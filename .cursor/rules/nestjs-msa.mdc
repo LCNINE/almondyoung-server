@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+새 마이크로서비스나 라이브러리를 추가해야 하는 경우, nestjs가 제공하는 cli 명령어인 `nest new g [app|lib] name`을 사용하여야 한다.
