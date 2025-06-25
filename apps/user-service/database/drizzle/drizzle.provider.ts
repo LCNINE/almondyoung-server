@@ -1,6 +1,6 @@
-import { db } from "../client";
+import { db } from '../client';
 
 export const DrizzleProvider = {
-  provide: "DRIZZLE",
+  provide: 'DRIZZLE',
   useValue: db,
 };
