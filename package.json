@@ -17,13 +17,15 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json"
+    "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/microservices": "^11.1.3",
     "@nestjs/platform-express": "^11.0.1",
+    "better-auth": "^1.2.10",
     "drizzle-orm": "^0.44.2",
     "kafkajs": "^2.2.4",
     "pg": "^8.16.2",

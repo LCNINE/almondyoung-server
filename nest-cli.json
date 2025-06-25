@@ -38,6 +38,17 @@
         "tsConfigPath": "libs/shared/tsconfig.lib.json"
       }
     },
+    "user-service": {
+      "type": "application",
+      "root": "apps/user-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/user-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/user-service/tsconfig.app.json",
+        "webpack": true,
+        "webpackConfigPath": "apps/user-service/webpack.config.js"
+      }
+    },
     "wms": {
       "type": "application",
       "root": "apps/wms",
