@@ -2,14 +2,22 @@ import { Module } from '@nestjs/common';
 import { DbModule, createDbConfigFromEnv } from '@app/db';
 import { userSchema, UserSchema } from '../database/drizzle/schema';
 import { ConfigModule } from '@nestjs/config';
-import { DatabaseModule } from '../database/database.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    DatabaseModule,
+    DbModule.forRoot({
+      config: {
+        host: 'ep-jolly-river-a8oplnnc-pooler.eastus2.azure.neon.tech',
+        port: 5432,
+        database: 'almond-users-service',
+        username: 'almond-users-service_owner',
+        password: 'npg_PESMZpX6nu5L',
+      },
+      schema: userSchema,
+    }),
   ],
 })
 export class AppModule {}
