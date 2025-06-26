@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { UserSchema } from 'apps/user/database/drizzle/schema';
+import { UserSchema } from 'apps/user-service/database/drizzle/schema';
 import { FastifyRequest } from 'fastify';
 
 export const CurrentUser = createParamDecorator(

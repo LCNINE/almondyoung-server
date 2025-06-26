@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { SignInDTO, SignUpDTO } from './dto/auth.dto';
+import { SignInDto } from './dto/sign-in.dto';
+import { SignUpDto } from './dto/sign-up.dto';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -45,7 +46,7 @@ describe('AuthController', () => {
   });
 
   it('should sign up and return user info with access token', async () => {
-    const signUpDto: SignUpDTO = {
+    const signUpDto: SignUpDto = {
       userId: 'test',
       nickname: 'test',
       email: 'test@test.com',
@@ -67,7 +68,7 @@ describe('AuthController', () => {
   });
 
   it('should sign in', async () => {
-    const signInDto: SignInDTO = {
+    const signInDto: SignInDto = {
       userId: 'test',
       password: 'test',
     };

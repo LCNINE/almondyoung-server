@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { DbModule, createDbConfigFromEnv } from '@app/db';
 import { userSchema, UserSchema } from '../database/drizzle/schema';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './auth/auth.module';
+import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { ConfigModule } from '@nestjs/config';
       },
       schema: userSchema,
     }),
+    AuthModule,
+    UserModule,
   ],
 })
 export class AppModule {}

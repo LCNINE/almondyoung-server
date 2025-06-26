@@ -44,9 +44,7 @@
       "entryFile": "main",
       "sourceRoot": "apps/user-service/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/user-service/tsconfig.app.json",
-        "webpack": true,
-        "webpackConfigPath": "apps/user-service/webpack.config.js"
+        "tsConfigPath": "apps/user-service/tsconfig.app.json"
       }
     },
     "wms": {
