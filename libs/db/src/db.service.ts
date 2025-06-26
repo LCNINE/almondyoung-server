@@ -14,7 +14,9 @@ export interface DbConfig {
 }
 
 @Injectable()
-export class DbService<TSchema extends Record<string, unknown> = Record<string, never>> {
+export class DbService<
+  TSchema extends Record<string, unknown> = Record<string, never>,
+> {
   private _db: PostgresJsDatabase<TSchema>;
 
   constructor(

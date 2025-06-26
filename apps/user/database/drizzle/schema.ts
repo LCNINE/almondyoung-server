@@ -130,3 +130,6 @@ export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
     references: [scopes.scopeId],
   }),
 }));
+
+export const userSchema = { users };
+export type UserSchema = typeof userSchema;
