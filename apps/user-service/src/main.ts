@@ -17,7 +17,7 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
-  const port = configService.get('PORT') || 3000;
+  const port = configService.get('PORT') || 5000;
 
   await app.register(fastifyHelmet);
   await app.register(fastifyCookie);

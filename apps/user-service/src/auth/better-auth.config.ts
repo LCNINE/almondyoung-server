@@ -1,51 +1,71 @@
+import { ConfigService } from '@nestjs/config';
 import { betterAuth } from 'better-auth';
 import { admin, bearer } from 'better-auth/plugins';
-import { config } from 'dotenv';
 import { Pool } from 'pg';
+import * as schema from '../../database/drizzle/schema';
+import { GlobalConfig } from '../config/config.type';
 
-config();
+export function createAuth(configService: ConfigService<GlobalConfig>) {
+  const dbConfig = configService.getOrThrow('database');
+  const appConfig = configService.getOrThrow('app');
+  const authConfig = configService.getOrThrow('auth');
 
-console.log('process.env.DATABASE_URL:', process.env.DATABASE_URL);
-
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  plugins: [admin(), bearer()],
-  emailAndPassword: {
-    enabled: true,
-  },
-  session: {
-    freshAge: 10,
-    modelName: 'sessions',
-    cookie: {
-      name: 'auth',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
+  return betterAuth({
+    database: new Pool({
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.username,
+      password: dbConfig.password,
+      database: dbConfig.database,
+      ssl: dbConfig.ssl,
+    }),
+    plugins: [admin(), bearer()],
+    emailAndPassword: {
+      enabled: true,
     },
-  },
-  user: {
-    modelName: 'users',
-    additionalFields: {
-      role: {
-        type: 'string',
-        defaultValue: 'user',
+    session: {
+      freshAge: 10,
+      modelName: 'sessions',
+      cookie: {
+        name: 'auth',
+        httpOnly: true,
+        secure: appConfig.nodeEnv === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7일
       },
     },
-  },
-  account: {
-    modelName: 'accounts',
-  },
-  verification: {
-    modelName: 'verifications',
-  },
-  socialProviders: {
-    // google: {
-    //   clientId: process.env.GOOGLE_CLIENT_ID,
-    //   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // },
-  },
-});
+    user: {
+      modelName: 'users',
+      fields: {
+        name: 'username',
+        emailVerified: 'email_verified',
+      },
+      additionalFields: {
+        role: {
+          type: 'string',
+          defaultValue: 'user',
+        },
+      },
+    },
+    schema: {
+      ...schema,
+    },
+    account: {
+      modelName: 'accounts',
+    },
+    verification: {
+      modelName: 'verifications',
+    },
+    socialProviders: {
+      ...(authConfig.oAuth.google
+        ? {
+            google: {
+              clientId: authConfig.oAuth.google.clientId,
+              clientSecret: authConfig.oAuth.google.clientSecret,
+            },
+          }
+        : {}),
+    },
+  });
+}

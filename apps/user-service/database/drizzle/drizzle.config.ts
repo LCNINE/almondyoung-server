@@ -5,8 +5,8 @@ import { join } from 'path';
 config({ path: join(__dirname, '../../.env') });
 
 export default defineConfig({
-  out: './apps/user/database/drizzle',
-  schema: './apps/user/database/drizzle/schema.ts',
+  out: './apps/user-service/database/drizzle',
+  schema: './apps/user-service/database/drizzle/schema.ts',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL!,

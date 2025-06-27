@@ -1,19 +1,24 @@
 import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
 import { userSchema } from '../database/drizzle/schema';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
+import configLoader from './config/config.loader';
+import { GlobalConfig } from './config/config.type';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: ['.env'],
+      load: [configLoader],
     }),
     DbModule.forRoot({
       config: {
         connectionString:
-          'postgres://almond-users-service_owner:npg_PESMZpX6nu5L@ep-jolly-river-a8oplnnc-pooler.eastus2.azure.neon.tech/almond-users-service',
+          process.env.DATABASE_URL ||
+          'postgres://postgres:postgres@localhost:5432/postgres',
       },
       schema: userSchema,
     }),

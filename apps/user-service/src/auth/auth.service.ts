@@ -35,7 +35,7 @@ export class AuthService {
       body: {
         email: signUpDto.email,
         password: signUpDto.password,
-        name: signUpDto.nickname,
+        name: signUpDto.username,
       },
     });
 
@@ -47,7 +47,7 @@ export class AuthService {
         id: authUser.id,
         email: signUpDto.email,
         userId: signUpDto.userId,
-        nickname: signUpDto.nickname,
+        username: signUpDto.username,
         passwordHash: '', // better-auth가 관리
       })
       .returning();
