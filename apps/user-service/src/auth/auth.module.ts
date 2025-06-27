@@ -3,16 +3,15 @@ import { AUTH_INSTANCE_KEY } from '../constants/auth.constant';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
-import { DbModule } from '@app/db';
 import { BetterAuthService } from './better-auth.service';
 import { ConfigService } from '@nestjs/config';
-import { betterAuth } from 'better-auth';
 import { auth } from './better-auth.config';
 
 @Module({
-  imports: [UserModule, DbModule],
+  imports: [UserModule],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, BetterAuthService],
+  exports: [AuthService, BetterAuthService],
 })
 export class AuthModule {
   static forRootAsync(): DynamicModule {
@@ -22,17 +21,13 @@ export class AuthModule {
       providers: [
         {
           provide: AUTH_INSTANCE_KEY,
-          useFactory: async (
-            configService: ConfigService,
-            authService: AuthService,
-          ) => {
+          useFactory: async (configService: ConfigService) => {
             return auth;
           },
-          inject: [ConfigService, AuthService],
+          inject: [ConfigService],
         },
-        BetterAuthService,
       ],
-      exports: [AUTH_INSTANCE_KEY, BetterAuthService],
+      exports: [AUTH_INSTANCE_KEY],
     };
   }
 }

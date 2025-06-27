@@ -1,7 +1,6 @@
-import { DB_CONNECTION, DbModule } from '@app/db';
+import { DbService, InjectDb } from '@app/db';
 import {
   BadRequestException,
-  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -12,14 +11,12 @@ import { UserService } from '../user/user.service';
 import { BetterAuthService } from './better-auth.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userService: UserService,
-    @Inject(DB_CONNECTION)
-    private readonly db: NeonHttpDatabase<typeof schema>,
+    @InjectDb() private readonly dbService: DbService<schema.UserSchema>,
     private readonly betterAuthService: BetterAuthService,
   ) {}
 
@@ -44,7 +41,7 @@ export class AuthService {
 
     console.log('authUser:::', authUser);
 
-    const [user] = await this.db
+    const [user] = await this.dbService.db
       .insert(schema.users)
       .values({
         id: authUser.id,
@@ -69,7 +66,7 @@ export class AuthService {
   }
 
   async signIn(signInDto: SignInDto) {
-    const user = await this.db
+    const user = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.userId, signInDto.userId))
@@ -114,7 +111,7 @@ export class AuthService {
       });
 
       // 토큰과 사용자 ID로 토큰 삭제
-      const result = await this.db
+      const result = await this.dbService.db
         .delete(schema.tokens)
         .where(
           and(eq(schema.tokens.value, token), eq(schema.tokens.userId, id)),
@@ -161,7 +158,7 @@ export class AuthService {
   }
 
   async validateUniqueEmail(email: string) {
-    const users = await this.db
+    const users = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.email, email))
@@ -171,7 +168,7 @@ export class AuthService {
   }
 
   async validateUniqueUserId(userId: string) {
-    const users = await this.db
+    const users = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.userId, userId))

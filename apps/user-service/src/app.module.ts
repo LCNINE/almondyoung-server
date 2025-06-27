@@ -1,7 +1,7 @@
-import { DbModule } from '@app/db';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { DbModule } from '@app/db';
 import { userSchema } from '../database/drizzle/schema';
+import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 
@@ -17,7 +17,7 @@ import { UserModule } from './user/user.module';
       },
       schema: userSchema,
     }),
-    AuthModule,
+    AuthModule.forRootAsync(),
     UserModule,
   ],
 })

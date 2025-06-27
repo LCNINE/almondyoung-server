@@ -28,7 +28,7 @@ export class DbModule {
         },
       ],
       exports: [DbService],
-      global: false, // 각 마이크로서비스에서 명시적으로 import하도록
+      global: true, // 전역 모듈로 설정
     };
   }
 }

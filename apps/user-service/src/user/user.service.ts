@@ -1,4 +1,4 @@
-import { DB_CONNECTION, DbModule } from '@app/db';
+import { DB_CONNECTION, DbModule, DbService, InjectDb } from '@app/db';
 import { Inject, Injectable } from '@nestjs/common';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
@@ -7,8 +7,7 @@ import * as schema from '../../database/drizzle/schema';
 @Injectable()
 export class UserService {
   constructor(
-    @Inject(DB_CONNECTION)
-    private readonly db: NeonHttpDatabase<typeof schema>,
+    @InjectDb() private readonly dbService: DbService<schema.UserSchema>,
   ) {}
 
   findAll() {

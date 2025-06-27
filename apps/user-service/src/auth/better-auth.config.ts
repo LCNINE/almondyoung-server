@@ -1,8 +1,12 @@
 import { betterAuth } from 'better-auth';
+import { admin, bearer } from 'better-auth/plugins';
+import { config } from 'dotenv';
 import { Pool } from 'pg';
-import { organization, twoFactor, bearer, admin } from 'better-auth/plugins';
 
-console.log('process.env.DATABASE_URL:"', process.env.DATABASE_URL);
+config();
+
+console.log('process.env.DATABASE_URL:', process.env.DATABASE_URL);
+
 export const auth = betterAuth({
   database: new Pool({
     connectionString: process.env.DATABASE_URL,
