@@ -22,11 +22,12 @@ const timestampColumns = {
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: varchar('user_id', { length: 255 }).notNull().unique(),
   username: varchar('username', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  emailVerified: boolean('email_verified').default(false),
+  password: varchar('password', { length: 255 }).notNull(),
+  email_verified: boolean('email_verified').default(false),
+  image: varchar('image', { length: 255 }).default(''),
+  role: varchar('role', { length: 50 }).default('user'),
   ...timestampColumns,
 });
 

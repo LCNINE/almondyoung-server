@@ -26,10 +26,10 @@ export class AuthService {
       throw new BadRequestException('이미 존재하는 이메일입니다.');
     }
 
-    const existsUserId = await this.validateUniqueUserId(signUpDto.userId);
-    if (existsUserId) {
-      throw new BadRequestException('이미 존재하는 아이디입니다.');
-    }
+    // const existsUserId = await this.validateUniqueUserId(signUpDto.userId);
+    // if (existsUserId) {
+    //   throw new BadRequestException('이미 존재하는 아이디입니다.');
+    // }
 
     const { user: authUser } = await this.betterAuthService.api.signUpEmail({
       body: {
@@ -39,54 +39,36 @@ export class AuthService {
       },
     });
 
-    console.log('authUser:::', authUser);
+    console.log('authUser:', authUser);
 
-    const [user] = await this.dbService.db
-      .insert(schema.users)
-      .values({
-        id: authUser.id,
-        email: signUpDto.email,
-        userId: signUpDto.userId,
-        username: signUpDto.username,
-        passwordHash: '', // better-auth가 관리
-      })
+    const [updatedUser] = await this.dbService.db
+      .update(schema.users)
+      .set({ id: authUser.id })
+      .where(eq(schema.users.id, authUser.id))
       .returning();
 
-    const { token } = await this.betterAuthService.api.signInEmail({
-      body: {
-        email: signUpDto.email,
-        password: signUpDto.password,
-      },
-    });
-
-    return {
-      user,
-      token,
-    };
+    return '완료';
   }
 
   async signIn(signInDto: SignInDto) {
-    const user = await this.dbService.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.userId, signInDto.userId))
-      .limit(1);
-
-    if (!user[0]) {
-      throw new BadRequestException('존재하지 않는 사용자입니다.');
-    }
-
-    const { token } = await this.betterAuthService.api.signInEmail({
-      body: {
-        email: user[0].email,
-        password: signInDto.password,
-      },
-    });
-
-    return {
-      user: user[0],
-      token,
-    };
+    // const user = await this.dbService.db
+    //   .select()
+    //   .from(schema.users)
+    //   .where(eq(schema.users.userId, signInDto.userId))
+    //   .limit(1);
+    // if (!user[0]) {
+    //   throw new BadRequestException('존재하지 않는 사용자입니다.');
+    // }
+    // const { token } = await this.betterAuthService.api.signInEmail({
+    //   body: {
+    //     email: user[0].email,
+    //     password: signInDto.password,
+    //   },
+    // });
+    // return {
+    //   user: user[0],
+    //   token,
+    // };
   }
 
   async signOut(request: FastifyRequest, id: string) {
@@ -168,12 +150,11 @@ export class AuthService {
   }
 
   async validateUniqueUserId(userId: string) {
-    const users = await this.dbService.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.userId, userId))
-      .limit(1);
-
-    return users.length > 0 ? users[0] : null;
+    // const users = await this.dbService.db
+    //   .select()
+    //   .from(schema.users)
+    //   .where(eq(schema.users.userId, userId))
+    //   .limit(1);
+    // return users.length > 0 ? users[0] : null;
   }
 }
