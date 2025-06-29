@@ -3,40 +3,59 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
-  SetMetadata,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
-import { REQUIRED_SCOPES } from '../decorators/require-scopes.decorator';
+import { FastifyRequest } from 'fastify';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ConfigService } from '@nestjs/config';
+
+interface JwtPayload {
+  sub: number;
+  email: string;
+  iat?: number;
+  exp?: number;
+}
 
 @Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+export class PublicPrivateGuard implements CanActivate {
+  constructor(
+    private jwtService: JwtService,
+    private reflector: Reflector,
+    private configService: ConfigService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-
-    if (!request.auth || !request.auth.user) {
-      throw new UnauthorizedException('로그인이 필요합니다.');
-    }
-
-    const requiredScopes = this.reflector.get<string[]>(
-      REQUIRED_SCOPES,
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
-    );
+      context.getClass(),
+    ]);
 
-    if (!requiredScopes) {
+    if (isPublic) {
       return true;
     }
 
-    const userScopes = request.auth.user.scopes || [];
-    const hasAllRequiredScopes = requiredScopes.every((scope) =>
-      userScopes.includes(scope),
-    );
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const token = this.extractTokenFromHeader(request);
 
-    if (!hasAllRequiredScopes) {
-      throw new UnauthorizedException('권한이 부족합니다.');
+    if (!token) {
+      throw new UnauthorizedException();
     }
-
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+        secret: this.configService.get<string>('JWT_SECRET'),
+      });
+      // 💡 We're assigning the payload to the request object here
+      // so that we can access it in our route handlers
+      request['user'] = payload;
+    } catch {
+      throw new UnauthorizedException();
+    }
     return true;
+  }
+
+  private extractTokenFromHeader(request: FastifyRequest): string | undefined {
+    const [type, token] = request.headers.authorization?.split(' ') ?? [];
+    return type === 'Bearer' ? token : undefined;
   }
 }

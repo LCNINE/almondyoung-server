@@ -27,7 +27,6 @@ export const users = pgTable('users', {
   password: varchar('password', { length: 255 }).notNull(),
   email_verified: boolean('email_verified').default(false),
   image: varchar('image', { length: 255 }).default(''),
-  role: varchar('role', { length: 50 }).default('user'),
   ...timestampColumns,
 });
 
@@ -135,3 +134,5 @@ export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
 
 export const userSchema = { users };
 export type UserSchema = typeof userSchema;
+
+export type User = typeof users.$inferSelect;

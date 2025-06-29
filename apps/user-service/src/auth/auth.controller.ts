@@ -1,5 +1,12 @@
-import { Body, Controller, Post, Req, ValidationPipe } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  Res,
+  ValidationPipe,
+} from '@nestjs/common';
+import { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
@@ -11,8 +18,11 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
-  async signUp(@Body(ValidationPipe) signUpDto: SignUpDto) {
-    return this.authService.signUp(signUpDto);
+  async signUp(
+    @Res({ passthrough: true }) res: FastifyReply,
+    @Body(ValidationPipe) signUpDto: SignUpDto,
+  ) {
+    return this.authService.signUp(signUpDto, res);
   }
 
   @Post('signin')

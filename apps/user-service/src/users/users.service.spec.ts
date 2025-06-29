@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UserService } from './user.service';
+import { UserService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 describe('UserService', () => {

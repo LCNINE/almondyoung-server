@@ -1,18 +1,14 @@
-import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { userSchema } from '../database/drizzle/schema';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
-import { UserModule } from './user/user.module';
-import configLoader from './config/config.loader';
-import { GlobalConfig } from './config/config.type';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env'],
-      load: [configLoader],
     }),
     DbModule.forRoot({
       config: {
@@ -22,8 +18,8 @@ import { GlobalConfig } from './config/config.type';
       },
       schema: userSchema,
     }),
-    AuthModule.forRootAsync(),
-    UserModule,
+    AuthModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

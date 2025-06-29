@@ -1,53 +1,70 @@
 import { DbService, InjectDb } from '@app/db';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  InternalServerErrorException,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import * as schema from '../../database/drizzle/schema';
-import { UserService } from '../user/user.service';
-import { BetterAuthService } from './better-auth.service';
+import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import * as bcrypt from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly userService: UserService,
-    @InjectDb() private readonly dbService: DbService<schema.UserSchema>,
-    private readonly betterAuthService: BetterAuthService,
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    @InjectDb() private readonly dbService: DbService<schema.User>,
   ) {}
 
-  async signUp(signUpDto: SignUpDto) {
-    const existsEmail = await this.validateUniqueEmail(signUpDto.email);
-    if (existsEmail) {
-      throw new BadRequestException('이미 존재하는 이메일입니다.');
+  async signUp(signUpDto: SignUpDto, @Res() res: FastifyReply) {
+    try {
+      const existsEmail = await this.usersService.findUserByEmail(
+        signUpDto.email,
+      );
+      if (existsEmail) {
+        throw new ConflictException('이미 존재하는 이메일입니다.');
+      }
+
+      const existingUserByNickname = await this.usersService.findUserByUsername(
+        signUpDto.username,
+      );
+
+      if (existingUserByNickname) {
+        throw new ConflictException('이미 존재하는 닉네임입니다.');
+      }
+
+      const saltOrRounds = 10;
+      const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
+
+      const [user] = await this.dbService.db
+        .insert(schema.users)
+        .values({ ...signUpDto, password: hash })
+        .returning();
+
+      const accessToken = await this.getAccessToken(user, res);
+      this.setRefreshToken(user.id, res);
+
+      return accessToken;
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      console.error('error:', error);
+      throw new InternalServerErrorException(
+        '회원가입 중 오류가 발생했습니다.',
+      );
     }
-
-    // const existsUserId = await this.validateUniqueUserId(signUpDto.userId);
-    // if (existsUserId) {
-    //   throw new BadRequestException('이미 존재하는 아이디입니다.');
-    // }
-
-    const { user: authUser } = await this.betterAuthService.api.signUpEmail({
-      body: {
-        email: signUpDto.email,
-        password: signUpDto.password,
-        name: signUpDto.username,
-      },
-    });
-
-    console.log('authUser:', authUser);
-
-    const [updatedUser] = await this.dbService.db
-      .update(schema.users)
-      .set({ id: authUser.id })
-      .where(eq(schema.users.id, authUser.id))
-      .returning();
-
-    return '완료';
   }
 
   async signIn(signInDto: SignInDto) {
@@ -86,12 +103,6 @@ export class AuthService {
     }
 
     try {
-      await this.betterAuthService.api.signOut({
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
       // 토큰과 사용자 ID로 토큰 삭제
       const result = await this.dbService.db
         .delete(schema.tokens)
@@ -114,6 +125,62 @@ export class AuthService {
     }
   }
 
+  async getAccessToken(
+    user: schema.User,
+    res: FastifyReply,
+  ): Promise<{ accessToken: string }> {
+    const payload = {
+      sub: user.id,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+      expiresIn:
+        this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ?? '15m',
+    });
+
+    const cookieOptions = {
+      path: '/',
+      ...(process.env.NODE_ENV === 'production'
+        ? {
+            domain: process.env.CORS_ORIGIN_DOMAIN,
+            sameSite: 'none' as const,
+            secure: true,
+            httpOnly: true,
+          }
+        : {}),
+    };
+
+    res.setCookie('accessToken', accessToken, cookieOptions);
+
+    return { accessToken };
+  }
+
+  async setRefreshToken(userId: string, res: FastifyReply): Promise<void> {
+    const refreshToken = this.jwtService.sign(
+      { sub: userId },
+      {
+        secret: this.configService.get<string>('JWT_SECRET'),
+        expiresIn:
+          this.configService.get('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w',
+      },
+    );
+
+    const setResCookie = {
+      path: '/',
+      ...(process.env.NODE_ENV === 'production'
+        ? {
+            domain: process.env.CORS_ORIGIN_DOMAIN,
+            sameSite: 'none' as const,
+            secure: true,
+            httpOnly: true,
+          }
+        : {}),
+    };
+
+    res.setCookie('refreshToken', refreshToken, setResCookie);
+  }
+
   async refreshToken(request: FastifyRequest) {
     const cookieToken = request.cookies?.auth;
     const bearerToken = request.headers.authorization?.replace('Bearer ', '');
@@ -125,36 +192,9 @@ export class AuthService {
     }
 
     try {
-      const response = await this.betterAuthService.api.refreshToken({
-        body: {
-          providerId: token,
-        },
-      });
-
-      return {
-        token: response.accessToken,
-      };
+      return '새로운 토큰 발급';
     } catch (error) {
       throw new UnauthorizedException('토큰 갱신에 실패했습니다.');
     }
-  }
-
-  async validateUniqueEmail(email: string) {
-    const users = await this.dbService.db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.email, email))
-      .limit(1);
-
-    return users.length > 0 ? users[0] : null;
-  }
-
-  async validateUniqueUserId(userId: string) {
-    // const users = await this.dbService.db
-    //   .select()
-    //   .from(schema.users)
-    //   .where(eq(schema.users.userId, userId))
-    //   .limit(1);
-    // return users.length > 0 ? users[0] : null;
   }
 }
