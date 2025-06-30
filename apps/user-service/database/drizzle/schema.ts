@@ -7,6 +7,7 @@ import {
   uuid,
   text,
   boolean,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 export const tokenTypeEnum = pgEnum('token_type', ['access', 'refresh']);
@@ -22,11 +23,10 @@ const timestampColumns = {
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id', { length: 255 }).notNull().unique(),
   username: varchar('username', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }).notNull(),
-  email_verified: boolean('email_verified').default(false),
-  image: varchar('image', { length: 255 }).default(''),
   ...timestampColumns,
 });
 
@@ -71,19 +71,25 @@ export const roleScopes = pgTable('role_scopes', {
   ...timestampColumns,
 });
 
-export const tokens = pgTable('tokens', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
-  value: varchar('value', { length: 255 }).notNull(),
-  type: tokenTypeEnum('type').notNull(),
-  scopes: varchar('scopes', { length: 65535 }).notNull(),
-  issuedAt: timestamp('issued_at').defaultNow().notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  isRevoked: boolean('is_revoked').default(false),
-  ...timestampColumns,
-});
+export const tokens = pgTable(
+  'tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    value: varchar('value', { length: 255 }).notNull(),
+    type: tokenTypeEnum('type').notNull(),
+    scopes: varchar('scopes', { length: 65535 }).notNull(),
+    issuedAt: timestamp('issued_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    isRevoked: boolean('is_revoked').default(false),
+    ...timestampColumns,
+  },
+  (table) => ({
+    userTypeIdx: unique().on(table.userId, table.type),
+  }),
+);
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
