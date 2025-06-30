@@ -4,6 +4,7 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +27,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly rolesService: RolesService,
+    private readonly mailService: MailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
   ) {}
 
@@ -287,6 +290,14 @@ export class AuthService {
 
   async refreshToken(user: schema.User, res: FastifyReply) {
     return this.getAccessToken(user, res);
+  }
+
+  async resetPassword(email: string) {
+    const user = await this.usersService.findUserByEmail(email);
+    if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
+
+    await this.mailService.sendPasswordResetEmail(email);
+    return { message: '비밀번호 재설정 이메일이 전송되었습니다.' };
   }
 
   private parseExpiresIn(expiresIn: string): number {

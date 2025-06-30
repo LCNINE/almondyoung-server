@@ -8,23 +8,23 @@ export class UsersService {
   constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
 
   async findUserByEmail(email: string): Promise<schema.User | null> {
-    const users = await this.dbService.db
+    const [users] = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.email, email))
       .limit(1);
 
-    return users.length > 0 ? users[0] : null;
+    return users;
   }
 
   async findUserByUsername(username: string): Promise<schema.User | null> {
-    const users = await this.dbService.db
+    const [users] = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.username, username))
       .limit(1);
 
-    return users.length > 0 ? users[0] : null;
+    return users;
   }
 
   async findUserByUserId(id: string): Promise<schema.User | null> {

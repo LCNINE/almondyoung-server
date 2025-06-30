@@ -11,6 +11,7 @@ import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RolesModule } from '../roles/roles.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { RolesModule } from '../roles/roles.module';
       inject: [ConfigService],
     }),
     RolesModule,
+    MailModule,
   ],
   providers: [
     AuthService,
