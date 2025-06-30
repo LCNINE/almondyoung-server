@@ -27,17 +27,23 @@ export class UsersService {
     return users.length > 0 ? users[0] : null;
   }
 
-  async findUserById(
-    id: string,
-  ): Promise<Omit<schema.User, 'password'> | null> {
-    const users = await this.dbService.db
+  async findUserByUserId(id: string): Promise<schema.User | null> {
+    const [users] = await this.dbService.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.userId, id))
+      .limit(1);
+
+    return users;
+  }
+
+  async findUserById(id: string): Promise<schema.User | null> {
+    const [users] = await this.dbService.db
       .select()
       .from(schema.users)
       .where(eq(schema.users.id, id))
       .limit(1);
 
-    const { password, ...userWithoutPassword } = users[0];
-
-    return userWithoutPassword;
+    return users;
   }
 }

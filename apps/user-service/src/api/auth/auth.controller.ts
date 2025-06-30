@@ -9,14 +9,14 @@ import {
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
-import { AuthService } from './auth.service';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { Public } from '../../commons/decorators/public.decorator';
+import { AuthService } from './auth.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
 export class AuthController {
@@ -32,6 +32,7 @@ export class AuthController {
   }
 
   @Post('signin')
+  @Public()
   @HttpCode(HttpStatus.OK)
   async signIn(
     @Body(ValidationPipe) signInDto: SignInDto,
@@ -41,12 +42,12 @@ export class AuthController {
   }
 
   @Post('signout')
+  @UseGuards(AuthGuard('jwt'))
   async signOut(
     @Req() request: FastifyRequest,
-    @CurrentUser() user: schema.UserSchema,
+    @CurrentUser() user: schema.User,
   ) {
-    console.log('user:', user);
-    // return this.authService.signOut(request, user);
+    return this.authService.signOut(request, user);
   }
 
   @Post('refresh')

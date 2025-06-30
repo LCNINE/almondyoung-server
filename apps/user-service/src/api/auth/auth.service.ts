@@ -76,54 +76,38 @@ export class AuthService {
     signInDto: SignInDto,
     res: FastifyReply,
   ): Promise<{ accessToken: string }> {
-    try {
-      const user = await this.dbService.db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.userId, signInDto.userId))
-        .limit(1);
+    const user = await this.usersService.findUserByUserId(signInDto.userId);
+    if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
 
-      if (!user[0]) {
-        throw new BadRequestException('존재하지 않는 사용자입니다.');
-      }
+    const isAuth = await bcrypt.compare(signInDto.password, user.password);
+    if (!isAuth)
+      throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
-      const accessToken = await this.getAccessToken(user[0], res);
-      await this.setRefreshToken(user[0].id, res);
+    await this.setRefreshToken(user.id, res);
+    const accessToken = await this.getAccessToken(user, res);
 
-      return accessToken;
-    } catch (error) {
-      console.error('error:', error);
-      throw new InternalServerErrorException('로그인 중 오류가 발생했습니다.');
-    }
+    return accessToken;
   }
 
-  async signOut(request: FastifyRequest, id: string) {
-    if (!id) {
-      throw new BadRequestException('사용자 ID가 필요합니다.');
-    }
-
-    const cookieToken = request.cookies?.auth;
-    const bearerToken = request.headers.authorization?.replace('Bearer ', '');
-
-    const token = cookieToken || bearerToken;
-
-    if (!token) {
-      throw new UnauthorizedException('인증 토큰이 필요합니다.');
-    }
+  async signOut(req: FastifyRequest, user: schema.User) {
+    const authHeader = req.headers.authorization;
+    const accessToken = authHeader?.split(' ')[1];
 
     try {
+      if (!accessToken) {
+        throw new UnauthorizedException('인증 토큰이 필요합니다.');
+      }
+
       // 토큰과 사용자 ID로 토큰 삭제
       const result = await this.dbService.db
         .delete(schema.tokens)
         .where(
-          and(eq(schema.tokens.value, token), eq(schema.tokens.userId, id)),
+          and(
+            eq(schema.tokens.value, accessToken),
+            eq(schema.tokens.userId, user.id),
+          ),
         )
         .returning();
-
-      // 삭제된 토큰이 없는 경우
-      if (!result.length) {
-        throw new UnauthorizedException('유효하지 않은 토큰입니다.');
-      }
 
       return { message: '로그아웃되었습니다.' };
     } catch (error) {
