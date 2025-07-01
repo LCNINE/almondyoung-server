@@ -318,6 +318,30 @@ export class AuthService {
     return;
   }
 
+  async findValidToken(userId: string, tokenValue: string) {
+    const existingToken = await this.dbService.db
+      .select()
+      .from(schema.tokens)
+      .where(
+        and(
+          eq(schema.tokens.userId, userId),
+          eq(schema.tokens.value, tokenValue),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] || null);
+
+    if (
+      !existingToken ||
+      existingToken.expiresAt <= new Date() ||
+      existingToken.isRevoked
+    ) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    return;
+  }
+
   private parseExpiresIn(expiresIn: string): number {
     const match = expiresIn.match(/^(\d+)([smhdw])$/);
     if (!match) return 15 * 60 * 1000; // 기본값 15분

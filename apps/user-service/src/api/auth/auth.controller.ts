@@ -53,7 +53,7 @@ export class AuthController {
   @Post('refresh')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  async refreshToken(
+  async restoreAccessToken(
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
