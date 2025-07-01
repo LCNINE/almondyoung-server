@@ -130,26 +130,65 @@ export const stockEvents = pgTable('stock_events', {
     sequenceNo: integer('sequence_no'),
 });
 
+// --- ① stocks (append‑only) ----------------------------------------------
 export const stocks = pgTable('stocks', {
     id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-    expiryDate: timestamp('expiry_date', { withTimezone: true }),
-    manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
+
+    /* FK */
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'restrict' })
+        .notNull(),
+    warehouseId: uuid('warehouse_id')
+        .references(() => warehouses.id)
+        .notNull(),
+    locationId: uuid('location_id')
+        .references(() => locations.id, { onDelete: 'set null' }),
+
+    /** 수량 */
     realQuantity: integer('real_quantity').notNull(),
     reservedQuantity: integer('reserved_quantity').notNull().default(0),
     availableQuantity: integer('available_quantity').notNull(),
     safetyStock: integer('safety_stock'),
-    subBarcode: varchar('sub_barcode', { length: 64 }),
+
+    /** 원장 타임스탬프 (append‑only) */
+    bornAt: timestamp('born_at', { withTimezone: true })
+        .notNull()
+        .defaultNow(),
+    deadAt: timestamp('dead_at', { withTimezone: true }),
+
+    /** 이벤트 연결 */
+    creatorEventId: uuid('creator_event_id')
+        .references(() => stockEvents.id)
+        .notNull(),
+    destroyerEventId: uuid('destroyer_event_id')
+        .references(() => stockEvents.id),
+
+    /** 메타 */
+    expiryDate: timestamp('expiry_date', { withTimezone: true }),
+    manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
     barcodeType: barcodeTypeEnum('barcode_type'),
+    subBarcode: varchar('sub_barcode', { length: 64 }),
     packingUnit: varchar('packing_unit', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-    creatorEventId: uuid('creator_event_id').references(() => stockEvents.id).notNull(),
-    destroyerEventId: uuid('destroyer_event_id').references(() => stockEvents.id),
-    isDeleted: boolean('is_deleted').notNull().default(false),
 });
+
+// --- ② outbound_task_items -----------------------------------------------
+export const outboundTaskItems = pgTable('outbound_task_items', {
+    taskId: uuid('task_id')
+        .references(() => outboundTasks.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id)
+        .notNull(),
+
+    qtyPending: integer('qty_pending').notNull().default(0),  // 출고대기
+    qtyPicking: integer('qty_picking').notNull().default(0),  // 카트 담김
+    qtyPicked: integer('qty_picked').notNull().default(0),   // 박스 완료
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.taskId, t.skuId),
+}));
+
 
 /*───────────────────────────
  * PRODUCT / SKU MAPPING

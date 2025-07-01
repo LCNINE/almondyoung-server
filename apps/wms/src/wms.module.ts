@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { WmsController } from './wms.controller';
 import { WmsService } from './wms.service';
+import { ExampleModule } from './example/example.module';
 
 @Module({
-  imports: [],
+  imports: [ExampleModule],
   controllers: [WmsController],
   providers: [WmsService],
 })
