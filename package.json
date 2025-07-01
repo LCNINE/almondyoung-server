@@ -20,16 +20,21 @@
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/microservices": "^11.1.3",
     "@nestjs/platform-express": "^11.0.1",
+    "dotenv": "^16.5.0",
     "drizzle-orm": "^0.44.2",
+    "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git",
     "kafkajs": "^2.2.4",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "ulid": "^3.0.1",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
@@ -46,6 +51,7 @@
     "@types/pg": "^8.15.4",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -58,6 +64,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },
