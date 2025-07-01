@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { PublicPrivateGuard } from '../../commons/guards/auth.guard';
+import { RolesGuard } from '../../commons/guards/roles.guard';
+import { EmailModule } from '../email/email.module';
+import { RolesModule } from '../roles/roles.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { PublicPrivateGuard } from '../../commons/guards/auth.guard';
-import { RolesGuard } from '../../commons/guards/roles.guard';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { RolesModule } from '../roles/roles.module';
-import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -20,7 +20,7 @@ import { MailModule } from '../mail/mail.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET'),
+        secret: configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
         signOptions: {
           expiresIn: configService.get('JWT_ACCESS_TOKEN_EXPIRATION', '15m'),
         },
@@ -28,7 +28,7 @@ import { MailModule } from '../mail/mail.module';
       inject: [ConfigService],
     }),
     RolesModule,
-    MailModule,
+    EmailModule,
   ],
   providers: [
     AuthService,

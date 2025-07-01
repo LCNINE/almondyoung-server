@@ -60,9 +60,17 @@ export class AuthController {
     return this.authService.refreshToken(user, res);
   }
 
+  @Post('forget-password')
+  @Public()
+  async forgotPassword(@Body(ValidationPipe) { email }: { email: string }) {
+    return this.authService.forgotPassword(email);
+  }
+
   @Post('reset-password')
   @Public()
-  async resetPassword(@Body(ValidationPipe) { email }: { email: string }) {
-    return this.authService.resetPassword(email);
+  async resetPassword(
+    @Body() { token, password }: { token: string; password: string },
+  ): Promise<void> {
+    return this.authService.resetPassword(token, password);
   }
 }

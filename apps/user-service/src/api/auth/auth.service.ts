@@ -18,7 +18,7 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { MailService } from '../mail/mail.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
@@ -27,7 +27,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly rolesService: RolesService,
-    private readonly mailService: MailService,
+    private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
   ) {}
 
@@ -167,7 +167,7 @@ export class AuthService {
       this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ?? '15m';
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
+      secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
       expiresIn,
     });
 
@@ -292,12 +292,30 @@ export class AuthService {
     return this.getAccessToken(user, res);
   }
 
-  async resetPassword(email: string) {
+  async forgotPassword(email: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
-    await this.mailService.sendPasswordResetEmail(email);
-    return { message: '비밀번호 재설정 이메일이 전송되었습니다.' };
+    await this.emailService.sendResetPasswordLink(email);
+  }
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    const email = await this.emailService.decodeConfirmationToken(token);
+
+    const user = await this.usersService.findUserByEmail(email);
+    if (!user) {
+      throw new NotFoundException(`No user found for email: ${email}`);
+    }
+
+    const saltOrRounds = 10;
+    const hash = await bcrypt.hash(password, saltOrRounds);
+
+    const result = await this.dbService.db
+      .update(schema.users)
+      .set({ password: hash })
+      .where(eq(schema.users.id, user.id));
+
+    return;
   }
 
   private parseExpiresIn(expiresIn: string): number {
