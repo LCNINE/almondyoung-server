@@ -542,11 +542,34 @@ export class AuthService {
     return;
   }
 
+  async changePassword(password: string, user: schema.User) {
+    const existingUser = await this.usersService.findUserById(user.id);
+
+    if (existingUser?.id !== user.id) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    try {
+      const saltOrRounds = 10;
+      const hash = await bcrypt.hash(password, saltOrRounds);
+      await this.dbService.db
+        .update(schema.users)
+        .set({ password: hash })
+        .where(eq(schema.users.id, user.id));
+
+      return;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        '비밀번호 변경 중 오류가 발생했습니다.',
+      );
+    }
+  }
+
   private parseExpiresIn(expiresIn: string): number {
     const match = expiresIn.match(/^(\d+)([smhdw])$/);
     if (!match) return 15 * 60 * 1000; // 기본값 15분
 
-    const [, value, unit] = match;
+    const [value, unit] = match;
     const num = parseInt(value, 10);
 
     switch (unit) {

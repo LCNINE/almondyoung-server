@@ -17,6 +17,7 @@ import { Public } from '../../commons/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { ChangePasswordDto } from './dto/change-pw.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -60,7 +61,14 @@ export class AuthController {
     return this.authService.refreshToken(user, res);
   }
 
-  TODO: 패스워드변경;
+  @Post('change-password')
+  @UseGuards(AuthGuard('jwt'))
+  async changePassword(
+    @Body(ValidationPipe) { password }: ChangePasswordDto,
+    @CurrentUser() user: schema.User,
+  ) {
+    return this.authService.changePassword(password, user);
+  }
 
   @Post('forget-password')
   @Public()
