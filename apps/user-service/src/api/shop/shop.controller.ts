@@ -19,7 +19,7 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
-  @Post('info-create')
+  @Post('info')
   @UseGuards(JwtAuthGuard)
   create(@Body() createShopDto: CreateShopInfoDto, @CurrentUser() user: User) {
     return this.shopService.create(createShopDto, user);
@@ -30,7 +30,8 @@ export class ShopController {
     return this.shopService.findOne(+id);
   }
 
-  @Patch(':id')
+  @Patch(':id/info')
+  @UseGuards(JwtAuthGuard)
   update(@Param('id') id: string, @Body() updateShopDto: UpdateShopInfoDto) {
     return this.shopService.update(+id, updateShopDto);
   }
