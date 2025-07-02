@@ -9,6 +9,7 @@ import { RolesModule } from './api/roles/roles.module';
 import { ScopesModule } from './api/scopes/scopes.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
+import { ShopModule } from './api/shop/shop.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     RolesModule,
     ScopesModule,
     EmailModule,
+    ShopModule,
   ],
   providers: [
     {
