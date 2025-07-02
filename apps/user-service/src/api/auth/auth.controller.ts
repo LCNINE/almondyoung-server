@@ -60,6 +60,8 @@ export class AuthController {
     return this.authService.refreshToken(user, res);
   }
 
+  TODO: 패스워드변경;
+
   @Post('forget-password')
   @Public()
   async forgotPassword(@Body(ValidationPipe) { email }: { email: string }) {
