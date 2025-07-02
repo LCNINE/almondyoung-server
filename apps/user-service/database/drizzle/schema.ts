@@ -162,7 +162,8 @@ export const shops = pgTable('shops', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id')
     .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+    .references(() => users.id, { onDelete: 'cascade' })
+    .unique(),
   isOperating: boolean('is_operating').notNull().default(false),
   yearsOperating: integer('years_operating'),
   shopType: shopTypeEnum('shop_type').notNull(),

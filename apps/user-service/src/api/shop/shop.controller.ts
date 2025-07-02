@@ -19,25 +19,25 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
+  @Get('info')
+  @UseGuards(JwtAuthGuard)
+  findOneByUserId(@CurrentUser() user: User) {
+    return this.shopService.findOneByUserId(user.id);
+  }
+
   @Post('info')
   @UseGuards(JwtAuthGuard)
   create(@Body() createShopDto: CreateShopInfoDto, @CurrentUser() user: User) {
     return this.shopService.create(createShopDto, user);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.shopService.findOne(+id);
-  }
-
   @Patch(':id/info')
   @UseGuards(JwtAuthGuard)
-  update(@Param('id') id: string, @Body() updateShopDto: UpdateShopInfoDto) {
-    return this.shopService.update(+id, updateShopDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.shopService.remove(+id);
+  update(
+    @Param('id') id: string,
+    @Body() updateShopDto: UpdateShopInfoDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.shopService.update(id, updateShopDto, user);
   }
 }
