@@ -1,22 +1,34 @@
 import { Injectable } from '@nestjs/common';
-import { CreateShopDto } from './dto/create-shop.dto';
-import { UpdateShopDto } from './dto/update-shop.dto';
+import { CreateShopInfoDto } from './dto/create-shop-info.dto';
+import { UpdateShopInfoDto } from './dto/update-shop-info';
+import { User } from 'apps/user-service/database/drizzle/schema';
+import { DbService, InjectDb } from '@app/db';
+import * as schema from '../../../database/drizzle/schema';
+import { Shop } from './entities/shop.entity';
 
 @Injectable()
 export class ShopService {
-  create(createShopDto: CreateShopDto) {
-    return 'This action adds a new shop';
-  }
+  constructor(@InjectDb() private readonly dbService: DbService<schema.Shop>) {}
+  async create(createShopDto: CreateShopInfoDto, user: User) {
+    await this.dbService.db.insert(schema.shops).values({
+      userId: user.id,
+      shopType: createShopDto.shopType,
+      categories: createShopDto.categories,
+      customCategory: createShopDto.customCategory,
+      targetCustomers: createShopDto.targetCustomers,
+      openDays: createShopDto.openDays,
+      isOperating: createShopDto.isOperating,
+      yearsOperating: createShopDto.yearsOperating,
+    });
 
-  findAll() {
-    return `This action returns all shop`;
+    return;
   }
 
   findOne(id: number) {
     return `This action returns a #${id} shop`;
   }
 
-  update(id: number, updateShopDto: UpdateShopDto) {
+  update(id: number, updateShopDto: UpdateShopInfoDto) {
     return `This action updates a #${id} shop`;
   }
 

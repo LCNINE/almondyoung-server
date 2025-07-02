@@ -30,7 +30,6 @@ const timestampColumns = {
 /***
  * user schema
  */
-
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: varchar('user_id', { length: 255 }).notNull().unique(),
@@ -157,39 +156,7 @@ export type User = typeof users.$inferSelect;
 /***
  * shope schema
  */
-
-export const shopCategoryEnum = pgEnum('shop_category', [
-  'hair',
-  'nail',
-  'makeup',
-  'skincare',
-  'massage',
-  'beauty',
-  'etc',
-]);
-
 export const shopTypeEnum = pgEnum('shop_type', ['solo', 'small', 'large']);
-
-export const customerTypeEnum = pgEnum('customer_type', [
-  'female',
-  'male',
-  'teens',
-  'twenties',
-  'thirties',
-  'forties',
-  'fifties_plus',
-  'all_ages',
-]);
-
-export const dayOfWeekEnum = pgEnum('day_of_week', [
-  'monday',
-  'tuesday',
-  'wednesday',
-  'thursday',
-  'friday',
-  'saturday',
-  'sunday',
-]);
 
 export const shops = pgTable('shops', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -199,24 +166,14 @@ export const shops = pgTable('shops', {
   isOperating: boolean('is_operating').notNull().default(false),
   yearsOperating: integer('years_operating'),
   shopType: shopTypeEnum('shop_type').notNull(),
-  categories: shopCategoryEnum('categories').notNull(), // 예: ["hair", "nail"]
-  customCategory: jsonb('custom_category'), // etc일 때 추가 값, 예: ["특수업종1", "특수업종2"]
-  targetCustomers: customerTypeEnum('target_customers'), // 예: ["female", "twenties"]
-  openDays: dayOfWeekEnum('open_days'),
-
+  categories: jsonb('categories').notNull(),
+  customCategory: jsonb('custom_category'),
+  targetCustomers: jsonb('target_customers'),
+  openDays: jsonb('open_days'),
   ...timestampColumns,
 });
 
 export type Shop = typeof shops.$inferSelect;
 
-export type ShopCategory = (typeof shopCategoryEnum.enumValues)[number];
-export const SHOP_CATEGORIES = shopCategoryEnum.enumValues;
-
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;
-
-export type CustomerType = (typeof customerTypeEnum.enumValues)[number];
-export const CUSTOMER_TYPES = customerTypeEnum.enumValues;
-
-export type DayOfWeek = (typeof dayOfWeekEnum.enumValues)[number];
-export const DAYS_OF_WEEK = dayOfWeekEnum.enumValues;
