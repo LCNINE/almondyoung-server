@@ -9,6 +9,7 @@ import {
   boolean,
   unique,
   integer,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 
 export const tokenTypeEnum = pgEnum('token_type', [
@@ -158,95 +159,64 @@ export type User = typeof users.$inferSelect;
  */
 
 export const shopCategoryEnum = pgEnum('shop_category', [
-  'hair', // 헤어
-  'nail', // 네일
-  'makeup', // 메이크업
-  'skincare', // 스킨케어
-  'massage', // 마사지
-  'beauty', // 뷰티
-  'etc', // 기타
+  'hair',
+  'nail',
+  'makeup',
+  'skincare',
+  'massage',
+  'beauty',
+  'etc',
 ]);
 
-export const shopTypeEnum = pgEnum('shop_type', [
-  'solo', // 1인샵
-  'small', // 소형샵
-  'large', // 대형샵
-]);
+export const shopTypeEnum = pgEnum('shop_type', ['solo', 'small', 'large']);
 
 export const customerTypeEnum = pgEnum('customer_type', [
-  'female', // 여성
-  'male', // 남성
-  'teens', // 10대
-  'twenties', // 20대
-  'thirties', // 30대
-  'forties', // 40대
-  'fifties_plus', // 50대 이상
-  'all_ages', // 전 연령
+  'female',
+  'male',
+  'teens',
+  'twenties',
+  'thirties',
+  'forties',
+  'fifties_plus',
+  'all_ages',
 ]);
 
 export const dayOfWeekEnum = pgEnum('day_of_week', [
-  'monday', // 월
-  'tuesday', // 화
-  'wednesday', // 수
-  'thursday', // 목
-  'friday', // 금
-  'saturday', // 토
-  'sunday', // 일
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
 ]);
 
-// 메인 샵 테이블
 export const shops = pgTable('shops', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
-  isOperating: boolean('is_operating').notNull().default(false), // 샵 운영 중 여부
-  yearsOperating: integer('years_operating'), // 운영 연수
-  shopType: shopTypeEnum('shop_type'), // 샵 유형
+  isOperating: boolean('is_operating').notNull().default(false),
+  yearsOperating: integer('years_operating'),
+  shopType: shopTypeEnum('shop_type').notNull(),
+  categories: shopCategoryEnum('categories').notNull(), // 예: ["hair", "nail"]
+  customCategory: jsonb('custom_category'), // etc일 때 추가 값, 예: ["특수업종1", "특수업종2"]
+  targetCustomers: customerTypeEnum('target_customers'), // 예: ["female", "twenties"]
+  openDays: dayOfWeekEnum('open_days'),
+
   ...timestampColumns,
 });
-
-// 샵 카테고리 (다중 선택 가능)
-export const shopCategories = pgTable('shop_categories', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  shopId: uuid('shop_id')
-    .notNull()
-    .references(() => shops.id, { onDelete: 'cascade' }),
-  category: shopCategoryEnum('category').notNull(),
-  customCategory: varchar('custom_category', { length: 100 }),
-  ...timestampColumns,
-});
-
-// 샵 주요 고객층 (다중 선택 가능)
-export const shopTargetCustomers = pgTable('shop_target_customers', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  shopId: uuid('shop_id')
-    .notNull()
-    .references(() => shops.id, { onDelete: 'cascade' }),
-  customerType: customerTypeEnum('customer_type').notNull(),
-  ...timestampColumns,
-});
-
-// 샵 운영 요일 (다중 선택 가능)
-export const shopOpenDays = pgTable('shop_open_days', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  shopId: uuid('shop_id')
-    .notNull()
-    .references(() => shops.id, { onDelete: 'cascade' }),
-  dayOfWeek: dayOfWeekEnum('day_of_week').notNull(),
-  ...timestampColumns,
-});
-
-export const shopRelations = relations(shops, ({ one, many }) => ({
-  user: one(users, {
-    fields: [shops.userId],
-    references: [users.id],
-  }),
-  categories: many(shopCategories),
-  targetCustomers: many(shopTargetCustomers),
-  openDays: many(shopOpenDays),
-}));
-
-export type ShopSchema = typeof shops;
 
 export type Shop = typeof shops.$inferSelect;
+
+export type ShopCategory = (typeof shopCategoryEnum.enumValues)[number];
+export const SHOP_CATEGORIES = shopCategoryEnum.enumValues;
+
+export type ShopType = (typeof shopTypeEnum.enumValues)[number];
+export const SHOP_TYPES = shopTypeEnum.enumValues;
+
+export type CustomerType = (typeof customerTypeEnum.enumValues)[number];
+export const CUSTOMER_TYPES = customerTypeEnum.enumValues;
+
+export type DayOfWeek = (typeof dayOfWeekEnum.enumValues)[number];
+export const DAYS_OF_WEEK = dayOfWeekEnum.enumValues;
