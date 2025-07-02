@@ -82,4 +82,10 @@ export class AuthController {
   ) {
     return await this.authService.verifyEmail(token, res);
   }
+
+  @Post('resend-verification-email')
+  @Public()
+  async resendVerificationEmail(@Body() { email }: { email: string }) {
+    return this.authService.resendVerificationEmail(email);
+  }
 }

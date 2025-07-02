@@ -239,12 +239,48 @@ export class AuthService {
     }
   }
 
+  // 이메일 재전송
+  async resendVerificationEmail(email: string) {
+    const user = await this.usersService.findUserByEmail(email);
+    if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
+
+    const expiresIn =
+      this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ?? '15m';
+
+    // 새로운 인증 토큰 생성
+    const verificationToken = this.jwtService.sign(
+      { sub: user.id },
+      {
+        secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        expiresIn,
+      },
+    );
+
+    // 새 토큰 저장
+    await this.dbService.db.insert(schema.tokens).values({
+      type: schema.tokenTypeEnum.enumValues[2],
+      userId: user.id,
+      value: verificationToken,
+      scopes: '',
+      expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+    });
+
+    // 이메일 재발송
+    await this.emailService.sendVerificationEmail(email, verificationToken);
+
+    return;
+  }
+
   async signIn(
     signInDto: SignInDto,
     res: FastifyReply,
   ): Promise<{ accessToken: string }> {
     const user = await this.usersService.findUserByUserId(signInDto.userId);
     if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('이메일 인증이 필요합니다.');
+    }
 
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
     if (!isAuth)
