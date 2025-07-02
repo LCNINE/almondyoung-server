@@ -73,4 +73,13 @@ export class AuthController {
   ): Promise<void> {
     return this.authService.resetPassword(token, password);
   }
+
+  @Post('callback/verify-email')
+  @Public()
+  async verifyEmail(
+    @Body() { token }: { token: string },
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    return await this.authService.verifyEmail(token, res);
+  }
 }

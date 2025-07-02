@@ -10,7 +10,11 @@ import {
   unique,
 } from 'drizzle-orm/pg-core';
 
-export const tokenTypeEnum = pgEnum('token_type', ['access', 'refresh']);
+export const tokenTypeEnum = pgEnum('token_type', [
+  'access',
+  'refresh',
+  'verification',
+]);
 
 const timestampColumns = {
   createdAt: timestamp('created_at')
@@ -27,6 +31,7 @@ export const users = pgTable('users', {
   username: varchar('username', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }).notNull(),
+  isEmailVerified: boolean('is_email_verified').notNull().default(false),
   ...timestampColumns,
 });
 

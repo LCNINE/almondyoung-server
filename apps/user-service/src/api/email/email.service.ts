@@ -7,7 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ResendService } from 'nestjs-resend';
-import { createPasswordResetTemplate } from '../../utils/templates/email-templates';
+import {
+  createPasswordResetTemplate,
+  createSignUpConfirmationTemplate,
+} from '../../utils/templates/email-templates';
 
 @Injectable()
 export class EmailService {
@@ -34,6 +37,21 @@ export class EmailService {
       email,
       ...template,
     });
+  }
+
+  async sendVerificationEmail(email: string, token: string): Promise<void> {
+    try {
+      const url = `${this.configService.get('SIGNUP_REDIRECT_URL')}?token=${token}`;
+      const template = createSignUpConfirmationTemplate(url);
+
+      return this.sendMail({
+        email,
+        ...template,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send verification email', error);
+      throw error;
+    }
   }
 
   private async sendMail({

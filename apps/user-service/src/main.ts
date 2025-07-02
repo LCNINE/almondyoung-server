@@ -9,9 +9,11 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
@@ -20,8 +22,8 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get('PORT') || 5000;
   const corsOrigin =
-    configService.get('CORS_ORIGIN') || 'http://localhost:3000';
-
+    configService.get('CORS_ORIGIN_DOMAIN') || 'http://localhost:3000';
+  logger.log('CORS:', corsOrigin);
   await app.register(fastifyHelmet);
   await app.register(fastifyCookie);
   await app.register(fastifyCors, {
@@ -39,7 +41,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  console.log(`Application running on port ${port}`);
+  logger.log(`Application running on port ${port}`);
   await app.listen(port, '0.0.0.0');
 }
 
