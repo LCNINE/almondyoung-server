@@ -2,6 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -19,6 +20,7 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
+import { ClientKafka } from '@nestjs/microservices';
 
 @Injectable()
 export class AuthService {
@@ -29,7 +31,12 @@ export class AuthService {
     private readonly rolesService: RolesService,
     private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
+    @Inject('KAFKA_PRODUCER') private readonly kafkaClient: ClientKafka,
   ) {}
+
+  async onModuleInit() {
+    await this.kafkaClient.connect();
+  }
 
   async signUp(
     signUpDto: SignUpDto,
@@ -223,6 +230,12 @@ export class AuthService {
         res,
       );
       await this.setRefreshToken(verificationToken.user.id, res);
+
+      await this.kafkaClient.emit('user.created', {
+        id: verificationToken.user.id,
+        email: verificationToken.user.email,
+        createdAt: new Date().toISOString(),
+      });
 
       return accessToken;
     } catch (error) {

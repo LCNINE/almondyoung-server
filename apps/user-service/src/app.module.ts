@@ -1,6 +1,6 @@
 import { DbModule } from '@app/db';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { userSchema } from '../database/drizzle/schema';
@@ -12,6 +12,7 @@ import { ScopesModule } from './api/scopes/scopes.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
+import { KafkaModule } from './api/kafka/kafka.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
       schema: userSchema,
     }),
     ScheduleModule.forRoot(),
+    KafkaModule,
     AuthModule,
     UsersModule,
     RolesModule,

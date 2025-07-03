@@ -1,3 +1,4 @@
+import { DbModule } from '@app/db';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -12,9 +13,11 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { KafkaModule } from '../kafka/kafka.module';
 
 @Module({
   imports: [
+    ConfigModule,
     UsersModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -29,6 +32,8 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
     }),
     RolesModule,
     EmailModule,
+    DbModule,
+    KafkaModule,
   ],
   providers: [
     AuthService,

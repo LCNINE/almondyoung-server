@@ -16,9 +16,9 @@ import * as schema from '../../../database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { Public } from '../../commons/decorators/public.decorator';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { ChangePasswordDto } from './dto/change-pw.dto';
 
 @Controller('auth')
 export class AuthController {
