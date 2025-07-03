@@ -6,4 +6,4 @@ import { DormantController } from './dormant.controller';
   controllers: [DormantController],
   providers: [DormantService],
 })
-export class DormantModule {}
+export class DormantModule { }
