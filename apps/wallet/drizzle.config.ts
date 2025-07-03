@@ -7,4 +7,6 @@ export default defineConfig({
   dbCredentials: {
     url: 'postgresql://payms_owner:npg_8KxncIF7qoyH@ep-fancy-bonus-a1iiaieh-pooler.ap-southeast-1.aws.neon.tech/payms?sslmode=require&channel_binding=require',
   },
+  verbose: true, // 상세한 로그 출력
+  strict: true,
 });

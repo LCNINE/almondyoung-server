@@ -95,13 +95,13 @@ export class PaymentMethodService {
       // 기존 기본 결제수단 해제
       await tx
         .update(schema.paymentMethod)
-        .set({ isDefault: 'N' })
+        .set({ isDefault: false })
         .where(eq(schema.paymentMethod.userId, userId));
 
       // 새로운 기본 결제수단 설정
       await tx
         .update(schema.paymentMethod)
-        .set({ isDefault: 'Y' })
+        .set({ isDefault: true })
         .where(eq(schema.paymentMethod.id, id));
     });
   }

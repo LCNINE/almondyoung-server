@@ -1,117 +1,262 @@
-// modules/payment-method/payment-method.schema.ts
+import { relations, sql } from 'drizzle-orm';
 import {
   pgTable,
-  bigint,
   varchar,
+  text,
+  boolean,
+  bigint,
   timestamp,
-  bigserial,
+  numeric,
+  unique,
+  foreignKey,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { ulid } from 'ulid';
 
-//
-// PaymentMethod (공통 결제수단)
-//
-export const paymentMethod = pgTable('payment_method', {
-  id: varchar('id', { length: 26 })
-    .primaryKey()
-    .$defaultFn(() => ulid()),
-  userId: bigint('user_id', { mode: 'number' }).notNull(),
-  methodType: varchar('method_type', { length: 32 }).notNull(), // CARD | BANK_ACCOUNT | PREPAID_WALLET | REWARD_POINT
-  methodName: varchar('method_name', { length: 64 }).notNull(),
-  isDefault: varchar('is_default', { length: 1 }).notNull(), // 'Y' | 'N'
-  status: varchar('status', { length: 16 }).notNull(), // ACTIVE | INACTIVE | DELETED
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-
-  // TODO: 향후 감사 추적 강화를 위한 필드들
-  // deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  // deletedBy: varchar('deleted_by', { length: 26 }), // 삭제한 사용자/시스템 ID
-  // deleteReason: varchar('delete_reason', { length: 100 }), // USER_REQUEST | EXPIRED | SYSTEM | FRAUD
+// 예시용 wallets 테이블 (실제 프로젝트에서는 import 하세요)
+const wallets = pgTable('wallets', {
+  id: varchar('id', { length: 26 }).primaryKey(),
 });
 
-//
-// CardMethod
-//
-export const cardMethod = pgTable('card_method', {
-  id: varchar('id', { length: 26 }).primaryKey(), // 결제수단 ID (FK)
-  cardCompanyId: bigint('card_company_id', { mode: 'number' }).notNull(),
-  pgToken: varchar('pg_token', { length: 128 }).notNull(),
-  billingKey: varchar('billing_key', { length: 128 }).notNull(),
-  maskedCardNumber: varchar('masked_card_number', { length: 32 }).notNull(),
-  expiryMonthYear: varchar('expiry_month_year', { length: 6 }).notNull(), // YYYYMM
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+// ────────────────────────────────────────────
+// 2️⃣ Payment Method (최상위 결제 수단)
+// ────────────────────────────────────────────
+export const paymentMethod = pgTable(
+  'payment_method',
 
-  // TODO: 향후 더 정확한 카드 식별을 위한 필드들
-  // cardFingerprint: varchar('card_fingerprint', { length: 64 }), // 카드번호+유효기간 해시
-  // lastFourDigits: varchar('last_four_digits', { length: 4 }), // 마지막 4자리 (검색용)
-});
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => ulid()),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    methodType: text('method_type')
+      .$type<
+        'CARD' | 'BANK_ACCOUNT' | 'PREPAID_WALLET' | 'BNPL' | 'REWARD_POINT'
+      >()
+      .notNull(),
+    methodName: varchar('method_name', { length: 64 }).notNull(),
+    isDefault: boolean('is_default').notNull().default(false),
+    // 💡 institutionCode 컬럼 유지
+    institutionCode: varchar('institution_code', { length: 32 }).notNull(),
+    status: text('status').$type<'ACTIVE' | 'INACTIVE' | 'DELETED'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_user_default_unique')
+      .on(table.userId)
+      .where(sql`${table.isDefault} = true`),
+    unique('uq_payment_method_id_type').on(table.id, table.methodType),
+  ],
+);
 
-//
-// BankAccountMethod
-//
-export const bankAccountMethod = pgTable('bank_account_method', {
-  id: varchar('id', { length: 26 }).primaryKey(), // 결제수단 ID (FK)
-  bankId: bigint('bank_id', { mode: 'number' }).notNull(),
-  pgToken: varchar('pg_token', { length: 128 }).notNull(),
-  billingKey: varchar('billing_key', { length: 128 }).notNull(),
-  maskedAccountNumber: varchar('masked_account_number', {
-    length: 64,
-  }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ────────────────────────────────────────────
+// 3️⃣ Card Method (카드)
+// ────────────────────────────────────────────
+export const cardMethod = pgTable(
+  'card_method',
+  {
+    id: varchar('id', { length: 26 }).primaryKey(),
+    methodType: text('method_type').notNull().default('CARD'),
+    pgToken: varchar('pg_token', { length: 128 }).notNull(),
+    billingKey: varchar('billing_key', { length: 128 }).notNull(),
+    maskedCardNumber: varchar('masked_card_number', { length: 32 }).notNull(),
+    lastFourDigits: varchar('last_four_digits', { length: 4 }),
+    cardBrand: varchar('card_brand', { length: 32 }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_card_billing_key_unique').on(table.billingKey),
+    foreignKey({
+      columns: [table.id, table.methodType],
+      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
+      name: 'fk_card_method_payment_method',
+    }).onDelete('cascade'),
+  ],
+);
 
-//
-// PrepaidWalletMethod
-//
-export const prepaidWalletMethod = pgTable('prepaid_wallet_method', {
-  id: varchar('id', { length: 26 }).primaryKey(), // 결제수단 ID (FK)
-  walletId: bigint('wallet_id', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ────────────────────────────────────────────
+// 4️⃣ Bank Account Method (계좌)
+// ────────────────────────────────────────────
+export const bankAccountMethod = pgTable(
+  'bank_account_method',
+  {
+    id: varchar('id', { length: 26 }).primaryKey(),
+    methodType: text('method_type').notNull().default('BANK_ACCOUNT'),
+    pgToken: varchar('pg_token', { length: 128 }).notNull(),
+    billingKey: varchar('billing_key', { length: 128 }).notNull(),
+    maskedAccountNumber: varchar('masked_account_number', {
+      length: 32,
+    }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_bank_billing_key_unique').on(table.billingKey),
+    foreignKey({
+      columns: [table.id, table.methodType],
+      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
+      name: 'fk_bank_account_method_payment_method',
+    }).onDelete('cascade'),
+  ],
+);
 
-//
-// RewardPointMethod
-//
-export const rewardPointMethod = pgTable('reward_point_method', {
-  id: varchar('id', { length: 26 }).primaryKey(), // 결제수단 ID (FK)
-  pointId: bigint('point_id', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ────────────────────────────────────────────
+// 5️⃣ Prepaid Wallet Method (선불 지갑)
+// ────────────────────────────────────────────
+export const prepaidWalletMethod = pgTable(
+  'prepaid_wallet_method',
+  {
+    id: varchar('id', { length: 26 }).primaryKey(),
+    methodType: text('method_type').notNull().default('PREPAID_WALLET'),
+    walletId: varchar('wallet_id', { length: 26 })
+      .notNull()
+      .references(() => wallets.id),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.id, table.methodType],
+      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
+      name: 'fk_prepaid_wallet_method_payment_method',
+    }).onDelete('cascade'),
+  ],
+);
 
-//
-// Bank (은행 마스터)
-//
-export const bank = pgTable('bank', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  code: varchar('code', { length: 16 }).notNull(),
-  name: varchar('name', { length: 64 }).notNull(),
-  status: varchar('status', { length: 16 }).notNull(), // ACTIVE | INACTIVE
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ────────────────────────────────────────────
+// 6️⃣ BNPL Method (후불 결제)
+// ────────────────────────────────────────────
+export const bnplMethod = pgTable(
+  'bnpl_method',
+  {
+    id: varchar('id', { length: 26 }).primaryKey(),
+    methodType: text('method_type').notNull().default('BNPL'),
+    creditLimit: numeric('credit_limit', {
+      precision: 18,
+      scale: 2,
+    }).$type<number>(),
+    approvedLimit: numeric('approved_limit', {
+      precision: 18,
+      scale: 2,
+    }).$type<number>(),
+    termsUrl: varchar('terms_url', { length: 256 }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.id, table.methodType],
+      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
+      name: 'fk_bnpl_method_payment_method',
+    }).onDelete('cascade'),
+  ],
+);
 
-//
-// CardCompany (카드사 마스터)
-//
-export const cardCompany = pgTable('card_company', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  code: varchar('code', { length: 16 }).notNull(),
-  name: varchar('name', { length: 64 }).notNull(),
-  status: varchar('status', { length: 16 }).notNull(), // ACTIVE | INACTIVE
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+// ────────────────────────────────────────────
+// 7️⃣ Reward Point Method (포인트)
+// ────────────────────────────────────────────
+export const rewardPointMethod = pgTable(
+  'reward_point_method',
+  {
+    id: varchar('id', { length: 26 }).primaryKey(),
+    methodType: text('method_type').notNull().default('REWARD_POINT'),
+    balanceSnapshot: numeric('balance_snapshot', {
+      precision: 18,
+      scale: 2,
+    }).$type<number>(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.id, table.methodType],
+      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
+      name: 'fk_reward_point_method_payment_method',
+    }).onDelete('cascade'),
+  ],
+);
+
+// ────────────────────────────────────────────
+//  Relations (관계 정의)
+// ────────────────────────────────────────────
+
+// ➡️ 정방향 관계: paymentMethod -> 하위 테이블들
+export const paymentMethodRelations = relations(paymentMethod, ({ one }) => ({
+  card: one(cardMethod, {
+    fields: [paymentMethod.id],
+    references: [cardMethod.id],
+  }),
+  bankAccount: one(bankAccountMethod, {
+    fields: [paymentMethod.id],
+    references: [bankAccountMethod.id],
+  }),
+  prepaidWallet: one(prepaidWalletMethod, {
+    fields: [paymentMethod.id],
+    references: [prepaidWalletMethod.id],
+  }),
+  bnpl: one(bnplMethod, {
+    fields: [paymentMethod.id],
+    references: [bnplMethod.id],
+  }),
+  rewardPoint: one(rewardPointMethod, {
+    fields: [paymentMethod.id],
+    references: [rewardPointMethod.id],
+  }),
+}));
+
+// ⬅️ 역방향 관계: 하위 테이블들 -> paymentMethod
+
+export const cardMethodRelations = relations(cardMethod, ({ one }) => ({
+  paymentMethod: one(paymentMethod, {
+    fields: [cardMethod.id],
+    references: [paymentMethod.id],
+  }),
+}));
+
+export const bankAccountMethodRelations = relations(
+  bankAccountMethod,
+  ({ one }) => ({
+    paymentMethod: one(paymentMethod, {
+      fields: [bankAccountMethod.id],
+      references: [paymentMethod.id],
+    }),
+  }),
+);
+
+export const prepaidWalletMethodRelations = relations(
+  prepaidWalletMethod,
+  ({ one }) => ({
+    paymentMethod: one(paymentMethod, {
+      fields: [prepaidWalletMethod.id],
+      references: [paymentMethod.id],
+    }),
+  }),
+);
+
+export const bnplMethodRelations = relations(bnplMethod, ({ one }) => ({
+  paymentMethod: one(paymentMethod, {
+    fields: [bnplMethod.id],
+    references: [paymentMethod.id],
+  }),
+}));
+
+export const rewardPointMethodRelations = relations(
+  rewardPointMethod,
+  ({ one }) => ({
+    paymentMethod: one(paymentMethod, {
+      fields: [rewardPointMethod.id],
+      references: [paymentMethod.id],
+    }),
+  }),
+);

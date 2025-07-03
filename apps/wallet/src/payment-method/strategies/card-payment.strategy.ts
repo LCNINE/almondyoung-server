@@ -7,7 +7,7 @@ import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import { HmsAPI } from 'hms-api-wrapper';
 import { PaymentProfileResponse } from 'hms-api-wrapper/dist/services/PaymentProfile/types';
-import { eq, and, like } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { PaymentMethodStrategy } from './payment.strategy';
 import * as schema from '../schema';
 import { CreateCardPaymentMethodDto } from '../dto/create-payment-method.dto';
@@ -98,9 +98,6 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
   /**
    * Format expiry date to YYYYMM format
    */
-  private formatExpiryDate(validYear: string, validMonth: string): string {
-    return `20${validYear}${validMonth.padStart(2, '0')}`;
-  }
 
   /**
    * Validate payment method registration payload
@@ -143,7 +140,7 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
           eq(schema.paymentMethod.userId, userId),
           eq(schema.paymentMethod.status, 'DELETED'),
           eq(schema.paymentMethod.methodType, 'CARD'),
-          like(schema.cardMethod.maskedCardNumber, `%${lastFourDigits}`),
+          eq(schema.cardMethod.lastFourDigits, lastFourDigits),
         ),
       )
       .limit(1);
@@ -208,7 +205,7 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .update(schema.paymentMethod)
       .set({
         methodName: `${member.paymentCompany} (${member.paymentNumber})`,
-        isDefault: dto.isDefault ? 'Y' : 'N',
+        isDefault: dto.isDefault ? true : false,
         status: 'ACTIVE',
         updatedAt: new Date(),
       })
@@ -220,7 +217,8 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
         pgToken: member.memberId,
         billingKey: member.memberId,
         maskedCardNumber: member.paymentNumber,
-        expiryMonthYear: this.formatExpiryDate(dto.validYear, dto.validMonth),
+        lastFourDigits: this.formatCardNumber(dto.cardNumber).slice(-4),
+        cardBrand: member.paymentCompany,
       })
       .where(eq(schema.cardMethod.id, paymentMethodId));
   }
@@ -239,18 +237,19 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
         userId: dto.userId,
         methodType: 'CARD',
         methodName: `${member.paymentCompany} (${member.paymentNumber})`,
-        isDefault: dto.isDefault ? 'Y' : 'N',
+        isDefault: dto.isDefault ? true : false,
+        institutionCode: member.paymentCompany,
         status: 'ACTIVE',
       })
       .returning();
 
     await tx.insert(schema.cardMethod).values({
       id: newPaymentMethod.id,
-      cardCompanyId: 0, // TODO: Remove after CardCompany table removal
       pgToken: member.memberId,
       billingKey: member.memberId,
       maskedCardNumber: member.paymentNumber,
-      expiryMonthYear: this.formatExpiryDate(dto.validYear, dto.validMonth),
+      lastFourDigits: this.formatCardNumber(dto.cardNumber).slice(-4),
+      cardBrand: member.paymentCompany,
     });
 
     return newPaymentMethod.id;
@@ -339,16 +338,10 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
    * Perform logical deletion in database
    */
   private async performLogicalDeletion(paymentMethodId: string): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
-      await tx
-        .update(schema.paymentMethod)
-        .set({ status: 'DELETED' })
-        .where(eq(schema.paymentMethod.id, paymentMethodId));
-
-      await tx
-        .delete(schema.cardMethod)
-        .where(eq(schema.cardMethod.id, paymentMethodId));
-    });
+    await this.dbService.db
+      .update(schema.paymentMethod)
+      .set({ status: 'DELETED' })
+      .where(eq(schema.paymentMethod.id, paymentMethodId));
   }
 
   /**

@@ -1,1 +1,0 @@
-ALTER TABLE "card_method" ALTER COLUMN "masked_card_number" SET DATA TYPE varchar(32);
