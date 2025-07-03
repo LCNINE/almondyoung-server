@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   HttpCode,
   HttpStatus,
   Post,
@@ -97,5 +98,20 @@ export class AuthController {
   @Public()
   async resendVerificationEmail(@Body() { email }: { email: string }) {
     return this.authService.resendVerificationEmail(email);
+  }
+
+  @Delete('account')
+  @UseGuards(AuthGuard('jwt'))
+  async deleteAccount(@CurrentUser() user: schema.User) {
+    return this.authService.deleteAccount(user);
+  }
+
+  @Post('check-password')
+  @UseGuards(AuthGuard('jwt'))
+  async checkPassword(
+    @Body() { password }: { password: string },
+    @CurrentUser() user: schema.User,
+  ) {
+    return this.authService.checkPassword(password, user);
   }
 }

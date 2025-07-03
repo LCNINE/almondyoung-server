@@ -565,6 +565,21 @@ export class AuthService {
     }
   }
 
+  async checkPassword(password: string, user: schema.User): Promise<void> {
+    const isAuth = await bcrypt.compare(password, user.password);
+    if (!isAuth)
+      throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
+
+    return;
+  }
+
+  async deleteAccount(user: schema.User): Promise<void> {
+    await this.dbService.db
+      .delete(schema.users)
+      .where(eq(schema.users.id, user.id));
+    return;
+  }
+
   private parseExpiresIn(expiresIn: string): number {
     const match = expiresIn.match(/^(\d+)([smhdw])$/);
     if (!match) return 15 * 60 * 1000; // 기본값 15분

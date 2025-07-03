@@ -98,9 +98,6 @@ export class UsersService {
           profile: {
             ...schema.profiles,
           },
-          shop: {
-            ...schema.shops,
-          },
         })
         .from(schema.users)
         .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
