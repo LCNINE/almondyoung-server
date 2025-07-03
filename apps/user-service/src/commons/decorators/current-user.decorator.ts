@@ -8,7 +8,6 @@ export const CurrentUser = createParamDecorator(
       .switchToHttp()
       .getRequest<FastifyRequest & { user: User }>();
 
-    const { password, ...userWithoutPassword } = request.user;
-    return userWithoutPassword;
+    return request.user;
   },
 );
