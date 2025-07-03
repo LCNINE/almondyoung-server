@@ -278,6 +278,12 @@ export class AuthService {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
     if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
 
+    if (user.deletedAt) {
+      throw new UnauthorizedException(
+        '휴면 처리된 사용자입니다. 관리자에게 문의해주세요.',
+      );
+    }
+
     if (!user.isEmailVerified) {
       throw new UnauthorizedException('이메일 인증이 필요합니다.');
     }
@@ -288,6 +294,11 @@ export class AuthService {
 
     await this.setRefreshToken(user.id, res);
     const accessToken = await this.getAccessToken(user, res);
+
+    await this.dbService.db
+      .update(schema.users)
+      .set({ lastActivityAt: new Date() })
+      .where(eq(schema.users.id, user.id)); // 마지막 활동일 업데이트
 
     return accessToken;
   }

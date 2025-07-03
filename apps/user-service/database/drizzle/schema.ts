@@ -18,6 +18,12 @@ export const tokenTypeEnum = pgEnum('token_type', [
   'verification',
 ]);
 
+export const providerTypeEnum = pgEnum('provider_type', [
+  'kakao',
+  'google',
+  'naver',
+]);
+
 const timestampColumns = {
   createdAt: timestamp('created_at')
     .default(sql`now()`)
@@ -35,8 +41,12 @@ export const users = pgTable('users', {
   loginId: varchar('login_id', { length: 255 }).notNull().unique(),
   username: varchar('username', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
-  password: varchar('password', { length: 255 }).notNull(),
+  password: varchar('password', { length: 255 }),
   isEmailVerified: boolean('is_email_verified').notNull().default(false),
+  lastActivityAt: timestamp('last_activity_at')
+    .default(sql`now()`)
+    .notNull(),
+  deletedAt: timestamp('deleted_at'),
   ...timestampColumns,
 });
 
@@ -122,6 +132,27 @@ export const profilesRelations = relations(profiles, ({ one }) => ({
   }),
 }));
 
+// 소셜 로그인 제공자별 사용자 식별 정보 테이블
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    provider: providerTypeEnum('provider').notNull(),
+    providerId: varchar('provider_id', { length: 255 }).notNull(),
+    providerData: jsonb('provider_data'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    // 각 사용자는 provider 당 하나의 identity만 가질 수 있음
+    providerUserIdx: unique().on(table.userId, table.provider),
+    // 각 provider의 providerId는 unique해야 함
+    providerIdIdx: unique().on(table.provider, table.providerId),
+  }),
+);
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   tokens: many(tokens),
@@ -130,6 +161,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     fields: [users.id],
     references: [profiles.userId],
   }),
+  identities: many(userIdentities),
 }));
 
 export const tokensRelations = relations(tokens, ({ one }) => ({
@@ -170,6 +202,13 @@ export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
   scope: one(scopes, {
     fields: [roleScopes.scopeId],
     references: [scopes.scopeId],
+  }),
+}));
+
+export const userIdentitiesRelations = relations(userIdentities, ({ one }) => ({
+  user: one(users, {
+    fields: [userIdentities.userId],
+    references: [users.id],
   }),
 }));
 
