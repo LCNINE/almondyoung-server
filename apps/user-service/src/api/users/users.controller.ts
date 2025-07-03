@@ -24,4 +24,13 @@ export class UsersController {
     // todo: 비즈프로필 join까지 같이
     return user;
   }
+
+  @Patch('me')
+  @UseGuards(AuthGuard('jwt'))
+  async updateMe(
+    @CurrentUser() user: User,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return this.usersService.update(user, updateUserDto);
+  }
 }

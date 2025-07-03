@@ -6,8 +6,10 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { AddressDto } from '../../../commons/dto/address.dto';
+import { PartialType } from '@nestjs/mapped-types';
 
-export class SignUpDto {
+export class SignUpDto extends PartialType(AddressDto) {
   @IsString()
   @MinLength(6)
   @MaxLength(50)
@@ -21,7 +23,7 @@ export class SignUpDto {
   @Matches(/^[a-zA-Z0-9._]+$/, {
     message: 'ID는 영문 대소문자, 숫자, ., _ 만 사용할 수 있습니다.',
   })
-  userId: string;
+  loginId: string;
 
   @IsString()
   @IsNotEmpty()

@@ -32,7 +32,7 @@ const timestampColumns = {
  */
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: varchar('user_id', { length: 255 }).notNull().unique(),
+  loginId: varchar('login_id', { length: 255 }).notNull().unique(),
   username: varchar('username', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }).notNull(),
@@ -101,10 +101,35 @@ export const tokens = pgTable(
   }),
 );
 
+// User_profile
+export const profiles = pgTable('profiles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .unique(),
+  phoneNumber: varchar('phone_number', { length: 20 }),
+  address: jsonb('address').notNull(),
+  birthDate: timestamp('birth_date'),
+  profileImageUrl: varchar('profile_image_url', { length: 1024 }),
+  ...timestampColumns,
+});
+
+export const profilesRelations = relations(profiles, ({ one }) => ({
+  user: one(users, {
+    fields: [profiles.userId],
+    references: [users.id],
+  }),
+}));
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   tokens: many(tokens),
   userRoles: many(userRoleAssignments),
+  profile: one(profiles, {
+    fields: [users.id],
+    references: [profiles.userId],
+  }),
 }));
 
 export const tokensRelations = relations(tokens, ({ one }) => ({

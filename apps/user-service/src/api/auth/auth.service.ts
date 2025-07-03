@@ -95,8 +95,8 @@ export class AuthService {
         };
       }
 
-      const existsUserId = await this.usersService.findUserByUserId(
-        signUpDto.userId,
+      const existsUserId = await this.usersService.findUserByLoginId(
+        signUpDto.loginId,
       );
       if (existsUserId) {
         throw new ConflictException('이미 존재하는 아이디입니다.');
@@ -275,7 +275,7 @@ export class AuthService {
     signInDto: SignInDto,
     res: FastifyReply,
   ): Promise<{ accessToken: string }> {
-    const user = await this.usersService.findUserByUserId(signInDto.userId);
+    const user = await this.usersService.findUserByLoginId(signInDto.loginId);
     if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
 
     if (!user.isEmailVerified) {
