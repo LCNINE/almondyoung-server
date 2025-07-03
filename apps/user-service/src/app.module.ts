@@ -15,7 +15,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: process.env.NODE_ENV === 'development' ? '.env.dev' : '.env',
     }),
     DbModule.forRoot({
       config: {
