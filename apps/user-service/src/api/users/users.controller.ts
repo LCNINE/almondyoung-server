@@ -21,8 +21,7 @@ export class UsersController {
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
   async getMe(@CurrentUser() user: User) {
-    // todo: 비즈프로필 join까지 같이
-    return user;
+    return this.usersService.getMe(user);
   }
 
   @Patch('me')

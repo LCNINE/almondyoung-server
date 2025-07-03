@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
@@ -85,6 +86,35 @@ export class UsersService {
     } catch (error) {
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',
+      );
+    }
+  }
+
+  async getMe(user: User) {
+    try {
+      const [userData] = await this.dbService.db
+        .select({
+          username: schema.users.username,
+          profile: {
+            ...schema.profiles,
+          },
+          shop: {
+            ...schema.shops,
+          },
+        })
+        .from(schema.users)
+        .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
+        .where(eq(schema.users.id, user.id))
+        .limit(1);
+
+      if (!userData) {
+        throw new NotFoundException('사용자 정보를 찾을 수 없습니다.');
+      }
+
+      return userData;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        '사용자 정보를 불러오는 중 오류가 발생했습니다.',
       );
     }
   }
