@@ -1,4 +1,6 @@
 import {
+  IsBoolean,
+  IsOptional,
   IsString,
   Length,
   Matches,
@@ -18,4 +20,8 @@ export class SignInDto {
   @MinLength(8, { message: '비밀번호는 최소 8자 이상이어야 합니다.' })
   @MaxLength(20, { message: '비밀번호는 최대 20자 이하여야 합니다.' })
   password: string;
+
+  @IsBoolean({ message: '기억하기 여부는 불리언 값이어야 합니다.' })
+  @IsOptional({ message: '기억하기 여부는 선택적 입력 항목입니다.' })
+  rememberMe?: boolean;
 }

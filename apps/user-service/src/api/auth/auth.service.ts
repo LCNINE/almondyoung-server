@@ -292,7 +292,7 @@ export class AuthService {
     if (!isAuth)
       throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
-    await this.setRefreshToken(user.id, res);
+    await this.setRefreshToken(user.id, res, signInDto.rememberMe);
     const accessToken = await this.getAccessToken(user, res);
 
     await this.dbService.db
@@ -420,70 +420,46 @@ export class AuthService {
   async setRefreshToken(
     userId: string,
     res: FastifyReply,
+    rememberMe: boolean = false,
   ): Promise<{ refreshToken: string }> {
-    const now = new Date();
+    const scopes = await this.getUserScopes(userId);
 
-    // DB에서 기존 refresh token 조회
-    const existingToken = await this.dbService.db
-      .select({
-        value: schema.tokens.value,
-        expiresAt: schema.tokens.expiresAt,
-      })
-      .from(schema.tokens)
+    // 자동 로그인 여부에 따라 만료 시간 결정
+    const expiresIn = this.getRefreshTokenExpiration(rememberMe);
+
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, scopes },
+      {
+        secret: this.configService.get<string>('JWT_REFRESH'),
+        expiresIn,
+      },
+    );
+
+    const expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
+
+    // 기존 리프레시 토큰 삭제 후 새로 생성 (기간이 바뀔 수 있으므로)
+    await this.dbService.db
+      .delete(schema.tokens)
       .where(
         and(
           eq(schema.tokens.userId, userId),
           eq(schema.tokens.type, schema.tokenTypeEnum.enumValues[1]),
         ),
-      )
-      .limit(1)
-      .then((rows) => rows[0] || null);
-
-    let refreshToken: string;
-    let expiresAt: Date;
-
-    if (!existingToken || new Date(existingToken.expiresAt) <= now) {
-      // 없거나 만료됨 → 새 토큰 생성
-      const scopes = await this.getUserScopes(userId);
-      const expiresIn =
-        this.configService.get('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w';
-
-      refreshToken = this.jwtService.sign(
-        { sub: userId, scopes },
-        {
-          secret: this.configService.get<string>('JWT_REFRESH'),
-          expiresIn,
-        },
       );
 
-      expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
+    // 새 리프레시 토큰 저장
+    await this.dbService.db.insert(schema.tokens).values({
+      type: schema.tokenTypeEnum.enumValues[1],
+      userId,
+      value: refreshToken,
+      scopes: scopes.join(','),
+      expiresAt,
+    });
 
-      await this.dbService.db
-        .insert(schema.tokens)
-        .values({
-          type: schema.tokenTypeEnum.enumValues[1],
-          userId,
-          value: refreshToken,
-          scopes: scopes.join(','),
-          expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: [schema.tokens.userId, schema.tokens.type],
-          set: {
-            value: refreshToken,
-            scopes: scopes.join(','),
-            expiresAt,
-          },
-        });
-    } else {
-      // 유효한 토큰이면 기존 값 사용
-      refreshToken = existingToken.value;
-      expiresAt = existingToken.expiresAt;
-    }
-
-    // 쿠키 설정
+    // 쿠키 설정 (
     const cookieOptions = {
       path: '/',
+      maxAge: this.parseExpiresIn(expiresIn),
       ...(process.env.NODE_ENV === 'production'
         ? {
             domain: process.env.CORS_ORIGIN_DOMAIN,
@@ -591,11 +567,28 @@ export class AuthService {
     return;
   }
 
+  // 리프레시 토큰 만료 시간 결정
+  private getRefreshTokenExpiration(rememberMe: boolean): string {
+    if (rememberMe) {
+      // 자동 로그인 체크 = 90일
+      return (
+        this.configService.get<string>('JWT_REFRESH_TOKEN_LONG_EXPIRATION') ??
+        '90d'
+      );
+    } else {
+      // 일반 로그인 = 2주
+      return (
+        this.configService.get<string>('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w'
+      );
+    }
+  }
+
   private parseExpiresIn(expiresIn: string): number {
     const match = expiresIn.match(/^(\d+)([smhdw])$/);
     if (!match) return 15 * 60 * 1000; // 기본값 15분
 
-    const [value, unit] = match;
+    const value = match[1];
+    const unit = match[2];
     const num = parseInt(value, 10);
 
     switch (unit) {
