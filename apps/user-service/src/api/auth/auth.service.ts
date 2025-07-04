@@ -468,23 +468,24 @@ export class AuthService {
       expiresIn,
     });
 
+    // 기존 액세스 토큰 삭제
     await this.dbService.db
-      .insert(schema.tokens)
-      .values({
-        type: schema.tokenTypeEnum.enumValues[0],
-        userId: user.id,
-        value: accessToken,
-        scopes: scopes.join(','),
-        expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-      })
-      .onConflictDoUpdate({
-        target: [schema.tokens.userId, schema.tokens.type],
-        set: {
-          value: accessToken,
-          scopes: scopes.join(','),
-          expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-        },
-      });
+      .delete(schema.tokens)
+      .where(
+        and(
+          eq(schema.tokens.userId, user.id),
+          eq(schema.tokens.type, schema.tokenTypeEnum.enumValues[0]),
+        ),
+      );
+
+    // 새 액세스 토큰 저장
+    await this.dbService.db.insert(schema.tokens).values({
+      type: schema.tokenTypeEnum.enumValues[0],
+      userId: user.id,
+      value: accessToken,
+      scopes: scopes.join(','),
+      expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+    });
 
     const cookieOptions = {
       path: '/',
