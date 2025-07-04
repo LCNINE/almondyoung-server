@@ -6,6 +6,7 @@ import { InvoiceModule } from './invoice/invoice.module';
 import { SharedModule } from '@app/shared';
 import { DbModule } from '@app/db';
 import { ScheduleModule } from '@nestjs/schedule';
+import { PaymentModule } from './payment/payment.module';
 import * as paymentMethodSchema from './payment-method/schema';
 import * as invoiceSchema from './invoice/schema';
 
@@ -23,6 +24,7 @@ import * as invoiceSchema from './invoice/schema';
     }),
     PaymentMethodModule,
     InvoiceModule,
+    PaymentModule,
   ],
   controllers: [PaymsController],
   providers: [PaymsService],
