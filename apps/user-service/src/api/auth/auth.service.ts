@@ -20,7 +20,7 @@ import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { ClientKafka } from '@nestjs/microservices';
+// import { ClientKafka } from '@nestjs/microservices';
 
 @Injectable()
 export class AuthService {
@@ -31,12 +31,11 @@ export class AuthService {
     private readonly rolesService: RolesService,
     private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
-    @Inject('KAFKA_PRODUCER') private readonly kafkaClient: ClientKafka,
   ) {}
 
-  async onModuleInit() {
-    await this.kafkaClient.connect();
-  }
+  // async onModuleInit() {
+  //   await this.kafkaClient.connect();
+  // }
 
   async signUp(
     signUpDto: SignUpDto,
@@ -231,11 +230,11 @@ export class AuthService {
       );
       await this.setRefreshToken(verificationToken.user.id, res);
 
-      await this.kafkaClient.emit('user.created', {
-        id: verificationToken.user.id,
-        email: verificationToken.user.email,
-        createdAt: new Date().toISOString(),
-      });
+      // await this.kafkaClient.emit('user.created', {
+      //   id: verificationToken.user.id,
+      //   email: verificationToken.user.email,
+      //   createdAt: new Date().toISOString(),
+      // });
 
       return accessToken;
     } catch (error) {
@@ -308,12 +307,86 @@ export class AuthService {
     await this.setRefreshToken(user.id, res, signInDto.rememberMe);
     const accessToken = await this.getAccessToken(user, res);
 
-    await this.dbService.db
-      .update(schema.users)
-      .set({ lastActivityAt: new Date() })
-      .where(eq(schema.users.id, user.id)); // 마지막 활동일 업데이트
+    // 마지막 활동일 업데이트
+    await this.lastActivityAtUpdate(user);
 
     return accessToken;
+  }
+
+  async signInWithKakao(
+    kakaoUser: {
+      name: string;
+      email: string;
+      providerId: string;
+    },
+    res: FastifyReply,
+  ) {
+    try {
+      // 카카오 providerId로 기존 identity 조회
+      const existingIdentity = await this.dbService.db
+        .select()
+        .from(schema.userIdentities)
+        .where(
+          and(
+            eq(schema.userIdentities.provider, 'kakao'),
+            eq(schema.userIdentities.providerId, kakaoUser.providerId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      let user: schema.User;
+
+      if (existingIdentity) {
+        // 기존 카카오 사용자
+        const foundUser = await this.usersService.findUserById(
+          existingIdentity.userId,
+        );
+        if (!foundUser) {
+          throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+        }
+        user = foundUser;
+
+        // 마지막 활동 시간 업데이트
+        await this.lastActivityAtUpdate(user);
+      } else {
+        // 새 카카오 사용자 생성
+        const [newUser] = await this.dbService.db
+          .insert(schema.users)
+          .values({
+            loginId: `kakao_${kakaoUser.providerId}`,
+            username: kakaoUser.name,
+            email: kakaoUser.email,
+            password: null,
+            isEmailVerified: true,
+          })
+          .returning();
+
+        // 카카오 identity 생성
+        await this.dbService.db.insert(schema.userIdentities).values({
+          userId: newUser.id,
+          provider: 'kakao',
+          providerId: kakaoUser.providerId,
+          providerData: { name: kakaoUser.name, email: kakaoUser.email },
+        });
+
+        user = newUser;
+      }
+
+      // 리프레시 토큰 설정 및 액세스 토큰 발급
+      await this.setRefreshToken(user.id, res, false);
+      const { accessToken } = await this.getAccessToken(user, res);
+      console.log('=== 토큰 발급 완료, 리다이렉트 시작 ===');
+
+      return res.redirect(
+        `http://localhost:3000/auth/kakao/callback?code=${accessToken}`,
+      );
+    } catch (error) {
+      console.error('카카오 로그인 중 오류:', error);
+      throw new InternalServerErrorException(
+        '카카오 로그인 중 오류가 발생했습니다.',
+      );
+    }
   }
 
   async signOut(req: FastifyRequest, user: schema.User) {
@@ -594,6 +667,13 @@ export class AuthService {
         this.configService.get<string>('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w'
       );
     }
+  }
+
+  private async lastActivityAtUpdate(user: schema.User) {
+    await this.dbService.db
+      .update(schema.users)
+      .set({ lastActivityAt: new Date() })
+      .where(eq(schema.users.id, user.id)); // 마지막 활동일 업데이트
   }
 
   private parseExpiresIn(expiresIn: string): number {

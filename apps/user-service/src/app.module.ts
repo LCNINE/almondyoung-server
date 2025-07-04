@@ -12,7 +12,7 @@ import { ScopesModule } from './api/scopes/scopes.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
-import { KafkaModule } from './api/kafka/kafka.module';
+// import { KafkaModule } from './api/kafka/kafka.module';
 
 @Module({
   imports: [
@@ -29,7 +29,7 @@ import { KafkaModule } from './api/kafka/kafka.module';
       schema: userSchema,
     }),
     ScheduleModule.forRoot(),
-    KafkaModule,
+    // KafkaModule,
     AuthModule,
     UsersModule,
     RolesModule,
@@ -45,4 +45,4 @@ import { KafkaModule } from './api/kafka/kafka.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

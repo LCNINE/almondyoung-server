@@ -13,7 +13,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
-import { KafkaModule } from '../kafka/kafka.module';
+import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
+// import { KafkaModule } from '../kafka/kafka.module';
 
 @Module({
   imports: [
@@ -33,12 +34,13 @@ import { KafkaModule } from '../kafka/kafka.module';
     RolesModule,
     EmailModule,
     DbModule,
-    KafkaModule,
+    // KafkaModule,
   ],
   providers: [
     AuthService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
+    JwtKakaoStrategy,
     //  APPGUARD 전역설정
     {
       provide: APP_GUARD,
@@ -52,4 +54,4 @@ import { KafkaModule } from '../kafka/kafka.module';
   controllers: [AuthController],
   exports: [AuthService, JwtModule, PassportModule],
 })
-export class AuthModule {}
+export class AuthModule { }

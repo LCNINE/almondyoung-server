@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -10,6 +11,7 @@ import {
   UseGuards,
   ValidationPipe,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
@@ -22,7 +24,10 @@ import { SignUpDto } from './dto/sign-up.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('signup')
   @Public()
@@ -113,5 +118,27 @@ export class AuthController {
     @CurrentUser() user: schema.User,
   ) {
     return this.authService.checkPassword(password, user);
+  }
+
+  @Get('kakao/signin')
+  @UseGuards(AuthGuard('kakao'))
+  @Public()
+  async kakaoAuth() {
+    // 카카오 로그인 리다이렉트
+  }
+
+  @Get('kakao/callback')
+  @UseGuards(AuthGuard('kakao'))
+  @Public()
+  async kakaoCallback(@Req() req: any, @Res() res: FastifyReply) {
+    const kakaoUser = req.user as {
+      name: string;
+      email: string;
+      providerId: string;
+    };
+
+    console.log('kakaoUser', kakaoUser);
+
+    return await this.authService.signInWithKakao(kakaoUser, res);
   }
 }
