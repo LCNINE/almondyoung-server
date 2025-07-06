@@ -19,7 +19,8 @@ import { EmailService } from '../email/email.service';
 import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
-import { SignUpDto } from './dto/sign-up.dto';
+import { LocalSignUpDto } from './dto/sign-up.dto';
+import { SocialSignUpDto } from './dto/social-sign-up.dto';
 // import { ClientKafka } from '@nestjs/microservices';
 
 @Injectable()
@@ -38,7 +39,7 @@ export class AuthService {
   // }
 
   async signUp(
-    signUpDto: SignUpDto,
+    signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
   ): Promise<{ message: string }> {
     try {
@@ -335,50 +336,36 @@ export class AuthService {
         .limit(1)
         .then((rows) => rows[0]);
 
-      let user: schema.User;
-
+      // 기존 사용자인 경우
       if (existingIdentity) {
-        // 기존 카카오 사용자
         const foundUser = await this.usersService.findUserById(
           existingIdentity.userId,
         );
+
         if (!foundUser) {
           throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
         }
-        user = foundUser;
 
-        // 마지막 활동 시간 업데이트
-        await this.lastActivityAtUpdate(user);
-      } else {
-        // 새 카카오 사용자 생성
-        const [newUser] = await this.dbService.db
-          .insert(schema.users)
-          .values({
-            loginId: `kakao_${kakaoUser.providerId}`,
-            username: kakaoUser.name,
-            email: kakaoUser.email,
-            password: null,
-            isEmailVerified: true,
-          })
-          .returning();
+        // 기존 사용자는 토큰 발급 후 리다이렉트
+        await this.setRefreshToken(foundUser.id, reply, false);
+        await this.getAccessToken(foundUser, reply);
 
-        // 카카오 identity 생성
-        await this.dbService.db.insert(schema.userIdentities).values({
-          userId: newUser.id,
-          provider: 'kakao',
-          providerId: kakaoUser.providerId,
-          providerData: { name: kakaoUser.name, email: kakaoUser.email },
-        });
-
-        user = newUser;
+        return reply
+          .status(302)
+          .redirect(`http://localhost:3000/auth/kakao/callback`);
       }
 
-      await this.setRefreshToken(user.id, reply, false);
-      await this.getAccessToken(user, reply);
-
-      return reply
-        .status(302)
-        .redirect(`http://localhost:3000/auth/kakao/success`);
+      // 신규 사용자인 경우 카카오 정보만 전달
+      return reply.status(302).redirect(
+        `http://localhost:3000/auth/kakao/callback?data=${encodeURIComponent(
+          JSON.stringify({
+            provider: 'kakao',
+            providerId: kakaoUser.providerId,
+            email: kakaoUser.email,
+            name: kakaoUser.name,
+          }),
+        )}`,
+      );
     } catch (error) {
       console.error('카카오 로그인 중 오류:', error);
       throw new InternalServerErrorException(
@@ -447,9 +434,10 @@ export class AuthService {
     return userScopes.map((scope) => scope.scopeName);
   }
 
-  async getAccessToken(
+  private async getAccessToken(
     user: schema.User,
     reply: FastifyReply,
+    db = this.dbService.db,
   ): Promise<{ accessToken: string }> {
     const scopes = await this.getUserScopes(user.id);
 
@@ -467,7 +455,7 @@ export class AuthService {
     });
 
     // 기존 액세스 토큰 삭제
-    await this.dbService.db
+    await db
       .delete(schema.tokens)
       .where(
         and(
@@ -477,7 +465,7 @@ export class AuthService {
       );
 
     // 새 액세스 토큰 저장
-    await this.dbService.db.insert(schema.tokens).values({
+    await db.insert(schema.tokens).values({
       type: schema.tokenTypeEnum.enumValues[0],
       userId: user.id,
       value: accessToken,
@@ -506,6 +494,7 @@ export class AuthService {
     userId: string,
     reply: FastifyReply,
     rememberMe: boolean = false,
+    db = this.dbService.db, // 기본값으로 this.dbService.db를 사용
   ): Promise<{ refreshToken: string }> {
     const scopes = await this.getUserScopes(userId);
 
@@ -523,7 +512,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
 
     // 기존 리프레시 토큰 삭제 후 새로 생성 (기간이 바뀔 수 있으므로)
-    await this.dbService.db
+    await db
       .delete(schema.tokens)
       .where(
         and(
@@ -533,7 +522,7 @@ export class AuthService {
       );
 
     // 새 리프레시 토큰 저장
-    await this.dbService.db.insert(schema.tokens).values({
+    await db.insert(schema.tokens).values({
       type: schema.tokenTypeEnum.enumValues[1],
       userId,
       value: refreshToken,
@@ -541,7 +530,7 @@ export class AuthService {
       expiresAt,
     });
 
-    // 쿠키 설정 (
+    // 쿠키 설정
     const cookieOptions = {
       path: '/',
       maxAge: this.parseExpiresIn(expiresIn),
@@ -664,6 +653,109 @@ export class AuthService {
       // 일반 로그인 = 2주
       return (
         this.configService.get<string>('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w'
+      );
+    }
+  }
+
+  async socialSignUp(
+    socialSignUpDto: SocialSignUpDto,
+    reply: FastifyReply,
+  ): Promise<{ accessToken: string }> {
+    try {
+      // 이미 가입된 사용자인지 확인
+      const existingIdentity = await this.dbService.db
+        .select()
+        .from(schema.userIdentities)
+        .where(
+          and(
+            eq(schema.userIdentities.provider, socialSignUpDto.provider),
+            eq(schema.userIdentities.providerId, socialSignUpDto.providerId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (existingIdentity) {
+        throw new ConflictException('이미 가입된 사용자입니다.');
+      }
+
+      // 이메일 중복 확인
+      const existingUser = await this.usersService.findUserByEmail(
+        socialSignUpDto.email,
+      );
+
+      if (existingUser) {
+        throw new ConflictException('이미 사용중인 이메일입니다.');
+      }
+
+      return await this.dbService.db.transaction(async (tx) => {
+        // 새 사용자 생성
+        const [newUser] = await tx
+          .insert(schema.users)
+          .values({
+            loginId: `${socialSignUpDto.provider}_${socialSignUpDto.providerId}`,
+            username: socialSignUpDto.username,
+            email: socialSignUpDto.email,
+            password: null,
+            isEmailVerified: true,
+          })
+          .returning();
+
+        // identity 생성
+        await tx.insert(schema.userIdentities).values({
+          userId: newUser.id,
+          provider: socialSignUpDto.provider,
+          providerId: socialSignUpDto.providerId,
+          providerData: {
+            name: socialSignUpDto.username,
+            email: socialSignUpDto.email,
+          },
+        });
+
+        // 프로필 생성
+        if (
+          socialSignUpDto.phoneNumber ||
+          socialSignUpDto.address ||
+          socialSignUpDto.birthDate ||
+          socialSignUpDto.profileImageUrl
+        ) {
+          await tx.insert(schema.profiles).values({
+            userId: newUser.id,
+            phoneNumber: socialSignUpDto.phoneNumber,
+            address: socialSignUpDto.address || {},
+            birthDate: socialSignUpDto.birthDate,
+            profileImageUrl: socialSignUpDto.profileImageUrl,
+          });
+        }
+
+        // 기본 역할 설정
+        const userRole = await tx
+          .select()
+          .from(schema.roles)
+          .where(eq(schema.roles.name, 'user'))
+          .limit(1)
+          .then((rows) => rows[0]);
+
+        if (!userRole) {
+          throw new Error('기본 사용자 역할이 설정되어 있지 않습니다.');
+        }
+
+        await tx.insert(schema.userRoleAssignments).values({
+          userId: newUser.id,
+          roleId: userRole.roleId,
+        });
+
+        // 토큰 발급 (트랜잭션 내에서)
+        await this.setRefreshToken(newUser.id, reply, false, tx);
+        return this.getAccessToken(newUser, reply, tx);
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+      console.error('소셜 회원가입 중 오류:', error);
+      throw new InternalServerErrorException(
+        '소셜 회원가입 중 오류가 발생했습니다.',
       );
     }
   }

@@ -21,7 +21,8 @@ import { Public } from '../../commons/decorators/public.decorator';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
-import { SignUpDto } from './dto/sign-up.dto';
+import { LocalSignUpDto, SignUpDto } from './dto/sign-up.dto';
+import { SocialSignUpDto } from './dto/social-sign-up.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -33,10 +34,10 @@ export class AuthController {
   @Post('signup')
   @Public()
   async signUp(
-    @Body(ValidationPipe) signUpDto: SignUpDto,
+    @Body(ValidationPipe) localSignUpDto: LocalSignUpDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    return this.authService.signUp(signUpDto, res);
+    return this.authService.signUp(localSignUpDto, res);
   }
 
   @Post('signin')
@@ -86,7 +87,8 @@ export class AuthController {
   @Post('reset-password')
   @Public()
   async resetPassword(
-    @Body() { token, password }: { token: string; password: string },
+    @Body(ValidationPipe)
+    { token, password }: { token: string; password: string },
   ): Promise<void> {
     return this.authService.resetPassword(token, password);
   }
@@ -94,7 +96,7 @@ export class AuthController {
   @Post('callback/verify-email')
   @Public()
   async verifyEmail(
-    @Body() { token }: { token: string },
+    @Body(ValidationPipe) { token }: { token: string },
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
     return await this.authService.verifyEmail(token, res);
@@ -102,7 +104,9 @@ export class AuthController {
 
   @Post('resend-verification-email')
   @Public()
-  async resendVerificationEmail(@Body() { email }: { email: string }) {
+  async resendVerificationEmail(
+    @Body(ValidationPipe) { email }: { email: string },
+  ) {
     return this.authService.resendVerificationEmail(email);
   }
 
@@ -115,7 +119,7 @@ export class AuthController {
   @Post('check-password')
   @UseGuards(AuthGuard('jwt'))
   async checkPassword(
-    @Body() { password }: { password: string },
+    @Body(ValidationPipe) { password }: { password: string },
     @CurrentUser() user: schema.User,
   ) {
     return this.authService.checkPassword(password, user);
@@ -139,5 +143,14 @@ export class AuthController {
     };
 
     return await this.authService.signInWithKakao(kakaoUser, res);
+  }
+
+  @Post('social-signup')
+  @Public()
+  async socialSignUp(
+    @Body(ValidationPipe) socialSignUpDto: SocialSignUpDto,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.authService.socialSignUp(socialSignUpDto, reply);
   }
 }

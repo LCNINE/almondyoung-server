@@ -119,7 +119,7 @@ export const profiles = pgTable('profiles', {
     .references(() => users.id, { onDelete: 'cascade' })
     .unique(),
   phoneNumber: varchar('phone_number', { length: 20 }),
-  address: jsonb('address').notNull(),
+  address: jsonb('address'),
   birthDate: timestamp('birth_date'),
   profileImageUrl: varchar('profile_image_url', { length: 1024 }),
   ...timestampColumns,
