@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Redirect,
   Req,
   Res,
   UseGuards,
@@ -136,8 +137,6 @@ export class AuthController {
       email: string;
       providerId: string;
     };
-
-    console.log('kakaoUser', kakaoUser);
 
     return await this.authService.signInWithKakao(kakaoUser, res);
   }

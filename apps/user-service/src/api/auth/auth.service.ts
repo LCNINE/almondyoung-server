@@ -39,7 +39,7 @@ export class AuthService {
 
   async signUp(
     signUpDto: SignUpDto,
-    @Res() res: FastifyReply,
+    @Res() reply: FastifyReply,
   ): Promise<{ message: string }> {
     try {
       // 이메일로 기존 사용자 조회
@@ -177,7 +177,7 @@ export class AuthService {
 
   async verifyEmail(
     token: string,
-    res: FastifyReply,
+    reply: FastifyReply,
   ): Promise<{ accessToken: string }> {
     try {
       //  토큰 검증
@@ -226,9 +226,9 @@ export class AuthService {
       // access 토큰 발급
       const accessToken = await this.getAccessToken(
         verificationToken.user,
-        res,
+        reply,
       );
-      await this.setRefreshToken(verificationToken.user.id, res);
+      await this.setRefreshToken(verificationToken.user.id, reply);
 
       // await this.kafkaClient.emit('user.created', {
       //   id: verificationToken.user.id,
@@ -285,7 +285,7 @@ export class AuthService {
 
   async signIn(
     signInDto: SignInDto,
-    res: FastifyReply,
+    reply: FastifyReply,
   ): Promise<{ accessToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
     if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
@@ -304,8 +304,8 @@ export class AuthService {
     if (!isAuth)
       throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
-    await this.setRefreshToken(user.id, res, signInDto.rememberMe);
-    const accessToken = await this.getAccessToken(user, res);
+    await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
+    const accessToken = await this.getAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
@@ -319,7 +319,7 @@ export class AuthService {
       email: string;
       providerId: string;
     },
-    res: FastifyReply,
+    reply: FastifyReply,
   ) {
     try {
       // 카카오 providerId로 기존 identity 조회
@@ -373,14 +373,12 @@ export class AuthService {
         user = newUser;
       }
 
-      // 리프레시 토큰 설정 및 액세스 토큰 발급
-      await this.setRefreshToken(user.id, res, false);
-      const { accessToken } = await this.getAccessToken(user, res);
-      console.log('=== 토큰 발급 완료, 리다이렉트 시작 ===');
+      await this.setRefreshToken(user.id, reply, false);
+      await this.getAccessToken(user, reply);
 
-      return res.redirect(
-        `http://localhost:3000/auth/kakao/callback?code=${accessToken}`,
-      );
+      return reply
+        .status(302)
+        .redirect(`http://localhost:3000/auth/kakao/success`);
     } catch (error) {
       console.error('카카오 로그인 중 오류:', error);
       throw new InternalServerErrorException(
@@ -451,7 +449,7 @@ export class AuthService {
 
   async getAccessToken(
     user: schema.User,
-    res: FastifyReply,
+    reply: FastifyReply,
   ): Promise<{ accessToken: string }> {
     const scopes = await this.getUserScopes(user.id);
 
@@ -499,14 +497,14 @@ export class AuthService {
         : {}),
     };
 
-    res.setCookie('accessToken', accessToken, cookieOptions);
+    reply.setCookie('accessToken', accessToken, cookieOptions);
 
     return { accessToken };
   }
 
   async setRefreshToken(
     userId: string,
-    res: FastifyReply,
+    reply: FastifyReply,
     rememberMe: boolean = false,
   ): Promise<{ refreshToken: string }> {
     const scopes = await this.getUserScopes(userId);
@@ -557,13 +555,13 @@ export class AuthService {
         : {}),
     };
 
-    res.setCookie('refreshToken', refreshToken, cookieOptions);
+    reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
     return { refreshToken };
   }
 
-  async refreshToken(user: schema.User, res: FastifyReply) {
-    return this.getAccessToken(user, res);
+  async refreshToken(user: schema.User, reply: FastifyReply) {
+    return this.getAccessToken(user, reply);
   }
 
   async forgotPassword(email: string) {
