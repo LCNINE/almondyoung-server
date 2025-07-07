@@ -9,7 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PaymentModule } from './payment/payment.module';
 import * as paymentMethodSchema from './payment-method/schema';
 import * as invoiceSchema from './invoice/schema';
-
+import * as paymentSchema from './payment/schema';
 @Module({
   imports: [
     SharedModule,
@@ -20,7 +20,7 @@ import * as invoiceSchema from './invoice/schema';
           process.env.DATABASE_URL ||
           'postgresql://payms_owner:npg_8KxncIF7qoyH@ep-fancy-bonus-a1iiaieh-pooler.ap-southeast-1.aws.neon.tech/payms?sslmode=require&channel_binding=require',
       },
-      schema: { ...paymentMethodSchema, ...invoiceSchema },
+      schema: { ...paymentMethodSchema, ...invoiceSchema, ...paymentSchema },
     }),
     PaymentMethodModule,
     InvoiceModule,

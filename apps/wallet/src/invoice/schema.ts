@@ -11,9 +11,12 @@ import { relations } from 'drizzle-orm';
 export const INVOICE_STATUS = {
   ISSUED: 'ISSUED',
   PAID: 'PAID',
+  PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED',
+  REFUNDED: 'REFUNDED',
   CANCELLED: 'CANCELLED',
   EXPIRED: 'EXPIRED',
   OVERDUE: 'OVERDUE',
+  FAILED: 'FAILED',
 } as const;
 
 export type InvoiceStatus = keyof typeof INVOICE_STATUS;
@@ -24,8 +27,9 @@ export const invoice = pgTable('invoice', {
   invoiceNumber: varchar('invoice_number', { length: 64 }).notNull(),
   invoiceType: varchar('invoice_type', { length: 32 }).notNull(), // SUBSCRIPTION | PRODUCT
   amount: decimal('amount', { precision: 18, scale: 2 }).notNull(),
+  refundedAmount: decimal('refunded_amount', { precision: 18, scale: 2 }).notNull().default('0'),
   currency: varchar('currency', { length: 3 }).notNull(),
-  status: varchar('status', { length: 16 }).notNull().$type<InvoiceStatus>(), // ISSUED | PAID | CANCELLED | EXPIRED | OVERDUE
+  status: varchar('status', { length: 24 }).notNull().$type<InvoiceStatus>(), // ISSUED | PAID | PARTIALLY_REFUNDED | REFUNDED | CANCELLED | EXPIRED | OVERDUE
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   dueAt: timestamp('due_at', { withTimezone: true }),
@@ -40,7 +44,7 @@ export const invoiceEvent = pgTable('invoice_event', {
   invoiceId: bigint('invoice_id', { mode: 'number' })
     .notNull()
     .references(() => invoice.id),
-  eventType: varchar('event_type', { length: 16 }).notNull(),
+  eventType: varchar('event_type', { length: 32 }).notNull(),
   reason: varchar('reason', { length: 255 }),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })

@@ -5,6 +5,7 @@ import { InvoiceModule } from '../invoice/invoice.module';
 import { PaymentMethodModule } from '../payment-method/payment-method.module';
 import { HmsApiProvider } from '../payment-method/hms-provider';
 import { SharedModule } from '@app/shared';
+import { InvoiceService } from '../invoice/invoice.service';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SharedModule } from '@app/shared';
   providers: [
     PaymentService,
     HmsApiProvider,
+    InvoiceService
   ],
   exports: [PaymentService],
 })
