@@ -9,10 +9,20 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { User } from '../../../database/drizzle/schema';
 import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  EventPublisherService,
+  InjectEventPublisher,
+} from '@app/shared/events/src';
+import { UserEvents } from '@app/shared/events/user.events';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<schema.User>,
+
+    @InjectEventPublisher()
+    private readonly eventPublisher: EventPublisherService<UserEvents>,
+  ) {}
 
   async findUserByEmail(email: string): Promise<schema.User | null> {
     const [users] = await this.dbService.db
@@ -83,6 +93,13 @@ export class UsersService {
             },
           });
       }
+
+      await this.eventPublisher.publishEvent('USER_UPDATED', {
+        userId: user.id,
+        ...updateUserDto,
+      });
+
+      return;
     } catch (error) {
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',

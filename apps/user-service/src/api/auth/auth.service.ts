@@ -21,7 +21,11 @@ import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 import { SocialSignUpDto } from './dto/social-sign-up.dto';
-// import { ClientKafka } from '@nestjs/microservices';
+import {
+  EventPublisherService,
+  InjectEventPublisher,
+} from '@app/shared/events/src';
+import { UserEvents } from '@app/shared/events/user.events';
 
 @Injectable()
 export class AuthService {
@@ -32,11 +36,9 @@ export class AuthService {
     private readonly rolesService: RolesService,
     private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
+    @InjectEventPublisher()
+    private readonly eventPublisher: EventPublisherService<UserEvents>,
   ) {}
-
-  // async onModuleInit() {
-  //   await this.kafkaClient.connect();
-  // }
 
   async signUp(
     signUpDto: LocalSignUpDto,
@@ -231,11 +233,11 @@ export class AuthService {
       );
       await this.setRefreshToken(verificationToken.user.id, reply);
 
-      // await this.kafkaClient.emit('user.created', {
-      //   id: verificationToken.user.id,
-      //   email: verificationToken.user.email,
-      //   createdAt: new Date().toISOString(),
-      // });
+      await this.eventPublisher.publishEvent('USER_CREATED', {
+        userId: verificationToken.user.id,
+        email: verificationToken.user.email,
+        name: verificationToken.user.username,
+      });
 
       return accessToken;
     } catch (error) {
@@ -635,9 +637,21 @@ export class AuthService {
   }
 
   async deleteAccount(user: schema.User): Promise<void> {
-    await this.dbService.db
+    const deletedUser = await this.dbService.db
       .delete(schema.users)
-      .where(eq(schema.users.id, user.id));
+      .where(eq(schema.users.id, user.id))
+      .returning();
+
+    if (deletedUser.length > 0) {
+      await this.eventPublisher.publishEvent('USER_DELETED', {
+        userId: user.id,
+      });
+    } else {
+      throw new NotFoundException(
+        `User with id ${user.id} not found or already deleted.`,
+      );
+    }
+
     return;
   }
 

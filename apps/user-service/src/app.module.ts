@@ -1,4 +1,6 @@
 import { DbModule } from '@app/db';
+import { createKafkaConfigFromEnv, EventsModule } from '@app/shared/events/src';
+import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -12,7 +14,6 @@ import { ScopesModule } from './api/scopes/scopes.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
-// import { KafkaModule } from './api/kafka/kafka.module';
 
 @Module({
   imports: [
@@ -28,8 +29,16 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
       },
       schema: userSchema,
     }),
+    EventsModule.forRoot<UserEvents>({
+      kafka: createKafkaConfigFromEnv({
+        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID!,
+        KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
+        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID,
+      }),
+      events: USER_EVENTS,
+      serviceName: 'user-service',
+    }),
     ScheduleModule.forRoot(),
-    // KafkaModule,
     AuthModule,
     UsersModule,
     RolesModule,
@@ -45,4 +54,4 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

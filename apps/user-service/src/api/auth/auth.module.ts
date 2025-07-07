@@ -1,4 +1,5 @@
 import { DbModule } from '@app/db';
+import { EventsModule } from '@app/shared/events/src';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -14,7 +15,6 @@ import { AuthService } from './auth.service';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
-// import { KafkaModule } from '../kafka/kafka.module';
 
 @Module({
   imports: [
@@ -34,7 +34,7 @@ import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
     RolesModule,
     EmailModule,
     DbModule,
-    // KafkaModule,
+    EventsModule,
   ],
   providers: [
     AuthService,
@@ -54,4 +54,4 @@ import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
   controllers: [AuthController],
   exports: [AuthService, JwtModule, PassportModule],
 })
-export class AuthModule { }
+export class AuthModule {}
