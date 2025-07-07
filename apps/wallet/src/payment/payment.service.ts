@@ -2,11 +2,11 @@ import { ConflictException, Injectable, BadRequestException, NotFoundException }
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { InvoiceService } from '../invoice/invoice.service';
 import { PaymentMethodService } from '../payment-method/payment-method.service';
-import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto, PartialPaymentDto } from './dto/create-payment.dto';
 import { paymentEvents, refundEvents } from './schema';
 import * as schema from './schema';
 import * as invoiceSchema from '../invoice/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { HmsAPI } from 'hms-api-wrapper';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
@@ -407,5 +407,73 @@ export class PaymentService {
     }));
     console.log('result:', result);
     return result;
+  }
+
+  /**
+   * 집계 쿼리 기반 누적 결제 금액 계산
+   */
+  async getPaidAmount(invoiceId: number): Promise<number> {
+    const events = await this.dbService.db
+      .select()
+      .from(paymentEvents)
+      .where(and(
+        eq(paymentEvents.invoiceId, invoiceId),
+        eq(paymentEvents.status, 'SUCCESS')
+      ));
+    return events.reduce((sum, e) => sum + Number(e.amount), 0);
+  }
+
+  /**
+   * 부분결제 처리 (정합성 우선)
+   */
+  async partialPayment(dto: PartialPaymentDto): Promise<any> {
+    // 1. invoice 조회
+    const invoice = await this.invoiceService.findOne(dto.invoiceId);
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    // 2. 누적 결제 금액 집계
+    const paidAmount = await this.getPaidAmount(invoice.id);
+
+    // 3. 초과 결제 방지
+    if (paidAmount + dto.amount > Number(invoice.amount)) {
+      throw new ConflictException('결제 금액이 청구 금액을 초과할 수 없습니다.');
+    }
+
+    // 4. 결제 처리 (PG사 연동 등, 여기서는 더미)
+    // 실제 PG 연동 로직 필요
+    const paymentResult = { success: true, pgTransactionId: 'dummy', pgResponse: '{}' };
+    if (!paymentResult.success) {
+      throw new BadRequestException('결제 실패');
+    }
+
+    // 5. payment_events에 결제 이벤트 기록
+    const [paymentEvent] = await this.dbService.db.insert(paymentEvents).values({
+      invoiceId: invoice.id,
+      paymentMethodId: dto.paymentMethodId,
+      amount: dto.amount.toString(),
+      status: 'SUCCESS',
+      pgTransactionId: paymentResult.pgTransactionId,
+      pgResponse: paymentResult.pgResponse,
+      actor: 'USER',
+    }).returning();
+
+    // 6. 상태 판정 및 invoice 상태/이벤트 처리
+    const newPaidAmount = paidAmount + dto.amount;
+    let newStatus = invoice.status;
+    if (newPaidAmount === Number(invoice.amount)) {
+      newStatus = 'PAID';
+    } else if (newPaidAmount > 0 && newPaidAmount < Number(invoice.amount)) {
+      newStatus = 'PARTIALLY_REFUNDED';
+    }
+    await this.invoiceService.updateStatus(invoice.id, { status: newStatus, reason: '부분결제' });
+    await this.dbService.db.insert(invoiceSchema.invoiceEvent).values({
+      invoiceId: invoice.id,
+      eventType: newStatus,
+      reason: '부분결제',
+      occurredAt: new Date(),
+      eventUuid: ulid(),
+    });
+
+    return { success: true, paymentEvent };
   }
 }

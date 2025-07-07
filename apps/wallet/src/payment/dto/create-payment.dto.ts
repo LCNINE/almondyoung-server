@@ -43,4 +43,18 @@ export class PartialRefundPaymentDto {
 
   @IsString()
   reason?: string;
+}
+
+export class PartialPaymentDto {
+  @IsNumber()
+  @IsNotEmpty()
+  invoiceId: number;
+
+  @IsString()
+  @IsNotEmpty()
+  paymentMethodId: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  amount: number;
 } 

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { PaymentService } from './payment.service';
-import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto } from './dto/create-payment.dto';
+import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto, PartialPaymentDto } from './dto/create-payment.dto';
 
 /**
  * Controller for handling payment-related endpoints.
@@ -91,5 +91,14 @@ export class PaymentController {
   ) {
     dto.paymentEventId = paymentEventId;
     return this.paymentService.refundPartialPayment(dto);
+  }
+
+  /**
+   * 부분결제 처리
+   * POST /payments/partial
+   */
+  @Post('partial')
+  async partialPayment(@Body() dto: PartialPaymentDto) {
+    return this.paymentService.partialPayment(dto);
   }
 }
