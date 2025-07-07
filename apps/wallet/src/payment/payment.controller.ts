@@ -12,18 +12,18 @@ export class PaymentController {
   /**
    * Get all payments (stub, implement as needed)
    */
-  @Get()
-  async getPayments() {
+    @Get()
+    async getPayments() {
     // TODO: Implement payment list retrieval
-    return 'Payments';
-  }
-
+            return 'Payments';
+    }
+    
   /**
    * Create a new payment based on invoice and payment method.
    * @param body Payment creation DTO
    * @returns Payment event result
    */
-  @Post()
+    @Post()
   async createPayment(@Body() body: CreatePaymentDto) {
     return this.paymentService.createPayment(body);
   }

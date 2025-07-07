@@ -8,7 +8,7 @@ export class CreatePaymentDto {
   @IsString()
   @IsNotEmpty()
   paymentMethodId: string; // ULID 타입으로 변경
-}
+} 
 
 export class RefundPaymentDto {
   @IsString()

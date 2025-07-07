@@ -6,9 +6,13 @@ import { PaymentMethodModule } from '../payment-method/payment-method.module';
 import { HmsApiProvider } from '../payment-method/hms-provider';
 import { SharedModule } from '@app/shared';
 import { InvoiceService } from '../invoice/invoice.service';
+import { CardPaymentStrategy } from './strategies/card-payment.strategy';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { PaymentEventListener } from './listeners/payment.listener';
 
 @Module({
   imports: [
+    EventEmitterModule.forRoot(),
     InvoiceModule,
     PaymentMethodModule,
     SharedModule,
@@ -17,7 +21,9 @@ import { InvoiceService } from '../invoice/invoice.service';
   providers: [
     PaymentService,
     HmsApiProvider,
-    InvoiceService
+    InvoiceService,
+    CardPaymentStrategy,
+    PaymentEventListener,
   ],
   exports: [PaymentService],
 })
