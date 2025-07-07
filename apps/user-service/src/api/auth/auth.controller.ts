@@ -78,6 +78,12 @@ export class AuthController {
     return this.authService.changePassword(password, user);
   }
 
+  @Post('forget-userid')
+  @Public()
+  async forgetUserId(@Body(ValidationPipe) { email }: { email: string }) {
+    return this.authService.forgetUserId(email);
+  }
+
   @Post('forget-password')
   @Public()
   async forgotPassword(@Body(ValidationPipe) { email }: { email: string }) {

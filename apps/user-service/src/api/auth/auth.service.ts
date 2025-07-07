@@ -327,8 +327,15 @@ export class AuthService {
     try {
       // 카카오 providerId로 기존 identity 조회
       const existingIdentity = await this.dbService.db
-        .select()
+        .select({
+          identity: schema.userIdentities,
+          user: schema.users,
+        })
         .from(schema.userIdentities)
+        .innerJoin(
+          schema.users,
+          eq(schema.userIdentities.userId, schema.users.id),
+        )
         .where(
           and(
             eq(schema.userIdentities.provider, 'kakao'),
@@ -340,36 +347,86 @@ export class AuthService {
 
       // 기존 사용자인 경우
       if (existingIdentity) {
-        const foundUser = await this.usersService.findUserById(
-          existingIdentity.userId,
-        );
-
-        if (!foundUser) {
-          throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
-        }
-
-        // 기존 사용자는 토큰 발급 후 리다이렉트
-        await this.setRefreshToken(foundUser.id, reply, false);
-        await this.getAccessToken(foundUser, reply);
+        // 토큰 발급 후 리다이렉트
+        await this.setRefreshToken(existingIdentity.user.id, reply, false);
+        await this.getAccessToken(existingIdentity.user, reply);
 
         return reply
           .status(302)
           .redirect(`http://localhost:3000/auth/kakao/callback`);
       }
 
-      // 신규 사용자인 경우 카카오 정보만 전달
-      return reply.status(302).redirect(
-        `http://localhost:3000/auth/kakao/callback?data=${encodeURIComponent(
-          JSON.stringify({
-            provider: 'kakao',
-            providerId: kakaoUser.providerId,
-            email: kakaoUser.email,
-            name: kakaoUser.name,
-          }),
-        )}`,
+      // 이메일 중복 확인
+      const existingUser = await this.usersService.findUserByEmail(
+        kakaoUser.email,
       );
+
+      if (existingUser) {
+        throw new ConflictException('이미 사용중인 이메일입니다.');
+      }
+
+      // 신규 사용자 생성 및 로그인 처리
+      return await this.dbService.db.transaction(async (tx) => {
+        // 새 사용자 생성
+        const [newUser] = await tx
+          .insert(schema.users)
+          .values({
+            loginId: `kakao_${kakaoUser.providerId}`,
+            username: kakaoUser.name,
+            email: kakaoUser.email,
+            password: null,
+            isEmailVerified: true,
+          })
+          .returning();
+
+        // identity 생성
+        await tx.insert(schema.userIdentities).values({
+          userId: newUser.id,
+          provider: 'kakao',
+          providerId: kakaoUser.providerId,
+          providerData: {
+            name: kakaoUser.name,
+            email: kakaoUser.email,
+          },
+        });
+
+        // 기본 역할 설정
+        const userRole = await tx
+          .select()
+          .from(schema.roles)
+          .where(eq(schema.roles.name, 'user'))
+          .limit(1)
+          .then((rows) => rows[0]);
+
+        if (!userRole) {
+          throw new Error('기본 사용자 역할이 설정되어 있지 않습니다.');
+        }
+
+        await tx.insert(schema.userRoleAssignments).values({
+          userId: newUser.id,
+          roleId: userRole.roleId,
+        });
+
+        // 토큰 발급 (트랜잭션 내에서)
+        await this.setRefreshToken(newUser.id, reply, false, tx);
+        await this.getAccessToken(newUser, reply, tx);
+
+        // 사용자 생성 이벤트 발행
+        await this.eventPublisher.publishEvent('USER_CREATED', {
+          userId: newUser.id,
+          email: newUser.email,
+          name: newUser.username,
+        });
+
+        return reply
+          .status(302)
+          .redirect(`http://localhost:3000/auth/kakao/callback`);
+      });
     } catch (error) {
       console.error('카카오 로그인 중 오류:', error);
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       throw new InternalServerErrorException(
         '카카오 로그인 중 오류가 발생했습니다.',
       );
@@ -553,6 +610,13 @@ export class AuthService {
 
   async refreshToken(user: schema.User, reply: FastifyReply) {
     return this.getAccessToken(user, reply);
+  }
+
+  async forgetUserId(email: string) {
+    const user = await this.usersService.findUserByEmail(email);
+    if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
+
+    await this.emailService.sendForgetUserIdLink(email, user.loginId);
   }
 
   async forgotPassword(email: string) {

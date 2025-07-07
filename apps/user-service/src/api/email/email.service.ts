@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { ResendService } from 'nestjs-resend';
 import {
+  createFindUserIdTemplate,
   createPasswordResetTemplate,
   createSignUpConfirmationTemplate,
 } from '../../utils/templates/email-templates';
@@ -32,6 +33,15 @@ export class EmailService {
 
     const url = `${this.configService.get('EMAIL_RESET_PASSWORD_URL')}?token=${token}`;
     const template = createPasswordResetTemplate(url);
+
+    return this.sendMail({
+      email,
+      ...template,
+    });
+  }
+
+  async sendForgetUserIdLink(email: string, loginId: string): Promise<void> {
+    const template = createFindUserIdTemplate(loginId);
 
     return this.sendMail({
       email,
