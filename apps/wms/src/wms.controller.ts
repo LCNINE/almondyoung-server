@@ -3,7 +3,7 @@ import { WmsService } from './wms.service';
 
 @Controller()
 export class WmsController {
-  constructor(private readonly wmsService: WmsService) {}
+  constructor(private readonly wmsService: WmsService) { }
 
   @Get()
   getHello(): string {

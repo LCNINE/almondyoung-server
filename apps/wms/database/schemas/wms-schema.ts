@@ -29,6 +29,7 @@ export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_exp
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
 export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
+export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
 /*───────────────────────────
  * MASTER DATA
@@ -115,7 +116,7 @@ export const locations = pgTable('locations', {
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockEvents = pgTable('stock_events', {
-    id: uuid('id').primaryKey().default(sql`uuid_generate_v7()`),
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
     stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'cascade' }),
     skuId: uuid('sku_id').references(() => skus.id),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id),
@@ -143,18 +144,13 @@ export const stocks = pgTable('stocks', {
         .notNull(),
     locationId: uuid('location_id')
         .references(() => locations.id, { onDelete: 'set null' }),
+    stockType: stockTypeEnum('stock_type').notNull().default('physical'),
 
     /** 수량 */
     realQuantity: integer('real_quantity').notNull(),
     reservedQuantity: integer('reserved_quantity').notNull().default(0),
     availableQuantity: integer('available_quantity').notNull(),
     safetyStock: integer('safety_stock'),
-
-    /** 원장 타임스탬프 (append‑only) */
-    bornAt: timestamp('born_at', { withTimezone: true })
-        .notNull()
-        .defaultNow(),
-    deadAt: timestamp('dead_at', { withTimezone: true }),
 
     /** 이벤트 연결 */
     creatorEventId: uuid('creator_event_id')
@@ -349,3 +345,33 @@ export const inboundLists = pgTable('inbound_lists', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+/*───────────────────────────
+ * TABLES ONLY SCHEMA (for TypedDatabase)
+ *──────────────────────────*/
+export const wmsTables = {
+    skus,
+    skuBarcodes,
+    categories,
+    skuCategories,
+    deliveryProfiles,
+    carriers,
+    warehouses,
+    locations,
+    stockEvents,
+    stocks,
+    outboundTaskItems,
+    productMatchings,
+    stockReservations,
+    outboundTasks,
+    outboundTaskLines,
+    shipments,
+    shipmentTracking,
+    returns,
+    settings,
+    holidays,
+    purchaseOrders,
+    purchaseOrderLines,
+    purchaseOrderCart,
+    inboundLists,
+} as const;
