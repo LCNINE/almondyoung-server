@@ -18,6 +18,6 @@ import { SharedModule } from '@app/shared';
       inject: [CardPaymentStrategy],
     },
   ],
-  exports: [PaymentMethodService],
+  exports: [PaymentMethodService, HmsApiProvider],
 })
 export class PaymentMethodModule {}

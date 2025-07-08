@@ -1,44 +1,107 @@
-import { Injectable } from '@nestjs/common';
-import type { 
-  PaymentTransactionRequest, 
-  PaymentApprovalResponse,
-  PaymentResult,
-  BasePaymentResponse
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  HmsAPI,
+  PaymentTransactionRequest,
+  PaymentCancelResponse,
+  PaymentPartialCancelResponse,
 } from 'hms-api-wrapper';
+import { ulid } from 'ulid';
 
-interface ProcessPaymentParams {
+export interface ApprovePaymentParams {
   amount: number;
-  billingKey: string;
-  memberId: string;  // HMS API requires memberId
+  userId: number;
 }
 
-interface PgResponse {
-  transactionId: string;
-  status: 'success' | 'failed';
-  message?: string;
-  rawResponse?: BasePaymentResponse;
+export interface PgApproveResponse {
+  success: boolean;
+  pgTransactionId: string;
+  pgResponse: string;
+}
+
+export interface RefundPaymentParams {
+  pgTransactionId: string;
+  amount: number;
+  originalAmount: number;
+}
+
+export interface PgRefundResponse {
+  success: boolean;
+  pgTransactionId: string;
+  pgResponse: string;
 }
 
 @Injectable()
 export class PgService {
-  async processPayment(params: ProcessPaymentParams): Promise<PgResponse> {
+  constructor(private readonly hmsApi: HmsAPI) {}
+
+  async approvePayment(params: ApprovePaymentParams): Promise<PgApproveResponse> {
+    const pgRequest = this.buildPaymentRequest(params);
+
     try {
-      const request: PaymentTransactionRequest = {
-        transactionId: `tx_${Date.now()}`, // 고유한 거래 ID 생성
-        memberId: params.memberId,
-        callAmount: params.amount,
-        cardPointFlag: 'N',  // 카드 포인트 사용하지 않음
+      const paymentResult =
+        await this.hmsApi.paymentTryansactions.requestTryansaction(pgRequest);
+
+      const success = paymentResult.payment?.result?.flag === 'Y';
+      return {
+        success,
+        pgTransactionId: pgRequest.transactionId,
+        pgResponse: JSON.stringify(paymentResult),
       };
-
-      // HMS API를 통한 결제 처리 - PaymentMethodService에서 처리
-      throw new Error('Not implemented - Should be handled by PaymentMethodService');
-
     } catch (error) {
       return {
-        transactionId: '', // 실패 시에는 빈 문자열
-        status: 'failed',
-        message: error.message,
-        rawResponse: error.response?.payment,
+        success: false,
+        pgTransactionId: pgRequest.transactionId,
+        pgResponse: JSON.stringify(error.response || error.message),
+      };
+    }
+  }
+
+  private buildPaymentRequest(
+    params: ApprovePaymentParams,
+  ): PaymentTransactionRequest {
+    return {
+      transactionId: `tx_${ulid()}`,
+      memberId: params.userId.toString(),
+      callAmount: params.amount,
+      cardPointFlag: 'N',
+    };
+  }
+
+  async refundPayment(params: RefundPaymentParams): Promise<PgRefundResponse> {
+    const { pgTransactionId, amount, originalAmount } = params;
+
+    if (!pgTransactionId) {
+      throw new InternalServerErrorException(
+        'PG transaction ID is required for refund.',
+      );
+    }
+
+    try {
+      let refundResponse: PaymentCancelResponse | PaymentPartialCancelResponse;
+
+      if (amount < originalAmount) {
+        refundResponse =
+          await this.hmsApi.paymentTryansactions.cancelPartialTryansaction(
+            pgTransactionId,
+            amount,
+          );
+      } else {
+        refundResponse =
+          await this.hmsApi.paymentTryansactions.cancelTryansaction(
+            pgTransactionId,
+          );
+      }
+
+      return {
+        success: true,
+        pgTransactionId,
+        pgResponse: JSON.stringify(refundResponse),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        pgTransactionId,
+        pgResponse: JSON.stringify(error.response || error.message),
       };
     }
   }
