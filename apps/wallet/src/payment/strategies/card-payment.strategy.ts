@@ -1,14 +1,18 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { HmsAPI } from 'hms-api-wrapper';
-import type {
-  PaymentTransactionRequest,
+import {
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import {
+  HmsAPI,
   PaymentCancelResponse,
   PaymentPartialCancelResponse,
+  PaymentTransactionRequest,
 } from 'hms-api-wrapper';
+import { ulid } from 'ulid';
 import {
-  PaymentStrategy,
   PayRequest,
   PgPayResult,
+  PaymentStrategy,
   RefundRequest,
   PgRefundResult,
 } from './payment.strategy';
@@ -41,7 +45,7 @@ export class CardPaymentStrategy implements PaymentStrategy {
 
   private buildPaymentRequest(invoice: any): PaymentTransactionRequest {
     return {
-      transactionId: `tx_${Date.now()}`,
+      transactionId: `tx_${ulid()}`,
       memberId: invoice.userId.toString(),
       callAmount: Number(invoice.amount),
       cardPointFlag: 'N',
@@ -62,25 +66,19 @@ export class CardPaymentStrategy implements PaymentStrategy {
     try {
       let refundResponse: PaymentCancelResponse | PaymentPartialCancelResponse;
 
-      // Based on the provided type definition, we call different methods
-      // for full and partial refunds.
       if (amount < originalPaymentAmount) {
-        // Partial refund
         refundResponse =
           await this.hmsApi.paymentTryansactions.cancelPartialTryansaction(
             pgTransactionId,
             amount,
           );
       } else {
-        // Full refund. The service layer prevents amount > originalPaymentAmount.
         refundResponse =
           await this.hmsApi.paymentTryansactions.cancelTryansaction(
             pgTransactionId,
           );
       }
 
-      // We assume success if the API call does not throw an exception,
-      // as we don't know the exact success flag in the response structure.
       return {
         success: true,
         pgTransactionId,

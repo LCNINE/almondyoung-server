@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, NotFoundException } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto, PartialPaymentDto } from './dto/create-payment.dto';
 
@@ -40,18 +40,29 @@ export class PaymentController {
   /**
    * 특정 결제 이벤트의 환불 목록 조회
    */
-  @Get(':id/refunds')
-  async getRefundsByPaymentEventId(@Param('id') paymentEventId: string) {
-    return this.paymentService.getRefundsByPaymentEventId(paymentEventId);
+  @Get(':paymentId/refunds')
+  async getRefundsByPaymentEventId(@Param('paymentId') paymentId: string) {
+    return this.paymentService.getRefundsByPaymentEventId(paymentId);
   }
 
   /**
-   * Get a specific refund by ID (stub, implement as needed)
+   * 특정 결제의 특정 환불 단건 조회
    */
-  @Get('refunds/:id')
-  async getRefund(@Param('id') id: string) {
-    // TODO: Implement refund detail retrieval
-    return 'Refund';
+  @Get(':paymentId/refunds/:refundId')
+  async getRefund(
+    @Param('paymentId') paymentId: string,
+    @Param('refundId') refundId: string,
+  ) {
+    const refunds = await this.paymentService.getRefundsByPaymentEventId(
+      paymentId,
+    );
+    const refund = refunds.find((r) => r.id === refundId);
+    if (!refund) {
+      throw new NotFoundException(
+        `Refund with ID ${refundId} not found for payment ${paymentId}`,
+      );
+    }
+    return refund;
   }
 
   /**
@@ -64,33 +75,30 @@ export class PaymentController {
   }
 
   /**
-   * Create a full refund for a payment.
-   * @param paymentEventId Payment event ID
-   * @param dto FullRefundPaymentDto
+   * Create a refund for a payment.
+   * If amount is provided, creates a partial refund.
+   * If amount is not provided, creates a full refund.
+   * @param paymentId Payment event ID
+   * @param dto RefundPaymentDto
    * @returns Refund event result
    */
-  @Post(':id/refund/full')
-  async fullRefund(
-    @Param('id') paymentEventId: string,
-    @Body() dto: FullRefundPaymentDto,
+  @Post(':paymentId/refunds')
+  async refundPayment(
+    @Param('paymentId') paymentId: string,
+    @Body() dto: RefundPaymentDto,
   ) {
-    dto.paymentEventId = paymentEventId;
-    return this.paymentService.refundFullPayment(dto);
-  }
-
-  /**
-   * Create a partial refund for a payment.
-   * @param paymentEventId Payment event ID
-   * @param dto PartialRefundPaymentDto
-   * @returns Refund event result
-   */
-  @Post(':id/refund/partial')
-  async partialRefund(
-    @Param('id') paymentEventId: string,
-    @Body() dto: PartialRefundPaymentDto,
-  ) {
-    dto.paymentEventId = paymentEventId;
-    return this.paymentService.refundPartialPayment(dto);
+    if (dto.amount) {
+      return this.paymentService.refundPartialPayment({
+        ...dto,
+        paymentEventId: paymentId,
+        amount: dto.amount, // Ensure amount is a number
+      });
+    } else {
+      return this.paymentService.refundFullPayment({
+        ...dto,
+        paymentEventId: paymentId,
+      });
+    }
   }
 
   /**

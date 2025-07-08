@@ -1,10 +1,10 @@
 import { Injectable, forwardRef, Inject, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { ulid } from 'ulid';
-import { DbService } from '@app/db/db.service';
 import { InjectDb } from '@app/db';
+import { DbService } from '@app/db/db.service';
 import { InvoiceService } from '../../invoice/invoice.service';
-import { 
+import {
   DuplicatePaymentAttemptedEvent,
   PaymentFailedEvent,
   PaymentSucceededEvent,
@@ -32,6 +32,7 @@ export class PaymentEventListener {
   private readonly logger = new Logger(PaymentEventListener.name);
 
   constructor(
+    @Inject(forwardRef(() => InvoiceService))
     private readonly invoiceService: InvoiceService,
     @Inject(forwardRef(() => PaymentService))
     private readonly paymentService: PaymentService,
@@ -40,28 +41,30 @@ export class PaymentEventListener {
 
   @OnEvent('payment.succeeded')
   async handlePaymentSucceeded(event: PaymentSucceededEvent): Promise<void> {
-    this.logger.log(`Handling payment.succeeded for invoice ID: ${event.invoice.id}`);
-    const totalPaid = await this.paymentService.getPaidAmount(event.invoice.id);
+    this.logger.log(
+      `Handling payment.succeeded for invoice ID: ${event.invoice.id}`,
+    );
+    const totalPaid = await this.paymentService.getPaidAmount(
+      event.invoice.id,
+    );
     const invoiceAmount = Number(event.invoice.amount);
-    
+
     let newStatus = event.invoice.status;
     let reason = '';
 
-    if (totalPaid === invoiceAmount) {
+    // NOTE: 현재는 전액 결제만 성공으로 간주하므로, totalPaid는 항상 invoiceAmount와 같습니다.
+    // 부분 결제를 허용하게 되면 이 로직은 변경되어야 합니다.
+    if (totalPaid >= invoiceAmount) {
       newStatus = INVOICE_STATUS.PAID;
       reason = 'Payment completed successfully.';
-    } else if (totalPaid > 0 && totalPaid < invoiceAmount) {
-      newStatus = INVOICE_STATUS.ISSUED;
-      reason = `Partially paid. Total paid: ${totalPaid}`;
-    } else {
-      // 과결제 또는 기타 예외적인 상황. 현재 로직에서는 발생하기 어려움.
-      return; 
     }
 
-    await this.invoiceService.updateStatus(event.invoice.id, {
-      status: newStatus,
-      reason: reason,
-    });
+    if (newStatus !== event.invoice.status) {
+      await this.invoiceService.updateStatus(event.invoice.id, {
+        status: newStatus,
+        reason: reason,
+      });
+    }
   }
 
   @OnEvent('payment.failed')

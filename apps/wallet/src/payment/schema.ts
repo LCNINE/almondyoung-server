@@ -34,7 +34,7 @@ import {
     amount: decimal('amount', { precision: 19, scale: 4 }).notNull(),
     status: varchar('status', {
       length: 255,
-      enum: ['REQUESTED', 'SUCCESS', 'FAILED'],
+      enum: ['REQUESTED', 'SUCCESS', 'FAILED', 'DUPLICATE_ATTEMPT'],
     }).notNull(),
     
     // PG사로부터 받은 고유 거래 ID

@@ -33,12 +33,12 @@ const ERROR_MSG = {
 
 const EVENT_TYPE = {
   REQUESTED: 'REQUESTED',
-  DUPLICATE_ATTEMPT: 'DUPLICATE_ATTEMPT',
   SUCCESS: 'SUCCESS',
   FAILED: 'FAILED',
+  DUPLICATE_ATTEMPT: 'DUPLICATE_ATTEMPT',
 } as const;
 
-type EventType = typeof EVENT_TYPE[keyof typeof EVENT_TYPE];
+type EventType = (typeof EVENT_TYPE)[keyof typeof EVENT_TYPE];
 
 const INVOICE_STATUS = {
   PAID: 'PAID',
@@ -406,10 +406,12 @@ export class PaymentService {
     const events = await this.dbService.db
       .select()
       .from(paymentEvents)
-      .where(and(
-        eq(paymentEvents.invoiceId, invoiceId),
-        eq(paymentEvents.status, 'SUCCESS')
-      ));
+      .where(
+        and(
+          eq(paymentEvents.invoiceId, invoiceId),
+          eq(paymentEvents.status, 'SUCCESS'),
+        ),
+      );
     return events.reduce((sum, e) => sum + Number(e.amount), 0);
   }
 
