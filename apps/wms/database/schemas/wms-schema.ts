@@ -40,6 +40,8 @@ export const skus = pgTable('skus', {
     defaultBarcode: varchar('default_barcode', { length: 64 }),
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     inventoryManagement: boolean('inventory_management').notNull().default(false),
+    // pre_stock_sellable: 재고 0이어도 선판매 가능한지 여부 (inventory_management=true일 때만 유효)
+    preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),

@@ -15,12 +15,16 @@ export class SkuService {
   ) { }
 
   async _createSkuInternal(data: CreateSkuDto) {
+    // preStockSellable 초기값 설정: inventoryManagement=true이면 true, 아니면 false
+    const preStockSellable = data.inventoryManagement === true;
+
     const [newSku] = await this.db.insert(wmsTables.skus).values({
       id: data.id,
       name: data.name,
       defaultBarcode: data.defaultBarcode,
       deliveryProfileId: data.deliveryProfileId,
       inventoryManagement: data.inventoryManagement,
+      preStockSellable: preStockSellable, // preStockSellable 필드 초기화
       sale1m: data.sale1m,
       sale3m: data.sale3m,
     }).returning();
@@ -34,9 +38,16 @@ export class SkuService {
   }
 
   async _updateSkuInternal(skuId: string, data: Partial<UpdateSkuDto>) {
+    // preStockSellable 업데이트 로직: inventoryManagement이 변경되면 preStockSellable도 변경
+    let preStockSellable: boolean | undefined;
+    if (data.inventoryManagement !== undefined) {
+      preStockSellable = data.inventoryManagement === true;
+    }
+
     const [updatedSku] = await this.db.update(wmsTables.skus)
       .set({
         ...data,
+        preStockSellable: preStockSellable, // preStockSellable 필드 업데이트
         updatedAt: new Date(),
       })
       .where(eq(wmsTables.skus.id, skuId))
@@ -56,16 +67,16 @@ export class SkuService {
     });
   }
 
-  async searchSkus(name?: string, barcode?: string) {
-    if (!name && !barcode) {
-      throw new Error('Either name or barcode must be provided for SKU search.');
+  async searchSkus(name?: string, productCode?: string) {
+    if (!name && !productCode) {
+      throw new Error('Either name or productCode must be provided for SKU search.');
     }
 
     const skus = await this.db.query.skus.findMany({
       where: (skus, { or, and }) =>
         and(
           name ? like(skus.name, `%${name}%`) : undefined,
-          barcode ? like(skus.defaultBarcode, `%${barcode}%`) : undefined,
+          productCode ? like(skus.defaultBarcode, `%${productCode}%`) : undefined,
         ),
     });
 
