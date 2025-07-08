@@ -3,12 +3,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, isNull, isNotNull, lt, inArray } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class DormantService {
   private readonly logger = new Logger(DormantService.name);
 
-  constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<schema.User>,
+    private readonly emailService: EmailService,
+  ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async handleDormantAccounts() {
@@ -35,7 +39,10 @@ export class DormantService {
 
     while (true) {
       const targetUsers = await this.dbService.db
-        .select({ id: schema.users.id })
+        .select({
+          id: schema.users.id,
+          email: schema.users.email,
+        })
         .from(schema.users)
         .where(
           and(
@@ -62,6 +69,18 @@ export class DormantService {
             isNull(schema.users.deletedAt),
           ),
         );
+
+      // 각 사용자에게 휴면 계정 전환 알림 이메일 발송
+      for (const user of targetUsers) {
+        try {
+          await this.emailService.sendDormantAccountNotification(user.email);
+        } catch (error) {
+          this.logger.error(
+            `휴면 계정 전환 이메일 발송 실패 (사용자 ID: ${user.id})`,
+            error,
+          );
+        }
+      }
 
       totalProcessed += targetUsers.length;
       this.logger.log(`휴면 전환 진행 중: ${totalProcessed}건 처리됨`);

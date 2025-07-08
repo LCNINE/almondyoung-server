@@ -64,6 +64,28 @@ export class EmailService {
     }
   }
 
+  async sendDormantAccountNotification(email: string): Promise<void> {
+    return this.sendMail({
+      email,
+      subject: '계정이 휴면 상태로 전환되었습니다',
+      text: `
+안녕하세요.
+
+1년 이상 서비스를 이용하지 않아 관련 법률에 따라 계정이 휴면 상태로 전환되었습니다.
+서비스를 계속 이용하시려면 로그인하여 계정을 활성화해 주세요.
+휴면 상태가 2년 이상 지속될 경우 관련 법률에 따라 계정이 영구 삭제될 수 있습니다.
+
+감사합니다.`,
+      html: `
+<h2>계정이 휴면 상태로 전환되었습니다</h2>
+<p>안녕하세요.</p>
+<p>1년 이상 서비스를 이용하지 않아 관련 법률에 따라 계정이 휴면 상태로 전환되었습니다.</p>
+<p>서비스를 계속 이용하시려면 로그인하여 계정을 활성화해 주세요.</p>
+<p>휴면 상태가 2년 이상 지속될 경우 관련 법률에 따라 계정이 영구 삭제될 수 있습니다.</p>
+<p>감사합니다.</p>`,
+    });
+  }
+
   private async sendMail({
     email,
     subject,
