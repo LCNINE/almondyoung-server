@@ -313,6 +313,9 @@ export class AuthService {
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
 
+    // 기본 역할 설정, 포스트맨으로 회원가입 테스트시 주석제
+    // await this.rolesService.setDefaultRoles(user.id, 'user');
+
     return accessToken;
   }
 

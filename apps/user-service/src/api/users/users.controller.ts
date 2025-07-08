@@ -32,4 +32,9 @@ export class UsersController {
   ) {
     return this.usersService.update(user, updateUserDto);
   }
+
+  @Get(':id')
+  async getUser(@Param('id') id: string) {
+    return this.usersService.findUserById(id);
+  }
 }
