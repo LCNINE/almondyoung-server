@@ -4,19 +4,15 @@ export default class UserModuleService {
   private client: AxiosInstance;
 
   constructor() {
-    const baseUrl = process.env.USER_BASE_URL;
-    const apiKey = process.env.USER_API_KEY;
+    const baseUrl = process.env.USER_SERVICE_URL;
 
-    if (!baseUrl || !apiKey) {
-      throw new Error(
-        'USER_BASE_URL 또는 USER_API_KEY가 설정되어 있지 않습니다.',
-      );
+    if (!baseUrl) {
+      throw new Error('USER_SERVICE_URL이 설정되어 있지 않습니다.');
     }
 
     this.client = axios.create({
       baseURL: baseUrl,
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
     });
