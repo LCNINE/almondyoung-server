@@ -22,11 +22,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ...(req.validatedBody as object),
     };
 
-    // 로그인한 경우 사용자 정보 추가
     const userId = (req.user as MedusaUser)?.id;
+
     if (userId) {
       const userService = req.scope.resolve<UserModuleService>(USER_MODULE);
       const user = await userService.getUserById(userId);
+
       if (!user) {
         res.status(404).json({
           message: '사용자를 찾을 수 없습니다.',
@@ -155,7 +156,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   try {
     const cartService = req.scope.resolve(Modules.CART);
     const { id } = req.params;
-    const validated = req.validatedBody as CreateLineItemDTO;
+    const validated = req.validatedBody as CreateLineItemDTO; // 메두사는 자동으로 req.body를 검증하고 req.validatedBody로 변환해줌
 
     // 필수 파라미터 확인
     if (
