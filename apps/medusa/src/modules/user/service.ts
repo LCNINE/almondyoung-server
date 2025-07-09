@@ -1,22 +1,22 @@
 import axios, { AxiosInstance } from 'axios';
 
-type Options = {
-  apiKey: string;
-  baseUrl: string;
-};
-
 export default class UserModuleService {
-  private options: Options;
   private client: AxiosInstance;
 
-  constructor({}, options: Options) {
-    this.options = options;
+  constructor() {
+    const baseUrl = process.env.USER_BASE_URL;
+    const apiKey = process.env.USER_API_KEY;
 
-    // 외부 user-service와 통신하는 axios client 초기화
+    if (!baseUrl || !apiKey) {
+      throw new Error(
+        'USER_BASE_URL 또는 USER_API_KEY가 설정되어 있지 않습니다.',
+      );
+    }
+
     this.client = axios.create({
-      baseURL: options.baseUrl,
+      baseURL: baseUrl,
       headers: {
-        Authorization: `Bearer ${options.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
     });
@@ -27,7 +27,7 @@ export default class UserModuleService {
       const response = await this.client.get(`/api/users/${id}`);
       return response.data;
     } catch (error) {
-      throw new Error(`유저 정보 조회 실패: ${error.message}`);
+      throw new Error(`유저 정보 조회 실패: ${error}`);
     }
   }
 
@@ -38,7 +38,7 @@ export default class UserModuleService {
       });
       return response.data;
     } catch (error) {
-      throw new Error(`유저 이메일 조회 실패: ${error.message}`);
+      throw new Error(`유저 이메일 조회 실패: ${error}`);
     }
   }
 }
