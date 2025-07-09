@@ -34,24 +34,43 @@ export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop
 /*───────────────────────────
  * MASTER DATA
  *──────────────────────────*/
+export const suppliers = pgTable('suppliers', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 255 }).notNull(),
+    contactInfo: json('contact_info'), // 연락처, 주소 등
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
 export const skus = pgTable('skus', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
-    defaultBarcode: varchar('default_barcode', { length: 64 }),
+    defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
-    inventoryManagement: boolean('inventory_management').notNull().default(false),
-    // pre_stock_sellable: 재고 0이어도 선판매 가능한지 여부 (inventory_management=true일 때만 유효)
-    preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
+    inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
+    preStockSellable: boolean('pre_stock_sellable').notNull().default(false), // 재고 0이어도 선판매 가능한지 여부 (inventory_management=true일 때만 유의미함)
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
+export const skuSuppliers = pgTable('sku_suppliers', {
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    supplierId: uuid('supplier_id')
+        .references(() => suppliers.id, { onDelete: 'cascade' })
+        .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.skuId, t.supplierId),
+}));
+
 export const skuBarcodes = pgTable('sku_barcodes', {
     id: uuid('id').primaryKey().defaultRandom(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    barcode: varchar('barcode', { length: 64 }).notNull(),
+    barcode: varchar('barcode', { length: 64 }).notNull(), // 실제 바코드 값
     barcodeType: barcodeTypeEnum('barcode_type').notNull(),
     packingUnit: varchar('packing_unit', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -78,14 +97,6 @@ export const deliveryProfiles = pgTable('delivery_profiles', {
     name: varchar('name', { length: 128 }).notNull(),
     sourceType: sourceTypeEnum('source_type').notNull(),
     avgDeliveryDays: integer('avg_delivery_days'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-});
-
-export const carriers = pgTable('carriers', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 128 }).notNull(),
-    apiEndpoint: varchar('api_endpoint', { length: 512 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
@@ -118,10 +129,10 @@ export const locations = pgTable('locations', {
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockEvents = pgTable('stock_events', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`), // uuid_generate_v7()
     stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'cascade' }),
-    skuId: uuid('sku_id').references(() => skus.id),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    skuId: uuid('sku_id').references(() => skus.id).notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
     eventType: eventTypeEnum('event_type').notNull(),
     quantity: integer('quantity').notNull(),
     expiryDate: timestamp('expiry_date', { withTimezone: true }),
@@ -131,11 +142,13 @@ export const stockEvents = pgTable('stock_events', {
     reason: varchar('reason', { length: 255 }),
     eventTimestamp: timestamp('event_timestamp', { withTimezone: true }).notNull().defaultNow(),
     sequenceNo: integer('sequence_no'),
+    createsStockRowId: uuid('creates_stock_row_id').references(() => stocks.id),
+    expiresStockRowId: uuid('expires_stock_row_id').references(() => stocks.id),
 });
 
 // --- ① stocks (append‑only) ----------------------------------------------
 export const stocks = pgTable('stocks', {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`), // uuid_generate_v7()
 
     /* FK */
     skuId: uuid('sku_id')
@@ -154,7 +167,7 @@ export const stocks = pgTable('stocks', {
     availableQuantity: integer('available_quantity').notNull(),
     safetyStock: integer('safety_stock'),
 
-    /** 이벤트 연결 */
+
     creatorEventId: uuid('creator_event_id')
         .references(() => stockEvents.id)
         .notNull(),
@@ -174,13 +187,11 @@ export const outboundTaskItems = pgTable('outbound_task_items', {
     taskId: uuid('task_id')
         .references(() => outboundTasks.id, { onDelete: 'cascade' })
         .notNull(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id)
-        .notNull(),
+    skuId: uuid('sku_id').references(() => skus.id).notNull(),
 
-    qtyPending: integer('qty_pending').notNull().default(0),  // 출고대기
-    qtyPicking: integer('qty_picking').notNull().default(0),  // 카트 담김
-    qtyPicked: integer('qty_picked').notNull().default(0),   // 박스 완료
+    quantityPending: integer('quantity_pending').notNull().default(0),
+    quantityPicking: integer('quantity_picking').notNull().default(0),
+    quantityPicked: integer('quantity_picked').notNull().default(0),
 
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => ({
@@ -189,19 +200,31 @@ export const outboundTaskItems = pgTable('outbound_task_items', {
 
 
 /*───────────────────────────
- * PRODUCT / SKU MAPPING
+ * PRODUCT / VARIANT / SKU MAPPING
  *──────────────────────────*/
 export const productMatchings = pgTable('product_matchings', {
     id: uuid('id').primaryKey().defaultRandom(),
-    productId: uuid('product_id').notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
-    variantId: uuid('variant_id'),
-    status: matchingStatusEnum('status').notNull().default('pending'),
-    priority: matchingPriorityEnum('priority').notNull().default('normal'),
-    isResolved: boolean('is_resolved').notNull().default(false),
+    variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+    status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
+    priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
+    isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+// product_variant_sku_links: variant와 sku의 N:M 관계를 위한 연결 테이블
+export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
+    productMatchingId: uuid('product_matching_id')
+        .references(() => productMatchings.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.productMatchingId, t.skuId),
+}));
+
 
 /*───────────────────────────
  * RESERVATIONS
@@ -210,7 +233,7 @@ export const stockReservations = pgTable('stock_reservations', {
     reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
     orderId: uuid('order_id'),
     stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+    quantity: integer('quantity').notNull(),
     status: reservationStatusEnum('status').notNull().default('pending'),
     timeoutAt: timestamp('timeout_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -234,7 +257,7 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
     id: uuid('id').primaryKey().defaultRandom(),
     taskId: uuid('task_id').references(() => outboundTasks.id, { onDelete: 'cascade' }).notNull(),
     stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+    quantity: integer('quantity').notNull(),
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
     scannedBarcode: varchar('scanned_barcode', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -246,7 +269,6 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 export const shipments = pgTable('shipments', {
     id: uuid('id').primaryKey().defaultRandom(),
     trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-    carrierId: uuid('carrier_id').references(() => carriers.id).notNull(),
     status: shipmentStatusEnum('status').notNull().default('created'),
     eta: timestamp('eta', { withTimezone: true }),
     splitStatus: boolean('split_status').notNull().default(false),
@@ -271,8 +293,8 @@ export const returns = pgTable('returns', {
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     status: returnStatusEnum('status').notNull().default('requested'),
     qcReason: varchar('qc_reason', { length: 255 }),
-    restockQty: integer('restock_qty'),
-    disposeQty: integer('dispose_qty'),
+    restockQuantity: integer('restock_quantity'),
+    disposeQuantity: integer('dispose_quantity'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
@@ -314,7 +336,7 @@ export const purchaseOrders = pgTable('purchase_orders', {
 export const purchaseOrderLines = pgTable('purchase_order_lines', {
     poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+    quantity: integer('quantity').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 },
     (t) => ({
@@ -327,7 +349,7 @@ export const purchaseOrderLines = pgTable('purchase_order_lines', {
 export const purchaseOrderCart = pgTable('purchase_order_cart', {
     id: uuid('id').primaryKey().defaultRandom(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+    quantity: integer('quantity').notNull(),
     type: poTypeEnum('type').notNull(),
     supplierInfo: json('supplier_info'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -341,7 +363,7 @@ export const inboundLists = pgTable('inbound_lists', {
     id: uuid('id').primaryKey().defaultRandom(),
     poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+    quantity: integer('quantity').notNull(),
     barcode: varchar('barcode', { length: 64 }),
     status: inboundStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -352,18 +374,20 @@ export const inboundLists = pgTable('inbound_lists', {
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
+    suppliers,
     skus,
+    skuSuppliers,
     skuBarcodes,
     categories,
     skuCategories,
     deliveryProfiles,
-    carriers,
     warehouses,
     locations,
     stockEvents,
     stocks,
     outboundTaskItems,
     productMatchings,
+    productVariantSkuLinks,
     stockReservations,
     outboundTasks,
     outboundTaskLines,
