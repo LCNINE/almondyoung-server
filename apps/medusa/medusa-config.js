@@ -15,7 +15,7 @@ module.exports = defineConfig({
   },
   modules: [
     {
-      resolve: '../../libs/shared/src/events/src',
+      resolve: './src/modules/events',
       options: {
         kafka: {
           clientId: process.env.KAFKA_CLIENT_ID || 'medusa-service',
