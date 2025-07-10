@@ -1,4 +1,4 @@
-import { BaseEventPayload, EventDefinition } from '@app/events';
+import { BaseEventPayload, EventDefinition } from '../../../../libs/events/src';
 
 export interface UserCreatedPayload extends BaseEventPayload {
   userId: string;
