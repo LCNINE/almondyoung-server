@@ -1,16 +1,19 @@
-import {
-  Injectable,
-  Inject,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
-import { PaymentMethodStrategy } from './strategies/payment.strategy';
-import { PaymentProfileResponse } from 'hms-api-wrapper/dist/services/PaymentProfile/types';
-import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
+import { eq } from 'drizzle-orm';
+import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import * as schema from './schema';
-import { eq, and } from 'drizzle-orm';
+import { PaymentMethodStrategy } from './strategies/payment.strategy';
+
+type PaymentMethod = typeof schema.paymentMethod.$inferSelect;
+export type PaymentMethodWithDetails = PaymentMethod & {
+  card: typeof schema.cardMethod.$inferSelect | null;
+  bankAccount: typeof schema.bankAccountMethod.$inferSelect | null;
+  prepaidWallet: typeof schema.prepaidWalletMethod.$inferSelect | null;
+  bnpl: typeof schema.bnplMethod.$inferSelect | null;
+  rewardPoint: typeof schema.rewardPointMethod.$inferSelect | null;
+};
 
 /**
  * Payment method service handling CRUD operations and strategy coordination
@@ -26,17 +29,17 @@ export class PaymentMethodService {
   /**
    * Create new payment method using appropriate strategy
    */
-  async createPaymentMethod(
-    dto: CreatePaymentMethodDto,
-  ): Promise<PaymentProfileResponse> {
+  async createPaymentMethod(dto: CreatePaymentMethodDto): Promise<unknown> {
     const strategy = this.findStrategy(dto.methodType);
 
     // Discriminated Union으로 타입 자동 추론
     switch (dto.methodType) {
       case 'CARD':
-        return strategy.register(dto) as Promise<PaymentProfileResponse>;
+        return strategy.register(dto);
       case 'BANK_ACCOUNT':
-        return strategy.register(dto) as Promise<PaymentProfileResponse>;
+        return strategy.register(dto);
+      case 'BNPL':
+        return strategy.register(dto);
       default: {
         // exhaustive check - 새로운 타입 추가 시 컴파일 에러 발생
         const _exhaustiveCheck: never = dto;
@@ -46,64 +49,77 @@ export class PaymentMethodService {
   }
 
   /**
-   * Find payment method by ID
+   * ID로 결제 수단을 조회합니다.
+   *
+   * @param id - 결제 수단 ID
+   * @returns
    */
-  async findById(id: string) {
-    const paymentMethod = await this.dbService.db
-      .select()
-      .from(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.id, id))
-      .limit(1);
-
-    return paymentMethod[0] || null;
-  }
-
-  /**
-   * Find active payment methods by user ID
-   */
-  async findByUserId(userId: number) {
-    return this.dbService.db
-      .select()
-      .from(schema.paymentMethod)
-      .where(
-        and(
-          eq(schema.paymentMethod.userId, userId),
-          eq(schema.paymentMethod.status, 'ACTIVE'),
-        ),
-      );
-  }
-
-  /**
-   * Delete payment method using appropriate strategy
-   */
-  async deleteById(id: string) {
-    const paymentMethod = await this.findById(id);
-
-    if (!paymentMethod) {
-      throw new NotFoundException(`Payment method with ID ${id} not found`);
-    }
-
-    const strategy = this.findStrategy(paymentMethod.methodType);
-    await strategy.delete(id);
-  }
-
-  /**
-   * Set payment method as default
-   */
-  async setAsDefault(id: string, userId: number) {
-    return this.dbService.db.transaction(async (tx) => {
-      // 기존 기본 결제수단 해제
-      await tx
-        .update(schema.paymentMethod)
-        .set({ isDefault: false })
-        .where(eq(schema.paymentMethod.userId, userId));
-
-      // 새로운 기본 결제수단 설정
-      await tx
-        .update(schema.paymentMethod)
-        .set({ isDefault: true })
-        .where(eq(schema.paymentMethod.id, id));
+  async findById(id: string): Promise<PaymentMethodWithDetails | null> {
+    const result = await this.dbService.db.query.paymentMethod.findFirst({
+      where: eq(schema.paymentMethod.id, id),
+      with: {
+        card: true,
+        bankAccount: true,
+        prepaidWallet: true,
+        bnpl: true,
+        rewardPoint: true,
+      },
     });
+
+    return result as PaymentMethodWithDetails | null;
+  }
+
+  /**
+   * 사용자의 모든 결제 수단을 조회합니다.
+   * @param userId - 사용자 ID
+   * @returns
+   */
+  async findByUserId(userId: number): Promise<PaymentMethodWithDetails[]> {
+    const results = await this.dbService.db.query.paymentMethod.findMany({
+      where: eq(schema.paymentMethod.userId, userId),
+      with: {
+        card: true,
+        bankAccount: true,
+        prepaidWallet: true,
+        bnpl: true,
+        rewardPoint: true,
+      },
+    });
+    return results as PaymentMethodWithDetails[];
+  }
+
+  /**
+   * 결제 수단 정보를 업데이트합니다.
+   * @param id - 결제 수단 ID
+   * @param updates - 업데이트할 정보
+   * @returns
+   */
+  async update(
+    id: string,
+    updates: Partial<{ methodName: string; isDefault: boolean }>,
+  ): Promise<PaymentMethod | null> {
+    const [updated] = await this.dbService.db
+      .update(schema.paymentMethod)
+      .set(updates)
+      .where(eq(schema.paymentMethod.id, id))
+      .returning();
+
+    return updated || null;
+  }
+
+  /**
+   * 결제 수단을 삭제합니다. (Soft delete)
+   * @param id
+   * @returns
+   */
+  async delete(id: string): Promise<PaymentMethod | null> {
+    const [deleted] = await this.dbService.db
+      .update(schema.paymentMethod)
+      .set({ status: 'DELETED', updatedAt: new Date() })
+      .where(eq(schema.paymentMethod.id, id))
+      .returning();
+
+    return deleted || null;
   }
 
   /**

@@ -1,22 +1,39 @@
-import { ConflictException, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { InvoiceService } from '../invoice/invoice.service';
-import { PaymentMethodService } from '../payment-method/payment-method.service';
-import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto, PartialPaymentDto } from './dto/create-payment.dto';
-import { paymentEvents, refundEvents } from './schema';
-import * as schema from './schema';
-import * as invoiceSchema from '../invoice/schema';
-import * as paymentMethodSchema from '../payment-method/schema';
-import { eq, and } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
-import { UpdateInvoiceStatusDto } from '../invoice/dto/update-invoice-status.dto';
-import { ulid } from 'ulid';
-import { inArray } from 'drizzle-orm';
-import { PaymentStrategy } from './strategies/payment.strategy';
+import { and, eq, inArray } from 'drizzle-orm';
+import { InvoiceService } from '../invoice/invoice.service';
+import * as invoiceSchema from '../invoice/schema';
+import { PaymentMethodService } from '../payment-method/payment-method.service';
+import * as paymentMethodSchema from '../payment-method/schema';
+import {
+  CreatePaymentDto,
+  FullRefundPaymentDto,
+  PartialPaymentDto,
+  PartialRefundPaymentDto,
+} from './dto/create-payment.dto';
+import {
+  DuplicatePaymentAttemptedEvent,
+  PaymentFailedEvent,
+  PaymentSucceededEvent,
+  RefundFailedEvent,
+  RefundSucceededEvent,
+} from './events/payment.events';
+import * as schema from './schema';
+import { paymentEvents, refundEvents } from './schema';
 import { CardPaymentStrategy } from './strategies/card-payment.strategy';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DuplicatePaymentAttemptedEvent, PaymentFailedEvent, PaymentSucceededEvent, RefundFailedEvent, RefundSucceededEvent } from './events/payment.events';
+import { PaymentStrategy } from './strategies/payment.strategy';
+import {
+  PaymentEventRow,
+  RefundEventRow,
+  RefundWithPaymentDetails,
+} from './types/payment.types';
 
 // --- 상수 선언 ---
 const ERROR_MSG = {
@@ -38,29 +55,9 @@ const EVENT_TYPE = {
   DUPLICATE_ATTEMPT: 'DUPLICATE_ATTEMPT',
 } as const;
 
-type EventType = (typeof EVENT_TYPE)[keyof typeof EVENT_TYPE];
-
 const INVOICE_STATUS = {
   PAID: 'PAID',
-  FAILED: 'FAILED',
 } as const;
-
-type InvoiceStatus = typeof INVOICE_STATUS[keyof typeof INVOICE_STATUS];
-
-type PaymentEventRow = typeof paymentEvents.$inferSelect;
-type RefundEventRow = typeof refundEvents.$inferSelect;
-
-interface PaymentEvent {
-  id: string;
-  invoiceId: number;
-  paymentMethodId: string;
-  amount: string;
-  status: typeof EVENT_TYPE.SUCCESS | typeof EVENT_TYPE.FAILED;
-  pgTransactionId?: string;
-  pgResponse?: string;
-  actor: string;
-  createdAt?: Date;
-}
 
 @Injectable()
 export class PaymentService {
@@ -78,7 +75,13 @@ export class PaymentService {
     // NOTE: 현재는 카드 결제만 지원합니다.
     // 추후 paymentMethod.type에 따라 다른 전략을 반환하도록 확장할 수 있습니다.
     // 예: switch (paymentMethod.type) { case 'BANK_TRANSFER': ... }
-    return this.cardPaymentStrategy;
+
+    switch (paymentMethod.methodType) {
+      case 'CARD':
+        return this.cardPaymentStrategy;
+      default:
+        return this.cardPaymentStrategy;
+    }
   }
 
   /**
@@ -103,17 +106,20 @@ export class PaymentService {
     const strategy = this.getPaymentStrategy(paymentMethod);
 
     // 1. 결제 요청 이벤트 기록 (REQUESTED)
-    const [requestedEvent] = await this.dbService.db.insert(schema.paymentEvents).values({
-      invoiceId: invoice.id,
-      paymentMethodId: paymentMethod.id,
-      amount: invoice.amount.toString(),
-      status: EVENT_TYPE.REQUESTED,
-      actor: 'USER',
-    }).returning();
+    const [requestedEvent] = await this.dbService.db
+      .insert(schema.paymentEvents)
+      .values({
+        invoiceId: invoice.id,
+        paymentMethodId: paymentMethod.id,
+        amount: invoice.amount.toString(),
+        status: EVENT_TYPE.REQUESTED,
+        actor: 'USER',
+      })
+      .returning();
 
     // 2. PG사 연동 (전략 객체 위임)
     const payResult = await strategy.pay({ invoice, paymentMethod });
-    
+
     // 3. 결과에 따라 status 업데이트 및 이벤트 발행
     if (payResult.success) {
       const successEvent = await this.updatePaymentEvent(requestedEvent.id, {
@@ -159,7 +165,9 @@ export class PaymentService {
   /**
    * Validate payment request and fetch invoice/payment method.
    */
-  private async validatePaymentRequest(dto: CreatePaymentDto | PartialPaymentDto): Promise<{
+  private async validatePaymentRequest(
+    dto: CreatePaymentDto | PartialPaymentDto,
+  ): Promise<{
     invoice: typeof invoiceSchema.invoice.$inferSelect;
     paymentMethod: typeof paymentMethodSchema.paymentMethod.$inferSelect;
   }> {
@@ -170,7 +178,9 @@ export class PaymentService {
     if (!invoice) {
       throw new NotFoundException(ERROR_MSG.INVOICE_NOT_FOUND);
     }
-    const paymentMethod = await this.paymentMethodService.findById(dto.paymentMethodId);
+    const paymentMethod = await this.paymentMethodService.findById(
+      dto.paymentMethodId,
+    );
     if (!paymentMethod) {
       throw new NotFoundException(ERROR_MSG.PAYMENT_METHOD_NOT_FOUND);
     }
@@ -190,7 +200,10 @@ export class PaymentService {
     const paymentEvent = await this.findPaymentEvent(dto.paymentEventId);
     const invoice = await this.findInvoiceForPayment(paymentEvent);
 
-    const { prevRefunded } = await this.calculateRefundAmounts(paymentEvent, invoice);
+    const { prevRefunded } = await this.calculateRefundAmounts(
+      paymentEvent,
+      invoice,
+    );
     const refundAmount = Number(invoice.amount) - prevRefunded;
 
     if (refundAmount <= 0) {
@@ -210,10 +223,15 @@ export class PaymentService {
    * @param dto PartialRefundPaymentDto
    * @returns RefundEventRow (DB row)
    */
-  async refundPartialPayment(dto: PartialRefundPaymentDto): Promise<RefundEventRow> {
+  async refundPartialPayment(
+    dto: PartialRefundPaymentDto,
+  ): Promise<RefundEventRow> {
     const paymentEvent = await this.findPaymentEvent(dto.paymentEventId);
     const invoice = await this.findInvoiceForPayment(paymentEvent);
-    const { prevRefunded, invoiceAmount } = await this.calculateRefundAmounts(paymentEvent, invoice);
+    const { prevRefunded, invoiceAmount } = await this.calculateRefundAmounts(
+      paymentEvent,
+      invoice,
+    );
     const requestedAmount = dto.amount;
 
     if (requestedAmount <= 0) {
@@ -222,7 +240,7 @@ export class PaymentService {
     if (prevRefunded + requestedAmount > invoiceAmount) {
       throw new ConflictException(ERROR_MSG.OVER_REFUND_AMOUNT);
     }
-    
+
     return this._processRefund({
       paymentEvent,
       invoice,
@@ -231,7 +249,9 @@ export class PaymentService {
     });
   }
 
-  private async findPaymentEvent(paymentEventId: string): Promise<PaymentEventRow> {
+  private async findPaymentEvent(
+    paymentEventId: string,
+  ): Promise<PaymentEventRow> {
     const paymentEvent = await this.dbService.db.query.paymentEvents.findFirst({
       where: eq(schema.paymentEvents.id, paymentEventId),
     });
@@ -240,8 +260,10 @@ export class PaymentService {
     }
     return paymentEvent;
   }
-  
-  private async findInvoiceForPayment(paymentEvent: PaymentEventRow): Promise<typeof invoiceSchema.invoice.$inferSelect> {
+
+  private async findInvoiceForPayment(
+    paymentEvent: PaymentEventRow,
+  ): Promise<typeof invoiceSchema.invoice.$inferSelect> {
     const [invoice] = await this.dbService.db
       .select()
       .from(invoiceSchema.invoice)
@@ -252,16 +274,19 @@ export class PaymentService {
     return invoice;
   }
 
-  public async calculateRefundAmounts(paymentEvent: PaymentEventRow, invoice: typeof invoiceSchema.invoice.$inferSelect) {
+  public async calculateRefundAmounts(
+    paymentEvent: PaymentEventRow,
+    invoice: typeof invoiceSchema.invoice.$inferSelect,
+  ) {
     const allRefundEvents = await this.dbService.db
       .select()
       .from(refundEvents)
       .where(eq(refundEvents.paymentEventId, paymentEvent.id));
-      
+
     const prevRefunded = allRefundEvents
       .filter((e) => e.status === 'SUCCESS')
       .reduce((sum, e) => sum + Number(e.amount), 0);
-      
+
     const invoiceAmount = Number(invoice.amount);
     return { prevRefunded, invoiceAmount };
   }
@@ -269,18 +294,25 @@ export class PaymentService {
   /**
    * 공통 환불 처리 로직 (부분/전액 환불)
    */
-  private async _processRefund({ paymentEvent, amount, reason, invoice }: {
+  private async _processRefund({
+    paymentEvent,
+    amount,
+    reason,
+    invoice,
+  }: {
     paymentEvent: PaymentEventRow;
     amount: number;
     reason?: string;
     invoice: typeof invoiceSchema.invoice.$inferSelect;
   }): Promise<RefundEventRow> {
-    const paymentMethod = await this.paymentMethodService.findById(paymentEvent.paymentMethodId);
+    const paymentMethod = await this.paymentMethodService.findById(
+      paymentEvent.paymentMethodId,
+    );
     if (!paymentMethod) {
       throw new NotFoundException(ERROR_MSG.PAYMENT_METHOD_NOT_FOUND);
     }
     const strategy = this.getPaymentStrategy(paymentMethod);
-    
+
     // PG사 환불 요청
     const refundResult = await strategy.refund({
       paymentEventToRefund: paymentEvent,
@@ -288,31 +320,42 @@ export class PaymentService {
       amount,
       reason,
     });
-    
+
     if (!refundResult.success) {
-      const failedEvent = await this.dbService.db.insert(refundEvents).values({
-        paymentEventId: paymentEvent.id,
-        amount: amount.toString(),
-        status: 'FAILED',
-        reason: reason || ERROR_MSG.REFUND_FAILED,
-        // pgResponse and pgTransactionId should be added to refundEvents schema
-      }).returning();
-      
+      await this.dbService.db
+        .insert(refundEvents)
+        .values({
+          paymentEventId: paymentEvent.id,
+          amount: amount.toString(),
+          status: 'FAILED',
+          reason: reason || ERROR_MSG.REFUND_FAILED,
+          // pgResponse and pgTransactionId should be added to refundEvents schema
+        })
+        .returning();
+
       this.eventEmitter.emit(
         'refund.failed',
-        new RefundFailedEvent(invoice, paymentEvent, amount, refundResult.pgResponse),
+        new RefundFailedEvent(
+          invoice,
+          paymentEvent,
+          amount,
+          refundResult.pgResponse,
+        ),
       );
       throw new BadRequestException(ERROR_MSG.REFUND_FAILED);
     }
 
     // 환불 성공 이벤트 기록
-    const [refundEvent] = await this.dbService.db.insert(refundEvents).values({
-      paymentEventId: paymentEvent.id,
-      amount: amount.toString(),
-      status: 'SUCCESS',
-      reason: reason || 'Refund successful',
-      // pgResponse and pgTransactionId should be added to refundEvents schema
-    }).returning();
+    const [refundEvent] = await this.dbService.db
+      .insert(refundEvents)
+      .values({
+        paymentEventId: paymentEvent.id,
+        amount: amount.toString(),
+        status: 'SUCCESS',
+        reason: reason || 'Refund successful',
+        // pgResponse and pgTransactionId should be added to refundEvents schema
+      })
+      .returning();
 
     // 이벤트 발행
     this.eventEmitter.emit(
@@ -328,7 +371,9 @@ export class PaymentService {
    * @param paymentEventId 결제 이벤트 ID
    * @returns 환불 이벤트 + 결제 이벤트 정보 배열
    */
-  async getRefundsByPaymentEventId(paymentEventId: string): Promise<Array<any>> {
+  async getRefundsByPaymentEventId(
+    paymentEventId: string,
+  ): Promise<RefundWithPaymentDetails[]> {
     // 환불 이벤트 목록 조회
     const refundList = await this.dbService.db
       .select()
@@ -340,7 +385,7 @@ export class PaymentService {
       where: eq(schema.paymentEvents.id, paymentEventId),
     });
     // 결제 이벤트 정보가 없으면 환불만 반환
-    return refundList.map(refund => ({
+    return refundList.map((refund) => ({
       ...refund,
       payment: paymentEvent
         ? {
@@ -358,44 +403,46 @@ export class PaymentService {
    * @param userId 유저 ID
    * @returns 환불 이벤트 + 결제 이벤트 정보 배열
    */
-  async getRefundsByUserId(userId: string | number): Promise<Array<any>> {
+  async getRefundsByUserId(
+    userId: string | number,
+  ): Promise<RefundWithPaymentDetails[]> {
     const numericUserId = typeof userId === 'string' ? Number(userId) : userId;
     const invoices = await this.dbService.db
       .select({ id: invoiceSchema.invoice.id })
       .from(invoiceSchema.invoice)
       .where(eq(invoiceSchema.invoice.userId, numericUserId));
-    console.log('invoices:', invoices);
     if (!invoices.length) return [];
-    const invoiceIds = invoices.map(inv => inv.id);
+    const invoiceIds = invoices.map((inv) => inv.id);
 
     const paymentEventsList = await this.dbService.db
       .select()
       .from(paymentEvents)
       .where(inArray(paymentEvents.invoiceId, invoiceIds));
-    console.log('paymentEventsList:', paymentEventsList);
     if (!paymentEventsList.length) return [];
-    const paymentEventIds = paymentEventsList.map(pe => pe.id);
+    const paymentEventIds = paymentEventsList.map((pe) => pe.id);
 
     const refundList = await this.dbService.db
       .select()
       .from(refundEvents)
       .where(inArray(refundEvents.paymentEventId, paymentEventIds));
-    console.log('refundList:', refundList);
     if (!refundList.length) return [];
-    
-    const paymentEventMap = Object.fromEntries(paymentEventsList.map(pe => [pe.id, pe]));
-    const result = refundList.map(refund => ({
-      ...refund,
-      payment: paymentEventMap[refund.paymentEventId]
-        ? {
-            amount: paymentEventMap[refund.paymentEventId].amount,
-            createdAt: paymentEventMap[refund.paymentEventId].createdAt,
-            paymentMethodId: paymentEventMap[refund.paymentEventId].paymentMethodId,
-            invoiceId: paymentEventMap[refund.paymentEventId].invoiceId,
-          }
-        : undefined,
-    }));
-    console.log('result:', result);
+
+    const paymentEventMap = new Map(paymentEventsList.map((pe) => [pe.id, pe]));
+
+    const result: RefundWithPaymentDetails[] = refundList.map((refund) => {
+      const paymentEvent = paymentEventMap.get(refund.paymentEventId);
+      return {
+        ...refund,
+        payment: paymentEvent
+          ? {
+              amount: paymentEvent.amount,
+              createdAt: paymentEvent.createdAt,
+              paymentMethodId: paymentEvent.paymentMethodId,
+              invoiceId: paymentEvent.invoiceId,
+            }
+          : undefined,
+      };
+    });
     return result;
   }
 
@@ -427,30 +474,35 @@ export class PaymentService {
 
     // 3. 초과 결제 방지
     if (paidAmount + dto.amount > Number(invoice.amount)) {
-      throw new ConflictException('결제 금액이 청구 금액을 초과할 수 없습니다.');
+      throw new ConflictException(
+        '결제 금액이 청구 금액을 초과할 수 없습니다.',
+      );
     }
 
     // 4. createPayment와 동일한 흐름으로 결제 처리
     const strategy = this.getPaymentStrategy(paymentMethod);
-    
+
     // 4-1. 결제 요청 이벤트 기록 (REQUESTED)
     // 부분 결제이므로 요청 금액은 dto.amount를 사용
-    const [requestedEvent] = await this.dbService.db.insert(paymentEvents).values({
-      invoiceId: invoice.id,
-      paymentMethodId: dto.paymentMethodId,
-      amount: dto.amount.toString(),
-      status: 'REQUESTED',
-      actor: 'USER',
-    }).returning();
+    const [requestedEvent] = await this.dbService.db
+      .insert(paymentEvents)
+      .values({
+        invoiceId: invoice.id,
+        paymentMethodId: dto.paymentMethodId,
+        amount: dto.amount.toString(),
+        status: 'REQUESTED',
+        actor: 'USER',
+      })
+      .returning();
 
     // 4-2. PG사 연동 (전략 객체 위임)
     // 부분 결제 금액으로 임시 invoice 객체를 만들어 전달
     const tempInvoiceForPay = { ...invoice, amount: dto.amount.toString() };
     const payResult = await strategy.pay({
-        invoice: tempInvoiceForPay,
-        paymentMethod
+      invoice: tempInvoiceForPay,
+      paymentMethod,
     });
-    
+
     // 4-3. 결과에 따라 status 업데이트 및 이벤트 발행
     if (payResult.success) {
       const successEvent = await this.updatePaymentEvent(requestedEvent.id, {

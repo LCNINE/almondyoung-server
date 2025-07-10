@@ -1,8 +1,11 @@
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 // 카드 결제수단 생성 DTO (HMS API 필수 필드 포함)
 export interface CreateCardPaymentMethodDto {
   methodType: 'CARD';
   userId: number;
+  methodName: string;
   isDefault?: boolean;
+  institutionCode: string;
   // HMS API 필수 필드들
   memberName: string;
   phone: string;
@@ -18,18 +21,45 @@ export interface CreateCardPaymentMethodDto {
   payerName: string;
 }
 
-// 은행계좌 결제수단 생성 DTO (향후 확장용)
-export interface CreateBankPaymentMethodDto {
+// 계좌이체 결제수단 생성 DTO (가상)
+export interface CreateBankAccountPaymentMethodDto {
   methodType: 'BANK_ACCOUNT';
   userId: number;
+  methodName: string;
   isDefault?: boolean;
-  // 은행 관련 필드들
+  institutionCode: string;
+  // 계좌 관련 필드들
   bankCode: string;
   accountNumber: string;
   accountHolderName: string;
 }
 
-// Discriminated Union Type
+// BNPL 결제수단 생성 DTO
+export interface CreateBnplPaymentMethodDto {
+  methodType: 'BNPL';
+  userId: number;
+  methodName: string;
+  isDefault?: boolean;
+  institutionCode: string;
+  // BNPL 관련 선택적 필드
+  creditLimit?: number;
+  approvedLimit?: number;
+  termsUrl?: string;
+}
+
+// 통합 DTO 타입 (Discriminated Union)
 export type CreatePaymentMethodDto =
   | CreateCardPaymentMethodDto
-  | CreateBankPaymentMethodDto;
+  | CreateBankAccountPaymentMethodDto
+  | CreateBnplPaymentMethodDto;
+
+export class UpdatePaymentMethodDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  methodName?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isDefault?: boolean;
+}

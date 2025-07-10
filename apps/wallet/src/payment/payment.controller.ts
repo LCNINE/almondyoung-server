@@ -1,6 +1,19 @@
-import { Body, Controller, Get, Param, Post, Query, NotFoundException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { PaymentService } from './payment.service';
-import { CreatePaymentDto, RefundPaymentDto, FullRefundPaymentDto, PartialRefundPaymentDto, PartialPaymentDto } from './dto/create-payment.dto';
+import {
+  CreatePaymentDto,
+  RefundPaymentDto,
+  PartialPaymentDto,
+} from './dto/create-payment.dto';
+import { RefundWithPaymentDetails } from './types/payment.types';
 
 /**
  * Controller for handling payment-related endpoints.
@@ -12,18 +25,13 @@ export class PaymentController {
   /**
    * Get all payments (stub, implement as needed)
    */
-    @Get()
-    async getPayments() {
-    // TODO: Implement payment list retrieval
-            return 'Payments';
-    }
-    
+
   /**
    * Create a new payment based on invoice and payment method.
    * @param body Payment creation DTO
    * @returns Payment event result
    */
-    @Post()
+  @Post()
   async createPayment(@Body() body: CreatePaymentDto) {
     return this.paymentService.createPayment(body);
   }
@@ -53,10 +61,11 @@ export class PaymentController {
     @Param('paymentId') paymentId: string,
     @Param('refundId') refundId: string,
   ) {
-    const refunds = await this.paymentService.getRefundsByPaymentEventId(
-      paymentId,
+    const refunds =
+      await this.paymentService.getRefundsByPaymentEventId(paymentId);
+    const refund = refunds.find(
+      (item: RefundWithPaymentDetails) => item.id === refundId,
     );
-    const refund = refunds.find((r) => r.id === refundId);
     if (!refund) {
       throw new NotFoundException(
         `Refund with ID ${refundId} not found for payment ${paymentId}`,
@@ -69,8 +78,9 @@ export class PaymentController {
    * 결제 단건 조회 (가장 포괄적인 경로, 마지막에 위치)
    */
   @Get(':id')
-  async getPayment(@Param('id') id: string) {
+  getPayment(@Param('id') id: string): string {
     // TODO: Implement payment detail retrieval
+    console.log(`Fetching payment with id: ${id}`);
     return 'Payment';
   }
 

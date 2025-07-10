@@ -1,5 +1,4 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ulid } from 'ulid';
 import {
   PayRequest,
   PgPayResult,
@@ -36,4 +35,4 @@ export class CardPaymentStrategy implements PaymentStrategy {
       originalAmount: originalPaymentAmount,
     });
   }
-} 
+}
