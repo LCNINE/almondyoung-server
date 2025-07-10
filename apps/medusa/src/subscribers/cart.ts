@@ -4,6 +4,8 @@ import {
   Events,
   CART_EVENTS,
 } from '../../../../libs/shared/src/events/cart.events';
+import { container } from '@medusajs/framework';
+import { Modules } from '@medusajs/framework/utils';
 
 interface MedusaCartData {
   id: string;
@@ -21,7 +23,7 @@ interface MedusaCartData {
 }
 
 export const config: SubscriberConfig = {
-  event: 'cart.*',
+  event: ['cart.created', 'cart.updated'],
   context: {
     subscriberId: 'cart-kafka-bridge',
   },
@@ -34,6 +36,13 @@ export const handler = async (data: SubscriberArgs<MedusaCartData>) => {
   // Medusa 이벤트를 Kafka 이벤트로 변환
   const eventType = data.event.name;
   const eventData = data.event.data;
+
+  const cartService = data.container.resolve(Modules.CART);
+  const cart = await cartService.retrieveCart(data.event.data.id, {
+    relations: ['items'],
+  });
+
+  console.log('cart:', cart);
 
   if (eventType === 'cart.created') {
     await eventPublisher.publishEvent(CART_EVENTS.CART_CREATED.topic, {
