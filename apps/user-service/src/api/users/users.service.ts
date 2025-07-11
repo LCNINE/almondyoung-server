@@ -73,7 +73,6 @@ export class UsersService {
       .where(eq(schema.users.id, id))
       .limit(1);
 
-    console.log('잘 찾았다:', users);
     return users;
   }
 
