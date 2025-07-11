@@ -36,10 +36,13 @@ export default defineMiddlewares({
               const userService =
                 req.scope.resolve<UserModuleService>(USER_MODULE);
 
-              const user = await userService.getMe(token);
+              const user = await userService.verifyToken(token);
 
               if (user) {
-                req.user = user;
+                req.user = {
+                  customer_id: user.id,
+                  userId: user.id,
+                };
               }
             } catch (error) {
               console.error('Token verification failed:', error);

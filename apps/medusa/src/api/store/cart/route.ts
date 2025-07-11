@@ -19,9 +19,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ...(req.validatedBody as object),
     };
 
-    const userId = (req.user as User)?.id;
-
-    console.log('req.user', req.user);
+    const userId = req.user?.userId;
 
     if (userId) {
       const userService = req.scope.resolve<UserModuleService>(USER_MODULE);
@@ -33,6 +31,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         });
         return;
       }
+
+      if (userId !== user.id) {
+        res.status(403).json({
+          message: '이 장바구니에 접근할 권한이 없습니다.',
+        });
+        return;
+      }
+
       cartData.customer_id = userId;
     }
 
