@@ -40,7 +40,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         return;
       }
 
-      cartData.customer_id = userId;
+      cartData.customer_id = user.id;
     }
 
     const { result } = await createCartWorkflow(req.scope).run({
@@ -51,6 +51,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     res.json(result);
   } catch (error) {
+    console.log('error:', error);
     if (error instanceof MedusaError) {
       switch (error.type) {
         case 'invalid_data':
