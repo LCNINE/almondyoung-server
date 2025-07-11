@@ -54,13 +54,26 @@ export class UsersService {
     return users;
   }
 
-  async findUserById(id: string): Promise<schema.User | null> {
+  async findUserById(
+    id: string,
+  ): Promise<Omit<schema.User, 'password'> | null> {
     const [users] = await this.dbService.db
-      .select()
+      .select({
+        id: schema.users.id,
+        loginId: schema.users.loginId,
+        username: schema.users.username,
+        email: schema.users.email,
+        isEmailVerified: schema.users.isEmailVerified,
+        lastActivityAt: schema.users.lastActivityAt,
+        deletedAt: schema.users.deletedAt,
+        createdAt: schema.users.createdAt,
+        updatedAt: schema.users.updatedAt,
+      })
       .from(schema.users)
       .where(eq(schema.users.id, id))
       .limit(1);
 
+    console.log('잘 찾았다:', users);
     return users;
   }
 

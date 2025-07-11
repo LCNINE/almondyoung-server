@@ -13,6 +13,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { User } from 'apps/user-service/database/drizzle/schema';
+import { Public } from '../../commons/decorators/public.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -34,6 +35,7 @@ export class UsersController {
   }
 
   @Get(':id')
+  @Public()
   async getUser(@Param('id') id: string) {
     return this.usersService.findUserById(id);
   }

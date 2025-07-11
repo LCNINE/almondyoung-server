@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { User } from '../../types/user.type';
 
 export default class UserModuleService {
   private client: AxiosInstance;
@@ -18,41 +19,46 @@ export default class UserModuleService {
     });
   }
 
-  async retrieveUser(userId: string) {
+  async retrieveUser(userId: string): Promise<User> {
     try {
       const response = await this.client.get(`/users/${userId}`);
-      return response.data;
+
+      return response.data.data;
     } catch (error) {
-      throw new Error(`유저 정보 조회 실패: ${error}`);
+      if (axios.isAxiosError(error)) {
+        console.error(
+          'Axios 응답 에러:',
+          error.response?.status,
+          error.response?.data,
+        );
+      } else {
+        console.error('Unknown Error:', error);
+      }
+      throw new Error(`유저 정보 조회 실패`);
     }
   }
 
-  async retrieveUserByEmail(email: string) {
+  async retrieveUserByEmail(email: string): Promise<User> {
     try {
       const response = await this.client.get(`/users`, {
         params: { email },
       });
-      return response.data;
+      return response.data.data;
     } catch (error) {
       throw new Error(`유저 이메일 조회 실패: ${error}`);
     }
   }
 
-  async getMe(token: string) {
+  async verifyToken(token: string): Promise<User> {
     try {
       const response = await this.client.get('/users/me', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-
-      return response.data;
+      return response.data.data;
     } catch (error) {
       throw new Error(`사용자 정보 조회 실패: ${error}`);
     }
-  }
-
-  async verifyToken(token: string) {
-    return this.getMe(token);
   }
 }
