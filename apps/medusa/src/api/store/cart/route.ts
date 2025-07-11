@@ -5,6 +5,7 @@ import { CreateCartDTO, CreateLineItemDTO } from '@medusajs/types';
 import { USER_MODULE } from '../../../modules/user';
 import type UserModuleService from '../../../modules/user/service';
 import { User } from '../../../types/user.type';
+import { createCartWorkflow } from '@medusajs/medusa/core-flows';
 
 /**
  * 장바구니 생성
@@ -42,8 +43,13 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       cartData.customer_id = userId;
     }
 
-    const cart = await cartService.createCarts(cartData);
-    res.json(cart);
+    const { result } = await createCartWorkflow(req.scope).run({
+      input: {
+        ...cartData,
+      },
+    });
+
+    res.json(result);
   } catch (error) {
     if (error instanceof MedusaError) {
       switch (error.type) {
