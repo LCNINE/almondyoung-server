@@ -24,9 +24,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     const userId = (req.user as MedusaUser)?.id;
 
+    console.log('req.user', req.user);
+
     if (userId) {
       const userService = req.scope.resolve<UserModuleService>(USER_MODULE);
-      const user = await userService.getUserById(userId);
+      const user = await userService.retrieveUser(userId);
 
       if (!user) {
         res.status(404).json({

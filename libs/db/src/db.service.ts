@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+
+const postgres = require('postgres');
 
 export const DB_CONNECTION = 'DB_CONNECTION';
 export const DB_SCHEMA = 'DB_SCHEMA';

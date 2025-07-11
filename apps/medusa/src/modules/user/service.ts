@@ -18,23 +18,41 @@ export default class UserModuleService {
     });
   }
 
-  async getUserById(id: string) {
+  async retrieveUser(userId: string) {
     try {
-      const response = await this.client.get(`/api/users/${id}`);
+      const response = await this.client.get(`/users/${userId}`);
       return response.data;
     } catch (error) {
       throw new Error(`유저 정보 조회 실패: ${error}`);
     }
   }
 
-  async getUserByEmail(email: string) {
+  async retrieveUserByEmail(email: string) {
     try {
-      const response = await this.client.get(`/api/users`, {
+      const response = await this.client.get(`/users`, {
         params: { email },
       });
       return response.data;
     } catch (error) {
       throw new Error(`유저 이메일 조회 실패: ${error}`);
     }
+  }
+
+  async getMe(token: string) {
+    try {
+      const response = await this.client.get('/users/me', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      throw new Error(`사용자 정보 조회 실패: ${error}`);
+    }
+  }
+
+  async verifyToken(token: string) {
+    return this.getMe(token);
   }
 }

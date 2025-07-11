@@ -39,5 +39,20 @@ module.exports = defineConfig({
         serviceName: 'medusa',
       },
     },
+    {
+      resolve: './src/modules/user',
+      type: 'custom',
+      options: {
+        userServiceUrl: process.env.USER_SERVICE_URL,
+      },
+    },
   ],
+  middlewares: {
+    store: [
+      {
+        resolve: './src/api/middlewares',
+        options: {},
+      },
+    ],
+  },
 });
