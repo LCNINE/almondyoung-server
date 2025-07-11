@@ -125,7 +125,11 @@ export class UsersService {
         throw new NotFoundException('사용자 정보를 찾을 수 없습니다.');
       }
 
-      return userData;
+      return {
+        ...userData,
+        id: user.id,
+        isEmailVerified: user.isEmailVerified,
+      };
     } catch (error) {
       throw new InternalServerErrorException(
         '사용자 정보를 불러오는 중 오류가 발생했습니다.',
