@@ -4,10 +4,7 @@ import { MedusaError } from '@medusajs/utils';
 import { CreateCartDTO, CreateLineItemDTO } from '@medusajs/types';
 import { USER_MODULE } from '../../../modules/user';
 import type UserModuleService from '../../../modules/user/service';
-
-interface MedusaUser {
-  id: string;
-}
+import { User } from '../../../types/user.type';
 
 /**
  * 장바구니 생성
@@ -22,7 +19,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ...(req.validatedBody as object),
     };
 
-    const userId = (req.user as MedusaUser)?.id;
+    const userId = (req.user as User)?.id;
 
     console.log('req.user', req.user);
 
@@ -111,7 +108,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // 로그인한 경우 소유자 확인
-    const userId = (req.user as MedusaUser)?.id;
+    const userId = (req.user as User)?.id;
     if (userId && cart.customer_id && cart.customer_id !== userId) {
       res.status(403).json({
         message: '이 장바구니에 접근할 권한이 없습니다.',
@@ -190,7 +187,7 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // 로그인한 경우 소유자 확인
-    const userId = (req.user as MedusaUser)?.id;
+    const userId = (req.user as User)?.id;
     if (
       userId &&
       existingCart.customer_id &&
@@ -272,7 +269,7 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // 로그인한 경우 소유자 확인
-    const userId = (req.user as MedusaUser)?.id;
+    const userId = (req.user as User)?.id;
     if (
       userId &&
       existingCart.customer_id &&
