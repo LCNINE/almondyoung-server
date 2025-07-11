@@ -31,10 +31,9 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const user = request['user'] as JwtPayload;
 
-    //  사용자의 역할 조회 (만료되지 않은 역할만)
-    const userRoles = await this.dbService.db
+    const userScopes = await this.dbService.db
       .select({
-        roleId: schema.userRoleAssignments.roleId,
+        scope_name: schema.scopes.scopeName,
       })
       .from(schema.userRoleAssignments)
       .where(
@@ -42,29 +41,22 @@ export class RolesGuard implements CanActivate {
           eq(schema.userRoleAssignments.userId, user.sub),
           isNull(schema.userRoleAssignments.expiresAt),
         ),
-      );
-    console.log('userRoles:', userRoles);
-    if (!userRoles.length) {
-      return false;
-    }
-
-    //  역할에 할당된 스코프 조회
-    const roleIds = userRoles.map((role) => role.roleId);
-    const roleScopes = await this.dbService.db
-      .select({
-        scopeName: schema.scopes.scopeName,
-      })
-      .from(schema.roleScopes)
+      )
+      .leftJoin(
+        schema.roles,
+        eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
+      )
+      .leftJoin(
+        schema.roleScopes,
+        eq(schema.roles.roleId, schema.roleScopes.roleId),
+      )
       .leftJoin(
         schema.scopes,
         eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
-      )
-      .where(inArray(schema.roleScopes.roleId, roleIds));
+      );
 
-    // 사용자가 가진 모든 스코프를 Set으로 변환
-    const userScopes = new Set(roleScopes.map((scope) => scope.scopeName));
-    console.log('userScopes:', userScopes);
-    //  필요한 모든 스코프를 가지고 있는지 확인
-    return requiredScopes.every((scope) => userScopes.has(scope));
+    const userScopeSet = new Set(userScopes.map((scope) => scope.scope_name));
+
+    return requiredScopes.every((scope) => userScopeSet.has(scope));
   }
 }
