@@ -168,6 +168,13 @@ export class UsersService {
           eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
         );
 
+      console.log({
+        ...userData,
+        id: user.id,
+        isEmailVerified: user.isEmailVerified,
+        roles: userRolesWithScopes,
+      });
+
       return {
         ...userData,
         id: user.id,
