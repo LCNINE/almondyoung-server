@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { User } from '../../../database/drizzle/schema';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -137,10 +137,42 @@ export class UsersService {
         throw new NotFoundException('사용자 정보를 찾을 수 없습니다.');
       }
 
+      const userRolesWithScopes = await this.dbService.db
+        .select({
+          role: {
+            id: schema.roles.roleId,
+            name: schema.roles.name,
+          },
+          scopes: {
+            scope_name: schema.scopes.scopeName,
+            description: schema.scopes.description,
+          },
+        })
+        .from(schema.userRoleAssignments)
+        .where(
+          and(
+            eq(schema.userRoleAssignments.userId, user.id),
+            isNull(schema.userRoleAssignments.expiresAt),
+          ),
+        )
+        .leftJoin(
+          schema.roles,
+          eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
+        )
+        .leftJoin(
+          schema.roleScopes,
+          eq(schema.roles.roleId, schema.roleScopes.roleId),
+        )
+        .leftJoin(
+          schema.scopes,
+          eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
+        );
+
       return {
         ...userData,
         id: user.id,
         isEmailVerified: user.isEmailVerified,
+        roles: userRolesWithScopes,
       };
     } catch (error) {
       throw new InternalServerErrorException(
