@@ -1,4 +1,9 @@
-const { loadEnv, defineConfig } = require('@medusajs/framework/utils');
+const {
+  loadEnv,
+  defineConfig,
+  Modules,
+  ContainerRegistrationKeys,
+} = require('@medusajs/framework/utils');
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd());
 
@@ -39,6 +44,27 @@ module.exports = defineConfig({
         serviceName: 'medusa',
       },
     },
+    {
+      resolve: '@medusajs/medusa/auth',
+      dependencies: [Modules.CACHE, ContainerRegistrationKeys.LOGGER],
+      options: {
+        providers: [
+          // default provider
+          {
+            resolve: '@medusajs/medusa/auth-emailpass',
+            id: 'emailpass',
+          },
+          {
+            resolve: './src/modules/auth',
+            id: 'my-auth',
+            options: {
+              // provider options...
+            },
+          },
+        ],
+      },
+    },
+
     {
       resolve: './src/modules/user',
       type: 'custom',

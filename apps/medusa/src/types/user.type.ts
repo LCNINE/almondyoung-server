@@ -1,5 +1,6 @@
 export interface User {
   id: string;
+  email: string;
   isEmailVerified: boolean;
   username: string;
   profile: {
@@ -10,4 +11,14 @@ export interface User {
     created_at: string;
     updated_at: string;
   };
+  roles: {
+    role: {
+      id: string;
+      name: string;
+    };
+    scopes: {
+      scope_name: string;
+      description: string;
+    }[];
+  }[];
 }

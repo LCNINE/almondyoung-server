@@ -16,13 +16,14 @@ export default class UserModuleService {
       headers: {
         'Content-Type': 'application/json',
       },
+      withCredentials: true,
     });
   }
 
   async retrieveUser(userId: string): Promise<User> {
     try {
       const response = await this.client.get(`/users/${userId}`);
-
+      console.log('response:', response.data.data);
       return response.data.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -59,6 +60,19 @@ export default class UserModuleService {
       return response.data.data;
     } catch (error) {
       throw new Error(`사용자 정보 조회 실패: ${error}`);
+    }
+  }
+
+  async fetchUser(token: string): Promise<User> {
+    try {
+      const response = await this.client.get(`/users/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.data.data;
+    } catch (error) {
+      throw new Error(`유저 정보 조회 실패: ${error.response?.data.message}`);
     }
   }
 }
