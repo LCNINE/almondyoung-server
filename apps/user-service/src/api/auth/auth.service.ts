@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   Res,
   UnauthorizedException,
@@ -29,6 +30,8 @@ import { UserEvents } from '@app/shared/events/user.events';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -221,10 +224,17 @@ export class AuthService {
         .where(eq(schema.tokens.value, token));
 
       // 기본 역할 설정
-      await this.rolesService.setDefaultRoles(
+      const userRole = await this.rolesService.setRole(
         verificationToken.user.id,
         'user',
       );
+      // 권한 설정
+      const assignment = await this.rolesService.assignUserRole(
+        verificationToken.user.id,
+        userRole.roleId,
+      );
+
+      this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
       // access 토큰 발급
       const accessToken = await this.getAccessToken(
@@ -314,7 +324,15 @@ export class AuthService {
     await this.lastActivityAtUpdate(user);
 
     // 기본 역할 설정, 포스트맨으로 회원가입 테스트시 주석제
-    // await this.rolesService.setDefaultRoles(user.id, 'user');
+    // const userRole = await this.rolesService.setRole(
+    //   user.id,
+    //   'user',
+    // );
+    // const assignment = await this.rolesService.assignUserRole(
+    //   user.id,
+    //   userRole.roleId,
+    // );
+    // this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
     return accessToken;
   }
@@ -353,6 +371,7 @@ export class AuthService {
         // 토큰 발급 후 리다이렉트
         await this.setRefreshToken(existingIdentity.user.id, reply, false);
         await this.getAccessToken(existingIdentity.user, reply);
+        await this.lastActivityAtUpdate(existingIdentity.user); // 마지막 활동일 업데이트
 
         return reply
           .status(302)
@@ -413,6 +432,7 @@ export class AuthService {
         // 토큰 발급 (트랜잭션 내에서)
         await this.setRefreshToken(newUser.id, reply, false, tx);
         await this.getAccessToken(newUser, reply, tx);
+        await this.lastActivityAtUpdate(newUser); // 마지막 활동일 업데이트
 
         // 사용자 생성 이벤트 발행
         await this.eventPublisher.publishEvent('USER_CREATED', {

@@ -5,5 +5,6 @@ import { ScopesController } from './scopes.controller';
 @Module({
   controllers: [ScopesController],
   providers: [ScopesService],
+  exports: [ScopesService],
 })
 export class ScopesModule {}
