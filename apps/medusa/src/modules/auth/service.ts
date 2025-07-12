@@ -24,7 +24,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
   ): Promise<AuthenticationResponse> {
     try {
       await authIdentityProviderService.retrieve({
-        entity_id: data.body!.loginId, // email or some ID
+        entity_id: data.body!.user_id, // email or some ID
       });
 
       return {
@@ -34,7 +34,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
         const createdAuthIdentity = await authIdentityProviderService.create({
-          entity_id: data.body!.loginId, // email or some ID
+          entity_id: data.body!.user_id, // email or some ID
           provider_metadata: {
             // can include password or any other relevant information
           },
