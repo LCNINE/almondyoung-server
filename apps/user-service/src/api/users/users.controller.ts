@@ -36,7 +36,7 @@ export class UsersController {
 
   @Get(':id')
   @Public()
-  async getUser(@Param('id') id: string) {
+  async getUserInfo(@Param('id') id: string) {
     return this.usersService.findUserById(id);
   }
 }
