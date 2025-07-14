@@ -17,6 +17,10 @@ module.exports = defineConfig({
       jwtSecret: process.env.JWT_SECRET || 'supersecret',
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
     },
+
+    http: {
+      jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
+    },
   },
 
   modules: [
@@ -53,7 +57,7 @@ module.exports = defineConfig({
           // default provider
           {
             resolve: '@medusajs/medusa/auth-emailpass',
-            id: 'emailpass',
+            id: 'loginId',
           },
           {
             resolve: './src/modules/auth',

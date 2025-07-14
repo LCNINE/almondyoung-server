@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Query,
   Redirect,
   Req,
   Res,
@@ -46,8 +47,9 @@ export class AuthController {
   async signIn(
     @Body(ValidationPipe) signInDto: SignInDto,
     @Res({ passthrough: true }) res: FastifyReply,
+    @Query('redirect_to') redirectTo?: string,
   ) {
-    return this.authService.signIn(signInDto, res);
+    return this.authService.signIn(signInDto, res, redirectTo);
   }
 
   @Post('signout')
@@ -59,14 +61,14 @@ export class AuthController {
     return this.authService.signOut(request, user);
   }
 
-  @Post('refresh')
+  @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  async restoreAccessToken(
+  async restoreToken(
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
-    return this.authService.refreshToken(user, res);
+    return this.authService.restoreToken(user, res);
   }
 
   @Post('change-password')

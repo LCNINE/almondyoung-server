@@ -237,7 +237,7 @@ export class AuthService {
       this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
       // access 토큰 발급
-      const accessToken = await this.getAccessToken(
+      const { accessToken } = await this.getAccessToken(
         verificationToken.user,
         reply,
       );
@@ -249,7 +249,7 @@ export class AuthService {
         name: verificationToken.user.username,
       });
 
-      return accessToken;
+      return { accessToken };
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
@@ -299,7 +299,8 @@ export class AuthService {
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
-  ): Promise<{ accessToken: string }> {
+    redirectTo?: string,
+  ): Promise<void | { accessToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
     if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
 
@@ -318,7 +319,7 @@ export class AuthService {
       throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
     await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
-    const accessToken = await this.getAccessToken(user, reply);
+    const { accessToken } = await this.getAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
@@ -334,7 +335,24 @@ export class AuthService {
     // );
     // this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
-    return accessToken;
+    if (redirectTo) {
+      const whitelist = [
+        'http://localhost:3000',
+        process.env.MEDUSA_CALLBACK_URL!,
+        process.env.CORS_ORIGIN_DOMAIN!,
+      ];
+
+      if (!whitelist.some((url) => redirectTo.startsWith(url))) {
+        throw new BadRequestException('Invalid redirect URL');
+      }
+
+      const url = new URL(redirectTo);
+      url.searchParams.set('token', accessToken);
+
+      return reply.status(302).redirect(url.toString());
+    }
+
+    return { accessToken };
   }
 
   async signInWithKakao(
@@ -631,7 +649,7 @@ export class AuthService {
     return { refreshToken };
   }
 
-  async refreshToken(user: schema.User, reply: FastifyReply) {
+  async restoreToken(user: schema.User, reply: FastifyReply) {
     return this.getAccessToken(user, reply);
   }
 

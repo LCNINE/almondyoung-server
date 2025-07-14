@@ -20,6 +20,19 @@ export default class UserModuleService {
     });
   }
 
+  async login(credentials: {
+    loginId: string;
+    password: string;
+  }): Promise<{ accessToken: string }> {
+    try {
+      const response = await this.client.post('/auth/signin', credentials);
+
+      return response.data.data;
+    } catch (error) {
+      throw new Error(`로그인 실패: ${error.response?.data.message}`);
+    }
+  }
+
   async retrieveUser(userId: string): Promise<User> {
     try {
       const response = await this.client.get(`/users/${userId}`);
@@ -73,6 +86,15 @@ export default class UserModuleService {
       return response.data.data;
     } catch (error) {
       throw new Error(`유저 정보 조회 실패: ${error.response?.data.message}`);
+    }
+  }
+
+  async restoreToken(): Promise<{ accessToken: string }> {
+    try {
+      const response = await this.client.post('/auth/restore-token');
+      return response.data.data;
+    } catch (error) {
+      throw new Error(`토큰 갱신 실패: ${error.response?.data.message}`);
     }
   }
 }
