@@ -33,9 +33,11 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       };
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
+        // provider_identity 테이블에 생성됌
         const createdAuthIdentity = await authIdentityProviderService.create({
           entity_id: data.body!.user_id, // email or some ID
           provider_metadata: {
+            user_id: data.body!.user_id,
             // can include password or any other relevant information
           },
         });
@@ -85,7 +87,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
               entity_id: user.id,
               provider_metadata: {
                 roles: user.roles || [],
-                scopes: user.roles.map((role) => role.scopes),
               },
             },
           ],
