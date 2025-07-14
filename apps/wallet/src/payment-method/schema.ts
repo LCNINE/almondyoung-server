@@ -10,6 +10,7 @@ import {
   unique,
   foreignKey,
   uniqueIndex,
+  integer,
 } from 'drizzle-orm/pg-core';
 import { ulid } from 'ulid';
 
@@ -36,6 +37,8 @@ export const paymentMethod = pgTable(
       .notNull(),
     methodName: varchar('method_name', { length: 64 }).notNull(),
     isDefault: boolean('is_default').notNull().default(false),
+    // 💡 BNPL 기능 활성화 여부
+    isBnpl: boolean('is_bnpl').notNull().default(false),
     // 💡 institutionCode 컬럼 유지
     institutionCode: varchar('institution_code', { length: 32 }).notNull(),
     status: text('status').$type<'ACTIVE' | 'INACTIVE' | 'DELETED'>().notNull(),
@@ -51,6 +54,84 @@ export const paymentMethod = pgTable(
       .on(table.userId)
       .where(sql`${table.isDefault} = true`),
     unique('uq_payment_method_id_type').on(table.id, table.methodType),
+  ],
+);
+
+// ────────────────────────────────────────────
+// BNPL Account (BNPL 계정 관리)
+// ────────────────────────────────────────────
+export const bnplAccount = pgTable(
+  'bnpl_account',
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => ulid()),
+    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    settlementPaymentMethodId: varchar('settlement_payment_method_id', {
+      length: 26,
+    })
+      .notNull()
+      .references(() => paymentMethod.id),
+    creditLimit: numeric('credit_limit', {
+      precision: 18,
+      scale: 2,
+    })
+      .$type<number>()
+      .notNull(),
+    currentBalance: numeric('current_balance', {
+      precision: 18,
+      scale: 2,
+    })
+      .$type<number>()
+      .notNull()
+      .default(0),
+    status: text('status')
+      .$type<'ACTIVE' | 'OVERDUE' | 'SUSPENDED'>()
+      .notNull()
+      .default('ACTIVE'),
+    billingCycleDay: integer('billing_cycle_day').notNull(),
+    version: bigint('version', { mode: 'number' }).notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_bnpl_account_user_unique').on(table.userId),
+    uniqueIndex('idx_bnpl_account_settlement_method').on(
+      table.settlementPaymentMethodId,
+    ),
+  ],
+);
+
+// ────────────────────────────────────────────
+// BNPL Activation Event (BNPL 활성화 이벤트)
+// ────────────────────────────────────────────
+export const bnplActivationEvent = pgTable(
+  'bnpl_activation_event',
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => ulid()),
+    paymentMethodId: varchar('payment_method_id', { length: 26 })
+      .notNull()
+      .references(() => paymentMethod.id),
+    bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+      .notNull()
+      .references(() => bnplAccount.id),
+
+    eventType: text('event_type')
+      .$type<'ACTIVATED' | 'DEACTIVATED'>()
+      .notNull(),
+    actor: text('actor').$type<'USER' | 'ADMIN' | 'SYSTEM'>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_bnpl_activation_payment_method').on(table.paymentMethodId),
   ],
 );
 
@@ -133,36 +214,6 @@ export const prepaidWalletMethod = pgTable(
 );
 
 // ────────────────────────────────────────────
-// 6️⃣ BNPL Method (후불 결제)
-// ────────────────────────────────────────────
-export const bnplMethod = pgTable(
-  'bnpl_method',
-  {
-    id: varchar('id', { length: 26 }).primaryKey(),
-    methodType: text('method_type').notNull().default('BNPL'),
-    creditLimit: numeric('credit_limit', {
-      precision: 18,
-      scale: 2,
-    }).$type<number>(),
-    approvedLimit: numeric('approved_limit', {
-      precision: 18,
-      scale: 2,
-    }).$type<number>(),
-    termsUrl: varchar('terms_url', { length: 256 }),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.id, table.methodType],
-      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
-      name: 'fk_bnpl_method_payment_method',
-    }).onDelete('cascade'),
-  ],
-);
-
-// ────────────────────────────────────────────
 // 7️⃣ Reward Point Method (포인트)
 // ────────────────────────────────────────────
 export const rewardPointMethod = pgTable(
@@ -205,10 +256,7 @@ export const paymentMethodRelations = relations(paymentMethod, ({ one }) => ({
     fields: [paymentMethod.id],
     references: [prepaidWalletMethod.id],
   }),
-  bnpl: one(bnplMethod, {
-    fields: [paymentMethod.id],
-    references: [bnplMethod.id],
-  }),
+
   rewardPoint: one(rewardPointMethod, {
     fields: [paymentMethod.id],
     references: [rewardPointMethod.id],
@@ -244,19 +292,44 @@ export const prepaidWalletMethodRelations = relations(
   }),
 );
 
-export const bnplMethodRelations = relations(bnplMethod, ({ one }) => ({
-  paymentMethod: one(paymentMethod, {
-    fields: [bnplMethod.id],
-    references: [paymentMethod.id],
-  }),
-}));
-
 export const rewardPointMethodRelations = relations(
   rewardPointMethod,
   ({ one }) => ({
     paymentMethod: one(paymentMethod, {
       fields: [rewardPointMethod.id],
       references: [paymentMethod.id],
+    }),
+  }),
+);
+
+// ────────────────────────────────────────────
+// BNPL Account Relations
+// ────────────────────────────────────────────
+export const bnplAccountRelations = relations(bnplAccount, ({ one, many }) => ({
+  user: one(paymentMethod, {
+    fields: [bnplAccount.userId],
+    references: [paymentMethod.userId],
+  }),
+  settlementPaymentMethod: one(paymentMethod, {
+    fields: [bnplAccount.settlementPaymentMethodId],
+    references: [paymentMethod.id],
+  }),
+  activationEvents: many(bnplActivationEvent),
+}));
+
+// ────────────────────────────────────────────
+// BNPL Activation Event Relations
+// ────────────────────────────────────────────
+export const bnplActivationEventRelations = relations(
+  bnplActivationEvent,
+  ({ one }) => ({
+    paymentMethod: one(paymentMethod, {
+      fields: [bnplActivationEvent.paymentMethodId],
+      references: [paymentMethod.id],
+    }),
+    bnplAccount: one(bnplAccount, {
+      fields: [bnplActivationEvent.bnplAccountId],
+      references: [bnplAccount.id],
     }),
   }),
 );

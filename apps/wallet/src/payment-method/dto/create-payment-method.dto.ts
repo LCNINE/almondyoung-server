@@ -47,11 +47,10 @@ export interface CreateBnplPaymentMethodDto {
   termsUrl?: string;
 }
 
-// 통합 DTO 타입 (Discriminated Union)
+// 통합 DTO 타입 (Discriminated Union) - 외부 PG사 연동이 필요한 결제수단만
 export type CreatePaymentMethodDto =
   | CreateCardPaymentMethodDto
-  | CreateBankAccountPaymentMethodDto
-  | CreateBnplPaymentMethodDto;
+  | CreateBankAccountPaymentMethodDto;
 
 export class UpdatePaymentMethodDto {
   @IsString()

@@ -7,7 +7,8 @@ import * as schema from '../schema';
 import { paymentMethod, bnplMethod } from '../schema';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js';
-import { eExtractTablesWithRelations } from 'drizzle-orm';
+import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 type Transaction = PgTransaction<
   PostgresJsQueryResultHKT,
@@ -31,7 +32,7 @@ export class BnplPaymentStrategy implements PaymentMethodStrategy {
   }
 
   async register(payload: CreateBnplPaymentMethodDto): Promise<{ id: string }> {
-    const dto = payload
+    const dto = payload;
     this.validate(dto);
 
     const newMethodId = await this.dbService.db.transaction(async (tx) => {
@@ -70,7 +71,7 @@ export class BnplPaymentStrategy implements PaymentMethodStrategy {
     await this.dbService.db
       .update(paymentMethod)
       .set({ status: 'DELETED', updatedAt: new Date() })
-      .where(schema.eq(paymentMethod.id, paymentMethodId));
+      .where(eq(paymentMethod.id, paymentMethodId));
   }
 
   private async unsetDefaultForUser(
@@ -80,6 +81,6 @@ export class BnplPaymentStrategy implements PaymentMethodStrategy {
     await tx
       .update(paymentMethod)
       .set({ isDefault: false })
-      .where(schema.eq(paymentMethod.userId, userId));
+      .where(eq(paymentMethod.userId, userId));
   }
 }

@@ -1,8 +1,16 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { ActivateBNPLDto, BNPLActor } from './dto/activate-bnpl.dto';
+import { DeactivateBNPLDto } from './dto/deactivate-bnpl.dto';
+import { BNPLAccountResponseDto } from './dto/bnpl-account.response.dto';
 import * as schema from './schema';
 import { PaymentMethodStrategy } from './strategies/payment.strategy';
 
@@ -11,7 +19,6 @@ export type PaymentMethodWithDetails = PaymentMethod & {
   card: typeof schema.cardMethod.$inferSelect | null;
   bankAccount: typeof schema.bankAccountMethod.$inferSelect | null;
   prepaidWallet: typeof schema.prepaidWalletMethod.$inferSelect | null;
-  bnpl: typeof schema.bnplMethod.$inferSelect | null;
   rewardPoint: typeof schema.rewardPointMethod.$inferSelect | null;
 };
 
@@ -27,18 +34,17 @@ export class PaymentMethodService {
   ) {}
 
   /**
-   * Create new payment method using appropriate strategy
+   * 외부 PG사 연동이 필요한 결제수단을 생성합니다.
+   * (카드, 은행계좌 등)
    */
   async createPaymentMethod(dto: CreatePaymentMethodDto): Promise<unknown> {
     const strategy = this.findStrategy(dto.methodType);
 
-    // Discriminated Union으로 타입 자동 추론
+    // 외부 PG사 연동이 필요한 결제수단만 처리
     switch (dto.methodType) {
       case 'CARD':
         return strategy.register(dto);
       case 'BANK_ACCOUNT':
-        return strategy.register(dto);
-      case 'BNPL':
         return strategy.register(dto);
       default: {
         // exhaustive check - 새로운 타입 추가 시 컴파일 에러 발생
@@ -61,7 +67,6 @@ export class PaymentMethodService {
         card: true,
         bankAccount: true,
         prepaidWallet: true,
-        bnpl: true,
         rewardPoint: true,
       },
     });
@@ -81,7 +86,6 @@ export class PaymentMethodService {
         card: true,
         bankAccount: true,
         prepaidWallet: true,
-        bnpl: true,
         rewardPoint: true,
       },
     });
@@ -135,5 +139,182 @@ export class PaymentMethodService {
     }
 
     return strategy;
+  }
+
+  // ────────────────────────────────────────────
+  // BNPL 관련 메서드들
+  // ────────────────────────────────────────────
+
+  /**
+   * 결제수단에 BNPL 기능을 활성화합니다.
+   * @param dto - BNPL 활성화 정보
+   * @returns BNPL 계정 정보
+   */
+  async activateBNPL(dto: ActivateBNPLDto): Promise<BNPLAccountResponseDto> {
+    // 1. 결제수단 존재 확인
+    const paymentMethod = await this.findById(dto.paymentMethodId);
+    if (!paymentMethod) {
+      throw new NotFoundException('결제수단을 찾을 수 없습니다.');
+    }
+
+    // 2. 정산용 결제수단 존재 확인
+    const settlementMethod = await this.findById(dto.settlementPaymentMethodId);
+    if (!settlementMethod) {
+      throw new NotFoundException('정산용 결제수단을 찾을 수 없습니다.');
+    }
+
+    // 3. 이미 BNPL이 활성화되어 있는지 확인
+    if (paymentMethod.isBnpl) {
+      throw new BadRequestException('이미 BNPL이 활성화되어 있습니다.');
+    }
+
+    // 4. 사용자별 BNPL 계정 생성
+    const [bnplAccount] = await this.dbService.db
+      .insert(schema.bnplAccount)
+      .values({
+        userId: paymentMethod.userId,
+        settlementPaymentMethodId: dto.settlementPaymentMethodId,
+        creditLimit: dto.creditLimit,
+        currentBalance: 0,
+        status: 'ACTIVE',
+        billingCycleDay: dto.billingCycleDay,
+        version: 1,
+      })
+      .returning();
+
+    // 5. 결제수단에 BNPL 활성화 표시
+    await this.dbService.db
+      .update(schema.paymentMethod)
+      .set({
+        isBnpl: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentMethod.id, dto.paymentMethodId));
+
+    // 6. BNPL 활성화 이벤트 기록
+    await this.dbService.db.insert(schema.bnplActivationEvent).values({
+      paymentMethodId: dto.paymentMethodId,
+      bnplAccountId: bnplAccount.id,
+      eventType: 'ACTIVATED',
+      actor: dto.actor,
+    });
+
+    return {
+      id: bnplAccount.id,
+      userId: bnplAccount.userId,
+      settlementPaymentMethodId: bnplAccount.settlementPaymentMethodId,
+      creditLimit: Number(bnplAccount.creditLimit),
+      currentBalance: Number(bnplAccount.currentBalance),
+      status: bnplAccount.status,
+      billingCycleDay: bnplAccount.billingCycleDay,
+      version: bnplAccount.version,
+      createdAt: bnplAccount.createdAt,
+      updatedAt: bnplAccount.updatedAt,
+    };
+  }
+
+  /**
+   * 결제수단의 BNPL 기능을 비활성화합니다.
+   * @param dto - BNPL 비활성화 정보
+   * @returns 비활성화 결과
+   */
+  async deactivateBNPL(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
+    // 1. 결제수단 존재 확인
+    const paymentMethod = await this.findById(dto.paymentMethodId);
+    if (!paymentMethod) {
+      throw new NotFoundException('결제수단을 찾을 수 없습니다.');
+    }
+
+    // 2. BNPL이 활성화되어 있는지 확인
+    if (!paymentMethod.isBnpl) {
+      throw new BadRequestException('BNPL이 활성화되어 있지 않습니다.');
+    }
+
+    // 3. BNPL 계정 조회
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, paymentMethod.userId),
+    });
+
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    // 4. 미정산 금액이 있는지 확인
+    if (Number(bnplAccount.currentBalance) > 0) {
+      throw new BadRequestException(
+        '미정산 금액이 있어 BNPL을 비활성화할 수 없습니다.',
+      );
+    }
+
+    // 5. 결제수단에서 BNPL 비활성화
+    await this.dbService.db
+      .update(schema.paymentMethod)
+      .set({
+        isBnpl: false,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentMethod.id, dto.paymentMethodId));
+
+    // 6. BNPL 비활성화 이벤트 기록
+    await this.dbService.db.insert(schema.bnplActivationEvent).values({
+      paymentMethodId: dto.paymentMethodId,
+      bnplAccountId: bnplAccount.id,
+      eventType: 'DEACTIVATED',
+      actor: dto.actor,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * 사용자의 BNPL 계정 정보를 조회합니다.
+   * @param userId - 사용자 ID
+   * @returns BNPL 계정 정보
+   */
+  async getBNPLAccount(userId: number): Promise<BNPLAccountResponseDto | null> {
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, userId),
+    });
+
+    if (!bnplAccount) {
+      return null;
+    }
+
+    return {
+      id: bnplAccount.id,
+      userId: bnplAccount.userId,
+      settlementPaymentMethodId: bnplAccount.settlementPaymentMethodId,
+      creditLimit: Number(bnplAccount.creditLimit),
+      currentBalance: Number(bnplAccount.currentBalance),
+      status: bnplAccount.status,
+      billingCycleDay: bnplAccount.billingCycleDay,
+      version: bnplAccount.version,
+      createdAt: bnplAccount.createdAt,
+      updatedAt: bnplAccount.updatedAt,
+    };
+  }
+
+  /**
+   * BNPL 활성화된 결제수단 목록을 조회합니다.
+   * @param userId - 사용자 ID
+   * @returns BNPL 활성화된 결제수단 목록
+   */
+  async getBNPLPaymentMethods(
+    userId: number,
+  ): Promise<PaymentMethodWithDetails[]> {
+    const results = await this.dbService.db.query.paymentMethod.findMany({
+      where: and(
+        eq(schema.paymentMethod.userId, userId),
+        eq(schema.paymentMethod.isBnpl, true),
+        eq(schema.paymentMethod.status, 'ACTIVE'),
+      ),
+      with: {
+        card: true,
+        bankAccount: true,
+        prepaidWallet: true,
+        rewardPoint: true,
+      },
+    });
+    return results as PaymentMethodWithDetails[];
   }
 }
