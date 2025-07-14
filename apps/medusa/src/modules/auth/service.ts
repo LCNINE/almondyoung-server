@@ -83,12 +83,18 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         entity_id: user.id,
       });
 
+      const actorType = user.roles?.some((role) => role.role.name === 'admin')
+        ? 'admin'
+        : 'customer';
+
       return {
         success: true,
         authIdentity: {
           ...authIdentity,
           app_metadata: {
+            actor_type: actorType,
             user_id: user.id,
+            role: user.roles,
           },
           provider_identities: [
             {

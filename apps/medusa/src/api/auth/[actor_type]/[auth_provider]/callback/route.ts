@@ -34,8 +34,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     authData,
   );
 
-  console.log('authIdentity detail:', JSON.stringify(authIdentity, null, 2));
-
   if (success && authIdentity) {
     const { http } = config.projectConfig;
 
@@ -48,7 +46,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       },
     );
 
-    console.log('token:', token);
     // 세션 쿠키 설정
     res.cookie('connect.sid', token, {
       httpOnly: true,
