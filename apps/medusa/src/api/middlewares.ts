@@ -3,6 +3,7 @@ import {
   MedusaRequest,
   MedusaResponse,
   MedusaNextFunction,
+  authenticate,
 } from '@medusajs/framework/http';
 import { responseWrapper } from '../middlewares/response-wrapper';
 
@@ -11,6 +12,11 @@ export default defineMiddlewares({
     {
       matcher: '/*',
       middlewares: [responseWrapper],
+    },
+    {
+      method: ['POST'],
+      matcher: '/auth/token/restore',
+      middlewares: [authenticate('*', 'bearer', { allowUnregistered: true })],
     },
   ],
 });

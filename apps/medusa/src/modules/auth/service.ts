@@ -52,11 +52,13 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     }
   }
 
+  // 인증 및 로그인에 사용됌
   async authenticate(
     data: AuthenticationInput,
     authIdentityProviderService: AuthIdentityProviderService,
   ): Promise<AuthenticationResponse> {
     try {
+      // 토큰 인증 처리
       const authHeader = data?.headers?.authorization;
 
       if (!authHeader?.startsWith('Bearer ')) {
@@ -76,13 +78,21 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
+      // authIdentityProviderService를 사용하여 인증 정보 조회
+      const authIdentity = await authIdentityProviderService.retrieve({
+        entity_id: user.id,
+      });
+
       return {
         success: true,
         authIdentity: {
-          id: user.id,
+          ...authIdentity,
+          app_metadata: {
+            user_id: user.id,
+          },
           provider_identities: [
             {
-              id: user.id,
+              id: authIdentity.id,
               provider: 'my-auth',
               entity_id: user.id,
               provider_metadata: {
