@@ -12,7 +12,7 @@ import {
   uniqueIndex,
   integer,
 } from 'drizzle-orm/pg-core';
-import { ulid } from 'ulid';
+import { nanoid } from 'nanoid';
 
 // 예시용 wallets 테이블 (실제 프로젝트에서는 import 하세요)
 const wallets = pgTable('wallets', {
@@ -26,9 +26,9 @@ export const paymentMethod = pgTable(
   'payment_method',
 
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 21 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => nanoid()),
     userId: bigint('user_id', { mode: 'number' }).notNull(),
     methodType: text('method_type')
       .$type<
@@ -63,9 +63,9 @@ export const paymentMethod = pgTable(
 export const bnplAccount = pgTable(
   'bnpl_account',
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 21 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => nanoid()),
     userId: bigint('user_id', { mode: 'number' }).notNull(),
     settlementPaymentMethodId: varchar('settlement_payment_method_id', {
       length: 26,
@@ -73,6 +73,12 @@ export const bnplAccount = pgTable(
       .notNull()
       .references(() => paymentMethod.id),
     creditLimit: numeric('credit_limit', {
+      precision: 18,
+      scale: 2,
+    })
+      .$type<number>()
+      .notNull(),
+    approvedLimit: numeric('approved_limit', {
       precision: 18,
       scale: 2,
     })
@@ -90,6 +96,7 @@ export const bnplAccount = pgTable(
       .notNull()
       .default('ACTIVE'),
     billingCycleDay: integer('billing_cycle_day').notNull(),
+    termsUrl: text('terms_url'),
     version: bigint('version', { mode: 'number' }).notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
@@ -112,16 +119,15 @@ export const bnplAccount = pgTable(
 export const bnplActivationEvent = pgTable(
   'bnpl_activation_event',
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 21 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => nanoid()),
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
     bnplAccountId: varchar('bnpl_account_id', { length: 26 })
       .notNull()
       .references(() => bnplAccount.id),
-
     eventType: text('event_type')
       .$type<'ACTIVATED' | 'DEACTIVATED'>()
       .notNull(),
@@ -306,10 +312,6 @@ export const rewardPointMethodRelations = relations(
 // BNPL Account Relations
 // ────────────────────────────────────────────
 export const bnplAccountRelations = relations(bnplAccount, ({ one, many }) => ({
-  user: one(paymentMethod, {
-    fields: [bnplAccount.userId],
-    references: [paymentMethod.userId],
-  }),
   settlementPaymentMethod: one(paymentMethod, {
     fields: [bnplAccount.settlementPaymentMethodId],
     references: [paymentMethod.id],

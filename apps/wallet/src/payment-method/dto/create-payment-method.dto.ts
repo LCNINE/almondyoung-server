@@ -41,16 +41,20 @@ export interface CreateBnplPaymentMethodDto {
   methodName: string;
   isDefault?: boolean;
   institutionCode: string;
-  // BNPL 관련 선택적 필드
+  // BNPL 관련 필드들
   creditLimit?: number;
   approvedLimit?: number;
+  billingCycleDay: number; // 필수 필드 추가
   termsUrl?: string;
+  // BNPL 정산용 결제수단 ID (카드나 계좌)
+  settlementPaymentMethodId: string;
 }
 
 // 통합 DTO 타입 (Discriminated Union) - 외부 PG사 연동이 필요한 결제수단만
 export type CreatePaymentMethodDto =
   | CreateCardPaymentMethodDto
-  | CreateBankAccountPaymentMethodDto;
+  | CreateBankAccountPaymentMethodDto
+  | CreateBnplPaymentMethodDto;
 
 export class UpdatePaymentMethodDto {
   @IsString()

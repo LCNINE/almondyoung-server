@@ -4,7 +4,7 @@ import { CreateBnplPaymentMethodDto } from '../dto/create-payment-method.dto';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import * as schema from '../schema';
-import { paymentMethod, bnplMethod } from '../schema';
+import { paymentMethod, bnplAccount } from '../schema';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
@@ -52,11 +52,12 @@ export class BnplPaymentStrategy implements PaymentMethodStrategy {
         })
         .returning({ id: paymentMethod.id });
 
-      await tx.insert(bnplMethod).values({
-        id: newMethod.id,
-        methodType: 'BNPL',
-        creditLimit: dto.creditLimit,
-        approvedLimit: dto.approvedLimit,
+      await tx.insert(bnplAccount).values({
+        userId: dto.userId,
+        settlementPaymentMethodId: newMethod.id,
+        creditLimit: dto.creditLimit || 0,
+        approvedLimit: dto.approvedLimit ?? dto.creditLimit ?? 0,
+        billingCycleDay: dto.billingCycleDay,
         termsUrl: dto.termsUrl,
       });
 

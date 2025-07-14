@@ -7,7 +7,10 @@ import {
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import { eq, and } from 'drizzle-orm';
-import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import {
+  CreatePaymentMethodDto,
+  CreateBnplPaymentMethodDto,
+} from './dto/create-payment-method.dto';
 import { ActivateBNPLDto, BNPLActor } from './dto/activate-bnpl.dto';
 import { DeactivateBNPLDto } from './dto/deactivate-bnpl.dto';
 import { BNPLAccountResponseDto } from './dto/bnpl-account.response.dto';
@@ -38,6 +41,11 @@ export class PaymentMethodService {
    * (카드, 은행계좌 등)
    */
   async createPaymentMethod(dto: CreatePaymentMethodDto): Promise<unknown> {
+    // BNPL은 별도 처리 (외부 PG사 연동 불필요)
+    if (dto.methodType === 'BNPL') {
+      return this.createBNPLPaymentMethod(dto);
+    }
+
     const strategy = this.findStrategy(dto.methodType);
 
     // 외부 PG사 연동이 필요한 결제수단만 처리
@@ -52,6 +60,56 @@ export class PaymentMethodService {
         return _exhaustiveCheck;
       }
     }
+  }
+
+  /**
+   * BNPL 결제수단을 생성합니다.
+   */
+  private async createBNPLPaymentMethod(
+    dto: CreateBnplPaymentMethodDto,
+  ): Promise<unknown> {
+    // 1. 기본 결제수단 생성
+    const [paymentMethod] = await this.dbService.db
+      .insert(schema.paymentMethod)
+      .values({
+        userId: dto.userId,
+        methodType: dto.methodType,
+        methodName: dto.methodName,
+        isDefault: dto.isDefault || false,
+        isBnpl: true, // BNPL 활성화
+        institutionCode: dto.institutionCode,
+        status: 'ACTIVE',
+      })
+      .returning();
+
+    // 2. BNPL 계정 생성
+    const [bnplAccount] = await this.dbService.db
+      .insert(schema.bnplAccount)
+      .values({
+        userId: dto.userId,
+        settlementPaymentMethodId: dto.settlementPaymentMethodId,
+        creditLimit: dto.creditLimit || 0,
+        approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
+        currentBalance: 0,
+        status: 'ACTIVE',
+        billingCycleDay: dto.billingCycleDay,
+        termsUrl: dto.termsUrl,
+        version: 1,
+      })
+      .returning();
+
+    // 3. BNPL 활성화 이벤트 기록
+    await this.dbService.db.insert(schema.bnplActivationEvent).values({
+      paymentMethodId: paymentMethod.id,
+      bnplAccountId: bnplAccount.id,
+      eventType: 'ACTIVATED',
+      actor: 'SYSTEM',
+    });
+
+    return {
+      paymentMethod,
+      bnplAccount,
+    };
   }
 
   /**
@@ -175,9 +233,11 @@ export class PaymentMethodService {
         userId: paymentMethod.userId,
         settlementPaymentMethodId: dto.settlementPaymentMethodId,
         creditLimit: dto.creditLimit,
+        approvedLimit: dto.approvedLimit,
         currentBalance: 0,
         status: 'ACTIVE',
         billingCycleDay: dto.billingCycleDay,
+        termsUrl: dto.termsUrl,
         version: 1,
       })
       .returning();

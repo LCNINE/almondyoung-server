@@ -37,6 +37,7 @@
     "eslint-plugin-drizzle": "^0.2.3",
     "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git",
     "kafkajs": "^2.2.4",
+    "nanoid": "^5.1.5",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",

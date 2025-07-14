@@ -13,6 +13,7 @@ import {
   RefundPaymentDto,
   PartialPaymentDto,
 } from './dto/create-payment.dto';
+import { CreateBnplPaymentDto } from './dto/create-bnpl-payment.dto';
 import { RefundWithPaymentDetails } from './types/payment.types';
 
 /**
@@ -118,5 +119,14 @@ export class PaymentController {
   @Post('partial')
   async partialPayment(@Body() dto: PartialPaymentDto) {
     return this.paymentService.partialPayment(dto);
+  }
+
+  /**
+   * BNPL 결제 처리
+   * POST /payments/bnpl
+   */
+  @Post('bnpl')
+  async createBnplPayment(@Body() dto: CreateBnplPaymentDto) {
+    return this.paymentService.createBnplPayment(dto, 'USER');
   }
 }

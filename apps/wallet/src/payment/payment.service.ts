@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -18,6 +19,8 @@ import {
   PartialPaymentDto,
   PartialRefundPaymentDto,
 } from './dto/create-payment.dto';
+import { CreateBnplPaymentDto } from './dto/create-bnpl-payment.dto';
+import { BNPLTransactionResponseDto } from './dto/bnpl-transaction.response.dto';
 import {
   DuplicatePaymentAttemptedEvent,
   PaymentFailedEvent,
@@ -26,14 +29,17 @@ import {
   RefundSucceededEvent,
 } from './events/payment.events';
 import * as schema from './schema';
-import { paymentEvents, refundEvents } from './schema';
+import { paymentEvents, refundEvents, bnplTransaction } from './schema';
 import { CardPaymentStrategy } from './strategies/card-payment.strategy';
+import { BnplPaymentStrategy } from './strategies/bnpl-payment.strategy';
 import { PaymentStrategy } from './strategies/payment.strategy';
 import {
   PaymentEventRow,
   RefundEventRow,
   RefundWithPaymentDetails,
 } from './types/payment.types';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { PgService } from './pg.service';
 
 // --- 상수 선언 ---
 const ERROR_MSG = {
@@ -50,7 +56,8 @@ const ERROR_MSG = {
 
 const EVENT_TYPE = {
   REQUESTED: 'REQUESTED',
-  SUCCESS: 'SUCCESS',
+  AUTHORIZED: 'AUTHORIZED',
+  CAPTURED: 'CAPTURED',
   FAILED: 'FAILED',
   DUPLICATE_ATTEMPT: 'DUPLICATE_ATTEMPT',
 } as const;
@@ -66,7 +73,9 @@ export class PaymentService {
     private readonly invoiceService: InvoiceService,
     private readonly paymentMethodService: PaymentMethodService,
     private readonly cardPaymentStrategy: CardPaymentStrategy,
+    private readonly bnplPaymentStrategy: BnplPaymentStrategy,
     private readonly eventEmitter: EventEmitter2,
+    private readonly pgService: PgService,
   ) {}
 
   private getPaymentStrategy(
@@ -79,6 +88,8 @@ export class PaymentService {
     switch (paymentMethod.methodType) {
       case 'CARD':
         return this.cardPaymentStrategy;
+      case 'BNPL':
+        return this.bnplPaymentStrategy;
       default:
         return this.cardPaymentStrategy;
     }
@@ -123,7 +134,7 @@ export class PaymentService {
     // 3. 결과에 따라 status 업데이트 및 이벤트 발행
     if (payResult.success) {
       const successEvent = await this.updatePaymentEvent(requestedEvent.id, {
-        status: EVENT_TYPE.SUCCESS,
+        status: EVENT_TYPE.CAPTURED,
         pgTransactionId: payResult.pgTransactionId,
         pgResponse: payResult.pgResponse,
       });
@@ -456,7 +467,7 @@ export class PaymentService {
       .where(
         and(
           eq(paymentEvents.invoiceId, invoiceId),
-          eq(paymentEvents.status, 'SUCCESS'),
+          eq(paymentEvents.status, 'CAPTURED'),
         ),
       );
     return events.reduce((sum, e) => sum + Number(e.amount), 0);
@@ -506,7 +517,7 @@ export class PaymentService {
     // 4-3. 결과에 따라 status 업데이트 및 이벤트 발행
     if (payResult.success) {
       const successEvent = await this.updatePaymentEvent(requestedEvent.id, {
-        status: EVENT_TYPE.SUCCESS,
+        status: EVENT_TYPE.CAPTURED,
         pgTransactionId: payResult.pgTransactionId,
         pgResponse: payResult.pgResponse,
       });
@@ -526,6 +537,450 @@ export class PaymentService {
         new PaymentFailedEvent(invoice, failedEvent),
       );
       throw new BadRequestException(ERROR_MSG.PAYMENT_FAILED);
+    }
+  }
+
+  // ────────────────────────────────────────────
+  // BNPL 결제 처리 메서드들
+  // ────────────────────────────────────────────
+
+  /**
+   * BNPL을 사용하여 인보이스를 결제합니다.
+   * 외부 PG사 연동 없이 내부 신용 거래로 처리됩니다.
+   * @param dto BNPL 결제 생성 DTO
+   * @param actor 행위자 (USER, ADMIN, SYSTEM)
+   * @returns BNPL 거래 정보
+   */
+  async createBnplPayment(
+    dto: CreateBnplPaymentDto,
+    actor: string,
+  ): Promise<BNPLTransactionResponseDto> {
+    return await this.dbService.db.transaction(async (tx) => {
+      // 1. 데이터 조회 및 초기 검증
+      const { paymentMethod, invoice, bnplAccount } =
+        await this.validateBnplPaymentRequest(dto, tx);
+
+      // 2. 동시성 제어 및 신용 한도 검증
+      const lockedBnplAccount = await this.validateCreditLimit(
+        bnplAccount.id,
+        invoice.amount,
+        tx,
+      );
+
+      // 3. 다단계 트랜잭션 실행
+      // 3-1. PaymentEvent 생성 (REQUESTED)
+      const [requestedEvent] = await tx
+        .insert(schema.paymentEvents)
+        .values({
+          invoiceId: invoice.id,
+          paymentMethodId: paymentMethod.id,
+          amount: invoice.amount.toString(),
+          status: 'REQUESTED',
+          actor: 'USER',
+        })
+        .returning();
+
+      // 3-2. PaymentEvent 상태를 AUTHORIZED로 변경 (BNPL 승인)
+      const [authorizedEvent] = await tx
+        .update(schema.paymentEvents)
+        .set({
+          status: 'AUTHORIZED',
+        })
+        .where(eq(schema.paymentEvents.id, requestedEvent.id))
+        .returning();
+
+      // 3-3. 잔액 업데이트
+      const newBalance =
+        Number(lockedBnplAccount.currentBalance) + Number(invoice.amount);
+      const [updatedBnplAccount] = await tx
+        .update(paymentMethodSchema.bnplAccount)
+        .set({
+          currentBalance: newBalance,
+          version: lockedBnplAccount.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(paymentMethodSchema.bnplAccount.id, lockedBnplAccount.id))
+        .returning();
+
+      // 3-4. BNPL 거래 내역 생성 (내부 관리용)
+      const [newTransaction] = await tx
+        .insert(schema.bnplTransaction)
+        .values({
+          bnplAccountId: lockedBnplAccount.id,
+          invoiceId: invoice.id,
+          transactionType: 'DEBIT',
+          status: 'AUTHORIZED', // 최초에는 AUTHORIZED로 저장
+          amount: Number(invoice.amount),
+        })
+        .returning();
+
+      // 3-5. Settlement Batch에 거래 추가
+      await this.addTransactionToSettlementBatch(
+        lockedBnplAccount.id,
+        newTransaction.id,
+        invoice.id,
+        Number(invoice.amount),
+        tx,
+      );
+
+      // 4. 이벤트 발행 (트랜잭션 커밋 후)
+      this.eventEmitter.emit(
+        'payment.succeeded',
+        new PaymentSucceededEvent(invoice, authorizedEvent),
+      );
+
+      return {
+        id: newTransaction.id,
+        bnplAccountId: newTransaction.bnplAccountId,
+        invoiceId: newTransaction.invoiceId,
+        transactionType: newTransaction.transactionType,
+        status: newTransaction.status,
+        amount: Number(newTransaction.amount),
+        createdAt: newTransaction.createdAt,
+      };
+    });
+  }
+
+  /**
+   * BNPL 결제 요청을 검증하고 필요한 데이터를 조회합니다.
+   */
+  private async validateBnplPaymentRequest(
+    dto: CreateBnplPaymentDto,
+    tx: any,
+  ): Promise<{
+    paymentMethod: typeof paymentMethodSchema.paymentMethod.$inferSelect;
+    invoice: typeof invoiceSchema.invoice.$inferSelect;
+    bnplAccount: typeof paymentMethodSchema.bnplAccount.$inferSelect;
+  }> {
+    // 1. 결제수단 조회 및 검증
+    const paymentMethod = await this.paymentMethodService.findById(
+      dto.paymentMethodId,
+    );
+    if (!paymentMethod) {
+      throw new NotFoundException('결제수단을 찾을 수 없습니다.');
+    }
+    if (!paymentMethod.isBnpl) {
+      throw new BadRequestException('BNPL이 활성화되지 않은 결제수단입니다.');
+    }
+
+    // 2. 인보이스 조회 및 검증
+    const [invoice] = await tx
+      .select()
+      .from(invoiceSchema.invoice)
+      .where(eq(invoiceSchema.invoice.id, dto.invoiceId));
+    if (!invoice) {
+      throw new NotFoundException('인보이스를 찾을 수 없습니다.');
+    }
+    if (invoice.status === 'PAID' || invoice.status === 'CANCELLED') {
+      throw new BadRequestException('결제할 수 없는 인보이스입니다.');
+    }
+
+    // 3. BNPL 계정 조회 및 검증
+    const [bnplAccount] = await tx
+      .select()
+      .from(paymentMethodSchema.bnplAccount)
+      .where(eq(paymentMethodSchema.bnplAccount.userId, paymentMethod.userId));
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+    if (bnplAccount.status !== 'ACTIVE') {
+      throw new BadRequestException('활성화되지 않은 BNPL 계정입니다.');
+    }
+
+    return { paymentMethod, invoice, bnplAccount };
+  }
+
+  /**
+   * 동시성 제어를 통해 신용 한도를 검증합니다.
+   */
+  private async validateCreditLimit(
+    bnplAccountId: string,
+    invoiceAmount: string,
+    tx: any,
+  ): Promise<typeof paymentMethodSchema.bnplAccount.$inferSelect> {
+    // Pessimistic Lock으로 동시성 제어
+    const [lockedBnplAccount] = await tx
+      .select()
+      .from(paymentMethodSchema.bnplAccount)
+      .where(eq(paymentMethodSchema.bnplAccount.id, bnplAccountId))
+      .for('update');
+
+    if (!lockedBnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    const currentBalance = Number(lockedBnplAccount.currentBalance);
+    const creditLimit = Number(lockedBnplAccount.creditLimit);
+    const amount = Number(invoiceAmount);
+
+    if (currentBalance + amount > creditLimit) {
+      throw new ForbiddenException('신용 한도를 초과했습니다.');
+    }
+
+    return lockedBnplAccount;
+  }
+
+  /**
+   * BNPL 거래를 settlement batch에 추가합니다.
+   */
+  private async addTransactionToSettlementBatch(
+    bnplAccountId: string,
+    bnplTransactionId: string,
+    invoiceId: number,
+    amount: number,
+    tx: any,
+  ): Promise<void> {
+    // 1. 현재 월의 settlement batch 조회 또는 생성
+    const currentDate = new Date();
+    const batchNumber = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+
+    let [settlementBatch] = await tx
+      .select()
+      .from(schema.settlementBatch)
+      .where(
+        and(
+          eq(schema.settlementBatch.batchNumber, batchNumber),
+          eq(schema.settlementBatch.bnplAccountId, bnplAccountId),
+        ),
+      );
+
+    if (!settlementBatch) {
+      // 새로운 settlement batch 생성
+      const batchPeriodStart = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        1,
+      );
+      const batchPeriodEnd = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth() + 1,
+        0,
+      );
+      const dueDate = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth() + 1,
+        15,
+      ); // 다음 달 15일
+
+      [settlementBatch] = await tx
+        .insert(schema.settlementBatch)
+        .values({
+          bnplAccountId,
+          batchNumber,
+          totalAmount: 0,
+          dueDate,
+          batchPeriodStart,
+          batchPeriodEnd,
+        })
+        .returning();
+    }
+
+    // 2. settlement batch item 추가
+    await tx.insert(schema.settlementBatchItem).values({
+      batchId: settlementBatch.id,
+      bnplTransactionId,
+      invoiceId,
+      amount,
+      transactionDate: new Date(),
+    });
+
+    // 3. settlement batch 총액 업데이트
+    await tx
+      .update(schema.settlementBatch)
+      .set({
+        totalAmount: Number(settlementBatch.totalAmount) + amount,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.settlementBatch.id, settlementBatch.id));
+  }
+
+  /**
+   * 5분마다 AUTHORIZED 상태의 BNPL 거래를 CAPTURED로 변경
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async captureAuthorizedBnplTransactions() {
+    // 5분 이상 지난 AUTHORIZED 거래만 대상으로 함
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    // 1. PaymentEvent의 AUTHORIZED 상태를 CAPTURED로 변경
+    const authorizedPaymentEvents =
+      await this.dbService.db.query.paymentEvents.findMany({
+        where: (fields, operators) =>
+          operators.and(
+            operators.eq(fields.status, 'AUTHORIZED'),
+            operators.lte(fields.createdAt, fiveMinutesAgo),
+          ),
+      });
+
+    console.log(
+      `Found ${authorizedPaymentEvents.length} BNPL payment events to capture`,
+    );
+
+    for (const paymentEvent of authorizedPaymentEvents) {
+      try {
+        // PaymentEvent에서 결제수단을 통해 사용자 ID 조회
+        const paymentMethod = await this.paymentMethodService.findById(
+          paymentEvent.paymentMethodId,
+        );
+
+        if (!paymentMethod) {
+          console.error(
+            `Payment method not found for payment event: ${paymentEvent.id}`,
+          );
+          continue;
+        }
+
+        // HMS API를 통해 실제 정산 처리
+        const captureResult = await this.pgService.approvePayment({
+          amount: Number(paymentEvent.amount),
+          userId: paymentMethod.userId,
+        });
+
+        if (captureResult.success) {
+          // 정산 성공 시 CAPTURED로 변경
+          await this.dbService.db
+            .update(schema.paymentEvents)
+            .set({
+              status: 'CAPTURED',
+              pgTransactionId: captureResult.pgTransactionId,
+              pgResponse: captureResult.pgResponse,
+            })
+            .where(eq(schema.paymentEvents.id, paymentEvent.id));
+
+          console.log(
+            `Captured payment event: ${paymentEvent.id} for invoice: ${paymentEvent.invoiceId}`,
+          );
+        } else {
+          console.error(
+            `Failed to capture payment event: ${paymentEvent.id}`,
+            captureResult.pgResponse,
+          );
+        }
+      } catch (error) {
+        console.error(
+          `Error capturing payment event: ${paymentEvent.id}`,
+          error,
+        );
+      }
+    }
+
+    // 2. bnplTransaction의 AUTHORIZED 상태를 CAPTURED로 변경
+    const authorizedTxs =
+      await this.dbService.db.query.bnplTransaction.findMany({
+        where: (fields, operators) =>
+          operators.and(
+            operators.eq(fields.status, 'AUTHORIZED'),
+            operators.lte(fields.createdAt, fiveMinutesAgo),
+          ),
+      });
+
+    console.log(`Found ${authorizedTxs.length} BNPL transactions to capture`);
+
+    for (const tx of authorizedTxs) {
+      await this.dbService.db
+        .update(schema.bnplTransaction)
+        .set({ status: 'CAPTURED' })
+        .where(eq(schema.bnplTransaction.id, tx.id));
+
+      console.log(
+        `Captured BNPL transaction: ${tx.id} for invoice: ${tx.invoiceId}`,
+      );
+    }
+  }
+
+  /**
+   * 매일 자정에 실행되어 billingCycleDay에 맞춰 월별 정산을 처리
+   */
+  @Cron('0 0 * * *') // 매일 자정
+  async processMonthlySettlementBatches() {
+    const today = new Date();
+    const currentDay = today.getDate();
+
+    // 모든 BNPL 계정 조회
+    const bnplAccounts = await this.dbService.db
+      .select()
+      .from(paymentMethodSchema.bnplAccount)
+      .where(eq(paymentMethodSchema.bnplAccount.status, 'ACTIVE'));
+
+    for (const account of bnplAccounts) {
+      // billingCycleDay와 일치하는 경우에만 처리
+      if (account.billingCycleDay === currentDay) {
+        await this.processSettlementBatchForAccount(account);
+      }
+    }
+  }
+
+  /**
+   * 특정 BNPL 계정의 월별 정산을 처리합니다.
+   */
+  private async processSettlementBatchForAccount(account: any): Promise<void> {
+    const currentDate = new Date();
+    const lastMonth = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() - 1,
+      1,
+    );
+    const batchNumber = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    // 지난 달 settlement batch 조회
+    const settlementBatches = await this.dbService.db
+      .select()
+      .from(schema.settlementBatch)
+      .where(
+        and(
+          eq(schema.settlementBatch.batchNumber, batchNumber),
+          eq(schema.settlementBatch.bnplAccountId, account.id),
+        ),
+      );
+
+    const settlementBatch = settlementBatches[0];
+
+    if (settlementBatch && settlementBatch.status === 'PENDING') {
+      try {
+        // HMS API를 통해 월별 정산 처리
+        const settlementResult = await this.pgService.approvePayment({
+          amount: Number(settlementBatch.totalAmount),
+          userId: account.userId,
+        });
+
+        if (settlementResult.success) {
+          // 정산 성공 시 상태 업데이트
+          await this.dbService.db
+            .update(schema.settlementBatch)
+            .set({
+              status: 'SETTLED',
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.settlementBatch.id, settlementBatch.id));
+
+          // 관련된 모든 BNPL 거래를 CAPTURED로 변경
+          const batchItems = await this.dbService.db
+            .select()
+            .from(schema.settlementBatchItem)
+            .where(eq(schema.settlementBatchItem.batchId, settlementBatch.id));
+
+          for (const item of batchItems) {
+            await this.dbService.db
+              .update(schema.bnplTransaction)
+              .set({ status: 'CAPTURED' })
+              .where(eq(schema.bnplTransaction.id, item.bnplTransactionId));
+          }
+
+          console.log(
+            `Monthly settlement completed for account: ${account.id}, amount: ${settlementBatch.totalAmount}`,
+          );
+        } else {
+          console.error(
+            `Failed to settle batch: ${settlementBatch.id}`,
+            settlementResult.pgResponse,
+          );
+        }
+      } catch (error) {
+        console.error(
+          `Error processing settlement batch: ${settlementBatch.id}`,
+          error,
+        );
+      }
     }
   }
 }

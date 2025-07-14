@@ -7,8 +7,8 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { ulid } from 'ulid';
-import { paymentMethod } from '../payment-method/schema';
+import { nanoid } from 'nanoid';
+import { paymentMethod, bnplAccount } from '../payment-method/schema';
 import { invoice } from '../invoice/schema';
 
 /**
@@ -19,7 +19,7 @@ import { invoice } from '../invoice/schema';
 export const paymentEvents = pgTable('payment_events', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => nanoid()),
 
   // 외부 'Invoice' 모듈의 청구서 ID를 참조합니다.
   invoiceId: bigint('invoice_id', { mode: 'number' })
@@ -34,7 +34,13 @@ export const paymentEvents = pgTable('payment_events', {
   amount: decimal('amount', { precision: 19, scale: 4 }).notNull(),
   status: varchar('status', {
     length: 255,
-    enum: ['REQUESTED', 'SUCCESS', 'FAILED', 'DUPLICATE_ATTEMPT'],
+    enum: [
+      'REQUESTED',
+      'AUTHORIZED',
+      'CAPTURED',
+      'FAILED',
+      'DUPLICATE_ATTEMPT',
+    ],
   }).notNull(),
 
   // PG사로부터 받은 고유 거래 ID
@@ -56,7 +62,7 @@ export const paymentEvents = pgTable('payment_events', {
 export const refundEvents = pgTable('refund_events', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => nanoid()),
 
   // 같은 모듈 내의 'payment_events' 테이블을 참조합니다.
   paymentEventId: varchar('payment_event_id', { length: 26 })
@@ -102,3 +108,134 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
     references: [paymentEvents.id],
   }),
 }));
+
+// ────────────────────────────────────────────
+// BNPL Transaction (BNPL 거래 내역)
+// ────────────────────────────────────────────
+export const bnplTransaction = pgTable('bnpl_transaction', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
+  bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+    .notNull()
+    .references(() => bnplAccount.id),
+  invoiceId: bigint('invoice_id', { mode: 'number' }).notNull(),
+  transactionType: text('transaction_type')
+    .$type<'DEBIT' | 'CREDIT'>()
+    .notNull(),
+  status: text('status')
+    .$type<'AUTHORIZED' | 'CAPTURED' | 'VOIDED'>()
+    .notNull(),
+  amount: decimal('amount', { precision: 19, scale: 4 })
+    .$type<number>()
+    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ────────────────────────────────────────────
+// BNPL Transaction Relations
+// ────────────────────────────────────────────
+export const bnplTransactionRelations = relations(
+  bnplTransaction,
+  ({ one }) => ({
+    bnplAccount: one(bnplAccount, {
+      fields: [bnplTransaction.bnplAccountId],
+      references: [bnplAccount.id],
+    }),
+    invoice: one(invoice, {
+      fields: [bnplTransaction.invoiceId],
+      references: [invoice.id],
+    }),
+  }),
+);
+
+// ────────────────────────────────────────────
+// Settlement Batch (월별 정산 배치)
+// ────────────────────────────────────────────
+export const settlementBatch = pgTable('settlement_batch', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
+  bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+    .notNull()
+    .references(() => bnplAccount.id),
+  batchNumber: varchar('batch_number', { length: 50 }).notNull(), // 예: "2025-07"
+  totalAmount: decimal('total_amount', { precision: 19, scale: 4 })
+    .$type<number>()
+    .notNull()
+    .default(0),
+  dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
+  status: text('status')
+    .$type<'PENDING' | 'PROCESSING' | 'SETTLED' | 'FAILED'>()
+    .notNull()
+    .default('PENDING'),
+  batchPeriodStart: timestamp('batch_period_start', {
+    withTimezone: true,
+  }).notNull(),
+  batchPeriodEnd: timestamp('batch_period_end', {
+    withTimezone: true,
+  }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ────────────────────────────────────────────
+// Settlement Batch Item (배치 내 개별 거래)
+// ────────────────────────────────────────────
+export const settlementBatchItem = pgTable('settlement_batch_item', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
+  batchId: varchar('batch_id', { length: 26 })
+    .notNull()
+    .references(() => settlementBatch.id),
+  bnplTransactionId: varchar('bnpl_transaction_id', { length: 26 })
+    .notNull()
+    .references(() => bnplTransaction.id),
+  amount: decimal('amount', { precision: 19, scale: 4 })
+    .$type<number>()
+    .notNull(),
+  transactionDate: timestamp('transaction_date', {
+    withTimezone: true,
+  }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ────────────────────────────────────────────
+// Settlement Batch Relations
+// ────────────────────────────────────────────
+export const settlementBatchRelations = relations(
+  settlementBatch,
+  ({ one, many }) => ({
+    bnplAccount: one(bnplAccount, {
+      fields: [settlementBatch.bnplAccountId],
+      references: [bnplAccount.id],
+    }),
+    items: many(settlementBatchItem),
+  }),
+);
+
+// ────────────────────────────────────────────
+// Settlement Batch Item Relations
+// ────────────────────────────────────────────
+export const settlementBatchItemRelations = relations(
+  settlementBatchItem,
+  ({ one }) => ({
+    settlementBatch: one(settlementBatch, {
+      fields: [settlementBatchItem.batchId],
+      references: [settlementBatch.id],
+    }),
+    bnplTransaction: one(bnplTransaction, {
+      fields: [settlementBatchItem.bnplTransactionId],
+      references: [bnplTransaction.id],
+    }),
+  }),
+);

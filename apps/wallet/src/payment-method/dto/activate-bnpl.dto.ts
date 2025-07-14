@@ -29,6 +29,11 @@ export class ActivateBNPLDto {
 
   @IsNotEmpty()
   @IsNumber()
+  @Min(0)
+  approvedLimit: number;
+
+  @IsNotEmpty()
+  @IsNumber()
   @Min(1)
   @Max(31)
   billingCycleDay: number;
@@ -36,4 +41,8 @@ export class ActivateBNPLDto {
   @IsNotEmpty()
   @IsEnum(BNPLActor)
   actor: BNPLActor;
+
+  @IsNotEmpty()
+  @IsString()
+  termsUrl: string;
 }

@@ -6,9 +6,11 @@ import { PaymentMethodModule } from '../payment-method/payment-method.module';
 import { SharedModule } from '@app/shared';
 import { InvoiceService } from '../invoice/invoice.service';
 import { CardPaymentStrategy } from './strategies/card-payment.strategy';
+import { BnplPaymentStrategy } from './strategies/bnpl-payment.strategy';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PaymentEventListener } from './listeners/payment.listener';
 import { PgService } from './pg.service';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -16,6 +18,7 @@ import { PgService } from './pg.service';
     InvoiceModule,
     PaymentMethodModule,
     SharedModule,
+    ScheduleModule, // forRoot() 제거
   ],
   controllers: [PaymentController],
   providers: [
@@ -23,6 +26,7 @@ import { PgService } from './pg.service';
     PgService,
     InvoiceService,
     CardPaymentStrategy,
+    BnplPaymentStrategy,
     PaymentEventListener,
   ],
   exports: [PaymentService],
