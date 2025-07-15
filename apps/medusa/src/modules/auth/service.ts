@@ -84,7 +84,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       });
 
       const actorType = user.roles?.some((role) => role.role.name === 'admin')
-        ? 'admin'
+        ? 'user'
         : 'customer';
 
       return {
