@@ -14,29 +14,14 @@ import { PaymentMethodStrategy } from './payment.strategy';
 import * as schema from '../schema';
 import { CreateCardPaymentMethodDto } from '../dto/create-payment-method.dto';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { CreatePaymentProfileDto } from 'hms-api-wrapper/dist/services/PaymentProfile/types';
 
-// 타입 선언 개선
+// 타입 선언 개선 (HmsApiPayload 제거, CreatePaymentProfileDto 사용)
 interface HmsMemberResponse {
   memberId: string;
   paymentCompany: string;
   paymentNumber: string;
   result?: { flag: string; message?: string };
-}
-
-interface HmsApiPayload {
-  memberId: string;
-  memberName: string;
-  phone: string;
-  paymentKind: 'CARD';
-  validMonth: string;
-  validYear: string;
-  cardNumber: string;
-  cardPassword: string;
-  identityNumber: string;
-  customerEmail: string;
-  paymentNumber: string;
-  payerName: string;
-  payerNumber: string;
 }
 
 @Injectable()
@@ -76,8 +61,8 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
     if (!dto.userId) throw new BadRequestException('userId is required');
     if (!dto.cardNumber)
       throw new BadRequestException('cardNumber is required');
-    if (!dto.memberName)
-      throw new BadRequestException('memberName is required');
+    if (!dto.methodName)
+      throw new BadRequestException('methodName is required');
     // 카드 번호 유효성 검사 (Luhn 알고리즘 등 추가 가능)
     const cleanCardNumber = dto.cardNumber.replace(/\D/g, '');
     if (cleanCardNumber.length < 13 || cleanCardNumber.length > 19) {
@@ -112,29 +97,29 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .limit(1);
   }
 
-  private buildHmsApiPayload(dto: CreateCardPaymentMethodDto): HmsApiPayload {
+  private buildHmsApiPayload(
+    dto: CreateCardPaymentMethodDto,
+  ): CreatePaymentProfileDto {
     const formattedCardNumber = this.formatCardNumber(dto.cardNumber);
     return {
       memberId: dto.userId.toString(),
-      memberName: dto.memberName,
+      memberName: dto.payerName,
       phone: this.formatPhoneNumber(dto.phone),
       paymentKind: 'CARD',
       validMonth: dto.validMonth,
       validYear: dto.validYear,
-      cardNumber: formattedCardNumber,
-      cardPassword: dto.cardPassword,
-      identityNumber: dto.identityNumber,
-      customerEmail: dto.customerEmail,
       paymentNumber: formattedCardNumber,
       payerName: dto.payerName,
       payerNumber: this.formatPayerNumber(dto.identityNumber),
+      password: dto.cardPassword,
+      email: dto.customerEmail,
     };
   }
 
   /**
    * 보안 강화된 HMS API 호출
    */
-  private async callHmsApi(payload: HmsApiPayload): Promise<any> {
+  private async callHmsApi(payload: CreatePaymentProfileDto): Promise<any> {
     try {
       const response = await this.hmsApi.paymentProfiles.create(payload);
       if (response.member.result.flag !== 'Y') {
@@ -218,10 +203,9 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
     this.validate(payload);
     const dto = payload as CreateCardPaymentMethodDto;
     try {
-      const formattedCardNumber = this.formatCardNumber(dto.cardNumber);
       const existingDeletedCard = await this.findExistingDeletedCard(
         dto.userId,
-        formattedCardNumber,
+        dto.cardNumber,
       );
       const hmsPayload = this.buildHmsApiPayload(dto);
       const pgResponse: any = await this.callHmsApi(hmsPayload);

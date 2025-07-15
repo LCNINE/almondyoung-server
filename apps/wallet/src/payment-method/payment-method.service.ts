@@ -46,7 +46,7 @@ export class PaymentMethodService {
   async createPaymentMethod(dto: CreatePaymentMethodDto): Promise<unknown> {
     // BNPL은 별도 처리 (외부 PG사 연동 불필요)
     if (dto.methodType === 'BNPL') {
-      return this.bnplService.createBNPLPaymentMethod(dto);
+      return this.bnplService.create(dto);
     }
 
     const strategy = this.strategyRegistry.get(dto.methodType);
@@ -144,7 +144,7 @@ export class PaymentMethodService {
    * @returns BNPL 계정 정보
    */
   async activateBNPL(dto: ActivateBNPLDto): Promise<BNPLAccountResponseDto> {
-    return this.bnplService.activateBNPL(dto);
+    return this.bnplService.activate(dto);
   }
 
   /**
@@ -153,7 +153,7 @@ export class PaymentMethodService {
    * @returns 비활성화 결과
    */
   async deactivateBNPL(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
-    return this.bnplService.deactivateBNPL(dto);
+    return this.bnplService.deactivate(dto);
   }
 
   /**
@@ -162,7 +162,7 @@ export class PaymentMethodService {
    * @returns BNPL 계정 정보
    */
   async getBNPLAccount(userId: number): Promise<BNPLAccountResponseDto | null> {
-    return this.bnplService.getBNPLAccount(userId);
+    return this.bnplService.getAccount(userId);
   }
 
   /**
@@ -173,6 +173,6 @@ export class PaymentMethodService {
   async getBNPLPaymentMethods(
     userId: number,
   ): Promise<PaymentMethodWithDetails[]> {
-    return this.bnplService.getBNPLPaymentMethods(userId);
+    return this.bnplService.findAllByUser(userId);
   }
 }

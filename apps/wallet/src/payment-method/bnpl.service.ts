@@ -10,21 +10,19 @@ import { HmsAPI } from 'hms-api-wrapper';
 import { CreatePaymentProfileDto } from 'hms-api-wrapper/dist/services/PaymentProfile/types';
 import { eq, and } from 'drizzle-orm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
 
-function toHmsProfileDto(
-  dto: CreateBnplPaymentMethodDto,
-): CreatePaymentProfileDto {
+function toHmsCmsDto(dto: CreateBnplPaymentMethodDto): CreateMemberRequestDto {
   return {
     memberId: dto.userId.toString(),
     memberName: dto.methodName,
     phone: dto.phone ?? '01012345678',
-    paymentKind: 'CARD', // BNPL이지만 HMS에서는 CARD로 처리 필요시
+    paymentKind: 'CMS',
+    paymentCompany: dto.institutionCode ?? '088',
     paymentNumber: dto.settlementPaymentMethodId ?? '1234567890123456',
     payerName: dto.methodName,
     payerNumber: '900101',
-    validYear: '30', // mock 값
-    validMonth: '12', // mock 값
-    // 기타 optional 필드는 필요시 추가
+    // 기타 BNPL용 필수 필드만 전달
   };
 }
 
@@ -37,11 +35,13 @@ export class BnplService {
     @Inject('BATCH_CMS_MOCK_HMS_API') private readonly mockHmsApi: HmsAPI,
   ) {}
 
-  async createBNPLPaymentMethod(dto: CreateBnplPaymentMethodDto) {
+  async create(dto: CreateBnplPaymentMethodDto) {
     try {
-      const hmsPayload = toHmsProfileDto(dto);
-      const hmsResult =
-        await this.mockHmsApi.paymentProfiles.create(hmsPayload);
+      const hmsPayload = toHmsCmsDto(dto);
+      // BNPL/CMS용 API(batchCms.members.create)를 호출하도록 수정 (any 캐스팅으로 임시 해결)
+      const hmsResult = await (this.mockHmsApi as any).batchCms.members.create(
+        hmsPayload,
+      );
       this.logger.log(`Mock HMS API 호출 성공: ${JSON.stringify(hmsResult)}`);
       return this.dbService.db.transaction(async (tx) => {
         // 1. 결제수단 생성
@@ -93,7 +93,7 @@ export class BnplService {
     }
   }
 
-  async activateBNPL(dto: ActivateBNPLDto): Promise<BNPLAccountResponseDto> {
+  async activate(dto: ActivateBNPLDto): Promise<BNPLAccountResponseDto> {
     return this.dbService.db.transaction(async (tx) => {
       // 1. 결제수단 존재 확인
       const paymentMethod = await tx.query.paymentMethod.findFirst({
@@ -155,7 +155,7 @@ export class BnplService {
     });
   }
 
-  async deactivateBNPL(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
+  async deactivate(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
     return this.dbService.db.transaction(async (tx) => {
       // 1. 결제수단 존재 확인
       const paymentMethod = await tx.query.paymentMethod.findFirst({
@@ -197,7 +197,7 @@ export class BnplService {
     });
   }
 
-  async getBNPLAccount(userId: number): Promise<BNPLAccountResponseDto | null> {
+  async getAccount(userId: number): Promise<BNPLAccountResponseDto | null> {
     const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
       where: eq(schema.bnplAccount.userId, userId),
     });
@@ -218,7 +218,7 @@ export class BnplService {
     };
   }
 
-  async getBNPLPaymentMethods(userId: number): Promise<any[]> {
+  async findAllByUser(userId: number): Promise<any[]> {
     const results = await this.dbService.db.query.paymentMethod.findMany({
       where: and(
         eq(schema.paymentMethod.userId, userId),
