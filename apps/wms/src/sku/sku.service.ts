@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
 import { TypedDatabase } from '@app/db';
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, or, sql, SQL } from 'drizzle-orm';
 import { CreateSkuDto } from './dto/create-sku.dto';
 import { UpdateSkuDto } from './dto/update-sku.dto';
 
@@ -14,14 +14,23 @@ export class SkuService {
     @InjectTypedDb<typeof wmsTables>() private readonly db: TypedDatabase<typeof wmsTables>,
   ) { }
 
+  private _generateSkuCode(): string {
+    const prefix = 'P';
+    const numericPart = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+    const alphaPart = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
+    return `${prefix}${numericPart}${alphaPart}`;
+  }
+
   async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode'>) {
     const preStockSellable = data.inventoryManagement === true;
+    const skuCode = this._generateSkuCode();
 
     // todo : 자동매칭 시 name 자동생성(pim의 상품 이름 + 옵션 이름) => 수정할 수 있는 것도 추가
     // todo : 수동매칭 시 name 수동입력
 
     const [newSku] = await this.db.insert(wmsTables.skus).values({
       name: data.name,
+      code: skuCode,
       deliveryProfileId: data.deliveryProfileId,
       inventoryManagement: data.inventoryManagement,
       preStockSellable: preStockSellable,
@@ -114,19 +123,78 @@ export class SkuService {
     });
   }
 
-  async searchSkus(name?: string, productCode?: string) {
-    if (!name && !productCode) {
-      throw new Error('Either name or productCode must be provided for SKU search.');
+  async searchSkus(query: { id?: string; code?: string; barcode?: string; name?: string; supplierName?: string }) {
+    // 기본 쿼리 구성
+    const baseQuery = this.db.select({
+      sku: wmsTables.skus,
+      barcode: wmsTables.skuBarcodes.barcode,
+      supplierName: wmsTables.suppliers.name,
+    })
+      .from(wmsTables.skus)
+      .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
+      .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skus.id, wmsTables.skuSuppliers.skuId))
+      .leftJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id));
+
+    // 조건들을 배열로 수집
+    const conditions: SQL[] = [];
+
+    // SKU ID 검색 (id) - 정확히 일치
+    if (query.id) {
+      conditions.push(eq(wmsTables.skus.id, query.id));
     }
 
-    const skus = await this.db.query.skus.findMany({
-      where: (skus, { or, and }) =>
-        and(
-          name ? like(skus.name, `%${name}%`) : undefined,
-          productCode ? like(skus.defaultBarcode, `%${productCode}%`) : undefined,
-        ),
-    });
+    // SKU 코드 검색 (code) - 정확히 일치
+    if (query.code) {
+      conditions.push(eq(wmsTables.skus.code, query.code));
+    }
 
-    return skus;
+    // SKU 이름 검색 (name) - 부분 일치 (ILIKE)
+    if (query.name) {
+      conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
+    }
+
+    // SKU 바코드 검색 (defaultBarcode 또는 skuBarcodes.barcode) - 정확히 일치
+    if (query.barcode) {
+      const barcodeCondition = or(
+        eq(wmsTables.skus.defaultBarcode, query.barcode),
+        eq(wmsTables.skuBarcodes.barcode, query.barcode),
+      );
+      if (barcodeCondition) {
+        conditions.push(barcodeCondition);
+      }
+    }
+
+    // 공급사 이름 검색 (supplierName) - 부분 일치 (ILIKE)
+    if (query.supplierName) {
+      conditions.push(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
+    }
+
+    // 조건이 있으면 where 절 추가
+    const finalQuery = conditions.length > 0
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
+
+    const results = await finalQuery;
+
+    // 중복 제거 및 결과 집계
+    const aggregatedSkus = results.reduce((acc, row) => {
+      const sku = row.sku;
+      if (!acc[sku.id]) {
+        acc[sku.id] = {
+          ...sku,
+          barcodes: [], // 모든 관련 바코드 (default 포함)
+          suppliers: [], // 모든 관련 공급사 이름
+        };
+      }
+      if (row.barcode && !acc[sku.id].barcodes.includes(row.barcode)) {
+        acc[sku.id].barcodes.push(row.barcode);
+      }
+      if (row.supplierName && !acc[sku.id].suppliers.includes(row.supplierName)) {
+        acc[sku.id].suppliers.push(row.supplierName);
+      }
+      return acc;
+    }, {});
+
+    return Object.values(aggregatedSkus);
   }
 }

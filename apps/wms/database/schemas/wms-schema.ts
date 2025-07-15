@@ -45,6 +45,7 @@ export const suppliers = pgTable('suppliers', {
 export const skus = pgTable('skus', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 64 }).notNull().unique(),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
@@ -70,7 +71,7 @@ export const skuSuppliers = pgTable('sku_suppliers', {
 export const skuBarcodes = pgTable('sku_barcodes', {
     id: uuid('id').primaryKey().defaultRandom(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    barcode: varchar('barcode', { length: 64 }).notNull(), // 실제 바코드 값
+    barcode: varchar('barcode', { length: 64 }).notNull().unique(), // 실제 바코드 값
     barcodeType: barcodeTypeEnum('barcode_type').notNull(),
     packingUnit: varchar('packing_unit', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),

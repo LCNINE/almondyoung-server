@@ -8,21 +8,21 @@ export class SkuController {
   constructor(private readonly skuService: SkuService) { }
 
   @Get()
-  @ApiOperation({ summary: 'SKU 검색 (상품명, 바코드/상품코드)' })
-  @ApiQuery({ name: 'name', required: false, description: 'SKU 이름' })
-  @ApiQuery({ name: 'productCode', required: false, description: 'SKU 바코드 또는 상품 코드' })
-  @ApiResponse({ status: 200, description: 'SKU 목록을 반환합니다.' })
+  @ApiOperation({ summary: 'SKU 검색 (ID, 코드, 바코드, 이름, 공급사 이름)' })
+  @ApiQuery({ name: 'id', required: false, description: 'SKU ID (정확히 일치)' })
+  @ApiQuery({ name: 'code', required: false, description: 'SKU 코드 (정확히 일치)' })
+  @ApiQuery({ name: 'barcode', required: false, description: 'SKU 기본 바코드 또는 서브 바코드 (부분 일치)' })
+  @ApiQuery({ name: 'name', required: false, description: 'SKU 이름 (부분 일치)' })
+  @ApiQuery({ name: 'supplierName', required: false, description: '공급사 이름 (부분 일치)' })
+  @ApiResponse({ status: 200, description: '검색된 SKU 목록을 반환합니다.' })
   async searchSkus(
-    @Query('name') name?: string,
+    @Query('id') id?: string,
+    @Query('code') code?: string,
     @Query('barcode') barcode?: string,
+    @Query('name') name?: string,
+    @Query('supplierName') supplierName?: string,
   ) {
-    return this.skuService.searchSkus(name, barcode);
+    return this.skuService.searchSkus({ id, code, barcode, name, supplierName });
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'SKU ID로 조회' })
-  @ApiResponse({ status: 200, description: '단일 SKU 정보 반환' })
-  async findSkuById(@Param('id') id: string) {
-    return this.skuService.findSkuById(id);
-  }
 }
