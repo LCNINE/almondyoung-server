@@ -22,3 +22,12 @@ export interface User {
     }[];
   }[];
 }
+
+export interface UserDTO {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  password?: string;
+  role?: string;
+  metadata?: Record<string, unknown>;
+}
