@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsDateString, IsEnum, IsString } from 'class-validator';
+import { IsUUID, IsOptional, IsDateString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { stockTypeEnum } from '../../../database/schemas/wms-schema';
 

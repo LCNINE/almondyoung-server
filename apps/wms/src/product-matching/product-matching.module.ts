@@ -6,4 +6,4 @@ import { ProductMatchingController } from './product-matching.controller';
   controllers: [ProductMatchingController],
   providers: [ProductMatchingService],
 })
-export class ProductMatchingModule {}
+export class ProductMatchingModule { }

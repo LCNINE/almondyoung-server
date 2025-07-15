@@ -50,6 +50,7 @@ export const skus = pgTable('skus', {
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
     preStockSellable: boolean('pre_stock_sellable').notNull().default(false), // 재고 0이어도 선판매 가능한지 여부 (inventory_management=true일 때만 유의미함)
+    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),

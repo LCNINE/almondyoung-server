@@ -3,7 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
 import { TypedDatabase } from '@app/db';
 import { and, eq, like, or, sql, SQL } from 'drizzle-orm';
-import { CreateSkuDto } from './dto/create-sku.dto';
+import { CreateSkuDto, SkuCreationSource } from './dto/create-sku.dto';
 import { UpdateSkuDto } from './dto/update-sku.dto';
 
 @Injectable()
@@ -25,15 +25,25 @@ export class SkuService {
     const preStockSellable = data.inventoryManagement === true;
     const skuCode = this._generateSkuCode();
 
-    // todo : 자동매칭 시 name 자동생성(pim의 상품 이름 + 옵션 이름) => 수정할 수 있는 것도 추가
-    // todo : 수동매칭 시 name 수동입력
+    let skuName: string;
+    if (data.source === SkuCreationSource.AUTO_MATCHING) {
+      // 자동 매칭 시: PIM 상품 이름 + 옵션 이름 조합
+      skuName = `${data.productName || 'Unknown Product'} - ${data.variantName || 'Unknown Variant'}`;
+    } else if (data.source === SkuCreationSource.MANUAL_MATCHING) {
+      // 수동 매칭 시: DTO에서 직접 입력받은 name 사용
+      skuName = data.name;
+    } else {
+      skuName = data.name || `Auto-generated SKU Name (${skuCode})`;
+      this.logger.warn(`SKU creation source not specified for SKU: ${skuName}. Using default naming.`);
+    }
 
     const [newSku] = await this.db.insert(wmsTables.skus).values({
-      name: data.name,
+      name: skuName,
       code: skuCode,
       deliveryProfileId: data.deliveryProfileId,
       inventoryManagement: data.inventoryManagement,
       preStockSellable: preStockSellable,
+      alwaysSellableZeroStock: data.alwaysSellableZeroStock ?? false,
       sale1m: data.sale1m,
       sale3m: data.sale3m,
     }).returning();
@@ -78,11 +88,12 @@ export class SkuService {
   }
 
   async _updateSkuInternal(skuId: string, data: Partial<Omit<UpdateSkuDto, 'code' | 'defaultBarcode'>>) {
-    // preStockSellable은 _updatePreStockSellableInternal을 통해 변경되므로 여기서는 제외
+    // preStockSellable은 _updatePreStockSellableInternal을 통해 변경, 여기서는 제외
     const updateData: Partial<typeof wmsTables.skus.$inferInsert> = {
       name: data.name,
       deliveryProfileId: data.deliveryProfileId,
       inventoryManagement: data.inventoryManagement,
+      alwaysSellableZeroStock: data.alwaysSellableZeroStock,
       sale1m: data.sale1m,
       sale3m: data.sale3m,
       updatedAt: new Date(),
