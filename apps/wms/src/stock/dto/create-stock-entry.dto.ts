@@ -1,17 +1,22 @@
-import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum, IsString } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { barcodeTypeEnum, stockTypeEnum } from '../../../database/schemas/wms-schema';
 
 export class CreateStockEntryDto {
-    @ApiProperty({ description: 'Product Matching의 Variant ID (이 ID를 기반으로 SKU 및 재고가 생성)' })
+    @ApiProperty({ description: 'Product Matching의 Variant ID (참조용)', required: false })
     @IsUUID()
-    @IsNotEmpty()
-    variantId: string;
+    @IsOptional() // 자동매칭 시에는 사용되므로 필수는 아님
+    variantId?: string;
 
     @ApiProperty({ description: '생성할 SKU 이름' })
     @IsString()
     @IsNotEmpty()
     skuName: string;
+
+    @ApiProperty({ description: '재고 관리 여부', required: false })
+    @IsBoolean()
+    @IsOptional()
+    inventoryManagement?: boolean;
 
     @ApiProperty({ description: '창고 ID' })
     @IsUUID()

@@ -2,11 +2,29 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
 import { TypedDatabase } from '@app/db';
-// import { InjectEventPublisher, TypedEventPattern } from '@app/events/decorators';
-// import { EventPublisherService } from '@app/events';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { SkuService } from '../sku/sku.service';
 import { StockService } from '../stock/stock.service';
+import { ResolveMatchingDto } from './dto/resolve-matching.dto';
+
+interface PimSkuComponent {
+  skuName: string;
+  // 여기에 바코드, 공급사 정보 등
+}
+
+interface PimVariantPayload {
+  id: string;
+  name: string;
+  inventoryManagement: boolean;
+  components: PimSkuComponent[];
+}
+
+interface PimProductPayload {
+  productId: string;
+  name: string;
+  variants: PimVariantPayload[];
+}
+
 
 @Injectable()
 export class ProductMatchingService {
@@ -18,21 +36,14 @@ export class ProductMatchingService {
     private readonly stockService: StockService,
   ) { }
 
-  // PIM 이벤트 수신 핸들러
 
-  // PIM에서 상품이 생성되었을 때 (판매등록)
-  // @TypedEventPattern<typeof PIM_EVENTS, 'product.created'>('product.created')
-  // async handlePimProductCreated(payload: ProductCreatedPayload, @Payload() message: KafkaMessage) {
-  //   
-  //   await this.createProductMatchingFromPimEvent(payload);
-  // }
+  //  PIM에서 판매상품 생성 이벤트 수신 시 (수동 매칭)
+  //  단순히 매칭 대기(pending) 상태만 생성. SKU/Stock은 생성하지 않음
 
-  // PIM 이벤트로부터 Product Matching 생성 (테스트용으로 사용)
-  async createProductMatchingFromPimEvent(payload: any) {
-    this.logger.log(`Creating product matching from PIM event for product ID: ${payload.productId}`);
+  async handleManualMatchingRequest(payload: PimProductPayload) {
+    this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
     for (const variant of payload.variants) {
-      // 1. product_matchings 테이블에 row 생성 (variant_id 단위)
       const existingMatching = await this.db.query.productMatchings.findFirst({
         where: eq(wmsTables.productMatchings.variantId, variant.id),
       });
@@ -44,244 +55,107 @@ export class ProductMatchingService {
 
       const [newProductMatching] = await this.db.insert(wmsTables.productMatchings).values({
         variantId: variant.id,
-        status: 'pending', // 기본 상태는 'pending'
-        priority: 'high', // 이미지 플로우에 따라 초기 priority는 high
+        status: 'pending',
+        priority: 'high', // 수동 처리 필요하므로 우선순위 'high'
         isResolved: false,
       }).returning();
 
       if (!newProductMatching) {
-        throw new Error('Product matching entry 생성에 실패했습니다.');
+        throw new Error('Product matching entry(pending) 생성에 실패했습니다.');
       }
       this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
-
-      // 3. [자동매칭 시나리오] inventoryManagement=true인 경우, 즉시 stock/sku 생성 (수량 0으로)
-      if (variant.inventoryManagement) {
-        try {
-          // StockService의 createStockEntry 호출 (quantity 0으로)
-          await this.stockService.createStockEntry({
-            variantId: variant.id,
-            skuName: variant.name || payload.name, // SKU 이름
-            warehouseId: 'DEFAULT_WAREHOUSE_ID', // TODO: 적절한 기본 창고 ID 설정 필요
-            quantity: 0, // 판매등록 시 재고는 0으로 생성
-            stockType: 'physical', // 물리 재고로 가정
-            reason: 'auto_matching_registration',
-            orderId: undefined, // 판매등록이므로 주문과 직접 관련 없음
-          });
-          this.logger.log(`Auto-matched SKU and Stock (qty 0) created for variant ${variant.id}.`);
-
-        } catch (error) {
-          this.logger.error(`Failed to auto-create SKU/Stock for variant ${variant.id}: ${error.message}`, error.stack);
-        }
-      } else {
-        // inventoryManagement=false인 경우, stock/sku 생성 안 함
-        this.logger.log(`Variant ${variant.id} is not inventory managed. No SKU or Stock created.`);
-      }
+      // TODO: 알림 서비스에 이벤트 발행 (priority: 'high'인 경우)
     }
   }
 
-  // PIM에서 상품이 업데이트되었을 때
-  // @TypedEventPattern<typeof PIM_EVENTS, 'product.updated'>('product.updated')
-  // async handlePimProductUpdated(payload: ProductUpdatedPayload, @Payload() message: KafkaMessage) {
-  //   await this.updateProductMatchingFromPimEvent(payload);
-  // }
 
-  // PIM 이벤트로부터 Product Matching 업데이트 (테스트용으로 사용)
-  async updateProductMatchingFromPimEvent(payload: any) {
-    this.logger.log(`Updating product matching from PIM event for product ID: ${payload.productId}`);
+  //  PIM에서 상품 "자동 매칭" 이벤트 수신 시
+  //  inventoryManagement=true 이면 SKU/Stock(qty 0)을 자동 생성하고, 즉시 'matched' 상태로 처리
+
+  async handleAutomaticMatchingRequest(payload: PimProductPayload) {
+    this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
 
     for (const variant of payload.variants) {
-      const productMatching = await this.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, variant.id),
-      });
-
-      if (!productMatching) {
-        this.logger.warn(`No product matching found for variant ${variant.id}. Skipping update.`);
+      // 1. 재고 관리 대상이 아니면 무시(ignored) 상태로 처리하고 넘어갑니다.
+      if (!variant.inventoryManagement) {
+        await this.db.insert(wmsTables.productMatchings).values({
+          variantId: variant.id,
+          status: 'ignored',
+          priority: 'normal',
+          isResolved: true, // 즉시 해결됨으로 처리
+        }).onConflictDoNothing();
+        this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored.`);
         continue;
       }
 
-      // product_matchings 업데이트
-      const updateData: Partial<typeof wmsTables.productMatchings.$inferInsert> = {
-        updatedAt: new Date(),
-      };
+      // 트랜잭션 시작: variant 하나에 대한 매칭/SKU/Stock/Link 생성을 원자적으로 처리
+      await this.db.transaction(async (tx) => {
+        // 2. product_matchings 테이블에 row 생성 (variant 단위, 'matched' 상태)
+        const [newProductMatching] = await tx.insert(wmsTables.productMatchings).values({
+          variantId: variant.id,
+          status: 'matched',
+          priority: 'normal',
+          isResolved: true, // 자동 매칭이므로 즉시 해결
+        }).returning();
 
-      const [updatedMatching] = await this.db.update(wmsTables.productMatchings)
-        .set(updateData)
-        .where(eq(wmsTables.productMatchings.id, productMatching.id))
-        .returning();
-
-      if (updatedMatching) {
-        this.logger.log(`Product matching ${updatedMatching.id} updated for variant ${variant.id}.`);
-      }
-    }
-  }
-
-  // PIM에서 상품이 삭제되었을 때
-  // @TypedEventPattern<typeof PIM_EVENTS, 'product.deleted'>('product.deleted')
-  // async handlePimProductDeleted(payload: ProductDeletedPayload, @Payload() message: KafkaMessage) {
-  //   this.logger.log(`Received PIM product.deleted event for product ID: ${payload.productId}`, { correlationId: payload.correlationId });
-
-  //   const [deletedMatching] = await this.db.update(wmsTables.productMatchings)
-  //     .set({
-  //       isResolved: true, // 소프트 삭제
-  //       status: 'ignored', // 삭제된 상품은 'ignored' 상태로 간주
-  //       updatedAt: new Date(),
-  //     })
-  //     .where(eq(wmsTables.productMatchings.productId, payload.productId))
-  //     .returning();
-
-  //   if (deletedMatching) {
-  //     this.logger.log(`Product matching ${deletedMatching.id} (soft deleted) for product ${payload.productId}.`);
-  //     // await this.eventPublisher.publishEvent('product.matching_removed', {
-  //     //   matchingId: deletedMatching.id,
-  //     //   productId: deletedMatching.productId,
-  //     //   variantId: deletedMatching.variantId,
-  //     // });
-  //     // productVariantSkuLinks의 연결도 cascading delete되거나, 여기서 명시적으로 삭제 로직 필요
-  //   }
-  // }
-
-  // StockService에서 `stock.updated` 이벤트가 발행될 때 (WMS 내부 발행) - 주석처리됨
-  // @TypedEventPattern<typeof WMS_EVENTS, 'stock.updated'>('stock.updated')
-  // async handleStockUpdated(payload: StockUpdatedPayload, @Payload() message: KafkaMessage) {
-  //   this.logger.log(`Received stock.updated event for SKU ${payload.skuId} in warehouse ${payload.warehouseId}`, { correlationId: payload.correlationId });
-
-  //   // `createStockEntry`가 호출되어 실제 재고가 생성되었을 때 (quantity가 0이든 0보다 크든)
-  //   // `product_matchings`의 `isResolved`와 `preStockSellable`을 업데이트하는 역할을 수행
-  //   // 이는 `StockService.createStockEntry`에서 `product_matchings`를 직접 업데이트하지 않고
-  //   // 이벤트를 통해 상태 동기화
-
-  //   // 1. 해당 SKU에 연결된 product_matchings 엔트리 찾기
-  //   const skuLinks = await this.db.query.productVariantSkuLinks.findMany({
-  //     where: eq(wmsTables.productVariantSkuLinks.skuId, payload.skuId),
-  //     // where: eq(wmsTables.productVariantSkuLinks.skuId, payload.skuId),
-  //   });
-
-  //   for (const link of skuLinks) {
-  //     const productMatching = await this.db.query.productMatchings.findFirst({
-  //       where: eq(wmsTables.productMatchings.id, link.productMatchingId),
-  //     });
-
-  //     if (productMatching && (!productMatching.isResolved || productMatching.preStockSellable)) {
-  //       // `isResolved`가 false이거나 `preStockSellable`이 true인 경우에만 업데이트
-  //       await this.db.update(wmsTables.productMatchings)
-  //         .set({
-  //           isResolved: true, // 매칭 완료
-  //           preStockSellable: false, // 첫 입고 완료
-  //           status: 'matched', // 상태를 'matched'로 변경
-  //           updatedAt: new Date(),
-  //         })
-  //         .where(eq(wmsTables.productMatchings.id, productMatching.id));
-  //       this.logger.log(`ProductMatching ${productMatching.id} updated (isResolved=true, preStockSellable=false) due to stock update for SKU ${payload.skuId}.`);
-
-  //       // product.matching_updated 이벤트 발행 (다른 서비스에 알림)
-  //       // await this.eventPublisher.publishEvent('product.matching_updated', {
-  //       //   matchingId: productMatching.id,
-  //       //   productId: productMatching.productId,
-  //       //   variantId: productMatching.variantId,
-  //       //   skuId: payload.skuId, // 업데이트된 SKU ID
-  //       //   status: 'matched',
-  //       //   preStockSellable: false,
-  //       // });
-  //     }
-  //   }
-  // }
-
-
-  // StockService에서 재고가 업데이트될 때 호출되는 메소드
-  async handleStockUpdatedInternal(skuId: string) {
-    this.logger.log(`Stock updated for SKU ${skuId}, updating product matching status.`);
-
-    // 1. 해당 SKU에 연결된 product_matchings 엔트리 찾기
-    const skuLinks = await this.db.query.productVariantSkuLinks.findMany({
-      where: eq(wmsTables.productVariantSkuLinks.skuId, skuId),
-    });
-
-    for (const link of skuLinks) {
-      const productMatching = await this.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.id, link.productMatchingId),
-      });
-
-      if (productMatching && !productMatching.isResolved) {
-        // `isResolved`가 false인 경우에만 업데이트
-        await this.db.update(wmsTables.productMatchings)
-          .set({
-            isResolved: true, // 매칭 완료
-            status: 'matched', // 상태를 'matched'로 변경
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.productMatchings.id, productMatching.id));
-        this.logger.log(`ProductMatching ${productMatching.id} updated (isResolved=true) due to stock update for SKU ${skuId}.`);
-      }
-    }
-  }
-
-
-  // 테스트용
-  // 테스트용 Product Matching 생성
-  async createTestProductMatching() {
-    const testPayload = {
-      productId: 'test-product-001',
-      variants: [
-        {
-          id: 'test-variant-001',
-          name: '테스트 상품 변형 1',
-          sku: 'TEST-SKU-001',
-          inventoryManagement: true,
-        },
-        {
-          id: 'test-variant-002',
-          name: '테스트 상품 변형 2',
-          sku: 'TEST-SKU-002',
-          inventoryManagement: false,
+        if (!newProductMatching) {
+          throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
         }
-      ]
-    };
 
-    await this.createProductMatchingFromPimEvent(testPayload);
-    this.logger.log('Test product matching created successfully');
+        // 3. Variant를 구성하는 각 SKU Component에 대해 SKU, Stock, Link 생성 (M:N 처리)
+        for (const component of variant.components) {
+          // 3-1. StockService를 통해 SKU 및 Stock(수량 0) 생성
+          const newStock = await this.stockService.createStockEntry({
+            variantId: variant.id,
+            skuName: component.skuName,
+            inventoryManagement: true,
+            warehouseId: 'DEFAULT_WAREHOUSE_ID', // TODO: 적절한 기본 창고 ID 설정 필요
+            quantity: 0,
+            stockType: 'physical',
+            reason: `auto_matching_for_variant_${variant.id}`,
+          }, tx);
+
+          // 3-2. productVariantSkuLinks에 매핑 추가
+          await tx.insert(wmsTables.productVariantSkuLinks).values({
+            productMatchingId: newProductMatching.id,
+            skuId: newStock.skuId,
+          });
+        }
+        this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs.`);
+      });
+    }
   }
-
-  // 테스트용 Product Matching 데이터 조회
-  async getTestProductMatchings() {
-    const matchings = await this.db.query.productMatchings.findMany({
-      where: (matchings, { like }) => like(matchings.variantId, 'test-%'),
-      orderBy: (matchings, { asc }) => [asc(matchings.createdAt)],
-    });
-    return matchings;
-  }
-
-  // 테스트용 Product Matching 데이터 삭제
-  async deleteTestProductMatchings() {
-    const deleted = await this.db.delete(wmsTables.productMatchings)
-      .where(like(wmsTables.productMatchings.variantId, 'test-%'))
-      .returning();
-
-    this.logger.log(`Deleted ${deleted.length} test product matchings`);
-    return deleted;
-  }
-
-  // 관리자 수동 매칭
 
   // 매칭 대기 목록 조회
   async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored') {
     const matchings = await this.db.query.productMatchings.findMany({
       where: (matchings, { and, eq }) => and(
         status ? eq(matchings.status, status) : undefined,
-        eq(matchings.isResolved, false), // 해결되지 않은 매칭만
+        eq(matchings.isResolved, false),
       ),
       orderBy: (matchings, { asc }) => [asc(matchings.createdAt)],
+      with: {
+        // 필요 시 연결된 SKU 정보 로드 (수동 매칭 화면에서 활용)
+        // links: {
+        //     with: {
+        //         sku: true
+        //     }
+        // }
+      }
     });
     return matchings;
   }
 
-  // 매칭 대기 해소 (SKU와 매칭 또는 무시)
-  // 이 메서드는 `관리자 수동 매칭` 중 `기존 stock(variant_id=NULL) 선택` 시나리오에 해당
-  // 이미 WMS에 SKU/Stock이 존재하는 경우를 매칭하는 API
-  async resolveMatchingPending(matchingId: string, skuIdToLink?: string, ignore?: boolean) {
+
+  //  매칭 대기 해소 (SKU와 매칭 또는 무시)
+
+  async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto) {
+    const { skuIds, ignore } = resolveDto;
+
     const productMatching = await this.db.query.productMatchings.findFirst({
       where: and(
         eq(wmsTables.productMatchings.id, matchingId),
-        eq(wmsTables.productMatchings.isResolved, false) // 아직 해결되지 않은 매칭
+        eq(wmsTables.productMatchings.isResolved, false)
       ),
     });
 
@@ -289,76 +163,51 @@ export class ProductMatchingService {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
     }
 
-    let newStatus: 'pending' | 'matched' | 'ignored';
-    let linkedSkuId: string | null = null;
-
     if (ignore) {
-      newStatus = 'ignored';
-      linkedSkuId = null;
-    } else if (skuIdToLink) {
-      // 1. 연결할 SKU가 실제로 WMS에 존재하는지 확인
-      const skuToLink = await this.skuService.findSkuById(skuIdToLink);
-      if (!skuToLink) {
-        throw new NotFoundException(`SKU with ID ${skuIdToLink} not found in WMS.`);
-      }
-      if (!skuToLink.inventoryManagement) {
-        throw new BadRequestException(`SKU ${skuToLink.id} is not inventory managed. Cannot link to a variant for sales.`);
-      }
-
-      newStatus = 'matched';
-      linkedSkuId = skuToLink.id;
-
-      // 2. productVariantSkuLinks에 매핑 추가 (중복 방지)
-      const existingLink = await this.db.query.productVariantSkuLinks.findFirst({
-        where: and(
-          eq(wmsTables.productVariantSkuLinks.productMatchingId, productMatching.id),
-          eq(wmsTables.productVariantSkuLinks.skuId, linkedSkuId)
-        )
-      });
-      if (!existingLink) {
-        await this.db.insert(wmsTables.productVariantSkuLinks).values({
-          productMatchingId: productMatching.id,
-          skuId: linkedSkuId
-        });
-        this.logger.log(`Linked existing SKU ${linkedSkuId} to productMatching ${productMatching.id}.`);
-      }
-      // 3. `preStockSellable` 플래그 업데이트
-      // 연결되는 SKU의 `preStockSellable`이 `true`라면 `false`로 변경 (첫 입고 완료 의미)
-      if (skuToLink.inventoryManagement && skuToLink.preStockSellable) {
-        await this.skuService._updatePreStockSellableInternal(skuToLink.id, false);
-      }
-
-    } else {
-      throw new BadRequestException('SKU ID를 제공하거나 무시 옵션을 선택해야 합니다.');
-    }
-
-    // product_matchings 테이블 업데이트
-    const [updatedMatching] = await this.db.update(wmsTables.productMatchings)
-      .set({
-        status: newStatus,
+      // 무시 처리
+      const [updatedMatching] = await this.db.update(wmsTables.productMatchings).set({
+        status: 'ignored',
         isResolved: true,
-        // preStockSellable: (newStatus === 'matched' ? false : productMatching.preStockSellable), // 매칭되면 false, 아니면 기존값 유지
         updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.productMatchings.id, matchingId))
-      .returning();
+      }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
+      this.logger.log(`Product matching ${matchingId} resolved as 'ignored'.`);
+      return updatedMatching;
 
-    if (!updatedMatching) {
-      throw new Error(`Product matching ${matchingId} 해소에 실패했습니다.`);
+    } else if (skuIds && skuIds.length > 0) {
+      // SKU 연결 처리 (트랜잭션)
+      return this.db.transaction(async (tx) => {
+        for (const skuId of skuIds) {
+          // 1. 연결할 SKU 유효성 검증
+          const skuToLink = await this.skuService.findSkuById(skuId);
+          if (!skuToLink) {
+            throw new NotFoundException(`SKU with ID ${skuId} not found in WMS.`);
+          }
+          if (!skuToLink.inventoryManagement) {
+            throw new BadRequestException(`SKU ${skuToLink.id} is not inventory managed.`);
+          }
+
+          // 2. productVariantSkuLinks에 매핑 추가 (ON CONFLICT DO NOTHING으로 중복 방지)
+          await tx.insert(wmsTables.productVariantSkuLinks).values({
+            productMatchingId: productMatching.id,
+            skuId: skuId,
+          }).onConflictDoNothing();
+
+          this.logger.log(`Linked SKU ${skuId} to productMatching ${productMatching.id}.`);
+        }
+
+        // 3. product_matchings 테이블 업데이트
+        const [updatedMatching] = await tx.update(wmsTables.productMatchings).set({
+          status: 'matched',
+          isResolved: true,
+          updatedAt: new Date(),
+        }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
+
+        this.logger.log(`Product matching ${matchingId} resolved as 'matched' with ${skuIds.length} SKUs.`);
+        return updatedMatching;
+      });
+    } else {
+      throw new BadRequestException('매칭할 SKU ID 목록을 제공하거나, 무시 옵션을 선택해야 합니다.');
     }
-
-    this.logger.log(`Product matching ${matchingId} 해소됨. 상태: ${newStatus}, SKU ID: ${linkedSkuId}.`);
-    // product.matching_updated 이벤트 발행 - 주석처리됨
-    // await this.eventPublisher.publishEvent('product.matching_updated', {
-    //   matchingId: updatedMatching.id,
-    //   productId: updatedMatching.productId,
-    //   variantId: updatedMatching.variantId,
-    //   skuId: linkedSkuId,
-    //   status: updatedMatching.status,
-    //   preStockSellable: updatedMatching.preStockSellable,
-    // });
-
-    return updatedMatching;
   }
 
   // 매칭 우선순위 설정
@@ -379,16 +228,6 @@ export class ProductMatchingService {
     }
 
     this.logger.log(`Product matching ${matchingId} 우선순위 설정됨: ${priority}.`);
-    // product.matching_updated 이벤트 발행
-    // await this.eventPublisher.publishEvent('product.matching_updated', {
-    //   matchingId: updatedMatching.id,
-    //   productId: updatedMatching.productId,
-    //   variantId: updatedMatching.variantId,
-    //   skuId: null, // 우선순위 변경은 SKU 연결과 직접 관련 없음
-    //   status: updatedMatching.status,
-    //   preStockSellable: updatedMatching.preStockSellable,
-    // });
-
     return updatedMatching;
   }
 }

@@ -22,7 +22,7 @@ export class ProductMatchingController {
   @ApiOperation({ summary: '매칭 대기 해소 (SKU와 매칭 또는 무시)' })
   @ApiResponse({ status: 200, description: '매칭 대기가 성공적으로 해소되었습니다.' })
   async resolveMatchingPending(@Param('id') matchingId: string, @Body() resolveDto: ResolveMatchingDto) {
-    return this.productMatchingService.resolveMatchingPending(matchingId, resolveDto.skuId, resolveDto.ignore);
+    return this.productMatchingService.resolveMatchingPending(matchingId, resolveDto);
   }
 
   @Patch(':id/priority')

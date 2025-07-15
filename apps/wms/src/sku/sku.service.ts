@@ -6,6 +6,9 @@ import { and, eq, like, or, sql, SQL } from 'drizzle-orm';
 import { CreateSkuDto, SkuCreationSource } from './dto/create-sku.dto';
 import { UpdateSkuDto } from './dto/update-sku.dto';
 
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbOrTx = DbTx | TypedDatabase<typeof wmsTables>;
+
 @Injectable()
 export class SkuService {
   private readonly logger = new Logger(SkuService.name);
@@ -21,23 +24,21 @@ export class SkuService {
     return `${prefix}${numericPart}${alphaPart}`;
   }
 
-  async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode'>) {
+  async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode'>, tx?: DbOrTx) {
+    const db = tx || this.db;
     const preStockSellable = data.inventoryManagement === true;
     const skuCode = this._generateSkuCode();
 
     let skuName: string;
     if (data.source === SkuCreationSource.AUTO_MATCHING) {
-      // 자동 매칭 시: PIM 상품 이름 + 옵션 이름 조합
       skuName = `${data.productName || 'Unknown Product'} - ${data.variantName || 'Unknown Variant'}`;
     } else if (data.source === SkuCreationSource.MANUAL_MATCHING) {
-      // 수동 매칭 시: DTO에서 직접 입력받은 name 사용
       skuName = data.name;
     } else {
       skuName = data.name || `Auto-generated SKU Name (${skuCode})`;
-      this.logger.warn(`SKU creation source not specified for SKU: ${skuName}. Using default naming.`);
     }
 
-    const [newSku] = await this.db.insert(wmsTables.skus).values({
+    const [newSku] = await db.insert(wmsTables.skus).values({
       name: skuName,
       code: skuCode,
       deliveryProfileId: data.deliveryProfileId,
@@ -49,37 +50,30 @@ export class SkuService {
     }).returning();
 
     if (!newSku) {
-      this.logger.error(`Failed to create SKU internally: ${data.name}`);
       throw new Error('Failed to create SKU internally');
     }
 
-    // SKU 생성 후, 기본 바코드를 자동 생성
-    const generatedBarcode = await this.generateAndSetDefaultBarcode(newSku.id, newSku.name);
+    const generatedBarcode = await this.generateAndSetDefaultBarcode(newSku.id, db);
     newSku.defaultBarcode = generatedBarcode;
 
     this.logger.log(`SKU created internally: ${newSku.id} (Name: ${newSku.name})`);
     return newSku;
   }
 
-  private async generateAndSetDefaultBarcode(skuId: string, skuName: string): Promise<string> {
-    // 실제 바코드 생성 규칙에 따라 바코드 생성 (예: SKU ID + 타임스탬프, SKU 이름 기반 해싱 등)
-    // 'SKU_BARCODE_' + SKU ID 앞부분 + 타임스탬프를 사용
+  private async generateAndSetDefaultBarcode(skuId: string, db: DbOrTx): Promise<string> {
     const generatedBarcode = `SKU_B_${skuId.substring(0, 8).toUpperCase()}_${Date.now()}`;
 
-    // skuBarcodes 테이블에 기본 바코드 삽입
-    const [newSkuBarcode] = await this.db.insert(wmsTables.skuBarcodes).values({
+    const [newSkuBarcode] = await db.insert(wmsTables.skuBarcodes).values({
       skuId: skuId,
       barcode: generatedBarcode,
-      barcodeType: 'standard', // 기본 바코드 타입
+      barcodeType: 'standard',
     }).returning();
 
     if (!newSkuBarcode) {
-      this.logger.error(`Failed to create default barcode for SKU ${skuId}.`);
       throw new Error('Failed to create default barcode for SKU.');
     }
 
-    // skus 테이블의 defaultBarcode 필드 업데이트
-    await this.db.update(wmsTables.skus)
+    await db.update(wmsTables.skus)
       .set({ defaultBarcode: generatedBarcode, updatedAt: new Date() })
       .where(eq(wmsTables.skus.id, skuId));
 
@@ -87,8 +81,8 @@ export class SkuService {
     return generatedBarcode;
   }
 
-  async _updateSkuInternal(skuId: string, data: Partial<Omit<UpdateSkuDto, 'code' | 'defaultBarcode'>>) {
-    // preStockSellable은 _updatePreStockSellableInternal을 통해 변경, 여기서는 제외
+  async _updateSkuInternal(skuId: string, data: Partial<Omit<UpdateSkuDto, 'code' | 'defaultBarcode'>>, tx?: DbTx) {
+    const db = tx || this.db;
     const updateData: Partial<typeof wmsTables.skus.$inferInsert> = {
       name: data.name,
       deliveryProfileId: data.deliveryProfileId,
@@ -99,21 +93,21 @@ export class SkuService {
       updatedAt: new Date(),
     };
 
-    const [updatedSku] = await this.db.update(wmsTables.skus)
+    const [updatedSku] = await db.update(wmsTables.skus)
       .set(updateData)
       .where(eq(wmsTables.skus.id, skuId))
       .returning();
 
     if (!updatedSku) {
-      this.logger.error(`SKU not found for internal update: ${skuId}`);
       throw new NotFoundException(`SKU with ID ${skuId} not found for internal update`);
     }
     this.logger.log(`SKU updated internally: ${updatedSku.id}`);
     return updatedSku;
   }
 
-  async _updatePreStockSellableInternal(skuId: string, value: boolean) {
-    const [updatedSku] = await this.db.update(wmsTables.skus)
+  async _updatePreStockSellableInternal(skuId: string, value: boolean, tx?: DbTx) {
+    const db = tx || this.db;
+    const [updatedSku] = await db.update(wmsTables.skus)
       .set({
         preStockSellable: value,
         updatedAt: new Date(),
@@ -135,7 +129,6 @@ export class SkuService {
   }
 
   async searchSkus(query: { id?: string; code?: string; barcode?: string; name?: string; supplierName?: string }) {
-    // 기본 쿼리 구성
     const baseQuery = this.db.select({
       sku: wmsTables.skus,
       barcode: wmsTables.skuBarcodes.barcode,
@@ -146,55 +139,34 @@ export class SkuService {
       .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skus.id, wmsTables.skuSuppliers.skuId))
       .leftJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id));
 
-    // 조건들을 배열로 수집
     const conditions: SQL[] = [];
 
-    // SKU ID 검색 (id) - 정확히 일치
-    if (query.id) {
-      conditions.push(eq(wmsTables.skus.id, query.id));
-    }
+    if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
+    if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
+    if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
 
-    // SKU 코드 검색 (code) - 정확히 일치
-    if (query.code) {
-      conditions.push(eq(wmsTables.skus.code, query.code));
-    }
-
-    // SKU 이름 검색 (name) - 부분 일치 (ILIKE)
-    if (query.name) {
-      conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
-    }
-
-    // SKU 바코드 검색 (defaultBarcode 또는 skuBarcodes.barcode) - 정확히 일치
     if (query.barcode) {
       const barcodeCondition = or(
         eq(wmsTables.skus.defaultBarcode, query.barcode),
         eq(wmsTables.skuBarcodes.barcode, query.barcode),
       );
-      if (barcodeCondition) {
-        conditions.push(barcodeCondition);
-      }
+      if (barcodeCondition) conditions.push(barcodeCondition);
     }
 
-    // 공급사 이름 검색 (supplierName) - 부분 일치 (ILIKE)
     if (query.supplierName) {
       conditions.push(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
     }
 
-    // 조건이 있으면 where 절 추가
-    const finalQuery = conditions.length > 0
-      ? baseQuery.where(and(...conditions))
-      : baseQuery;
-
+    const finalQuery = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
     const results = await finalQuery;
 
-    // 중복 제거 및 결과 집계
     const aggregatedSkus = results.reduce((acc, row) => {
       const sku = row.sku;
       if (!acc[sku.id]) {
         acc[sku.id] = {
           ...sku,
-          barcodes: [], // 모든 관련 바코드 (default 포함)
-          suppliers: [], // 모든 관련 공급사 이름
+          barcodes: [],
+          suppliers: [],
         };
       }
       if (row.barcode && !acc[sku.id].barcodes.includes(row.barcode)) {
