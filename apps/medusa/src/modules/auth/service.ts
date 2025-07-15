@@ -83,6 +83,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         entity_id: user.id,
       });
 
+      // user면 admin으로 간주함
       const actorType = user.roles?.some((role) => role.role.name === 'admin')
         ? 'user'
         : 'customer';
