@@ -35,10 +35,12 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   );
 
   if (success && authIdentity) {
+    const actorType = authIdentity?.app_metadata?.actor_type || actor_type;
+
     const { http } = config.projectConfig;
 
     const token = generateJwtTokenForAuthIdentity(
-      { authIdentity, actorType: actor_type },
+      { authIdentity, actorType: actorType as string },
       {
         secret: http.jwtSecret!,
         expiresIn: http.jwtExpiresIn,
@@ -54,8 +56,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       maxAge: 15 * 60 * 1000, // 15분
     });
 
+    // 테스트용도임
+    return res.status(200).json({ token });
+
     // 프론트엔드로 리다이렉트
-    return res.redirect(`${redirect_to}`);
+    // return res.redirect(`${redirect_to}`);
   }
 
   throw new MedusaError(

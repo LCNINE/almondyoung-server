@@ -1,4 +1,8 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import {
+  AuthenticatedMedusaRequest,
+  MedusaRequest,
+  MedusaResponse,
+} from '@medusajs/framework/http';
 import { Modules } from '@medusajs/framework/utils';
 import { MedusaError } from '@medusajs/utils';
 import { CreateCartDTO, CreateLineItemDTO } from '@medusajs/types';
@@ -10,7 +14,10 @@ import { createCartWorkflow } from '@medusajs/medusa/core-flows';
 /**
  * 장바구니 생성
  */
-export async function POST(req: MedusaRequest, res: MedusaResponse) {
+export async function POST(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+) {
   try {
     const cartService = req.scope.resolve(Modules.CART);
 
@@ -20,7 +27,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       ...(req.validatedBody as object),
     };
 
-    const userId = req.user?.userId;
+    const userId = req.auth_context.actor_id;
 
     if (userId) {
       const userService = req.scope.resolve<UserModuleService>(USER_MODULE);
@@ -43,13 +50,14 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       cartData.customer_id = user.id;
     }
 
-    const { result } = await createCartWorkflow(req.scope).run({
-      input: {
-        ...cartData,
-      },
-    });
+    return res.json(cartData);
+    // const { result } = await createCartWorkflow(req.scope).run({
+    //   input: {
+    //     ...cartData,
+    //   },
+    // });
 
-    res.json(result);
+    // res.json(result);
   } catch (error) {
     console.log('error:', error);
     if (error instanceof MedusaError) {

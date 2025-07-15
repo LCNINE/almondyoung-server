@@ -6,6 +6,7 @@ import {
   authenticate,
 } from '@medusajs/framework/http';
 import { responseWrapper } from '../middlewares/response-wrapper';
+import { storeMiddlewares } from './store/middlewares';
 
 export default defineMiddlewares({
   routes: [
@@ -18,5 +19,6 @@ export default defineMiddlewares({
       matcher: '/auth/token/restore',
       middlewares: [authenticate('*', 'bearer', { allowUnregistered: true })],
     },
+    ...storeMiddlewares.routes,
   ],
 });
