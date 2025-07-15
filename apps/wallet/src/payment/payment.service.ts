@@ -29,7 +29,7 @@ import {
   RefundSucceededEvent,
 } from './events/payment.events';
 import * as schema from './schema';
-import { paymentEvents, refundEvents, bnplTransaction } from './schema';
+import { paymentEvents, refundEvents } from './schema';
 import { CardPaymentStrategy } from './strategies/card-payment.strategy';
 import { BnplPaymentStrategy } from './strategies/bnpl-payment.strategy';
 import { PaymentStrategy } from './strategies/payment.strategy';
@@ -555,6 +555,11 @@ export class PaymentService {
     dto: CreateBnplPaymentDto,
     actor: string,
   ): Promise<BNPLTransactionResponseDto> {
+    console.log('🔵 [BNPL CREATE] BNPL 결제 생성 시작');
+    console.log(
+      `🔵 [BNPL CREATE] Invoice ID: ${dto.invoiceId}, Payment Method ID: ${dto.paymentMethodId}`,
+    );
+
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 데이터 조회 및 초기 검증
       const { paymentMethod, invoice, bnplAccount } =
@@ -818,6 +823,10 @@ export class PaymentService {
 
     for (const paymentEvent of authorizedPaymentEvents) {
       try {
+        console.log(
+          `🟡 [BNPL CAPTURE] Payment Event ID: ${paymentEvent.id} 처리 시작`,
+        );
+
         // PaymentEvent에서 결제수단을 통해 사용자 ID 조회
         const paymentMethod = await this.paymentMethodService.findById(
           paymentEvent.paymentMethodId,
@@ -830,6 +839,10 @@ export class PaymentService {
           continue;
         }
 
+        console.log(
+          `🟡 [BNPL CAPTURE] HMS API 호출 시작 - User ID: ${paymentMethod.userId}, Amount: ${paymentEvent.amount}`,
+        );
+
         // HMS API를 통해 실제 정산 처리
         const captureResult = await this.pgService.approvePayment({
           amount: Number(paymentEvent.amount),
@@ -837,6 +850,14 @@ export class PaymentService {
         });
 
         if (captureResult.success) {
+          console.log(`🟢 [BNPL CAPTURE] HMS API 호출 성공!`);
+          console.log(
+            `🟢 [BNPL CAPTURE] HMS Transaction ID: ${captureResult.pgTransactionId}`,
+          );
+          console.log(
+            `🟢 [BNPL CAPTURE] HMS Response: ${captureResult.pgResponse}`,
+          );
+
           // 정산 성공 시 CAPTURED로 변경
           await this.dbService.db
             .update(schema.paymentEvents)
@@ -848,11 +869,11 @@ export class PaymentService {
             .where(eq(schema.paymentEvents.id, paymentEvent.id));
 
           console.log(
-            `Captured payment event: ${paymentEvent.id} for invoice: ${paymentEvent.invoiceId}`,
+            `🟢 [BNPL CAPTURE] Payment Event 상태 변경 완료: ${paymentEvent.id} → CAPTURED`,
           );
         } else {
           console.error(
-            `Failed to capture payment event: ${paymentEvent.id}`,
+            `🔴 [BNPL CAPTURE] HMS API 호출 실패: ${paymentEvent.id}`,
             captureResult.pgResponse,
           );
         }

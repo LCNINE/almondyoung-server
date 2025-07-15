@@ -1,4 +1,5 @@
 import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
 // 카드 결제수단 생성 DTO (HMS API 필수 필드 포함)
 export interface CreateCardPaymentMethodDto {
   methodType: 'CARD';
@@ -34,20 +35,19 @@ export interface CreateBankAccountPaymentMethodDto {
   accountHolderName: string;
 }
 
-// BNPL 결제수단 생성 DTO
+// BNPL 결제수단 생성 DTO (내부용)
 export interface CreateBnplPaymentMethodDto {
-  methodType: 'BNPL';
   userId: number;
+  methodType: 'BNPL';
   methodName: string;
   isDefault?: boolean;
   institutionCode: string;
-  // BNPL 관련 필드들
   creditLimit?: number;
   approvedLimit?: number;
-  billingCycleDay: number; // 필수 필드 추가
+  billingCycleDay: number;
   termsUrl?: string;
-  // BNPL 정산용 결제수단 ID (카드나 계좌)
   settlementPaymentMethodId: string;
+  phone?: string; // HMS 연동용 필드만 optional로 추가
 }
 
 // 통합 DTO 타입 (Discriminated Union) - 외부 PG사 연동이 필요한 결제수단만

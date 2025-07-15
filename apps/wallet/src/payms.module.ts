@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { PaymsController } from './payms.controller';
 import { PaymsService } from './payms.service';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { InvoiceModule } from './invoice/invoice.module';
@@ -10,6 +9,7 @@ import { PaymentModule } from './payment/payment.module';
 import * as paymentMethodSchema from './payment-method/schema';
 import * as invoiceSchema from './invoice/schema';
 import * as paymentSchema from './payment/schema';
+import { CardMethodModule } from './card-method/card-method.module';
 @Module({
   imports: [
     SharedModule,
@@ -25,8 +25,9 @@ import * as paymentSchema from './payment/schema';
     PaymentMethodModule,
     InvoiceModule,
     PaymentModule,
+    CardMethodModule,
   ],
-  controllers: [PaymsController],
+  controllers: [],
   providers: [PaymsService],
 })
 export class PaymsModule {}

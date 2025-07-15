@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
@@ -11,19 +13,16 @@ import { eq, and } from 'drizzle-orm';
 import { PaymentMethodStrategy } from './payment.strategy';
 import * as schema from '../schema';
 import { CreateCardPaymentMethodDto } from '../dto/create-payment-method.dto';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-/**
- * Interface for deleted card information
- */
-interface DeletedCardInfo {
-  id: string;
-  methodName: string;
-  deletedAt: Date | null;
+// 타입 선언 개선
+interface HmsMemberResponse {
+  memberId: string;
+  paymentCompany: string;
+  paymentNumber: string;
+  result?: { flag: string; message?: string };
 }
 
-/**
- * Interface for HMS API payload
- */
 interface HmsApiPayload {
   memberId: string;
   memberName: string;
@@ -40,90 +39,57 @@ interface HmsApiPayload {
   payerNumber: string;
 }
 
-/**
- * Interface for HMS member response
- */
-interface HmsMemberResponse {
-  memberId: string;
-  paymentCompany: string;
-  paymentNumber: string;
-}
-
-/**
- * Interface for registration response
- */
-interface RegisterResponse {
-  id: string;
-  hmsResponse: PaymentProfileResponse;
-}
-
-/**
- * Card payment strategy implementation for HMS API integration
- */
 @Injectable()
 export class CardPaymentStrategy implements PaymentMethodStrategy {
+  private readonly logger = new Logger(CardPaymentStrategy.name);
+
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly hmsApi: HmsAPI,
   ) {}
 
-  /**
-   * Check if this strategy supports the given method type
-   */
-  supports(methodType: string): boolean {
-    return methodType === 'CARD';
+  supportedTypes(): string[] {
+    return ['CARD'];
   }
 
-  /**
-   * Format phone number by removing hyphens
-   */
+  supports(methodType: string): boolean {
+    return this.supportedTypes().includes(methodType);
+  }
+
   private formatPhoneNumber(phone: string): string {
     return phone.replace(/-/g, '');
   }
 
-  /**
-   * Format card number by removing hyphens
-   */
   private formatCardNumber(cardNumber: string): string {
     return cardNumber.replace(/-/g, '');
   }
 
-  /**
-   * Format payer number from identity number (first 6 digits)
-   */
   private formatPayerNumber(identityNumber: string): string {
     return identityNumber.replace(/-/g, '').substring(0, 6);
   }
 
   /**
-   * Format expiry date to YYYYMM format
+   * 강화된 유효성 검사
    */
-
-  /**
-   * Validate payment method registration payload
-   */
-  validate(payload: unknown): void {
+  validate(payload: unknown): asserts payload is CreateCardPaymentMethodDto {
     const dto = payload as CreateCardPaymentMethodDto;
-    if (!dto.userId) {
-      throw new BadRequestException('userId is required');
-    }
-    if (!dto.cardNumber) {
+    if (!dto.userId) throw new BadRequestException('userId is required');
+    if (!dto.cardNumber)
       throw new BadRequestException('cardNumber is required');
-    }
-    if (!dto.memberName) {
+    if (!dto.memberName)
       throw new BadRequestException('memberName is required');
+    // 카드 번호 유효성 검사 (Luhn 알고리즘 등 추가 가능)
+    const cleanCardNumber = dto.cardNumber.replace(/\D/g, '');
+    if (cleanCardNumber.length < 13 || cleanCardNumber.length > 19) {
+      throw new BadRequestException('Invalid card number length');
     }
   }
 
-  /**
-   * Find existing deleted card with same card number
-   */
   private async findExistingDeletedCard(
     userId: number,
     cardNumber: string,
-  ): Promise<DeletedCardInfo[]> {
+  ): Promise<{ id: string; methodName: string; deletedAt: Date | null }[]> {
     const lastFourDigits = cardNumber.slice(-4);
-
     return await this.dbService.db
       .select({
         id: schema.paymentMethod.id,
@@ -146,17 +112,13 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .limit(1);
   }
 
-  /**
-   * Build HMS API payload from DTO
-   */
   private buildHmsApiPayload(dto: CreateCardPaymentMethodDto): HmsApiPayload {
     const formattedCardNumber = this.formatCardNumber(dto.cardNumber);
-
     return {
-      memberId: dto.userId.toString(), // HMS API requires string type
+      memberId: dto.userId.toString(),
       memberName: dto.memberName,
       phone: this.formatPhoneNumber(dto.phone),
-      paymentKind: 'CARD' as const,
+      paymentKind: 'CARD',
       validMonth: dto.validMonth,
       validYear: dto.validYear,
       cardNumber: formattedCardNumber,
@@ -170,33 +132,33 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
   }
 
   /**
-   * Call HMS API to register payment profile
+   * 보안 강화된 HMS API 호출
    */
-  private async callHmsApi(
-    payload: HmsApiPayload,
-  ): Promise<PaymentProfileResponse> {
+  private async callHmsApi(payload: HmsApiPayload): Promise<any> {
     try {
       const response = await this.hmsApi.paymentProfiles.create(payload);
-
-      if (response.member?.result?.flag !== 'Y') {
+      if (response.member.result.flag !== 'Y') {
+        const errorMsg = response.member.result.message || 'Unknown HMS error';
+        this.logger.error(
+          `HMS API failed: ${errorMsg}`,
+          JSON.stringify(response),
+        );
         throw new BadRequestException(
-          `HMS API registration failed: ${response.member?.result?.message || 'Unknown error'}`,
+          `Payment registration failed: ${errorMsg}`,
         );
       }
-
       return response;
     } catch (error) {
-      throw new BadRequestException(
-        `Failed to register payment profile: ${error}`,
-      );
+      this.logger.error('HMS API call failed', error.stack);
+      throw new InternalServerErrorException('Payment service unavailable');
     }
   }
 
   /**
-   * Reactivate existing deleted card
+   * 트랜잭션 인식 개선된 메서드
    */
   private async reactivateDeletedCard(
-    tx: Parameters<Parameters<typeof this.dbService.db.transaction>[0]>[0],
+    tx: PostgresJsDatabase<typeof schema>,
     paymentMethodId: string,
     member: HmsMemberResponse,
     dto: CreateCardPaymentMethodDto,
@@ -205,12 +167,11 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .update(schema.paymentMethod)
       .set({
         methodName: `${member.paymentCompany} (${member.paymentNumber})`,
-        isDefault: dto.isDefault ? true : false,
+        isDefault: !!dto.isDefault,
         status: 'ACTIVE',
         updatedAt: new Date(),
       })
       .where(eq(schema.paymentMethod.id, paymentMethodId));
-
     await tx
       .update(schema.cardMethod)
       .set({
@@ -223,11 +184,8 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .where(eq(schema.cardMethod.id, paymentMethodId));
   }
 
-  /**
-   * Create new card payment method
-   */
   private async createNewCard(
-    tx: Parameters<Parameters<typeof this.dbService.db.transaction>[0]>[0],
+    tx: PostgresJsDatabase<typeof schema>,
     member: HmsMemberResponse,
     dto: CreateCardPaymentMethodDto,
   ): Promise<string> {
@@ -237,12 +195,11 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
         userId: dto.userId,
         methodType: 'CARD',
         methodName: `${member.paymentCompany} (${member.paymentNumber})`,
-        isDefault: dto.isDefault ? true : false,
+        isDefault: !!dto.isDefault,
         institutionCode: member.paymentCompany,
         status: 'ACTIVE',
       })
       .returning();
-
     await tx.insert(schema.cardMethod).values({
       id: newPaymentMethod.id,
       pgToken: member.memberId,
@@ -251,54 +208,76 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       lastFourDigits: this.formatCardNumber(dto.cardNumber).slice(-4),
       cardBrand: member.paymentCompany,
     });
-
     return newPaymentMethod.id;
   }
 
-  /**
-   * Register new card payment method
-   */
-  async register(payload: unknown): Promise<RegisterResponse> {
+  async register(
+    payload: unknown,
+    tx: PostgresJsDatabase<typeof schema>,
+  ): Promise<{ id: string; hmsResponse: any }> {
+    this.validate(payload);
     const dto = payload as CreateCardPaymentMethodDto;
-    this.validate(dto);
-
-    const formattedCardNumber = this.formatCardNumber(dto.cardNumber);
-    const existingDeletedCard = await this.findExistingDeletedCard(
-      dto.userId,
-      formattedCardNumber,
-    );
-
-    const hmsPayload = this.buildHmsApiPayload(dto);
-    const pgResponse = await this.callHmsApi(hmsPayload);
-    const member = pgResponse.member as HmsMemberResponse;
-
-    if (!member) {
-      throw new BadRequestException(
-        'Invalid HMS API response: missing member data',
+    try {
+      const formattedCardNumber = this.formatCardNumber(dto.cardNumber);
+      const existingDeletedCard = await this.findExistingDeletedCard(
+        dto.userId,
+        formattedCardNumber,
       );
-    }
-
-    let id = ''; // Initialize with empty string
-
-    await this.dbService.db.transaction(async (tx) => {
-      if (existingDeletedCard.length > 0) {
-        id = existingDeletedCard[0].id;
-        console.log(`Reactivating deleted card: ${id}`);
-        await this.reactivateDeletedCard(tx, id, member, dto);
-      } else {
-        id = await this.createNewCard(tx, member, dto);
-        console.log(`Created new card: ${id}`);
+      const hmsPayload = this.buildHmsApiPayload(dto);
+      const pgResponse: any = await this.callHmsApi(hmsPayload);
+      const member = (pgResponse as any).member as HmsMemberResponse;
+      if (!member || !member.memberId) {
+        throw new BadRequestException('Invalid HMS response structure');
       }
-    });
-
-    if (!id) {
-      throw new Error('Failed to create or reactivate payment method');
+      let paymentMethodId: string;
+      if (existingDeletedCard.length > 0) {
+        paymentMethodId = existingDeletedCard[0].id;
+        this.logger.log(`Reactivating card: ${paymentMethodId}`);
+        await this.reactivateDeletedCard(tx, paymentMethodId, member, dto);
+      } else {
+        paymentMethodId = await this.createNewCard(tx, member, dto);
+        this.logger.log(`Created new card: ${paymentMethodId}`);
+      }
+      return {
+        id: paymentMethodId,
+        hmsResponse: pgResponse,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Card registration failed: ${error.message}`,
+        error.stack,
+      );
+      throw error;
     }
+  }
 
-    return {
-      id,
-      hmsResponse: pgResponse,
-    };
+  async delete(paymentMethodId: string): Promise<void> {
+    try {
+      const cardMethod = await this.findCardMethod(paymentMethodId);
+      await this.deleteFromHmsApi(cardMethod.pgToken);
+      await this.performLogicalDeletion(paymentMethodId);
+    } catch (error) {
+      this.logger.error(`Card deletion failed: ${error.message}`, error.stack);
+      if (error instanceof HmsApiDeleteFailedException) {
+        throw new BadRequestException(
+          'Card deleted locally but failed in payment gateway. Please contact support.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async deleteFromHmsApi(pgToken: string): Promise<void> {
+    try {
+      const response = await this.hmsApi.paymentProfiles.delete(pgToken);
+      if (!response.member.result || response.member.result.flag !== 'Y') {
+        throw new HmsApiDeleteFailedException(
+          response.member.result?.message || 'HMS deletion failed',
+        );
+      }
+    } catch (error) {
+      throw new HmsApiDeleteFailedException(error.message);
+    }
   }
 
   /**
@@ -323,18 +302,6 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
   }
 
   /**
-   * Delete payment profile from HMS API
-   */
-  private async deleteFromHmsApi(pgToken: string): Promise<void> {
-    try {
-      await this.hmsApi.paymentProfiles.delete(pgToken);
-    } catch (error) {
-      console.error(`Failed to delete payment profile from HMS: ${error}`);
-      // Continue with DB deletion even if HMS API fails
-    }
-  }
-
-  /**
    * Perform logical deletion in database
    */
   private async performLogicalDeletion(paymentMethodId: string): Promise<void> {
@@ -343,15 +310,11 @@ export class CardPaymentStrategy implements PaymentMethodStrategy {
       .set({ status: 'DELETED' })
       .where(eq(schema.paymentMethod.id, paymentMethodId));
   }
+}
 
-  /**
-   * Delete card payment method
-   * Note: PaymentMethod validation is handled by Service layer
-   */
-  async delete(paymentMethodId: string): Promise<void> {
-    const cardMethod = await this.findCardMethod(paymentMethodId);
-
-    await this.deleteFromHmsApi(cardMethod.pgToken);
-    await this.performLogicalDeletion(paymentMethodId);
+class HmsApiDeleteFailedException extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HmsApiDeleteFailedException';
   }
 }
