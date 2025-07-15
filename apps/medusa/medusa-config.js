@@ -57,7 +57,7 @@ module.exports = defineConfig({
           // default provider
           {
             resolve: '@medusajs/medusa/auth-emailpass',
-            id: 'loginId',
+            id: 'emailpass',
           },
           {
             resolve: './src/modules/auth',
