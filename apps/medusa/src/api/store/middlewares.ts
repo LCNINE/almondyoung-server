@@ -4,7 +4,7 @@ export const storeMiddlewares = {
   routes: [
     {
       matcher: '/store/cart',
-      middlewares: [authenticate(['admin', 'customer'], ['session', 'bearer'])],
+      middlewares: [authenticate(['user', 'customer'], ['session', 'bearer'])],
     },
   ],
 };

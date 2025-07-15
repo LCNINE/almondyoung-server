@@ -19,7 +19,7 @@ module.exports = defineConfig({
     },
 
     http: {
-      jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
+      jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
   },
 
