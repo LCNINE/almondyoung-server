@@ -7,15 +7,15 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import UserModuleService from '../user/service';
+import CustomUserModuleService from '../custom-user/service';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
-  private userModule: UserModuleService;
+  private userCustomModule: CustomUserModuleService;
 
   constructor() {
     super();
-    this.userModule = new UserModuleService();
+    this.userCustomModule = new CustomUserModuleService();
   }
 
   async register(
@@ -69,7 +69,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       const token = authHeader.split(' ')[1];
-      const user = await this.userModule.fetchUser(token);
+      const user = await this.userCustomModule.fetchUser(token);
 
       if (!user) {
         return {
@@ -95,6 +95,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           app_metadata: {
             actor_type: actorType,
             user_id: user.id,
+            email: user.email,
             role: user.roles,
           },
           provider_identities: [
