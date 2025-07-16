@@ -1,11 +1,14 @@
+// apps/wms/src/product-matching/product-matching.service.ts
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
-import { TypedDatabase } from '@app/db';
+import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, like } from 'drizzle-orm';
 import { SkuService } from '../sku/sku.service';
 import { StockService } from '../stock/stock.service';
+import { WarehouseService } from '../warehouse/warehouse.service';
 import { ResolveMatchingDto } from './dto/resolve-matching.dto';
+import { SkuCreationSource } from '../sku/dto/create-sku.dto';
 
 interface PimSkuComponent {
   skuName: string;
@@ -25,21 +28,23 @@ interface PimProductPayload {
   variants: PimVariantPayload[];
 }
 
-
 @Injectable()
 export class ProductMatchingService {
   private readonly logger = new Logger(ProductMatchingService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly db: TypedDatabase<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
     private readonly skuService: SkuService,
     private readonly stockService: StockService,
+    private readonly warehouseService: WarehouseService,
   ) { }
 
+  private get db() {
+    return this.dbService.db;
+  }
 
   //  PIM에서 판매상품 생성 이벤트 수신 시 (수동 매칭)
   //  단순히 매칭 대기(pending) 상태만 생성. SKU/Stock은 생성하지 않음
-
   async handleManualMatchingRequest(payload: PimProductPayload) {
     this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
@@ -68,10 +73,8 @@ export class ProductMatchingService {
     }
   }
 
-
   //  PIM에서 상품 "자동 매칭" 이벤트 수신 시
   //  inventoryManagement=true 이면 SKU/Stock(qty 0)을 자동 생성하고, 즉시 'matched' 상태로 처리
-
   async handleAutomaticMatchingRequest(payload: PimProductPayload) {
     this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
 
@@ -88,7 +91,7 @@ export class ProductMatchingService {
         continue;
       }
 
-      // 트랜잭션 시작: variant 하나에 대한 매칭/SKU/Stock/Link 생성을 원자적으로 처리
+      // 트랜잭션 시작: variant 하나에 대한 매칭/SKU/Stock/Link 생성을
       await this.db.transaction(async (tx) => {
         // 2. product_matchings 테이블에 row 생성 (variant 단위, 'matched' 상태)
         const [newProductMatching] = await tx.insert(wmsTables.productMatchings).values({
@@ -103,13 +106,15 @@ export class ProductMatchingService {
         }
 
         // 3. Variant를 구성하는 각 SKU Component에 대해 SKU, Stock, Link 생성 (M:N 처리)
+        const warehouseId = this.warehouseService.getDefaultWarehouseId(); // 기본 국내 창고
+
         for (const component of variant.components) {
           // 3-1. StockService를 통해 SKU 및 Stock(수량 0) 생성
           const newStock = await this.stockService.createStockEntry({
             variantId: variant.id,
             skuName: component.skuName,
             inventoryManagement: true,
-            warehouseId: 'DEFAULT_WAREHOUSE_ID', // TODO: 적절한 기본 창고 ID 설정 필요
+            warehouseId,
             quantity: 0,
             stockType: 'physical',
             reason: `auto_matching_for_variant_${variant.id}`,
@@ -129,26 +134,20 @@ export class ProductMatchingService {
   // 매칭 대기 목록 조회
   async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored') {
     const matchings = await this.db.query.productMatchings.findMany({
-      where: (matchings, { and, eq }) => and(
-        status ? eq(matchings.status, status) : undefined,
-        eq(matchings.isResolved, false),
-      ),
+      where: status ? eq(wmsTables.productMatchings.status, status) : undefined,
       orderBy: (matchings, { asc }) => [asc(matchings.createdAt)],
       with: {
-        // 필요 시 연결된 SKU 정보 로드 (수동 매칭 화면에서 활용)
-        // links: {
-        //     with: {
-        //         sku: true
-        //     }
-        // }
+        links: {
+          with: {
+            sku: true
+          }
+        }
       }
     });
     return matchings;
   }
 
-
   //  매칭 대기 해소 (SKU와 매칭 또는 무시)
-
   async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto) {
     const { skuIds, ignore } = resolveDto;
 
@@ -229,5 +228,73 @@ export class ProductMatchingService {
 
     this.logger.log(`Product matching ${matchingId} 우선순위 설정됨: ${priority}.`);
     return updatedMatching;
+  }
+
+  // Variant 삭제 처리
+  async handleVariantDeletion(variantId: string) {
+    this.logger.log(`Handling variant deletion for variantId: ${variantId}`);
+
+    const productMatching = await this.db.query.productMatchings.findFirst({
+      where: eq(wmsTables.productMatchings.variantId, variantId),
+    });
+
+    if (!productMatching) {
+      this.logger.warn(`No product matching found for variantId: ${variantId}, nothing to delete.`);
+      return;
+    }
+
+    // 매칭된 상태인 경우에만 매칭 데이터 삭제
+    if (productMatching.status === 'matched') {
+      await this.db.transaction(async (tx) => {
+        // 1. productVariantSkuLinks 삭제
+        await tx.delete(wmsTables.productVariantSkuLinks)
+          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, productMatching.id));
+
+        // 2. productMatchings 삭제
+        await tx.delete(wmsTables.productMatchings)
+          .where(eq(wmsTables.productMatchings.id, productMatching.id));
+
+        this.logger.log(`Deleted product matching and links for variantId: ${variantId}`);
+      });
+    } else {
+      // pending이나 ignored 상태인 경우도 삭제
+      await this.db.delete(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.id, productMatching.id));
+
+      this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
+    }
+  }
+
+  // 수동 매칭 시 새 SKU 생성
+  async createNewSkuForMatching(variantId: string, skuData: {
+    name: string;
+    inventoryManagement: boolean;
+    alwaysSellableZeroStock?: boolean;
+  }) {
+    return this.db.transaction(async (tx) => {
+      // SKU 생성
+      const newSku = await this.skuService._createSkuInternal({
+        name: skuData.name,
+        inventoryManagement: skuData.inventoryManagement,
+        alwaysSellableZeroStock: skuData.alwaysSellableZeroStock,
+        source: SkuCreationSource.MANUAL_MATCHING,
+      }, tx);
+
+      // Stock 생성 (재고 0으로)
+      if (skuData.inventoryManagement) {
+        const warehouseId = this.warehouseService.getDefaultWarehouseId();
+        await this.stockService.createStockEntry({
+          variantId,
+          skuName: newSku.name,
+          inventoryManagement: true,
+          warehouseId,
+          quantity: 0,
+          stockType: 'physical',
+          reason: `manual_matching_for_variant_${variantId}`,
+        }, tx);
+      }
+
+      return newSku;
+    });
   }
 }

@@ -1,16 +1,15 @@
-// apps/wms/src/sku/sku.service.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { SkuService } from './sku.service';
+import { WarehouseService } from './warehouse.service';
 
-describe('SkuService', () => {
-  let service: SkuService;
+describe('WarehouseService', () => {
+  let service: WarehouseService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [SkuService],
+      providers: [WarehouseService],
     }).compile();
 
-    service = module.get<SkuService>(SkuService);
+    service = module.get<WarehouseService>(WarehouseService);
   });
 
   it('should be defined', () => {

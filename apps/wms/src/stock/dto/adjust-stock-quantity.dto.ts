@@ -1,3 +1,4 @@
+// apps/wms/src/stock/dto/adjust-stock-quantity.dto.ts
 import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

@@ -1,3 +1,4 @@
+// apps/wms/src/wms.controller.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { WmsController } from './wms.controller';
 import { WmsService } from './wms.service';

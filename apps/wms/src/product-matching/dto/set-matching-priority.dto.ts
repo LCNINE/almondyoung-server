@@ -1,3 +1,4 @@
+// apps/wms/src/product-matching/dto/set-matching-priority.dto.ts
 import { IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { matchingPriorityEnum } from '../../../database/schemas/wms-schema';

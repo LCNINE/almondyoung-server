@@ -1,3 +1,4 @@
+// apps/wms/src/sku/sku.controller.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { SkuController } from './sku.controller';
 import { SkuService } from './sku.service';

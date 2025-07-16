@@ -1,3 +1,4 @@
+// apps/wms/src/sku/sku.controller.ts
 import { Controller, Get, Query } from '@nestjs/common';
 import { SkuService } from './sku.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';

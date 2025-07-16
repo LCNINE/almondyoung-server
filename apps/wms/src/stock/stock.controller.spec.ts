@@ -1,3 +1,4 @@
+// apps/wms/src/stock/stock.controller.spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { StockController } from './stock.controller';
 import { StockService } from './stock.service';

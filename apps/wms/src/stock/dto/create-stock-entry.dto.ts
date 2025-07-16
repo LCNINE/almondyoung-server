@@ -1,3 +1,4 @@
+// apps/wms/src/stock/dto/create-stock-entry.dto.ts
 import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { barcodeTypeEnum, stockTypeEnum } from '../../../database/schemas/wms-schema';

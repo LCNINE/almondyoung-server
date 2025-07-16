@@ -1,3 +1,4 @@
+// apps/wms/src/sku/dto/update-sku.dto.ts
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateSkuDto } from './create-sku.dto';
 import { IsOptional, IsBoolean } from 'class-validator';

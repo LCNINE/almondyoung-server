@@ -1,7 +1,7 @@
-// apps/wms/src/sku/sku.module.ts
+// apps/wms/src/warehouse/warehouse.module.ts
 import { Module } from '@nestjs/common';
-import { SkuService } from './sku.service';
-import { SkuController } from './sku.controller';
+import { WarehouseService } from './warehouse.service';
+import { WarehouseController } from './warehouse.controller';
 import { DbModule } from '@app/db';
 import { wmsTables } from '../../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
@@ -16,8 +16,8 @@ import { ConfigModule } from '@nestjs/config';
       schema: wmsTables,
     }),
   ],
-  controllers: [SkuController],
-  providers: [SkuService],
-  exports: [SkuService],
+  controllers: [WarehouseController],
+  providers: [WarehouseService],
+  exports: [WarehouseService],
 })
-export class SkuModule { }
+export class WarehouseModule { }

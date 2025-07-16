@@ -1,3 +1,4 @@
+// apps/wms/src/sku/sku.service.ts
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';

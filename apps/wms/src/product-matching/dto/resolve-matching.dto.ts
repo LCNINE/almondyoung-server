@@ -1,3 +1,4 @@
+// apps/wms/src/product-matching/dto/resolve-matching.dto.ts
 import { IsUUID, IsOptional, IsBoolean, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

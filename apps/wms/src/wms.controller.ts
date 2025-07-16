@@ -1,3 +1,4 @@
+// apps/wms/src/wms.controller.ts
 import { Controller, Get } from '@nestjs/common';
 import { WmsService } from './wms.service';
 

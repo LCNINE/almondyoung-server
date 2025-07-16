@@ -1,3 +1,4 @@
+// apps/wms/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { WmsModule } from './wms.module';
 

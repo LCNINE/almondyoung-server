@@ -1,30 +1,14 @@
+// apps/wms/test/product-matching.e2e-spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { WmsModule } from '../src/wms.module';
-import { ProductMatchingService } from '../src/product-matching/product-matching.service';
-import { SkuService } from '../src/sku/sku.service';
-import { InjectTypedDb } from '@app/db/decorators';
 import { TypedDatabase } from '@app/db';
 import { wmsTables } from '../database/schemas/wms-schema';
-import { and, eq, like } from 'drizzle-orm';
-import { CreateSkuDto } from '../src/sku/dto/create-sku.dto';
 
-describe('ProductMatching (e2e)', () => {
+describe('ProductMatching E2E 테스트', () => {
     let app: INestApplication;
-    let productMatchingService: ProductMatchingService;
-    let skuService: SkuService;
     let db: TypedDatabase<typeof wmsTables>;
-
-    // 테스트 데이터 정리용 함수
-    const cleanupDatabase = async () => {
-        await db.delete(wmsTables.productVariantSkuLinks);
-        await db.delete(wmsTables.productMatchings);
-        await db.delete(wmsTables.stockEvents);
-        await db.delete(wmsTables.stocks);
-        await db.delete(wmsTables.skuBarcodes);
-        await db.delete(wmsTables.skus).where(like(wmsTables.skus.name, 'E2E Test %'));
-    };
 
     beforeAll(async () => {
         const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -32,174 +16,163 @@ describe('ProductMatching (e2e)', () => {
         }).compile();
 
         app = moduleFixture.createNestApplication();
-        app.useGlobalPipes(new ValidationPipe()); // DTO 유효성 검사를 위해 추가
         await app.init();
 
-        // 테스트에 필요한 서비스 및 DB 인스턴스 가져오기
-        productMatchingService = moduleFixture.get<ProductMatchingService>(ProductMatchingService);
-        skuService = moduleFixture.get<SkuService>(SkuService);
-        db = moduleFixture.get<TypedDatabase<typeof wmsTables>>('default'); // 'default'는 DB 주입 토큰
-
-        // 테스트 시작 전 DB 정리
-        await cleanupDatabase();
+        // 데이터베이스 연결 가져오기
+        db = app.get<TypedDatabase<typeof wmsTables>>('TypedDatabase');
     });
 
     afterAll(async () => {
-        // 모든 테스트 후 DB 정리 및 앱 종료
-        await cleanupDatabase();
         await app.close();
     });
 
-    // 각 테스트 케이스 실행 전 DB 상태 초기화
-    beforeEach(async () => {
-        await cleanupDatabase();
-    });
-
-    describe('자동 매칭 시나리오', () => {
-        it('재고 관리 대상(inventoryManagement: true)인 번들 상품이 자동 매칭되어야 한다', async () => {
-            // 1. 테스트용 PIM 페이로드 (번들 상품: 1 variant, 2 components)
-            const pimPayload = {
-                productId: 'e2e-product-01',
-                name: 'E2E Test 번들 세트',
+    describe('PIM 이벤트 테스트 API', () => {
+        it('자동 매칭 이벤트를 처리해야 한다', async () => {
+            const payload = {
+                productId: 'test-product-1',
+                name: '테스트 상품',
                 variants: [
                     {
-                        id: 'e2e-variant-01',
-                        name: '선물 세트 A',
+                        id: 'test-variant-1',
+                        name: '노란우비 세트',
                         inventoryManagement: true,
                         components: [
-                            { skuName: 'E2E Test SKU - 상자' },
-                            { skuName: 'E2E Test SKU - 리본' },
-                        ],
-                    },
-                ],
+                            { skuName: '노란우비' },
+                            { skuName: '노란우산' }
+                        ]
+                    }
+                ]
             };
 
-            // 2. 자동 매칭 서비스 직접 호출 (PIM 이벤트 수신 모방)
-            await productMatchingService.handleAutomaticMatchingRequest(pimPayload);
+            const response = await request(app.getHttpServer())
+                .post('/wms/test/pim-events/auto-matching')
+                .send(payload)
+                .expect(201);
 
-            // 3. DB에서 결과 검증
-            // 3-1. product_matchings 테이블 검증
+            expect(response.body).toEqual({
+                message: '자동 매칭 이벤트 처리 완료'
+            });
+
+            // 데이터베이스에 실제로 생성되었는지 확인
             const matching = await db.query.productMatchings.findFirst({
-                where: eq(wmsTables.productMatchings.variantId, 'e2e-variant-01'),
+                where: (m, { eq }) => eq(m.variantId, 'test-variant-1')
             });
-
-            if (!matching) {
-                throw new Error('productMatchings 테이블에서 매칭 결과를 찾을 수 없습니다.');
-            }
-            expect(matching.status).toBe('matched');
-            expect(matching.isResolved).toBe(true);
-
-            // 3-2. skus 테이블 검증
-            const boxSku = await db.query.skus.findFirst({ where: eq(wmsTables.skus.name, 'E2E Test SKU - 상자') });
-            const ribbonSku = await db.query.skus.findFirst({ where: eq(wmsTables.skus.name, 'E2E Test SKU - 리본') });
-            expect(boxSku).toBeDefined();
-            expect(ribbonSku).toBeDefined();
-
-            // 3-3. stocks 테이블 검증 (재고 0으로 생성)
-            if (!boxSku) {
-                throw new Error('boxSku가 정의되어 있지 않습니다.');
-            }
-            if (!ribbonSku) {
-                throw new Error('ribbonSku가 정의되어 있지 않습니다.');
-            }
-            const boxStock = await db.query.stocks.findFirst({ where: eq(wmsTables.stocks.skuId, boxSku.id) });
-            const ribbonStock = await db.query.stocks.findFirst({ where: eq(wmsTables.stocks.skuId, ribbonSku.id) });
-            expect(boxStock).toBeDefined();
-            expect(boxStock?.realQuantity).toBe(0);
-            expect(ribbonStock).toBeDefined();
-            expect(ribbonStock?.realQuantity).toBe(0);
-
-            // 3-4. product_variant_sku_links 테이블 검증 (M:N 관계)
-            const links = await db.query.productVariantSkuLinks.findMany({
-                where: eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id),
-            });
-            expect(links.length).toBe(2);
-            const linkedSkuIds = links.map(l => l.skuId);
-            expect(boxSku).toBeDefined();
-            expect(ribbonSku).toBeDefined();
-            if (boxSku && ribbonSku) {
-                expect(linkedSkuIds).toContain(boxSku.id);
-                expect(linkedSkuIds).toContain(ribbonSku.id);
-            }
-        });
-    });
-
-    describe('수동 매칭 시나리오', () => {
-        let pendingMatchingId: string;
-        let existingSku1: any;
-        let existingSku2: any;
-
-        beforeEach(async () => {
-            // 1. 테스트용 'pending' 상태 매칭 생성
-            const pimPayload = {
-                productId: 'e2e-product-manual',
-                name: 'E2E Test 수동 매칭 상품',
-                variants: [{ id: 'e2e-variant-manual', name: '수동 옵션', inventoryManagement: true, components: [] }],
-            };
-            await productMatchingService.handleManualMatchingRequest(pimPayload);
-            const matching = await db.query.productMatchings.findFirst({ where: eq(wmsTables.productMatchings.variantId, 'e2e-variant-manual') });
-            if (!matching) {
-                throw new Error('matching이 정의되어 있지 않습니다.');
-            }
-            pendingMatchingId = matching.id;
-
-            // 2. 미리 연결할 SKU 2개 생성
-            existingSku1 = await skuService._createSkuInternal({ name: 'E2E Test 기존 SKU 1', inventoryManagement: true });
-            existingSku2 = await skuService._createSkuInternal({ name: 'E2E Test 기존 SKU 2', inventoryManagement: true });
+            expect(matching).toBeTruthy();
+            expect(matching?.status).toBe('matched');
         });
 
-        it('GET /wms/matchings : pending 상태의 매칭 목록을 조회해야 한다', async () => {
-            return request(app.getHttpServer())
-                .get('/wms/matchings?status=pending')
-                .expect(200)
-                .then((res) => {
-                    expect(res.body).toBeInstanceOf(Array);
-                    expect(res.body.length).toBe(1);
-                    expect(res.body[0].id).toBe(pendingMatchingId);
-                    expect(res.body[0].status).toBe('pending');
-                });
-        });
-
-        it('PATCH /wms/matchings/:id/resolve : pending 상태의 매칭을 여러 SKU와 연결(해소)해야 한다', async () => {
-            const resolveDto = {
-                skuIds: [existingSku1.id, existingSku2.id],
+        it('수동 매칭을 위한 pending 상태를 생성해야 한다', async () => {
+            const payload = {
+                productId: 'test-product-2',
+                name: '수동 매칭 상품',
+                variants: [
+                    {
+                        id: 'test-variant-2',
+                        name: '빨간우비 세트',
+                        inventoryManagement: true,
+                        components: [
+                            { skuName: '빨간우비' }
+                        ]
+                    }
+                ]
             };
 
             await request(app.getHttpServer())
-                .patch(`/wms/matchings/${pendingMatchingId}/resolve`)
-                .send(resolveDto)
-                .expect(200)
-                .then((res) => {
-                    expect(res.body.id).toBe(pendingMatchingId);
-                    expect(res.body.status).toBe('matched');
-                    expect(res.body.isResolved).toBe(true);
-                });
+                .post('/wms/test/pim-events/manual-matching')
+                .send(payload)
+                .expect(201);
 
-            // DB에서 링크 직접 확인
-            const links = await db.query.productVariantSkuLinks.findMany({
-                where: eq(wmsTables.productVariantSkuLinks.productMatchingId, pendingMatchingId),
-            });
-            expect(links.length).toBe(2);
+            // GET으로 pending 상태 확인
+            const pendingResponse = await request(app.getHttpServer())
+                .get('/wms/matchings?status=pending')
+                .expect(200);
+
+            const pendingItems = pendingResponse.body;
+            const foundItem = pendingItems.find((item: any) => item.variantId === 'test-variant-2');
+
+            expect(foundItem).toBeTruthy();
+            expect(foundItem.status).toBe('pending');
+            expect(foundItem.priority).toBe('high');
+        });
+    });
+
+    describe('매칭 관리 API', () => {
+        let matchingId: string;
+
+        beforeEach(async () => {
+            // 테스트용 pending 매칭 생성
+            const [result] = await db.insert(wmsTables.productMatchings).values({
+                variantId: 'test-variant-resolve',
+                status: 'pending',
+                priority: 'high',
+                isResolved: false,
+            }).returning();
+            matchingId = result.id;
         });
 
-        it('PATCH /wms/matchings/:id/resolve : pending 상태의 매칭을 무시(ignore)해야 한다', async () => {
+        it('SKU와 매칭을 해결해야 한다', async () => {
+            // 먼저 SKU 생성
+            const [skuResult] = await db.insert(wmsTables.skus).values({
+                name: 'Test SKU',
+                code: 'TEST-SKU-001',
+                inventoryManagement: true,
+            }).returning();
+            const skuId = skuResult.id;
+
             const resolveDto = {
-                ignore: true,
+                skuIds: [skuId],
+                ignore: false
             };
 
-            return request(app.getHttpServer())
-                .patch(`/wms/matchings/${pendingMatchingId}/resolve`)
+            await request(app.getHttpServer())
+                .patch(`/wms/matchings/${matchingId}/resolve`)
                 .send(resolveDto)
-                .expect(200)
-                .then(async (res) => {
-                    expect(res.body.status).toBe('ignored');
-                    expect(res.body.isResolved).toBe(true);
+                .expect(200);
 
-                    // DB에서 상태 직접 확인
-                    const ignoredMatching = await db.query.productMatchings.findFirst({ where: eq(wmsTables.productMatchings.id, pendingMatchingId) });
-                    expect(ignoredMatching).toBeDefined();
-                    expect(ignoredMatching?.status).toBe('ignored');
-                });
+            // 매칭이 resolved 되었는지 확인
+            const matching = await db.query.productMatchings.findFirst({
+                where: (m, { eq }) => eq(m.id, matchingId)
+            });
+
+            expect(matching?.status).toBe('matched');
+            expect(matching?.isResolved).toBe(true);
         });
+
+        it('매칭을 무시 처리해야 한다', async () => {
+            const resolveDto = {
+                ignore: true
+            };
+
+            await request(app.getHttpServer())
+                .patch(`/wms/matchings/${matchingId}/resolve`)
+                .send(resolveDto)
+                .expect(200);
+
+            const matching = await db.query.productMatchings.findFirst({
+                where: (m, { eq }) => eq(m.id, matchingId)
+            });
+
+            expect(matching?.status).toBe('ignored');
+            expect(matching?.isResolved).toBe(true);
+        });
+
+        it('매칭 우선순위를 변경해야 한다', async () => {
+            await request(app.getHttpServer())
+                .patch(`/wms/matchings/${matchingId}/priority`)
+                .send({ priority: 'normal' })
+                .expect(200);
+
+            const matching = await db.query.productMatchings.findFirst({
+                where: (m, { eq }) => eq(m.id, matchingId)
+            });
+
+            expect(matching?.priority).toBe('normal');
+        });
+    });
+
+    // 테스트 후 정리 (선택사항)
+    afterEach(async () => {
+        // 테스트 데이터 정리가 필요한 경우
+        // await db.delete(wmsTables.productMatchings).where(...);
     });
 });

@@ -1,14 +1,25 @@
-import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+// apps/wms/src/stock/stock.controller.ts
+import { Controller, Get, Post, Body, Query, Param } from '@nestjs/common';
 import { StockService } from './stock.service';
+import { WarehouseTransferService } from './warehouse-transfer.service';
+import { WarehouseService } from '../warehouse/warehouse.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CreateStockEntryDto } from './dto/create-stock-entry.dto';
 import { AdjustStockQuantityDto } from './dto/adjust-stock-quantity.dto';
 import { GetStockQueryDto } from './dto/get-stock-query.dto';
+import { CreateInboundDto } from './dto/create-inbound.dto';
+import { InterWarehouseTransferDto } from './dto/inter-warehouse-transfer.dto';
+import { IntraWarehouseMoveDto } from './dto/intra-warehouse-move.dto';
+import { ProcessOutboundDto } from './dto/process-outbound.dto';
 
 @ApiTags('Stock')
 @Controller('wms/stocks')
 export class StockController {
-  constructor(private readonly stockService: StockService) { }
+  constructor(
+    private readonly stockService: StockService,
+    private readonly warehouseTransferService: WarehouseTransferService,
+    private readonly warehouseService: WarehouseService,
+  ) { }
 
   @Post('/entry')
   @ApiOperation({ summary: '새로운 재고 묶음 생성 (판매등록 시 재고 0, 또는 수동 입고)' })
@@ -19,13 +30,53 @@ export class StockController {
     return this.stockService.createStockEntry(createStockEntryDto);
   }
 
+  @Post('/inbound')
+  @ApiOperation({ summary: '거래처로부터의 입고 처리 (국내/해외)' })
+  @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.' })
+  async processInbound(@Body() inboundDto: CreateInboundDto) {
+    return this.stockService.processInbound(inboundDto);
+  }
+
+  @Post('/transfer/inter-warehouse')
+  @ApiOperation({ summary: '창고 간 재고 이동' })
+  @ApiResponse({ status: 200, description: '창고 간 이동이 성공적으로 처리되었습니다.' })
+  async transferBetweenWarehouses(@Body() transferDto: InterWarehouseTransferDto) {
+    return this.warehouseTransferService.transferBetweenWarehouses(transferDto);
+  }
+
+  @Post('/transfer/intra-warehouse')
+  @ApiOperation({ summary: '창고 내 위치 이동' })
+  @ApiResponse({ status: 200, description: '창고 내 이동이 성공적으로 처리되었습니다.' })
+  async moveWithinWarehouse(@Body() moveDto: IntraWarehouseMoveDto) {
+    return this.warehouseTransferService.moveWithinWarehouse(moveDto);
+  }
+
+  @Post('/outbound/:stockId')
+  @ApiOperation({ summary: '출고 처리' })
+  @ApiResponse({ status: 200, description: '출고가 성공적으로 처리되었습니다.' })
+  async processOutbound(
+    @Param('stockId') stockId: string,
+    @Body() outboundDto: ProcessOutboundDto
+  ) {
+    return this.stockService.processOutbound(
+      stockId,
+      outboundDto.quantity,
+      outboundDto.reason,
+      outboundDto.orderId
+    );
+  }
+
   @Post('/adjust')
-  @ApiOperation({ summary: '재고 수량 조정 (증가/감소, 파손/분실 등)' })
+  @ApiOperation({ summary: '재고 수량 조정 (관리자 수동 조정)' })
   @ApiResponse({ status: 200, description: '재고 수량이 성공적으로 조정되었습니다.' })
   @ApiResponse({ status: 400, description: '잘못된 요청 또는 유효성 검사 실패.' })
   @ApiResponse({ status: 404, description: '활성 재고 항목을 찾을 수 없음.' })
   async adjustStockQuantity(@Body() adjustDto: AdjustStockQuantityDto) {
-    return this.stockService.adjustStockQuantity(adjustDto.stockId, adjustDto.delta, adjustDto.reason, adjustDto.orderId);
+    return this.stockService.adjustStockManually(
+      adjustDto.stockId,
+      adjustDto.delta,
+      adjustDto.reason
+    );
   }
 
   @Get()
@@ -38,6 +89,13 @@ export class StockController {
   @ApiResponse({ status: 200, description: '현재 재고 정보를 반환합니다.' })
   async getCurrentStock(@Query() query: GetStockQueryDto) {
     return this.stockService.getCurrentStock(query);
+  }
+
+  @Get('/warehouse/:warehouseId/summary')
+  @ApiOperation({ summary: '특정 창고의 재고 요약 조회' })
+  @ApiResponse({ status: 200, description: '창고별 재고 요약을 반환합니다.' })
+  async getWarehouseStockSummary(@Param('warehouseId') warehouseId: string) {
+    return this.warehouseService.getWarehouseStockSummary(warehouseId);
   }
 
   @Get('/history')
@@ -55,5 +113,4 @@ export class StockController {
   ) {
     return this.stockService.getStockHistory(skuId, warehouseId, startDate, endDate);
   }
-
 }
