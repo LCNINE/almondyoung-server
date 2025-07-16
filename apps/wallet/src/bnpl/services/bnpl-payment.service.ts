@@ -1,19 +1,20 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { InjectDb } from '@app/db';
-import { DbService } from '@app/db/db.service';
-import { eq, and } from 'drizzle-orm';
+import { Injectable, Logger } from '@nestjs/common';
 import { nanoid } from 'nanoid';
-import * as schema from '../schema';
-import { payment, paymentEvent } from '../../shared/schemas/payment.schema';
+import { eq } from 'drizzle-orm';
+import { PaymentService } from '../../payment/payment.service';
 import { PaymentRequestDto, PaymentCaptureDto } from '../dto/payment-request.dto';
+import { bnplTransaction, bnplAccount } from '../schema';
+import * as schema from '../schema';
+import { DbService, InjectDb } from '@app/db';
 
 /**
  * BNPL 결제 서비스
  * 
- * 주요 기능:
+ * 주요 역할:
  * 1. BNPL 결제 요청 처리
- * 2. 결제 이벤트 기록
- * 3. 결제 상태 관리
+ * 2. BNPL 결제 캡처 처리
+ * 3. BNPL 결제 실패 처리
+ * 4. 이벤트 소싱 패턴에 따라 결제 이벤트 생성
  */
 @Injectable()
 export class BnplPaymentService {
@@ -21,77 +22,48 @@ export class BnplPaymentService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
+    private readonly paymentService: PaymentService,
   ) {
     this.logger.log('🚀 BNPL 결제 서비스 초기화 완료');
   }
 
   /**
    * BNPL 결제 요청 처리
-   * 1. payment_event 테이블에 REQUESTED 이벤트 생성
-   * 2. bnpl_transaction 테이블에 거래 기록
+   * 
+   * 플로우:
+   * 1. BNPL 계정 조회
+   * 2. 결제 이벤트 생성 (REQUESTED)
+   * 3. BNPL 거래 기록 생성 (AUTHORIZED)
+   * 
+   * @param dto 결제 요청 DTO (이미 검증됨)
+   * @returns 결제 요청 결과
    */
-  async requestPayment(dto: PaymentRequestDto): Promise<{ 
-    success: boolean; 
-    paymentId: string;
-    eventId: string;
-    transactionId: string;
-  }> {
+  async requestPayment(dto: PaymentRequestDto): Promise<{ paymentId: string; transactionId: string }> {
     this.logger.log(`BNPL 결제 요청 시작: ${dto.bnplAccountId}, 금액: ${dto.amount}원`);
 
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. BNPL 계정 조회 및 검증
-      const bnplAccount = await tx.query.bnplAccount.findFirst({
-        where: eq(schema.bnplAccount.id, dto.bnplAccountId),
+    try {
+      // 1. BNPL 계정 조회
+      const account = await this.dbService.db.query.bnplAccount.findFirst({
+        where: eq(bnplAccount.id, dto.bnplAccountId),
       });
 
-      if (!bnplAccount) {
-        throw new BadRequestException('BNPL 계정을 찾을 수 없습니다.');
+      if (!account) {
+        throw new Error(`BNPL 계정을 찾을 수 없습니다: ${dto.bnplAccountId}`);
       }
 
-      if (bnplAccount.status !== 'ACTIVE') {
-        throw new BadRequestException(`BNPL 계정이 활성 상태가 아닙니다: ${bnplAccount.status}`);
-      }
+      // 2. 결제 이벤트 생성 (REQUESTED) - DTO 객체로 전달
+      const paymentRequestDto = {
+        invoiceId: dto.invoiceId,
+        paymentMethodId: account.paymentMethodId,
+        amount: dto.amount,
+        actor: 'USER' as const,
+      };
 
-      // 2. 신용 한도 확인
-      const availableCredit = Number(bnplAccount.creditLimit) - Number(bnplAccount.currentBalance);
-      if (dto.amount > availableCredit) {
-        throw new BadRequestException(`신용 한도 초과: 가용 한도 ${availableCredit}원, 요청 금액 ${dto.amount}원`);
-      }
+      const paymentEvent = await this.paymentService.requestPayment(paymentRequestDto);
 
-      // 3. payment 테이블에 결제 정보 생성
-      const paymentId = nanoid();
-      const [newPayment] = await tx
-        .insert(payment)
-        .values({
-          id: paymentId,
-          invoiceId: dto.invoiceId,
-          paymentMethodId: bnplAccount.paymentMethodId,
-          amount: dto.amount,
-          status: 'PENDING',
-          paymentType: 'BNPL',
-          description: dto.description || `BNPL 결제 - ${dto.invoiceId}`,
-          metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
-        })
-        .returning();
-
-      // 4. payment_event 테이블에 REQUESTED 이벤트 생성
-      const eventId = nanoid();
-      const [newEvent] = await tx
-        .insert(paymentEvent)
-        .values({
-          id: eventId,
-          paymentId: paymentId,
-          eventType: 'PAYMENT_REQUESTED',
-          amount: dto.amount,
-          actor: 'USER',
-          metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
-        })
-        .returning();
-
-      // 5. bnpl_transaction 테이블에 거래 기록
+      // 3. BNPL 거래 기록 생성 (AUTHORIZED)
       const transactionId = nanoid();
-      const [newTransaction] = await tx
-        .insert(schema.bnplTransaction)
+      const [transaction] = await this.dbService.db.insert(bnplTransaction)
         .values({
           id: transactionId,
           bnplAccountId: dto.bnplAccountId,
@@ -99,182 +71,185 @@ export class BnplPaymentService {
           transactionType: 'DEBIT',
           status: 'AUTHORIZED',
           amount: dto.amount,
+          createdAt: new Date(),
         })
         .returning();
 
-      this.logger.log(`BNPL 결제 요청 완료: paymentId=${paymentId}, eventId=${eventId}, transactionId=${transactionId}`);
+      this.logger.log(`BNPL 결제 요청 완료: paymentId=${paymentEvent.id}, transactionId=${transactionId}`);
 
       return {
-        success: true,
-        paymentId,
-        eventId,
+        paymentId: paymentEvent.id,
         transactionId,
       };
-    });
-  }
-
-  /**
-   * BNPL 결제 실패 처리
-   * 1. payment_event 테이블에 FAILED 이벤트 생성
-   * 2. payment 테이블의 상태 업데이트
-   * 3. bnpl_transaction 테이블의 상태 업데이트
-   */
-  async failPayment(paymentId: string, reason: string): Promise<{ 
-    success: boolean; 
-    eventId: string;
-  }> {
-    this.logger.log(`BNPL 결제 실패 처리 시작: ${paymentId}, 사유: ${reason}`);
-
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. payment 정보 조회
-      const paymentInfo = await tx.query.payment.findFirst({
-        where: eq(payment.id, paymentId),
-      });
-
-      if (!paymentInfo) {
-        throw new BadRequestException('결제 정보를 찾을 수 없습니다.');
-      }
-
-      if (paymentInfo.status !== 'PENDING') {
-        throw new BadRequestException(`결제가 이미 처리되었습니다: ${paymentInfo.status}`);
-      }
-
-      // 2. payment_event 테이블에 FAILED 이벤트 생성
-      const eventId = nanoid();
-      await tx
-        .insert(paymentEvent)
-        .values({
-          id: eventId,
-          paymentId: paymentId,
-          eventType: 'PAYMENT_FAILED',
-          amount: Number(paymentInfo.amount),
-          actor: 'SYSTEM',
-          reason: reason,
-        });
-
-      // 3. payment 테이블의 상태 업데이트
-      await tx
-        .update(payment)
-        .set({
-          status: 'FAILED',
-          updatedAt: new Date(),
-        })
-        .where(eq(payment.id, paymentId));
-
-      // 4. bnpl_transaction 테이블의 상태 업데이트
-      // 해당 payment와 연결된 bnpl_transaction 찾기
-      const transaction = await tx.query.bnplTransaction.findFirst({
-        where: and(
-          eq(schema.bnplTransaction.invoiceId, paymentInfo.invoiceId),
-          eq(schema.bnplTransaction.status, 'AUTHORIZED')
-        ),
-      });
-
-      if (transaction) {
-        await tx
-          .update(schema.bnplTransaction)
-          .set({
-            status: 'VOIDED',
-          })
-          .where(eq(schema.bnplTransaction.id, transaction.id));
-      }
-
-      this.logger.log(`BNPL 결제 실패 처리 완료: paymentId=${paymentId}, eventId=${eventId}`);
-
-      return {
-        success: true,
-        eventId,
-      };
-    });
+    } catch (error) {
+      this.logger.error(`BNPL 결제 요청 실패: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
    * BNPL 결제 캡처 처리
-   * 1. payment_event 테이블에 CAPTURED 이벤트 생성
-   * 2. payment 테이블의 상태 업데이트
-   * 3. bnpl_transaction 테이블의 상태 업데이트
-   * 4. bnpl_account 테이블의 currentBalance 업데이트
+   * 
+   * 플로우:
+   * 1. 결제 이벤트 조회
+   * 2. 결제 성공 이벤트 생성 (SUCCESS)
+   * 3. BNPL 거래 상태 업데이트 (CAPTURED)
+   * 4. BNPL 계정 잔액 업데이트
+   * 
+   * @param dto 결제 캡처 DTO
+   * @returns 결제 캡처 결과
    */
-  async capturePayment(dto: PaymentCaptureDto): Promise<{ 
-    success: boolean; 
-    eventId: string;
-  }> {
+  async capturePayment(dto: PaymentCaptureDto): Promise<{ eventId: string }> {
     this.logger.log(`BNPL 결제 캡처 시작: ${dto.paymentId}`);
 
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. payment 정보 조회
-      const paymentInfo = await tx.query.payment.findFirst({
-        where: eq(payment.id, dto.paymentId),
-      });
+    try {
+      // 1. 결제 이벤트 조회
+      const paymentEvent = await this.paymentService.getPaymentEvent(dto.paymentId);
 
-      if (!paymentInfo) {
-        throw new BadRequestException('결제 정보를 찾을 수 없습니다.');
+      if (!paymentEvent) {
+        throw new Error(`결제 이벤트를 찾을 수 없습니다: ${dto.paymentId}`);
       }
 
-      if (paymentInfo.status !== 'PENDING') {
-        throw new BadRequestException(`결제가 이미 처리되었습니다: ${paymentInfo.status}`);
+      if (paymentEvent.status !== 'REQUESTED') {
+        throw new Error(`결제 상태가 요청 상태가 아닙니다: ${paymentEvent.status}`);
       }
 
-      // 캡처 금액 결정 (지정된 금액 또는 전체 금액)
-      const captureAmount = dto.amount || Number(paymentInfo.amount);
+      // 2. 결제 성공 이벤트 생성 (SUCCESS) - DTO 객체로 전달
+      const paymentSuccessDto = {
+        invoiceId: paymentEvent.invoiceId,
+        paymentMethodId: paymentEvent.paymentMethodId,
+        amount: dto.amount || paymentEvent.amount,
+        pgTransactionId: `bnpl_capture_${Date.now()}`,
+        pgResponse: JSON.stringify({ status: 'success', timestamp: new Date() }),
+        actor: 'SCHEDULER' as const,
+      };
 
-      // 2. payment_event 테이블에 CAPTURED 이벤트 생성
-      const eventId = nanoid();
-      await tx
-        .insert(paymentEvent)
-        .values({
-          id: eventId,
-          paymentId: dto.paymentId,
-          eventType: 'PAYMENT_CAPTURED',
-          amount: captureAmount,
-          actor: 'SYSTEM',
-        });
+      const successEvent = await this.paymentService.successPayment(paymentSuccessDto);
 
-      // 3. payment 테이블의 상태 업데이트
-      await tx
-        .update(payment)
-        .set({
-          status: 'COMPLETED',
-          updatedAt: new Date(),
-          completedAt: new Date(),
-        })
-        .where(eq(payment.id, dto.paymentId));
-
-      // 4. bnpl_transaction 테이블의 상태 업데이트
-      // 해당 payment와 연결된 bnpl_transaction 찾기
-      const transaction = await tx.query.bnplTransaction.findFirst({
-        where: and(
-          eq(schema.bnplTransaction.invoiceId, paymentInfo.invoiceId),
-          eq(schema.bnplTransaction.status, 'AUTHORIZED')
+      // 3. BNPL 거래 상태 업데이트 (CAPTURED)
+      // 해당 인보이스 ID와 관련된 AUTHORIZED 상태의 거래 찾기
+      const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+        where: (bnplTransaction, { and, eq }) => and(
+          eq(bnplTransaction.invoiceId, paymentEvent.invoiceId),
+          eq(bnplTransaction.status, 'AUTHORIZED')
         ),
       });
 
-      if (!transaction) {
-        throw new BadRequestException('BNPL 거래 정보를 찾을 수 없습니다.');
+      if (transactions.length === 0) {
+        throw new Error(`AUTHORIZED 상태의 BNPL 거래를 찾을 수 없습니다: invoiceId=${paymentEvent.invoiceId}`);
       }
 
-      await tx
-        .update(schema.bnplTransaction)
-        .set({
-          status: 'CAPTURED',
-        })
-        .where(eq(schema.bnplTransaction.id, transaction.id));
+      // 거래 상태 업데이트
+      await this.dbService.db.update(bnplTransaction)
+        .set({ status: 'CAPTURED' })
+        .where(eq(bnplTransaction.id, transactions[0].id));
 
-      // 5. bnpl_account 테이블의 currentBalance 업데이트
-      await tx
-        .update(schema.bnplAccount)
-        .set({
-          currentBalance: Number(transaction.amount) + Number(transaction.amount),
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.bnplAccount.id, transaction.bnplAccountId));
+      // 4. BNPL 계정 잔액 업데이트
+      // 결제 방법 ID로 BNPL 계정 찾기
+      const bnplAccounts = await this.dbService.db.query.bnplAccount.findMany({
+        where: eq(bnplAccount.paymentMethodId, paymentEvent.paymentMethodId),
+      });
 
-      this.logger.log(`BNPL 결제 캡처 완료: paymentId=${dto.paymentId}, eventId=${eventId}, amount=${captureAmount}`);
+      if (bnplAccounts.length > 0) {
+        const account = bnplAccounts[0];
+        const newBalance = account.currentBalance + Number(paymentEvent.amount);
+
+        await this.dbService.db.update(bnplAccount)
+          .set({ currentBalance: newBalance })
+          .where(eq(bnplAccount.id, account.id));
+
+        this.logger.log(`BNPL 계정 잔액 업데이트: ${account.id}, 새 잔액: ${newBalance}원`);
+      }
+
+      this.logger.log(`BNPL 결제 캡처 완료: eventId=${successEvent.id}`);
 
       return {
-        success: true,
-        eventId,
+        eventId: successEvent.id,
       };
-    });
+    } catch (error) {
+      this.logger.error(`BNPL 결제 캡처 실패: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * BNPL 결제 실패 처리
+   * 
+   * 플로우:
+   * 1. 결제 이벤트 조회
+   * 2. 결제 실패 이벤트 생성 (FAILED)
+   * 3. BNPL 거래 상태 업데이트 (VOIDED)
+   * 
+   * @param paymentId 결제 ID
+   * @param reason 실패 사유
+   * @returns 결제 실패 결과
+   */
+  async failPayment(paymentId: string, reason: string): Promise<{ eventId: string }> {
+    this.logger.log(`BNPL 결제 실패 처리 시작: ${paymentId}, 사유: ${reason}`);
+
+    try {
+      // 1. 결제 이벤트 조회
+      const paymentEvent = await this.paymentService.getPaymentEvent(paymentId);
+
+      if (!paymentEvent) {
+        throw new Error(`결제 이벤트를 찾을 수 없습니다: ${paymentId}`);
+      }
+
+      // 2. 결제 실패 이벤트 생성 (FAILED) - DTO 객체로 전달
+      const paymentFailureDto = {
+        invoiceId: paymentEvent.invoiceId,
+        paymentMethodId: paymentEvent.paymentMethodId,
+        amount: paymentEvent.amount,
+        pgResponse: JSON.stringify({ status: 'failed', reason, timestamp: new Date() }),
+        actor: 'ADMIN' as const, // SYSTEM 대신 ADMIN 사용
+      };
+
+      const failedEvent = await this.paymentService.failPayment(paymentFailureDto);
+
+      // 3. BNPL 거래 상태 업데이트 (VOIDED)
+      // 해당 인보이스 ID와 관련된 AUTHORIZED 상태의 거래 찾기
+      const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+        where: (bnplTransaction, { and, eq }) => and(
+          eq(bnplTransaction.invoiceId, paymentEvent.invoiceId),
+          eq(bnplTransaction.status, 'AUTHORIZED')
+        ),
+      });
+
+      if (transactions.length > 0) {
+        // 거래 상태 업데이트
+        await this.dbService.db.update(bnplTransaction)
+          .set({ status: 'VOIDED' })
+          .where(eq(bnplTransaction.id, transactions[0].id));
+      }
+
+      this.logger.log(`BNPL 결제 실패 처리 완료: eventId=${failedEvent.id}`);
+
+      return {
+        eventId: failedEvent.id,
+      };
+    } catch (error) {
+      this.logger.error(`BNPL 결제 실패 처리 오류: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 결제 이벤트 조회
+   * 
+   * @param paymentId 결제 ID
+   * @returns 결제 이벤트
+   */
+  async getPaymentEvent(paymentId: string) {
+    return this.paymentService.getPaymentEvent(paymentId);
+  }
+
+  /**
+   * 인보이스 ID로 결제 이벤트 조회
+   * 
+   * @param invoiceId 인보이스 ID
+   * @returns 결제 이벤트 목록
+   */
+  async getPaymentEventsByInvoiceId(invoiceId: number) {
+    return this.paymentService.getPaymentEventsByInvoiceId(invoiceId);
   }
 }

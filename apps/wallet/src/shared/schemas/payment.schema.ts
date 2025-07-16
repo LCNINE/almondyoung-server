@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 import { paymentMethod } from './payment-method.schema';
+import { invoice } from '../../invoice/schema';
 
 /**
  * 결제 (Payment)
@@ -21,7 +22,9 @@ export const payment = pgTable('payment', {
     .$defaultFn(() => nanoid()),
   
   // 결제 관련 정보
-  invoiceId: bigint('invoice_id', { mode: 'number' }).notNull(),
+  invoiceId: bigint('invoice_id', { mode: 'number' })
+    .notNull()
+    .references(() => invoice.id), // invoice 테이블 직접 참조
   paymentMethodId: varchar('payment_method_id', { length: 26 })
     .notNull()
     .references(() => paymentMethod.id),
@@ -174,6 +177,11 @@ export const paymentRelations = relations(payment, ({ one, many }) => ({
   paymentMethod: one(paymentMethod, {
     fields: [payment.paymentMethodId],
     references: [paymentMethod.id],
+  }),
+  // invoice 관계 추가
+  invoice: one((importedInvoice) => importedInvoice, {
+    fields: [payment.invoiceId],
+    references: [(importedInvoice) => importedInvoice.id],
   }),
   events: many(paymentEvent),
   refunds: many(refund),

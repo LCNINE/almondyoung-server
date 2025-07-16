@@ -5,12 +5,14 @@ import { HmsBnplService } from './services/hms-bnpl.service';
 import { BnplAccountService } from './services/bnpl-account.service';
 import { BnplSettlementService } from './services/bnpl-settlement.service';
 import { BnplCreditService } from './services/bnpl-credit.service';
-import { SharedModule } from '@app/shared';
 import { BnplPaymentService } from './services/bnpl-payment.service';
+import { SharedModule } from '@app/shared';
+import { PaymentModule } from '../payment/payment.module';
 
 @Module({
   imports: [
     SharedModule,
+    PaymentModule,
   ],
   controllers: [BnplController],
   providers: [

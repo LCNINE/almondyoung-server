@@ -1,124 +1,164 @@
-import { z } from 'zod';
 import {
-  payment,
-  paymentEvent,
-  refund,
-  refundEvent,
-  paymentRelations,
-  paymentEventRelations,
-  refundRelations,
-  refundEventRelations,
-} from '../shared/schemas/payment.schema';
-import { paymentMethod } from '../shared/schemas/payment-method.schema';
+  pgTable,
+  varchar,
+  bigint,
+  decimal,
+  timestamp,
+  text,
+} from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+import { ulid } from 'ulid';
+import { z } from 'zod';
+
 import { invoice } from '../invoice/schema';
-import { bnplAccount, bnplTransaction } from '../bnpl/schema';
+import { paymentMethod } from '../bnpl/schema';
 
-// 공용 스키마 re-export
-export {
-  payment,
-  paymentEvent,
-  refund,
-  refundEvent,
-  paymentRelations,
-  paymentEventRelations,
-  refundRelations,
-  refundEventRelations,
-};
+export const paymentEvents = pgTable('payment_events', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(ulid),
 
-// ────────────────────────────────────────────
-// Zod 스키마 (nestjs-zod용)
-// ────────────────────────────────────────────
+  invoiceId: bigint('invoice_id', { mode: 'number' })
+    .notNull()
+    .references(() => invoice.id),
 
-// Payment 스키마
-export const PaymentSchema = z.object({
-  id: z.string(),
-  invoiceId: z.number().int(),
-  paymentMethodId: z.string(),
-  amount: z.number().positive(),
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED']),
-  paymentType: z.enum(['CARD', 'BANK_TRANSFER', 'BNPL', 'REWARD_POINT']),
-  description: z.string().optional().nullable(),
-  metadata: z.string().optional().nullable(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  completedAt: z.date().optional().nullable(),
+  paymentMethodId: varchar('payment_method_id', { length: 26 })
+    .notNull()
+    .references(() => paymentMethod.id),
+
+  amount: decimal('amount', { precision: 19, scale: 4 })
+    .$type<string>()
+    .notNull(),
+
+  status: varchar('status', { length: 255 })
+    .$type<'REQUESTED' | 'SUCCESS' | 'FAILED' | 'DUPLICATE_ATTEMPT'>()
+    .notNull(),
+
+  pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
+  pgResponse: text('pg_response'),
+
+  actor: varchar('actor', { length: 255 })
+    .$type<'USER' | 'SCHEDULER' | 'ADMIN'>()
+    .notNull(),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
-// PaymentEvent 스키마
-export const PaymentEventSchema = z.object({
-  id: z.string(),
-  paymentId: z.string(),
-  eventType: z.enum([
-    'PAYMENT_REQUESTED',
-    'PAYMENT_AUTHORIZED',
-    'PAYMENT_CAPTURED',
-    'PAYMENT_FAILED',
-    'PAYMENT_REFUNDED',
-    'PAYMENT_VOIDED',
-  ]),
-  amount: z.number().positive(),
-  pgTransactionId: z.string().optional().nullable(),
-  pgResponse: z.string().optional().nullable(),
-  actor: z.enum(['USER', 'SYSTEM', 'ADMIN', 'SCHEDULER']),
-  reason: z.string().optional().nullable(),
-  metadata: z.string().optional().nullable(),
+
+export const refundEvents = pgTable('refund_events', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(ulid),
+
+  paymentEventId: varchar('payment_event_id', { length: 26 })
+    .notNull()
+    .references(() => paymentEvents.id),
+
+  amount: decimal('amount', { precision: 19, scale: 4 })
+    .$type<string>()
+    .notNull(),
+
+  status: varchar('status', { length: 255 })
+    .$type<'REQUESTED' | 'SUCCESS' | 'FAILED'>()
+    .notNull(),
+
+  reason: text('reason'),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/* ------------------------------------------------------------------
+ * 2️⃣ 타입 정의
+ *    - DB 스키마 타입 (실제 DB 타입과 일치)
+ *    - 비즈니스 로직 타입 (number 사용)
+ * ----------------------------------------------------------------*/
+const id26 = z.string().length(26);
+
+// DB에서 받는 실제 타입 (decimal은 string)
+export const RefundEventDbSchema = z.object({
+  id: id26,
+  paymentEventId: id26,
+  amount: z.string(), // DB decimal은 string
+  status: z.enum(['REQUESTED', 'SUCCESS', 'FAILED']),
+  reason: z.string().nullable().optional(),
   createdAt: z.date(),
 });
 
-// Refund 스키마
-export const RefundSchema = z.object({
-  id: z.string(),
-  paymentId: z.string(),
-  amount: z.number().positive(),
-  status: z.enum(['PENDING', 'COMPLETED', 'FAILED']),
-  reason: z.string().optional().nullable(),
-  metadata: z.string().optional().nullable(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  completedAt: z.date().optional().nullable(),
-});
-
-// RefundEvent 스키마
+// 비즈니스 로직에서 사용하는 타입 (amount는 number)
 export const RefundEventSchema = z.object({
-  id: z.string(),
-  refundId: z.string(),
-  eventType: z.enum([
-    'REFUND_REQUESTED',
-    'REFUND_PROCESSED',
-    'REFUND_COMPLETED',
-    'REFUND_FAILED',
-  ]),
-  amount: z.number().positive(),
-  pgTransactionId: z.string().optional().nullable(),
-  pgResponse: z.string().optional().nullable(),
-  actor: z.enum(['USER', 'SYSTEM', 'ADMIN']),
-  reason: z.string().optional().nullable(),
-  metadata: z.string().optional().nullable(),
+  id: id26,
+  paymentEventId: id26,
+  amount: z.number().positive(), // 비즈니스 로직에서는 number
+  status: z.enum(['REQUESTED', 'SUCCESS', 'FAILED']),
+  reason: z.string().nullable().optional(),
   createdAt: z.date(),
 });
 
-// 결제 생성 스키마
-export const CreatePaymentSchema = z.object({
-  invoiceId: z.number().int().positive(),
-  paymentMethodId: z.string(),
-  amount: z.number().positive(),
-  paymentType: z.enum(['CARD', 'BANK_TRANSFER', 'BNPL', 'REWARD_POINT']),
-  description: z.string().optional(),
-  metadata: z.string().optional(),
+export const CreateRefundEventSchema = RefundEventSchema.omit({
+  id: true,
+  createdAt: true,
 });
 
-// 환불 생성 스키마
-export const CreateRefundSchema = z.object({
-  paymentId: z.string(),
-  amount: z.number().positive(),
-  reason: z.string(),
-  metadata: z.string().optional(),
+export type RefundEventDb = z.infer<typeof RefundEventDbSchema>; // DB 타입
+export type RefundEvent = z.infer<typeof RefundEventSchema>; // 비즈니스 로직 타입
+export type CreateRefundEvent = z.infer<typeof CreateRefundEventSchema>;
+
+/* ------------------------------------------------------------------
+ * 3️⃣ Drizzle relations
+ * ----------------------------------------------------------------*/
+export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
+  paymentEvent: one(paymentEvents, {
+    fields:     [refundEvents.paymentEventId],
+    references: [paymentEvents.id],
+  }),
+}));
+
+
+// DB에서 받는 실제 타입 (decimal은 string)
+export const PaymentEventDbSchema = z.object({
+  id: id26,
+  invoiceId: z.number().int().nonnegative(),
+  paymentMethodId: id26,
+  amount: z.string(), // DB decimal은 string
+  status: z.enum(['REQUESTED', 'SUCCESS', 'FAILED', 'DUPLICATE_ATTEMPT']),
+  pgTransactionId: z.string().max(255).nullable().optional(),
+  pgResponse: z.string().nullable().optional(),
+  actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']),
+  createdAt: z.date(),
 });
 
-// 타입 추출
-export type Payment = z.infer<typeof PaymentSchema>;
-export type PaymentEvent = z.infer<typeof PaymentEventSchema>;
-export type Refund = z.infer<typeof RefundSchema>;
-export type RefundEvent = z.infer<typeof RefundEventSchema>;
-export type CreatePayment = z.infer<typeof CreatePaymentSchema>;
-export type CreateRefund = z.infer<typeof CreateRefundSchema>;
+// 비즈니스 로직에서 사용하는 타입 (amount는 number)
+export const PaymentEventSchema = z.object({
+  id: id26,
+  invoiceId: z.number().int().nonnegative(),
+  paymentMethodId: id26,
+  amount: z.number().positive(), // 비즈니스 로직에서는 number
+  status: z.enum(['REQUESTED', 'SUCCESS', 'FAILED', 'DUPLICATE_ATTEMPT']),
+  pgTransactionId: z.string().max(255).nullable().optional(),
+  pgResponse: z.string().nullable().optional(),
+  actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']),
+  createdAt: z.date(),
+});
+
+export const CreatePaymentEventSchema = PaymentEventSchema.omit({
+  id: true,
+  createdAt: true,
+});
+
+export type PaymentEventDb = z.infer<typeof PaymentEventDbSchema>; // DB 타입
+export type PaymentEvent = z.infer<typeof PaymentEventSchema>; // 비즈니스 로직 타입
+export type CreatePaymentEvent = z.infer<typeof CreatePaymentEventSchema>;
+
+/* ------------------------------------------------------------------
+ * 3️⃣ Drizzle relations
+ * ----------------------------------------------------------------*/
+export const paymentEventsRelations = relations(paymentEvents, ({ one, many }) => ({
+  invoice:       one(invoice,       { fields: [paymentEvents.invoiceId],       references: [invoice.id] }),
+  paymentMethod: one(paymentMethod, { fields: [paymentEvents.paymentMethodId], references: [paymentMethod.id] }),
+  refunds:       many(refundEvents),
+}));
+

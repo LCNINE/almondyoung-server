@@ -186,8 +186,52 @@ export class BnplService {
    * BNPL 출금 요청 - 테스트용
    */
   async requestWithdrawal(withdrawalData: any) {
-    // 테스트용 수동 출금
-    return this.hmsBnplService.requestWithdrawal(withdrawalData);
+    this.logger.log(`BNPL 출금 요청 시작: ${withdrawalData.memberId}, 금액: ${withdrawalData.callAmount || withdrawalData.amount}원`);
+    
+    try {
+      // 1. HMS 배치 CMS에 출금 요청
+      const result = await this.hmsBnplService.requestWithdrawal(withdrawalData);
+      
+      // 2. 성공 시 payment_event 테이블에 기록
+      if (result.payment && result.payment.status === '신청') {
+        // BNPL 계정 조회
+        const bnplAccount = await this.accountService.getAccountByUserId(
+          parseInt(withdrawalData.memberId.split('_')[1], 10)
+        );
+        
+        if (bnplAccount) {
+          // payment 테이블에 기록
+          const paymentResult = await this.paymentService.requestPayment({
+            bnplAccountId: bnplAccount.id,
+            invoiceId: parseInt(result.payment.transactionId.replace(/\D/g, ''), 10) || 999999,
+            amount: result.payment.callAmount || withdrawalData.amount,
+            description: `BNPL 출금 - ${result.payment.transactionId}`,
+            metadata: { withdrawalData, hmsResponse: result }
+          });
+          
+          this.logger.log(`BNPL 출금 요청 payment_event 기록 완료: ${paymentResult.paymentId}`);
+          
+          // 바로 캡처 처리
+          await this.paymentService.capturePayment({
+            paymentId: paymentResult.paymentId
+          });
+          
+          this.logger.log(`BNPL 출금 캡처 처리 완료: ${paymentResult.paymentId}`);
+          
+          // 결과에 payment 정보 추가
+          return {
+            ...result,
+            paymentId: paymentResult.paymentId,
+            message: 'BNPL 출금 요청 및 이벤트 기록이 완료되었습니다.'
+          };
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      this.logger.error(`BNPL 출금 요청 실패: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
