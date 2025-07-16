@@ -16,9 +16,6 @@ module.exports = defineConfig({
       authCors: process.env.AUTH_CORS || '',
       jwtSecret: process.env.JWT_SECRET || 'supersecret',
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
-    },
-
-    http: {
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
   },
@@ -69,10 +66,8 @@ module.exports = defineConfig({
         ],
       },
     },
-
     {
-      resolve: './src/modules/user',
-      type: 'custom',
+      resolve: './src/modules/custom-user',
       options: {
         userServiceUrl: process.env.USER_SERVICE_URL,
       },

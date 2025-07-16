@@ -1,7 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
 import { User } from '../../types/user.type';
+import { MedusaService } from '@medusajs/framework/utils';
+import { CreateUserDTO } from '@medusajs/framework/types';
 
-export default class UserModuleService {
+export default class CustomUserModuleService {
   private client: AxiosInstance;
 
   constructor() {

@@ -6,8 +6,8 @@ import {
 import { Modules } from '@medusajs/framework/utils';
 import { MedusaError } from '@medusajs/utils';
 import { CreateCartDTO, CreateLineItemDTO } from '@medusajs/types';
-import { USER_MODULE } from '../../../modules/user';
-import type UserModuleService from '../../../modules/user/service';
+import { CUSTOM_USER_MODULE } from '../../../modules/custom-user';
+import type UserModuleService from '../../../modules/custom-user/service';
 import { User } from '../../../types/user.type';
 import { createCartWorkflow } from '@medusajs/medusa/core-flows';
 
@@ -30,8 +30,9 @@ export async function POST(
     const userId = req.auth_context.actor_id;
 
     if (userId) {
-      const userService = req.scope.resolve<UserModuleService>(USER_MODULE);
-      const user = await userService.retrieveUser(userId);
+      const userCustomService =
+        req.scope.resolve<UserModuleService>(CUSTOM_USER_MODULE);
+      const user = await userCustomService.retrieveUser(userId);
 
       if (!user) {
         res.status(404).json({
