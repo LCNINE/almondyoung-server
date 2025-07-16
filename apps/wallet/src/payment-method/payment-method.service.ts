@@ -12,7 +12,7 @@ import { ActivateBNPLDto } from './dto/activate-bnpl.dto';
 import { DeactivateBNPLDto } from './dto/deactivate-bnpl.dto';
 import { BNPLAccountResponseDto } from './dto/bnpl-account.response.dto';
 import * as schema from './schema';
-import { BnplService } from './bnpl.service';
+import { BnplService } from './services/bnpl.service';
 import { CardPaymentProfileService, CardPaymentTransactionService } from './services/card-payment.service';
 import { BatchCmsMemberService, BatchCmsAgreementService, BatchCmsWithdrawalService } from './services/batch-cms.service';
 
@@ -20,7 +20,6 @@ type PaymentMethod = typeof schema.paymentMethod.$inferSelect;
 export type PaymentMethodWithDetails = PaymentMethod & {
   card: typeof schema.cardMethod.$inferSelect | null;
   bankAccount: typeof schema.bankAccountMethod.$inferSelect | null;
-  prepaidWallet: typeof schema.prepaidWalletMethod.$inferSelect | null;
   rewardPoint: typeof schema.rewardPointMethod.$inferSelect | null;
 };
 
@@ -54,20 +53,22 @@ export class PaymentMethodService {
   }
 
   /**
-   * 외부 PG사 연동이 필요한 결제수단을 생성합니다.
-   * (카드, 은행계좌 등)
+   * 카드 결제수단 생성 (실제 HMS API 연동)
+   * BNPL(배치 CMS)은 별도 엔드포인트 사용: POST /payment-methods/batch-cms
    */
   async createPaymentMethod(dto: CreatePaymentMethodDto): Promise<unknown> {
-    // BNPL은 별도 처리 (외부 PG사 연동 불필요)
+    // BNPL은 별도 엔드포인트로 분리됨
     if (dto.methodType === 'BNPL') {
-      return this.bnplService.create(dto);
+      throw new BadRequestException(
+        'BNPL(배치 CMS) 계좌는 POST /payment-methods/batch-cms 엔드포인트를 사용해주세요.',
+      );
     }
 
     const strategy = this.strategyRegistry.get(dto.methodType);
 
     if (!strategy) {
       throw new BadRequestException(
-        `Unsupported payment method: ${dto.methodType}`,
+        `지원하지 않는 결제수단입니다: ${dto.methodType}. 현재 지원: CARD`,
       );
     }
 
@@ -88,7 +89,6 @@ export class PaymentMethodService {
       with: {
         card: true,
         bankAccount: true,
-        prepaidWallet: true,
         rewardPoint: true,
       },
     });
@@ -107,7 +107,6 @@ export class PaymentMethodService {
       with: {
         card: true,
         bankAccount: true,
-        prepaidWallet: true,
         rewardPoint: true,
       },
     });
@@ -153,30 +152,12 @@ export class PaymentMethodService {
   // ────────────────────────────────────────────
 
   /**
-   * 결제수단에 BNPL 기능을 활성화합니다.
-   * @param dto - BNPL 활성화 정보
-   * @returns BNPL 계정 정보
-   */
-  async activateBNPL(dto: ActivateBNPLDto): Promise<BNPLAccountResponseDto> {
-    return this.bnplService.activate(dto);
-  }
-
-  /**
-   * 결제수단의 BNPL 기능을 비활성화합니다.
-   * @param dto - BNPL 비활성화 정보
-   * @returns 비활성화 결과
-   */
-  async deactivateBNPL(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
-    return this.bnplService.deactivate(dto);
-  }
-
-  /**
    * 사용자의 BNPL 계정 정보를 조회합니다.
    * @param userId - 사용자 ID
    * @returns BNPL 계정 정보
    */
   async getBNPLAccount(userId: number): Promise<BNPLAccountResponseDto | null> {
-    return this.bnplService.getAccount(userId);
+    return this.bnplService.getBatchCmsAccount(userId);
   }
 
   /**
@@ -187,7 +168,7 @@ export class PaymentMethodService {
   async getBNPLPaymentMethods(
     userId: number,
   ): Promise<PaymentMethodWithDetails[]> {
-    return this.bnplService.findAllByUser(userId);
+    return this.bnplService.getBatchCmsPaymentMethods(userId);
   }
 
   // ────────────────────────────────────────────

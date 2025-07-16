@@ -1,5 +1,21 @@
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { 
+  IsBoolean, 
+  IsOptional, 
+  IsString, 
+  MaxLength, 
+  IsNumber, 
+  IsPositive, 
+  Min, 
+  Max, 
+  IsEmail, 
+  IsPhoneNumber, 
+  IsIn,
+  IsNotEmpty,
+  IsUrl
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
+
 // [내부 비즈니스용 DTO] 카드 결제수단 생성
 export interface CreateCardPaymentMethodDto {
   methodType: 'CARD';
@@ -30,18 +46,61 @@ export interface CreateBankAccountPaymentMethodDto {
   accountHolderName: string;
 }
 
-// [내부 비즈니스용 DTO] BNPL 결제수단 생성
-export interface CreateBnplPaymentMethodDto {
+// [내부 비즈니스용 DTO] BNPL 결제수단 생성 (Class 기반으로 변경)
+export class CreateBnplPaymentMethodDto {
+  @IsIn(['BNPL'])
+  @IsNotEmpty()
   methodType: 'BNPL';
+
+  @IsNumber()
+  @IsPositive()
+  @Type(() => Number)
   userId: number;
+
+
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
   methodName: string;
+
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
   isDefault?: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(32)
   institutionCode: string;
+
+  @IsNumber()
+  @IsPositive()
+  @IsOptional()
+  @Type(() => Number)
   creditLimit?: number;
+
+  @IsNumber()
+  @IsPositive()
+  @IsOptional()
+  @Type(() => Number)
   approvedLimit?: number;
+
+  @IsNumber()
+  @Min(1)
+  @Max(31)
+  @Type(() => Number)
   billingCycleDay: number;
+
+  @IsUrl()
+  @IsOptional()
   termsUrl?: string;
-  settlementPaymentMethodId: string;
+
+  // settlementPaymentMethodId 제거 - BNPL은 자체 완결형 결제수단
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(15)
   phone?: string;
 }
 

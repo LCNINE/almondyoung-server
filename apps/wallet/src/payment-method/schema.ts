@@ -14,10 +14,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { nanoid } from 'nanoid';
 
-// 예시용 wallets 테이블 (실제 프로젝트에서는 import 하세요)
-const wallets = pgTable('wallets', {
-  id: varchar('id', { length: 26 }).primaryKey(),
-});
+// 지갑 기능 제거됨
 
 // ────────────────────────────────────────────
 // 2️⃣ Payment Method (최상위 결제 수단)
@@ -31,9 +28,7 @@ export const paymentMethod = pgTable(
       .$defaultFn(() => nanoid()),
     userId: bigint('user_id', { mode: 'number' }).notNull(),
     methodType: text('method_type')
-      .$type<
-        'CARD' | 'BANK_ACCOUNT' | 'PREPAID_WALLET' | 'BNPL' | 'REWARD_POINT'
-      >()
+      .$type<'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'REWARD_POINT'>()
       .notNull(),
     methodName: varchar('method_name', { length: 64 }).notNull(),
     isDefault: boolean('is_default').notNull().default(false),
@@ -67,11 +62,7 @@ export const bnplAccount = pgTable(
       .primaryKey()
       .$defaultFn(() => nanoid()),
     userId: bigint('user_id', { mode: 'number' }).notNull(),
-    settlementPaymentMethodId: varchar('settlement_payment_method_id', {
-      length: 26,
-    })
-      .notNull()
-      .references(() => paymentMethod.id),
+    // settlementPaymentMethodId 제거 - BNPL은 자체 완결형 결제수단
     creditLimit: numeric('credit_limit', {
       precision: 18,
       scale: 2,
@@ -92,7 +83,7 @@ export const bnplAccount = pgTable(
       .notNull()
       .default(0),
     status: text('status')
-      .$type<'ACTIVE' | 'OVERDUE' | 'SUSPENDED'>()
+      .$type<'ACTIVE' | 'INACTIVE' | 'OVERDUE' | 'SUSPENDED'>()
       .notNull()
       .default('ACTIVE'),
     billingCycleDay: integer('billing_cycle_day').notNull(),
@@ -107,9 +98,6 @@ export const bnplAccount = pgTable(
   },
   (table) => [
     uniqueIndex('idx_bnpl_account_user_unique').on(table.userId),
-    uniqueIndex('idx_bnpl_account_settlement_method').on(
-      table.settlementPaymentMethodId,
-    ),
   ],
 );
 
@@ -195,29 +183,7 @@ export const bankAccountMethod = pgTable(
   ],
 );
 
-// ────────────────────────────────────────────
-// 5️⃣ Prepaid Wallet Method (선불 지갑)
-// ────────────────────────────────────────────
-export const prepaidWalletMethod = pgTable(
-  'prepaid_wallet_method',
-  {
-    id: varchar('id', { length: 26 }).primaryKey(),
-    methodType: text('method_type').notNull().default('PREPAID_WALLET'),
-    walletId: varchar('wallet_id', { length: 26 })
-      .notNull()
-      .references(() => wallets.id),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.id, table.methodType],
-      foreignColumns: [paymentMethod.id, paymentMethod.methodType],
-      name: 'fk_prepaid_wallet_method_payment_method',
-    }).onDelete('cascade'),
-  ],
-);
+// 지갑 기능 제거됨 - prepaidWalletMethod 테이블 삭제
 
 // ────────────────────────────────────────────
 // 7️⃣ Reward Point Method (포인트)
@@ -258,11 +224,6 @@ export const paymentMethodRelations = relations(paymentMethod, ({ one }) => ({
     fields: [paymentMethod.id],
     references: [bankAccountMethod.id],
   }),
-  prepaidWallet: one(prepaidWalletMethod, {
-    fields: [paymentMethod.id],
-    references: [prepaidWalletMethod.id],
-  }),
-
   rewardPoint: one(rewardPointMethod, {
     fields: [paymentMethod.id],
     references: [rewardPointMethod.id],
@@ -288,15 +249,7 @@ export const bankAccountMethodRelations = relations(
   }),
 );
 
-export const prepaidWalletMethodRelations = relations(
-  prepaidWalletMethod,
-  ({ one }) => ({
-    paymentMethod: one(paymentMethod, {
-      fields: [prepaidWalletMethod.id],
-      references: [paymentMethod.id],
-    }),
-  }),
-);
+// 지갑 관련 Relations 제거됨
 
 export const rewardPointMethodRelations = relations(
   rewardPointMethod,
@@ -311,11 +264,7 @@ export const rewardPointMethodRelations = relations(
 // ────────────────────────────────────────────
 // BNPL Account Relations
 // ────────────────────────────────────────────
-export const bnplAccountRelations = relations(bnplAccount, ({ one, many }) => ({
-  settlementPaymentMethod: one(paymentMethod, {
-    fields: [bnplAccount.settlementPaymentMethodId],
-    references: [paymentMethod.id],
-  }),
+export const bnplAccountRelations = relations(bnplAccount, ({ many }) => ({
   activationEvents: many(bnplActivationEvent),
 }));
 

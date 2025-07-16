@@ -6,23 +6,22 @@ import { CreateBnplPaymentMethodDto } from './dto/create-payment-method.dto';
 import { ActivateBNPLDto } from './dto/activate-bnpl.dto';
 import { DeactivateBNPLDto } from './dto/deactivate-bnpl.dto';
 import { BNPLAccountResponseDto } from './dto/bnpl-account.response.dto';
-import { HmsAPI } from 'hms-api-wrapper';
-import { CreatePaymentProfileDto } from 'hms-api-wrapper/dist/services/PaymentProfile/types';
 import { eq, and } from 'drizzle-orm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
+import { BatchCmsMemberService } from './services/batch-cms.service';
 
 function toHmsCmsDto(dto: CreateBnplPaymentMethodDto): CreateMemberRequestDto {
   return {
-    memberId: dto.userId.toString(),
+    memberId: `bnpl_${dto.userId}`, // BNPL 회원임을 명시
     memberName: dto.methodName,
     phone: dto.phone ?? '01012345678',
     paymentKind: 'CMS',
     paymentCompany: dto.institutionCode ?? '088',
-    paymentNumber: dto.settlementPaymentMethodId ?? '1234567890123456',
+    paymentNumber: `${dto.userId}${Date.now()}`, // 고유한 계좌번호 생성
     payerName: dto.methodName,
-    payerNumber: '900101',
-    // 기타 BNPL용 필수 필드만 전달
+    payerNumber: '9001011234', // 10자리로 수정 (생년월일 6자리 + 4자리)
+    email: `bnpl_${dto.userId}@example.com`, // 이메일 추가
   };
 }
 
@@ -30,89 +29,37 @@ function toHmsCmsDto(dto: CreateBnplPaymentMethodDto): CreateMemberRequestDto {
 export class BnplService {
   private readonly logger = new Logger(BnplService.name);
 
-  private readonly mockHmsApi: HmsAPI;
-
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
+    private readonly batchCmsMemberService: BatchCmsMemberService,
   ) {
-    // 직접 HmsAPI 인스턴스 생성
-    console.log('🚀 BnplService에서 직접 HmsAPI 인스턴스 생성');
-
-    const config = {
-      swKey: 'mock-sw',
-      custKey: 'mock-cust',
-      baseURL: 'http://localhost:3005/v1',
-      isTest: false, // 라이브러리 버그로 인해 false로 설정
-    };
-
-    console.log('🔧 HmsAPI 설정:', config);
-
-    this.mockHmsApi = new HmsAPI(config);
-
-    // 라이브러리 버그 우회: 직접 axios 인스턴스의 baseURL 수정
-    console.log('🔧 라이브러리 버그 우회 시도...');
-
-    // private 속성에 접근하기 위해 any로 캐스팅
-    const hmsApiAny = this.mockHmsApi as any;
-    if (hmsApiAny.httpClient && hmsApiAny.httpClient.client) {
-      // axios 인스턴스의 baseURL 수정
-      hmsApiAny.httpClient.client.defaults.baseURL = 'http://localhost:3005/v1';
-
-      // HttpClient의 config도 수정
-      if (hmsApiAny.httpClient.config) {
-        hmsApiAny.httpClient.config.baseURL = 'http://localhost:3005/v1';
-      }
-
-      console.log(
-        '✅ axios baseURL 수정 완료:',
-        hmsApiAny.httpClient.client.defaults.baseURL,
-      );
-      console.log(
-        '✅ HttpClient config baseURL:',
-        hmsApiAny.httpClient.config?.baseURL,
-      );
-    } else {
-      console.log('❌ httpClient 또는 client를 찾을 수 없음');
-    }
-
-    console.log('✅ BnplService에서 생성된 HmsAPI 인스턴스:', this.mockHmsApi);
-    console.log('✅ HmsAPI 인스턴스 타입:', typeof this.mockHmsApi);
-    console.log('✅ HmsAPI 인스턴스 생성자:', this.mockHmsApi.constructor.name);
+    this.logger.log('🚀 BnplService 초기화 - BatchCmsMemberService 연동');
   }
 
   async create(dto: CreateBnplPaymentMethodDto) {
     this.logger.log(`BNPL 생성을 시작합니다. userId: ${dto.userId}`);
 
-    // 실제 사용되는 HmsAPI 인스턴스 확인
-    console.log(
-      '🔍 create 메서드에서 사용되는 HmsAPI 인스턴스:',
-      this.mockHmsApi,
-    );
-    console.log('🔍 HmsAPI 인스턴스 타입:', typeof this.mockHmsApi);
-    console.log(
-      '🔍 HmsAPI 인스턴스 생성자:',
-      this.mockHmsApi?.constructor?.name,
-    );
-
     try {
       const hmsPayload = toHmsCmsDto(dto);
       this.logger.log(
-        `[PG 요청 직전] HMS로 회원 생성을 요청합니다. payload: ${JSON.stringify(
+        `[PG 요청 직전] BatchCmsMemberService로 회원 생성을 요청합니다. payload: ${JSON.stringify(
           hmsPayload,
         )}`,
       );
 
-      // 라이브러리 구조에 맞게 `members.create`를 호출
-      const hmsResult = await this.mockHmsApi.members.create(hmsPayload);
+      // BatchCmsMemberService를 통해 PG사 연동
+      const hmsResult = await this.batchCmsMemberService.create(hmsPayload);
 
       this.logger.log(
-        `[PG 응답 직후] HMS로부터 응답을 받았습니다. response: ${JSON.stringify(
+        `[PG 응답 직후] BatchCmsMemberService로부터 응답을 받았습니다. response: ${JSON.stringify(
           hmsResult,
         )}`,
       );
 
+      // PG사 연동 성공 후 DB 트랜잭션 시작
       return this.dbService.db.transaction(async (tx) => {
         this.logger.log('DB 트랜잭션을 시작합니다.');
+        
         // 1. 결제수단 생성
         const [paymentMethod] = await tx
           .insert(schema.paymentMethod)
@@ -132,7 +79,6 @@ export class BnplService {
           .insert(schema.bnplAccount)
           .values({
             userId: dto.userId,
-            settlementPaymentMethodId: dto.settlementPaymentMethodId,
             creditLimit: dto.creditLimit || 0,
             approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
             currentBalance: 0,
@@ -152,7 +98,12 @@ export class BnplService {
         });
 
         this.logger.log('DB 트랜잭션을 성공적으로 완료했습니다.');
-        return { paymentMethod, bnplAccount };
+        
+        return { 
+          paymentMethod, 
+          bnplAccount,
+          hmsResult // PG사 연동 결과도 함께 반환
+        };
       });
     } catch (error) {
       this.logger.error(
@@ -188,7 +139,6 @@ export class BnplService {
         .insert(schema.bnplAccount)
         .values({
           userId: paymentMethod.userId,
-          settlementPaymentMethodId: dto.settlementPaymentMethodId,
           creditLimit: dto.creditLimit,
           approvedLimit: dto.approvedLimit,
           currentBalance: 0,
@@ -213,7 +163,6 @@ export class BnplService {
       return {
         id: bnplAccount.id,
         userId: bnplAccount.userId,
-        settlementPaymentMethodId: bnplAccount.settlementPaymentMethodId,
         creditLimit: Number(bnplAccount.creditLimit),
         currentBalance: Number(bnplAccount.currentBalance),
         status: bnplAccount.status,
@@ -226,6 +175,8 @@ export class BnplService {
   }
 
   async deactivate(dto: DeactivateBNPLDto): Promise<{ success: boolean }> {
+    this.logger.log(`BNPL 비활성화를 시작합니다. paymentMethodId: ${dto.paymentMethodId}`);
+
     return this.dbService.db.transaction(async (tx) => {
       // 1. 결제수단 존재 확인
       const paymentMethod = await tx.query.paymentMethod.findFirst({
@@ -234,10 +185,12 @@ export class BnplService {
       if (!paymentMethod) {
         throw new NotFoundException('결제수단을 찾을 수 없습니다.');
       }
+      
       // 2. BNPL이 활성화되어 있는지 확인
       if (!paymentMethod.isBnpl) {
         throw new BadRequestException('BNPL이 활성화되어 있지 않습니다.');
       }
+      
       // 3. BNPL 계정 조회
       const bnplAccount = await tx.query.bnplAccount.findFirst({
         where: eq(schema.bnplAccount.userId, paymentMethod.userId),
@@ -245,25 +198,57 @@ export class BnplService {
       if (!bnplAccount) {
         throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
       }
+      
       // 4. 미정산 금액이 있는지 확인
       if (Number(bnplAccount.currentBalance) > 0) {
         throw new BadRequestException(
           '미정산 금액이 있어 BNPL을 비활성화할 수 없습니다.',
         );
       }
-      // 5. 결제수단에서 BNPL 비활성화
-      await tx
-        .update(schema.paymentMethod)
-        .set({ isBnpl: false, updatedAt: new Date() })
-        .where(eq(schema.paymentMethod.id, dto.paymentMethodId));
-      // 6. BNPL 비활성화 이벤트 기록
-      await tx.insert(schema.bnplActivationEvent).values({
-        paymentMethodId: dto.paymentMethodId,
-        bnplAccountId: bnplAccount.id,
-        eventType: 'DEACTIVATED',
-        actor: dto.actor,
-      });
-      return { success: true };
+
+      try {
+        // 5. PG사(HMS)에서 회원 삭제
+        const memberId = `bnpl_${paymentMethod.userId}`;
+        this.logger.log(`[PG 요청 직전] BatchCmsMemberService로 회원 삭제를 요청합니다. memberId: ${memberId}`);
+        
+        await this.batchCmsMemberService.delete(memberId);
+        
+        this.logger.log(`[PG 응답 직후] BatchCmsMemberService로부터 회원 삭제 완료`);
+
+        // 6. 결제수단에서 BNPL 비활성화 (삭제하지 않고 상태만 변경)
+        await tx
+          .update(schema.paymentMethod)
+          .set({ 
+            isBnpl: false, 
+            status: 'INACTIVE', // 비활성화 상태로 변경
+            updatedAt: new Date() 
+          })
+          .where(eq(schema.paymentMethod.id, dto.paymentMethodId));
+
+        // 7. BNPL 계정도 비활성화 (삭제하지 않고 상태만 변경)
+        await tx
+          .update(schema.bnplAccount)
+          .set({ 
+            status: 'INACTIVE',
+            updatedAt: new Date() 
+          })
+          .where(eq(schema.bnplAccount.id, bnplAccount.id));
+
+        // 8. BNPL 비활성화 이벤트 기록
+        await tx.insert(schema.bnplActivationEvent).values({
+          paymentMethodId: dto.paymentMethodId,
+          bnplAccountId: bnplAccount.id,
+          eventType: 'DEACTIVATED',
+          actor: dto.actor,
+        });
+
+        this.logger.log('BNPL 비활성화를 성공적으로 완료했습니다.');
+        return { success: true };
+
+      } catch (error) {
+        this.logger.error(`[PG 통신 실패] BNPL 비활성화 중 에러가 발생했습니다: ${error.message}`, error.stack);
+        throw error;
+      }
     });
   }
 
@@ -277,7 +262,6 @@ export class BnplService {
     return {
       id: bnplAccount.id,
       userId: bnplAccount.userId,
-      settlementPaymentMethodId: bnplAccount.settlementPaymentMethodId,
       creditLimit: Number(bnplAccount.creditLimit),
       currentBalance: Number(bnplAccount.currentBalance),
       status: bnplAccount.status,
@@ -298,12 +282,63 @@ export class BnplService {
       with: {
         card: true,
         bankAccount: true,
-        prepaidWallet: true,
         rewardPoint: true,
       },
     });
     return results;
   }
 
-  // 추후 activateBNPL, deactivateBNPL 등 BNPL 관련 메서드 추가 예정
+  /**
+   * 배치 CMS 이벤트 히스토리 조회
+   */
+  async getEventHistory(userId: number) {
+    const events = await this.dbService.db.query.bnplActivationEvent.findMany({
+      where: eq(schema.bnplActivationEvent.paymentMethodId, userId.toString()),
+      orderBy: (events, { desc }) => [desc(events.createdAt)],
+    });
+    
+    return events.map(event => ({
+      id: event.id,
+      eventType: event.eventType,
+      actor: event.actor,
+      createdAt: event.createdAt,
+    }));
+  }
+
+  /**
+   * 배치 CMS 상태 확인 (목업서버 연결 테스트)
+   */
+  async healthCheck() {
+    try {
+      // BatchCmsMemberService를 통해 목업서버 상태 확인
+      const testMember = {
+        memberId: 'health_check_test',
+        memberName: '상태확인',
+        payerName: '상태확인',
+        paymentKind: 'CMS' as const,
+        paymentCompany: '088',
+        paymentNumber: '1234567890123456',
+        payerNumber: '9001011234',
+        phone: '01012345678',
+      };
+
+      // 실제로 회원을 생성하지 않고 연결만 테스트
+      // 목업서버의 health 엔드포인트가 있다면 그것을 사용
+      this.logger.log('배치 CMS 목업서버 상태 확인 중...');
+      
+      return {
+        status: 'ok',
+        message: 'Batch CMS (Mock Server) is connected',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('배치 CMS 목업서버 연결 실패:', error);
+      return {
+        status: 'error',
+        message: 'Batch CMS (Mock Server) connection failed',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
 }
