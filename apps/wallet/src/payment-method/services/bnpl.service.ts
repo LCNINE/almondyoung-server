@@ -79,7 +79,7 @@ export class BnplService {
             methodType: 'BNPL',
             methodName: dto.methodName,
             isDefault: dto.isDefault || false,
-            isBnpl: true,
+
             institutionCode: dto.institutionCode,
             status: 'ACTIVE',
           })
@@ -159,10 +159,6 @@ export class BnplService {
         throw new NotFoundException('결제수단을 찾을 수 없습니다.');
       }
 
-      if (!paymentMethod.isBnpl || paymentMethod.status !== 'ACTIVE') {
-        throw new BadRequestException('활성화된 BNPL 계좌가 아닙니다.');
-      }
-
       // 2. BNPL 계정 조회 및 검증
       const bnplAccount = await tx.query.bnplAccount.findFirst({
         where: and(
@@ -195,7 +191,7 @@ export class BnplService {
         await tx
           .update(paymentMethodSchema.paymentMethod)
           .set({ 
-            isBnpl: false,
+
             status: 'INACTIVE',
             updatedAt: new Date() 
           })
@@ -273,7 +269,6 @@ export class BnplService {
     const results = await this.dbService.db.query.paymentMethod.findMany({
       where: and(
         eq(paymentMethodSchema.paymentMethod.userId, userId),
-        eq(paymentMethodSchema.paymentMethod.isBnpl, true),
         eq(paymentMethodSchema.paymentMethod.status, 'ACTIVE')
       ),
       with: {
@@ -294,7 +289,6 @@ export class BnplService {
     const paymentMethods = await this.dbService.db.query.paymentMethod.findMany({
       where: and(
         eq(paymentMethodSchema.paymentMethod.userId, userId),
-        eq(paymentMethodSchema.paymentMethod.isBnpl, true)
       ),
     });
 

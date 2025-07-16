@@ -1,133 +1,14 @@
-import { relations, sql } from 'drizzle-orm';
+import { relations } from 'drizzle-orm';
 import {
   pgTable,
   varchar,
   text,
-  boolean,
-  bigint,
   timestamp,
   numeric,
-  unique,
   foreignKey,
   uniqueIndex,
-  integer,
 } from 'drizzle-orm/pg-core';
-import { nanoid } from 'nanoid';
-
-// 지갑 기능 제거됨
-
-// ────────────────────────────────────────────
-// 2️⃣ Payment Method (최상위 결제 수단)
-// ────────────────────────────────────────────
-export const paymentMethod = pgTable(
-  'payment_method',
-
-  {
-    id: varchar('id', { length: 21 })
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    userId: bigint('user_id', { mode: 'number' }).notNull(),
-    methodType: text('method_type')
-      .$type<'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'REWARD_POINT'>()
-      .notNull(),
-    methodName: varchar('method_name', { length: 64 }).notNull(),
-    isDefault: boolean('is_default').notNull().default(false),
-    // 💡 BNPL 기능 활성화 여부
-    isBnpl: boolean('is_bnpl').notNull().default(false),
-    // 💡 institutionCode 컬럼 유지
-    institutionCode: varchar('institution_code', { length: 32 }).notNull(),
-    status: text('status').$type<'ACTIVE' | 'INACTIVE' | 'DELETED'>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_user_default_unique')
-      .on(table.userId)
-      .where(sql`${table.isDefault} = true`),
-    unique('uq_payment_method_id_type').on(table.id, table.methodType),
-  ],
-);
-
-// ────────────────────────────────────────────
-// BNPL Account (BNPL 계정 관리)
-// ────────────────────────────────────────────
-export const bnplAccount = pgTable(
-  'bnpl_account',
-  {
-    id: varchar('id', { length: 21 })
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    userId: bigint('user_id', { mode: 'number' }).notNull(),
-    // settlementPaymentMethodId 제거 - BNPL은 자체 완결형 결제수단
-    creditLimit: numeric('credit_limit', {
-      precision: 18,
-      scale: 2,
-    })
-      .$type<number>()
-      .notNull(),
-    approvedLimit: numeric('approved_limit', {
-      precision: 18,
-      scale: 2,
-    })
-      .$type<number>()
-      .notNull(),
-    currentBalance: numeric('current_balance', {
-      precision: 18,
-      scale: 2,
-    })
-      .$type<number>()
-      .notNull()
-      .default(0),
-    status: text('status')
-      .$type<'ACTIVE' | 'INACTIVE' | 'OVERDUE' | 'SUSPENDED'>()
-      .notNull()
-      .default('ACTIVE'),
-    billingCycleDay: integer('billing_cycle_day').notNull(),
-    termsUrl: text('terms_url'),
-    version: bigint('version', { mode: 'number' }).notNull().default(1),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_bnpl_account_user_unique').on(table.userId),
-  ],
-);
-
-// ────────────────────────────────────────────
-// BNPL Activation Event (BNPL 활성화 이벤트)
-// ────────────────────────────────────────────
-export const bnplActivationEvent = pgTable(
-  'bnpl_activation_event',
-  {
-    id: varchar('id', { length: 21 })
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    paymentMethodId: varchar('payment_method_id', { length: 26 })
-      .notNull()
-      .references(() => paymentMethod.id),
-    bnplAccountId: varchar('bnpl_account_id', { length: 26 })
-      .notNull()
-      .references(() => bnplAccount.id),
-    eventType: text('event_type')
-      .$type<'ACTIVATED' | 'DEACTIVATED'>()
-      .notNull(),
-    actor: text('actor').$type<'USER' | 'ADMIN' | 'SYSTEM'>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_bnpl_activation_payment_method').on(table.paymentMethodId),
-  ],
-);
+import { paymentMethod } from '../shared/schemas/payment-method.schema';
 
 // ────────────────────────────────────────────
 // 3️⃣ Card Method (카드)
@@ -261,26 +142,4 @@ export const rewardPointMethodRelations = relations(
   }),
 );
 
-// ────────────────────────────────────────────
-// BNPL Account Relations
-// ────────────────────────────────────────────
-export const bnplAccountRelations = relations(bnplAccount, ({ many }) => ({
-  activationEvents: many(bnplActivationEvent),
-}));
-
-// ────────────────────────────────────────────
-// BNPL Activation Event Relations
-// ────────────────────────────────────────────
-export const bnplActivationEventRelations = relations(
-  bnplActivationEvent,
-  ({ one }) => ({
-    paymentMethod: one(paymentMethod, {
-      fields: [bnplActivationEvent.paymentMethodId],
-      references: [paymentMethod.id],
-    }),
-    bnplAccount: one(bnplAccount, {
-      fields: [bnplActivationEvent.bnplAccountId],
-      references: [bnplAccount.id],
-    }),
-  }),
-);
+// Payment-Method 모듈은 카드, 계좌, 포인트 결제수단만 관리

@@ -664,9 +664,6 @@ export class PaymentService {
     if (!paymentMethod) {
       throw new NotFoundException('결제수단을 찾을 수 없습니다.');
     }
-    if (!paymentMethod.isBnpl) {
-      throw new BadRequestException('BNPL이 활성화되지 않은 결제수단입니다.');
-    }
 
     // 2. 인보이스 조회 및 검증
     const [invoice] = await tx

@@ -38,12 +38,14 @@
     "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",
     "kafkajs": "^2.2.4",
     "nanoid": "^5.1.5",
+    "nestjs-zod": "^4.3.1",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "ulid": "^3.0.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^4.0.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
