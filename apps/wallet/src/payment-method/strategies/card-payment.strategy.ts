@@ -27,11 +27,26 @@ interface HmsMemberResponse {
 @Injectable()
 export class CardPaymentStrategy implements PaymentMethodStrategy {
   private readonly logger = new Logger(CardPaymentStrategy.name);
+  private readonly hmsApi: HmsAPI;
 
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-    private readonly hmsApi: HmsAPI,
-  ) {}
+  ) {
+    // 직접 HmsAPI 인스턴스 생성
+    console.log('🚀 CardPaymentStrategy에서 직접 HmsAPI 인스턴스 생성');
+
+    this.hmsApi = new HmsAPI({
+      swKey: 'mock-sw',
+      custKey: 'mock-cust',
+      baseURL: 'http://localhost:3005/v1',
+      isTest: true,
+    });
+
+    console.log(
+      '✅ CardPaymentStrategy에서 생성된 HmsAPI 인스턴스:',
+      this.hmsApi,
+    );
+  }
 
   supportedTypes(): string[] {
     return ['CARD'];

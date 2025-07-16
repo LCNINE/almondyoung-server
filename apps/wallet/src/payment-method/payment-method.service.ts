@@ -1,23 +1,20 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   CreatePaymentMethodDto,
-  CreateBnplPaymentMethodDto,
 } from './dto/create-payment-method.dto';
-import { ActivateBNPLDto, BNPLActor } from './dto/activate-bnpl.dto';
+import { ActivateBNPLDto } from './dto/activate-bnpl.dto';
 import { DeactivateBNPLDto } from './dto/deactivate-bnpl.dto';
 import { BNPLAccountResponseDto } from './dto/bnpl-account.response.dto';
 import * as schema from './schema';
-import { PaymentMethodStrategy } from './strategies/payment.strategy';
 import { BnplService } from './bnpl.service';
-import { PAYMENT_STRATEGY_REGISTRY } from './strategies/payment.strategy';
+import { CardPaymentProfileService, CardPaymentTransactionService } from './services/card-payment.service';
+import { BatchCmsMemberService, BatchCmsAgreementService, BatchCmsWithdrawalService } from './services/batch-cms.service';
 
 type PaymentMethod = typeof schema.paymentMethod.$inferSelect;
 export type PaymentMethodWithDetails = PaymentMethod & {
@@ -32,12 +29,29 @@ export type PaymentMethodWithDetails = PaymentMethod & {
  */
 @Injectable()
 export class PaymentMethodService {
+  private strategyRegistry = new Map<string, any>(); // 임시로 전략 레지스트리 추가
+
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-    @Inject(PAYMENT_STRATEGY_REGISTRY)
-    private readonly strategyRegistry: Map<string, PaymentMethodStrategy>,
     private readonly bnplService: BnplService,
-  ) {}
+    // 카드 결제 서비스들 (실제 HMS API)
+    private readonly cardPaymentProfileService: CardPaymentProfileService,
+    private readonly cardPaymentTransactionService: CardPaymentTransactionService,
+    // 배치 CMS 서비스들 (목업서버)
+    private readonly batchCmsMemberService: BatchCmsMemberService,
+    private readonly batchCmsAgreementService: BatchCmsAgreementService,
+    private readonly batchCmsWithdrawalService: BatchCmsWithdrawalService,
+  ) {
+    // 전략 레지스트리 초기화 (필요시 실제 전략들을 등록)
+    this.initializeStrategies();
+  }
+
+  private initializeStrategies() {
+    // TODO: 실제 전략 구현체들을 등록
+    // this.strategyRegistry.set('CARD', new CardPaymentStrategy());
+    // this.strategyRegistry.set('BANK_ACCOUNT', new BankAccountStrategy());
+    console.log('Payment strategies initialized');
+  }
 
   /**
    * 외부 PG사 연동이 필요한 결제수단을 생성합니다.
@@ -174,5 +188,111 @@ export class PaymentMethodService {
     userId: number,
   ): Promise<PaymentMethodWithDetails[]> {
     return this.bnplService.findAllByUser(userId);
+  }
+
+  // ────────────────────────────────────────────
+  // HMS API 사용 예시 메서드들
+  // ────────────────────────────────────────────
+
+  /**
+   * 카드 결제 프로필 생성 (실제 HMS API 사용)
+   * @param profileData - 결제 프로필 데이터
+   */
+  async createCardPaymentProfile(profileData: any) {
+    try {
+      console.log('🔥 카드 결제 프로필 생성 - 실제 HMS API 사용');
+      const result = await this.cardPaymentProfileService.create(profileData);
+      return result;
+    } catch (error) {
+      console.error('카드 결제 프로필 생성 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 카드 결제 실행 (실제 HMS API 사용)
+   * @param transactionData - 거래 데이터
+   */
+  async executeCardPayment(transactionData: any) {
+    try {
+      console.log('🔥 카드 결제 실행 - 실제 HMS API 사용');
+      const result = await this.cardPaymentTransactionService.approve(transactionData);
+      return result;
+    } catch (error) {
+      console.error('카드 결제 실행 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 배치 CMS 회원 생성 (목업서버 사용)
+   * @param memberData - 회원 데이터
+   */
+  async createBatchCmsMember(memberData: any) {
+    try {
+      console.log('🔧 배치 CMS 회원 생성 - 목업서버 사용');
+      const result = await this.batchCmsMemberService.create(memberData);
+      return result;
+    } catch (error) {
+      console.error('배치 CMS 회원 생성 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 배치 CMS 동의서 등록 (목업서버 사용)
+   * @param custId - 고객 ID
+   * @param memberId - 회원 ID
+   * @param fileInput - 파일 입력
+   */
+  async registerBatchCmsAgreement(custId: string, memberId: string, fileInput: any) {
+    try {
+      console.log('🔧 배치 CMS 동의서 등록 - 목업서버 사용');
+      const result = await this.batchCmsAgreementService.register(custId, memberId, fileInput);
+      return result;
+    } catch (error) {
+      console.error('배치 CMS 동의서 등록 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 배치 CMS 출금 요청 (목업서버 사용)
+   * @param paymentData - 출금 데이터
+   */
+  async requestBatchCmsWithdrawal(paymentData: any) {
+    try {
+      console.log('🔧 배치 CMS 출금 요청 - 목업서버 사용');
+      const result = await this.batchCmsWithdrawalService.request(paymentData);
+      return result;
+    } catch (error) {
+      console.error('배치 CMS 출금 요청 실패:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * HMS API 설정 정보 조회
+   */
+  getHmsApiConfig() {
+    return {
+      cardPayment: 'Real HMS API',
+      batchCms: 'Mock Server',
+      environment: process.env.NODE_ENV || 'development',
+    };
+  }
+
+  /**
+   * 목업서버 상태 확인 (배치 CMS 목업 사용시에만)
+   */
+  async checkMockServerHealth() {
+    try {
+      const result = await this.batchCmsWithdrawalService.healthCheck();
+      console.log('✅ 목업서버 상태 확인 성공:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ 목업서버 상태 확인 실패:', error);
+      throw error;
+    }
   }
 }

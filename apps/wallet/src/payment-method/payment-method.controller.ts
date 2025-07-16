@@ -105,4 +105,40 @@ export class PaymentMethodController {
   ): Promise<PaymentMethodWithDetails[]> {
     return this.paymentMethodService.getBNPLPaymentMethods(userId);
   }
+
+  // ────────────────────────────────────────────
+  // HMS API 테스트 엔드포인트들
+  // ────────────────────────────────────────────
+
+  /**
+   * HMS API 설정 정보 조회
+   */
+  @Get('hms/config')
+  async getHmsConfig() {
+    return this.paymentMethodService.getHmsApiConfig();
+  }
+
+  /**
+   * 목업서버 상태 확인 (배치 CMS 목업 사용시에만)
+   */
+  @Get('hms/health')
+  async checkMockServerHealth() {
+    return this.paymentMethodService.checkMockServerHealth();
+  }
+
+  /**
+   * 배치 CMS 회원 생성 테스트 (목업서버)
+   */
+  @Post('test/batch-cms/member')
+  async testCreateBatchCmsMember(@Body() memberData: any) {
+    return this.paymentMethodService.createBatchCmsMember(memberData);
+  }
+
+  /**
+   * 배치 CMS 출금 요청 테스트 (목업서버)
+   */
+  @Post('test/batch-cms/withdrawal')
+  async testBatchCmsWithdrawal(@Body() paymentData: any) {
+    return this.paymentMethodService.requestBatchCmsWithdrawal(paymentData);
+  }
 }

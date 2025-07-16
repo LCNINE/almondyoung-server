@@ -32,9 +32,25 @@ export interface PgRefundResponse {
 
 @Injectable()
 export class PgService {
-  constructor(private readonly hmsApi: HmsAPI) {}
+  private readonly hmsApi: HmsAPI;
 
-  async approvePayment(params: ApprovePaymentParams): Promise<PgApproveResponse> {
+  constructor() {
+    // 직접 HmsAPI 인스턴스 생성
+    console.log('🚀 PgService에서 직접 HmsAPI 인스턴스 생성');
+
+    this.hmsApi = new HmsAPI({
+      swKey: 'mock-sw',
+      custKey: 'mock-cust',
+      baseURL: 'http://localhost:3005/v1',
+      isTest: true,
+    });
+
+    console.log('✅ PgService에서 생성된 HmsAPI 인스턴스:', this.hmsApi);
+  }
+
+  async approvePayment(
+    params: ApprovePaymentParams,
+  ): Promise<PgApproveResponse> {
     const pgRequest = this.buildPaymentRequest(params);
 
     try {
@@ -105,4 +121,4 @@ export class PgService {
       };
     }
   }
-} 
+}

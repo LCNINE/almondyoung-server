@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
 import { PaymentMethodService } from './payment-method.service';
 import { PaymentMethodController } from './payment-method.controller';
-import { CardPaymentStrategy } from './strategies/card-payment.strategy';
-import { HmsApiProvider, BatchCmsMockHmsApiProvider } from './hms-provider';
 import { SharedModule } from '@app/shared';
 import { BnplService } from './bnpl.service';
-import { PAYMENT_STRATEGY_REGISTRY } from './strategies/payment.strategy';
-import { PaymentMethodStrategy } from './strategies/payment.strategy';
+// HMS API 서비스들
+import { CardPaymentProfileService, CardPaymentTransactionService } from './services/card-payment.service';
+import { BatchCmsMemberService, BatchCmsAgreementService, BatchCmsWithdrawalService } from './services/batch-cms.service';
 
 @Module({
   imports: [SharedModule],
@@ -14,22 +13,13 @@ import { PaymentMethodStrategy } from './strategies/payment.strategy';
   providers: [
     PaymentMethodService,
     BnplService,
-    CardPaymentStrategy,
-    HmsApiProvider,
-    BatchCmsMockHmsApiProvider,
-    {
-      provide: PAYMENT_STRATEGY_REGISTRY,
-      useFactory: (...strategies: PaymentMethodStrategy[]) => {
-        const registry = new Map<string, PaymentMethodStrategy>();
-        strategies.forEach((strategy) => {
-          strategy.supportedTypes().forEach((type) => {
-            registry.set(type, strategy);
-          });
-        });
-        return registry;
-      },
-      inject: [CardPaymentStrategy], // 추후 전략 추가 시 여기에 추가
-    },
+    // 카드 결제 서비스들 (실제 HMS API)
+    CardPaymentProfileService,
+    CardPaymentTransactionService,
+    // 배치 CMS 서비스들 (목업서버)
+    BatchCmsMemberService,
+    BatchCmsAgreementService,
+    BatchCmsWithdrawalService,
   ],
   exports: [PaymentMethodService, BnplService],
 })

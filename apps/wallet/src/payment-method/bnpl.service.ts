@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import * as schema from './schema';
@@ -30,20 +30,89 @@ function toHmsCmsDto(dto: CreateBnplPaymentMethodDto): CreateMemberRequestDto {
 export class BnplService {
   private readonly logger = new Logger(BnplService.name);
 
+  private readonly mockHmsApi: HmsAPI;
+
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-    @Inject('BATCH_CMS_MOCK_HMS_API') private readonly mockHmsApi: HmsAPI,
-  ) {}
+  ) {
+    // 직접 HmsAPI 인스턴스 생성
+    console.log('🚀 BnplService에서 직접 HmsAPI 인스턴스 생성');
+
+    const config = {
+      swKey: 'mock-sw',
+      custKey: 'mock-cust',
+      baseURL: 'http://localhost:3005/v1',
+      isTest: false, // 라이브러리 버그로 인해 false로 설정
+    };
+
+    console.log('🔧 HmsAPI 설정:', config);
+
+    this.mockHmsApi = new HmsAPI(config);
+
+    // 라이브러리 버그 우회: 직접 axios 인스턴스의 baseURL 수정
+    console.log('🔧 라이브러리 버그 우회 시도...');
+
+    // private 속성에 접근하기 위해 any로 캐스팅
+    const hmsApiAny = this.mockHmsApi as any;
+    if (hmsApiAny.httpClient && hmsApiAny.httpClient.client) {
+      // axios 인스턴스의 baseURL 수정
+      hmsApiAny.httpClient.client.defaults.baseURL = 'http://localhost:3005/v1';
+
+      // HttpClient의 config도 수정
+      if (hmsApiAny.httpClient.config) {
+        hmsApiAny.httpClient.config.baseURL = 'http://localhost:3005/v1';
+      }
+
+      console.log(
+        '✅ axios baseURL 수정 완료:',
+        hmsApiAny.httpClient.client.defaults.baseURL,
+      );
+      console.log(
+        '✅ HttpClient config baseURL:',
+        hmsApiAny.httpClient.config?.baseURL,
+      );
+    } else {
+      console.log('❌ httpClient 또는 client를 찾을 수 없음');
+    }
+
+    console.log('✅ BnplService에서 생성된 HmsAPI 인스턴스:', this.mockHmsApi);
+    console.log('✅ HmsAPI 인스턴스 타입:', typeof this.mockHmsApi);
+    console.log('✅ HmsAPI 인스턴스 생성자:', this.mockHmsApi.constructor.name);
+  }
 
   async create(dto: CreateBnplPaymentMethodDto) {
+    this.logger.log(`BNPL 생성을 시작합니다. userId: ${dto.userId}`);
+
+    // 실제 사용되는 HmsAPI 인스턴스 확인
+    console.log(
+      '🔍 create 메서드에서 사용되는 HmsAPI 인스턴스:',
+      this.mockHmsApi,
+    );
+    console.log('🔍 HmsAPI 인스턴스 타입:', typeof this.mockHmsApi);
+    console.log(
+      '🔍 HmsAPI 인스턴스 생성자:',
+      this.mockHmsApi?.constructor?.name,
+    );
+
     try {
       const hmsPayload = toHmsCmsDto(dto);
-      // BNPL/CMS용 API(batchCms.members.create)를 호출하도록 수정 (any 캐스팅으로 임시 해결)
-      const hmsResult = await (this.mockHmsApi as any).batchCms.members.create(
-        hmsPayload,
+      this.logger.log(
+        `[PG 요청 직전] HMS로 회원 생성을 요청합니다. payload: ${JSON.stringify(
+          hmsPayload,
+        )}`,
       );
-      this.logger.log(`Mock HMS API 호출 성공: ${JSON.stringify(hmsResult)}`);
+
+      // 라이브러리 구조에 맞게 `members.create`를 호출
+      const hmsResult = await this.mockHmsApi.members.create(hmsPayload);
+
+      this.logger.log(
+        `[PG 응답 직후] HMS로부터 응답을 받았습니다. response: ${JSON.stringify(
+          hmsResult,
+        )}`,
+      );
+
       return this.dbService.db.transaction(async (tx) => {
+        this.logger.log('DB 트랜잭션을 시작합니다.');
         // 1. 결제수단 생성
         const [paymentMethod] = await tx
           .insert(schema.paymentMethod)
@@ -82,11 +151,12 @@ export class BnplService {
           actor: 'SYSTEM',
         });
 
+        this.logger.log('DB 트랜잭션을 성공적으로 완료했습니다.');
         return { paymentMethod, bnplAccount };
       });
     } catch (error) {
       this.logger.error(
-        `Mock HMS API 호출 실패: ${error.message}`,
+        `[PG 통신 또는 DB 작업 실패] BNPL 생성 중 에러가 발생했습니다: ${error.message}`,
         error.stack,
       );
       throw error;

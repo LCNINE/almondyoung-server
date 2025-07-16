@@ -9,9 +9,14 @@ import { PaymentModule } from './payment/payment.module';
 import * as paymentMethodSchema from './payment-method/schema';
 import * as invoiceSchema from './invoice/schema';
 import * as paymentSchema from './payment/schema';
-import { CardMethodModule } from './card-method/card-method.module';
+import { ConfigModule } from '@nestjs/config';
+
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true, // 다른 모듈에서 ConfigService를 바로 사용할 수 있도록 설정
+      envFilePath: `.env.${process.env.NODE_ENV}` || '.env',
+    }),
     SharedModule,
     ScheduleModule.forRoot(),
     DbModule.forRoot({
@@ -25,7 +30,6 @@ import { CardMethodModule } from './card-method/card-method.module';
     PaymentMethodModule,
     InvoiceModule,
     PaymentModule,
-    CardMethodModule,
   ],
   controllers: [],
   providers: [PaymsService],
