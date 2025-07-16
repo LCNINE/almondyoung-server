@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
 import { PaymsService } from './payms.service';
-import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { InvoiceModule } from './invoice/invoice.module';
 import { SharedModule } from '@app/shared';
 import { DbModule } from '@app/db';
 import { ScheduleModule } from '@nestjs/schedule';
-import { PaymentModule } from './payment/payment.module';
+// import { PaymentModule } from './payment/payment.module';
 import { BnplModule } from './bnpl/bnpl.module';
-import * as paymentMethodSchema from './payment-method/schema';
 import * as invoiceSchema from './invoice/schema';
 import * as paymentSchema from './payment/schema';
 import * as bnplSchema from './bnpl/schema';
 import { ConfigModule } from '@nestjs/config';
+import { ZodValidationPipe } from 'nestjs-zod';
+import { APP_PIPE } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -27,14 +27,19 @@ import { ConfigModule } from '@nestjs/config';
           process.env.DATABASE_URL ||
           'postgresql://payms_owner:npg_8KxncIF7qoyH@ep-fancy-bonus-a1iiaieh-pooler.ap-southeast-1.aws.neon.tech/payms?sslmode=require&channel_binding=require',
       },
-      schema: { ...paymentMethodSchema, ...invoiceSchema, ...paymentSchema, ...bnplSchema },
+      schema: { ...invoiceSchema, ...paymentSchema, ...bnplSchema },
     }),
-    PaymentMethodModule,
     InvoiceModule,
-    PaymentModule,
+    // PaymentModule,
     BnplModule,
   ],
   controllers: [],
-  providers: [PaymsService],
+  providers: [
+    PaymsService,
+    {
+      provide: APP_PIPE, // 전역 파이프로 등록
+      useClass: ZodValidationPipe, // ZodValidationPipe 사용
+    },
+  ],
 })
 export class PaymsModule {}

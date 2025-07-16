@@ -6,9 +6,12 @@ import { BnplAccountService } from './services/bnpl-account.service';
 import { BnplSettlementService } from './services/bnpl-settlement.service';
 import { BnplCreditService } from './services/bnpl-credit.service';
 import { SharedModule } from '@app/shared';
+import { BnplPaymentService } from './services/bnpl-payment.service';
 
 @Module({
-  imports: [SharedModule],
+  imports: [
+    SharedModule,
+  ],
   controllers: [BnplController],
   providers: [
     BnplService,
@@ -16,7 +19,8 @@ import { SharedModule } from '@app/shared';
     BnplAccountService,
     BnplSettlementService,
     BnplCreditService,
+    BnplPaymentService
   ],
   exports: [BnplService],
 })
-export class BnplModule {}
+export class BnplModule { }

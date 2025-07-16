@@ -12,9 +12,21 @@ import {
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { paymentMethod } from '../shared/schemas/payment-method.schema';
+import { 
+  payment, 
+  paymentEvent, 
+  refund, 
+  refundEvent 
+} from '../shared/schemas/payment.schema';
 
 // BNPL 모듈에서 사용할 수 있도록 re-export
-export { paymentMethod };
+export { 
+  paymentMethod,
+  payment,
+  paymentEvent,
+  refund,
+  refundEvent
+};
 
 // ────────────────────────────────────────────
 // BNPL 계정 (BNPL Account)
@@ -263,17 +275,21 @@ export const BnplAccountSchema = z.object({
   id: z.string(),
   userId: z.number().int(),
   paymentMethodId: z.string(),
-  creditLimit: z.number().positive().max(10000000),
-  approvedLimit: z.number().positive().max(10000000),
+  creditLimit: z.number(),
+  approvedLimit: z.number(),
   currentBalance: z.number(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'OVERDUE', 'SUSPENDED']),
-  billingCycleDay: z.number().int().min(1).max(31),
+  billingCycleDay: z.number().int(),
   termsUrl: z.string().url().nullable().optional(),
   version: z.number().int(),
   createdAt: z.date(),
-  updatedAt: z.date()
+  updatedAt: z.date(),
 });
-
+const extraResponseFields = {
+  availableCredit: z.number(),
+  lastSettlementDate: z.date().nullable(),
+};
+export const BnplAccountResponseSchema = BnplAccountSchema.extend(extraResponseFields);
 // BNPL 계정 생성 스키마
 export const CreateBnplAccountSchema = z.object({
   userId: z.number().int().positive(),

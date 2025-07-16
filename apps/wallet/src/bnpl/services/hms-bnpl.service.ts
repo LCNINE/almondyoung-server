@@ -62,7 +62,7 @@ export class HmsBnplService {
   }
 
   /**
-   * HMS 배치 CMS 출금 요청
+   * HMS 배치 CMS 출금 요청ㅋ
    */
   async requestWithdrawal(withdrawalData: any) {
     this.logger.log(`[HMS] 배치 CMS 출금 요청: ${withdrawalData.memberId}`);
@@ -101,16 +101,17 @@ export class HmsBnplService {
    * DTO를 HMS CMS 회원 등록 요청으로 변환
    */
   private toHmsMemberDto(dto: CreateBnplAccountDto) {
+    const timestamp = Date.now();
     return {
-      memberId: `bnpl_${dto.userId}`,
+      memberId: `bnpl_${dto.userId}_${timestamp}`, // 타임스탬프 추가하여 고유한 ID 생성
       memberName: dto.methodName,
       payerName: dto.methodName,
       paymentKind: 'CMS' as const, // 문자열 리터럴 타입으로 명시적 지정
       paymentCompany: dto.institutionCode,
-      paymentNumber: `${dto.userId}${Date.now()}`, // 고유한 계좌번호 생성
+      paymentNumber: `${dto.userId}${timestamp}`, // 고유한 계좌번호 생성
       payerNumber: '9001011234', // 임시 생년월일
       phone: dto.phone || '01012345678',
-      email: `bnpl_${dto.userId}@example.com`,
+      email: `bnpl_${dto.userId}_${timestamp}@example.com`,
     };
-  }
-}
+ 
+}}

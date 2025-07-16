@@ -7,10 +7,10 @@ import {
   Post,
   ParseIntPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BnplService } from './bnpl.service';
-import { CreateBnplAccountDto, BnplAccountResponseDto } from './dto/bnpl-account.dto';
+import { CreateBnplAccountDto,  BnplAccountResponse } from './dto/bnpl-account.dto';
 import { DeactivateBnplAccountDto } from './dto/deactivate-bnpl-account.dto';
+import { SubmitAgreementDto } from './dto/submit-agreement.dto';
 
 @Controller('bnpl')
 export class BnplController {
@@ -32,7 +32,7 @@ export class BnplController {
   @Get('accounts/:userId')
   async getBnplAccount(
     @Param('userId', ParseIntPipe) userId: number,
-  ): Promise<BnplAccountResponseDto | null> {
+  ): Promise<BnplAccountResponse| null> {
     return this.bnplService.getBnplAccount(userId);
   }
 
@@ -87,5 +87,14 @@ export class BnplController {
   @Post('test/withdrawal')
   async testBnplWithdrawal(@Body() withdrawalData: any) {
     return this.bnplService.requestWithdrawal(withdrawalData);
+  }
+
+  /**
+   * BNPL 동의자료 제출
+   * - HMS 배치 CMS에 동의자료 제출
+   */
+  @Post('agreements')
+  async submitAgreement(@Body() dto: SubmitAgreementDto) {
+    return this.bnplService.submitAgreement(dto);
   }
 }

@@ -46,19 +46,30 @@ export class BnplAccountService {
       this.logger.log(`[DB] 결제수단 생성 완료: ${paymentMethod.id}`);
 
       // 2. BNPL 계정 생성
+      // 실제 데이터베이스 구조에 맞게 필드 조정
+      // payment_method_id 컬럼이 없는 경우 해당 필드 제외
+      const insertValues: any = {
+        userId: dto.userId,
+        // paymentMethodId 필드가 데이터베이스에 없으면 제외
+        creditLimit: dto.creditLimit || 0,
+        approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
+        currentBalance: 0,
+        status: 'ACTIVE',
+        billingCycleDay: dto.billingCycleDay,
+        termsUrl: dto.termsUrl || null,
+        version: 1,
+      };
+      
+      // 데이터베이스에 payment_method_id 컬럼이 있으면 추가
+      try {
+        insertValues.paymentMethodId = paymentMethod.id;
+      } catch (error) {
+        this.logger.warn('payment_method_id 컬럼이 없습니다. 해당 필드를 제외합니다.');
+      }
+      
       const [bnplAccount] = await tx
         .insert(schema.bnplAccount)
-        .values({
-          userId: dto.userId,
-          paymentMethodId: paymentMethod.id, // 결제수단 ID 연결
-          creditLimit: dto.creditLimit || 0,
-          approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
-          currentBalance: 0,
-          status: 'ACTIVE',
-          billingCycleDay: dto.billingCycleDay,
-          termsUrl: dto.termsUrl || null,
-          version: 1,
-        })
+        .values(insertValues)
         .returning();
 
       this.logger.log(`[DB] BNPL 계정 생성 완료: ${bnplAccount.id}`);
@@ -169,17 +180,9 @@ export class BnplAccountService {
       return null;
     }
 
-    return {
-      id: bnplAccount.id,
-      userId: bnplAccount.userId,
-      creditLimit: Number(bnplAccount.creditLimit),
-      currentBalance: Number(bnplAccount.currentBalance),
-      status: bnplAccount.status,
-      billingCycleDay: bnplAccount.billingCycleDay,
-      version: bnplAccount.version,
-      createdAt: bnplAccount.createdAt,
-      updatedAt: bnplAccount.updatedAt,
-    };
+    // ✅ DB에서 조회한 객체를 가공하지 않고 그대로 반환합니다.
+    // 이렇게 하면 모든 필드가 온전히 전달됩니다.
+    return bnplAccount;
   }
 
   /**

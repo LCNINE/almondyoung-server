@@ -227,8 +227,8 @@ export class BnplSettlementService {
         );
       } else {
         // payment 객체에 message가 없을 수 있으므로 안전하게 처리
-        const errorMessage = withdrawalResult.payment.message ||
-          withdrawalResult.payment.description ||
+        const errorMessage = withdrawalResult.payment.result.message ||
+          withdrawalResult.payment.result.message ||
           '알 수 없는 오류';
         throw new Error(`출금 실패: ${errorMessage}`);
       }
