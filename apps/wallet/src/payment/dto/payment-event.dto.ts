@@ -7,7 +7,7 @@ import { z } from 'zod';
 export const CreatePaymentEventSchema = z.object({
   invoiceId: z.number().int().positive(),
   paymentMethodId: z.string().length(26),
-  amount: z.number().positive(),
+  amount: z.string(),
   status: z.enum(['REQUESTED', 'SUCCESS', 'FAILED', 'DUPLICATE_ATTEMPT']),
   pgTransactionId: z.string().max(255).optional(),
   pgResponse: z.string().optional(),
@@ -17,7 +17,9 @@ export const CreatePaymentEventSchema = z.object({
 /**
  * 결제 이벤트 생성 DTO
  */
-export class CreatePaymentEventDto extends createZodDto(CreatePaymentEventSchema) {}
+export class CreatePaymentEventDto extends createZodDto(
+  CreatePaymentEventSchema,
+) {}
 
 /**
  * 결제 요청 스키마
@@ -25,7 +27,7 @@ export class CreatePaymentEventDto extends createZodDto(CreatePaymentEventSchema
 export const PaymentRequestSchema = z.object({
   invoiceId: z.number().int().positive(),
   paymentMethodId: z.string().length(26),
-  amount: z.number().positive(),
+  amount: z.string(),
   actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']).default('USER'),
 });
 
@@ -40,7 +42,7 @@ export class PaymentRequestDto extends createZodDto(PaymentRequestSchema) {}
 export const PaymentSuccessSchema = z.object({
   invoiceId: z.number().int().positive(),
   paymentMethodId: z.string().length(26),
-  amount: z.number().positive(),
+  amount: z.string(),
   pgTransactionId: z.string(),
   pgResponse: z.string().optional(),
   actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']).default('SCHEDULER'),
@@ -57,9 +59,9 @@ export class PaymentSuccessDto extends createZodDto(PaymentSuccessSchema) {}
 export const PaymentFailureSchema = z.object({
   invoiceId: z.number().int().positive(),
   paymentMethodId: z.string().length(26),
-  amount: z.number().positive(),
+  amount: z.string(),
   pgResponse: z.string().optional(),
-  actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']).default('SYSTEM'),
+  actor: z.enum(['USER', 'SCHEDULER', 'ADMIN']).default('USER'),
 });
 
 /**

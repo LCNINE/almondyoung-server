@@ -1,7 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import * as schema from './schema';
+import * as schema from '../shared/schemas/schema';
 import { ulid } from 'ulid';
 import { and, eq, SQL, desc, lt } from 'drizzle-orm';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';

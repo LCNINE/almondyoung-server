@@ -2,7 +2,7 @@ import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { eq, and, sql } from 'drizzle-orm';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
-import * as schema from './schema';
+import * as schema from '../shared/schemas/schema';
 import { HmsCardService } from './services/hms-card.service';
 import { CreateCardMethodDto } from './dto/create-card-method';
 import { CardMethodResponseDto } from './dto/card-method-response.dto';
@@ -34,20 +34,22 @@ export class PgIntegrationService {
             .where(
               and(
                 eq(schema.paymentMethod.userId, dto.userId),
-                eq(schema.paymentMethod.methodType, 'CARD')
-              )
+                eq(schema.paymentMethod.methodType, 'CARD'),
+              ),
             );
         }
 
         // 2. HMS API를 통한 카드 등록
         const hmsResponse = await this.hmsCardService.registerCard(dto);
-        
+
         // 3. 카드 유효성 검증 (0원 승인)
-        const isValid = await this.hmsCardService.validateCard(hmsResponse.billingKey);
+        const isValid = await this.hmsCardService.validateCard(
+          hmsResponse.billingKey,
+        );
         if (!isValid) {
           throw new HttpException(
             '카드 유효성 검증에 실패했습니다',
-            HttpStatus.BAD_REQUEST
+            HttpStatus.BAD_REQUEST,
           );
         }
 
@@ -81,7 +83,9 @@ export class PgIntegrationService {
           })
           .returning();
 
-        this.logger.log(`Card registered successfully with ID: ${createdPaymentMethod.id}`);
+        this.logger.log(
+          `Card registered successfully with ID: ${createdPaymentMethod.id}`,
+        );
 
         // 6. 응답 DTO 생성
         return plainToClass(CardMethodResponseDto, {
@@ -89,7 +93,8 @@ export class PgIntegrationService {
           userId: createdPaymentMethod.userId,
           methodName: createdPaymentMethod.methodName,
           institutionCode: createdPaymentMethod.institutionCode,
-          institutionName: createdCardMethod.issuerName || hmsResponse.cardInfo.issuerName,
+          institutionName:
+            createdCardMethod.issuerName || hmsResponse.cardInfo.issuerName,
           maskedCardNumber: createdCardMethod.maskedCardNumber,
           cardBrand: createdCardMethod.cardBrand,
           cardType: createdCardMethod.cardType || hmsResponse.cardInfo.type,
@@ -98,17 +103,16 @@ export class PgIntegrationService {
           createdAt: createdPaymentMethod.createdAt,
           updatedAt: createdPaymentMethod.updatedAt,
         });
-
       } catch (error) {
         this.logger.error('Card registration failed:', error);
-        
+
         if (error instanceof HttpException) {
           throw error;
         }
-        
+
         throw new HttpException(
           '카드 등록 중 오류가 발생했습니다',
-          HttpStatus.INTERNAL_SERVER_ERROR
+          HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
     });
@@ -123,18 +127,18 @@ export class PgIntegrationService {
         where: and(
           eq(schema.paymentMethod.userId, userId),
           eq(schema.paymentMethod.methodType, 'CARD'),
-          eq(schema.paymentMethod.status, 'ACTIVE')
+          eq(schema.paymentMethod.status, 'ACTIVE'),
         ),
         with: {
           card: true,
         },
         orderBy: (paymentMethod, { desc, sql }) => [
           desc(paymentMethod.isDefault),
-          desc(paymentMethod.createdAt)
+          desc(paymentMethod.createdAt),
         ],
       });
 
-      return methods.map(method => 
+      return methods.map((method) =>
         plainToClass(CardMethodResponseDto, {
           id: method.id,
           userId: method.userId,
@@ -148,13 +152,13 @@ export class PgIntegrationService {
           isActive: method.status === 'ACTIVE',
           createdAt: method.createdAt,
           updatedAt: method.updatedAt,
-        })
+        }),
       );
     } catch (error) {
       this.logger.error('Failed to get card methods:', error);
       throw new HttpException(
         '카드 목록 조회에 실패했습니다',
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -170,7 +174,7 @@ export class PgIntegrationService {
           where: and(
             eq(schema.paymentMethod.id, methodId),
             eq(schema.paymentMethod.userId, userId),
-            eq(schema.paymentMethod.methodType, 'CARD')
+            eq(schema.paymentMethod.methodType, 'CARD'),
           ),
           with: {
             card: true,
@@ -180,7 +184,7 @@ export class PgIntegrationService {
         if (!method) {
           throw new HttpException(
             '결제수단을 찾을 수 없습니다',
-            HttpStatus.NOT_FOUND
+            HttpStatus.NOT_FOUND,
           );
         }
 
@@ -192,25 +196,24 @@ export class PgIntegrationService {
         // 3. DB에서 소프트 삭제 (status를 INACTIVE로 변경)
         await tx
           .update(schema.paymentMethod)
-          .set({ 
+          .set({
             status: 'INACTIVE',
             isDefault: false,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(schema.paymentMethod.id, methodId));
 
         this.logger.log(`Card method deleted: ${methodId}`);
-
       } catch (error) {
         this.logger.error('Failed to delete card method:', error);
-        
+
         if (error instanceof HttpException) {
           throw error;
         }
-        
+
         throw new HttpException(
           '카드 삭제 중 오류가 발생했습니다',
-          HttpStatus.INTERNAL_SERVER_ERROR
+          HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
     });
@@ -228,14 +231,14 @@ export class PgIntegrationService {
             eq(schema.paymentMethod.id, methodId),
             eq(schema.paymentMethod.userId, userId),
             eq(schema.paymentMethod.methodType, 'CARD'),
-            eq(schema.paymentMethod.status, 'ACTIVE')
+            eq(schema.paymentMethod.status, 'ACTIVE'),
           ),
         });
 
         if (!method) {
           throw new HttpException(
             '결제수단을 찾을 수 없습니다',
-            HttpStatus.NOT_FOUND
+            HttpStatus.NOT_FOUND,
           );
         }
 
@@ -246,31 +249,30 @@ export class PgIntegrationService {
           .where(
             and(
               eq(schema.paymentMethod.userId, userId),
-              eq(schema.paymentMethod.methodType, 'CARD')
-            )
+              eq(schema.paymentMethod.methodType, 'CARD'),
+            ),
           );
 
         // 3. 새로운 기본 결제수단 설정
         await tx
           .update(schema.paymentMethod)
-          .set({ 
+          .set({
             isDefault: true,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(schema.paymentMethod.id, methodId));
 
         this.logger.log(`Default method set: ${methodId}`);
-
       } catch (error) {
         this.logger.error('Failed to set default method:', error);
-        
+
         if (error instanceof HttpException) {
           throw error;
         }
-        
+
         throw new HttpException(
           '기본 결제수단 설정에 실패했습니다',
-          HttpStatus.INTERNAL_SERVER_ERROR
+          HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
     });

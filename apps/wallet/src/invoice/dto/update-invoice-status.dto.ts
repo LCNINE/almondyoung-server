@@ -1,6 +1,6 @@
-import { InvoiceStatus } from '../schema';
+import * as schema from '../../shared/schemas/schema';
 
 export class UpdateInvoiceStatusDto {
-  status: InvoiceStatus;
+  status: schema.InvoiceStatus;
   reason?: string;
 }

@@ -1,14 +1,18 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import { eq, and } from 'drizzle-orm';
-import * as schema from '../schema';
 import { CreateBnplAccountDto } from '../dto/create-bnpl-account.dto';
 import { DeactivateBnplAccountDto } from '../dto/deactivate-bnpl-account.dto';
-
+import * as schema from '../../shared/schemas/schema';
 /**
  * BNPL 계정 관리 서비스
- * 
+ *
  * 주요 기능:
  * 1. BNPL 계정 생성/조회/비활성화
  * 2. BNPL 이벤트 기록 관리
@@ -28,7 +32,7 @@ export class BnplAccountService {
    */
   async createAccount(dto: CreateBnplAccountDto, hmsResult: any) {
     this.logger.log(`[DB] BNPL 계정 생성 시작: ${dto.userId}`);
-    
+
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 결제수단 생성
       const [paymentMethod] = await tx
@@ -59,14 +63,16 @@ export class BnplAccountService {
         termsUrl: dto.termsUrl || null,
         version: 1,
       };
-      
+
       // 데이터베이스에 payment_method_id 컬럼이 있으면 추가
       try {
         insertValues.paymentMethodId = paymentMethod.id;
       } catch (error) {
-        this.logger.warn('payment_method_id 컬럼이 없습니다. 해당 필드를 제외합니다.');
+        this.logger.warn(
+          'payment_method_id 컬럼이 없습니다. 해당 필드를 제외합니다.',
+        );
       }
-      
+
       const [bnplAccount] = await tx
         .insert(schema.bnplAccount)
         .values(insertValues)
@@ -86,7 +92,7 @@ export class BnplAccountService {
         .returning();
 
       this.logger.log(`[DB] 활성화 이벤트 기록 완료: ${activationEvent.id}`);
-      
+
       return {
         paymentMethod,
         bnplAccount,
@@ -97,9 +103,11 @@ export class BnplAccountService {
   /**
    * BNPL 계정 비활성화
    */
-  async deactivateAccount(dto: DeactivateBnplAccountDto & { accountId: string }) {
+  async deactivateAccount(
+    dto: DeactivateBnplAccountDto & { accountId: string },
+  ) {
     this.logger.log(`[DB] BNPL 계정 비활성화 시작: ${dto.accountId}`);
-    
+
     return await this.dbService.db.transaction(async (tx) => {
       // 1. BNPL 계정 조회
       const bnplAccount = await tx.query.bnplAccount.findFirst({
@@ -115,7 +123,7 @@ export class BnplAccountService {
         where: and(
           eq(schema.paymentMethod.userId, bnplAccount.userId),
           eq(schema.paymentMethod.methodType, 'BNPL'),
-          eq(schema.paymentMethod.status, 'ACTIVE')
+          eq(schema.paymentMethod.status, 'ACTIVE'),
         ),
       });
 
@@ -126,25 +134,25 @@ export class BnplAccountService {
       // 3. 미정산 금액 확인
       if (Number(bnplAccount.currentBalance) > 0) {
         throw new BadRequestException(
-          `미정산 금액이 ${bnplAccount.currentBalance}원 있어 비활성화할 수 없습니다.`
+          `미정산 금액이 ${bnplAccount.currentBalance}원 있어 비활성화할 수 없습니다.`,
         );
       }
 
       // 4. 결제수단 비활성화
       await tx
         .update(schema.paymentMethod)
-        .set({ 
+        .set({
           status: 'INACTIVE',
-          updatedAt: new Date() 
+          updatedAt: new Date(),
         })
         .where(eq(schema.paymentMethod.id, paymentMethod.id));
 
       // 5. BNPL 계정 비활성화
       await tx
         .update(schema.bnplAccount)
-        .set({ 
+        .set({
           status: 'INACTIVE',
-          updatedAt: new Date() 
+          updatedAt: new Date(),
         })
         .where(eq(schema.bnplAccount.id, bnplAccount.id));
 
@@ -159,8 +167,10 @@ export class BnplAccountService {
         })
         .returning();
 
-      this.logger.log(`[DB] 비활성화 이벤트 기록 완료: ${deactivationEvent.id}`);
-      
+      this.logger.log(
+        `[DB] 비활성화 이벤트 기록 완료: ${deactivationEvent.id}`,
+      );
+
       return { success: true };
     });
   }
@@ -172,7 +182,7 @@ export class BnplAccountService {
     const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
       where: and(
         eq(schema.bnplAccount.userId, userId),
-        eq(schema.bnplAccount.status, 'ACTIVE')
+        eq(schema.bnplAccount.status, 'ACTIVE'),
       ),
     });
 
@@ -218,13 +228,8 @@ export class BnplAccountService {
       where: and(
         eq(schema.paymentMethod.userId, userId),
         eq(schema.paymentMethod.methodType, 'BNPL'),
-        eq(schema.paymentMethod.status, 'ACTIVE')
+        eq(schema.paymentMethod.status, 'ACTIVE'),
       ),
-      with: {
-        card: true,
-        bankAccount: true,
-        rewardPoint: true,
-      },
     });
 
     return results;
@@ -235,12 +240,14 @@ export class BnplAccountService {
    */
   async getEventHistory(userId: number) {
     // 사용자의 BNPL 결제수단들을 먼저 조회
-    const paymentMethods = await this.dbService.db.query.paymentMethod.findMany({
-      where: and(
-        eq(schema.paymentMethod.userId, userId),
-        eq(schema.paymentMethod.methodType, 'BNPL')
-      ),
-    });
+    const paymentMethods = await this.dbService.db.query.paymentMethod.findMany(
+      {
+        where: and(
+          eq(schema.paymentMethod.userId, userId),
+          eq(schema.paymentMethod.methodType, 'BNPL'),
+        ),
+      },
+    );
 
     if (paymentMethods.length === 0) {
       return [];
@@ -249,13 +256,13 @@ export class BnplAccountService {
     // 해당 결제수단들의 이벤트 조회
     const events = await this.dbService.db.query.bnplActivationEvent.findMany({
       where: eq(
-        schema.bnplActivationEvent.paymentMethodId, 
-        paymentMethods[0].id // 첫 번째 결제수단의 이벤트만 조회 (실제로는 IN 조건 사용)
+        schema.bnplActivationEvent.paymentMethodId,
+        paymentMethods[0].id, // 첫 번째 결제수단의 이벤트만 조회 (실제로는 IN 조건 사용)
       ),
       orderBy: (events, { desc }) => [desc(events.createdAt)],
     });
 
-    return events.map(event => ({
+    return events.map((event) => ({
       id: event.id,
       paymentMethodId: event.paymentMethodId,
       eventType: event.eventType,

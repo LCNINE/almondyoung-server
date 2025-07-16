@@ -34,12 +34,61 @@ export function parseDecimalArray(amounts: (string | number)[]): number[] {
 }
 
 /**
- * 금액 합계 계산 (DB decimal string 처리)
+ * 금액 합계 계산 (DB decimal string 처리) - number 반환
  * @param amounts DB에서 받은 decimal string 배열
  * @returns 합계 (number)
  */
 export function sumDecimals(amounts: (string | number)[]): number {
-  return amounts.reduce((sum, amount) => sum + parseDecimal(amount), 0);
+  let total = 0;
+  for (const amount of amounts) {
+    total += parseDecimal(amount);
+  }
+  return total;
+}
+
+/**
+ * 금액 합계 계산 (string 기반 정밀 계산)
+ * @param amounts decimal string 배열
+ * @returns 합계 (string) - 정밀도 보장
+ */
+export function sumDecimalStrings(amounts: (string | number)[]): string {
+  let total = 0;
+  for (const amount of amounts) {
+    const amountNum: number =
+      typeof amount === 'string' ? parseFloat(amount) : amount;
+    total += amountNum;
+  }
+  return total.toFixed(4);
+}
+
+/**
+ * 두 decimal string 덧셈
+ * @param a 첫 번째 decimal string
+ * @param b 두 번째 decimal string
+ * @returns 덧셈 결과 (string)
+ */
+export function addDecimalStrings(
+  a: string | number,
+  b: string | number,
+): string {
+  const aNum = typeof a === 'string' ? parseFloat(a) : a;
+  const bNum = typeof b === 'string' ? parseFloat(b) : b;
+  return (aNum + bNum).toFixed(4);
+}
+
+/**
+ * 두 decimal string 뺄셈
+ * @param a 첫 번째 decimal string
+ * @param b 두 번째 decimal string
+ * @returns 뺄셈 결과 (string)
+ */
+export function subtractDecimalStrings(
+  a: string | number,
+  b: string | number,
+): string {
+  const aNum = typeof a === 'string' ? parseFloat(a) : a;
+  const bNum = typeof b === 'string' ? parseFloat(b) : b;
+  return (aNum - bNum).toFixed(4);
 }
 
 /**

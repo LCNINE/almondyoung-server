@@ -2,14 +2,15 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
-import * as schema from '../schema';
+import * as schema from '../../shared/schemas/schema';
 import { HmsBnplService } from './hms-bnpl.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ulid } from 'ulid';
+import { sumDecimalStrings } from '../../payment/utils/money.utils';
 
 /**
  * BNPL 정산 서비스
- * 
+ *
  * 주요 기능:
  * 1. 월별 정산 배치 생성
  * 2. 정기 결제 처리
@@ -50,7 +51,7 @@ export class BnplSettlementService {
         await this.createSettlementBatchForAccount(account, batchMonth);
       } catch (error) {
         this.logger.error(
-          `정산 배치 생성 실패: accountId=${account.id}, error=${error.message}`
+          `정산 배치 생성 실패: accountId=${account.id}, error=${error.message}`,
         );
       }
     }
@@ -63,19 +64,21 @@ export class BnplSettlementService {
    */
   async createSettlementBatchForAccount(
     account: any,
-    batchMonth: string
-  ): Promise<schema.SettlementBatch> {
+    batchMonth: string,
+  ): Promise<typeof schema.settlementBatch.$inferSelect> {
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 이미 생성된 배치가 있는지 확인
       const existingBatch = await tx.query.settlementBatch.findFirst({
         where: and(
           eq(schema.settlementBatch.bnplAccountId, account.id),
-          eq(schema.settlementBatch.batchNumber, batchMonth)
+          eq(schema.settlementBatch.batchNumber, batchMonth),
         ),
       });
 
       if (existingBatch) {
-        this.logger.log(`이미 생성된 배치 존재: ${batchMonth}, accountId=${account.id}`);
+        this.logger.log(
+          `이미 생성된 배치 존재: ${batchMonth}, accountId=${account.id}`,
+        );
         return existingBatch;
       }
 
@@ -94,21 +97,19 @@ export class BnplSettlementService {
           eq(schema.bnplTransaction.transactionType, 'DEBIT'),
           eq(schema.bnplTransaction.status, 'CAPTURED'),
           gte(schema.bnplTransaction.createdAt, batchPeriodStart),
-          lte(schema.bnplTransaction.createdAt, batchPeriodEnd)
+          lte(schema.bnplTransaction.createdAt, batchPeriodEnd),
         ),
       });
 
       // 4. 총 금액 계산
-      const totalAmount = transactions.reduce(
-        (sum, tx) => sum + Number(tx.amount),
-        0
+      const totalAmount = sumDecimalStrings(
+        transactions.map((tx) => tx.amount),
       );
 
       // 5. 정산 배치 생성
       const [settlementBatch] = await tx
         .insert(schema.settlementBatch)
         .values({
-          id: ulid(),
           bnplAccountId: account.id,
           batchNumber: batchMonth,
           totalAmount,
@@ -121,22 +122,20 @@ export class BnplSettlementService {
 
       // 6. 정산 배치 항목 생성
       if (transactions.length > 0) {
-        await tx
-          .insert(schema.settlementBatchItem)
-          .values(
-            transactions.map(tx => ({
-              id: ulid(),
-              batchId: settlementBatch.id,
-              bnplTransactionId: tx.id,
-              amount: tx.amount,
-              transactionDate: tx.createdAt,
-            }))
-          );
+        await tx.insert(schema.settlementBatchItem).values(
+          transactions.map((tx) => ({
+            id: ulid(),
+            batchId: settlementBatch.id,
+            bnplTransactionId: tx.id,
+            amount: tx.amount,
+            transactionDate: tx.createdAt,
+          })),
+        );
       }
 
       this.logger.log(
         `정산 배치 생성 완료: batchId=${settlementBatch.id}, ` +
-        `총액=${totalAmount}원, 거래건수=${transactions.length}`
+          `총액=${totalAmount}원, 거래건수=${transactions.length}`,
       );
 
       return settlementBatch;
@@ -152,18 +151,21 @@ export class BnplSettlementService {
     const today = new Date();
     const billingDay = today.getDate();
 
-    this.logger.log(`정기 결제 처리 시작: ${today.toISOString()}, 결제일=${billingDay}`);
+    this.logger.log(
+      `정기 결제 처리 시작: ${today.toISOString()}, 결제일=${billingDay}`,
+    );
 
     // 오늘이 결제일인 정산 배치 조회
-    const pendingBatches = await this.dbService.db.query.settlementBatch.findMany({
-      where: and(
-        eq(schema.settlementBatch.status, 'PENDING'),
-        sql`EXTRACT(DAY FROM ${schema.settlementBatch.dueDate}) = ${billingDay}`
-      ),
-      with: {
-        bnplAccount: true,
-      },
-    });
+    const pendingBatches =
+      await this.dbService.db.query.settlementBatch.findMany({
+        where: and(
+          eq(schema.settlementBatch.status, 'PENDING'),
+          sql`EXTRACT(DAY FROM ${schema.settlementBatch.dueDate}) = ${billingDay}`,
+        ),
+        with: {
+          bnplAccount: true,
+        },
+      });
 
     this.logger.log(`처리 대상 정산 배치: ${pendingBatches.length}건`);
 
@@ -172,7 +174,7 @@ export class BnplSettlementService {
         await this.processSingleBilling(batch);
       } catch (error) {
         this.logger.error(
-          `정기 결제 처리 실패: batchId=${batch.id}, error=${error.message}`
+          `정기 결제 처리 실패: batchId=${batch.id}, error=${error.message}`,
         );
       }
     }
@@ -190,7 +192,7 @@ export class BnplSettlementService {
         .update(schema.settlementBatch)
         .set({
           status: 'PROCESSING',
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(schema.settlementBatch.id, batch.id));
 
@@ -208,7 +210,7 @@ export class BnplSettlementService {
           .update(schema.settlementBatch)
           .set({
             status: 'SETTLED',
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(schema.settlementBatch.id, batch.id));
 
@@ -223,11 +225,12 @@ export class BnplSettlementService {
 
         this.logger.log(
           `정산 완료: batchId=${batch.id}, amount=${batch.totalAmount}, ` +
-          `transactionId=${withdrawalResult.payment.transactionId}`
+            `transactionId=${withdrawalResult.payment.transactionId}`,
         );
       } else {
         // payment 객체에 message가 없을 수 있으므로 안전하게 처리
-        const errorMessage = withdrawalResult.payment.result.message ||
+        const errorMessage =
+          withdrawalResult.payment.result.message ||
           withdrawalResult.payment.result.message ||
           '알 수 없는 오류';
         throw new Error(`출금 실패: ${errorMessage}`);
@@ -238,11 +241,13 @@ export class BnplSettlementService {
         .update(schema.settlementBatch)
         .set({
           status: 'FAILED',
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(schema.settlementBatch.id, batch.id));
 
-      this.logger.error(`정산 실패: batchId=${batch.id}, error=${error.message}`);
+      this.logger.error(
+        `정산 실패: batchId=${batch.id}, error=${error.message}`,
+      );
       throw error;
     }
   }
@@ -253,10 +258,10 @@ export class BnplSettlementService {
   async requestManualWithdrawal(
     bnplAccountId: string,
     amount: number,
-    reason: string
+    reason: string,
   ): Promise<any> {
     this.logger.log(
-      `수동 출금 요청: accountId=${bnplAccountId}, amount=${amount}, reason=${reason}`
+      `수동 출금 요청: accountId=${bnplAccountId}, amount=${amount}, reason=${reason}`,
     );
 
     // 1. BNPL 계정 조회
@@ -271,7 +276,7 @@ export class BnplSettlementService {
     // 2. 잔액 확인
     if (Number(account.currentBalance) < amount) {
       throw new BadRequestException(
-        `출금 가능 금액(${account.currentBalance}원)을 초과합니다.`
+        `출금 가능 금액(${account.currentBalance}원)을 초과합니다.`,
       );
     }
 
@@ -303,9 +308,11 @@ export class BnplSettlementService {
    */
   async getSettlementBatchStatus(
     bnplAccountId: string,
-    batchMonth?: string
+    batchMonth?: string,
   ): Promise<any[]> {
-    const conditions = [eq(schema.settlementBatch.bnplAccountId, bnplAccountId)];
+    const conditions = [
+      eq(schema.settlementBatch.bnplAccountId, bnplAccountId),
+    ];
 
     if (batchMonth) {
       conditions.push(eq(schema.settlementBatch.batchNumber, batchMonth));
@@ -324,10 +331,10 @@ export class BnplSettlementService {
       limit: 12, // 최근 12개월
     });
 
-    return batches.map(batch => ({
+    return batches.map((batch) => ({
       id: batch.id,
       batchNumber: batch.batchNumber,
-      totalAmount: Number(batch.totalAmount),
+      totalAmount: batch.totalAmount,
       dueDate: batch.dueDate,
       status: batch.status,
       itemCount: batch.items.length,
@@ -350,29 +357,29 @@ export class BnplSettlementService {
       where: eq(schema.settlementBatch.bnplAccountId, bnplAccountId),
     });
 
-    const settledBatches = batches.filter(b => b.status === 'SETTLED');
-    const pendingBatches = batches.filter(b => b.status === 'PENDING');
-    const failedBatches = batches.filter(b => b.status === 'FAILED');
+    const settledBatches = batches.filter((b) => b.status === 'SETTLED');
+    const pendingBatches = batches.filter((b) => b.status === 'PENDING');
+    const failedBatches = batches.filter((b) => b.status === 'FAILED');
 
     const totalSettled = settledBatches.reduce(
       (sum, b) => sum + Number(b.totalAmount),
-      0
+      0,
     );
     const totalPending = pendingBatches.reduce(
       (sum, b) => sum + Number(b.totalAmount),
-      0
+      0,
     );
     const totalFailed = failedBatches.reduce(
       (sum, b) => sum + Number(b.totalAmount),
-      0
+      0,
     );
 
-    const averageMonthlyAmount = settledBatches.length > 0
-      ? totalSettled / settledBatches.length
-      : 0;
+    const averageMonthlyAmount =
+      settledBatches.length > 0 ? totalSettled / settledBatches.length : 0;
 
-    const lastSettlement = settledBatches
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+    const lastSettlement = settledBatches.sort(
+      (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+    )[0];
 
     return {
       totalSettled,

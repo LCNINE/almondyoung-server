@@ -23,10 +23,7 @@ export class InvoiceController {
   }
 
   @Get()
-  findAll(
-    @Query('userId') userId?: string,
-    @Query('status') status?: schema.InvoiceStatus,
-  ) {
+  findAll(@Query('userId') userId?: string, @Query('status') status?: any) {
     const userIdAsNumber = userId ? parseInt(userId, 10) : undefined;
     return this.invoiceService.findAll(userIdAsNumber, status);
   }

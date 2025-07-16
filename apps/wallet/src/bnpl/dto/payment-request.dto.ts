@@ -7,7 +7,7 @@ import { z } from 'zod';
 export const PaymentRequestSchema = z.object({
   bnplAccountId: z.string(),
   invoiceId: z.number().int().positive(),
-  amount: z.number().positive(),
+  amount: z.string(),
   description: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 });
@@ -22,7 +22,7 @@ export class PaymentRequestDto extends createZodDto(PaymentRequestSchema) {}
  */
 export const PaymentCaptureSchema = z.object({
   paymentId: z.string(),
-  amount: z.number().positive().optional(), // 캡처 금액 (없으면 전체 금액)
+  amount: z.string(), // 캡처 금액 (없으면 전체 금액)
 });
 
 /**

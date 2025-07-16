@@ -1,9 +1,9 @@
-import { InvoiceStatus } from '../schema';
+import * as schema from '../../shared/schemas/schema';
 
 export class InvoiceEventResponseDto {
   id: number;
   eventUuid: string;
-  eventType: InvoiceStatus;
+  eventType: schema.InvoiceStatus;
   reason: string | null;
   occurredAt: Date;
 }
@@ -15,7 +15,7 @@ export class InvoiceResponseDto {
   invoiceType: string;
   amount: string;
   currency: string;
-  status: InvoiceStatus;
+  status: schema.InvoiceStatus;
   expiresAt: Date;
   dueAt: Date | null;
   createdAt: Date;

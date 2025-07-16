@@ -6,13 +6,10 @@ import { DbModule } from '@app/db';
 import { ScheduleModule } from '@nestjs/schedule';
 // import { PaymentModule } from './payment/payment.module';
 import { BnplModule } from './bnpl/bnpl.module';
-import * as invoiceSchema from './invoice/schema';
-import * as paymentSchema from './payment/schema';
-import * as bnplSchema from './bnpl/schema';
 import { ConfigModule } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { APP_PIPE } from '@nestjs/core';
-
+import * as schema from './shared/schemas/schema';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -27,7 +24,7 @@ import { APP_PIPE } from '@nestjs/core';
           process.env.DATABASE_URL ||
           'postgresql://payms_owner:npg_8KxncIF7qoyH@ep-fancy-bonus-a1iiaieh-pooler.ap-southeast-1.aws.neon.tech/payms?sslmode=require&channel_binding=require',
       },
-      schema: { ...invoiceSchema, ...paymentSchema, ...bnplSchema },
+      schema: { ...schema },
     }),
     InvoiceModule,
     // PaymentModule,
