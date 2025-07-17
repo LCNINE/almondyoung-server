@@ -29,7 +29,7 @@ export class InvoiceService {
     return expiresAt;
   }
 
-  private async generateInvoiceNumber(userId: number): Promise<string> {
+  private async generateInvoiceNumber(userId: string): Promise<string> {
     // Get the current date components
     const now = new Date();
     const yearMonth =
@@ -154,7 +154,7 @@ export class InvoiceService {
   }
 
   async findAll(
-    userId?: number,
+    userId?: string,
     status?: schema.InvoiceStatus,
   ): Promise<InvoiceResponseDto[]> {
     const conditions: SQL[] = [];

@@ -11,7 +11,6 @@ import {
 import { InvoiceService } from './invoice.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
-import * as schema from './schema';
 
 @Controller('invoices')
 export class InvoiceController {
@@ -24,8 +23,7 @@ export class InvoiceController {
 
   @Get()
   findAll(@Query('userId') userId?: string, @Query('status') status?: any) {
-    const userIdAsNumber = userId ? parseInt(userId, 10) : undefined;
-    return this.invoiceService.findAll(userIdAsNumber, status);
+    return this.invoiceService.findAll(userId, status);
   }
 
   @Get(':id')

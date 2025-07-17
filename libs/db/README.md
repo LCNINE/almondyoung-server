@@ -72,15 +72,10 @@ import { eq } from 'drizzle-orm';
 
 @Injectable()
 export class UserService {
-  constructor(
-    @InjectDb() private readonly dbService: DbService<UserSchema>,
-  ) {}
+  constructor(@InjectDb() private readonly dbService: DbService<UserSchema>) {}
 
   async createUser(name: string, email: string) {
-    return this.dbService.db
-      .insert(users)
-      .values({ name, email })
-      .returning();
+    return this.dbService.db.insert(users).values({ name, email }).returning();
   }
 
   async findUserById(id: number) {
@@ -104,14 +99,13 @@ export class UserService {
   }
 
   async deleteUser(id: number) {
-    return this.dbService.db
-      .delete(users)
-      .where(eq(users.id, id))
-      .returning();
+    return this.dbService.db.delete(users).where(eq(users.id, id)).returning();
   }
 
   // 트랜잭션 사용 예시
-  async createUsersInTransaction(userData: Array<{ name: string; email: string }>) {
+  async createUsersInTransaction(
+    userData: Array<{ name: string; email: string }>,
+  ) {
     return this.dbService.transaction(async (tx) => {
       const results = [];
       for (const data of userData) {
@@ -128,7 +122,13 @@ export class UserService {
 
 ```typescript
 // apps/order-service/src/schema.ts
-import { pgTable, serial, varchar, integer, timestamp } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  varchar,
+  integer,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
@@ -148,11 +148,9 @@ import { OrderSchema, orders } from './schema';
 
 @Injectable()
 export class OrderService {
-  constructor(
-    @InjectDb() private readonly dbService: DbService<OrderSchema>,
-  ) {}
+  constructor(@InjectDb() private readonly dbService: DbService<OrderSchema>) {}
 
-  async createOrder(userId: number, productName: string, quantity: number) {
+  async createOrder(userId: string, productName: string, quantity: number) {
     return this.dbService.db
       .insert(orders)
       .values({ userId, productName, quantity })
@@ -160,7 +158,7 @@ export class OrderService {
   }
 
   // 완전한 타입 안정성을 가진 쿼리
-  async findOrdersByUserId(userId: number) {
+  async findOrdersByUserId(userId: string) {
     return this.dbService.db
       .select()
       .from(orders)
@@ -210,4 +208,4 @@ export default {
     database: process.env.DB_NAME!,
   },
 } satisfies Config;
-``` 
+```

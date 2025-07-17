@@ -14,7 +14,8 @@ import {
 } from './dto/payment-request.dto';
 import { sumDecimalStrings } from '../payment/utils/money.utils';
 
-/**
+/**import { sumDecimalStrings } from '../payment/utils/mㅠy.utils';
+import { Blob } from 'buffer'; // 
  * BNPL 서비스 - Orchestrator/Facade 패턴
  *
  * 주요 역할:
@@ -129,7 +130,7 @@ export class BnplService {
       }
 
       // 3. HMS 배치 CMS에서 회원 삭제
-      await this.hmsBnplService.deleteMember(`bnpl_${account.userId}`);
+      await this.hmsBnplService.deleteMember(account.userId);
 
       // 4. DB에서 BNPL 계정 비활성화
       const result = await this.accountService.deactivateAccount(dto);
@@ -149,7 +150,7 @@ export class BnplService {
    */
   // bnpl.service.ts
 
-  async getBnplAccount(userId: number): Promise<BnplAccountResponse | null> {
+  async getBnplAccount(userId: string): Promise<BnplAccountResponse | null> {
     const account = await this.accountService.getAccountByUserId(userId);
 
     if (!account) {
@@ -188,14 +189,14 @@ export class BnplService {
   /**
    * 사용자의 모든 BNPL 계좌 조회
    */
-  async getBnplAccounts(userId: number) {
+  async getBnplAccounts(userId: string) {
     return this.accountService.getAllAccountsByUserId(userId);
   }
 
   /**
    * BNPL 이벤트 히스토리 조회
    */
-  async getBnplEventHistory(userId: number) {
+  async getBnplEventHistory(userId: string) {
     return this.accountService.getEventHistory(userId);
   }
 
@@ -216,16 +217,14 @@ export class BnplService {
       if (result.payment && result.payment.status === '신청') {
         // BNPL 계정 조회
         const bnplAccount = await this.accountService.getAccountByUserId(
-          parseInt(withdrawalData.memberId.split('_')[1], 10),
+          withdrawalData.memberId,
         );
 
         if (bnplAccount) {
           // payment 테이블에 기록
           const paymentResult = await this.paymentService.requestPayment({
             bnplAccountId: bnplAccount.id,
-            invoiceId:
-              parseInt(result.payment.transactionId.replace(/\D/g, ''), 10) ||
-              999999,
+            invoiceId: withdrawalData.invoiceId,
             amount: result.payment.callAmount || withdrawalData.amount,
             description: `BNPL 출금 - ${result.payment.transactionId}`,
             metadata: { withdrawalData, hmsResponse: result },
@@ -286,23 +285,27 @@ export class BnplService {
    * 1. HMS 배치 CMS에 동의자료 제출
    * 2. 성공 시 응답 반환
    */
-  async submitAgreement(dto: SubmitAgreementDto) {
-    this.logger.log(`BNPL 동의자료 제출 시작. memberId: ${dto.memberId}`);
+  async submitAgreement(
+    data: SubmitAgreementDto & {
+      agreementFile: {
+        filename: string;
+        mimetype: string;
+        value: Buffer;
+      };
+    },
+  ) {
+    this.logger.log(`BNPL 동의자료 제출 시작. memberId: ${data.memberId}`);
 
     try {
-      // 동의자료를 파일 형태로 변환 (목업 서버에서는 텍스트로 처리)
-      const fileInput = {
-        content: dto.agreementText,
-        filename: `agreement_${dto.memberId}_${Date.now()}.txt`,
-        contentType: 'text/plain',
-      };
-
-      // HMS 배치 CMS에 동의자료 제출
-      const result = await this.hmsBnplService.submitAgreement(
-        dto.custId || 'default-cust',
-        dto.memberId,
-        fileInput,
-      );
+      // 1. HmsBnplService로 원시 데이터만 전달
+      const result = await this.hmsBnplService.submitAgreement({
+        memberId: data.memberId,
+        custId: data.custId || 'default-cust',
+        agreementText: data.agreementText,
+        filename: data.agreementFile.filename,
+        mimetype: data.agreementFile.mimetype,
+        buffer: data.agreementFile.value,
+      });
 
       this.logger.log(
         `BNPL 동의자료 제출 완료: ${result.agreementFile?.agreementKey}`,
@@ -312,17 +315,17 @@ export class BnplService {
         success: true,
         agreementKey: result.agreementFile?.agreementKey,
         message: '동의자료가 성공적으로 제출되었습니다.',
+        result,
       };
     } catch (error) {
       this.logger.error(`BNPL 동의자료 제출 실패: ${error.message}`);
       throw error;
     }
   }
-
   /**
    * 대시보드용 통계 정보 (추가 기능)
    */
-  async getDashboardStatistics(userId: number) {
+  async getDashboardStatistics(userId: string) {
     const account = await this.accountService.getAccountByUserId(userId);
     if (!account) {
       return null;

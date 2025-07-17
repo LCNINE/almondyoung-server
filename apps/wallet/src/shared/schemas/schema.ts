@@ -49,7 +49,7 @@ export const paymentMethod = pgTable(
     id: varchar('id', { length: 21 })
       .primaryKey()
       .$defaultFn(() => nanoid()),
-    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    userId: varchar('user_id', { length: 64 }).notNull(),
     methodType: text('method_type')
       .$type<'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'REWARD_POINT'>()
       .notNull(),
@@ -110,7 +110,7 @@ export const bnplAccount = pgTable(
     id: varchar('id', { length: 21 })
       .primaryKey()
       .$defaultFn(() => nanoid()),
-    userId: bigint('user_id', { mode: 'number' }).notNull(),
+    userId: varchar('user_id', { length: 64 }).notNull(),
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
@@ -289,7 +289,7 @@ export const settlementProcessEvent = pgTable('settlement_process_event', {
 // Invoice details
 export const invoice = pgTable('invoice', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
-  userId: bigint('user_id', { mode: 'number' }).notNull(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
   invoiceNumber: varchar('invoice_number', { length: 64 }).notNull(),
   invoiceType: varchar('invoice_type', { length: 32 }).notNull(),
   amount: decimal('amount', { precision: 18, scale: 2 }).notNull(),

@@ -121,7 +121,7 @@ export class PgIntegrationService {
   /**
    * 사용자의 카드 결제수단 목록 조회
    */
-  async getCardMethods(userId: number): Promise<CardMethodResponseDto[]> {
+  async getCardMethods(userId: string): Promise<CardMethodResponseDto[]> {
     try {
       const methods = await this.dbService.db.query.paymentMethod.findMany({
         where: and(
@@ -166,7 +166,7 @@ export class PgIntegrationService {
   /**
    * 카드 결제수단 삭제
    */
-  async deleteCardMethod(userId: number, methodId: string): Promise<void> {
+  async deleteCardMethod(userId: string, methodId: string): Promise<void> {
     return await this.dbService.db.transaction(async (tx) => {
       try {
         // 1. 결제수단 조회 (카드 정보 포함)
@@ -222,7 +222,7 @@ export class PgIntegrationService {
   /**
    * 기본 결제수단 설정
    */
-  async setDefaultMethod(userId: number, methodId: string): Promise<void> {
+  async setDefaultMethod(userId: string, methodId: string): Promise<void> {
     return await this.dbService.db.transaction(async (tx) => {
       try {
         // 1. 결제수단 존재 확인

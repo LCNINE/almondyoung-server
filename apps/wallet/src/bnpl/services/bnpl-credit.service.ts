@@ -12,15 +12,15 @@ export class BnplCreditService {
    * 초기 신용 한도 평가
    * TODO: 실제 신용평가 로직 구현 필요
    */
-  async evaluateInitialCreditLimit(userId: number): Promise<number> {
+  async evaluateInitialCreditLimit(userId: string): Promise<number> {
     this.logger.log(`초기 신용 한도 평가 시작. userId: ${userId}`);
-    
+
     // 기본 신용 한도 (임시)
     const defaultCreditLimit = 500000; // 50만원
-    
+
     // TODO: 실제 신용평가 API 연동
     // TODO: 사용자 소득, 신용점수, 거래내역 등을 고려한 평가
-    
+
     return defaultCreditLimit;
   }
 
@@ -33,11 +33,11 @@ export class BnplCreditService {
     availableCredit: number;
   }> {
     // TODO: 실제 DB에서 계정 정보와 사용 내역 조회
-    
+
     // 임시 데이터
     const totalLimit = 500000;
     const usedAmount = 0; // TODO: 실제 사용 금액 계산
-    
+
     return {
       totalLimit,
       usedAmount,
@@ -58,7 +58,7 @@ export class BnplCreditService {
     // - 연체 이력
     // - 사용 패턴
     // - 결제 이력 등
-    
+
     return {
       riskLevel: 'LOW',
       riskScore: 85,

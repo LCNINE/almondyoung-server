@@ -14,7 +14,7 @@ export enum InvoiceType {
 
 export class CreateInvoiceDto {
   @IsNotEmpty()
-  userId: number;
+  userId: string;
 
   @IsString()
   @IsNotEmpty()

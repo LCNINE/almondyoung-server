@@ -4,7 +4,7 @@ import { CreateBnplAccountDto } from '../dto/create-bnpl-account.dto';
 
 /**
  * HMS 배치 CMS 연동 서비스
- * 
+ *
  * 주요 기능:
  * 1. HMS 배치 CMS 회원 등록/삭제
  * 2. 동의자료 제출
@@ -29,10 +29,10 @@ export class HmsBnplService {
    */
   async registerMember(dto: CreateBnplAccountDto) {
     this.logger.log(`[HMS] 배치 CMS 회원 등록: ${dto.userId}`);
-    
+
     const payload = this.toHmsMemberDto(dto);
     const result = await this.mockApi.members.create(payload);
-    
+
     this.logger.log(`[HMS] 배치 CMS 회원 등록 성공: ${result.member.memberId}`);
     return result;
   }
@@ -42,9 +42,9 @@ export class HmsBnplService {
    */
   async deleteMember(memberId: string) {
     this.logger.log(`[HMS] 배치 CMS 회원 삭제: ${memberId}`);
-    
+
     await this.mockApi.members.delete(memberId);
-    
+
     this.logger.log(`[HMS] 배치 CMS 회원 삭제 성공`);
     return { success: true };
   }
@@ -52,12 +52,46 @@ export class HmsBnplService {
   /**
    * HMS 배치 CMS 동의자료 제출
    */
-  async submitAgreement(custId: string, memberId: string, fileInput: any) {
+  async submitAgreement({
+    memberId,
+    custId,
+    agreementText,
+    filename,
+    mimetype,
+    buffer,
+  }: {
+    memberId: string;
+    custId: string;
+    agreementText: string;
+    filename: string;
+    mimetype: string;
+    buffer: Buffer;
+  }) {
     this.logger.log(`[HMS] 배치 CMS 동의자료 제출: ${memberId}`);
-    
-    const result = await this.mockApi.agreements.register(custId, memberId, fileInput);
-    
-    this.logger.log(`[HMS] 배치 CMS 동의자료 제출 성공: ${result.agreementFile.agreementKey}`);
+
+    // 1. Buffer → Blob 변환 (글로벌 Blob)
+    const blob = new Blob([buffer], { type: mimetype });
+    // 2. FormData 생성 (글로벌 FormData)
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    formData.append('memberId', memberId);
+    if (custId) formData.append('custId', custId);
+    if (agreementText) formData.append('agreementText', agreementText);
+
+    // 3. fetch로 MockHmsAPI(목업서버)에 동의자료 제출
+    const response = await fetch(
+      `http://localhost:3005/v1/custs/${custId}/agreements`,
+      {
+        method: 'POST',
+        body: formData,
+        // Content-Type은 fetch가 자동으로 생성
+      },
+    );
+    const result = await response.json();
+
+    this.logger.log(
+      `[HMS] 배치 CMS 동의자료 제출 성공: ${result.agreementFile?.agreementKey}`,
+    );
     return result;
   }
 
@@ -66,10 +100,12 @@ export class HmsBnplService {
    */
   async requestWithdrawal(withdrawalData: any) {
     this.logger.log(`[HMS] 배치 CMS 출금 요청: ${withdrawalData.memberId}`);
-    
+
     const result = await this.mockApi.withdrawals.request(withdrawalData);
-    
-    this.logger.log(`[HMS] 배치 CMS 출금 요청 성공: ${result.payment.transactionId}`);
+
+    this.logger.log(
+      `[HMS] 배치 CMS 출금 요청 성공: ${result.payment.transactionId}`,
+    );
     return result;
   }
 
@@ -79,7 +115,7 @@ export class HmsBnplService {
   async checkHealth() {
     try {
       await this.mockApi.healthCheck();
-      
+
       return {
         status: 'ok',
         message: 'HMS BNPL Service is connected',
@@ -87,7 +123,7 @@ export class HmsBnplService {
       };
     } catch (error) {
       this.logger.error(`[HMS] 배치 CMS 상태 확인 실패: ${error.message}`);
-      
+
       return {
         status: 'error',
         message: 'HMS BNPL Service connection failed',
@@ -103,7 +139,7 @@ export class HmsBnplService {
   private toHmsMemberDto(dto: CreateBnplAccountDto) {
     const timestamp = Date.now();
     return {
-      memberId: `bnpl_${dto.userId}_${timestamp}`, // 타임스탬프 추가하여 고유한 ID 생성
+      memberId: dto.userId, // 타임스탬프 추가하여 고유한 ID 생성
       memberName: dto.methodName,
       payerName: dto.methodName,
       paymentKind: 'CMS' as const, // 문자열 리터럴 타입으로 명시적 지정
@@ -113,5 +149,5 @@ export class HmsBnplService {
       phone: dto.phone || '01012345678',
       email: `bnpl_${dto.userId}_${timestamp}@example.com`,
     };
- 
-}}
+  }
+}

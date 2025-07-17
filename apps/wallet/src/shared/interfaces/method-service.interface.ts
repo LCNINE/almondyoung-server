@@ -5,6 +5,6 @@ export interface IMethodService<TCreateDto, TUpdateDto, TResponseDto> {
   register(dto: TCreateDto): Promise<TResponseDto>;
   update(id: string, dto: TUpdateDto): Promise<TResponseDto>;
   delete(id: string): Promise<void>;
-  getList(userId: number): Promise<TResponseDto[]>;
+  getList(userId: string): Promise<TResponseDto[]>;
   setDefault(id: string): Promise<void>;
 }

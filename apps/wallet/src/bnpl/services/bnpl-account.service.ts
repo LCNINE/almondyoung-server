@@ -178,7 +178,7 @@ export class BnplAccountService {
   /**
    * 사용자 ID로 BNPL 계정 조회
    */
-  async getAccountByUserId(userId: number) {
+  async getAccountByUserId(userId: string) {
     const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
       where: and(
         eq(schema.bnplAccount.userId, userId),
@@ -223,7 +223,7 @@ export class BnplAccountService {
   /**
    * 사용자 ID로 모든 BNPL 계정 조회
    */
-  async getAllAccountsByUserId(userId: number) {
+  async getAllAccountsByUserId(userId: string) {
     const results = await this.dbService.db.query.paymentMethod.findMany({
       where: and(
         eq(schema.paymentMethod.userId, userId),
@@ -238,7 +238,7 @@ export class BnplAccountService {
   /**
    * BNPL 이벤트 히스토리 조회
    */
-  async getEventHistory(userId: number) {
+  async getEventHistory(userId: string) {
     // 사용자의 BNPL 결제수단들을 먼저 조회
     const paymentMethods = await this.dbService.db.query.paymentMethod.findMany(
       {

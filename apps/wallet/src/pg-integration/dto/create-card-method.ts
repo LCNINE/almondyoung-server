@@ -1,10 +1,15 @@
-import { IsString, IsBoolean, IsOptional, Length, Matches, IsNotEmpty } from 'class-validator';
-
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  Length,
+  Matches,
+  IsNotEmpty,
+} from 'class-validator';
 
 export class CreateCardMethodDto {
-
   @IsNotEmpty()
-  userId: number;
+  userId: string;
 
   @IsString()
   @IsNotEmpty()
@@ -24,7 +29,9 @@ export class CreateCardMethodDto {
   cardNumber: string;
 
   @IsString()
-  @Matches(/^(0[1-9]|1[0-2])\/\d{2}$/, { message: '유효기간은 MM/YY 형식이어야 합니다' })
+  @Matches(/^(0[1-9]|1[0-2])\/\d{2}$/, {
+    message: '유효기간은 MM/YY 형식이어야 합니다',
+  })
   expiryDate: string;
 
   @IsString()

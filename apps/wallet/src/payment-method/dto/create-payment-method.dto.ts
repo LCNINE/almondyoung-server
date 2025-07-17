@@ -1,17 +1,17 @@
-import { 
-  IsBoolean, 
-  IsOptional, 
-  IsString, 
-  MaxLength, 
-  IsNumber, 
-  IsPositive, 
-  Min, 
-  Max, 
-  IsEmail, 
-  IsPhoneNumber, 
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+  IsNumber,
+  IsPositive,
+  Min,
+  Max,
+  IsEmail,
+  IsPhoneNumber,
   IsIn,
   IsNotEmpty,
-  IsUrl
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
@@ -19,7 +19,7 @@ import { CreateMemberRequestDto } from 'hms-api-wrapper/dist/services/BatchCms/t
 // [내부 비즈니스용 DTO] 카드 결제수단 생성
 export interface CreateCardPaymentMethodDto {
   methodType: 'CARD';
-  userId: number;
+  userId: string;
   methodName: string;
   isDefault?: boolean;
   institutionCode: string;
@@ -37,7 +37,7 @@ export interface CreateCardPaymentMethodDto {
 // [내부 비즈니스용 DTO] 계좌 결제수단 생성
 export interface CreateBankAccountPaymentMethodDto {
   methodType: 'BANK_ACCOUNT';
-  userId: number;
+  userId: string;
   methodName: string;
   isDefault?: boolean;
   institutionCode: string;
@@ -55,9 +55,7 @@ export class CreateBnplPaymentMethodDto {
   @IsNumber()
   @IsPositive()
   @Type(() => Number)
-  userId: number;
-
-
+  userId: string;
 
   @IsString()
   @IsNotEmpty()

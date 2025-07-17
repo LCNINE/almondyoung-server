@@ -11,7 +11,7 @@ import { z } from 'zod';
 // BNPL 계정 스키마
 export const BnplAccountSchema = z.object({
   id: z.string(),
-  userId: z.number().int(),
+  userId: z.string().min(1).max(64),
   paymentMethodId: z.string(),
   creditLimit: z.number(),
   approvedLimit: z.number(),
@@ -31,7 +31,7 @@ export const BnplAccountResponseSchema =
   BnplAccountSchema.extend(extraResponseFields);
 // BNPL 계정 생성 스키마
 export const CreateBnplAccountSchema = z.object({
-  userId: z.number().int().positive(),
+  userId: z.string().min(1).max(64),
   methodType: z.literal('BNPL'),
   methodName: z.string().min(1).max(64),
   institutionCode: z.string().min(1),

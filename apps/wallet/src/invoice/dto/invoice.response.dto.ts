@@ -10,7 +10,7 @@ export class InvoiceEventResponseDto {
 
 export class InvoiceResponseDto {
   id: number;
-  userId: number;
+  userId: string;
   invoiceNumber: string;
   invoiceType: string;
   amount: string;

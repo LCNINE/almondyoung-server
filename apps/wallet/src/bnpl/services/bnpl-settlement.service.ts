@@ -198,7 +198,7 @@ export class BnplSettlementService {
 
       // 2. HMS 배치 CMS로 출금 요청
       const withdrawalResult = await this.hmsBnplService.requestWithdrawal({
-        memberId: `bnpl_${batch.bnplAccount.userId}`,
+        memberId: batch.bnplAccount.memberId,
         amount: Number(batch.totalAmount),
         withdrawalDate: new Date().toISOString().split('T')[0],
         merchantTxId: batch.id,
@@ -282,7 +282,7 @@ export class BnplSettlementService {
 
     // 3. HMS 배치 CMS로 출금 요청
     const result = await this.hmsBnplService.requestWithdrawal({
-      memberId: `bnpl_${account.userId}`,
+      memberId: account.userId,
       amount,
       withdrawalDate: new Date().toISOString().split('T')[0],
       merchantTxId: `manual_${ulid()}`,

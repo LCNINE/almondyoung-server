@@ -1,0 +1,51 @@
+### BNPL 결제수단 등록
+POST http://localhost:5000/bnpl/accounts
+Content-Type: application/json
+
+{
+  "methodType": "BNPL",
+  "userId": 1,
+  "methodName": "알몬드영 BNPL",
+  "institutionCode": "ALMOND001"
+  "billingCycleDay": 25,
+  "isDefault": true,
+  "creditLimit": 500000,
+  "approvedLimit": 300000,
+  "termsUrl": "https://example.com/terms",
+  "phone": "01012345678"
+}
+
+
+## BNPL 동의자료 파일 제출 (txt)
+POST http://localhost:5000/bnpl/agreements
+
+# agreement.txt 파일이 이 디렉토리에 존재하고, 10자 이상 내용이 들어가야 합니다.
+# 예시 내용: 본인은 BNPL 약관에 동의합니다.
+
+memberId=1
+  agreementFile=@/home/jihun/다운로드/dual/almondyoung-server/apps/wallet/agreement.txt;type=text/plain
+
+## BNPL 청구서(Invoice) 생성
+POST http://localhost:5000/invoices
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "amount": "100000",
+  "currency": "KRW",
+  "invoiceType": "PRODUCT",
+  "description": "BNPL 테스트 청구서"
+}
+
+## BNPL 출금신청
+# 아래 invoiceId는 위에서 생성된 청구서의 id로 대체해서 사용하세요.
+POST http://localhost:5000/bnpl/test/withdrawal
+Content-Type: application/json
+
+{
+  "transactionId": "BNPL-202507123342",
+  "memberId": "bnpl_1_1752683218875",
+  "paymentDate": "20250717",
+  "callAmount": 100000,
+  "invoiceId":8
+}
