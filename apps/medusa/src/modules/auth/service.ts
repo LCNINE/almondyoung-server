@@ -60,7 +60,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     try {
       // 토큰 인증 처리
       const authHeader = data?.headers?.authorization;
-
       if (!authHeader?.startsWith('Bearer ')) {
         return {
           success: false,
