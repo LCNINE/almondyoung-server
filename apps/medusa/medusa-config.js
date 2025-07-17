@@ -54,7 +54,15 @@ module.exports = defineConfig({
           // default provider
           {
             resolve: '@medusajs/medusa/auth-emailpass',
+            dependencies: [Modules.CACHE, ContainerRegistrationKeys.LOGGER],
             id: 'emailpass',
+            options: {
+              hashConfig: {
+                logN: 15,
+                r: 8,
+                p: 1,
+              },
+            },
           },
           {
             resolve: './src/modules/auth',
