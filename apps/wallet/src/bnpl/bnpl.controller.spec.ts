@@ -110,4 +110,57 @@ describe('BnplController', () => {
     expect(mockService.checkBnplHealth).toHaveBeenCalled();
     expect(res).toEqual(expect.objectContaining({ status: 'ok' }));
   });
+
+  it('getBnplAccount should return account', async () => {
+    mockService.getBnplAccount.mockResolvedValue({ id: 'acc1' } as any);
+    const res = await controller.getBnplAccount('u1');
+    expect(mockService.getBnplAccount).toHaveBeenCalledWith('u1');
+    expect(res).toEqual({ id: 'acc1' });
+  });
+
+  it('getBnplAccounts should return list', async () => {
+    mockService.getBnplAccounts.mockResolvedValue([{ id: 'acc1' }] as any);
+    const res = await controller.getBnplAccounts('u1');
+    expect(mockService.getBnplAccounts).toHaveBeenCalledWith('u1');
+    expect(res).toEqual([{ id: 'acc1' }]);
+  });
+
+  it('getBnplHistory should return events', async () => {
+    mockService.getBnplEventHistory.mockResolvedValue([{ id: 'evt1' }] as any);
+    const res = await controller.getBnplHistory('u1');
+    expect(mockService.getBnplEventHistory).toHaveBeenCalledWith('u1');
+    expect(res).toEqual([{ id: 'evt1' }]);
+  });
+
+  it('testBnplWithdrawal forwards payload', async () => {
+    const payload = { memberId: 'm1', callAmount: 1000 } as any;
+    mockService.requestWithdrawal.mockResolvedValue({ success: true } as any);
+    const res = await controller.testBnplWithdrawal(payload);
+    expect(mockService.requestWithdrawal).toHaveBeenCalledWith(payload);
+    expect(res).toEqual({ success: true });
+  });
+
+  it('submitAgreement (Express style) forwards file', async () => {
+    const req: any = {
+      body: { memberId: 'm1' },
+      file: {
+        originalname: '../../../test/agreement.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('abc'),
+      },
+    };
+    mockService.submitAgreement.mockResolvedValue({ success: true } as any);
+    const res = await controller.submitAgreement(req);
+    expect(mockService.submitAgreement).toHaveBeenCalledWith({
+      memberId: 'm1',
+      agreementFile: {
+        filename: '../../../test/agreement.png',
+        mimetype: 'image/png',
+        value: Buffer.from('abc'),
+      },
+      custId: '',
+      agreementText: '',
+    });
+    expect(res).toEqual({ success: true });
+  });
 });
