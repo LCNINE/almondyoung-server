@@ -42,6 +42,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           },
         });
 
+        // ToDO roles medusa-admin 권한 있으면 USEr 테이블 생성
+
         return {
           success: true,
           authIdentity: createdAuthIdentity,
@@ -87,8 +89,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         ? 'user'
         : 'customer';
 
-      console.log('actorType::::::::', actorType);
-
       return {
         success: true,
         authIdentity: {
@@ -118,4 +118,12 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       };
     }
   }
+
+  // async validateCallback(
+  //   data: AuthenticationInput,
+  //   authIdentityProviderService: AuthIdentityProviderService,
+  // ): Promise<AuthenticationResponse> {
+  //   console.log('validateCallback::::::::', data);
+  //   return { success: true };
+  // }
 }
