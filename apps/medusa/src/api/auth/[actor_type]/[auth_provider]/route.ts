@@ -10,6 +10,7 @@ import {
 } from '@medusajs/framework/utils';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../utils/generate-jwt-token';
+import { setAuthCookie } from '../../../../utils/set-auth-cookie';
 
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
@@ -58,9 +59,11 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
         },
       );
 
+      // 쿠키 설정
+      setAuthCookie(res, token);
+
       return res.status(200).json({
         token,
-        authIdentity,
       });
     }
 

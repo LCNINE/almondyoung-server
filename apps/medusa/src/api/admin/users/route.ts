@@ -13,7 +13,7 @@ export async function POST(
 
   const authModule = req.scope.resolve(Modules.AUTH);
 
-  // 비밀번호 해싱 및 Auth Identity 생성 (register 메서드 사용)
+  // 비밀번호 해싱 및 Auth Identity 생성
   const { success, authIdentity, error } = await authModule.register(
     'emailpass',
     {
