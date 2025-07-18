@@ -12,6 +12,7 @@ import {
     pgEnum,
     primaryKey,
     unique,
+    decimal,
 } from 'drizzle-orm/pg-core';
 
 /*───────────────────────────
@@ -67,6 +68,48 @@ export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
 export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
+
+// 주문 관련 enum 추가
+export const orderStatusEnum = pgEnum('order_status', [
+    'pending',        // 주문 생성 (결제 대기)
+    'confirmed',      // 주문 확정 (결제 완료)
+    'processing',     // 처리 중 (일괄주문확정 완료)
+    'shipped',        // 출고 완료
+    'delivered',      // 배송 완료
+    'cancelled',      // 취소
+    'timeout'         // 타임아웃
+]);
+
+export const orderItemStatusEnum = pgEnum('order_item_status', [
+    'pending',            // 대기 중
+    'matched',            // 재고 매칭 완료
+    'stock_deducted',     // 재고 차감 완료
+    'stock_unavailable',  // 재고 부족
+    'cancelled'           // 취소
+]);
+
+export const salesChannelEnum = pgEnum('sales_channel', [
+    'medusa',         // 메두사 (자체 몰)
+    'naver',          // 네이버 스마트스토어
+    'coupang',        // 쿠팡
+    'gmarket',        // 지마켓
+    'auction',        // 옥션
+    'elevenstst',     // 11번가
+    'tmon',           // 티몬
+    'wemakeprice',    // 위메프
+    'lotte',          // 롯데온
+    'interpark',      // 인터파크
+    'selfmate_3pl'    // 3PL (셀메이트)
+]);
+
+export const eventTypeOrderEnum = pgEnum('event_type_order', [
+    'ORDER_CREATED',     // 주문 생성
+    'ORDER_CONFIRMED',   // 주문 확정
+    'ORDER_MODIFIED',    // 주문 수정
+    'ORDER_CANCELLED'    // 주문 취소
+]);
+
+export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'express']);
 
 /*───────────────────────────
  * MASTER DATA
@@ -186,7 +229,7 @@ export const stockEvents = pgTable('stock_events', {
 
     expiryDate: timestamp('expiry_date', { withTimezone: true }),
     manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
-    orderId: uuid('order_id'),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }), // orders 테이블 참조 추가
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
     reason: varchar('reason', { length: 255 }),
     eventTimestamp: timestamp('event_timestamp', { withTimezone: true }).notNull().defaultNow(),
@@ -230,22 +273,6 @@ export const stocks = pgTable('stocks', {
     packingUnit: varchar('packing_unit', { length: 64 }),
 });
 
-// outbound_task_items
-export const outboundTaskItems = pgTable('outbound_task_items', {
-    taskId: uuid('task_id')
-        .references(() => outboundTasks.id, { onDelete: 'cascade' })
-        .notNull(),
-    skuId: uuid('sku_id').references(() => skus.id).notNull(),
-
-    quantityPending: integer('quantity_pending').notNull().default(0),
-    quantityPicking: integer('quantity_picking').notNull().default(0),
-    quantityPicked: integer('quantity_picked').notNull().default(0),
-
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, t => ({
-    pk: primaryKey(t.taskId, t.skuId),
-}));
-
 /*───────────────────────────
  * PRODUCT / VARIANT / SKU MAPPING
  *──────────────────────────*/
@@ -269,17 +296,115 @@ export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
+    quantity: integer('quantity').notNull().default(1), // 구성 수량 (세트 상품용)
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, t => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
 }));
 
 /*───────────────────────────
+ * ORDER MANAGEMENT
+ *──────────────────────────*/
+// 주문 테이블 추가
+export const orders = pgTable('orders', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
+    salesChannel: salesChannelEnum('sales_channel').notNull(),
+    status: orderStatusEnum('status').notNull().default('pending'),
+
+    // 고객 정보
+    customerName: varchar('customer_name', { length: 255 }),
+    customerEmail: varchar('customer_email', { length: 255 }),
+    customerPhone: varchar('customer_phone', { length: 50 }),
+
+    // 배송 정보
+    shippingAddress: json('shipping_address').notNull(), // 배송지 전체 정보
+    shippingAddressHash: varchar('shipping_address_hash', { length: 64 }), // 합배송 처리용 해시
+
+    // 금액 정보
+    totalAmount: integer('total_amount'), // 총 주문 금액
+    shippingFee: integer('shipping_fee').default(0), // 배송비
+
+    // 합배송 정보
+    mergeGroupId: varchar('merge_group_id', { length: 64 }), // 합배송 그룹 ID
+    isMerged: boolean('is_merged').notNull().default(false), // 합배송 여부
+
+    // 타임스탬프
+    orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
+}));
+
+// 주문 상품 테이블 추가
+export const orderItems = pgTable('order_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orderId: uuid('order_id')
+        .references(() => orders.id, { onDelete: 'cascade' })
+        .notNull(),
+    variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+    productMatchingId: uuid('product_matching_id')
+        .references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
+
+    productName: varchar('product_name', { length: 255 }).notNull(),
+    quantity: integer('quantity').notNull(),
+    unitPrice: integer('unit_price'), // 단가
+    totalPrice: integer('total_price'), // 총 가격
+
+    status: orderItemStatusEnum('status').notNull().default('pending'),
+    suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
+    unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보
+
+    deductedAt: timestamp('deducted_at', { withTimezone: true }), // 재고 차감 시간
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// 주문 이벤트 로그 테이블 추가
+export const orderEvents = pgTable('order_events', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventId: varchar('event_id', { length: 255 }).notNull().unique(), // 멱등성 체크용
+    orderId: uuid('order_id')
+        .references(() => orders.id, { onDelete: 'cascade' })
+        .notNull(),
+    eventType: eventTypeOrderEnum('event_type').notNull(),
+    payload: json('payload').notNull(), // 이벤트 데이터
+    processedAt: timestamp('processed_at', { withTimezone: true }).defaultNow(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// 합배송 그룹 테이블 추가
+export const mergeGroups = pgTable('merge_groups', {
+    id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
+    customerEmail: varchar('customer_email', { length: 255 }).notNull(),
+    shippingAddressHash: varchar('shipping_address_hash', { length: 64 }).notNull(),
+    totalShippingFee: integer('total_shipping_fee').default(0),
+    orderCount: integer('order_count').default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+/*───────────────────────────
+ * stock_events.eventType: 'OUT' (주문 출고), 'IN' (입고), 'ADJUST' (조정) 등
+ * stock_events.reason: 'ORDER_FULFILLED', 'MANUAL_ADJUST' 등
+ * stock_events.orderId: 주문 연결
+ *──────────────────────────*/
+
+/*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
     reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id'),
+    orderId: uuid('order_id')
+        .references(() => orders.id, { onDelete: 'cascade' })
+        .notNull(),
     stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
     status: reservationStatusEnum('status').notNull().default('pending'),
@@ -293,13 +418,53 @@ export const stockReservations = pgTable('stock_reservations', {
  *──────────────────────────*/
 export const outboundTasks = pgTable('outbound_tasks', {
     id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id'),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
+    mergeGroupId: varchar('merge_group_id', { length: 64 })
+        .references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
     status: taskStatusEnum('status').notNull().default('created'),
+    priority: taskPriorityEnum('priority').notNull().default('normal'),
+
+    totalItems: integer('total_items').default(0), // 총 품목 수
+    totalQuantity: integer('total_quantity').default(0), // 총 수량
+
+    assignedTo: uuid('assigned_to'), // 작업자 ID
+    requiresGiftWrap: boolean('requires_gift_wrap').default(false), // 선물포장 필요
+    temperatureControlled: boolean('temperature_controlled').default(false), // 온도 제어 필요
+
     unavailableReason: unavailableReasonEnum('unavailable_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+// 바구니와 주문 연결 테이블 추가
+export const outboundTaskOrders = pgTable('outbound_task_orders', {
+    taskId: uuid('task_id')
+        .references(() => outboundTasks.id, { onDelete: 'cascade' })
+        .notNull(),
+    orderId: uuid('order_id')
+        .references(() => orders.id, { onDelete: 'cascade' })
+        .notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.taskId, t.orderId),
+}));
+
+// outbound_task_items 수정
+export const outboundTaskItems = pgTable('outbound_task_items', {
+    taskId: uuid('task_id')
+        .references(() => outboundTasks.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id').references(() => skus.id).notNull(),
+
+    quantityPending: integer('quantity_pending').notNull().default(0),
+    quantityPicking: integer('quantity_picking').notNull().default(0),
+    quantityPicked: integer('quantity_picked').notNull().default(0),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.taskId, t.skuId),
+}));
 
 export const outboundTaskLines = pgTable('outbound_task_lines', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -337,7 +502,7 @@ export const shipmentTracking = pgTable('shipment_tracking', {
  *──────────────────────────*/
 export const returns = pgTable('returns', {
     id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id'),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     status: returnStatusEnum('status').notNull().default('requested'),
     qcReason: varchar('qc_reason', { length: 255 }),
@@ -434,11 +599,16 @@ export const wmsTables = {
     locations,
     stockEvents,
     stocks,
-    outboundTaskItems,
     productMatchings,
     productVariantSkuLinks,
+    orders,
+    orderItems,
+    orderEvents,
+    mergeGroups,
     stockReservations,
     outboundTasks,
+    outboundTaskOrders,
+    outboundTaskItems,
     outboundTaskLines,
     shipments,
     shipmentTracking,
