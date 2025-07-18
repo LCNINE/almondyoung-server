@@ -1,15 +1,14 @@
-import { defineMiddlewares, authenticate } from '@medusajs/framework/http';
-import cookieParser from 'cookie-parser';
+import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { responseWrapper } from '../middlewares/response-wrapper';
+import { COOKIE_NAME } from '../utils/set-auth-cookie';
 import { adminMiddlewares } from './admin/middlewares';
 import { storeMiddlewares } from './store/middlewares';
-import { COOKIE_NAME } from '../utils/set-auth-cookie';
 
 export default defineMiddlewares({
   routes: [
     {
       matcher: '/*',
-      middlewares: [cookieParser(), responseWrapper],
+      middlewares: [responseWrapper],
     },
     {
       method: ['POST'],
