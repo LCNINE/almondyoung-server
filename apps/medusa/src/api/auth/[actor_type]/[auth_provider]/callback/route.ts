@@ -10,6 +10,7 @@ import {
 } from '@medusajs/framework/utils';
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../../utils/generate-jwt-token';
+import { setAuthCookie } from '../../../../../utils/set-auth-cookie';
 
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const { actor_type, auth_provider } = req.params;
@@ -48,13 +49,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
       },
     );
 
-    // 세션 쿠키 설정
-    res.cookie('connect.sid', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15분
-    });
+    // 쿠키 설정
+    setAuthCookie(res, token);
 
     // 테스트용도임
     return res.status(200).json({ token });

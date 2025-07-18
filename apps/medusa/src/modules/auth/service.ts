@@ -87,6 +87,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         ? 'user'
         : 'customer';
 
+      console.log('actorType::::::::', actorType);
+
       return {
         success: true,
         authIdentity: {
