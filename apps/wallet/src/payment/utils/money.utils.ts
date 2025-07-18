@@ -96,7 +96,7 @@ export function subtractDecimalStrings(
  * @param amount 금액 (number 또는 string)
  * @returns 포맷된 금액 문자열 (예: "1,000원")
  */
-export function formatKRW(amount: string | number): string {
+export function formatKRW(amount: number): string {
   const numAmount = parseDecimal(amount);
   return `${numAmount.toLocaleString('ko-KR')}원`;
 }

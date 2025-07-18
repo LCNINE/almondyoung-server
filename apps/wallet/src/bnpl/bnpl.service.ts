@@ -3,19 +3,21 @@ import { BnplAccountService } from './services/bnpl-account.service';
 import { HmsBnplService } from './services/hms-bnpl.service';
 import { BnplSettlementService } from './services/bnpl-settlement.service';
 import { BnplCreditService } from './services/bnpl-credit.service';
-import { BnplPaymentService } from './services/bnpl-payment.service';
-import { CreateBnplAccountDto } from './dto/create-bnpl-account.dto';
-import { DeactivateBnplAccountDto } from './dto/deactivate-bnpl-account.dto';
-import { BnplAccountResponse } from './dto/bnpl-account.dto';
-import { SubmitAgreementDto } from './dto/submit-agreement.dto';
-import {
-  PaymentRequestDto,
-  PaymentCaptureDto,
-} from './dto/payment-request.dto';
 import { sumDecimalStrings } from '../payment/utils/money.utils';
-
-/**import { sumDecimalStrings } from '../payment/utils/mㅠy.utils';
-import { Blob } from 'buffer'; // 
+import {
+  BnplAccount,
+  BnplAccountDto,
+  BnplTransactionDto,
+  CapturePaymentPayload,
+  CreateBnplAccountPayload,
+  CreateBnplAccountResponseDto,
+  PaymentEventDto,
+  RequestPaymentPayload,
+} from '../shared/zod';
+import { ulid } from 'ulid';
+import { BnplPaymentService } from './services/bnpl-payment.service';
+import { CreateMemberResponseDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
+/**
  * BNPL 서비스 - Orchestrator/Facade 패턴
  *
  * 주요 역할:
@@ -33,7 +35,7 @@ export class BnplService {
     private readonly creditService: BnplCreditService,
     private readonly settlementService: BnplSettlementService,
     private readonly hmsBnplService: HmsBnplService,
-    private readonly paymentService: BnplPaymentService,
+    private readonly bnplPaymentService: BnplPaymentService,
   ) {
     this.logger.log('🚀 BNPL 서비스 초기화 완료');
   }
@@ -47,7 +49,9 @@ export class BnplService {
    * 3. DB에 BNPL 계정 생성
    * 4. 초기 정산 배치 생성
    */
-  async createBnplAccount(dto: CreateBnplAccountDto) {
+  async createBnplAccount(
+    dto: CreateBnplAccountPayload,
+  ): Promise<CreateBnplAccountResponseDto> {
     this.logger.log(`BNPL 계좌 등록 시작. userId: ${dto.userId}`);
 
     try {
@@ -60,7 +64,8 @@ export class BnplService {
       }
 
       // 2. HMS 배치 CMS에 회원 등록
-      const hmsResult = await this.hmsBnplService.registerMember(dto);
+      const hmsResult: CreateMemberResponseDto =
+        await this.hmsBnplService.registerMember(dto);
       this.logger.log(`HMS 회원 등록 완료: ${hmsResult.member.memberId}`);
 
       // 3. DB에 BNPL 계정 생성
@@ -84,9 +89,15 @@ export class BnplService {
 
       return {
         success: true,
-        account: accountResult,
-        hmsResult,
         message: 'BNPL 계좌가 성공적으로 등록되었습니다.',
+        data: {
+          paymentMethod: accountResult.paymentMethod,
+          bnplAccount: {
+            ...accountResult.bnplAccount,
+            termsUrl: accountResult.bnplAccount.termsUrl || undefined,
+          },
+          hmsMember: hmsResult.member,
+        },
       };
     } catch (error) {
       this.logger.error(`BNPL 계좌 등록 실패: ${error.message}`);
@@ -107,9 +118,7 @@ export class BnplService {
    * 3. DB에서 BNPL 계정 비활성화
    * 4. 관련 정산 배치 처리
    */
-  async deactivateBnplAccount(
-    dto: DeactivateBnplAccountDto & { accountId: string },
-  ) {
+  async deactivateBnplAccount(dto: any) {
     this.logger.log(`BNPL 계좌 비활성화 시작. accountId: ${dto.accountId}`);
 
     try {
@@ -150,7 +159,7 @@ export class BnplService {
    */
   // bnpl.service.ts
 
-  async getBnplAccount(userId: string): Promise<BnplAccountResponse | null> {
+  async getBnplAccount(userId: string): Promise<BnplAccount | null> {
     const account = await this.accountService.getAccountByUserId(userId);
 
     if (!account) {
@@ -164,7 +173,10 @@ export class BnplService {
     );
 
     // ✅ 확장된 DTO의 모양에 정확히 맞춰서 객체를 만들어 반환
-    const responseDto: BnplAccountResponse = {
+    const responseDto: BnplAccountDto & {
+      availableCredit: number;
+      lastSettlementDate: Date | null;
+    } = {
       // 1. BnplAccountSchema에서 온 필드들
       id: account.id,
       userId: account.userId,
@@ -174,7 +186,7 @@ export class BnplService {
       currentBalance: account.currentBalance,
       status: account.status,
       billingCycleDay: account.billingCycleDay,
-      termsUrl: account.termsUrl,
+      termsUrl: account.termsUrl || '',
       version: account.version,
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,
@@ -222,33 +234,22 @@ export class BnplService {
 
         if (bnplAccount) {
           // payment 테이블에 기록
-          const paymentResult = await this.paymentService.requestPayment({
-            bnplAccountId: bnplAccount.id,
+          const paymentResult = await this.bnplPaymentService.requestPayment({
             invoiceId: withdrawalData.invoiceId,
+            paymentMethodId: bnplAccount.paymentMethodId,
             amount: result.payment.callAmount || withdrawalData.amount,
-            description: `BNPL 출금 - ${result.payment.transactionId}`,
-            metadata: { withdrawalData, hmsResponse: result },
+            actor: 'USER',
           });
 
           this.logger.log(
-            `BNPL 출금 요청 payment_event 기록 완료: ${paymentResult.paymentId}`,
-          );
-
-          // 바로 캡처 처리
-          await this.paymentService.capturePayment({
-            paymentId: paymentResult.paymentId,
-            amount: result.payment.callAmount || withdrawalData.amount,
-          });
-
-          this.logger.log(
-            `BNPL 출금 캡처 처리 완료: ${paymentResult.paymentId}`,
+            `BNPL 출금 요청 payment_event 기록 완료: ${paymentResult.id}`,
           );
 
           // 결과에 payment 정보 추가
           return {
             ...result,
-            paymentId: paymentResult.paymentId,
-            message: 'BNPL 출금 요청 및 이벤트 기록이 완료되었습니다.',
+            paymentId: paymentResult.id,
+            message: 'BNPL 출금 요청 및 이벤트 기록이 완료되었  습니다.',
           };
         }
       }
@@ -286,7 +287,7 @@ export class BnplService {
    * 2. 성공 시 응답 반환
    */
   async submitAgreement(
-    data: SubmitAgreementDto & {
+    data: any & {
       agreementFile: {
         filename: string;
         mimetype: string;
@@ -394,21 +395,21 @@ export class BnplService {
    * 1. payment_event 테이블에 REQUESTED 이벤트 생성
    * 2. bnpl_transaction 테이블에 거래 기록
    */
-  async requestPayment(dto: PaymentRequestDto) {
+  async requestPayment(dto: RequestPaymentPayload) {
     this.logger.log(
-      `BNPL 결제 요청 시작: ${dto.bnplAccountId}, 금액: ${dto.amount}원`,
+      `BNPL 결제 요청 시작: ${dto.invoiceId}, 금액: ${dto.amount}원`,
     );
 
     try {
       // 결제 요청 처리 및 이벤트 생성
-      const result = await this.paymentService.requestPayment(dto);
+      const result = await this.bnplPaymentService.requestPayment(dto);
 
-      this.logger.log(`BNPL 결제 요청 완료: paymentId=${result.paymentId}`);
+      this.logger.log(`BNPL 결제 요청 완료: paymentId=${result.id}`);
 
       return {
         success: true,
-        paymentId: result.paymentId,
-        transactionId: result.transactionId,
+        paymentId: result.id,
+        transactionId: result.pgTransactionId,
         message: 'BNPL 결제가 요청되었습니다.',
       };
     } catch (error) {
@@ -435,13 +436,17 @@ export class BnplService {
 
     try {
       // 결제 실패 처리 및 이벤트 생성
-      const result = await this.paymentService.failPayment(paymentId, reason);
+      const bnplPayment = await this.bnplPaymentService.failPayment({
+        id: paymentId,
+        errorMessage: reason,
+        actor: 'USER',
+      });
 
       this.logger.log(`BNPL 결제 실패 처리 완료: paymentId=${paymentId}`);
 
       return {
         success: true,
-        eventId: result.eventId,
+        eventId: bnplPayment.id,
         message: 'BNPL 결제 실패가 처리되었습니다.',
       };
     } catch (error) {
@@ -458,18 +463,18 @@ export class BnplService {
    * 2. payment 테이블의 상태 업데이트
    * 3. bnpl_account 테이블의 currentBalance 업데이트
    */
-  async capturePayment(dto: PaymentCaptureDto) {
-    this.logger.log(`BNPL 결제 캡처 시작: ${dto.paymentId}`);
+  async capturePayment(dto: CapturePaymentPayload) {
+    this.logger.log(`BNPL 결제 캡처 시작: ${dto.id}`);
 
     try {
       // 결제 캡처 처리 및 이벤트 생성
-      const result = await this.paymentService.capturePayment(dto);
+      const result = await this.bnplPaymentService.capturePayment(dto);
 
-      this.logger.log(`BNPL 결제 캡처 완료: paymentId=${dto.paymentId}`);
+      this.logger.log(`BNPL 결제 캡처 완료: paymentId=${dto.id}`);
 
       return {
         success: true,
-        eventId: result.eventId,
+        eventId: result.id,
         message: 'BNPL 결제가 성공적으로 처리되었습니다.',
       };
     } catch (error) {

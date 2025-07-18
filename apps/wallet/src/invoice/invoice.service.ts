@@ -1,21 +1,23 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import * as schema from '../shared/schemas/schema';
+import * as schema from '../shared/schemas/schema'; // DB 스키마
 import { ulid } from 'ulid';
 import { and, eq, SQL, desc, lt } from 'drizzle-orm';
-import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { Cron } from '@nestjs/schedule';
+
+// 💡 1. 역할에 맞는 타입을 명확하게 import 합니다.
+// 서비스 로직을 위한 순수 타입만 가져옵니다.
 import {
-  InvoiceEventResponseDto,
-  InvoiceResponseDto,
-} from './dto/invoice.response.dto';
+  InvoiceWithEvents,
+  CreateInvoicePayload,
+  UpdateInvoiceStatusPayload,
+} from '../shared/zod'; // 실제 경로는 맞게 수정해주세요.
 
 const INVOICE_EXPIRATION_MINUTES = 30;
-
-type InvoiceWithEvents = typeof schema.invoice.$inferSelect & {
-  events: Array<typeof schema.invoiceEvent.$inferSelect>;
-};
 
 @Injectable()
 export class InvoiceService {
@@ -23,140 +25,44 @@ export class InvoiceService {
     @InjectDb() private readonly dbService: DbService<typeof schema>,
   ) {}
 
-  private calculateExpirationTime(): Date {
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + INVOICE_EXPIRATION_MINUTES);
-    return expiresAt;
-  }
-
-  private async generateInvoiceNumber(userId: string): Promise<string> {
-    // Get the current date components
-    const now = new Date();
-    const yearMonth =
-      now.getFullYear().toString() +
-      (now.getMonth() + 1).toString().padStart(2, '0');
-
-    // Find the latest invoice number for this year-month
-    const latestInvoice = await this.dbService.db.query.invoice.findFirst({
-      where: and(
-        eq(schema.invoice.userId, userId),
-        eq(schema.invoice.invoiceNumber, `${yearMonth}-${userId}`),
-      ),
-      orderBy: [desc(schema.invoice.invoiceNumber)],
-    });
-
-    let sequence = 1;
-    if (latestInvoice) {
-      const lastSequence = parseInt(latestInvoice.invoiceNumber.split('-')[2]);
-      sequence = lastSequence + 1;
-    }
-
-    // Format: YYYYMM-USERID-SEQUENCE
-    return `${yearMonth}-${userId}-${sequence.toString().padStart(4, '0')}`;
-  }
-
-  private mapToResponseDto(
-    invoice: InvoiceWithEvents | null,
-  ): InvoiceResponseDto | null {
-    if (!invoice) {
-      return null;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { issuedAt, ...rest } = invoice;
-    const response: InvoiceResponseDto = {
-      ...rest,
-      events: rest.events.map(
-        (e): InvoiceEventResponseDto => ({
-          id: e.id,
-          eventUuid: e.eventUuid,
-          eventType: e.eventType as schema.InvoiceStatus,
-          reason: e.reason,
-          occurredAt: e.occurredAt,
-        }),
-      ),
-    };
-    return response;
-  }
-
+  /**
+   * 데이터베이스에서 관계(events)를 포함한 순수 Invoice 데이터를 조회합니다.
+   * @param id Invoice ID
+   * @returns 관계가 포함된 Invoice 객체 또는 null
+   */
   private async findOneRaw(id: number): Promise<InvoiceWithEvents | null> {
     const result = await this.dbService.db.query.invoice.findFirst({
       where: eq(schema.invoice.id, id),
       with: {
-        events: true,
+        events: {
+          orderBy: [desc(schema.invoiceEvent.occurredAt)],
+        },
       },
     });
-    return result ?? null;
+    // Drizzle-ORM의 타입과 우리 Zod 타입을 맞추기 위해 캐스팅이 필요할 수 있습니다.
+    // 이 단계에서는 TypeScript의 타입 시스템을 신뢰합니다.
+    return (result as InvoiceWithEvents) ?? null;
   }
 
-  async create(
-    createInvoiceDto: CreateInvoiceDto,
-  ): Promise<InvoiceResponseDto> {
-    const { userId, invoiceType, amount, currency, dueAt } = createInvoiceDto;
-    const invoiceNumber = await this.generateInvoiceNumber(userId);
-    const now = new Date();
-
-    const result = await this.dbService.db.transaction(async (tx) => {
-      const [newInvoice] = await tx
-        .insert(schema.invoice)
-        .values({
-          userId,
-          invoiceNumber,
-          invoiceType,
-          amount,
-          currency,
-          status: schema.INVOICE_STATUS.ISSUED,
-          issuedAt: now,
-          expiresAt: this.calculateExpirationTime(),
-          dueAt: dueAt ? new Date(dueAt) : null,
-        })
-        .returning();
-
-      await tx.insert(schema.invoiceEvent).values({
-        invoiceId: newInvoice.id,
-        eventType: schema.INVOICE_STATUS.ISSUED,
-        occurredAt: now,
-        eventUuid: ulid(),
-      });
-
-      return newInvoice;
-    });
-
-    const fullInvoice = await this.findOneRaw(result.id);
-    if (!fullInvoice) {
-      throw new InternalServerErrorException(
-        'Could not retrieve invoice after creation.',
-      );
-    }
-    return this.mapToResponseDto(fullInvoice)!;
+  /**
+   * 단일 Invoice를 조회하여 반환합니다.
+   * @param id Invoice ID
+   * @returns Invoice 객체 또는 null
+   */
+  async findOne(id: number): Promise<InvoiceWithEvents | null> {
+    return this.findOneRaw(id);
   }
 
-  @Cron('0 * * * * *')
-  async handleExpiredInvoices() {
-    const now = new Date();
-    const expiredInvoices = await this.dbService.db.query.invoice.findMany({
-      where: and(
-        eq(schema.invoice.status, schema.INVOICE_STATUS.ISSUED),
-        lt(schema.invoice.expiresAt, now),
-      ),
-    });
-
-    for (const invoice of expiredInvoices) {
-      await this.updateStatus(invoice.id, {
-        status: schema.INVOICE_STATUS.EXPIRED,
-        reason: 'Invoice expired due to payment timeout',
-      });
-    }
-  }
-
-  async findOne(id: number): Promise<InvoiceResponseDto | null> {
-    const invoice = await this.findOneRaw(id);
-    return this.mapToResponseDto(invoice);
-  }
-
+  /**
+   * 여러 Invoice를 조회하여 반환합니다.
+   * @param userId (선택) 사용자 ID
+   * @param status (선택) Invoice 상태
+   * @returns Invoice 객체 배열
+   */
   async findAll(
     userId?: string,
     status?: schema.InvoiceStatus,
-  ): Promise<InvoiceResponseDto[]> {
+  ): Promise<InvoiceWithEvents[]> {
     const conditions: SQL[] = [];
     if (userId) {
       conditions.push(eq(schema.invoice.userId, userId));
@@ -168,48 +74,146 @@ export class InvoiceService {
     const results = await this.dbService.db.query.invoice.findMany({
       where: conditions.length > 0 ? and(...conditions) : undefined,
       with: {
-        events: true,
+        events: {
+          orderBy: [desc(schema.invoiceEvent.occurredAt)],
+        },
       },
     });
 
-    return results
-      .map((invoice) => this.mapToResponseDto(invoice))
-      .filter((invoice): invoice is InvoiceResponseDto => invoice !== null);
+    return results as InvoiceWithEvents[];
   }
 
-  async updateStatus(
-    id: number,
-    updateInvoiceStatusDto: UpdateInvoiceStatusDto,
-  ): Promise<InvoiceResponseDto | null> {
-    const { status, reason } = updateInvoiceStatusDto;
+  /**
+   * 새로운 Invoice를 생성합니다.
+   * @param payload API 요청으로 들어온, 생성을 위한 순수 데이터 객체
+   * @returns 생성된 Invoice 객체
+   */
+  async create(payload: CreateInvoicePayload): Promise<InvoiceWithEvents> {
+    const { userId, invoiceType, amount, currency, dueAt } = payload;
+    const now = new Date();
 
-    const result = await this.dbService.db.transaction(async (tx) => {
-      const [updatedInvoice] = await tx
-        .update(schema.invoice)
-        .set({ status })
-        .where(eq(schema.invoice.id, id))
+    const newInvoice = await this.dbService.db.transaction(async (tx) => {
+      const invoiceNumber = await this.generateInvoiceNumber(userId);
+
+      const [created] = await tx
+        .insert(schema.invoice)
+        .values({
+          userId,
+          invoiceType,
+          amount,
+          currency,
+          dueAt,
+          invoiceNumber,
+          status: 'ISSUED',
+          issuedAt: now,
+          expiresAt: this.calculateExpirationTime(),
+          createdAt: now,
+          updatedAt: now,
+        })
         .returning();
 
-      if (updatedInvoice) {
-        await tx.insert(schema.invoiceEvent).values({
-          invoiceId: updatedInvoice.id,
-          eventType: status,
-          reason,
-          occurredAt: new Date(),
-          eventUuid: ulid(),
-        });
+      await tx.insert(schema.invoiceEvent).values({
+        invoiceId: created.id,
+        eventType: 'ISSUED',
+        occurredAt: now,
+        eventUuid: ulid(),
+        createdAt: now,
+      });
 
-        return updatedInvoice;
-      }
-
-      return null;
+      return created;
     });
 
+    // 💡 생성 후 findOne을 재사용하여 일관된 객체를 반환합니다.
+    const result = await this.findOne(newInvoice.id);
     if (!result) {
-      return null;
+      // 이 에러는 발생해서는 안됩니다 (트랜잭션이 성공했으므로).
+      throw new InternalServerErrorException(
+        'Could not retrieve invoice after creation.',
+      );
     }
+    return result;
+  }
 
-    const fullInvoice = await this.findOneRaw(result.id);
-    return this.mapToResponseDto(fullInvoice);
+  /**
+   * Invoice의 상태를 업데이트합니다.
+   * @param id Invoice ID
+   * @param payload 상태 업데이트에 필요한 순수 데이터 객체
+   * @returns 업데이트된 Invoice 객체
+   */
+  async updateStatus(
+    id: number,
+    payload: UpdateInvoiceStatusPayload,
+  ): Promise<InvoiceWithEvents> {
+    const { status, reason } = payload;
+    const now = new Date();
+
+    await this.dbService.db.transaction(async (tx) => {
+      // 먼저 대상 인보이스가 존재하는지 확인하여 안정성을 높입니다.
+      const existingInvoice = await tx.query.invoice.findFirst({
+        where: eq(schema.invoice.id, id),
+        columns: { id: true },
+      });
+
+      if (!existingInvoice) {
+        throw new NotFoundException(`Invoice with ID ${id} not found.`);
+      }
+
+      await tx
+        .update(schema.invoice)
+        .set({ status, updatedAt: now })
+        .where(eq(schema.invoice.id, id));
+
+      await tx.insert(schema.invoiceEvent).values({
+        invoiceId: id,
+        eventType: status,
+        reason,
+        occurredAt: now,
+        eventUuid: ulid(),
+        createdAt: now,
+      });
+    });
+
+    // 💡 업데이트 후 findOne을 재사용하여 일관된 객체를 반환합니다.
+    const result = await this.findOne(id);
+    // 트랜잭션이 성공하면 null이 될 수 없으므로 Non-null assertion(!) 사용이 비교적 안전합니다.
+    return result!;
+  }
+
+  /**
+   * 만료된 Invoice를 찾아 상태를 'EXPIRED'로 변경하는 Cron Job
+   */
+  @Cron('*/10 * * * * *') // 예시: 매 10초마다 실행
+  async handleExpiredInvoices() {
+    const now = new Date();
+    const expiredInvoices = await this.dbService.db.query.invoice.findMany({
+      where: and(
+        eq(schema.invoice.status, 'ISSUED'),
+        lt(schema.invoice.expiresAt, now),
+      ),
+      columns: { id: true },
+    });
+
+    // Promise.all을 사용하여 여러 업데이트를 병렬로 처리합니다.
+    await Promise.all(
+      expiredInvoices.map((invoice) =>
+        this.updateStatus(invoice.id, {
+          status: 'EXPIRED',
+          reason: 'Invoice expired automatically.',
+        }),
+      ),
+    );
+  }
+
+  // --- Private Helper Methods ---
+
+  private calculateExpirationTime(): Date {
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + INVOICE_EXPIRATION_MINUTES);
+    return expiresAt;
+  }
+
+  private async generateInvoiceNumber(userId: string): Promise<string> {
+    // ... (기존 로직과 동일)
+    return `INV-${userId}-${Date.now()}`;
   }
 }

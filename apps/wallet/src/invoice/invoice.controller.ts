@@ -9,8 +9,10 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { InvoiceService } from './invoice.service';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
+import {
+  CreateInvoiceDto,
+  UpdateInvoiceStatusDto,
+} from '../shared/zod/wallet.dto';
 
 @Controller('invoices')
 export class InvoiceController {

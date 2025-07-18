@@ -7,9 +7,12 @@ import {
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import { eq, and } from 'drizzle-orm';
-import { CreateBnplAccountDto } from '../dto/create-bnpl-account.dto';
-import { DeactivateBnplAccountDto } from '../dto/deactivate-bnpl-account.dto';
+import {
+  CreateBnplAccountPayload,
+  UpdateBnplAccountStatusPayload,
+} from '../../shared/zod';
 import * as schema from '../../shared/schemas/schema';
+import { ulid } from 'ulid';
 /**
  * BNPL 계정 관리 서비스
  *
@@ -30,31 +33,30 @@ export class BnplAccountService {
   /**
    * BNPL 계정 생성
    */
-  async createAccount(dto: CreateBnplAccountDto, hmsResult: any) {
+  async createAccount(dto: CreateBnplAccountPayload, hmsResult: any) {
     this.logger.log(`[DB] BNPL 계정 생성 시작: ${dto.userId}`);
 
     return await this.dbService.db.transaction(async (tx) => {
-      // 1. 결제수단 생성
-      const [paymentMethod] = await tx
-        .insert(schema.paymentMethod)
-        .values({
-          userId: dto.userId,
-          methodType: 'BNPL',
-          methodName: dto.methodName,
-          isDefault: dto.isDefault || false,
-          institutionCode: dto.institutionCode,
-          status: 'ACTIVE',
-        })
-        .returning();
+      // 1. 기존 PaymentMethod 유효성 검사
+      const paymentMethod = await tx.query.paymentMethod.findFirst({
+        where: and(
+          eq(schema.paymentMethod.id, dto.paymentMethodId),
+          eq(schema.paymentMethod.userId, dto.userId),
+          eq(schema.paymentMethod.methodType, 'BNPL'),
+          eq(schema.paymentMethod.status, 'ACTIVE'),
+        ),
+      });
 
-      this.logger.log(`[DB] 결제수단 생성 완료: ${paymentMethod.id}`);
+      if (!paymentMethod) {
+        throw new BadRequestException('유효하지 않은 paymentMethodId');
+      }
+
+      this.logger.log(`[DB] 결제수단 확인 완료: ${paymentMethod.id}`);
 
       // 2. BNPL 계정 생성
-      // 실제 데이터베이스 구조에 맞게 필드 조정
-      // payment_method_id 컬럼이 없는 경우 해당 필드 제외
       const insertValues: any = {
         userId: dto.userId,
-        // paymentMethodId 필드가 데이터베이스에 없으면 제외
+        paymentMethodId: paymentMethod.id,
         creditLimit: dto.creditLimit || 0,
         approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
         currentBalance: 0,
@@ -63,15 +65,6 @@ export class BnplAccountService {
         termsUrl: dto.termsUrl || null,
         version: 1,
       };
-
-      // 데이터베이스에 payment_method_id 컬럼이 있으면 추가
-      try {
-        insertValues.paymentMethodId = paymentMethod.id;
-      } catch (error) {
-        this.logger.warn(
-          'payment_method_id 컬럼이 없습니다. 해당 필드를 제외합니다.',
-        );
-      }
 
       const [bnplAccount] = await tx
         .insert(schema.bnplAccount)
@@ -104,7 +97,7 @@ export class BnplAccountService {
    * BNPL 계정 비활성화
    */
   async deactivateAccount(
-    dto: DeactivateBnplAccountDto & { accountId: string },
+    dto: UpdateBnplAccountStatusPayload & { accountId: string },
   ) {
     this.logger.log(`[DB] BNPL 계정 비활성화 시작: ${dto.accountId}`);
 
@@ -160,10 +153,11 @@ export class BnplAccountService {
       const [deactivationEvent] = await tx
         .insert(schema.bnplActivationEvent)
         .values({
+          id: ulid(),
           paymentMethodId: paymentMethod.id,
           bnplAccountId: bnplAccount.id,
           eventType: 'DEACTIVATED',
-          actor: dto.actor,
+          actor: 'USER',
         })
         .returning();
 

@@ -18,8 +18,12 @@ import {
   unique,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
+
 import { ulid } from 'ulid';
+import { PaymentAuthorizedEvent } from '../../payment/events/payment.events';
+import { getTsid } from 'tsid-ts';
+
+export const newMemberId = (): string => getTsid().toString();
 
 // ───────────────────────────────────────────
 // Constants and Types
@@ -46,9 +50,9 @@ export type InvoiceStatus = keyof typeof INVOICE_STATUS;
 export const paymentMethod = pgTable(
   'payment_method',
   {
-    id: varchar('id', { length: 21 })
+    id: varchar('id', { length: 26 })
       .primaryKey()
-      .$defaultFn(() => nanoid()),
+      .$defaultFn(() => ulid()),
     userId: varchar('user_id', { length: 64 }).notNull(),
     methodType: text('method_type')
       .$type<'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'REWARD_POINT'>()
@@ -56,7 +60,10 @@ export const paymentMethod = pgTable(
     methodName: varchar('method_name', { length: 64 }).notNull(),
     isDefault: boolean('is_default').notNull().default(false),
     institutionCode: varchar('institution_code', { length: 32 }).notNull(),
-    status: text('status').$type<'ACTIVE' | 'INACTIVE' | 'DELETED'>().notNull(),
+    status: text('status')
+      .$type<'PENDING' | 'ACTIVE' | 'FAILED' | 'INACTIVE' | 'DELETED'>()
+      .notNull()
+      .default('PENDING'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -76,7 +83,9 @@ export const paymentMethod = pgTable(
 export const cardMethod = pgTable(
   'card_method',
   {
-    id: varchar('id', { length: 26 }).primaryKey(),
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => ulid()),
     methodType: text('method_type').notNull().default('CARD'),
     pgToken: varchar('pg_token', { length: 128 }).notNull(),
     billingKey: varchar('billing_key', { length: 128 }).notNull(),
@@ -109,7 +118,7 @@ export const bnplAccount = pgTable(
   {
     id: varchar('id', { length: 21 })
       .primaryKey()
-      .$defaultFn(() => nanoid()),
+      .$defaultFn(() => newMemberId()),
     userId: varchar('user_id', { length: 64 }).notNull(),
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
@@ -145,9 +154,9 @@ export const bnplAccount = pgTable(
 export const bnplActivationEvent = pgTable(
   'bnpl_activation_event',
   {
-    id: varchar('id', { length: 21 })
+    id: varchar('id', { length: 26 })
       .primaryKey()
-      .$defaultFn(() => nanoid()),
+      .$defaultFn(() => ulid()),
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
@@ -157,7 +166,9 @@ export const bnplActivationEvent = pgTable(
     eventType: text('event_type')
       .$type<'ACTIVATED' | 'DEACTIVATED'>()
       .notNull(),
-    actor: text('actor').$type<'USER' | 'ADMIN' | 'SYSTEM'>().notNull(),
+    actor: text('actor')
+      .$type<'USER' | 'ADMIN' | 'SYSTEM' | 'SCHEDULER'>()
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -171,7 +182,7 @@ export const bnplActivationEvent = pgTable(
 export const bnplTransaction = pgTable('bnpl_transaction', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => nanoid()),
+    .$defaultFn(() => ulid()),
   bnplAccountId: varchar('bnpl_account_id', { length: 26 })
     .notNull()
     .references(() => bnplAccount.id),
@@ -183,7 +194,7 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
     .$type<'AUTHORIZED' | 'CAPTURED' | 'VOIDED'>()
     .notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 })
-    .$type<string>()
+    .$type<number>()
     .notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -198,18 +209,18 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
 export const settlementBatch = pgTable('settlement_batch', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => nanoid()),
+    .$defaultFn(() => ulid()),
   bnplAccountId: varchar('bnpl_account_id', { length: 26 })
     .notNull()
     .references(() => bnplAccount.id),
   batchNumber: varchar('batch_number', { length: 50 }).notNull(),
   totalAmount: numeric('total_amount', { precision: 19, scale: 4 })
-    .$type<string>()
+    .$type<number>()
     .notNull()
-    .default('0'),
+    .default(0),
   dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
   status: text('status')
-    .$type<'PENDING' | 'PROCESSING' | 'SETTLED' | 'FAILED'>()
+    .$type<'PENDING' | 'PROCESSING' | 'SETTLED' | 'FAILED' | 'CANCELLED'>()
     .notNull()
     .default('PENDING'),
   batchPeriodStart: timestamp('batch_period_start', {
@@ -230,7 +241,7 @@ export const settlementBatch = pgTable('settlement_batch', {
 export const settlementBatchItem = pgTable('settlement_batch_item', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => nanoid()),
+    .$defaultFn(() => ulid()),
   batchId: varchar('batch_id', { length: 26 })
     .notNull()
     .references(() => settlementBatch.id),
@@ -238,7 +249,7 @@ export const settlementBatchItem = pgTable('settlement_batch_item', {
     .notNull()
     .references(() => bnplTransaction.id),
   amount: numeric('amount', { precision: 19, scale: 4 })
-    .$type<string>()
+    .$type<number>()
     .notNull(),
   transactionDate: timestamp('transaction_date', {
     withTimezone: true,
@@ -261,20 +272,21 @@ export const settlementProcessEvent = pgTable('settlement_process_event', {
     .$type<
       | 'BATCH_STARTED'
       | 'ITEM_PROCESSING'
-      | 'ITEM_SUCCESS'
+      | 'ITEM_AUTHORIZED'
+      | 'ITEM_CAPTURED'
       | 'ITEM_FAILED'
       | 'BATCH_COMPLETED'
       | 'BATCH_FAILED'
     >()
     .notNull(),
   status: varchar('status', { length: 50 })
-    .$type<'PROCESSING' | 'SUCCESS' | 'FAILED'>()
+    .$type<'PROCESSING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED'>()
     .notNull(),
   paymentEventId: varchar('payment_event_id', { length: 26 }),
   errorMessage: text('error_message'),
   metadata: text('metadata'),
   actor: varchar('actor', { length: 255 })
-    .$type<'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
+    .$type<'SCHEDULER' | 'ADMIN' | 'SYSTEM' | 'USER'>()
     .notNull()
     .default('SCHEDULER'),
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -292,16 +304,22 @@ export const invoice = pgTable('invoice', {
   userId: varchar('user_id', { length: 64 }).notNull(),
   invoiceNumber: varchar('invoice_number', { length: 64 }).notNull(),
   invoiceType: varchar('invoice_type', { length: 32 }).notNull(),
-  amount: decimal('amount', { precision: 18, scale: 2 }).notNull(),
-  refundedAmount: decimal('refunded_amount', { precision: 18, scale: 2 })
+  amount: numeric('amount', { precision: 19, scale: 4 })
+    .$type<number>()
+    .notNull(),
+  refundedAmount: numeric('refunded_amount', { precision: 19, scale: 4 })
+    .$type<number>()
     .notNull()
-    .default('0'),
+    .default(0),
   currency: varchar('currency', { length: 3 }).notNull(),
   status: varchar('status', { length: 24 }).notNull().$type<InvoiceStatus>(),
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   dueAt: timestamp('due_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
@@ -334,20 +352,24 @@ export const paymentEvents = pgTable('payment_events', {
   paymentMethodId: varchar('payment_method_id', { length: 26 })
     .notNull()
     .references(() => paymentMethod.id),
-  amount: decimal('amount', { precision: 19, scale: 4 })
-    .$type<string>()
+  amount: numeric('amount', { precision: 19, scale: 4 })
+    .$type<number>()
     .notNull(),
   status: varchar('status', { length: 255 })
-    .$type<'REQUESTED' | 'SUCCESS' | 'FAILED' | 'DUPLICATE_ATTEMPT'>()
+    .$type<
+      'REQUESTED' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'DUPLICATE_ATTEMPT'
+    >()
     .notNull(),
   pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
   pgResponse: text('pg_response'),
   actor: varchar('actor', { length: 255 })
-    .$type<'USER' | 'SCHEDULER' | 'ADMIN'>()
+    .$type<'USER' | 'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
     .notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  errorMessage: varchar('error_message', { length: 255 }),
 });
 
 // Refund events
@@ -356,11 +378,11 @@ export const refundEvents = pgTable('refund_events', {
   paymentEventId: varchar('payment_event_id', { length: 26 })
     .notNull()
     .references(() => paymentEvents.id),
-  amount: decimal('amount', { precision: 19, scale: 4 })
-    .$type<string>()
+  amount: numeric('amount', { precision: 19, scale: 4 })
+    .$type<number>()
     .notNull(),
   status: varchar('status', { length: 255 })
-    .$type<'REQUESTED' | 'SUCCESS' | 'FAILED'>()
+    .$type<'REQUESTED' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED'>()
     .notNull(),
   reason: text('reason'),
   createdAt: timestamp('created_at', { withTimezone: true })

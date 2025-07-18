@@ -59,7 +59,7 @@ export class ImprovedSettlementService {
           id: batchId,
           bnplAccountId,
           batchNumber: month,
-          totalAmount: '0',
+          totalAmount: 0,
           dueDate,
           status: 'PENDING',
           batchPeriodStart: startDate,
@@ -91,7 +91,7 @@ export class ImprovedSettlementService {
       // 5. 정산 배치 총액 업데이트
       await this.dbService.db
         .update(schema.settlementBatch)
-        .set({ totalAmount: totalAmount.toString() })
+        .set({ totalAmount: totalAmount })
         .where(eq(schema.settlementBatch.id, batchId));
 
       // 6. 배치 생성 완료 이벤트
@@ -279,16 +279,8 @@ export class ImprovedSettlementService {
       }
 
       // 3. 결제 캡처 처리
-      const result = await this.paymentService.successPayment({
-        invoiceId: Number(requestedEvent.invoiceId),
-        paymentMethodId: String(requestedEvent.paymentMethodId),
-        amount: requestedEvent.amount,
-        pgTransactionId: `settlement_${batchId}_${Date.now()}`,
-        pgResponse: JSON.stringify({
-          status: 'success',
-          batchId,
-          timestamp: new Date(),
-        }),
+      const result = await this.paymentService.capturePayment({
+        id: requestedEvent.id,
         actor: 'SCHEDULER',
       });
 

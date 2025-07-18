@@ -10,6 +10,8 @@ import { ConfigModule } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { APP_PIPE } from '@nestjs/core';
 import * as schema from './shared/schemas/schema';
+import { PaymentModule } from './payment/payment.module';
+import { PaymentMethodModule } from './payment-method/payment-method.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -28,6 +30,8 @@ import * as schema from './shared/schemas/schema';
     }),
     InvoiceModule,
     // PaymentModule,
+    PaymentModule,
+    PaymentMethodModule,
     BnplModule,
   ],
   controllers: [],

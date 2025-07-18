@@ -14,12 +14,13 @@ import {
 } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { BnplService } from './bnpl.service';
-import {
-  CreateBnplAccountDto,
-  BnplAccountResponse,
-} from './dto/bnpl-account.dto';
-import { DeactivateBnplAccountDto } from './dto/deactivate-bnpl-account.dto';
+
 import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  BnplAccountDto,
+  CreateBnplAccountDto,
+  UpdateBnplAccountStatusDto,
+} from '../shared/zod';
 
 @Controller('bnpl')
 export class BnplController {
@@ -41,7 +42,7 @@ export class BnplController {
   @Get('accounts/:userId')
   async getBnplAccount(
     @Param('userId', ParseIntPipe) userId: string,
-  ): Promise<BnplAccountResponse | null> {
+  ): Promise<BnplAccountDto | null> {
     return this.bnplService.getBnplAccount(userId);
   }
 
@@ -62,7 +63,7 @@ export class BnplController {
   @Delete('accounts/:accountId')
   async deactivateBnplAccount(
     @Param('accountId') accountId: string,
-    @Body() dto: DeactivateBnplAccountDto,
+    @Body() dto: UpdateBnplAccountStatusDto,
   ) {
     return this.bnplService.deactivateBnplAccount({
       ...dto,

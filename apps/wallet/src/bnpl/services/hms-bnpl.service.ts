@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MockHmsAPI } from 'hms-api-wrapper';
-import { CreateBnplAccountDto } from '../dto/create-bnpl-account.dto';
+import { CreateBnplAccountPayload } from '../../shared/zod';
 
 /**
  * HMS 배치 CMS 연동 서비스
@@ -27,7 +27,7 @@ export class HmsBnplService {
   /**
    * HMS 배치 CMS 회원 등록
    */
-  async registerMember(dto: CreateBnplAccountDto) {
+  async registerMember(dto: CreateBnplAccountPayload) {
     this.logger.log(`[HMS] 배치 CMS 회원 등록: ${dto.userId}`);
 
     const payload = this.toHmsMemberDto(dto);
@@ -136,7 +136,7 @@ export class HmsBnplService {
   /**
    * DTO를 HMS CMS 회원 등록 요청으로 변환
    */
-  private toHmsMemberDto(dto: CreateBnplAccountDto) {
+  private toHmsMemberDto(dto: any) {
     const timestamp = Date.now();
     return {
       memberId: dto.userId, // 타임스탬프 추가하여 고유한 ID 생성

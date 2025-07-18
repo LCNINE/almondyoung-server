@@ -5,11 +5,12 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "transformIgnorePatterns": ["node_modules/(?!(nanoid)/)"],
+  "transformIgnorePatterns": ["<rootDir>/node_modules/(?!(nanoid)/)"],
   "collectCoverageFrom": ["**/*.(t|j)s"],
   "coverageDirectory": "./coverage",
   "testEnvironment": "node",
   "moduleNameMapper": {
+    "^nanoid$": "<rootDir>/node_modules/nanoid/index.cjs",
     "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
     "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
     "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"

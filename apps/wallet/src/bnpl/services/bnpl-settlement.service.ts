@@ -102,9 +102,10 @@ export class BnplSettlementService {
       });
 
       // 4. 총 금액 계산
-      const totalAmount = sumDecimalStrings(
-        transactions.map((tx) => tx.amount),
-      );
+      let totalAmount = 0;
+      transactions.forEach((tx) => {
+        totalAmount += tx.amount;
+      });
 
       // 5. 정산 배치 생성
       const [settlementBatch] = await tx
@@ -112,7 +113,7 @@ export class BnplSettlementService {
         .values({
           bnplAccountId: account.id,
           batchNumber: batchMonth,
-          totalAmount,
+          totalAmount: totalAmount,
           dueDate,
           status: 'PENDING',
           batchPeriodStart,
