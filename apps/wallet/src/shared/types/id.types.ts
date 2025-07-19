@@ -16,8 +16,8 @@ export type UserLoginId = string;      // 로그인 ID (이메일, 아이디 등
 export type PaymentMethodId = string;  // 결제 수단 ID
 export type BnplAccountId = string;    // BNPL 계정 ID
 
-// 내부 시퀀스 ID (DB 성능상 number 유지)
-export type InvoiceId = number;        // 인보이스 ID (내부 시퀀스)
+// 내부 시퀀스 ID (string으로 통일)
+export type InvoiceId = string;        // 인보이스 ID (ULID 사용)
 export type TransactionId = number;    // 거래 ID (내부 시퀀스)
 
 // 이벤트 ID (추적 가능성을 위해 string)

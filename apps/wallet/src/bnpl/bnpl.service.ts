@@ -461,7 +461,7 @@ export class BnplService {
    * 플로우:
    * 1. payment_event 테이블에 CAPTURED 이벤트 생성
    * 2. payment 테이블의 상태 업데이트
-   * 3. bnpl_account 테이블의 currentBalance 업데이트
+   * 3. bnpl_transaction 테이블에 이벤트 기록 (Event Sourcing)
    */
   async capturePayment(dto: CapturePaymentPayload) {
     this.logger.log(`BNPL 결제 캡처 시작: ${dto.id}`);

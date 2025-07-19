@@ -215,14 +215,17 @@ export class BnplSettlementService {
           })
           .where(eq(schema.settlementBatch.id, batch.id));
 
-        // 4. BNPL 계정 잔액 차감
+        // 4. BNPL Transaction 이벤트 생성 (Event Sourcing)
+        // 정산은 CREDIT 타입 (잔액 차감)
         await this.dbService.db
-          .update(schema.bnplAccount)
-          .set({
-            currentBalance: sql`${schema.bnplAccount.currentBalance} - ${batch.totalAmount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.bnplAccount.id, batch.bnplAccountId));
+          .insert(schema.bnplTransaction)
+          .values({
+            bnplAccountId: batch.bnplAccountId,
+            invoiceId: `SETTLEMENT-${batch.id}-${Date.now()}`, // 정산 배치용 Invoice ID
+            transactionType: 'CREDIT',
+            status: 'CAPTURED',
+            amount: batch.totalAmount,
+          });
 
         this.logger.log(
           `정산 완료: batchId=${batch.id}, amount=${batch.totalAmount}, ` +
@@ -274,10 +277,11 @@ export class BnplSettlementService {
       throw new BadRequestException('BNPL 계정을 찾을 수 없습니다.');
     }
 
-    // 2. 잔액 확인
-    if (Number(account.currentBalance) < amount) {
+    // 2. 잔액 확인 (Event Sourcing - 실시간 계산)
+    const currentBalance = await this.calculateCurrentBalance(account.id);
+    if (currentBalance < amount) {
       throw new BadRequestException(
-        `출금 가능 금액(${account.currentBalance}원)을 초과합니다.`,
+        `출금 가능 금액(${currentBalance}원)을 초과합니다.`,
       );
     }
 
@@ -290,15 +294,17 @@ export class BnplSettlementService {
       reason,
     });
 
-    // 4. 성공 시 잔액 차감
+    // 4. 성공 시 BNPL Transaction 이벤트 생성 (Event Sourcing)
     if (result.payment.status === 'SUCCESS') {
       await this.dbService.db
-        .update(schema.bnplAccount)
-        .set({
-          currentBalance: sql`${schema.bnplAccount.currentBalance} - ${amount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.bnplAccount.id, bnplAccountId));
+        .insert(schema.bnplTransaction)
+        .values({
+          bnplAccountId,
+          invoiceId: `MANUAL-WITHDRAWAL-${ulid()}`, // 수동 출금용 Invoice ID
+          transactionType: 'CREDIT',
+          status: 'CAPTURED',
+          amount,
+        });
     }
 
     return result;
@@ -342,6 +348,28 @@ export class BnplSettlementService {
       createdAt: batch.createdAt,
       updatedAt: batch.updatedAt,
     }));
+  }
+
+  /**
+   * Event Sourcing: BNPL Transaction 이벤트들을 기반으로 현재 잔액 계산
+   */
+  private async calculateCurrentBalance(accountId: string): Promise<number> {
+    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
+      orderBy: (transactions, { asc }) => [asc(transactions.createdAt)],
+    });
+
+    let balance = 0;
+    for (const transaction of transactions) {
+      const amount = Number(transaction.amount);
+      if (transaction.transactionType === 'DEBIT') {
+        balance += amount; // 사용 금액 증가
+      } else if (transaction.transactionType === 'CREDIT') {
+        balance -= amount; // 상환 금액 차감
+      }
+    }
+
+    return Math.max(0, balance); // 음수 방지
   }
 
   /**

@@ -65,7 +65,6 @@ describe('BnplController', () => {
           paymentMethodId: 'pm1',
           creditLimit: 5000,
           approvedLimit: 3000,
-          currentBalance: 0,
           billingCycleDay: 25,
           version: 1,
         },

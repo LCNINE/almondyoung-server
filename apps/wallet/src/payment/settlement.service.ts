@@ -23,7 +23,7 @@ import {
 type ProcessedBatchItemResult = {
   itemId: string;
   transactionId: string;
-  invoiceId: number;
+  invoiceId: string;
   amount: number;
   status: 'SUCCESS' | 'FAILED';
   paymentEventId?: string; // 성공 시에만 존재

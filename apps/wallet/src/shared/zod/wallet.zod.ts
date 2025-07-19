@@ -5,8 +5,9 @@ import { z } from 'zod';
 // ────────────────────────────────────────────────────────────────
 const ID = {
   ULID: z.string().length(26, 'ULID must be 26 characters long'),
-  TSID: z.string().length(26, 'TSID must be 26 characters long'),
+  TSID: z.string().length(21, 'TSID must be 21 characters long'), // TSID는 21자리
   BigIntId: z.number().int().positive('ID must be a positive integer'),
+  InvoiceId: z.string().max(64, 'Invoice ID must be at most 64 characters'), // Invoice ID는 string
 };
 const AmountSchema = z.number().positive('Amount must be a positive number');
 const CurrencySchema = z
@@ -79,7 +80,6 @@ export const BnplAccountSchema = z.object({
   paymentMethodId: ID.ULID,
   creditLimit: AmountSchema,
   approvedLimit: AmountSchema,
-  currentBalance: AmountSchema.default(0),
   status: BnplStatusEnum.default('ACTIVE'),
   billingCycleDay: z.number().int().min(1).max(31),
   termsUrl: z.string().url().optional(),
@@ -90,7 +90,6 @@ export const BnplAccountSchema = z.object({
 
 export const CreateBnplAccountPayloadSchema = BnplAccountSchema.omit({
   id: true,
-  currentBalance: true,
   status: true,
   version: true,
   createdAt: true,
@@ -102,7 +101,7 @@ export const UpdateBnplAccountStatusPayloadSchema = BnplAccountSchema.pick({
 });
 
 export const BnplActivationEventSchema = z.object({
-  id: ID.TSID,
+  id: ID.ULID,
   paymentMethodId: ID.ULID,
   bnplAccountId: ID.TSID,
   eventType: ActivationTypeEnum,
@@ -113,7 +112,7 @@ export const BnplActivationEventSchema = z.object({
 export const BnplTransactionSchema = z.object({
   id: ID.ULID,
   bnplAccountId: ID.TSID,
-  invoiceId: ID.BigIntId,
+  invoiceId: ID.InvoiceId,
   transactionType: BnplTransactionTypeEnum,
   status: BnplTransactionStatusEnum,
   amount: AmountSchema,
@@ -203,7 +202,7 @@ const InvoiceStatusEnum = z.enum([
 ]);
 
 export const InvoiceSchema = z.object({
-  id: ID.BigIntId,
+  id: ID.InvoiceId,
   userId: z.string().max(64),
   invoiceNumber: z.string().max(64),
   invoiceType: z.string().max(32),
@@ -238,7 +237,7 @@ export const UpdateInvoiceStatusPayloadSchema = InvoiceSchema.pick({
 export const InvoiceEventSchema = z.object({
   id: ID.BigIntId,
   eventUuid: z.string().max(64),
-  invoiceId: ID.BigIntId,
+  invoiceId: ID.InvoiceId,
   eventType: z.string().max(32),
   reason: z.string().max(255).optional(),
   occurredAt: z.date(),
@@ -267,16 +266,17 @@ const RefundStatusEnum = z.enum([
 
 export const PaymentEventSchema = z.object({
   id: ID.ULID,
-  invoiceId: ID.BigIntId,
+  invoiceId: ID.InvoiceId,
   paymentMethodId: ID.ULID,
   amount: AmountSchema,
   status: PaymentStatusEnum,
   pgTransactionId: z.string().max(255).nullable().optional(),
-  pgResponse: z.string().optional(),
+  pgResponse: z.string().nullable().optional(), // Drizzle text() 필드는 nullable
   actor: ActorEnum,
-  errorMessage: z.string().optional(), // 실패 시 사유를 기록하기 위한 필드 추가
+  errorMessage: z.string().max(255).nullable().optional(), // Drizzle varchar(255) 필드는 nullable
+  metadata: z.string().nullable().optional(), // DB에는 JSON 문자열로 저장
   createdAt: z.date(),
-  updatedAt: z.date(), // 상태 변경을 추적하기 위한 필드 추가
+  updatedAt: z.date().nullable().optional(), // Drizzle timestamp() 필드는 nullable
 });
 
 export const CreatePaymentPayloadSchema = PaymentEventSchema.omit({
@@ -310,7 +310,7 @@ const BaseEventSchema = z.object({
 const PaymentRequestedPayloadSchema = z.object({
   amount: AmountSchema,
   currency: CurrencySchema,
-  invoiceId: ID.BigIntId,
+  invoiceId: ID.InvoiceId,
 });
 
 const PaymentAuthorizedPayloadSchema = z.object({
@@ -327,11 +327,22 @@ const PaymentFailedPayloadSchema = z.object({
   errorMessage: z.string(),
 });
 
-export const RequestPaymentPayloadSchema = PaymentEventSchema.pick({
+// 서비스 레이어용 - metadata를 객체로 받음
+export const RequestPaymentPayloadSchema = z.object({
+  invoiceId: ID.InvoiceId,
+  paymentMethodId: ID.ULID,
+  amount: AmountSchema,
+  actor: ActorEnum,
+  metadata: z.record(z.any()).optional(), // 서비스에서는 객체로 받음
+});
+
+// DB 저장용 - metadata를 문자열로 변환
+export const RequestPaymentDbPayloadSchema = PaymentEventSchema.pick({
   invoiceId: true,
   paymentMethodId: true,
   amount: true,
   actor: true,
+  metadata: true, // DB에는 JSON 문자열로 저장
 });
 
 // 📍 파생 스키마 2: '승인' 상태 업데이트를 위한 페이로드

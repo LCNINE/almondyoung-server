@@ -59,7 +59,6 @@ export class BnplAccountService {
         paymentMethodId: paymentMethod.id,
         creditLimit: dto.creditLimit || 0,
         approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
-        currentBalance: 0,
         status: 'ACTIVE',
         billingCycleDay: dto.billingCycleDay,
         termsUrl: dto.termsUrl || null,
@@ -124,10 +123,11 @@ export class BnplAccountService {
         throw new NotFoundException('BNPL 결제수단을 찾을 수 없습니다.');
       }
 
-      // 3. 미정산 금액 확인
-      if (Number(bnplAccount.currentBalance) > 0) {
+      // 3. 미정산 금액 확인 (Event Sourcing으로 실시간 계산)
+      const currentBalance = await this.calculateCurrentBalance(bnplAccount.id);
+      if (currentBalance > 0) {
         throw new BadRequestException(
-          `미정산 금액이 ${bnplAccount.currentBalance}원 있어 비활성화할 수 없습니다.`,
+          `미정산 금액이 ${currentBalance}원 있어 비활성화할 수 없습니다.`,
         );
       }
 
@@ -201,11 +201,15 @@ export class BnplAccountService {
       return null;
     }
 
+    // Event Sourcing: 현재 잔액을 실시간 계산
+    const currentBalance = await this.calculateCurrentBalance(accountId);
+
     return {
       id: bnplAccount.id,
       userId: bnplAccount.userId,
+      paymentMethodId: bnplAccount.paymentMethodId,
       creditLimit: Number(bnplAccount.creditLimit),
-      currentBalance: Number(bnplAccount.currentBalance),
+      currentBalance,
       status: bnplAccount.status,
       billingCycleDay: bnplAccount.billingCycleDay,
       version: bnplAccount.version,
@@ -266,26 +270,66 @@ export class BnplAccountService {
   }
 
   /**
+   * Event Sourcing: BNPL Transaction 이벤트들을 기반으로 현재 잔액 계산
+   */
+  private async calculateCurrentBalance(accountId: string): Promise<number> {
+    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
+      orderBy: (transactions, { asc }) => [asc(transactions.createdAt)],
+    });
+
+    let balance = 0;
+    for (const transaction of transactions) {
+      const amount = Number(transaction.amount);
+      if (transaction.transactionType === 'DEBIT') {
+        balance += amount; // 사용 금액 증가
+      } else if (transaction.transactionType === 'CREDIT') {
+        balance -= amount; // 상환 금액 차감
+      }
+    }
+
+    return Math.max(0, balance); // 음수 방지
+  }
+
+  /**
    * 계정 통계 정보 조회
-   * TODO: 실제 통계 로직 구현 필요
    */
   async getAccountStatistics(accountId: string) {
-    // TODO: 실제 거래 내역 기반 통계 계산
+    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
+      orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
+    });
+
+    const totalTransactions = transactions.length;
+    const totalAmount = transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
+    const averageAmount = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
+    const lastTransactionDate = transactions.length > 0 ? transactions[0].createdAt : null;
+
     return {
-      totalTransactions: 0,
-      totalAmount: 0,
-      averageAmount: 0,
-      lastTransactionDate: null,
+      totalTransactions,
+      totalAmount,
+      averageAmount,
+      lastTransactionDate,
     };
   }
 
   /**
    * 거래 내역 조회
-   * TODO: 실제 거래 내역 조회 로직 구현 필요
    */
   async getTransactionHistory(accountId: string, limit: number = 100) {
-    // TODO: 실제 DB에서 거래 내역 조회
-    // 현재는 빈 배열 반환
-    return [];
+    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
+      orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
+      limit,
+    });
+
+    return transactions.map((tx) => ({
+      id: tx.id,
+      invoiceId: tx.invoiceId,
+      transactionType: tx.transactionType,
+      status: tx.status,
+      amount: Number(tx.amount),
+      createdAt: tx.createdAt,
+    }));
   }
 }

@@ -11,7 +11,7 @@ import { ulid } from 'ulid';
 
 // ===== 기존 시스템 (number) =====
 export type LegacyUserId = number;      // 기존 사용자 ID
-export type InvoiceId = number;         // 인보이스 ID (성능상 number 유지)
+export type InvoiceId = string;         // 인보이스 ID (string으로 통일)
 export type TransactionId = number;     // 거래 ID (성능상 number 유지)
 
 // ===== 새로운 시스템 (string) =====
@@ -128,5 +128,5 @@ export const TypeGuards = {
     typeof id === 'string' && IdUtils.validateBnplAccountId(id),
     
   isInvoiceId: (id: any): id is InvoiceId => 
-    typeof id === 'number' && id > 0,
+    typeof id === 'string' && id.length > 0,
 };

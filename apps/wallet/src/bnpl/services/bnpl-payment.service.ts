@@ -27,7 +27,7 @@ export class BnplPaymentService {
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private eventEmitter: EventEmitter2,
-  ) {}
+  ) { }
 
   /**
    * 💡 [생성] 새로운 결제 요청을 받아 'REQUESTED' 상태의 이벤트를 생성합니다.
@@ -38,17 +38,25 @@ export class BnplPaymentService {
     const now = new Date();
     const eventId = ulid();
 
-    const newPaymentEventData = {
-      ...payload,
+    // DB 저장용 데이터 변환
+    const dbPayload = {
       id: eventId,
-      status: 'REQUESTED' as const, // 상태를 명확히 지정
+      invoiceId: payload.invoiceId,
+      paymentMethodId: payload.paymentMethodId,
+      amount: payload.amount,
+      status: 'REQUESTED' as const,
+      actor: payload.actor,
+      metadata: payload.metadata ? JSON.stringify(payload.metadata) : null,
+      pgTransactionId: null,
+      pgResponse: null,
+      errorMessage: null,
       createdAt: now,
-      updatedAt: now,
+      updatedAt: null, // 생성 시에는 null
     };
 
     const [createdEvent] = await this.dbService.db
       .insert(schema.paymentEvents)
-      .values(newPaymentEventData)
+      .values(dbPayload)
       .returning();
 
     this.logger.log(`결제 요청 생성됨: ${createdEvent.id}`);
@@ -162,7 +170,7 @@ export class BnplPaymentService {
    * @returns PaymentEvent 객체 배열
    */
   async getPaymentEventsByInvoiceId(
-    invoiceId: number,
+    invoiceId: string,
   ): Promise<PaymentEvent[]> {
     const events = await this.dbService.db.query.paymentEvents.findMany({
       where: eq(schema.paymentEvents.invoiceId, invoiceId),

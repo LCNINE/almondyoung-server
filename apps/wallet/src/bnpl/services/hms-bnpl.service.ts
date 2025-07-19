@@ -110,6 +110,118 @@ export class HmsBnplService {
   }
 
   /**
+   * HMS 결제 상태 확인 (부분환불 시 필요)
+   */
+  async getPaymentStatus(transactionId: string) {
+    this.logger.log(`[HMS] 결제 상태 확인: ${transactionId}`);
+
+    try {
+      // 목업서버의 결제 조회 API 호출
+      const response = await fetch(
+        `http://localhost:3005/v1/payments/cms/${transactionId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      this.logger.log(`[HMS] 결제 상태 확인 성공: ${transactionId} - ${result.payment.status}`);
+      
+      return {
+        transactionId: result.payment.transactionId,
+        status: result.payment.status, // '신청', '처리완료', '취소', '실패'
+        amount: result.payment.callAmount,
+        capturedAt: result.payment.capturedAt,
+        captureMethod: result.payment.captureMethod,
+        memberId: result.payment.memberId,
+      };
+    } catch (error) {
+      this.logger.error(`[HMS] 결제 상태 확인 실패: ${transactionId} - ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * HMS 결제 캡처 상태 확인 (부분결제 시 필요)
+   */
+  async checkCaptureStatus(transactionId: string) {
+    this.logger.log(`[HMS] 캡처 상태 확인: ${transactionId}`);
+
+    const paymentStatus = await this.getPaymentStatus(transactionId);
+    
+    return {
+      transactionId,
+      isCaptured: paymentStatus.status === '처리완료',
+      capturedAt: paymentStatus.capturedAt,
+      captureMethod: paymentStatus.captureMethod,
+      capturedAmount: paymentStatus.amount,
+      status: paymentStatus.status,
+    };
+  }
+
+  /**
+   * HMS 캡처 히스토리 조회 (감사 추적용)
+   */
+  async getCaptureHistory(transactionId?: string) {
+    this.logger.log(`[HMS] 캡처 히스토리 조회: ${transactionId || 'all'}`);
+
+    try {
+      const url = transactionId 
+        ? `http://localhost:3005/v1/system/capture-history?transactionId=${transactionId}`
+        : 'http://localhost:3005/v1/system/capture-history';
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      
+      this.logger.log(`[HMS] 캡처 히스토리 조회 성공: ${result.totalCount}건`);
+      
+      return result;
+    } catch (error) {
+      this.logger.error(`[HMS] 캡처 히스토리 조회 실패: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * HMS 환불 처리 (필요시 - 현재는 목업서버에 환불 API가 없으므로 placeholder)
+   */
+  async processRefund(originalTransactionId: string, refundAmount: number, reason: string) {
+    this.logger.log(`[HMS] 환불 처리: ${originalTransactionId}, 금액: ${refundAmount}`);
+
+    // TODO: 실제 HMS API에 환불 API가 있다면 여기서 호출
+    // 현재는 목업서버에 환불 API가 없으므로 로그만 남김
+    this.logger.warn(`[HMS] 환불 API는 아직 목업서버에 구현되지 않음. 로그만 기록.`);
+    
+    return {
+      success: true,
+      refundId: `REFUND-${Date.now()}`,
+      originalTransactionId,
+      refundAmount,
+      reason,
+      processedAt: new Date().toISOString(),
+      message: '환불 요청이 기록되었습니다 (목업 환경)',
+    };
+  }
+
+  /**
    * HMS 배치 CMS 상태 확인
    */
   async checkHealth() {

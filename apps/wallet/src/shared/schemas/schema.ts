@@ -129,10 +129,7 @@ export const bnplAccount = pgTable(
     approvedLimit: numeric('approved_limit', { precision: 18, scale: 2 })
       .$type<number>()
       .notNull(),
-    currentBalance: numeric('current_balance', { precision: 18, scale: 2 })
-      .$type<number>()
-      .notNull()
-      .default(0),
+
     status: text('status')
       .$type<'ACTIVE' | 'INACTIVE' | 'OVERDUE' | 'SUSPENDED'>()
       .notNull()
@@ -160,7 +157,7 @@ export const bnplActivationEvent = pgTable(
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
-    bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+    bnplAccountId: varchar('bnpl_account_id', { length: 21 })
       .notNull()
       .references(() => bnplAccount.id),
     eventType: text('event_type')
@@ -183,10 +180,10 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
-  bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+  bnplAccountId: varchar('bnpl_account_id', { length: 21 })
     .notNull()
     .references(() => bnplAccount.id),
-  invoiceId: bigint('invoice_id', { mode: 'number' }).notNull(),
+  invoiceId: varchar('invoice_id', { length: 64 }).notNull(),
   transactionType: text('transaction_type')
     .$type<'DEBIT' | 'CREDIT'>()
     .notNull(),
@@ -210,7 +207,7 @@ export const settlementBatch = pgTable('settlement_batch', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
-  bnplAccountId: varchar('bnpl_account_id', { length: 26 })
+  bnplAccountId: varchar('bnpl_account_id', { length: 21 })
     .notNull()
     .references(() => bnplAccount.id),
   batchNumber: varchar('batch_number', { length: 50 }).notNull(),
@@ -300,7 +297,7 @@ export const settlementProcessEvent = pgTable('settlement_process_event', {
 
 // Invoice details
 export const invoice = pgTable('invoice', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   userId: varchar('user_id', { length: 64 }).notNull(),
   invoiceNumber: varchar('invoice_number', { length: 64 }).notNull(),
   invoiceType: varchar('invoice_type', { length: 32 }).notNull(),
@@ -326,9 +323,9 @@ export const invoice = pgTable('invoice', {
 
 // Invoice events
 export const invoiceEvent = pgTable('invoice_event', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   eventUuid: varchar('event_uuid', { length: 64 }).notNull(),
-  invoiceId: bigint('invoice_id', { mode: 'number' })
+  invoiceId: varchar('invoice_id', { length: 26 })
     .notNull()
     .references(() => invoice.id),
   eventType: varchar('event_type', { length: 32 }).notNull(),
@@ -346,7 +343,7 @@ export const invoiceEvent = pgTable('invoice_event', {
 // Payment events
 export const paymentEvents = pgTable('payment_events', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-  invoiceId: bigint('invoice_id', { mode: 'number' })
+  invoiceId: varchar('invoice_id', { length: 26 })
     .notNull()
     .references(() => invoice.id),
   paymentMethodId: varchar('payment_method_id', { length: 26 })
@@ -370,6 +367,7 @@ export const paymentEvents = pgTable('payment_events', {
     .notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }),
   errorMessage: varchar('error_message', { length: 255 }),
+  metadata: text('metadata'), // Event Sourcing을 위한 메타데이터 (JSON 문자열)
 });
 
 // Refund events
