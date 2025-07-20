@@ -9,34 +9,34 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { InvoiceService } from './invoice.service';
-import {
-  CreateInvoiceDto,
-  UpdateInvoiceStatusDto,
-} from '../shared/zod/wallet.dto';
 
+import * as invoiceZod from '../shared/zod/invoice.zod';
 @Controller('invoices')
 export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
 
   @Post()
-  create(@Body() createInvoiceDto: CreateInvoiceDto) {
+  create(@Body() createInvoiceDto: invoiceZod.Invoice['Create']) {
     return this.invoiceService.create(createInvoiceDto);
   }
 
   @Get()
-  findAll(@Query('userId') userId?: string, @Query('status') status?: any) {
+  findAll(
+    @Query('userId') userId?: string,
+    @Query('status') status?: invoiceZod.Invoice['Select']['status'],
+  ) {
     return this.invoiceService.findAll(userId, status);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', ParseIntPipe) id: string) {
     return this.invoiceService.findOne(id);
   }
 
   @Patch(':id/status')
   updateStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateInvoiceStatusDto: UpdateInvoiceStatusDto,
+    @Param('id', ParseIntPipe) id: string,
+    @Body() updateInvoiceStatusDto: invoiceZod.Invoice['UpdateStatus'],
   ) {
     return this.invoiceService.updateStatus(id, updateInvoiceStatusDto);
   }

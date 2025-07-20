@@ -4,6 +4,7 @@ import { InvoiceModule } from './invoice/invoice.module';
 import { SharedModule } from '@app/shared';
 import { DbModule } from '@app/db';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 // import { PaymentModule } from './payment/payment.module';
 import { BnplModule } from './bnpl/bnpl.module';
 import { ConfigModule } from '@nestjs/config';
@@ -12,11 +13,22 @@ import { APP_PIPE } from '@nestjs/core';
 import * as schema from './shared/schemas/schema';
 import { PaymentModule } from './payment/payment.module';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
+import { EventsModule } from './shared/events/events.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // 다른 모듈에서 ConfigService를 바로 사용할 수 있도록 설정
-      envFilePath: `.env.${process.env.NODE_ENV}` || '.env',
+      envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
+    }),
+    EventEmitterModule.forRoot({
+      // 이벤트 처리 설정
+      wildcard: false,
+      delimiter: '.',
+      newListener: false,
+      removeListener: false,
+      maxListeners: 10,
+      verboseMemoryLeak: false,
+      ignoreErrors: false,
     }),
     SharedModule,
     ScheduleModule.forRoot(),
@@ -28,9 +40,10 @@ import { PaymentMethodModule } from './payment-method/payment-method.module';
       },
       schema: { ...schema },
     }),
+    EventsModule,
     InvoiceModule,
     // PaymentModule,
-    PaymentModule,
+    // PaymentModule,
     PaymentMethodModule,
     BnplModule,
   ],

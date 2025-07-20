@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MockHmsAPI } from 'hms-api-wrapper';
-import { CreateBnplAccountPayload } from '../../shared/zod';
+import * as bnplZod from '../../shared/zod/bnpl.zod';
 
 /**
  * HMS 배치 CMS 연동 서비스
@@ -27,7 +27,7 @@ export class HmsBnplService {
   /**
    * HMS 배치 CMS 회원 등록
    */
-  async registerMember(dto: CreateBnplAccountPayload) {
+  async registerMember(dto: bnplZod.Account['Create']) {
     this.logger.log(`[HMS] 배치 CMS 회원 등록: ${dto.userId}`);
 
     const payload = this.toHmsMemberDto(dto);
@@ -132,9 +132,11 @@ export class HmsBnplService {
       }
 
       const result = await response.json();
-      
-      this.logger.log(`[HMS] 결제 상태 확인 성공: ${transactionId} - ${result.payment.status}`);
-      
+
+      this.logger.log(
+        `[HMS] 결제 상태 확인 성공: ${transactionId} - ${result.payment.status}`,
+      );
+
       return {
         transactionId: result.payment.transactionId,
         status: result.payment.status, // '신청', '처리완료', '취소', '실패'
@@ -144,7 +146,9 @@ export class HmsBnplService {
         memberId: result.payment.memberId,
       };
     } catch (error) {
-      this.logger.error(`[HMS] 결제 상태 확인 실패: ${transactionId} - ${error.message}`);
+      this.logger.error(
+        `[HMS] 결제 상태 확인 실패: ${transactionId} - ${error.message}`,
+      );
       throw error;
     }
   }
@@ -156,7 +160,7 @@ export class HmsBnplService {
     this.logger.log(`[HMS] 캡처 상태 확인: ${transactionId}`);
 
     const paymentStatus = await this.getPaymentStatus(transactionId);
-    
+
     return {
       transactionId,
       isCaptured: paymentStatus.status === '처리완료',
@@ -174,7 +178,7 @@ export class HmsBnplService {
     this.logger.log(`[HMS] 캡처 히스토리 조회: ${transactionId || 'all'}`);
 
     try {
-      const url = transactionId 
+      const url = transactionId
         ? `http://localhost:3005/v1/system/capture-history?transactionId=${transactionId}`
         : 'http://localhost:3005/v1/system/capture-history';
 
@@ -190,9 +194,9 @@ export class HmsBnplService {
       }
 
       const result = await response.json();
-      
+
       this.logger.log(`[HMS] 캡처 히스토리 조회 성공: ${result.totalCount}건`);
-      
+
       return result;
     } catch (error) {
       this.logger.error(`[HMS] 캡처 히스토리 조회 실패: ${error.message}`);
@@ -203,13 +207,21 @@ export class HmsBnplService {
   /**
    * HMS 환불 처리 (필요시 - 현재는 목업서버에 환불 API가 없으므로 placeholder)
    */
-  async processRefund(originalTransactionId: string, refundAmount: number, reason: string) {
-    this.logger.log(`[HMS] 환불 처리: ${originalTransactionId}, 금액: ${refundAmount}`);
+  async processRefund(
+    originalTransactionId: string,
+    refundAmount: number,
+    reason: string,
+  ) {
+    this.logger.log(
+      `[HMS] 환불 처리: ${originalTransactionId}, 금액: ${refundAmount}`,
+    );
 
     // TODO: 실제 HMS API에 환불 API가 있다면 여기서 호출
     // 현재는 목업서버에 환불 API가 없으므로 로그만 남김
-    this.logger.warn(`[HMS] 환불 API는 아직 목업서버에 구현되지 않음. 로그만 기록.`);
-    
+    this.logger.warn(
+      `[HMS] 환불 API는 아직 목업서버에 구현되지 않음. 로그만 기록.`,
+    );
+
     return {
       success: true,
       refundId: `REFUND-${Date.now()}`,

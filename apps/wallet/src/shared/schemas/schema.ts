@@ -10,8 +10,6 @@ import {
   text,
   timestamp,
   integer,
-  bigserial,
-  decimal,
   boolean,
   uniqueIndex,
   foreignKey,
@@ -20,7 +18,6 @@ import {
 import { relations, sql } from 'drizzle-orm';
 
 import { ulid } from 'ulid';
-import { PaymentAuthorizedEvent } from '../../payment/events/payment.events';
 import { getTsid } from 'tsid-ts';
 
 export const newMemberId = (): string => getTsid().toString();
@@ -79,7 +76,45 @@ export const paymentMethod = pgTable(
   ],
 );
 
-// Card-specific payment method details
+// BatchCMS (HMS BNPL) 전용 테이블
+export const batchCmsMethod = pgTable(
+  'batch_cms_method',
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .references(() => paymentMethod.id),
+    paymentMethodId: varchar('payment_method_id', { length: 26 })
+      .notNull()
+      .references(() => paymentMethod.id),
+    // BatchCMS (HMS) 고유 필드
+    hmsMemberId: varchar('hms_member_id', { length: 64 }).notNull(),
+    hmsCustId: varchar('hms_cust_id', { length: 64 })
+      .notNull()
+      .default('default-cust'),
+
+    // BNPL 관련 정보
+    creditLimit: numeric('credit_limit', { precision: 18, scale: 2 })
+      .$type<number>()
+      .notNull(),
+    approvedLimit: numeric('approved_limit', { precision: 18, scale: 2 })
+      .$type<number>()
+      .notNull(),
+    billingCycleDay: integer('billing_cycle_day').notNull(),
+
+    // BatchCMS 메타데이터
+    hmsMetadata: text('hms_metadata'), // JSON 형태로 HMS 응답 원본 저장
+    termsUrl: text('terms_url'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
+    status: varchar('status', { length: 255 }).notNull().default('PENDING'),
+  },
+  (table) => [uniqueIndex('idx_hms_member_unique').on(table.hmsMemberId)],
+);
+
+// Card-specific payment method details (기존 유지 - 향후 Toss 등 추가 예정)
 export const cardMethod = pgTable(
   'card_method',
   {
@@ -299,7 +334,6 @@ export const settlementProcessEvent = pgTable('settlement_process_event', {
 export const invoice = pgTable('invoice', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   userId: varchar('user_id', { length: 64 }).notNull(),
-  invoiceNumber: varchar('invoice_number', { length: 64 }).notNull(),
   invoiceType: varchar('invoice_type', { length: 32 }).notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 })
     .$type<number>()
@@ -398,11 +432,22 @@ export const paymentMethodRelations = relations(paymentMethod, ({ one }) => ({
     fields: [paymentMethod.id],
     references: [cardMethod.id],
   }),
+  batchCms: one(batchCmsMethod, {
+    fields: [paymentMethod.id],
+    references: [batchCmsMethod.id],
+  }),
 }));
 
 export const cardMethodRelations = relations(cardMethod, ({ one }) => ({
   paymentMethod: one(paymentMethod, {
     fields: [cardMethod.id],
+    references: [paymentMethod.id],
+  }),
+}));
+
+export const batchCmsMethodRelations = relations(batchCmsMethod, ({ one }) => ({
+  paymentMethod: one(paymentMethod, {
+    fields: [batchCmsMethod.id],
     references: [paymentMethod.id],
   }),
 }));

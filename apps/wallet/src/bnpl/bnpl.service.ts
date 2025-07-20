@@ -3,20 +3,18 @@ import { BnplAccountService } from './services/bnpl-account.service';
 import { HmsBnplService } from './services/hms-bnpl.service';
 import { BnplSettlementService } from './services/bnpl-settlement.service';
 import { BnplCreditService } from './services/bnpl-credit.service';
+import { BatchCmsStatusTrackerService } from './services/batch-cms-status-tracker.service';
+import { PgPort } from '../payment/ports/pg.port';
 import { sumDecimalStrings } from '../payment/utils/money.utils';
-import {
-  BnplAccount,
-  BnplAccountDto,
-  BnplTransactionDto,
-  CapturePaymentPayload,
-  CreateBnplAccountPayload,
-  CreateBnplAccountResponseDto,
-  PaymentEventDto,
-  RequestPaymentPayload,
-} from '../shared/zod';
-import { ulid } from 'ulid';
 import { BnplPaymentService } from './services/bnpl-payment.service';
+import { BnplTransactionService } from './services/bnpl-transaction.service';
+import { MonthlyStatementService } from './services/monthly-statement.service';
+import { EventProcessorService } from '../shared/events/event-processor.service';
+import { BnplPaymentRequestedEvent } from './events/bnpl.events';
 import { CreateMemberResponseDto } from 'hms-api-wrapper/dist/services/BatchCms/types';
+import * as bnplZod from '../shared/zod/bnpl.zod';
+import * as paymentZod from '../shared/zod/payment.zod';
+import { ulid } from 'ulid';
 /**
  * BNPL 서비스 - Orchestrator/Facade 패턴
  *
@@ -35,78 +33,33 @@ export class BnplService {
     private readonly creditService: BnplCreditService,
     private readonly settlementService: BnplSettlementService,
     private readonly hmsBnplService: HmsBnplService,
+    private readonly batchCmsStatusTracker: BatchCmsStatusTrackerService,
+    private readonly pgPort: PgPort, // PG 어댑터 주입
     private readonly bnplPaymentService: BnplPaymentService,
+    private readonly bnplTransactionService: BnplTransactionService,
+    private readonly monthlyStatementService: MonthlyStatementService,
+    private readonly eventProcessor: EventProcessorService,
   ) {
-    this.logger.log('🚀 BNPL 서비스 초기화 완료');
+    this.logger.log('🚀 BNPL 서비스 초기화 완료 (하이브리드 결제 지원)');
   }
 
   /**
-   * BNPL 계좌 등록 - 복잡한 프로세스 조율
-   *
-   * 플로우:
-   * 1. 신용 한도 평가
-   * 2. HMS 배치 CMS에 회원 등록
-   * 3. DB에 BNPL 계정 생성
-   * 4. 초기 정산 배치 생성
+   * BNPL 계좌 등록 - 이제 이벤트 기반으로 처리됨
+   * 
+   * 참고: 실제 계좌 생성은 PaymentMethod에서 BatchCmsMethodRegisteredEvent를 통해 처리됩니다.
+   * 이 메서드는 호환성을 위해 유지되지만, 직접 호출하지 마세요.
    */
-  async createBnplAccount(
-    dto: CreateBnplAccountPayload,
-  ): Promise<CreateBnplAccountResponseDto> {
-    this.logger.log(`BNPL 계좌 등록 시작. userId: ${dto.userId}`);
-
-    try {
-      // 1. 신용 한도 평가 (dto에 creditLimit이 없는 경우)
-      if (!dto.creditLimit) {
-        dto.creditLimit = await this.creditService.evaluateInitialCreditLimit(
-          dto.userId,
-        );
-        this.logger.log(`신용 한도 평가 완료: ${dto.creditLimit}원`);
-      }
-
-      // 2. HMS 배치 CMS에 회원 등록
-      const hmsResult: CreateMemberResponseDto =
-        await this.hmsBnplService.registerMember(dto);
-      this.logger.log(`HMS 회원 등록 완료: ${hmsResult.member.memberId}`);
-
-      // 3. DB에 BNPL 계정 생성
-      const accountResult = await this.accountService.createAccount(
-        dto,
-        hmsResult,
-      );
-
-      // 4. 현재 달의 정산 배치 생성 (선택적)
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-      try {
-        await this.settlementService.createSettlementBatchForAccount(
-          accountResult.bnplAccount,
-          currentMonth,
-        );
-        this.logger.log(`초기 정산 배치 생성 완료: ${currentMonth}`);
-      } catch (error) {
-        // 정산 배치 생성 실패는 계정 생성을 막지 않음
-        this.logger.warn(`초기 정산 배치 생성 실패: ${error.message}`);
-      }
-
-      return {
-        success: true,
-        message: 'BNPL 계좌가 성공적으로 등록되었습니다.',
-        data: {
-          paymentMethod: accountResult.paymentMethod,
-          bnplAccount: {
-            ...accountResult.bnplAccount,
-            termsUrl: accountResult.bnplAccount.termsUrl || undefined,
-          },
-          hmsMember: hmsResult.member,
-        },
-      };
-    } catch (error) {
-      this.logger.error(`BNPL 계좌 등록 실패: ${error.message}`);
-
-      // 롤백 처리가 필요한 경우
-      // TODO: HMS 회원 등록이 성공했지만 DB 저장이 실패한 경우 HMS 회원 삭제
-
-      throw error;
-    }
+  async createBnplAccount(dto: bnplZod.Account.Create): Promise<{
+    success: boolean;
+    message: string;
+    data?: any;
+  }> {
+    this.logger.warn('createBnplAccount 직접 호출됨. PaymentMethod 이벤트 기반 처리를 권장합니다.');
+    
+    return {
+      success: false,
+      message: 'BNPL 계좌는 PaymentMethod 등록을 통해 자동으로 생성됩니다. PaymentMethod를 먼저 등록해주세요.',
+    };
   }
 
   /**
@@ -118,12 +71,14 @@ export class BnplService {
    * 3. DB에서 BNPL 계정 비활성화
    * 4. 관련 정산 배치 처리
    */
-  async deactivateBnplAccount(dto: any) {
-    this.logger.log(`BNPL 계좌 비활성화 시작. accountId: ${dto.accountId}`);
+  async deactivateBnplAccount(dto: bnplZod.Account.UpdateStatus) {
+    this.logger.log(`BNPL 계좌 비활성화 시작. accountId: ${dto.bnplAccountId}`);
 
     try {
       // 1. 계정 정보 조회 및 검증 (accountId로 직접 조회하는 메서드 필요)
-      const account = await this.accountService.getAccountById(dto.accountId);
+      const account = await this.accountService.getAccountById(
+        dto.bnplAccountId,
+      );
       if (!account) {
         throw new Error('BNPL 계정을 찾을 수 없습니다.');
       }
@@ -142,7 +97,7 @@ export class BnplService {
       await this.hmsBnplService.deleteMember(account.userId);
 
       // 4. DB에서 BNPL 계정 비활성화
-      const result = await this.accountService.deactivateAccount(dto);
+      await this.accountService.deactivateAccount(dto);
 
       return {
         success: true,
@@ -159,7 +114,9 @@ export class BnplService {
    */
   // bnpl.service.ts
 
-  async getBnplAccount(userId: string): Promise<BnplAccount | null> {
+  async getBnplAccount(
+    userId: string,
+  ): Promise<bnplZod.Account.Select | null> {
     const account = await this.accountService.getAccountByUserId(userId);
 
     if (!account) {
@@ -173,7 +130,7 @@ export class BnplService {
     );
 
     // ✅ 확장된 DTO의 모양에 정확히 맞춰서 객체를 만들어 반환
-    const responseDto: BnplAccountDto & {
+    const responseDto: bnplZod.Account.Select & {
       availableCredit: number;
       lastSettlementDate: Date | null;
     } = {
@@ -183,7 +140,6 @@ export class BnplService {
       paymentMethodId: account.paymentMethodId,
       creditLimit: account.creditLimit,
       approvedLimit: account.approvedLimit,
-      currentBalance: account.currentBalance,
       status: account.status,
       billingCycleDay: account.billingCycleDay,
       termsUrl: account.termsUrl || '',
@@ -213,7 +169,7 @@ export class BnplService {
   }
 
   /**
-   * BNPL 출금 요청 - 테스트용
+   * BNPL 출금 요청 - PG 어댑터를 통한 처리
    */
   async requestWithdrawal(withdrawalData: any) {
     this.logger.log(
@@ -221,12 +177,17 @@ export class BnplService {
     );
 
     try {
-      // 1. HMS 배치 CMS에 출금 요청
-      const result =
-        await this.hmsBnplService.requestWithdrawal(withdrawalData);
+      // 1. PG 어댑터를 통한 출금 요청
+      const pgResult = await this.pgPort.charge({
+        amount: withdrawalData.callAmount || withdrawalData.amount,
+        orderId: withdrawalData.invoiceId,
+        memberId: withdrawalData.memberId,
+        description: 'BNPL 월별 정산',
+        metadata: withdrawalData,
+      });
 
       // 2. 성공 시 payment_event 테이블에 기록
-      if (result.payment && result.payment.status === '신청') {
+      if (pgResult.status === 'SUCCESS' || pgResult.status === 'PENDING') {
         // BNPL 계정 조회
         const bnplAccount = await this.accountService.getAccountByUserId(
           withdrawalData.memberId,
@@ -237,7 +198,7 @@ export class BnplService {
           const paymentResult = await this.bnplPaymentService.requestPayment({
             invoiceId: withdrawalData.invoiceId,
             paymentMethodId: bnplAccount.paymentMethodId,
-            amount: result.payment.callAmount || withdrawalData.amount,
+            amount: withdrawalData.callAmount || withdrawalData.amount,
             actor: 'USER',
           });
 
@@ -247,14 +208,23 @@ export class BnplService {
 
           // 결과에 payment 정보 추가
           return {
-            ...result,
+            success: true,
+            transactionId: pgResult.transactionId,
             paymentId: paymentResult.id,
-            message: 'BNPL 출금 요청 및 이벤트 기록이 완료되었  습니다.',
+            status: pgResult.status,
+            message: 'BNPL 출금 요청 및 이벤트 기록이 완료되었습니다.',
+            rawResponse: pgResult.rawResponse,
           };
         }
       }
 
-      return result;
+      return {
+        success: pgResult.status === 'SUCCESS' || pgResult.status === 'PENDING',
+        transactionId: pgResult.transactionId,
+        status: pgResult.status,
+        message: pgResult.message || 'BNPL 출금 요청 처리 완료',
+        rawResponse: pgResult.rawResponse,
+      };
     } catch (error) {
       this.logger.error(`BNPL 출금 요청 실패: ${error.message}`);
       throw error;
@@ -389,37 +359,226 @@ export class BnplService {
   }
 
   /**
-   * BNPL 결제 요청 처리
+   * BNPL 결제 요청 처리 (하이브리드 승인 시스템)
    *
    * 플로우:
-   * 1. payment_event 테이블에 REQUESTED 이벤트 생성
-   * 2. bnpl_transaction 테이블에 거래 기록
+   * 1. BatchCMS 상태 확인
+   * 2. 승인 방식 결정 (정규 vs 임시)
+   * 3. PaymentEvent 생성 및 BnplTransaction 생성
+   * 4. 월별명세서에 추가
    */
-  async requestPayment(dto: RequestPaymentPayload) {
+  async requestPayment(dto: bnplZod.Payment['Request']) {
     this.logger.log(
-      `BNPL 결제 요청 시작: ${dto.invoiceId}, 금액: ${dto.amount}원`,
+      `BNPL 결제 요청 시작: ${dto.invoiceId || 'N/A'}, 금액: ${dto.amount}원`,
     );
 
     try {
-      // 결제 요청 처리 및 이벤트 생성
-      const result = await this.bnplPaymentService.requestPayment(dto);
+      // 1단계: 결제 승인 방식 결정
+      const approvalResult = await this.approvePayment({
+        accountId: dto.accountId,
+        invoiceId: dto.invoiceId || `INV_${ulid()}`,
+        amount: dto.amount,
+        description: dto.description,
+      });
 
-      this.logger.log(`BNPL 결제 요청 완료: paymentId=${result.id}`);
+      if (!approvalResult.success) {
+        throw new Error(approvalResult.message);
+      }
+
+      this.logger.log(`BNPL 결제 승인 완료: ${approvalResult.approvalMethod} 방식`);
 
       return {
         success: true,
-        paymentId: result.id,
-        transactionId: result.pgTransactionId,
-        message: 'BNPL 결제가 요청되었습니다.',
+        paymentId: approvalResult.paymentEventId,
+        transactionId: approvalResult.transactionId,
+        approvalMethod: approvalResult.approvalMethod,
+        message: approvalResult.message,
       };
+
     } catch (error) {
       this.logger.error(`BNPL 결제 요청 실패: ${error.message}`);
+      throw error;
+    }
+  }
 
-      // 결제 실패 처리
-      if (error.paymentId) {
-        await this.failPayment(error.paymentId, error.message);
+  /**
+   * BNPL 결제 승인 처리 (핵심 하이브리드 로직)
+   */
+  async approvePayment(request: {
+    accountId: string;
+    invoiceId: string;
+    amount: number;
+    description?: string;
+  }): Promise<{
+    success: boolean;
+    paymentEventId: string;
+    transactionId: string;
+    approvalMethod: 'BATCH_CMS' | 'INTERNAL_CREDIT';
+    message: string;
+  }> {
+    this.logger.log(`BNPL 결제 승인 시작: ${request.accountId}, 금액: ${request.amount}`);
+
+    try {
+      // 1. BNPL 계정 조회
+      const account = await this.accountService.getAccountById(request.accountId);
+      if (!account) {
+        throw new Error('BNPL 계정을 찾을 수 없습니다.');
       }
 
+      // 2. BatchCMS 상태 확인
+      const batchCmsStatus = await this.checkBatchCmsStatus(account.paymentMethodId);
+      
+      // 3. 승인 방식 결정 및 처리
+      if (batchCmsStatus.status === 'APPROVED') {
+        // 정규 결제 방식 (BatchCMS 등록 완료)
+        return await this.processRegularPayment(account, request);
+      } else {
+        // 임시 결제 방식 (내부 신용도 기반)
+        return await this.processTemporaryPayment(account, request);
+      }
+
+    } catch (error) {
+      this.logger.error(`BNPL 결제 승인 실패: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * BatchCMS 상태 확인
+   */
+  async checkBatchCmsStatus(paymentMethodId: string): Promise<{
+    status: string;
+    daysElapsed: number;
+  }> {
+    try {
+      return await this.batchCmsStatusTracker.checkRegistrationStatus(paymentMethodId);
+    } catch (error) {
+      this.logger.error(`BatchCMS 상태 확인 실패: ${error.message}`);
+      // 기본값으로 PENDING 반환
+      return {
+        status: 'PENDING',
+        daysElapsed: 0,
+      };
+    }
+  }
+
+  /**
+   * 정규 결제 처리 (BatchCMS 등록 완료)
+   */
+  private async processRegularPayment(
+    account: any,
+    request: { accountId: string; invoiceId: string; amount: number; description?: string; }
+  ) {
+    this.logger.log(`정규 결제 처리: ${request.accountId}`);
+
+    // PaymentEvent 생성
+    const paymentEvent = await this.bnplPaymentService.requestPayment({
+      invoiceId: request.invoiceId,
+      paymentMethodId: account.paymentMethodId,
+      amount: request.amount,
+      actor: 'USER',
+    });
+
+    // BnplTransaction 생성 (정규)
+    const transaction = await this.bnplTransactionService.createTransaction({
+      bnplAccountId: account.id,
+      invoiceId: request.invoiceId,
+      transactionType: 'DEBIT',
+      status: 'AUTHORIZED',
+      amount: request.amount,
+      approvalMethod: 'BATCH_CMS',
+    });
+
+    // 월별명세서에 추가
+    await this.addToMonthlyStatement(account.id, transaction, 'REGULAR');
+
+    return {
+      success: true,
+      paymentEventId: paymentEvent.id,
+      transactionId: transaction.id,
+      approvalMethod: 'BATCH_CMS' as const,
+      message: 'BNPL 정규 결제가 승인되었습니다.',
+    };
+  }
+
+  /**
+   * 임시 결제 처리 (내부 신용도 기반)
+   */
+  private async processTemporaryPayment(
+    account: any,
+    request: { accountId: string; invoiceId: string; amount: number; description?: string; }
+  ) {
+    this.logger.log(`임시 결제 처리: ${request.accountId}`);
+
+    // 내부 신용도 확인
+    const canApprove = await this.canApproveWithInternalCredit(account.id, request.amount);
+    if (!canApprove) {
+      throw new Error('내부 신용도 한도를 초과했습니다. BatchCMS 등록 완료 후 이용 가능합니다.');
+    }
+
+    // PaymentEvent 생성
+    const paymentEvent = await this.bnplPaymentService.requestPayment({
+      invoiceId: request.invoiceId,
+      paymentMethodId: account.paymentMethodId,
+      amount: request.amount,
+      actor: 'USER',
+    });
+
+    // BnplTransaction 생성 (임시)
+    const transaction = await this.bnplTransactionService.createTransaction({
+      bnplAccountId: account.id,
+      invoiceId: request.invoiceId,
+      transactionType: 'DEBIT',
+      status: 'AUTHORIZED',
+      amount: request.amount,
+      approvalMethod: 'INTERNAL_CREDIT',
+    });
+
+    // 월별명세서에 추가 (임시)
+    await this.addToMonthlyStatement(account.id, transaction, 'TEMPORARY');
+
+    // 내부 신용도 사용량 업데이트
+    await this.creditService.addTemporaryApprovalUsage(account.id, request.amount);
+
+    return {
+      success: true,
+      paymentEventId: paymentEvent.id,
+      transactionId: transaction.id,
+      approvalMethod: 'INTERNAL_CREDIT' as const,
+      message: 'BNPL 임시 결제가 승인되었습니다.',
+    };
+  }
+
+  /**
+   * 내부 신용도 기반 승인 가능 여부 확인
+   */
+  async canApproveWithInternalCredit(accountId: string, amount: number): Promise<boolean> {
+    try {
+      const creditInfo = await this.creditService.getAvailableCredit(accountId);
+      return creditInfo.availableCredit >= amount;
+    } catch (error) {
+      this.logger.error(`내부 신용도 확인 실패: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 월별명세서에 거래 추가
+   */
+  async addToMonthlyStatement(
+    accountId: string, 
+    transaction: any, 
+    type: 'REGULAR' | 'TEMPORARY'
+  ): Promise<void> {
+    try {
+      await this.monthlyStatementService.addTransaction(accountId, {
+        ...transaction,
+        approvalType: type,
+      });
+      
+      this.logger.log(`월별명세서 추가 완료: ${accountId}, 타입: ${type}`);
+    } catch (error) {
+      this.logger.error(`월별명세서 추가 실패: ${error.message}`);
       throw error;
     }
   }
@@ -463,7 +622,7 @@ export class BnplService {
    * 2. payment 테이블의 상태 업데이트
    * 3. bnpl_transaction 테이블에 이벤트 기록 (Event Sourcing)
    */
-  async capturePayment(dto: CapturePaymentPayload) {
+  async capturePayment(dto: paymentZod.Event.Capture) {
     this.logger.log(`BNPL 결제 캡처 시작: ${dto.id}`);
 
     try {
@@ -481,5 +640,17 @@ export class BnplService {
       this.logger.error(`BNPL 결제 캡처 실패: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * BNPL 계정 ID로부터 PaymentMethod ID 조회
+   * 이벤트 기반 결제 처리에서 사용됩니다.
+   */
+  private async getPaymentMethodIdByAccount(bnplAccountId: string): Promise<string> {
+    const account = await this.accountService.getAccountById(bnplAccountId);
+    if (!account) {
+      throw new Error(`BNPL 계정을 찾을 수 없습니다: ${bnplAccountId}`);
+    }
+    return account.paymentMethodId;
   }
 }

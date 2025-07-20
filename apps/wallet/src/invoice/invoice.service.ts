@@ -11,12 +11,8 @@ import { Cron } from '@nestjs/schedule';
 
 // 💡 1. 역할에 맞는 타입을 명확하게 import 합니다.
 // 서비스 로직을 위한 순수 타입만 가져옵니다.
-import {
-  InvoiceWithEvents,
-  CreateInvoicePayload,
-  UpdateInvoiceStatusPayload,
-} from '../shared/zod'; // 실제 경로는 맞게 수정해주세요.
 
+import * as invoiceZod from '../shared/zod/invoice.zod';
 const INVOICE_EXPIRATION_MINUTES = 30;
 
 @Injectable()
@@ -30,7 +26,9 @@ export class InvoiceService {
    * @param id Invoice ID
    * @returns 관계가 포함된 Invoice 객체 또는 null
    */
-  private async findOneRaw(id: number): Promise<InvoiceWithEvents | null> {
+  private async findOneRaw(
+    id: string,
+  ): Promise<invoiceZod.Invoice['Select'] | null> {
     const result = await this.dbService.db.query.invoice.findFirst({
       where: eq(schema.invoice.id, id),
       with: {
@@ -41,7 +39,7 @@ export class InvoiceService {
     });
     // Drizzle-ORM의 타입과 우리 Zod 타입을 맞추기 위해 캐스팅이 필요할 수 있습니다.
     // 이 단계에서는 TypeScript의 타입 시스템을 신뢰합니다.
-    return (result as InvoiceWithEvents) ?? null;
+    return (result as invoiceZod.Invoice['Select']) ?? null;
   }
 
   /**
@@ -49,7 +47,7 @@ export class InvoiceService {
    * @param id Invoice ID
    * @returns Invoice 객체 또는 null
    */
-  async findOne(id: number): Promise<InvoiceWithEvents | null> {
+  async findOne(id: string): Promise<invoiceZod.Invoice['Select'] | null> {
     return this.findOneRaw(id);
   }
 
@@ -62,7 +60,7 @@ export class InvoiceService {
   async findAll(
     userId?: string,
     status?: schema.InvoiceStatus,
-  ): Promise<InvoiceWithEvents[]> {
+  ): Promise<invoiceZod.Invoice['Select'][]> {
     const conditions: SQL[] = [];
     if (userId) {
       conditions.push(eq(schema.invoice.userId, userId));
@@ -80,7 +78,7 @@ export class InvoiceService {
       },
     });
 
-    return results as InvoiceWithEvents[];
+    return results;
   }
 
   /**
@@ -88,13 +86,13 @@ export class InvoiceService {
    * @param payload API 요청으로 들어온, 생성을 위한 순수 데이터 객체
    * @returns 생성된 Invoice 객체
    */
-  async create(payload: CreateInvoicePayload): Promise<InvoiceWithEvents> {
+  async create(
+    payload: invoiceZod.Invoice['Create'],
+  ): Promise<invoiceZod.Invoice['Select']> {
     const { userId, invoiceType, amount, currency, dueAt } = payload;
     const now = new Date();
 
     const newInvoice = await this.dbService.db.transaction(async (tx) => {
-      const invoiceNumber = await this.generateInvoiceNumber(userId);
-
       const [created] = await tx
         .insert(schema.invoice)
         .values({
@@ -103,7 +101,6 @@ export class InvoiceService {
           amount,
           currency,
           dueAt,
-          invoiceNumber,
           status: 'ISSUED',
           issuedAt: now,
           expiresAt: this.calculateExpirationTime(),
@@ -141,9 +138,9 @@ export class InvoiceService {
    * @returns 업데이트된 Invoice 객체
    */
   async updateStatus(
-    id: number,
-    payload: UpdateInvoiceStatusPayload,
-  ): Promise<InvoiceWithEvents> {
+    id: string,
+    payload: invoiceZod.Invoice['UpdateStatus'],
+  ): Promise<invoiceZod.Invoice['Select']> {
     const { status, reason } = payload;
     const now = new Date();
 
@@ -210,10 +207,5 @@ export class InvoiceService {
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + INVOICE_EXPIRATION_MINUTES);
     return expiresAt;
-  }
-
-  private async generateInvoiceNumber(userId: string): Promise<string> {
-    // ... (기존 로직과 동일)
-    return `INV-${userId}-${Date.now()}`;
   }
 }

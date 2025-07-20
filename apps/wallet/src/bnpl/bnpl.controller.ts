@@ -10,18 +10,12 @@ import {
   Req,
   HttpException,
   HttpStatus,
-  UploadedFile,
 } from '@nestjs/common';
-import { FastifyRequest } from 'fastify';
 import { BnplService } from './bnpl.service';
 
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  BnplAccountDto,
-  CreateBnplAccountDto,
-  UpdateBnplAccountStatusDto,
-} from '../shared/zod';
-
+import * as bnplZod from '../shared/zod/bnpl.zod';
+import * as paymentZod from '../shared/zod/payment.zod';
 @Controller('bnpl')
 export class BnplController {
   constructor(private readonly bnplService: BnplService) {}
@@ -32,7 +26,7 @@ export class BnplController {
    * - 내부 DB에 BNPL 계정 생성
    */
   @Post('accounts')
-  async createBnplAccount(@Body() dto: CreateBnplAccountDto) {
+  async createBnplAccount(@Body() dto: bnplZod.Account['Create']) {
     return this.bnplService.createBnplAccount(dto);
   }
 
@@ -42,7 +36,7 @@ export class BnplController {
   @Get('accounts/:userId')
   async getBnplAccount(
     @Param('userId', ParseIntPipe) userId: string,
-  ): Promise<BnplAccountDto | null> {
+  ): Promise<bnplZod.Account['Select'] | null> {
     return this.bnplService.getBnplAccount(userId);
   }
 
@@ -63,11 +57,11 @@ export class BnplController {
   @Delete('accounts/:accountId')
   async deactivateBnplAccount(
     @Param('accountId') accountId: string,
-    @Body() dto: UpdateBnplAccountStatusDto,
+    @Body() dto: bnplZod.Account['UpdateStatus'],
   ) {
     return this.bnplService.deactivateBnplAccount({
       ...dto,
-      accountId,
+      bnplAccountId: accountId,
     });
   }
 
@@ -93,6 +87,36 @@ export class BnplController {
   @Post('test/withdrawal')
   async testBnplWithdrawal(@Body() withdrawalData: any) {
     return this.bnplService.requestWithdrawal(withdrawalData);
+  }
+
+  /**
+   * BNPL 결제 요청
+   */
+  @Post('payments')
+  async requestPayment(@Body() dto: bnplZod.Payment['Request']) {
+    return this.bnplService.requestPayment(dto);
+  }
+
+  /**
+   * BNPL 결제 캡처
+   */
+  @Post('payments/:paymentId/capture')
+  async capturePayment(
+    @Param('paymentId') paymentId: string,
+    @Body() dto: { actor: paymentZod.Event['Capture']['actor'] },
+  ) {
+    return this.bnplService.capturePayment({ id: paymentId, ...dto });
+  }
+
+  /**
+   * BNPL 결제 실패 처리
+   */
+  @Post('payments/:paymentId/fail')
+  async failPayment(
+    @Param('paymentId') paymentId: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.bnplService.failPayment(paymentId, body.reason);
   }
 
   /**

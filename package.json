@@ -40,6 +40,7 @@
     "class-validator": "^0.14.2",
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.44.2",
+    "drizzle-zod": "^0.8.2",
     "eslint-plugin-drizzle": "^0.2.3",
     "fastify": "^4.29.1",
     "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",

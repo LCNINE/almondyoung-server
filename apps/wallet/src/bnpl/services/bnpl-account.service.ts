@@ -1,24 +1,13 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
-import { eq, and } from 'drizzle-orm';
-import {
-  CreateBnplAccountPayload,
-  UpdateBnplAccountStatusPayload,
-} from '../../shared/zod';
 import * as schema from '../../shared/schemas/schema';
-import { ulid } from 'ulid';
+import { eq } from 'drizzle-orm';
+
 /**
- * BNPL 계정 관리 서비스
- *
- * 주요 기능:
- * 1. BNPL 계정 생성/조회/비활성화
- * 2. BNPL 이벤트 기록 관리
+ * BNPL 계정 서비스 (최소 구현)
+ * 
+ * 핵심 결제 로직에 필요한 기본 기능만 구현
  */
 @Injectable()
 export class BnplAccountService {
@@ -26,310 +15,115 @@ export class BnplAccountService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-  ) {
-    this.logger.log('🚀 BNPL 계정 서비스 초기화 완료');
-  }
+  ) {}
 
   /**
-   * BNPL 계정 생성
+   * BNPL 계정 ID로 조회
    */
-  async createAccount(dto: CreateBnplAccountPayload, hmsResult: any) {
-    this.logger.log(`[DB] BNPL 계정 생성 시작: ${dto.userId}`);
-
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. 기존 PaymentMethod 유효성 검사
-      const paymentMethod = await tx.query.paymentMethod.findFirst({
-        where: and(
-          eq(schema.paymentMethod.id, dto.paymentMethodId),
-          eq(schema.paymentMethod.userId, dto.userId),
-          eq(schema.paymentMethod.methodType, 'BNPL'),
-          eq(schema.paymentMethod.status, 'ACTIVE'),
-        ),
+  async getAccountById(accountId: string) {
+    try {
+      const account = await this.dbService.db.query.bnplAccount.findFirst({
+        where: eq(schema.bnplAccount.id, accountId),
       });
 
-      if (!paymentMethod) {
-        throw new BadRequestException('유효하지 않은 paymentMethodId');
-      }
-
-      this.logger.log(`[DB] 결제수단 확인 완료: ${paymentMethod.id}`);
-
-      // 2. BNPL 계정 생성
-      const insertValues: any = {
-        userId: dto.userId,
-        paymentMethodId: paymentMethod.id,
-        creditLimit: dto.creditLimit || 0,
-        approvedLimit: dto.approvedLimit || dto.creditLimit || 0,
-        status: 'ACTIVE',
-        billingCycleDay: dto.billingCycleDay,
-        termsUrl: dto.termsUrl || null,
-        version: 1,
-      };
-
-      const [bnplAccount] = await tx
-        .insert(schema.bnplAccount)
-        .values(insertValues)
-        .returning();
-
-      this.logger.log(`[DB] BNPL 계정 생성 완료: ${bnplAccount.id}`);
-
-      // 3. 활성화 이벤트 기록
-      const [activationEvent] = await tx
-        .insert(schema.bnplActivationEvent)
-        .values({
-          paymentMethodId: paymentMethod.id,
-          bnplAccountId: bnplAccount.id,
-          eventType: 'ACTIVATED',
-          actor: 'SYSTEM',
-        })
-        .returning();
-
-      this.logger.log(`[DB] 활성화 이벤트 기록 완료: ${activationEvent.id}`);
-
-      return {
-        paymentMethod,
-        bnplAccount,
-      };
-    });
-  }
-
-  /**
-   * BNPL 계정 비활성화
-   */
-  async deactivateAccount(
-    dto: UpdateBnplAccountStatusPayload & { accountId: string },
-  ) {
-    this.logger.log(`[DB] BNPL 계정 비활성화 시작: ${dto.accountId}`);
-
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. BNPL 계정 조회
-      const bnplAccount = await tx.query.bnplAccount.findFirst({
-        where: eq(schema.bnplAccount.id, dto.accountId),
-      });
-
-      if (!bnplAccount) {
-        throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
-      }
-
-      // 2. 결제수단 조회 (methodType='BNPL'로 구분)
-      const paymentMethod = await tx.query.paymentMethod.findFirst({
-        where: and(
-          eq(schema.paymentMethod.userId, bnplAccount.userId),
-          eq(schema.paymentMethod.methodType, 'BNPL'),
-          eq(schema.paymentMethod.status, 'ACTIVE'),
-        ),
-      });
-
-      if (!paymentMethod) {
-        throw new NotFoundException('BNPL 결제수단을 찾을 수 없습니다.');
-      }
-
-      // 3. 미정산 금액 확인 (Event Sourcing으로 실시간 계산)
-      const currentBalance = await this.calculateCurrentBalance(bnplAccount.id);
-      if (currentBalance > 0) {
-        throw new BadRequestException(
-          `미정산 금액이 ${currentBalance}원 있어 비활성화할 수 없습니다.`,
-        );
-      }
-
-      // 4. 결제수단 비활성화
-      await tx
-        .update(schema.paymentMethod)
-        .set({
-          status: 'INACTIVE',
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.paymentMethod.id, paymentMethod.id));
-
-      // 5. BNPL 계정 비활성화
-      await tx
-        .update(schema.bnplAccount)
-        .set({
-          status: 'INACTIVE',
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.bnplAccount.id, bnplAccount.id));
-
-      // 6. 비활성화 이벤트 기록
-      const [deactivationEvent] = await tx
-        .insert(schema.bnplActivationEvent)
-        .values({
-          id: ulid(),
-          paymentMethodId: paymentMethod.id,
-          bnplAccountId: bnplAccount.id,
-          eventType: 'DEACTIVATED',
-          actor: 'USER',
-        })
-        .returning();
-
-      this.logger.log(
-        `[DB] 비활성화 이벤트 기록 완료: ${deactivationEvent.id}`,
-      );
-
-      return { success: true };
-    });
+      return account;
+    } catch (error) {
+      this.logger.error(`BNPL 계정 조회 실패: ${accountId}`, error);
+      throw error;
+    }
   }
 
   /**
    * 사용자 ID로 BNPL 계정 조회
    */
   async getAccountByUserId(userId: string) {
-    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
-      where: and(
-        eq(schema.bnplAccount.userId, userId),
-        eq(schema.bnplAccount.status, 'ACTIVE'),
-      ),
-    });
+    try {
+      const account = await this.dbService.db.query.bnplAccount.findFirst({
+        where: eq(schema.bnplAccount.userId, userId),
+      });
 
-    if (!bnplAccount) {
-      return null;
+      return account;
+    } catch (error) {
+      this.logger.error(`사용자 BNPL 계정 조회 실패: ${userId}`, error);
+      throw error;
     }
-
-    // ✅ DB에서 조회한 객체를 가공하지 않고 그대로 반환합니다.
-    // 이렇게 하면 모든 필드가 온전히 전달됩니다.
-    return bnplAccount;
   }
 
   /**
-   * 계정 ID로 BNPL 계정 조회
-   */
-  async getAccountById(accountId: string) {
-    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
-      where: eq(schema.bnplAccount.id, accountId),
-    });
-
-    if (!bnplAccount) {
-      return null;
-    }
-
-    // Event Sourcing: 현재 잔액을 실시간 계산
-    const currentBalance = await this.calculateCurrentBalance(accountId);
-
-    return {
-      id: bnplAccount.id,
-      userId: bnplAccount.userId,
-      paymentMethodId: bnplAccount.paymentMethodId,
-      creditLimit: Number(bnplAccount.creditLimit),
-      currentBalance,
-      status: bnplAccount.status,
-      billingCycleDay: bnplAccount.billingCycleDay,
-      version: bnplAccount.version,
-      createdAt: bnplAccount.createdAt,
-      updatedAt: bnplAccount.updatedAt,
-    };
-  }
-
-  /**
-   * 사용자 ID로 모든 BNPL 계정 조회
+   * 사용자의 모든 BNPL 계정 조회
    */
   async getAllAccountsByUserId(userId: string) {
-    const results = await this.dbService.db.query.paymentMethod.findMany({
-      where: and(
-        eq(schema.paymentMethod.userId, userId),
-        eq(schema.paymentMethod.methodType, 'BNPL'),
-        eq(schema.paymentMethod.status, 'ACTIVE'),
-      ),
-    });
+    try {
+      const accounts = await this.dbService.db.query.bnplAccount.findMany({
+        where: eq(schema.bnplAccount.userId, userId),
+      });
 
-    return results;
+      return accounts;
+    } catch (error) {
+      this.logger.error(`사용자 모든 BNPL 계정 조회 실패: ${userId}`, error);
+      throw error;
+    }
   }
 
   /**
-   * BNPL 이벤트 히스토리 조회
+   * BNPL 계정 비활성화
+   */
+  async deactivateAccount(dto: { bnplAccountId: string }) {
+    try {
+      const [updated] = await this.dbService.db
+        .update(schema.bnplAccount)
+        .set({
+          status: 'INACTIVE',
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.bnplAccount.id, dto.bnplAccountId))
+        .returning();
+
+      this.logger.log(`BNPL 계정 비활성화 완료: ${dto.bnplAccountId}`);
+      return updated;
+    } catch (error) {
+      this.logger.error(`BNPL 계정 비활성화 실패: ${dto.bnplAccountId}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 이벤트 히스토리 조회 (임시 구현)
    */
   async getEventHistory(userId: string) {
-    // 사용자의 BNPL 결제수단들을 먼저 조회
-    const paymentMethods = await this.dbService.db.query.paymentMethod.findMany(
-      {
-        where: and(
-          eq(schema.paymentMethod.userId, userId),
-          eq(schema.paymentMethod.methodType, 'BNPL'),
-        ),
-      },
-    );
-
-    if (paymentMethods.length === 0) {
-      return [];
-    }
-
-    // 해당 결제수단들의 이벤트 조회
-    const events = await this.dbService.db.query.bnplActivationEvent.findMany({
-      where: eq(
-        schema.bnplActivationEvent.paymentMethodId,
-        paymentMethods[0].id, // 첫 번째 결제수단의 이벤트만 조회 (실제로는 IN 조건 사용)
-      ),
-      orderBy: (events, { desc }) => [desc(events.createdAt)],
-    });
-
-    return events.map((event) => ({
-      id: event.id,
-      paymentMethodId: event.paymentMethodId,
-      eventType: event.eventType,
-      actor: event.actor,
-      createdAt: event.createdAt,
-    }));
+    // TODO: 실제 이벤트 히스토리 구현
+    this.logger.log(`이벤트 히스토리 조회: ${userId}`);
+    return [];
   }
 
   /**
-   * Event Sourcing: BNPL Transaction 이벤트들을 기반으로 현재 잔액 계산
+   * 거래 히스토리 조회 (임시 구현)
    */
-  private async calculateCurrentBalance(accountId: string): Promise<number> {
-    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
-      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
-      orderBy: (transactions, { asc }) => [asc(transactions.createdAt)],
-    });
+  async getTransactionHistory(accountId: string, limit: number) {
+    try {
+      const transactions = await this.dbService.db.query.bnplTransaction.findMany({
+        where: eq(schema.bnplTransaction.bnplAccountId, accountId),
+        limit,
+        orderBy: (bnplTransaction, { desc }) => [desc(bnplTransaction.createdAt)],
+      });
 
-    let balance = 0;
-    for (const transaction of transactions) {
-      const amount = Number(transaction.amount);
-      if (transaction.transactionType === 'DEBIT') {
-        balance += amount; // 사용 금액 증가
-      } else if (transaction.transactionType === 'CREDIT') {
-        balance -= amount; // 상환 금액 차감
-      }
+      return transactions;
+    } catch (error) {
+      this.logger.error(`거래 히스토리 조회 실패: ${accountId}`, error);
+      throw error;
     }
-
-    return Math.max(0, balance); // 음수 방지
   }
 
   /**
-   * 계정 통계 정보 조회
+   * 계정 통계 조회 (임시 구현)
    */
   async getAccountStatistics(accountId: string) {
-    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
-      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
-      orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
-    });
-
-    const totalTransactions = transactions.length;
-    const totalAmount = transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
-    const averageAmount = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
-    const lastTransactionDate = transactions.length > 0 ? transactions[0].createdAt : null;
-
+    // TODO: 실제 통계 구현
+    this.logger.log(`계정 통계 조회: ${accountId}`);
     return {
-      totalTransactions,
-      totalAmount,
-      averageAmount,
-      lastTransactionDate,
+      totalTransactions: 0,
+      totalAmount: 0,
+      lastTransactionDate: null,
     };
-  }
-
-  /**
-   * 거래 내역 조회
-   */
-  async getTransactionHistory(accountId: string, limit: number = 100) {
-    const transactions = await this.dbService.db.query.bnplTransaction.findMany({
-      where: eq(schema.bnplTransaction.bnplAccountId, accountId),
-      orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
-      limit,
-    });
-
-    return transactions.map((tx) => ({
-      id: tx.id,
-      invoiceId: tx.invoiceId,
-      transactionType: tx.transactionType,
-      status: tx.status,
-      amount: Number(tx.amount),
-      createdAt: tx.createdAt,
-    }));
   }
 }
