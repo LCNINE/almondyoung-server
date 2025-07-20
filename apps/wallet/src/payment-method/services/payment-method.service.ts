@@ -14,12 +14,7 @@ import { eq } from 'drizzle-orm';
 import { EventProcessorService } from '../../shared/events/event-processor.service';
 
 import { MethodManagementPort } from '../port/method-management.port';
-
-type WalletTx = Parameters<
-  DbService<typeof schema>['db']['transaction']
->[0] extends (tx: infer T) => any
-  ? T
-  : never;
+import { WalletTx } from '../../shared/types';
 
 /**
  * 결제수단(PaymentMethod) 도메인 서비스
@@ -50,18 +45,17 @@ export class PaymentMethodService {
   async create(dto: Method['Create']) {
     return await this.dbService.db.transaction(async (tx) => {
       if (dto.isDefault) {
-        // 동일 사용자 기존 기본 결제수단 해제
         await tx
           .update(schema.paymentMethod)
           .set({ isDefault: false })
           .where(eq(schema.paymentMethod.userId, dto.userId));
       }
 
-      // paymentMethod를 먼저 생성
+      // 1. 공통 paymentMethod를 먼저 PENDING 상태로 생성합니다.
       const [paymentMethod] = await tx
         .insert(schema.paymentMethod)
         .values({
-          id: ulid(), // 명시적으로 id 생성
+          id: ulid(),
           userId: dto.userId,
           methodType: dto.methodType,
           methodName: dto.methodName,
@@ -73,15 +67,23 @@ export class PaymentMethodService {
 
       this.logger.log(`PaymentMethod created: ${paymentMethod.id}`);
 
-      // BNPL인 경우 특별 처리
+      // 2. BNPL인 경우, Port를 통해 등록 절차를 '위임'합니다.
+      //    이 서비스는 어댑터가 내부적으로 DB를 쓰는지 API만 쓰는지 더 이상 신경쓰지 않습니다.
       if (dto.methodType === 'BNPL') {
-        await this.handleBatchCmsRegistration(paymentMethod, dto, tx);
+        try {
+          // 어댑터가 트랜잭션에 참여하도록 tx와 paymentMethod 정보를 전달합니다.
+          await this.methodManager.registerMember(dto, tx, paymentMethod);
+        } catch (error) {
+          this.logger.error(`BNPL 등록 위임 실패: ${paymentMethod.id}`, error);
+          // 어댑터에서 발생한 에러를 여기서 잡아서 최종 처리
+          // 트랜잭션이 롤백되도록 에러를 다시 던집니다.
+          throw error;
+        }
       }
 
       return paymentMethod;
     });
   }
-
   /**
    * 결제수단 정보 수정
    */
@@ -174,26 +176,30 @@ export class PaymentMethodService {
   ) {
     try {
       this.logger.log(`BNPL 등록 처리 시작: ${paymentMethod.id}`);
-      // 임시로 목업 데이터 생성 (실제로는 HMS API 응답 사용)
-      const hmsMemberId = `HMS_${ulid()}`;
-      const hmsCustId = 'default-cust';
-      const creditLimit = 1000000;
-      const approvedLimit = creditLimit;
-      const billingCycleDay = 1;
-      const termsUrl = undefined;
+
+      // 실제 어댑터를 통해 BatchCMS(목업) 회원등록 API 호출
+      const registerResult = await this.methodManager.registerMember(
+        dto,
+        tx,
+        paymentMethod,
+      );
+
+      // registerResult의 memberId 등 활용 가능
+      // 이후 batchCmsMethod insert 등은 기존대로 진행
+
       // 반드시 paymentMethod.id를 id, paymentMethodId 모두에 사용
       const [batchCmsMethod] = await tx
         .insert(schema.batchCmsMethod)
         .values({
           id: paymentMethod.id,
           paymentMethodId: paymentMethod.id,
-          hmsMemberId: hmsMemberId,
-          hmsCustId: hmsCustId,
-          creditLimit: creditLimit,
-          approvedLimit: approvedLimit,
-          billingCycleDay: billingCycleDay,
+          hmsMemberId: registerResult.member.memberId,
+          hmsCustId: 'default-cust',
+          creditLimit: 0,
+          approvedLimit: 0,
+          billingCycleDay: 0,
           hmsMetadata: undefined,
-          termsUrl: termsUrl,
+          termsUrl: undefined,
           createdAt: new Date(),
           updatedAt: new Date(),
           status: 'PENDING',
@@ -226,39 +232,35 @@ export class PaymentMethodService {
     this.logger.log('BNPL 승인 상태 확인 시작');
 
     try {
-      // PENDING 상태인 PaymentMethod와 연결된 BatchCMS 항목들 조회
+      // PENDING 상태인 BatchCMS 항목들 조회
       const pendingMethods =
         await this.dbService.db.query.batchCmsMethod.findMany({
-          with: {
-            paymentMethod: true,
-          },
+          where: eq(schema.batchCmsMethod.status, 'PENDING'),
+          // ...필요시 추가 조건
         });
 
-      // PaymentMethod 상태가 PENDING인 것들만 필터링
-      const filteredPendingMethods = pendingMethods.filter(
-        (item) => item.paymentMethod?.status === 'PENDING',
-      );
-
       this.logger.log(
-        `승인 대기 중인 BNPL 결제수단: ${filteredPendingMethods.length}개`,
+        `승인 대기 중인 BNPL 결제수단: ${pendingMethods.length}개`,
       );
 
-      for (const batchCmsMethod of filteredPendingMethods) {
+      for (const batchCmsMethod of pendingMethods) {
         try {
-          // TODO: 실제 PG사(HMS) 승인 상태 확인 API 호출
-          // const approvalStatus = await this.hmsApiService.checkApprovalStatus(batchCmsMethod.hmsMemberId);
+          // ✅ 어댑터에게 상태를 물어보기만 함
+          const approvalStatus = await this.methodManager.getMemberStatus(
+            batchCmsMethod.hmsMemberId,
+          );
 
-          // 임시로 3일 경과 여부로 승인 상태 결정
-          const metadata = JSON.parse(batchCmsMethod.hmsMetadata || '{}') as {
-            expectedApprovalDate: string;
-          };
-          const expectedApprovalDate = new Date(metadata.expectedApprovalDate);
-          const isApproved = new Date() >= expectedApprovalDate;
-
-          if (isApproved) {
-            // 승인 완료 처리
+          // ✅ 어댑터의 답변에 따라 내부 상태만 변경
+          if (approvalStatus.status === 'REGISTERED') {
             await this.approveBatchCmsMethod(batchCmsMethod);
+          } else if (approvalStatus.status === 'FAILED') {
+            // 실패 처리 로직 (예: status FAILED로 변경)
+            await this.dbService.db
+              .update(schema.batchCmsMethod)
+              .set({ status: 'FAILED', updatedAt: new Date() })
+              .where(eq(schema.batchCmsMethod.id, batchCmsMethod.id));
           }
+          // PENDING이면 아무것도 하지 않고 다음으로 넘어감
         } catch (error) {
           this.logger.error(
             `BNPL 승인 상태 확인 실패: ${batchCmsMethod.id}`,

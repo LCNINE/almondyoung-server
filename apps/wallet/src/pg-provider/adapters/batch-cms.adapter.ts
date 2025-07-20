@@ -5,6 +5,9 @@ import { MockHmsAPI } from 'hms-api-wrapper';
 import * as paymentZod from '../../shared/zod/payment.zod';
 import { CreatePaymentMethodPayload } from '../../shared/zod/payment-method.zod';
 import tsid from 'tsid-ts';
+import { WalletTx } from '../../shared/types';
+import * as schema from '../../shared/schemas/schema';
+import { ulid } from 'ulid';
 
 @Injectable()
 export class BatchCmsAdapter
@@ -122,38 +125,46 @@ export class BatchCmsAdapter
   }
 
   // 회원 등록 (타입 정합성 유지)
-  async registerMember(request: CreatePaymentMethodPayload): Promise<any> {
+  async registerMember(
+    request: CreatePaymentMethodPayload,
+    tx: WalletTx, // 트랜잭션 객체를 직접 받음
+    paymentMethod: typeof schema.paymentMethod.$inferSelect, // 생성된 paymentMethod의 ID를 받음
+  ): Promise<any> {
     this.logger.log(`BatchCMS 회원 등록: ${request.userId}`);
-    // CreatePaymentMethodPayload → BatchCMS 회원등록 DTO로 변환
-    const memberData = {
-      memberId: request.userId,
-      memberName: request.methodName, // 예시: methodName을 memberName으로 사용
-      payerName: request.methodName,
-      paymentKind: 'CMS' as const,
-      paymentCompany: request.institutionCode,
-      paymentNumber: '1234567890', // 실제로는 추가 정보 필요
-      payerNumber: '9001011234',
-      phone: '01012345678',
-      email: `${request.userId}@example.com`,
-    };
-    try {
-      const result = await this.mockApi.members.create(memberData);
-      return {
-        memberId: result.member.memberId,
-        status: 'SUCCESS',
-        message: '회원 등록 성공',
-        rawResponse: result,
-      };
-    } catch (error) {
-      return {
-        memberId: '',
-        status: 'FAILURE',
-        message: (error as Error).message,
-        rawResponse: {},
-      };
-    }
-  }
 
+    // 1. 외부 API 호출
+    const hmsResponse = await this.mockApi.members.create({
+      memberId: paymentMethod.id,
+      memberName: request.methodName,
+      payerName: request.methodName,
+      paymentKind: 'CMS',
+      paymentCompany: 'BATCHCMS',
+      paymentNumber: ulid(),
+      payerNumber: ulid(),
+      phone: '01012345678',
+    });
+
+    // 2. ✅ 어댑터가 직접 batchCmsMethod 테이블에 기록!
+    //    이 로직이 서비스에서 어댑터로 이동함.
+    await tx
+      .insert(schema.batchCmsMethod)
+      .values({
+        id: paymentMethod.id,
+        paymentMethodId: paymentMethod.id,
+        hmsMemberId: hmsResponse.member.memberId,
+        creditLimit: 0,
+        approvedLimit: 0,
+        billingCycleDay: 1,
+        status: 'PENDING',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        termsUrl: 'https://www.batchcms.com/terms',
+      })
+      .returning();
+
+    // API 응답 반환
+    return hmsResponse;
+  }
   async getMemberStatus(memberId: string): Promise<{
     status: 'PENDING' | 'REGISTERED' | 'FAILED';
     registeredAt?: Date;
