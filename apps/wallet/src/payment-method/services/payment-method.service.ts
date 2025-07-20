@@ -12,6 +12,8 @@ import { ulid } from 'ulid';
 import { Method, BatchCms } from '../../shared/zod/payment-method.zod';
 import { eq } from 'drizzle-orm';
 import { EventProcessorService } from '../../shared/events/event-processor.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { BnplPaymentMethodRegisteredEvent } from '../events/bnpl-payment-method-registered.event';
 
 import { MethodManagementPort } from '../port/method-management.port';
 import { WalletTx } from '../../shared/types';
@@ -33,6 +35,7 @@ export class PaymentMethodService {
     private readonly eventProcessor: EventProcessorService,
     @Inject(MethodManagementPort)
     private readonly methodManager: MethodManagementPort,
+    private readonly eventEmitter: EventEmitter2,
     // paymentMethodRepo 등 repository 관련 의존성 제거
   ) {}
 
@@ -79,6 +82,17 @@ export class PaymentMethodService {
           // 트랜잭션이 롤백되도록 에러를 다시 던집니다.
           throw error;
         }
+        // 트랜잭션 성공 후 이벤트 발행
+        this.eventEmitter.emit(
+          'bnpl.method.registered',
+          new BnplPaymentMethodRegisteredEvent(
+            paymentMethod.id,
+            paymentMethod.userId,
+            1000000, // 예시: 실제 한도 정보로 교체 가능
+            1000000,
+            1,
+          ),
+        );
       }
 
       return paymentMethod;

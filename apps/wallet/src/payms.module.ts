@@ -42,6 +42,7 @@ import { EventsModule } from './shared/events/events.module';
     }),
     EventsModule,
     InvoiceModule,
+    BnplModule,
     // PaymentModule,
     // PaymentModule,
     PaymentMethodModule,

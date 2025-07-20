@@ -15,7 +15,7 @@
 
 // import { FileInterceptor } from '@nestjs/platform-express';
 // import * as bnplZod from '../shared/zod/bnpl.zod';
-// import * as paymentZod from '../shared/zod/payment.zod';
+// import * as paymentZod from '../shared/zod/payment.zod';ㅁ
 // @Controller('bnpl')
 // export class BnplController {
 //   constructor(private readonly bnplService: BnplService) {}
