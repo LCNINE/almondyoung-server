@@ -12,10 +12,7 @@ import * as schema from '../shared/schemas/schema';
 // 💡 1. 역할에 맞는, 새롭게 정의된 타입들을 import 합니다.
 import * as paymentZod from '../shared/zod/payment.zod';
 
-import {
-  PAYMENT_PROCESSING_PORT,
-  PaymentProcessingPort,
-} from '../bnpl/ports/payment-ports';
+import { PaymentProcessingPort } from './port/payment-processing.port';
 import { DbService, InjectDb } from '@app/db';
 
 @Injectable()
@@ -23,7 +20,7 @@ export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
 
   constructor(
-    @Inject(PAYMENT_PROCESSING_PORT)
+    @Inject(PaymentProcessingPort)
     private readonly paymentProcessor: PaymentProcessingPort,
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     // repository 관련 의존성 제거

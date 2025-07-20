@@ -12,15 +12,14 @@ import { ulid } from 'ulid';
 import { Method, BatchCms } from '../../shared/zod/payment-method.zod';
 import { eq } from 'drizzle-orm';
 import { EventProcessorService } from '../../shared/events/event-processor.service';
-import {
-  PaymentMethodCreatedEvent,
-  PaymentMethodActivatedEvent,
-  BatchCmsMethodRegisteredEvent,
-} from '../events/payment-method.events';
-import {
-  METHOD_MANAGEMENT_PORT,
-  MethodManagementPort,
-} from '../../bnpl/ports/payment-ports';
+
+import { MethodManagementPort } from '../port/method-management.port';
+
+type WalletTx = Parameters<
+  DbService<typeof schema>['db']['transaction']
+>[0] extends (tx: infer T) => any
+  ? T
+  : never;
 
 /**
  * 결제수단(PaymentMethod) 도메인 서비스
@@ -37,7 +36,7 @@ export class PaymentMethodService {
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly eventProcessor: EventProcessorService,
-    @Inject(METHOD_MANAGEMENT_PORT)
+    @Inject(MethodManagementPort)
     private readonly methodManager: MethodManagementPort,
     // paymentMethodRepo 등 repository 관련 의존성 제거
   ) {}
@@ -58,10 +57,11 @@ export class PaymentMethodService {
           .where(eq(schema.paymentMethod.userId, dto.userId));
       }
 
+      // paymentMethod를 먼저 생성
       const [paymentMethod] = await tx
         .insert(schema.paymentMethod)
         .values({
-          id: ulid(),
+          id: ulid(), // 명시적으로 id 생성
           userId: dto.userId,
           methodType: dto.methodType,
           methodName: dto.methodName,
@@ -73,25 +73,9 @@ export class PaymentMethodService {
 
       this.logger.log(`PaymentMethod created: ${paymentMethod.id}`);
 
-      // 일반 결제수단 생성 이벤트 발행
-      await this.eventProcessor.emit(
-        new PaymentMethodCreatedEvent(
-          paymentMethod.id,
-          paymentMethod.userId,
-          paymentMethod.methodType,
-          paymentMethod.methodName,
-          paymentMethod.institutionCode,
-          paymentMethod.isDefault,
-          {
-            actor: 'USER',
-            correlationId: ulid(),
-          },
-        ),
-      );
-
       // BNPL인 경우 특별 처리
       if (dto.methodType === 'BNPL') {
-        await this.handleBatchCmsRegistration(paymentMethod.id, dto);
+        await this.handleBatchCmsRegistration(paymentMethod, dto, tx);
       }
 
       return paymentMethod;
@@ -184,89 +168,52 @@ export class PaymentMethodService {
    * - BatchCmsMethodRegisteredEvent 발행
    */
   private async handleBatchCmsRegistration(
-    paymentMethodId: string,
+    paymentMethod: typeof schema.paymentMethod.$inferSelect,
     dto: Method['Create'],
+    tx: WalletTx,
   ) {
     try {
-      this.logger.log(`BNPL 등록 처리 시작: ${paymentMethodId}`);
-
-      // TODO: 실제 PG사(HMS) 회원 등록 API 호출
-      // const hmsResponse = await this.hmsApiService.registerMember({
-      //   userId: dto.userId,
-      //   creditLimit: creditLimit,
-      //   approvedLimit: approvedLimit,
-      //   billingCycleDay: billingCycleDay,
-      // });
-
+      this.logger.log(`BNPL 등록 처리 시작: ${paymentMethod.id}`);
       // 임시로 목업 데이터 생성 (실제로는 HMS API 응답 사용)
       const hmsMemberId = `HMS_${ulid()}`;
       const hmsCustId = 'default-cust';
-
-      // BNPL 기본값 설정 (실제로는 요청에서 받아야 함)
-      const creditLimit = 1000000; // 기본 100만원
+      const creditLimit = 1000000;
       const approvedLimit = creditLimit;
-      const billingCycleDay = 1; // 매월 1일
+      const billingCycleDay = 1;
       const termsUrl = undefined;
-
-      // BatchCMS 테이블에 기록 (PENDING_APPROVAL 상태)
-      const [batchCmsMethod] = await this.dbService.db
+      // 반드시 paymentMethod.id를 id, paymentMethodId 모두에 사용
+      const [batchCmsMethod] = await tx
         .insert(schema.batchCmsMethod)
         .values({
-          id: ulid(),
-          paymentMethodId: paymentMethodId,
-          // BatchCMS (HMS) 고유 필드
+          id: paymentMethod.id,
+          paymentMethodId: paymentMethod.id,
           hmsMemberId: hmsMemberId,
           hmsCustId: hmsCustId,
-          // BNPL 관련 정보
           creditLimit: creditLimit,
           approvedLimit: approvedLimit,
           billingCycleDay: billingCycleDay,
-          // BatchCMS 메타데이터
-          hmsMetadata: undefined, // JSON 형태로 HMS 응답 원본 저장
+          hmsMetadata: undefined,
           termsUrl: termsUrl,
-
           createdAt: new Date(),
           updatedAt: new Date(),
           status: 'PENDING',
         })
         .returning();
-
       this.logger.log(
         `BatchCMS 기록 생성: ${batchCmsMethod.id}, 상태: PENDING_APPROVAL`,
       );
-
-      // BatchCmsMethodRegisteredEvent 발행 (BNPL 도메인에서 처리)
-      await this.eventProcessor.emit(
-        new BatchCmsMethodRegisteredEvent(
-          paymentMethodId,
-          dto.userId,
-          hmsMemberId,
-          hmsCustId,
-          batchCmsMethod.creditLimit,
-          batchCmsMethod.approvedLimit,
-          batchCmsMethod.billingCycleDay,
-          batchCmsMethod.termsUrl ?? undefined,
-          {
-            actor: 'SYSTEM',
-            correlationId: ulid(),
-          },
-        ),
-      );
-
-      this.logger.log(`BNPL 등록 이벤트 발행 완료: ${paymentMethodId}`);
+      this.logger.log(`BNPL 등록 이벤트 발행 완료: ${paymentMethod.id}`);
     } catch (error) {
       this.logger.error(`BNPL 등록 처리 실패: ${error}`, {
-        paymentMethodId,
+        paymentMethodId: paymentMethod.id,
         userId: dto.userId,
         error: error as Error,
       });
-
       // PaymentMethod 상태를 FAILED로 변경
-      await this.dbService.db
+      await tx
         .update(schema.paymentMethod)
         .set({ status: 'FAILED', updatedAt: new Date() })
-        .where(eq(schema.paymentMethod.id, paymentMethodId));
-
+        .where(eq(schema.paymentMethod.id, paymentMethod.id));
       throw error;
     }
   }
@@ -354,24 +301,24 @@ export class PaymentMethodService {
         `BNPL 결제수단 승인 완료: ${batchCmsMethod.paymentMethodId}`,
       );
 
-      // PaymentMethodActivatedEvent 발행
-      const paymentMethod = await tx.query.paymentMethod.findFirst({
-        where: eq(schema.paymentMethod.id, batchCmsMethod.paymentMethodId),
-      });
+      // PaymentMethodActivatedEvent 발행 (임시 주석처리)
+      // const paymentMethod = await tx.query.paymentMethod.findFirst({
+      //   where: eq(schema.paymentMethod.id, batchCmsMethod.paymentMethodId),
+      // });
 
-      if (paymentMethod) {
-        await this.eventProcessor.emit(
-          new PaymentMethodActivatedEvent(
-            paymentMethod.id,
-            paymentMethod.userId,
-            paymentMethod.methodType,
-            {
-              actor: 'SYSTEM',
-              correlationId: ulid(),
-            },
-          ),
-        );
-      }
+      // if (paymentMethod) {
+      //   await this.eventProcessor.emit(
+      //     new PaymentMethodActivatedEvent(
+      //       paymentMethod.id,
+      //       paymentMethod.userId,
+      //       paymentMethod.methodType,
+      //       {
+      //         actor: 'SYSTEM',
+      //         correlationId: ulid(),
+      //       },
+      //     ),
+      //   );
+      // }
     });
   }
 }

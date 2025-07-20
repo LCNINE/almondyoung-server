@@ -11,7 +11,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { APP_PIPE } from '@nestjs/core';
 import * as schema from './shared/schemas/schema';
-import { PaymentModule } from './payment/payment.module';
+// import { PaymentModule } from './payment/payment.module';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { EventsModule } from './shared/events/events.module';
 @Module({
@@ -45,7 +45,6 @@ import { EventsModule } from './shared/events/events.module';
     // PaymentModule,
     // PaymentModule,
     PaymentMethodModule,
-    BnplModule,
   ],
   controllers: [],
   providers: [
