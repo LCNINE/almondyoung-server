@@ -61,6 +61,7 @@ describe('ProductMatchingService (Integration)', () => {
         stock_events,
         stocks,
         product_variant_sku_links,
+        product_option_matchings,
         product_matchings,
         skus
       CASCADE
@@ -75,6 +76,7 @@ describe('ProductMatchingService (Integration)', () => {
         stock_events,
         stocks,
         product_variant_sku_links,
+        product_option_matchings,
         product_matchings,
         skus
       CASCADE
@@ -111,6 +113,7 @@ describe('ProductMatchingService (Integration)', () => {
       expect(createdMatching).toBeDefined();
       expect(createdMatching?.status).toBe('pending');
       expect(createdMatching?.priority).toBe('high');
+      expect(createdMatching?.strategy).toBeNull();
       expect(createdMatching?.isResolved).toBe(false);
     });
 
@@ -165,9 +168,6 @@ describe('ProductMatchingService (Integration)', () => {
         ],
       };
 
-      // WarehouseService의 getDefaultWarehouseId를 모킹할 필요 없음
-      // 실제 기본 창고 ID를 사용
-
       await service.handleAutomaticMatchingRequest(payload);
 
       // 매칭이 생성되었는지 확인
@@ -177,6 +177,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       expect(createdMatching).toBeDefined();
       expect(createdMatching?.status).toBe('matched');
+      expect(createdMatching?.strategy).toBe('variant');
       expect(createdMatching?.isResolved).toBe(true);
 
       // SKU가 생성되었는지 확인
@@ -219,6 +220,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       expect(createdMatching).toBeDefined();
       expect(createdMatching?.status).toBe('ignored');
+      expect(createdMatching?.strategy).toBe('void');
       expect(createdMatching?.isResolved).toBe(true);
 
       // SKU나 재고가 생성되지 않았는지 확인
@@ -249,9 +251,6 @@ describe('ProductMatchingService (Integration)', () => {
 
       await service.handleManualMatchingRequest(payload);
 
-      // WarehouseService의 getDefaultWarehouseId를 모킹할 필요 없음
-      // 실제 기본 창고 ID를 사용
-
       // SKU를 생성
       const newSku = await service.createNewSkuForMatching(variantId, {
         name: '테스트 SKU',
@@ -266,6 +265,7 @@ describe('ProductMatchingService (Integration)', () => {
       await service.resolveMatchingPending(matching!.id, {
         skuIds: [newSku.id],
         ignore: false,
+        strategy: 'variant'
       });
 
       // 매칭이 해소되었는지 확인
@@ -274,7 +274,73 @@ describe('ProductMatchingService (Integration)', () => {
       });
 
       expect(resolvedMatching?.status).toBe('matched');
+      expect(resolvedMatching?.strategy).toBe('variant');
       expect(resolvedMatching?.isResolved).toBe(true);
+    });
+
+    it('수동 매칭 시 수량을 지정할 수 있어야 한다', async () => {
+      const variantId = uuidv4();
+      // 수동 매칭 요청 생성
+      const payload = {
+        productId: testProductId,
+        name: '세트 상품',
+        variants: [
+          {
+            id: variantId,
+            name: '선물 세트',
+            inventoryManagement: true,
+            components: [],
+          },
+        ],
+      };
+
+      await service.handleManualMatchingRequest(payload);
+
+      // 여러 SKU 생성
+      const sku1 = await service.createNewSkuForMatching(variantId, {
+        name: '상품 A',
+        inventoryManagement: true,
+      });
+
+      const sku2 = await service.createNewSkuForMatching(variantId, {
+        name: '상품 B',
+        inventoryManagement: true,
+      });
+
+      // 매칭 ID 조회
+      const matching = await dbService.db.query.productMatchings.findFirst({
+        where: eq(wmsTables.productMatchings.variantId, variantId),
+      });
+
+      // 수량을 지정하여 매칭 해소
+      await service.resolveMatchingPending(matching!.id, {
+        skuMappings: [
+          { skuId: sku1.id, quantity: 2 }, // 상품 A 2개
+          { skuId: sku2.id, quantity: 3 }, // 상품 B 3개
+        ],
+        ignore: false,
+        strategy: 'variant'
+      });
+
+      // 매칭이 해소되었는지 확인
+      const resolvedMatching = await dbService.db.query.productMatchings.findFirst({
+        where: eq(wmsTables.productMatchings.id, matching!.id),
+      });
+
+      expect(resolvedMatching?.status).toBe('matched');
+
+      // 링크 테이블에서 직접 조회
+      const links = await dbService.db.query.productVariantSkuLinks.findMany({
+        where: eq(wmsTables.productVariantSkuLinks.productMatchingId, matching!.id)
+      });
+
+      expect(links).toHaveLength(2);
+
+      // 수량 확인
+      const link1 = links.find(l => l.skuId === sku1.id);
+      const link2 = links.find(l => l.skuId === sku2.id);
+      expect(link1?.quantity).toBe(2);
+      expect(link2?.quantity).toBe(3);
     });
 
     it('매칭 대기를 무시로 처리할 수 있어야 한다', async () => {
@@ -311,7 +377,133 @@ describe('ProductMatchingService (Integration)', () => {
       });
 
       expect(ignoredMatching?.status).toBe('ignored');
+      expect(ignoredMatching?.strategy).toBe('void');
       expect(ignoredMatching?.isResolved).toBe(true);
+    });
+  });
+
+  describe('옵션별 매칭', () => {
+    it('옵션별 매칭을 생성할 수 있어야 한다', async () => {
+      const variantId = uuidv4();
+      // 먼저 수동 매칭 요청을 생성
+      const payload = {
+        productId: testProductId,
+        name: '컴퓨터',
+        variants: [
+          {
+            id: variantId,
+            name: '컴퓨터 세트',
+            inventoryManagement: true,
+            components: [],
+          },
+        ],
+      };
+
+      await service.handleManualMatchingRequest(payload);
+
+      // CPU와 RAM용 SKU 생성
+      const cpuI7 = await service.createNewSkuForMatching(variantId, {
+        name: 'Intel i7 CPU',
+        inventoryManagement: true,
+      });
+
+      const ram16GB = await service.createNewSkuForMatching(variantId, {
+        name: '16GB RAM',
+        inventoryManagement: true,
+      });
+
+      // 매칭 ID 조회
+      const matching = await dbService.db.query.productMatchings.findFirst({
+        where: eq(wmsTables.productMatchings.variantId, variantId),
+      });
+
+      // 옵션별 매칭 해소
+      await service.resolveOptionMatching(matching!.id, [
+        {
+          optionName: 'CPU',
+          optionValue: 'i7',
+          skuId: cpuI7.id
+        },
+        {
+          optionName: 'RAM',
+          optionValue: '16GB',
+          skuId: ram16GB.id
+        }
+      ]);
+
+      // 매칭이 옵션별로 처리되었는지 확인
+      const resolvedMatching = await dbService.db.query.productMatchings.findFirst({
+        where: eq(wmsTables.productMatchings.id, matching!.id),
+      });
+
+      expect(resolvedMatching?.status).toBe('matched');
+      expect(resolvedMatching?.strategy).toBe('option');
+      expect(resolvedMatching?.isResolved).toBe(true);
+
+      // 옵션 매칭이 생성되었는지 확인
+      const optionMappings = await dbService.db.query.productOptionMatchings.findMany({
+        where: eq(wmsTables.productOptionMatchings.productMatchingId, matching!.id),
+      });
+
+      expect(optionMappings).toHaveLength(2);
+      expect(optionMappings.find(m => m.optionName === 'CPU' && m.optionValue === 'i7')).toBeDefined();
+      expect(optionMappings.find(m => m.optionName === 'RAM' && m.optionValue === '16GB')).toBeDefined();
+    });
+
+    it('옵션 조합에 따른 SKU 목록을 조회할 수 있어야 한다', async () => {
+      const variantId = uuidv4();
+      // 매칭 생성 및 설정 (위 테스트와 동일한 과정)
+      const payload = {
+        productId: testProductId,
+        name: '컴퓨터',
+        variants: [
+          {
+            id: variantId,
+            name: '컴퓨터 세트',
+            inventoryManagement: true,
+            components: [],
+          },
+        ],
+      };
+
+      await service.handleManualMatchingRequest(payload);
+
+      const cpuI7 = await service.createNewSkuForMatching(variantId, {
+        name: 'Intel i7 CPU',
+        inventoryManagement: true,
+      });
+
+      const ram16GB = await service.createNewSkuForMatching(variantId, {
+        name: '16GB RAM',
+        inventoryManagement: true,
+      });
+
+      const matching = await dbService.db.query.productMatchings.findFirst({
+        where: eq(wmsTables.productMatchings.variantId, variantId),
+      });
+
+      await service.resolveOptionMatching(matching!.id, [
+        {
+          optionName: 'CPU',
+          optionValue: 'i7',
+          skuId: cpuI7.id
+        },
+        {
+          optionName: 'RAM',
+          optionValue: '16GB',
+          skuId: ram16GB.id
+        }
+      ]);
+
+      // 특정 옵션 조합에 대한 SKU 조회
+      const skuMappings = await service.getSkusForVariant(variantId, [
+        { optionName: 'CPU', optionValue: 'i7' },
+        { optionName: 'RAM', optionValue: '16GB' }
+      ]);
+
+      expect(skuMappings).toHaveLength(2);
+      expect(skuMappings.find(m => m.skuId === cpuI7.id)).toBeDefined();
+      expect(skuMappings.find(m => m.skuId === ram16GB.id)).toBeDefined();
     });
   });
 });

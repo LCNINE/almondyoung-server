@@ -2,7 +2,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
-import { TypedDatabase } from '@app/db';
+import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, gte, isNull } from 'drizzle-orm';
 import { InterWarehouseTransferDto } from './dto/inter-warehouse-transfer.dto';
 import { IntraWarehouseMoveDto } from './dto/intra-warehouse-move.dto';
@@ -12,12 +12,14 @@ export class WarehouseTransferService {
     private readonly logger = new Logger(WarehouseTransferService.name);
 
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly db: TypedDatabase<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
     ) { }
 
-    /**
-     * 창고 간 재고 이동
-     */
+    private get db() {
+        return this.dbService.db;
+    }
+
+    // 창고 간 재고 이동
     async transferBetweenWarehouses(dto: InterWarehouseTransferDto) {
         const { fromWarehouseId, toWarehouseId, skuId, quantity, reason } = dto;
 
@@ -30,7 +32,7 @@ export class WarehouseTransferService {
         }
 
         return this.db.transaction(async (tx) => {
-            // 1. 출발 창고의 가용 재고 확인
+
             const sourceStocks = await tx.query.stocks.findMany({
                 where: and(
                     eq(wmsTables.stocks.skuId, skuId),
@@ -39,8 +41,8 @@ export class WarehouseTransferService {
                     gte(wmsTables.stocks.availableQuantity, 1)
                 ),
                 orderBy: (stocks, { asc }) => [
-                    asc(stocks.expiryDate), // 유통기한 빠른 것부터
-                    asc(stocks.creatorEventId) // FIFO
+                    asc(stocks.expiryDate),
+                    asc(stocks.creatorEventId)
                 ],
             });
 
@@ -48,7 +50,6 @@ export class WarehouseTransferService {
                 throw new NotFoundException(`출발 창고에 SKU ${skuId}의 가용 재고가 없습니다.`);
             }
 
-            // 총 가용 재고 계산
             const totalAvailable = sourceStocks.reduce((sum, stock) => sum + stock.availableQuantity, 0);
             if (totalAvailable < quantity) {
                 throw new BadRequestException(
@@ -56,7 +57,7 @@ export class WarehouseTransferService {
                 );
             }
 
-            // 2. 출발 창고에서 차감할 재고들 처리
+            // 출발 창고에서 재고 차감
             let remainingQuantity = quantity;
             const transferDetails: Array<{
                 stockId: string;
@@ -70,7 +71,6 @@ export class WarehouseTransferService {
 
                 const transferQuantity = Math.min(sourceStock.availableQuantity, remainingQuantity);
 
-                // 2-1. 출발 창고에서 OUT 이벤트 생성
                 const [outEvent] = await tx.insert(wmsTables.stockEvents).values({
                     stockId: sourceStock.id,
                     skuId: sourceStock.skuId,
@@ -83,12 +83,12 @@ export class WarehouseTransferService {
                     expiresStockRowId: sourceStock.id,
                 }).returning();
 
-                // 2-2. 기존 재고 만료 처리
+                // 기존 재고 만료 처리
                 await tx.update(wmsTables.stocks)
                     .set({ destroyerEventId: outEvent.id })
                     .where(eq(wmsTables.stocks.id, sourceStock.id));
 
-                // 2-3. 차감 후 남은 수량이 있으면 새 재고 생성
+                // 차감 후 남은 수량이 있으면 새 재고 생성
                 if (sourceStock.realQuantity > transferQuantity) {
                     const [newSourceStock] = await tx.insert(wmsTables.stocks).values({
                         ...sourceStock,
@@ -114,9 +114,8 @@ export class WarehouseTransferService {
                 remainingQuantity -= transferQuantity;
             }
 
-            // 3. 도착 창고에 재고 추가
+            // 도착 창고에 재고 추가
             for (const detail of transferDetails) {
-                // 3-1. IN 이벤트 생성
                 const [inEvent] = await tx.insert(wmsTables.stockEvents).values({
                     skuId,
                     warehouseId: toWarehouseId,
@@ -129,7 +128,6 @@ export class WarehouseTransferService {
                     reason: `창고 이동: ${fromWarehouseId} → ${toWarehouseId} - ${reason}`,
                 }).returning();
 
-                // 3-2. 새 재고 생성
                 const [newStock] = await tx.insert(wmsTables.stocks).values({
                     skuId,
                     warehouseId: toWarehouseId,
@@ -143,7 +141,6 @@ export class WarehouseTransferService {
                     manufacturedAt: detail.manufacturedAt,
                 }).returning();
 
-                // 3-3. 이벤트에 생성된 재고 ID 연결
                 await tx.update(wmsTables.stockEvents)
                     .set({ createsStockRowId: newStock.id, stockId: newStock.id })
                     .where(eq(wmsTables.stockEvents.id, inEvent.id));
@@ -165,14 +162,12 @@ export class WarehouseTransferService {
         });
     }
 
-    /**
-     * 창고 내 위치 이동
-     */
+    // 창고 내 위치 이동
     async moveWithinWarehouse(dto: IntraWarehouseMoveDto) {
         const { stockId, newLocationId, reason } = dto;
 
         return this.db.transaction(async (tx) => {
-            // 1. 현재 재고 확인
+
             const currentStock = await tx.query.stocks.findFirst({
                 where: and(
                     eq(wmsTables.stocks.id, stockId),
@@ -184,7 +179,6 @@ export class WarehouseTransferService {
                 throw new NotFoundException(`활성 재고 ${stockId}를 찾을 수 없습니다.`);
             }
 
-            // 2. 새 위치 확인
             const newLocation = await tx.query.locations.findFirst({
                 where: eq(wmsTables.locations.id, newLocationId),
             });
@@ -193,12 +187,10 @@ export class WarehouseTransferService {
                 throw new NotFoundException(`위치 ${newLocationId}를 찾을 수 없습니다.`);
             }
 
-            // 같은 창고인지 확인
             if (newLocation.warehouseId !== currentStock.warehouseId) {
                 throw new BadRequestException('다른 창고의 위치로는 이동할 수 없습니다. 창고 간 이동을 사용하세요.');
             }
 
-            // 3. MOVE 이벤트 생성
             const [moveEvent] = await tx.insert(wmsTables.stockEvents).values({
                 stockId: currentStock.id,
                 skuId: currentStock.skuId,
@@ -210,12 +202,12 @@ export class WarehouseTransferService {
                 expiresStockRowId: currentStock.id,
             }).returning();
 
-            // 4. 기존 재고 만료
+            // 기존 재고 만료
             await tx.update(wmsTables.stocks)
                 .set({ destroyerEventId: moveEvent.id })
                 .where(eq(wmsTables.stocks.id, stockId));
 
-            // 5. 새 위치에 재고 생성
+            // 새 위치에 재고 생성
             const [newStock] = await tx.insert(wmsTables.stocks).values({
                 ...currentStock,
                 id: undefined,
@@ -224,7 +216,6 @@ export class WarehouseTransferService {
                 destroyerEventId: null,
             }).returning();
 
-            // 6. 이벤트에 생성된 재고 ID 연결
             await tx.update(wmsTables.stockEvents)
                 .set({ createsStockRowId: newStock.id })
                 .where(eq(wmsTables.stockEvents.id, moveEvent.id));
@@ -236,5 +227,53 @@ export class WarehouseTransferService {
 
             return newStock;
         });
+    }
+
+    // 재고 위치별 현황 조회
+    async getStocksByLocation(locationId: string) {
+        return this.db.query.stocks.findMany({
+            where: and(
+                eq(wmsTables.stocks.locationId, locationId),
+                isNull(wmsTables.stocks.destroyerEventId)
+            ),
+            with: {
+                sku: true,
+            },
+            orderBy: (stocks, { asc }) => [
+                asc(stocks.skuId),
+                asc(stocks.expiryDate),
+            ],
+        });
+    }
+
+    // 창고별 위치 활용률 조회
+    async getLocationUtilization(warehouseId: string) {
+        const locations = await this.db.query.locations.findMany({
+            where: eq(wmsTables.locations.warehouseId, warehouseId),
+        });
+
+        const utilization = await Promise.all(
+            locations.map(async (location) => {
+                const stocks = await this.db.query.stocks.findMany({
+                    where: and(
+                        eq(wmsTables.stocks.locationId, location.id),
+                        isNull(wmsTables.stocks.destroyerEventId)
+                    ),
+                });
+
+                const totalQuantity = stocks.reduce((sum, stock) => sum + stock.realQuantity, 0);
+                const skuCount = new Set(stocks.map(s => s.skuId)).size;
+
+                return {
+                    locationId: location.id,
+                    locationCode: location.code,
+                    stockCount: stocks.length,
+                    skuCount,
+                    totalQuantity,
+                };
+            })
+        );
+
+        return utilization;
     }
 }

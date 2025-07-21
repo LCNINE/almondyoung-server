@@ -91,6 +91,65 @@ export class StockController {
     return this.stockService.getCurrentStock(query);
   }
 
+  @Get('/sku/:skuId/total')
+  @ApiOperation({ summary: 'SKU별 총 재고 조회 (모든 창고 합계)' })
+  @ApiResponse({
+    status: 200,
+    description: 'SKU의 총 재고 정보를 반환합니다.',
+    schema: {
+      type: 'object',
+      properties: {
+        skuId: { type: 'string' },
+        totalRealQuantity: { type: 'number' },
+        totalReservedQuantity: { type: 'number' },
+        totalAvailableQuantity: { type: 'number' }
+      }
+    }
+  })
+  async getTotalStockBySku(@Param('skuId') skuId: string) {
+    return this.stockService.getTotalStockBySku(skuId);
+  }
+
+  @Get('/sku/:skuId/warehouse/:warehouseId')
+  @ApiOperation({ summary: '특정 창고의 SKU별 재고 상세 조회' })
+  @ApiResponse({ status: 200, description: '창고별 SKU 재고 상세 정보를 반환합니다.' })
+  async getStockBySkuAndWarehouse(
+    @Param('skuId') skuId: string,
+    @Param('warehouseId') warehouseId: string
+  ) {
+    return this.stockService.getStockBySkuAndWarehouse(skuId, warehouseId);
+  }
+
+  @Get('/location/:locationId')
+  @ApiOperation({ summary: '특정 위치의 재고 현황 조회' })
+  @ApiResponse({ status: 200, description: '위치별 재고 목록을 반환합니다.' })
+  async getStocksByLocation(@Param('locationId') locationId: string) {
+    return this.warehouseTransferService.getStocksByLocation(locationId);
+  }
+
+  @Get('/warehouse/:warehouseId/locations/utilization')
+  @ApiOperation({ summary: '창고별 위치 활용률 조회' })
+  @ApiResponse({
+    status: 200,
+    description: '창고의 위치별 활용률을 반환합니다.',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          locationId: { type: 'string' },
+          locationCode: { type: 'string' },
+          stockCount: { type: 'number' },
+          skuCount: { type: 'number' },
+          totalQuantity: { type: 'number' }
+        }
+      }
+    }
+  })
+  async getLocationUtilization(@Param('warehouseId') warehouseId: string) {
+    return this.warehouseTransferService.getLocationUtilization(warehouseId);
+  }
+
   @Get('/warehouse/:warehouseId/summary')
   @ApiOperation({ summary: '특정 창고의 재고 요약 조회' })
   @ApiResponse({ status: 200, description: '창고별 재고 요약을 반환합니다.' })

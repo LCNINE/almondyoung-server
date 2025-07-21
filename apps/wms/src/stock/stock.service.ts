@@ -2,13 +2,14 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../database/schemas/wms-schema';
-import { TypedDatabase } from '@app/db';
+import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, gte, lte, isNull, or, desc, sql } from 'drizzle-orm';
 import { CreateStockEntryDto } from './dto/create-stock-entry.dto';
 import { GetStockQueryDto } from './dto/get-stock-query.dto';
 import { CreateInboundDto } from './dto/create-inbound.dto';
 import { SkuService } from '../sku/sku.service';
 import { WarehouseService } from '../warehouse/warehouse.service';
+import { SkuCreationSource } from '../sku/dto/create-sku.dto';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 
@@ -17,30 +18,53 @@ export class StockService {
   private readonly logger = new Logger(StockService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly db: TypedDatabase<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
     private readonly skuService: SkuService,
     private readonly warehouseService: WarehouseService,
   ) { }
+
+  private get db() {
+    return this.dbService.db;
+  }
 
   private calculateAvailableQuantity(realQuantity: number, reservedQuantity: number): number {
     return realQuantity - reservedQuantity;
   }
 
-  //  새로운 재고 묶음(Stock Entry)을 생성
-  //  SKU가 존재하지 않으면 자동으로 생성
+  // stock Entry생성
   async createStockEntry(dto: CreateStockEntryDto, tx?: DbTx) {
     const db = tx || this.db;
-    const { skuName, inventoryManagement, warehouseId, quantity, stockType, locationId, expiryDate, manufacturedAt, barcodeType, subBarcode, packingUnit, reason, orderId } = dto;
+    const {
+      variantId,
+      skuName,
+      inventoryManagement,
+      warehouseId,
+      quantity,
+      stockType,
+      locationId,
+      expiryDate,
+      manufacturedAt,
+      barcodeType,
+      subBarcode,
+      packingUnit,
+      reason,
+      orderId
+    } = dto;
 
     // 1. SKU 조회 또는 생성
     let sku = await db.query.skus.findFirst({ where: eq(wmsTables.skus.name, skuName) });
 
     if (!sku) {
       this.logger.warn(`SKU with name '${skuName}' not found. Auto-creating SKU.`);
-      // SKU 서비스의 내부 생성 메서드를 호출하여 SKU를 생성
+
+      const creationSource = variantId
+        ? SkuCreationSource.AUTO_MATCHING
+        : SkuCreationSource.MANUAL_ENTRY;
+
       sku = await this.skuService._createSkuInternal({
         name: skuName,
         inventoryManagement: inventoryManagement ?? true,
+        source: creationSource,
       }, db);
     } else {
       if (!sku.inventoryManagement) {
@@ -48,14 +72,12 @@ export class StockService {
       }
     }
 
-    // 2. 초기 수량 유효성 검사
     if (quantity < 0) {
       throw new BadRequestException('초기 재고 항목 수량은 음수일 수 없습니다.');
     }
 
-    // 3. 재고 생성 로직
+    // 재고 생성
     const execution = async (executor: DbTx) => {
-      // 3-1. 재고 이벤트(stock_events) 레코드 생성
       if (!sku) {
         throw new Error('SKU 정보가 없습니다. 재고 이벤트 생성에 실패했습니다.');
       }
@@ -68,39 +90,45 @@ export class StockService {
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : null,
         orderId,
-        reason: reason || 'initial_stock_creation',
+        reason: reason || `initial_stock_creation${variantId ? `_for_variant_${variantId}` : ''}`,
       }).returning();
       if (!creatingEvent) throw new Error('재고 생성 이벤트 생성에 실패했습니다.');
 
-      // 3-2. 새로운 재고(stocks) 레코드 생성
       if (!sku) {
         throw new Error('SKU 정보가 없습니다. 재고 생성에 실패했습니다.');
       }
       const [newStock] = await executor.insert(wmsTables.stocks).values({
-        skuId: sku.id, warehouseId, locationId, stockType, realQuantity: quantity,
-        reservedQuantity: 0, availableQuantity: quantity,
+        skuId: sku.id,
+        warehouseId,
+        locationId,
+        stockType,
+        realQuantity: quantity,
+        reservedQuantity: 0,
+        availableQuantity: quantity,
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : null,
-        barcodeType, subBarcode, packingUnit, creatorEventId: creatingEvent.id,
+        barcodeType,
+        subBarcode,
+        packingUnit,
+        creatorEventId: creatingEvent.id,
       }).returning();
       if (!newStock) throw new Error('새 재고 항목 생성에 실패했습니다.');
 
-      // 3-3. 생성된 재고 ID를 재고 이벤트에 다시 연결
       await executor.update(wmsTables.stockEvents)
         .set({ createsStockRowId: newStock.id, stockId: newStock.id })
         .where(eq(wmsTables.stockEvents.id, creatingEvent.id));
 
-      // 3-4. 선판매 가능(preStockSellable) 상태 업데이트
+      // 선판매 가능(preStockSellable) 상태 업데이트
       // SKU가 선판매 가능 상태이고, 이번 입고 수량이 0보다 클 때만 상태를 false로 변경
       if (sku.preStockSellable && quantity > 0) {
         await this.skuService._updatePreStockSellableInternal(sku.id, false, executor);
       }
 
       this.logger.log(`새 재고 항목 생성됨: ${newStock.id} for SKU ${sku.id}, 수량: ${quantity}.`);
-      return newStock;
+
+      return { ...newStock, variantId };
     };
 
-    // 4. 트랜잭션 실행
     if (tx) {
       return execution(tx);
     } else {
@@ -108,13 +136,10 @@ export class StockService {
     }
   }
 
-  /**
-   * 거래처로부터의 입고 처리
-   */
+  // 거래처로부터의 입고 처리
   async processInbound(dto: CreateInboundDto) {
     const { skuId, quantity, supplierType, warehouseId, locationId, expiryDate, manufacturedAt, reason, purchaseOrderId } = dto;
 
-    // SKU 확인
     const sku = await this.skuService.findSkuById(skuId);
     if (!sku) {
       throw new NotFoundException(`SKU ${skuId}를 찾을 수 없습니다.`);
@@ -128,7 +153,7 @@ export class StockService {
       // 창고 결정
       const targetWarehouseId = warehouseId || this.warehouseService.getDefaultWarehouseIdByType(supplierType);
 
-      // 1. 입고 이벤트 생성
+      // 입고 이벤트 생성
       const eventType = supplierType === 'overseas' ? 'IN_OVERSEAS' : 'IN_DOMESTIC';
       const [inboundEvent] = await tx.insert(wmsTables.stockEvents).values({
         skuId,
@@ -142,7 +167,7 @@ export class StockService {
         reason: `${supplierType} 거래처 입고 - ${reason}`,
       }).returning();
 
-      // 2. 새 재고 생성
+      // 새 재고 생성
       const [newStock] = await tx.insert(wmsTables.stocks).values({
         skuId,
         warehouseId: targetWarehouseId,
@@ -156,12 +181,11 @@ export class StockService {
         manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : null,
       }).returning();
 
-      // 3. 이벤트에 생성된 재고 ID 연결
       await tx.update(wmsTables.stockEvents)
         .set({ createsStockRowId: newStock.id, stockId: newStock.id })
         .where(eq(wmsTables.stockEvents.id, inboundEvent.id));
 
-      // 4. SKU의 preStockSellable 상태 업데이트
+      // preStockSellable 상태 업데이트
       if (sku.preStockSellable && quantity > 0) {
         await this.skuService._updatePreStockSellableInternal(sku.id, false, tx);
       }
@@ -175,16 +199,14 @@ export class StockService {
     });
   }
 
-  /**
-   * 출고 처리
-   */
+  // 출고 처리
   async processOutbound(stockId: string, quantity: number, reason: string, orderId?: string) {
     if (quantity <= 0) {
       throw new BadRequestException('출고 수량은 0보다 커야 합니다.');
     }
 
     return this.db.transaction(async (tx) => {
-      // 1. 현재 재고 확인
+      // 현재 재고 확인
       const currentStock = await tx.query.stocks.findFirst({
         where: and(
           eq(wmsTables.stocks.id, stockId),
@@ -203,7 +225,7 @@ export class StockService {
         );
       }
 
-      // 2. 출고 이벤트 생성
+      // 출고 이벤트 생성
       const [outboundEvent] = await tx.insert(wmsTables.stockEvents).values({
         stockId: currentStock.id,
         skuId: currentStock.skuId,
@@ -216,12 +238,12 @@ export class StockService {
         expiresStockRowId: currentStock.id,
       }).returning();
 
-      // 3. 기존 재고 만료
+      // 기존 재고 만료
       await tx.update(wmsTables.stocks)
         .set({ destroyerEventId: outboundEvent.id })
         .where(eq(wmsTables.stocks.id, stockId));
 
-      // 4. 남은 수량이 있으면 새 재고 생성
+      // 남은 수량이 있으면 새 재고 생성
       const remainingQuantity = currentStock.realQuantity - quantity;
       if (remainingQuantity > 0) {
         const [newStock] = await tx.insert(wmsTables.stocks).values({
@@ -253,9 +275,7 @@ export class StockService {
     });
   }
 
-  /**
-   * 관리자 수동 조정
-   */
+  // 관리자 수동 조정
   async adjustStockManually(stockId: string, delta: number, reason: string) {
     if (delta === 0) {
       this.logger.log(`재고 조정 ${stockId}에 대한 델타가 0입니다. 변경사항이 적용되지 않았습니다.`);
@@ -263,7 +283,7 @@ export class StockService {
     }
 
     return this.db.transaction(async (tx) => {
-      // 1. 현재 활성 상태인 재고 레코드 조회
+      // 현재 활성 상태인 재고 레코드 조회
       const currentStock = await tx.query.stocks.findFirst({
         where: and(
           eq(wmsTables.stocks.id, stockId),
@@ -275,19 +295,18 @@ export class StockService {
         throw new NotFoundException(`ID ${stockId}의 활성 재고 항목을 찾을 수 없습니다.`);
       }
 
-      // 2. SKU 유효성 검사
-      const sku = await this.skuService.findSkuById(currentStock.skuId);
+      const sku = await this.skuService.findSkuById(currentStock.skuId, tx);
       if (!sku || !sku.inventoryManagement) {
         throw new BadRequestException(`SKU ${currentStock.skuId}가 물리적 재고 관리로 구성되지 않았습니다.`);
       }
 
-      // 3. 조정 후 수량 계산 및 유효성 검사
+      // 조정 후 수량 계산
       const newRealQuantity = currentStock.realQuantity + delta;
       if (newRealQuantity < 0) {
         throw new BadRequestException(`조정으로 인해 재고 ID ${stockId}의 실제 수량이 음수가 됩니다.`);
       }
 
-      // 4. 재고 조정 이벤트 생성
+      // 재고 조정 이벤트 생성
       const eventType = 'ADJUST_MANUAL';
       const [adjustingEvent] = await tx.insert(wmsTables.stockEvents).values({
         stockId: currentStock.id,
@@ -302,12 +321,12 @@ export class StockService {
         expiresStockRowId: currentStock.id,
       }).returning();
 
-      // 5. 기존 재고 레코드 만료 처리
+      // 기존 재고 레코드 만료 처리
       await tx.update(wmsTables.stocks)
         .set({ destroyerEventId: adjustingEvent.id })
         .where(eq(wmsTables.stocks.id, stockId));
 
-      // 6. 조정된 수량으로 새로운 재고 레코드 생성
+      // 조정된 수량으로 새로운 재고 레코드 생성
       const newAvailableQuantity = this.calculateAvailableQuantity(newRealQuantity, currentStock.reservedQuantity);
       const [newStock] = await tx.insert(wmsTables.stocks).values({
         ...currentStock,
@@ -318,12 +337,12 @@ export class StockService {
         availableQuantity: newAvailableQuantity,
       }).returning();
 
-      // 7. 조정 이벤트에 새로 생성된 재고 ID를 연결
+      // 조정 이벤트에 새로 생성된 재고 ID를 연결
       await tx.update(wmsTables.stockEvents)
         .set({ createsStockRowId: newStock.id, stockId: newStock.id })
         .where(eq(wmsTables.stockEvents.id, adjustingEvent.id));
 
-      // 8. 선판매 가능(preStockSellable) 상태 업데이트
+      // 선판매 가능(preStockSellable) 상태 업데이트
       if (sku.preStockSellable && delta > 0 && newRealQuantity > 0) {
         await this.skuService._updatePreStockSellableInternal(sku.id, false, tx);
       }
@@ -333,7 +352,7 @@ export class StockService {
     });
   }
 
-  //  현재 or 특정 시점 재고 상태를 조회
+  //  현재 or 특정 시점 재고 상태 조회
   async getCurrentStock(query: GetStockQueryDto) {
     const { skuId, warehouseId, locationId, stockType, asOfTimestamp } = query;
 
@@ -377,12 +396,12 @@ export class StockService {
         packingUnit: stock.packingUnit,
       });
       return acc;
-    }, {});
+    }, {} as Record<string, any>);
 
     return Object.values(aggregatedStock);
   }
 
-  //  특정 SKU의 재고 변경 이력(원장)을 조회
+  //  특정 SKU의 재고 변경 이력 조회
   async getStockHistory(skuId: string, warehouseId?: string, startDate?: string, endDate?: string) {
     const history = await this.db.query.stockEvents.findMany({
       where: (event, { and, eq, gte, lte }) => and(
@@ -396,8 +415,56 @@ export class StockService {
     return history;
   }
 
-  // 기존 adjustStockQuantity 메서드 (하위 호환성을 위해 유지)
   async adjustStockQuantity(stockId: string, delta: number, reason: string, orderId?: string) {
     return this.adjustStockManually(stockId, delta, reason);
+  }
+
+  // SKU별 총 재고 조회 (모든 창고의 합계)
+  async getTotalStockBySku(skuId: string): Promise<{
+    skuId: string;
+    totalRealQuantity: number;
+    totalReservedQuantity: number;
+    totalAvailableQuantity: number;
+  }> {
+    const stocks = await this.db.query.stocks.findMany({
+      where: and(
+        eq(wmsTables.stocks.skuId, skuId),
+        isNull(wmsTables.stocks.destroyerEventId)
+      ),
+    });
+
+    const total = stocks.reduce(
+      (acc, stock) => ({
+        totalRealQuantity: acc.totalRealQuantity + stock.realQuantity,
+        totalReservedQuantity: acc.totalReservedQuantity + stock.reservedQuantity,
+        totalAvailableQuantity: acc.totalAvailableQuantity + stock.availableQuantity,
+      }),
+      { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 }
+    );
+
+    return {
+      skuId,
+      totalRealQuantity: total.totalRealQuantity,
+      totalReservedQuantity: total.totalReservedQuantity,
+      totalAvailableQuantity: total.totalAvailableQuantity,
+    };
+  }
+
+  // 특정 창고의 SKU별 재고 조회
+  async getStockBySkuAndWarehouse(skuId: string, warehouseId: string) {
+    return this.db.query.stocks.findMany({
+      where: and(
+        eq(wmsTables.stocks.skuId, skuId),
+        eq(wmsTables.stocks.warehouseId, warehouseId),
+        isNull(wmsTables.stocks.destroyerEventId)
+      ),
+      with: {
+        location: true,
+      },
+      orderBy: (stocks, { asc }) => [
+        asc(stocks.expiryDate),
+        asc(stocks.creatorEventId),
+      ],
+    });
   }
 }

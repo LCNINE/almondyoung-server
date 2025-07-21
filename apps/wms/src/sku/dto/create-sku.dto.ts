@@ -6,6 +6,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export enum SkuCreationSource {
     AUTO_MATCHING = 'auto_matching',
     MANUAL_MATCHING = 'manual_matching',
+    MANUAL_ENTRY = "MANUAL_ENTRY",
 }
 
 export class CreateSkuDto {
