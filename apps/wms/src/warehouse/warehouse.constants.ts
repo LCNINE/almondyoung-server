@@ -1,3 +1,4 @@
+// apps/wms/src/warehouse/warehouse.constants.ts
 import { warehouseTypeEnum } from '../../database/schemas/wms-schema';
 
 export const WAREHOUSE_CONSTANTS = {

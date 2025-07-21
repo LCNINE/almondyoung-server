@@ -9,7 +9,12 @@ import { StockService } from '../stock/stock.service';
 import { WarehouseService } from '../warehouse/warehouse.service';
 import { ResolveMatchingDto } from './dto/resolve-matching.dto';
 import { SkuCreationSource } from '../sku/dto/create-sku.dto';
+import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from './strategies/matching-strategy.interface';
+import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
+import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
+import { OptionMatchingStrategy } from './strategies/option-matching.strategy';
 
+// 일단 임시로
 interface PimSkuComponent {
   skuName: string;
   // 여기에 바코드, 공급사 정보 등
@@ -31,20 +36,34 @@ interface PimProductPayload {
 @Injectable()
 export class ProductMatchingService {
   private readonly logger = new Logger(ProductMatchingService.name);
+  private readonly strategies: Map<string, MatchingStrategy>;
 
   constructor(
     @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
     private readonly skuService: SkuService,
     private readonly stockService: StockService,
     private readonly warehouseService: WarehouseService,
-  ) { }
+  ) {
+    this.strategies = new Map();
+    this.strategies.set('void', new VoidMatchingStrategy(dbService));
+    this.strategies.set('variant', new VariantMatchingStrategy(dbService));
+    this.strategies.set('option', new OptionMatchingStrategy(dbService));
+  }
 
   private get db() {
     return this.dbService.db;
   }
 
-  //  PIM에서 판매상품 생성 이벤트 수신 시 (수동 매칭)
-  //  단순히 매칭 대기(pending) 상태만 생성. SKU/Stock은 생성하지 않음
+  private getStrategy(strategyType: string): MatchingStrategy {
+    const strategy = this.strategies.get(strategyType);
+    if (!strategy) {
+      throw new BadRequestException(`Unknown matching strategy: ${strategyType}`);
+    }
+    return strategy;
+  }
+
+  // PIM에서 판매상품 생성 이벤트 수신 시 
+  // 매칭 대기(pending) 상태만 생성. SKU/Stock은 생성하지 않음
   async handleManualMatchingRequest(payload: PimProductPayload) {
     this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
@@ -61,7 +80,8 @@ export class ProductMatchingService {
       const [newProductMatching] = await this.db.insert(wmsTables.productMatchings).values({
         variantId: variant.id,
         status: 'pending',
-        priority: 'high', // 수동 처리 필요하므로 우선순위 'high'
+        priority: 'high',
+        strategy: null, // 아직 전략 미결정
         isResolved: false,
       }).returning();
 
@@ -73,43 +93,46 @@ export class ProductMatchingService {
     }
   }
 
-  //  PIM에서 상품 "자동 매칭" 이벤트 수신 시
-  //  inventoryManagement=true 이면 SKU/Stock(qty 0)을 자동 생성하고, 즉시 'matched' 상태로 처리
+  // PIM에서 상품 "자동 매칭" 이벤트 수신 시
+  // inventoryManagement=true 이면 SKU/Stock(qty 0)을 자동 생성하고, 즉시 'matched' 상태로 처리
   async handleAutomaticMatchingRequest(payload: PimProductPayload) {
     this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
 
     for (const variant of payload.variants) {
-      // 1. 재고 관리 대상이 아니면 무시(ignored) 상태로 처리하고 넘어갑니다.
+      // 1. 재고 관리 대상이 아니면 무시(ignored) 상태로 처리
       if (!variant.inventoryManagement) {
         await this.db.insert(wmsTables.productMatchings).values({
           variantId: variant.id,
           status: 'ignored',
           priority: 'normal',
-          isResolved: true, // 즉시 해결됨으로 처리
+          strategy: 'void',
+          isResolved: true,
         }).onConflictDoNothing();
-        this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored.`);
+        this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
         continue;
       }
 
-      // 트랜잭션 시작: variant 하나에 대한 매칭/SKU/Stock/Link 생성을
+      // 트랜잭션 시작: variant 하나에 대한 매칭/SKU/Stock/Link 생성
       await this.db.transaction(async (tx) => {
         // 2. product_matchings 테이블에 row 생성 (variant 단위, 'matched' 상태)
         const [newProductMatching] = await tx.insert(wmsTables.productMatchings).values({
           variantId: variant.id,
           status: 'matched',
           priority: 'normal',
-          isResolved: true, // 자동 매칭이므로 즉시 해결
+          strategy: 'variant', // 기본적 variant 사용
+          isResolved: true,
         }).returning();
 
         if (!newProductMatching) {
           throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
         }
 
-        // 3. Variant를 구성하는 각 SKU Component에 대해 SKU, Stock, Link 생성 (M:N 처리)
-        const warehouseId = this.warehouseService.getDefaultWarehouseId(); // 기본 국내 창고
+        // 3. Variant를 구성하는 각 SKU Component에 대해 SKU, Stock, Link 생성 
+        const warehouseId = this.warehouseService.getDefaultWarehouseId();
+        const strategy = this.getStrategy('variant');
+        const mappings: SkuQuantityMapping[] = [];
 
         for (const component of variant.components) {
-          // 3-1. StockService를 통해 SKU 및 Stock(수량 0) 생성
           const newStock = await this.stockService.createStockEntry({
             variantId: variant.id,
             skuName: component.skuName,
@@ -120,13 +143,19 @@ export class ProductMatchingService {
             reason: `auto_matching_for_variant_${variant.id}`,
           }, tx);
 
-          // 3-2. productVariantSkuLinks에 매핑 추가
-          await tx.insert(wmsTables.productVariantSkuLinks).values({
-            productMatchingId: newProductMatching.id,
+          mappings.push({
             skuId: newStock.skuId,
+            quantity: 1
           });
         }
-        this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs.`);
+
+        const context: MatchingContext = {
+          variantId: variant.id,
+          productMatchingId: newProductMatching.id
+        };
+        await strategy.create(context, mappings, tx);
+
+        this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`);
       });
     }
   }
@@ -144,12 +173,35 @@ export class ProductMatchingService {
         }
       }
     });
-    return matchings;
+
+    const matchingsWithDetails = await Promise.all(matchings.map(async (matching) => {
+      if (matching.strategy && matching.status === 'matched') {
+        try {
+          const strategy = this.getStrategy(matching.strategy);
+          const context: MatchingContext = {
+            variantId: matching.variantId,
+            productMatchingId: matching.id
+          };
+          const skuMappings = await strategy.lookup(context);
+
+          return {
+            ...matching,
+            skuMappings
+          };
+        } catch (error) {
+          this.logger.error(`Failed to lookup mappings for matching ${matching.id}:`, error);
+          return matching;
+        }
+      }
+      return matching;
+    }));
+
+    return matchingsWithDetails;
   }
 
-  //  매칭 대기 해소 (SKU와 매칭 또는 무시)
+  // 매칭 대기 해소
   async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto) {
-    const { skuIds, ignore } = resolveDto;
+    const { skuIds, skuMappings, ignore, strategy = 'variant' } = resolveDto;
 
     const productMatching = await this.db.query.productMatchings.findFirst({
       where: and(
@@ -163,49 +215,66 @@ export class ProductMatchingService {
     }
 
     if (ignore) {
-      // 무시 처리
       const [updatedMatching] = await this.db.update(wmsTables.productMatchings).set({
         status: 'ignored',
+        strategy: 'void',
         isResolved: true,
         updatedAt: new Date(),
       }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
-      this.logger.log(`Product matching ${matchingId} resolved as 'ignored'.`);
+      this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
       return updatedMatching;
 
-    } else if (skuIds && skuIds.length > 0) {
-      // SKU 연결 처리 (트랜잭션)
+    } else if ((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0)) {
+
       return this.db.transaction(async (tx) => {
-        for (const skuId of skuIds) {
-          // 1. 연결할 SKU 유효성 검증
-          const skuToLink = await this.skuService.findSkuById(skuId);
-          if (!skuToLink) {
-            throw new NotFoundException(`SKU with ID ${skuId} not found in WMS.`);
-          }
-          if (!skuToLink.inventoryManagement) {
-            throw new BadRequestException(`SKU ${skuToLink.id} is not inventory managed.`);
-          }
+        let mappings: SkuQuantityMapping[];
 
-          // 2. productVariantSkuLinks에 매핑 추가 (ON CONFLICT DO NOTHING으로 중복 방지)
-          await tx.insert(wmsTables.productVariantSkuLinks).values({
-            productMatchingId: productMatching.id,
-            skuId: skuId,
-          }).onConflictDoNothing();
-
-          this.logger.log(`Linked SKU ${skuId} to productMatching ${productMatching.id}.`);
+        // skuMappings가 제공된 경우 (수량 지정)
+        if (skuMappings && skuMappings.length > 0) {
+          mappings = skuMappings.map(mapping => ({
+            skuId: mapping.skuId,
+            quantity: mapping.quantity || 1
+          }));
+          this.logger.log(`Using provided SKU mappings with quantities: ${JSON.stringify(mappings)}`);
+        }
+        // skuIds만 제공된 경우 (기본 수량 1)
+        else if (skuIds && skuIds.length > 0) {
+          mappings = skuIds.map(skuId => ({
+            skuId,
+            quantity: 1
+          }));
+          this.logger.log(`Using SKU IDs with default quantity 1: ${JSON.stringify(mappings)}`);
+        } else {
+          throw new BadRequestException('SKU 매핑 정보가 없습니다.');
         }
 
-        // 3. product_matchings 테이블 업데이트
+        const matchingStrategy = this.getStrategy(strategy);
+        const context: MatchingContext = {
+          variantId: productMatching.variantId,
+          productMatchingId: productMatching.id
+        };
+
+        const isValid = await matchingStrategy.validate(context, mappings);
+        if (!isValid) {
+          throw new BadRequestException('Invalid SKU mappings for the selected strategy');
+        }
+
+        await matchingStrategy.create(context, mappings, tx);
+
         const [updatedMatching] = await tx.update(wmsTables.productMatchings).set({
           status: 'matched',
+          strategy: strategy,
           isResolved: true,
           updatedAt: new Date(),
         }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
 
-        this.logger.log(`Product matching ${matchingId} resolved as 'matched' with ${skuIds.length} SKUs.`);
+        const totalSkus = mappings.length;
+        const totalQuantity = mappings.reduce((sum, m) => sum + m.quantity, 0);
+        this.logger.log(`Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}`);
         return updatedMatching;
       });
     } else {
-      throw new BadRequestException('매칭할 SKU ID 목록을 제공하거나, 무시 옵션을 선택해야 합니다.');
+      throw new BadRequestException('매칭할 SKU 정보를 제공하거나, 무시 옵션을 선택해야 합니다.');
     }
   }
 
@@ -244,20 +313,24 @@ export class ProductMatchingService {
     }
 
     // 매칭된 상태인 경우에만 매칭 데이터 삭제
-    if (productMatching.status === 'matched') {
+    if (productMatching.status === 'matched' && productMatching.strategy) {
       await this.db.transaction(async (tx) => {
-        // 1. productVariantSkuLinks 삭제
-        await tx.delete(wmsTables.productVariantSkuLinks)
-          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, productMatching.id));
+        if (!productMatching.strategy) {
+          throw new BadRequestException('strategy 값이 null입니다.');
+        }
+        const strategy = this.getStrategy(productMatching.strategy as string);
+        const context: MatchingContext = {
+          variantId: productMatching.variantId,
+          productMatchingId: productMatching.id
+        };
+        await strategy.delete(context, tx);
 
-        // 2. productMatchings 삭제
         await tx.delete(wmsTables.productMatchings)
           .where(eq(wmsTables.productMatchings.id, productMatching.id));
 
-        this.logger.log(`Deleted product matching and links for variantId: ${variantId}`);
+        this.logger.log(`Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`);
       });
     } else {
-      // pending이나 ignored 상태인 경우도 삭제
       await this.db.delete(wmsTables.productMatchings)
         .where(eq(wmsTables.productMatchings.id, productMatching.id));
 
@@ -272,7 +345,6 @@ export class ProductMatchingService {
     alwaysSellableZeroStock?: boolean;
   }) {
     return this.db.transaction(async (tx) => {
-      // SKU 생성
       const newSku = await this.skuService._createSkuInternal({
         name: skuData.name,
         inventoryManagement: skuData.inventoryManagement,
@@ -280,7 +352,6 @@ export class ProductMatchingService {
         source: SkuCreationSource.MANUAL_MATCHING,
       }, tx);
 
-      // Stock 생성 (재고 0으로)
       if (skuData.inventoryManagement) {
         const warehouseId = this.warehouseService.getDefaultWarehouseId();
         await this.stockService.createStockEntry({
@@ -296,5 +367,121 @@ export class ProductMatchingService {
 
       return newSku;
     });
+  }
+
+  // 옵션별 매칭
+
+  // 매칭 전략 변경
+  async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant' | 'option') {
+    const productMatching = await this.db.query.productMatchings.findFirst({
+      where: eq(wmsTables.productMatchings.id, matchingId)
+    });
+
+    if (!productMatching) {
+      throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
+    }
+
+    if (productMatching.status !== 'matched') {
+      throw new BadRequestException('Can only change strategy for matched products');
+    }
+
+    await this.db.transaction(async (tx) => {
+      if (productMatching.strategy) {
+        const oldStrategy = this.getStrategy(productMatching.strategy);
+        const context: MatchingContext = {
+          variantId: productMatching.variantId,
+          productMatchingId: productMatching.id
+        };
+        await oldStrategy.delete(context, tx);
+      }
+
+      await tx.update(wmsTables.productMatchings)
+        .set({
+          strategy: newStrategy,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.productMatchings.id, matchingId));
+
+      this.logger.log(`Changed matching strategy for ${matchingId} from ${productMatching.strategy} to ${newStrategy}`);
+    });
+  }
+
+  // 옵션별 매칭 생성/업데이트
+  async resolveOptionMatching(
+    matchingId: string,
+    optionMappings: Array<{
+      optionName: string;
+      optionValue: string;
+      skuId: string;
+    }>
+  ) {
+    const productMatching = await this.db.query.productMatchings.findFirst({
+      where: eq(wmsTables.productMatchings.id, matchingId)
+    });
+
+    if (!productMatching) {
+      throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
+    }
+
+    return this.db.transaction(async (tx) => {
+      const strategy = this.getStrategy('option') as OptionMatchingStrategy;
+
+      for (const optionMapping of optionMappings) {
+        const context: MatchingContext = {
+          variantId: productMatching.variantId,
+          productMatchingId: productMatching.id,
+          optionData: [{
+            optionName: optionMapping.optionName,
+            optionValue: optionMapping.optionValue
+          }]
+        };
+
+        const mappings: SkuQuantityMapping[] = [{
+          skuId: optionMapping.skuId,
+          quantity: 1
+        }];
+
+        await strategy.update(context, mappings, tx);
+      }
+
+      const [updatedMatching] = await tx.update(wmsTables.productMatchings)
+        .set({
+          status: 'matched',
+          strategy: 'option',
+          isResolved: true,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .returning();
+
+      this.logger.log(`Option matching resolved for ${matchingId} with ${optionMappings.length} option mappings`);
+      return updatedMatching;
+    });
+  }
+
+  // 특정 variant의 SKU 조합 조회 (주문 처리 시 사용)
+  async getSkusForVariant(
+    variantId: string,
+    selectedOptions?: Array<{ optionName: string; optionValue: string }>
+  ): Promise<SkuQuantityMapping[]> {
+    const productMatching = await this.db.query.productMatchings.findFirst({
+      where: and(
+        eq(wmsTables.productMatchings.variantId, variantId),
+        eq(wmsTables.productMatchings.status, 'matched')
+      )
+    });
+
+    if (!productMatching || !productMatching.strategy) {
+      throw new NotFoundException(`No matched product found for variant ${variantId}`);
+    }
+
+    const strategy = this.getStrategy(productMatching.strategy);
+    const context: MatchingContext = {
+      variantId: productMatching.variantId,
+      productMatchingId: productMatching.id,
+      optionData: selectedOptions
+    };
+
+    return strategy.lookup(context);
   }
 }

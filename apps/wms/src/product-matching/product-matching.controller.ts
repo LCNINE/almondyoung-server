@@ -1,9 +1,12 @@
 // apps/wms/src/product-matching/product-matching.controller.ts
-import { Controller, Get, Query, Patch, Param, Body } from '@nestjs/common';
+import { Controller, Get, Query, Patch, Param, Body, Post } from '@nestjs/common';
 import { ProductMatchingService } from './product-matching.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { ResolveMatchingDto } from './dto/resolve-matching.dto';
 import { SetMatchingPriorityDto } from './dto/set-matching-priority.dto';
+import { ResolveOptionMatchingDto } from './dto/option-matching.dto';
+import { ChangeStrategyDto } from './dto/change-strategy.dto';
+import { VariantSkuLookupDto } from './dto/variant-sku-lookup.dto';
 import { matchingStatusEnum } from '../../database/schemas/wms-schema';
 
 @ApiTags('Product Matching')
@@ -13,7 +16,12 @@ export class ProductMatchingController {
 
   @Get()
   @ApiOperation({ summary: '매칭 대기 목록 조회' })
-  @ApiQuery({ name: 'status', enum: matchingStatusEnum.enumValues, required: false, description: '매칭 상태 필터 (pending, matched, ignored)' })
+  @ApiQuery({
+    name: 'status',
+    enum: matchingStatusEnum.enumValues,
+    required: false,
+    description: '매칭 상태 필터 (pending, matched, ignored)'
+  })
   @ApiResponse({ status: 200, description: '매칭 대기 목록을 반환합니다.' })
   async getMatchingPendings(@Query('status') status?: typeof matchingStatusEnum.enumValues[number]) {
     return this.productMatchingService.getMatchingPendings(status);
@@ -26,10 +34,50 @@ export class ProductMatchingController {
     return this.productMatchingService.resolveMatchingPending(matchingId, resolveDto);
   }
 
+  @Patch(':id/resolve-options')
+  @ApiOperation({ summary: '옵션별 매칭 해소' })
+  @ApiResponse({ status: 200, description: '옵션별 매칭이 성공적으로 해소되었습니다.' })
+  async resolveOptionMatching(
+    @Param('id') matchingId: string,
+    @Body() resolveOptionDto: ResolveOptionMatchingDto
+  ) {
+    return this.productMatchingService.resolveOptionMatching(matchingId, resolveOptionDto.optionMappings);
+  }
+
   @Patch(':id/priority')
   @ApiOperation({ summary: '매칭 대기 우선순위 설정' })
   @ApiResponse({ status: 200, description: '매칭 우선순위가 설정되었습니다.' })
   async setMatchingPriority(@Param('id') matchingId: string, @Body() priorityDto: SetMatchingPriorityDto) {
     return this.productMatchingService.setMatchingPriority(matchingId, priorityDto.priority);
+  }
+
+  @Patch(':id/strategy')
+  @ApiOperation({ summary: '매칭 전략 변경' })
+  @ApiResponse({ status: 200, description: '매칭 전략이 변경되었습니다.' })
+  async changeMatchingStrategy(@Param('id') matchingId: string, @Body() changeStrategyDto: ChangeStrategyDto) {
+    return this.productMatchingService.changeMatchingStrategy(matchingId, changeStrategyDto.strategy);
+  }
+
+  @Post('variants/:variantId/sku-lookup')
+  @ApiOperation({ summary: 'Variant의 SKU 조합 조회' })
+  @ApiResponse({
+    status: 200,
+    description: '선택된 옵션에 따른 SKU 목록을 반환합니다.',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          skuId: { type: 'string' },
+          quantity: { type: 'number' }
+        }
+      }
+    }
+  })
+  async getSkusForVariant(
+    @Param('variantId') variantId: string,
+    @Body() lookupDto: VariantSkuLookupDto
+  ) {
+    return this.productMatchingService.getSkusForVariant(variantId, lookupDto.selectedOptions);
   }
 }

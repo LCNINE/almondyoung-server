@@ -123,8 +123,10 @@ export class SkuService {
     return updatedSku;
   }
 
-  async findSkuById(skuId: string) {
-    return this.db.query.skus.findFirst({
+  // 트랜잭션을 지원하도록 수정
+  async findSkuById(skuId: string, tx?: DbOrTx) {
+    const db = tx || this.db;
+    return db.query.skus.findFirst({
       where: eq(wmsTables.skus.id, skuId)
     });
   }

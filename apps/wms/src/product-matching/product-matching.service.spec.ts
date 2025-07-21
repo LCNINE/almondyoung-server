@@ -8,7 +8,9 @@ import { ProductMatchingModule } from './product-matching.module';
 import { WmsModule } from '../wms.module';
 import { DbService } from '@app/db';
 import { wmsTables } from '../../database/schemas/wms-schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
+import { v4 as uuidv4 } from 'uuid';
+import { WAREHOUSE_CONSTANTS } from '../warehouse/warehouse.constants';
 
 describe('ProductMatchingService (Integration)', () => {
   let service: ProductMatchingService;
@@ -16,6 +18,12 @@ describe('ProductMatchingService (Integration)', () => {
   let skuService: SkuService;
   let stockService: StockService;
   let warehouseService: WarehouseService;
+
+  // 테스트에서 사용할 UUID들을 미리 생성
+  const testProductId = uuidv4();
+  const testVariantId = uuidv4();
+  // 실제 기본 창고 ID 사용
+  const defaultWarehouseId = WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id;
 
   beforeAll(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -27,28 +35,50 @@ describe('ProductMatchingService (Integration)', () => {
     skuService = module.get<SkuService>(SkuService);
     stockService = module.get<StockService>(StockService);
     warehouseService = module.get<WarehouseService>(WarehouseService);
+
+    // 기본 창고를 명시적으로 생성 (onModuleInit이 테스트에서 실행되지 않을 수 있음)
+    await dbService.db.insert(wmsTables.warehouses).values({
+      id: WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id,
+      name: WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.name,
+      type: WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.type,
+      location: WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.location,
+    }).onConflictDoNothing();
+
+    await dbService.db.insert(wmsTables.warehouses).values({
+      id: WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.id,
+      name: WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.name,
+      type: WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.type,
+      location: WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.location,
+    }).onConflictDoNothing();
   });
 
   beforeEach(async () => {
     // 각 테스트 전에 관련 테이블들을 정리합니다
-    await dbService.db.transaction(async (tx) => {
-      await tx.delete(wmsTables.productVariantSkuLinks);
-      await tx.delete(wmsTables.productMatchings);
-      await tx.delete(wmsTables.stocks);
-      await tx.delete(wmsTables.skus);
-      await tx.delete(wmsTables.warehouses);
-    });
+    // 순환 참조로 인해 개별 삭제가 어려우므로 TRUNCATE 사용
+    await dbService.db.execute(sql`
+      TRUNCATE TABLE 
+        stock_reservations,
+        stock_events,
+        stocks,
+        product_variant_sku_links,
+        product_matchings,
+        skus
+      CASCADE
+    `);
   });
 
   afterAll(async () => {
     // 테스트 완료 후 정리
-    await dbService.db.transaction(async (tx) => {
-      await tx.delete(wmsTables.productVariantSkuLinks);
-      await tx.delete(wmsTables.productMatchings);
-      await tx.delete(wmsTables.stocks);
-      await tx.delete(wmsTables.skus);
-      await tx.delete(wmsTables.warehouses);
-    });
+    await dbService.db.execute(sql`
+      TRUNCATE TABLE 
+        stock_reservations,
+        stock_events,
+        stocks,
+        product_variant_sku_links,
+        product_matchings,
+        skus
+      CASCADE
+    `);
   });
 
   it('서비스가 정의되어 있어야 한다', () => {
@@ -57,12 +87,13 @@ describe('ProductMatchingService (Integration)', () => {
 
   describe('수동 매칭 요청 처리', () => {
     it('variant에 대해 pending 상태의 매칭을 생성해야 한다', async () => {
+      const variantId = uuidv4();
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '테스트 변형',
             inventoryManagement: true,
             components: [{ skuName: 'SKU-1' }],
@@ -74,7 +105,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       // 데이터베이스에서 실제로 생성되었는지 확인
       const createdMatching = await dbService.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       expect(createdMatching).toBeDefined();
@@ -84,12 +115,13 @@ describe('ProductMatchingService (Integration)', () => {
     });
 
     it('이미 매칭이 존재하면 건너뛰어야 한다', async () => {
+      const variantId = uuidv4();
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '테스트 변형',
             inventoryManagement: true,
             components: [{ skuName: 'SKU-1' }],
@@ -102,7 +134,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       // 기존 매칭 개수 확인
       const existingMatchings = await dbService.db.query.productMatchings.findMany({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
       const initialCount = existingMatchings.length;
 
@@ -111,7 +143,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       // 매칭 개수가 증가하지 않았는지 확인
       const finalMatchings = await dbService.db.query.productMatchings.findMany({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
       expect(finalMatchings.length).toBe(initialCount);
     });
@@ -119,12 +151,13 @@ describe('ProductMatchingService (Integration)', () => {
 
   describe('자동 매칭 요청 처리', () => {
     it('재고 관리 대상 variant에 대해 SKU와 재고를 생성해야 한다', async () => {
+      const variantId = uuidv4();
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '테스트 변형',
             inventoryManagement: true,
             components: [{ skuName: 'SKU-1' }],
@@ -132,11 +165,14 @@ describe('ProductMatchingService (Integration)', () => {
         ],
       };
 
+      // WarehouseService의 getDefaultWarehouseId를 모킹할 필요 없음
+      // 실제 기본 창고 ID를 사용
+
       await service.handleAutomaticMatchingRequest(payload);
 
       // 매칭이 생성되었는지 확인
       const createdMatching = await dbService.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       expect(createdMatching).toBeDefined();
@@ -152,23 +188,21 @@ describe('ProductMatchingService (Integration)', () => {
 
       // 재고가 생성되었는지 확인
       const createdStock = await dbService.db.query.stocks.findFirst({
-        where: and(
-          eq(wmsTables.stocks.skuId, createdSku!.id),
-          eq(wmsTables.stocks.variantId, 'variant-1')
-        ),
+        where: eq(wmsTables.stocks.skuId, createdSku!.id),
       });
 
       expect(createdStock).toBeDefined();
-      expect(createdStock?.quantity).toBe(0);
+      expect(createdStock?.realQuantity).toBe(0);
     });
 
     it('재고 관리하지 않는 variant는 ignored 상태로 처리해야 한다', async () => {
+      const variantId = uuidv4();
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '디지털 상품',
             inventoryManagement: false,
             components: [],
@@ -180,7 +214,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       // ignored 상태로 매칭이 생성되었는지 확인
       const createdMatching = await dbService.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       expect(createdMatching).toBeDefined();
@@ -198,13 +232,14 @@ describe('ProductMatchingService (Integration)', () => {
 
   describe('매칭 해소', () => {
     it('매칭 대기를 SKU와 연결하여 해소할 수 있어야 한다', async () => {
+      const variantId = uuidv4();
       // 먼저 수동 매칭 요청을 생성
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '테스트 변형',
             inventoryManagement: true,
             components: [{ skuName: 'SKU-1' }],
@@ -214,15 +249,18 @@ describe('ProductMatchingService (Integration)', () => {
 
       await service.handleManualMatchingRequest(payload);
 
+      // WarehouseService의 getDefaultWarehouseId를 모킹할 필요 없음
+      // 실제 기본 창고 ID를 사용
+
       // SKU를 생성
-      const newSku = await service.createNewSkuForMatching('variant-1', {
+      const newSku = await service.createNewSkuForMatching(variantId, {
         name: '테스트 SKU',
         inventoryManagement: true,
       });
 
       // 매칭을 해소
       const matching = await dbService.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       await service.resolveMatchingPending(matching!.id, {
@@ -240,13 +278,14 @@ describe('ProductMatchingService (Integration)', () => {
     });
 
     it('매칭 대기를 무시로 처리할 수 있어야 한다', async () => {
+      const variantId = uuidv4();
       // 먼저 수동 매칭 요청을 생성
       const payload = {
-        productId: 'product-1',
+        productId: testProductId,
         name: '테스트 상품',
         variants: [
           {
-            id: 'variant-1',
+            id: variantId,
             name: '테스트 변형',
             inventoryManagement: true,
             components: [{ skuName: 'SKU-1' }],
@@ -258,7 +297,7 @@ describe('ProductMatchingService (Integration)', () => {
 
       // 매칭을 무시로 처리
       const matching = await dbService.db.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, 'variant-1'),
+        where: eq(wmsTables.productMatchings.variantId, variantId),
       });
 
       await service.resolveMatchingPending(matching!.id, {

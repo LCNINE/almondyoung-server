@@ -63,6 +63,10 @@ export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_tran
 export const returnStatusEnum = pgEnum('return_status', ['requested', 'received', 'qc_passed', 'qc_failed', 'disposed']);
 export const matchingStatusEnum = pgEnum('matching_status', ['pending', 'matched', 'ignored']);
 export const matchingPriorityEnum = pgEnum('matching_priority', ['normal', 'high']);
+
+// 매칭 전략 enum 추가
+export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'variant', 'option']);
+
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
@@ -281,6 +285,7 @@ export const productMatchings = pgTable('product_matchings', {
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
     status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
     priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
+    strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
     isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -300,6 +305,22 @@ export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, t => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
+}));
+
+// 옵션별 매칭을 위한 테이블 추가
+export const productOptionMatchings = pgTable('product_option_matchings', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productMatchingId: uuid('product_matching_id')
+        .references(() => productMatchings.id, { onDelete: 'cascade' })
+        .notNull(),
+    optionName: varchar('option_name', { length: 255 }).notNull(), // 예: 'CPU', 'RAM'
+    optionValue: varchar('option_value', { length: 255 }).notNull(), // 예: 'i7', '16GB'
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    uniqueOptionMatching: unique().on(t.productMatchingId, t.optionName, t.optionValue),
 }));
 
 /*───────────────────────────
@@ -601,6 +622,7 @@ export const wmsTables = {
     stocks,
     productMatchings,
     productVariantSkuLinks,
+    productOptionMatchings, // 추가
     orders,
     orderItems,
     orderEvents,
