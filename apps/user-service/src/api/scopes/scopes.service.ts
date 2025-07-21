@@ -12,8 +12,8 @@ import { eq } from 'drizzle-orm';
 export class ScopesService {
   constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
 
-  async createScopes(setUserScopesDto: SetUserScopesDto) {
-    const scopes = setUserScopesDto.scopes.join(',');
+  async createScopes(UserScopesDto: SetUserScopesDto) {
+    const { scopes, description } = UserScopesDto;
 
     try {
       // 스코프 중복 확인
@@ -23,13 +23,13 @@ export class ScopesService {
         .where(eq(schema.scopes.scopeName, scopes))
         .limit(1);
 
-      if (exists) {
+      if (exists.length > 0) {
         throw new BadRequestException(`이미 존재하는 스코프입니다: ${scopes}`);
       }
 
       await this.dbService.db.insert(schema.scopes).values({
         scopeName: scopes,
-        description: setUserScopesDto.description,
+        description: description,
       });
     } catch (err) {
       console.error('[ScopesService.createScopes] error:', err);

@@ -29,6 +29,15 @@
         "tsConfigPath": "libs/db/tsconfig.lib.json"
       }
     },
+    "roles": {
+      "type": "library",
+      "root": "libs/roles",
+      "entryFile": "index",
+      "sourceRoot": "libs/roles/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/roles/tsconfig.lib.json"
+      }
+    },
     "shared": {
       "type": "library",
       "root": "libs/shared",
