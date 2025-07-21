@@ -53,7 +53,6 @@ export class UsersController {
    */
   @Get(':userId/roles')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['master'])
   @HttpCode(HttpStatus.OK)
   async getUserRoles(@Param('userId') userId: string) {
     return this.usersService.getUserRoles(userId);

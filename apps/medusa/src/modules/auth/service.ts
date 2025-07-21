@@ -8,6 +8,7 @@ import {
   MedusaError,
 } from '@medusajs/framework/utils';
 import CustomUserModuleService from '../custom-user/service';
+import { USER_ROLES } from '@/roles/src/constants/roles.constant';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
@@ -84,8 +85,15 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         entity_id: user.id,
       });
 
-      // user면 admin으로 간주함
-      const actorType = user.roles?.some((role) => role.role.name === 'admin')
+      const userRoles = await this.userCustomModule.getUserRoles(
+        user.id,
+        token,
+      );
+
+      // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
+      const actorType = userRoles.roles?.some(
+        (role) => role.role.name === USER_ROLES.MASTER,
+      )
         ? 'user'
         : 'customer';
 
@@ -97,7 +105,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             actor_type: actorType,
             user_id: user.id,
             email: user.email,
-            role: user.roles,
+            role: userRoles.roles[0].role.name,
           },
           provider_identities: [
             {
@@ -105,7 +113,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
               provider: 'my-auth',
               entity_id: user.id,
               provider_metadata: {
-                roles: user.roles || [],
+                roles: userRoles.roles[0].role.name || [],
               },
             },
           ],
