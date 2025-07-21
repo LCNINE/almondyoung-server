@@ -1,12 +1,7 @@
 // apps/wms/src/sku/dto/update-sku.dto.ts
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
 import { CreateSkuDto } from './create-sku.dto';
-import { IsOptional, IsBoolean } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 
-export class UpdateSkuDto extends PartialType(CreateSkuDto) {
-    @ApiProperty({ description: '재고 0이어도 항상 판매 가능한 상품 여부', required: false })
-    @IsBoolean()
-    @IsOptional()
-    alwaysSellableZeroStock?: boolean;
-}
+export class UpdateSkuDto extends PartialType(
+    OmitType(CreateSkuDto, ['source', 'productName', 'variantName'] as const)
+) { }
