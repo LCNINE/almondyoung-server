@@ -56,9 +56,9 @@ export default class CustomUserModuleService {
 
   async retrieveUserByEmail(email: string): Promise<User> {
     try {
-      const response = await this.client.get(`/users`, {
-        params: { email },
-      });
+      const response = await this.client.get(
+        `/users/find-by-email?email=${email}`,
+      );
       return response.data.data;
     } catch (error) {
       throw new Error(`유저 이메일 조회 실패: ${error}`);
@@ -78,13 +78,14 @@ export default class CustomUserModuleService {
     }
   }
 
-  async fetchUser(token: string): Promise<User> {
+  async getUserDetailsByToken(token: string): Promise<User> {
     try {
-      const response = await this.client.get(`/users/me`, {
+      const response = await this.client.get(`/users/details`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+
       return response.data.data;
     } catch (error) {
       throw new Error(`유저 정보 조회 실패: ${error.response?.data.message}`);

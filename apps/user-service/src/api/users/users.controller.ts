@@ -74,4 +74,15 @@ export class UsersController {
     await this.usersService.update(userId, updateUserDto);
     return;
   }
+
+  /**
+   * 이메일로 사용자 찾기
+   * @Query email - 찾고자 하는 사용자의 이메일
+   */
+  @Get('find-by-email')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async findUserByEmail(@Query('email') email: string) {
+    return this.usersService.findUserByEmail(email);
+  }
 }
