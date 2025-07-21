@@ -6,7 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PublicPrivateGuard } from '../../commons/guards/auth.guard';
-import { RolesGuard } from '../../commons/guards/roles.guard';
+import { RolesGuard } from '@app/roles';
 import { EmailModule } from '../email/email.module';
 import { RolesModule } from '../roles/roles.module';
 import { UsersModule } from '../users/users.module';
