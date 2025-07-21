@@ -27,7 +27,9 @@ export default class CustomUserModuleService {
     password: string;
   }): Promise<{ accessToken: string }> {
     try {
-      const response = await this.client.post('/auth/signin', credentials);
+      const response = await this.client.post<
+        UserServiceResponse<{ accessToken: string }>
+      >('/auth/signin', credentials);
 
       return response.data.data;
     } catch (error) {
@@ -37,7 +39,9 @@ export default class CustomUserModuleService {
 
   async retrieveUser(userId: string): Promise<User> {
     try {
-      const response = await this.client.get(`/users/${userId}`);
+      const response = await this.client.get<UserServiceResponse<User>>(
+        `/users/${userId}`,
+      );
 
       return response.data.data;
     } catch (error) {
@@ -54,12 +58,12 @@ export default class CustomUserModuleService {
     }
   }
 
-  async retrieveUserByEmail(email: string): Promise<User> {
+  async retrieveUserByEmail(email: string): Promise<UserServiceResponse<User>> {
     try {
-      const response = await this.client.get(
+      const response = await this.client.get<UserServiceResponse<User>>(
         `/users/find-by-email?email=${email}`,
       );
-      return response.data.data;
+      return response.data;
     } catch (error) {
       throw new Error(`유저 이메일 조회 실패: ${error}`);
     }
@@ -67,11 +71,14 @@ export default class CustomUserModuleService {
 
   async getUserDetailsByToken(userServiceToken: string): Promise<User> {
     try {
-      const response = await this.client.get(`/users/details`, {
-        headers: {
-          Authorization: `Bearer ${userServiceToken}`,
+      const response = await this.client.get<UserServiceResponse<User>>(
+        `/users/details`,
+        {
+          headers: {
+            Authorization: `Bearer ${userServiceToken}`,
+          },
         },
-      });
+      );
 
       return response.data.data;
     } catch (error) {
@@ -81,7 +88,9 @@ export default class CustomUserModuleService {
 
   async restoreToken(): Promise<{ accessToken: string }> {
     try {
-      const response = await this.client.post('/auth/restore-token');
+      const response = await this.client.post<
+        UserServiceResponse<{ accessToken: string }>
+      >('/auth/restore-token');
       return response.data.data;
     } catch (error) {
       throw new Error(`토큰 갱신 실패: ${error.response?.data.message}`);
