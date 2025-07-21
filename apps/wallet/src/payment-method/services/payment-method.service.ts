@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Inject,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectDb } from '@app/db';
 import { DbService } from '@app/db/db.service';
 import * as schema from '../../shared/schemas/schema';
@@ -36,7 +37,7 @@ export class PaymentMethodService {
     private readonly methodManager: MethodManagementPort,
     private readonly eventEmitter: EventEmitter2,
     // paymentMethodRepo 등 repository 관련 의존성 제거
-  ) {}
+  ) { }
 
   /**
    * 결제수단 신규 등록
@@ -45,7 +46,7 @@ export class PaymentMethodService {
    * - isDefault=true 요청 시, 같은 userId 의 다른 isDefault 를 false 로 설정
    */
   async create(dto: Method['Create']) {
-    return await this.dbService.db.transaction(async (tx) => {
+    const paymentMethod = await this.dbService.db.transaction(async (tx) => {
       if (dto.isDefault) {
         await tx
           .update(schema.paymentMethod)
@@ -81,21 +82,27 @@ export class PaymentMethodService {
           // 트랜잭션이 롤백되도록 에러를 다시 던집니다.
           throw error;
         }
-        // 트랜잭션 성공 후 이벤트 발행
-        this.eventEmitter.emit(
-          'bnpl.method.registered',
-          new BnplPaymentMethodRegisteredEvent(
-            paymentMethod.id,
-            paymentMethod.userId,
-            1000000, // 예시: 실제 한도 정보로 교체 가능
-            1000000,
-            1,
-          ),
-        );
       }
 
       return paymentMethod;
     });
+
+    // 트랜잭션 완료 후 이벤트 발행 (BNPL인 경우)
+    if (dto.methodType === 'BNPL') {
+      const event = new BnplPaymentMethodRegisteredEvent(
+        paymentMethod.id,
+        paymentMethod.userId,
+        1000000, // 예시: 실제 한도 정보로 교체 가능
+        1000000,
+        1,
+      );
+
+      this.logger.log(`🚀 BNPL 이벤트 발행: ${paymentMethod.userId}`, event);
+      this.eventEmitter.emit('bnpl.method.registered', event);
+      this.logger.log(`✅ BNPL 이벤트 발행 완료: ${paymentMethod.userId}`);
+    }
+
+    return paymentMethod;
   }
   /**
    * 결제수단 정보 수정
@@ -181,25 +188,35 @@ export class PaymentMethodService {
   }
 
   /**
-   * PG사 승인 상태 확인 및 업데이트 (스케줄러에서 호출)
-   * 매일 실행되어 PENDING_APPROVAL 상태인 BatchCMS 항목들을 확인
+   * PG사 승인 상태 확인 및 업데이트 (테스트 환경: 30초마다 실행)
+   * PENDING 상태인 BatchCMS 항목들을 확인하여 승인 상태 업데이트
    */
+  @Cron('*/30 * * * * *', {
+    name: 'check-bnpl-approval-status',
+    timeZone: 'Asia/Seoul',
+  })
   async checkAndUpdateBnplApprovalStatus() {
     this.logger.log('BNPL 승인 상태 확인 시작');
 
     try {
-      // PENDING 상태인 BatchCMS 항목들 조회
+      // PENDING 상태인 BatchCMS 항목들 조회 (paymentMethod.status 기준)
       const pendingMethods =
         await this.dbService.db.query.batchCmsMethod.findMany({
-          where: eq(schema.batchCmsMethod.status, 'PENDING'),
-          // ...필요시 추가 조건
+          with: {
+            paymentMethod: true,
+          },
         });
 
-      this.logger.log(
-        `승인 대기 중인 BNPL 결제수단: ${pendingMethods.length}개`,
+      // PENDING 상태인 결제수단만 필터링
+      const filteredPendingMethods = pendingMethods.filter(
+        method => method.paymentMethod.status === 'PENDING'
       );
 
-      for (const batchCmsMethod of pendingMethods) {
+      this.logger.log(
+        `승인 대기 중인 BNPL 결제수단: ${filteredPendingMethods.length}개`,
+      );
+
+      for (const batchCmsMethod of filteredPendingMethods) {
         try {
           // ✅ 어댑터에게 상태를 물어보기만 함
           const approvalStatus = await this.methodManager.getMemberStatus(
@@ -210,11 +227,11 @@ export class PaymentMethodService {
           if (approvalStatus.status === 'REGISTERED') {
             await this.approveBatchCmsMethod(batchCmsMethod);
           } else if (approvalStatus.status === 'FAILED') {
-            // 실패 처리 로직 (예: status FAILED로 변경)
+            // 실패 처리 로직 (paymentMethod.status를 FAILED로 변경)
             await this.dbService.db
-              .update(schema.batchCmsMethod)
+              .update(schema.paymentMethod)
               .set({ status: 'FAILED', updatedAt: new Date() })
-              .where(eq(schema.batchCmsMethod.id, batchCmsMethod.id));
+              .where(eq(schema.paymentMethod.id, batchCmsMethod.paymentMethodId));
           }
           // PENDING이면 아무것도 하지 않고 다음으로 넘어감
         } catch (error) {
@@ -234,22 +251,22 @@ export class PaymentMethodService {
    */
   private async approveBatchCmsMethod(batchCmsMethod: BatchCms['Select']) {
     await this.dbService.db.transaction(async (tx) => {
-      // BatchCMS 상태를 APPROVED로 변경
+      // BatchCMS 메타데이터 업데이트 (status 컬럼은 제거되었으므로 제외)
       await tx
         .update(schema.batchCmsMethod)
         .set({
-          status: 'APPROVED',
           updatedAt: new Date(),
           hmsMetadata: JSON.stringify({
             ...(JSON.parse(batchCmsMethod.hmsMetadata || '{}') as {
               expectedApprovalDate: string;
             }),
             approvedDate: new Date().toISOString(),
+            status: 'APPROVED', // 메타데이터에만 저장
           }),
         })
         .where(eq(schema.batchCmsMethod.id, batchCmsMethod.id));
 
-      // PaymentMethod 상태를 ACTIVE로 변경
+      // PaymentMethod 상태를 ACTIVE로 변경 (유일한 신뢰의 원천)
       await tx
         .update(schema.paymentMethod)
         .set({ status: 'ACTIVE', updatedAt: new Date() })

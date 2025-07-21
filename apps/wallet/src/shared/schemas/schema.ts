@@ -36,8 +36,17 @@ export const INVOICE_STATUS = {
   OVERDUE: 'OVERDUE',
   FAILED: 'FAILED',
 } as const;
-
 export type InvoiceStatus = keyof typeof INVOICE_STATUS;
+
+// ✅ (개선) 거래 및 이벤트의 생명주기를 나타내는 표준 상태를 상수로 정의합니다.
+//    이것이 사용자께서 말씀하신 '상속/재사용'에 해당합니다.
+export const TRANSACTION_STATUS = {
+  AUTHORIZED: 'AUTHORIZED', // 내부 승인 완료 / PG사 예약 접수 완료
+  REQUESTED: 'REQUESTED', // 정산 요청됨 (배치 처리 시작)
+  CAPTURED: 'CAPTURED', // 최종 출금 성공 (수금 완료)
+  FAILED: 'FAILED', // 최종 출금 실패
+} as const;
+export type TransactionStatus = keyof typeof TRANSACTION_STATUS;
 
 // ────────────────────────────────────────────
 // Payment Method Schemas
@@ -109,7 +118,6 @@ export const batchCmsMethod = pgTable(
       .defaultNow()
       .notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }),
-    status: varchar('status', { length: 255 }).notNull().default('PENDING'),
   },
   (table) => [uniqueIndex('idx_hms_member_unique').on(table.hmsMemberId)],
 );
@@ -222,9 +230,7 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
   transactionType: text('transaction_type')
     .$type<'DEBIT' | 'CREDIT'>()
     .notNull(),
-  status: text('status')
-    .$type<'AUTHORIZED' | 'CAPTURED' | 'VOIDED'>()
-    .notNull(),
+  status: text('status').$type<TransactionStatus>().notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 })
     .$type<number>()
     .notNull(),
@@ -387,9 +393,7 @@ export const paymentEvents = pgTable('payment_events', {
     .$type<number>()
     .notNull(),
   status: varchar('status', { length: 255 })
-    .$type<
-      'REQUESTED' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'DUPLICATE_ATTEMPT'
-    >()
+    .$type<TransactionStatus>()
     .notNull(),
   pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
   pgResponse: text('pg_response'),
@@ -479,6 +483,10 @@ export const bnplTransactionRelations = relations(
     bnplAccount: one(bnplAccount, {
       fields: [bnplTransaction.bnplAccountId],
       references: [bnplAccount.id],
+    }),
+    invoice: one(invoice, {
+      fields: [bnplTransaction.invoiceId],
+      references: [invoice.id],
     }),
     settlementBatchItems: many(settlementBatchItem),
   }),

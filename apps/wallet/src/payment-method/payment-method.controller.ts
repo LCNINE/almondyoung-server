@@ -5,14 +5,10 @@ import {
   Patch,
   Param,
   Delete,
-  UseInterceptors,
-  UploadedFile,
   Req,
 } from '@nestjs/common';
 import { PaymentMethodService } from './services/payment-method.service';
 import * as paymentMethodZod from '../shared/zod/payment-method.zod';
-import { RegisterAgreementRequest } from 'hms-api-wrapper';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { FastifyRequest } from 'fastify';
 @Controller('payment-methods')
 export class PaymentMethodController {
@@ -49,7 +45,10 @@ export class PaymentMethodController {
   }
 
   @Post(':id/consent')
-  async submitConsent(@Param('id') id: string, @Req() request: FastifyRequest) {
+  async submitConsent(
+    @Param('id') memberId: string,
+    @Req() request: FastifyRequest,
+  ) {
     const data = await request.file(); // fastify-multipart API
 
     // 파일 스트림(data.file), 파일명(data.filename) 사용 가능
@@ -60,7 +59,7 @@ export class PaymentMethodController {
     const buffer = Buffer.concat(chunks);
 
     return this.paymentMethodService.submitConsent({
-      memberId: id,
+      memberId: memberId,
       file: buffer,
       filename: data.filename,
     });

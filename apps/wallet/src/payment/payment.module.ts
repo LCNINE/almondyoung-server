@@ -2,10 +2,11 @@
 
 import { Module } from '@nestjs/common';
 import { PaymentService } from './payment.service';
+import { SettlementService } from './settlement.service';
 import { PaymentProcessingPort } from './port/payment-processing.port';
 import { BatchCmsAdapter } from '../pg-provider/adapters/batch-cms.adapter';
 import { PgProviderModule } from '../pg-provider/pg-provider.module';
-import { PaymentController } from './payment.controller'; // ✅ Controller import
+import { PaymentController } from './payment.controller';
 
 @Module({
   imports: [PgProviderModule],
@@ -14,6 +15,7 @@ import { PaymentController } from './payment.controller'; // ✅ Controller impo
   ],
   providers: [
     PaymentService,
+    SettlementService,
     {
       provide: PaymentProcessingPort,
       useClass: BatchCmsAdapter,

@@ -20,8 +20,14 @@ export class BnplListener {
   async handleBnplMethodRegisteredEvent(
     payload: BnplPaymentMethodRegisteredEvent,
   ) {
-    this.logger.log(`'bnpl.method.registered' 이벤트 수신`, payload);
-    // 실제 계정 생성 로직은 서비스에게 위임합니다.
-    await this.bnplAccountService.createFromEvent(payload);
+    this.logger.log(`📨 'bnpl.method.registered' 이벤트 수신`, payload);
+    try {
+      // 실제 계정 생성 로직은 서비스에게 위임합니다.
+      await this.bnplAccountService.createFromEvent(payload);
+      this.logger.log(`✅ BNPL 계정 생성 완료: ${payload.userId}`);
+    } catch (error) {
+      this.logger.error(`❌ BNPL 계정 생성 실패: ${payload.userId}`, error);
+      throw error;
+    }
   }
 }

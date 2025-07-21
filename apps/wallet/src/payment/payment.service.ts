@@ -3,14 +3,11 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
-  Inject,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import * as schema from '../shared/schemas/schema';
 import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
-import { PaymentProcessingPort } from './port/payment-processing.port';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 
 // 이 서비스가 컨트롤러로부터 받을 요청 데이터 타입 정의
@@ -28,11 +25,8 @@ export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
 
   constructor(
-    // ✅ 팩토리 대신, Port(계약서)를 직접 주입받습니다.
-    @Inject(PaymentProcessingPort)
-    private readonly paymentProcessor: PaymentProcessingPort,
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-  ) {}
+  ) { }
 
   /**
    * 결제 프로세스를 총괄하는 메인 메서드
@@ -70,6 +64,11 @@ export class PaymentService {
         throw new NotFoundException('존재하지 않는 결제수단입니다.');
       }
 
+      // ✅ 중요: 이 결제수단이 'ACTIVE' 상태인지 확인하는 것이 유일한 관문입니다.
+      if (paymentMethod.status !== 'ACTIVE') {
+        throw new BadRequestException('활성화된 BNPL 결제수단이 아닙니다.');
+      }
+
       // --- 🚨 userId 소유권 검증 로직 (주석 처리) ---
       // TODO: 추후 인증(Auth) Guard가 구현되면 아래 주석을 반드시 해제해야 합니다.
       /*
@@ -85,27 +84,11 @@ export class PaymentService {
         throw new NotFoundException('BNPL 계정이 존재하지 않습니다.');
       }
 
-      const batchCmsMethod = await tx.query.batchCmsMethod.findFirst({
-        where: eq(schema.batchCmsMethod.id, paymentMethod.id),
-      });
-      if (!batchCmsMethod) {
-        throw new NotFoundException(
-          '해당 결제수단에 연결된 BNPL PG사 정보가 없습니다.',
-        );
-      }
+      // --- ❌ PG사(어댑터) 호출 로직 완전 삭제 ---
+      // 외부와 통신 없이, 내부적으로 모든 것을 처리합니다.
 
-      // --- 3. 어댑터에 결제 요청 위임 ---
-      const paymentDate = this.calculateNextPaymentDate();
-      const chargeResult = await this.paymentProcessor.charge({
-        memberId: batchCmsMethod.hmsMemberId, // ✅ hmsMemberId를 전달
-        invoiceId,
-        amount: invoice.amount,
-        paymentDate: paymentDate,
-      });
-
-      console.log(chargeResult, 'chargeResult');
-      // --- 5. 통신 결과 기록 (PaymentEvent) ---
-      this.logger.log(`PG사 통신 결과 수신: ${chargeResult.status}`);
+      // --- 4. 내부 기록 생성 ---
+      // 4a. PaymentEvent 기록 (상태: AUTHORIZED)
       const [paymentEvent] = await tx
         .insert(schema.paymentEvents)
         .values({
@@ -113,45 +96,33 @@ export class PaymentService {
           invoiceId: invoice.id,
           paymentMethodId: paymentMethod.id,
           amount: invoice.amount,
-          status: chargeResult.status, // 'AUTHORIZED' 또는 'FAILED'
-          pgTransactionId: chargeResult.transactionId,
-          pgResponse: JSON.stringify(chargeResult.rawResponse),
+          status: 'AUTHORIZED', // ✅ '내부 승인 완료' 상태로 즉시 기록
           actor: 'USER',
-          metadata: JSON.stringify({ gateway: chargeResult.gatewayId }),
         })
         .returning();
 
-      if (!chargeResult.success) {
-        this.logger.error(`결제 실패: ${chargeResult.transactionId}`);
-        // 실패했어도 PaymentEvent는 기록되고, 트랜잭션은 롤백됩니다.
-        throw new BadRequestException('결제 요청에 실패했습니다.');
-      }
-
-      // --- 6. 성공 시, 내부 상태 업데이트 ---
-      this.logger.log(`결제 예약 성공: ${chargeResult.transactionId}`);
-
-      // 6a. 내부 회계 장부 기록 (bnplTransaction)
+      // 4b. bnplTransaction 기록 (상태: AUTHORIZED)
       await tx.insert(schema.bnplTransaction).values({
         id: ulid(),
         bnplAccountId: bnplAccount.id,
         invoiceId: invoice.id,
         transactionType: 'DEBIT',
-        status: 'AUTHORIZED', // PG사와 동일하게 '승인됨(예약됨)' 상태로 기록
+        status: 'AUTHORIZED', // ✅ '내부 승인 완료' 상태로 즉시 기록
         amount: invoice.amount,
       });
 
-      // 6b. 청구서 상태 업데이트
+      // 4c. 청구서 상태 PAID로 업데이트
       await tx
         .update(schema.invoice)
-        .set({ status: 'PAID' }) // 사용자 경험을 위해 'PAID'로 즉시 처리
+        .set({ status: 'PAID' })
         .where(eq(schema.invoice.id, invoiceId));
 
-      this.logger.log(`내부 상태 업데이트 완료: Invoice ID ${invoiceId}`);
+      this.logger.log(`내부 결제 승인 완료: Invoice ID ${invoiceId}`);
 
       return {
         success: true,
         paymentEventId: paymentEvent.id,
-        paymentStatus: chargeResult.status,
+        paymentStatus: 'AUTHORIZED',
       };
     });
   }

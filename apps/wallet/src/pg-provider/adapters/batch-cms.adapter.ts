@@ -54,7 +54,19 @@ export class BatchCmsAdapter
       return {
         success: true,
         transactionId: result.payment.transactionId,
-        status: result.payment.status === '신청' ? 'AUTHORIZED' : 'FAILED',
+        status:
+          result.payment.status === '출금대기' ||
+          result.payment.status === '출금중' ||
+          result.payment.status === '출금실패' ||
+          result.payment.status === '출금성공'
+            ? 'AUTHORIZED'
+            : result.payment.status === '출금대기'
+              ? 'AUTHORIZED'
+              : result.payment.status === '출금중'
+                ? 'AUTHORIZED'
+                : result.payment.status === '출금실패'
+                  ? 'FAILED'
+                  : 'FAILED',
         rawResponse: result,
       };
     } catch (error) {
@@ -102,19 +114,23 @@ export class BatchCmsAdapter
       const result = await this.mockApi.withdrawals.get(transactionId);
       let standardStatus: 'REQUESTED' | 'CAPTURED' | 'CANCELLED' | 'FAILED';
       switch (result.payment.status) {
-        case '신청':
+        case '출금대기':
+        case '신청': // 하위 호환성
           standardStatus = 'REQUESTED';
           break;
-        case '처리완료':
+        case '출금성공':
+        case '처리완료': // 하위 호환성
           standardStatus = 'CAPTURED';
+          break;
+        case '출금실패':
+        case '실패': // 하위 호환성
+          standardStatus = 'FAILED';
           break;
         case '취소':
           standardStatus = 'CANCELLED';
           break;
-        case '실패':
-          standardStatus = 'FAILED';
-          break;
         default:
+          this.logger.warn(`알 수 없는 HMS 결제 상태: ${result.payment.status}`);
           standardStatus = 'REQUESTED';
       }
       return {
@@ -164,7 +180,7 @@ export class BatchCmsAdapter
         creditLimit: 0,
         approvedLimit: 0,
         billingCycleDay: 1,
-        status: 'PENDING',
+        // status 컬럼 제거됨 - paymentMethod.status를 유일한 신뢰의 원천으로 사용
         createdAt: new Date(),
         updatedAt: new Date(),
         termsUrl: 'https://www.batchcms.com/terms',
@@ -200,23 +216,26 @@ export class BatchCmsAdapter
     this.logger.log(`BatchCMS 회원 상태 조회: ${memberId}`);
     try {
       const result = await this.mockApi.members.get(memberId);
-      // 임시로 3일 경과 시 등록 완료로 처리
-      const memberCreatedAt = new Date();
-      const daysSinceCreation = Math.floor(
-        (Date.now() - memberCreatedAt.getTime()) / (1000 * 60 * 60 * 24),
-      );
-      if (daysSinceCreation >= 3) {
-        return {
-          status: 'REGISTERED',
-          registeredAt: new Date(
-            memberCreatedAt.getTime() + 3 * 24 * 60 * 60 * 1000,
-          ),
-        };
+
+      // HMS API 응답의 한국어 상태를 우리 시스템 상태로 변환
+      switch (result.member.status) {
+        case '신청완료':
+          return {
+            status: 'REGISTERED',
+            registeredAt: new Date(),
+          };
+        case '신청대기':
+          return {
+            status: 'PENDING',
+          };
+        default:
+          this.logger.warn(`알 수 없는 HMS 상태: ${result.member.status}`);
+          return {
+            status: 'PENDING',
+          };
       }
-      return {
-        status: 'PENDING',
-      };
     } catch (error) {
+      this.logger.error(`BatchCMS 회원 상태 조회 실패: ${memberId}`, error);
       return {
         status: 'FAILED',
       };

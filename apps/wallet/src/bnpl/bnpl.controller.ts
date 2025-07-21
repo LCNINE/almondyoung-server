@@ -1,195 +1,109 @@
-// import {
-//   Controller,
-//   Delete,
-//   Get,
-//   Param,
-//   ParseIntPipe,
-//   Post,
-//   UseInterceptors,
-//   Body,
-//   Req,
-//   HttpException,
-//   HttpStatus,
-// } from '@nestjs/common';
-// import { BnplService } from './bnpl.service';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
+  BadRequestException,
+} from '@nestjs/common';
+import { BnplAccountService } from './services/bnpl-account.service';
 
-// import { FileInterceptor } from '@nestjs/platform-express';
-// import * as bnplZod from '../shared/zod/bnpl.zod';
-// import * as paymentZod from '../shared/zod/payment.zod';ㅁ
-// @Controller('bnpl')
-// export class BnplController {
-//   constructor(private readonly bnplService: BnplService) {}
+/**
+ * BNPL 도메인 컨트롤러
+ * - 사용자의 BNPL 계정 정보 조회
+ * - 사용자의 BNPL 거래 내역 조회
+ * - 정산 배치 정보 조회
+ */
+@Controller('bnpl')
+export class BnplController {
+  constructor(private readonly bnplAccountService: BnplAccountService) { }
 
-//   /**
-//    * BNPL 계좌 등록 (배치 CMS 회원 등록)
-//    * - PG사(HMS)에 회원 등록
-//    * - 내부 DB에 BNPL 계정 생성
-//    */
-//   @Post('accounts')
-//   async createBnplAccount(@Body() dto: bnplZod.Account['Create']) {
-//     return this.bnplService.createBnplAccount(dto);
-//   }
+  /**
+   * 사용자의 BNPL 계정 정보 조회
+   * GET /bnpl/accounts/me?userId=123 (임시로 쿼리 파라미터 사용)
+   * TODO: JWT 인증 구현 후 @Req()에서 userId 추출하도록 변경
+   */
+  @Get('accounts/me')
+  async getMyBnplAccount(@Query('userId') userId: string) {
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다.');
+    }
 
-//   /**
-//    * 사용자의 BNPL 계좌 정보 조회
-//    */
-//   @Get('accounts/:userId')
-//   async getBnplAccount(
-//     @Param('userId', ParseIntPipe) userId: string,
-//   ): Promise<bnplZod.Account['Select'] | null> {
-//     return this.bnplService.getBnplAccount(userId);
-//   }
+    const data = await this.bnplAccountService.getMyBnplAccount(userId);
+    return {
+      success: true,
+      data,
+    };
+  }
 
-//   /**
-//    * 사용자의 모든 BNPL 계좌 목록 조회
-//    */
-//   @Get('accounts/:userId/all')
-//   async getBnplAccounts(@Param('userId', ParseIntPipe) userId: string) {
-//     return this.bnplService.getBnplAccounts(userId);
-//   }
+  /**
+   * 사용자의 BNPL 거래 내역 조회
+   * GET /bnpl/accounts/me/transactions?userId=123&limit=20&offset=0
+   */
+  @Get('accounts/me/transactions')
+  async getMyTransactions(
+    @Query('userId') userId: string,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+  ) {
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다.');
+    }
 
-//   /**
-//    * BNPL 계좌 비활성화
-//    * - PG사(HMS)에서 회원 삭제
-//    * - 내부 DB에서 비활성화 처리 (삭제 아님)
-//    * - 이벤트 기록 남김
-//    */
-//   @Delete('accounts/:accountId')
-//   async deactivateBnplAccount(
-//     @Param('accountId') accountId: string,
-//     @Body() dto: bnplZod.Account['UpdateStatus'],
-//   ) {
-//     return this.bnplService.deactivateBnplAccount({
-//       ...dto,
-//       bnplAccountId: accountId,
-//     });
-//   }
+    const limitNum = Math.min(limit, 100); // 최대 100개로 제한
+    const { transactions, total } = await this.bnplAccountService.getMyTransactions(userId, limitNum, offset);
 
-//   /**
-//    * BNPL 이벤트 히스토리 조회
-//    */
-//   @Get('accounts/:userId/history')
-//   async getBnplHistory(@Param('userId', ParseIntPipe) userId: string) {
-//     return this.bnplService.getBnplEventHistory(userId);
-//   }
+    return {
+      success: true,
+      data: {
+        transactions,
+        pagination: {
+          total,
+          limit: limitNum,
+          offset,
+          hasMore: offset + limitNum < total,
+        },
+      },
+    };
+  }
 
-//   /**
-//    * BNPL 상태 확인 (목업서버 연결 테스트)
-//    */
-//   @Get('test/health')
-//   async checkBnplHealth() {
-//     return this.bnplService.checkBnplHealth();
-//   }
+  /**
+   * 사용자의 정산 배치 내역 조회
+   * GET /bnpl/accounts/me/settlements?userId=123
+   */
+  @Get('accounts/me/settlements')
+  async getMySettlements(@Query('userId') userId: string) {
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다.');
+    }
 
-//   /**
-//    * BNPL 출금신청 테스트
-//    */
-//   @Post('test/withdrawal')
-//   async testBnplWithdrawal(@Body() withdrawalData: any) {
-//     return this.bnplService.requestWithdrawal(withdrawalData);
-//   }
+    const settlements = await this.bnplAccountService.getMySettlements(userId);
+    return {
+      success: true,
+      data: {
+        settlements,
+      },
+    };
+  }
 
-//   /**
-//    * BNPL 결제 요청
-//    */
-//   @Post('payments')
-//   async requestPayment(@Body() dto: bnplZod.Payment['Request']) {
-//     return this.bnplService.requestPayment(dto);
-//   }
+  /**
+   * 특정 정산 배치 상세 조회
+   * GET /bnpl/settlements/:batchId?userId=123
+   */
+  @Get('settlements/:batchId')
+  async getSettlementDetail(
+    @Param('batchId') batchId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다.');
+    }
 
-//   /**
-//    * BNPL 결제 캡처
-//    */
-//   @Post('payments/:paymentId/capture')
-//   async capturePayment(
-//     @Param('paymentId') paymentId: string,
-//     @Body() dto: { actor: paymentZod.Event['Capture']['actor'] },
-//   ) {
-//     return this.bnplService.capturePayment({ id: paymentId, ...dto });
-//   }
-
-//   /**
-//    * BNPL 결제 실패 처리
-//    */
-//   @Post('payments/:paymentId/fail')
-//   async failPayment(
-//     @Param('paymentId') paymentId: string,
-//     @Body() body: { reason: string },
-//   ) {
-//     return this.bnplService.failPayment(paymentId, body.reason);
-//   }
-
-//   /**
-//    * BNPL 동의자료 제출 (Express 환경 전용, supertest E2E 테스트용)
-//    */
-//   @Post('agreements')
-//   @UseInterceptors(FileInterceptor('agreementFile'))
-//   async submitAgreement(@Req() req: any) {
-//     let memberId: string;
-//     let file: any;
-
-//     // Fastify 환경: req.file이 함수
-//     if (typeof req.file === 'function') {
-//       const data = await req.file();
-//       if (!data) {
-//         throw new HttpException(
-//           'agreementFile이 업로드되지 않았습니다',
-//           HttpStatus.BAD_REQUEST,
-//         );
-//       }
-//       memberId = data.fields?.memberId?.value || data.fields?.memberId;
-//       file = {
-//         filename: data.filename,
-//         mimetype: data.mimetype,
-//         value: await data.toBuffer(),
-//       };
-//     }
-//     // Express 환경: req.file은 객체
-//     else if (req.file) {
-//       memberId = req.body.memberId;
-//       file = {
-//         filename: req.file.originalname,
-//         mimetype: req.file.mimetype,
-//         value: req.file.buffer,
-//       };
-//     } else {
-//       throw new HttpException(
-//         'agreementFile이 업로드되지 않았습니다',
-//         HttpStatus.BAD_REQUEST,
-//       );
-//     }
-
-//     if (!memberId) {
-//       throw new HttpException(
-//         'memberId가 누락되었습니다',
-//         HttpStatus.BAD_REQUEST,
-//       );
-//     }
-
-//     return this.bnplService.submitAgreement({
-//       memberId,
-//       agreementFile: file,
-//       custId: '',
-//       agreementText: '',
-//     });
-//   }
-//   // Fastify 방식(복구 필요시 참고)
-//   // async submitAgreement(@Req() req: FastifyRequest) {
-//   //   const data = await (req as any).file();
-//   //   if (!data) {
-//   //     throw new HttpException('agreementFile이 업로드되지 않았습니다', HttpStatus.BAD_REQUEST);
-//   //   }
-//   //   const buffer = await data.toBuffer();
-//   //   const memberId = data.fields?.memberId?.value || data.fields?.memberId;
-//   //   return this.bnplService.submitAgreement({
-//   //     memberId,
-//   //     agreementFile: {
-//   //       filename: data.filename,
-//   //       mimetype: data.mimetype,
-//   //       value: buffer,
-//   //     },
-//   //     custId: '',
-//   //     agreementText: '',
-//   //   });
-//   // }
-// }
+    const data = await this.bnplAccountService.getSettlementDetail(userId, batchId);
+    return {
+      success: true,
+      data,
+    };
+  }
+}

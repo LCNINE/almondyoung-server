@@ -49,3 +49,11 @@ Content-Type: application/json
   "callAmount": 100000,
   "invoiceId":8
 }
+
+POST http://localhost:5000/payments
+Content-Type: application/json
+
+{
+  "invoiceId": "01K0NB9XK8ECM5HNBMDMKPDBRH",
+  "paymentMethodId": "01K0NA1GNG9FYMV2EQYCS5K81J"
+}
