@@ -70,7 +70,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       const token = authHeader.split(' ')[1];
-      const user = await this.userCustomModule.fetchUser(token);
+      const user = await this.userCustomModule.getUserDetailsByToken(token);
 
       if (!user) {
         return {
@@ -118,12 +118,4 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       };
     }
   }
-
-  // async validateCallback(
-  //   data: AuthenticationInput,
-  //   authIdentityProviderService: AuthIdentityProviderService,
-  // ): Promise<AuthenticationResponse> {
-  //   console.log('validateCallback::::::::', data);
-  //   return { success: true };
-  // }
 }
