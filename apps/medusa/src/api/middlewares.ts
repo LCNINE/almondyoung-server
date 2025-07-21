@@ -1,6 +1,4 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
-import { responseWrapper } from '../middlewares/response-wrapper';
-import { COOKIE_NAME } from '../utils/set-auth-cookie';
 import { adminMiddlewares } from './admin/middlewares';
 import { storeMiddlewares } from './store/middlewares';
 
