@@ -31,3 +31,23 @@ export interface UserDTO {
   role?: string;
   metadata?: Record<string, unknown>;
 }
+
+export interface UserRole {
+  userId: string;
+  roles: {
+    role: {
+      id: string;
+      name: string;
+    };
+    scopes: {
+      scope_name: string;
+      description: string;
+    }[];
+  }[];
+}
+
+// user-service 응답 타입
+export interface UserServiceResponse<T> {
+  success: boolean;
+  data: T;
+}

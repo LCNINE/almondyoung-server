@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { User } from '../../types/user.type';
+import { User, UserRole, UserServiceResponse } from '../../types/user.type';
 import { MedusaService } from '@medusajs/framework/utils';
 import { CreateUserDTO } from '@medusajs/framework/types';
 
@@ -65,24 +65,11 @@ export default class CustomUserModuleService {
     }
   }
 
-  async verifyToken(token: string): Promise<User> {
-    try {
-      const response = await this.client.get('/users/me', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      return response.data.data;
-    } catch (error) {
-      throw new Error(`사용자 정보 조회 실패: ${error}`);
-    }
-  }
-
-  async getUserDetailsByToken(token: string): Promise<User> {
+  async getUserDetailsByToken(userServiceToken: string): Promise<User> {
     try {
       const response = await this.client.get(`/users/details`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${userServiceToken}`,
         },
       });
 
@@ -98,6 +85,26 @@ export default class CustomUserModuleService {
       return response.data.data;
     } catch (error) {
       throw new Error(`토큰 갱신 실패: ${error.response?.data.message}`);
+    }
+  }
+
+  async getUserRoles(
+    userId: string,
+    userServiceToken: string,
+  ): Promise<UserRole> {
+    try {
+      const response = await this.client.get<UserServiceResponse<UserRole>>(
+        `/users/${userId}/roles`,
+        {
+          headers: {
+            Authorization: `Bearer ${userServiceToken}`,
+          },
+        },
+      );
+
+      return response.data.data;
+    } catch (error) {
+      throw new Error(`유저 역할 조회 실패: ${error.response?.data.message}`);
     }
   }
 }
