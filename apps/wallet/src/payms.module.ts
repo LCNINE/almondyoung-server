@@ -14,6 +14,7 @@ import * as schema from './shared/schemas/schema';
 // import { PaymentModule } from './payment/payment.module';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { EventsModule } from './shared/events/events.module';
+import { PaymentModule } from './payment/payment.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -44,7 +45,7 @@ import { EventsModule } from './shared/events/events.module';
     InvoiceModule,
     BnplModule,
     // PaymentModule,
-    // PaymentModule,
+    PaymentModule,
     PaymentMethodModule,
   ],
   controllers: [],

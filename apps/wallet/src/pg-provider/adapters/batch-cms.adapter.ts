@@ -1,7 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PaymentProcessingPort } from '../../payment/port/payment-processing.port';
+import {
+  ChargeResult,
+  PaymentProcessingPort,
+} from '../../payment/port/payment-processing.port';
 import { MethodManagementPort } from '../../payment-method/port/method-management.port';
-import { MockHmsAPI } from 'hms-api-wrapper';
+import {
+  AgreementFileResponseDto,
+  MockHmsAPI,
+  RegisterAgreementRequest,
+} from 'hms-api-wrapper';
 import * as paymentZod from '../../shared/zod/payment.zod';
 import { CreatePaymentMethodPayload } from '../../shared/zod/payment-method.zod';
 import tsid from 'tsid-ts';
@@ -26,34 +33,36 @@ export class BatchCmsAdapter
   }
 
   // 결제 처리
-  async charge(request: paymentZod.Event['Request']): Promise<{
-    transactionId: string;
-    status: 'PENDING' | 'SUCCESS' | 'FAILURE';
-    message?: string;
-    rawResponse: any;
-    capturedAt?: Date;
-  }> {
+  async charge(request: {
+    invoiceId: string;
+    amount: number;
+    paymentDate: string;
+    memberId: string;
+  }): Promise<ChargeResult> {
     this.logger.log(
       `BatchCMS 결제 요청: ${request.invoiceId}, 금액: ${request.amount}`,
     );
+
+    console.log(request, 'requwat');
     try {
       const result = await this.mockApi.withdrawals.request({
-        memberId: tsid.getTsid().toString(),
+        memberId: request.memberId,
         callAmount: request.amount,
-        paymentDate: new Date().toISOString().split('T')[0],
+        paymentDate: request.paymentDate,
         transactionId: tsid.getTsid().toString(),
       });
       return {
+        success: true,
         transactionId: result.payment.transactionId,
-        status: result.payment.status === '신청' ? 'PENDING' : 'SUCCESS',
+        status: result.payment.status === '신청' ? 'AUTHORIZED' : 'FAILED',
         rawResponse: result,
       };
     } catch (error) {
       return {
+        success: false,
         transactionId: '',
-        status: 'FAILURE',
-        message: (error as Error).message,
-        rawResponse: {},
+        status: 'FAILED',
+        rawResponse: error,
       };
     }
   }
@@ -165,6 +174,25 @@ export class BatchCmsAdapter
     // API 응답 반환
     return hmsResponse;
   }
+
+  async submitConsent(
+    request: RegisterAgreementRequest,
+  ): Promise<{ success: boolean; rawResponse: AgreementFileResponseDto }> {
+    this.logger.log(`BatchCMS 동의자료 제출: ${request.memberId}`);
+    const result = await this.mockApi.agreements.register(
+      'default-cust',
+      request.memberId,
+      {
+        file: request.file as Buffer,
+        filename: request.filename,
+      },
+    );
+    return {
+      success: true,
+      rawResponse: result,
+    };
+  }
+
   async getMemberStatus(memberId: string): Promise<{
     status: 'PENDING' | 'REGISTERED' | 'FAILED';
     registeredAt?: Date;

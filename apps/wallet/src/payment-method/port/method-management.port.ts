@@ -1,6 +1,10 @@
 import { CreatePaymentMethodPayload } from '../../shared/zod/payment-method.zod';
 import * as schema from '../../shared/schemas/schema';
 import { WalletTx } from '../../shared/types';
+import {
+  AgreementFileResponseDto,
+  RegisterAgreementRequest,
+} from 'hms-api-wrapper';
 
 // 포트(계약서)는 구체적인 구현이 아닌, '약속'만 정의합니다.
 export abstract class MethodManagementPort {
@@ -15,6 +19,14 @@ export abstract class MethodManagementPort {
     tx: WalletTx,
     paymentMethod: typeof schema.paymentMethod.$inferSelect,
   ): Promise<any>; // 반환 타입은 어댑터의 API 응답에 따라 유연하게 설정
+
+  /**
+   * 동의자료 제출
+   * @param request 동의자료 제출에 필요한 데이터 DTO
+   */
+  abstract submitConsent(
+    request: RegisterAgreementRequest, // 동의자료 제출에 필요한 데이터 DTO
+  ): Promise<{ success: boolean; rawResponse: AgreementFileResponseDto }>;
 
   /**
    * 외부 PG사에 등록된 회원의 상태를 조회합니다.

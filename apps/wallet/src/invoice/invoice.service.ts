@@ -100,7 +100,7 @@ export class InvoiceService {
           invoiceType,
           amount,
           currency,
-          dueAt,
+          dueAt: dueAt ? new Date(dueAt) : undefined, // 반드시 Date 객체로 변환
           status: 'ISSUED',
           issuedAt: now,
           expiresAt: this.calculateExpirationTime(),

@@ -2,211 +2,169 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ConflictException,
+  BadRequestException,
+  Inject,
+  ForbiddenException,
 } from '@nestjs/common';
-import { ulid } from 'ulid';
-import { eq } from 'drizzle-orm';
-import { Inject } from '@nestjs/common';
+import { InjectDb, DbService } from '@app/db';
 import * as schema from '../shared/schemas/schema';
-
-// 💡 1. 역할에 맞는, 새롭게 정의된 타입들을 import 합니다.
-import * as paymentZod from '../shared/zod/payment.zod';
-
+import { eq } from 'drizzle-orm';
+import { ulid } from 'ulid';
 import { PaymentProcessingPort } from './port/payment-processing.port';
-import { DbService, InjectDb } from '@app/db';
+import { ProcessPaymentDto } from './dto/process-payment.dto';
 
+// 이 서비스가 컨트롤러로부터 받을 요청 데이터 타입 정의
+interface ProcessPaymentPayload {
+  invoiceId: string;
+  paymentMethodId: string;
+}
+
+/**
+ * 결제(Payment) 도메인 서비스
+ * - 역할: 결제 프로세스를 총괄 지휘하고, 결과를 DB에 기록합니다.
+ */
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
 
   constructor(
+    // ✅ 팩토리 대신, Port(계약서)를 직접 주입받습니다.
     @Inject(PaymentProcessingPort)
     private readonly paymentProcessor: PaymentProcessingPort,
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-    // repository 관련 의존성 제거
   ) {}
 
   /**
-   * 💡 [생성] 새로운 결제 요청을 받아 'REQUESTED' 상태의 이벤트를 생성합니다.
-   * @param payload 결제 요청에 필요한 데이터
-   * @returns 생성된 PaymentEvent 객체
+   * 결제 프로세스를 총괄하는 메인 메서드
+   * @param payload 결제에 필요한 정보 (청구서 ID, 결제수단 ID)
    */
-  async requestPayment(
-    payload: paymentZod.Event['Request'],
-  ): Promise<paymentZod.Event['Select']> {
+  async processPayment(payload: ProcessPaymentDto) {
+    const { invoiceId, paymentMethodId } = payload;
+
+    // 여러 DB 작업을 하나의 원자적 단위로 묶기 위해 트랜잭션을 사용합니다.
+    return this.dbService.db.transaction(async (tx) => {
+      // --- 1. 사전 검증 (Guard Clauses) ---
+      this.logger.log(`결제 처리 시작: Invoice ID ${invoiceId}`);
+
+      const invoice = await tx.query.invoice.findFirst({
+        where: eq(schema.invoice.id, invoiceId),
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('존재하지 않는 청구서입니다.');
+      }
+      if (invoice.status === 'PAID' || invoice.status === 'CANCELLED') {
+        throw new BadRequestException('이미 처리되었거나 폐기된 청구서입니다.');
+      }
+
+      // --- 2. 🚨 임시 조치: 청구서에서 userId 가져오기 ---
+      // TODO: 추후 인증 Guard 구현 시, 이 라인을 삭제하고 Controller에서 직접 userId를 받아야 합니다.
+      const userId = invoice.userId;
+      this.logger.warn(`임시로 Invoice에서 UserId를 사용합니다: ${userId}`);
+
+      // --- 3. 결제수단 검증 ---
+      const paymentMethod = await tx.query.paymentMethod.findFirst({
+        where: eq(schema.paymentMethod.id, paymentMethodId),
+      });
+      if (!paymentMethod) {
+        throw new NotFoundException('존재하지 않는 결제수단입니다.');
+      }
+
+      // --- 🚨 userId 소유권 검증 로직 (주석 처리) ---
+      // TODO: 추후 인증(Auth) Guard가 구현되면 아래 주석을 반드시 해제해야 합니다.
+      /*
+      if (paymentMethod.userId !== userId) {
+        throw new ForbiddenException('본인의 결제수단만 사용할 수 있습니다.');
+      }
+      */
+
+      const bnplAccount = await tx.query.bnplAccount.findFirst({
+        where: eq(schema.bnplAccount.userId, userId),
+      });
+      if (!bnplAccount) {
+        throw new NotFoundException('BNPL 계정이 존재하지 않습니다.');
+      }
+
+      const batchCmsMethod = await tx.query.batchCmsMethod.findFirst({
+        where: eq(schema.batchCmsMethod.id, paymentMethod.id),
+      });
+      if (!batchCmsMethod) {
+        throw new NotFoundException(
+          '해당 결제수단에 연결된 BNPL PG사 정보가 없습니다.',
+        );
+      }
+
+      // --- 3. 어댑터에 결제 요청 위임 ---
+      const paymentDate = this.calculateNextPaymentDate();
+      const chargeResult = await this.paymentProcessor.charge({
+        memberId: batchCmsMethod.hmsMemberId, // ✅ hmsMemberId를 전달
+        invoiceId,
+        amount: invoice.amount,
+        paymentDate: paymentDate,
+      });
+
+      console.log(chargeResult, 'chargeResult');
+      // --- 5. 통신 결과 기록 (PaymentEvent) ---
+      this.logger.log(`PG사 통신 결과 수신: ${chargeResult.status}`);
+      const [paymentEvent] = await tx
+        .insert(schema.paymentEvents)
+        .values({
+          id: ulid(),
+          invoiceId: invoice.id,
+          paymentMethodId: paymentMethod.id,
+          amount: invoice.amount,
+          status: chargeResult.status, // 'AUTHORIZED' 또는 'FAILED'
+          pgTransactionId: chargeResult.transactionId,
+          pgResponse: JSON.stringify(chargeResult.rawResponse),
+          actor: 'USER',
+          metadata: JSON.stringify({ gateway: chargeResult.gatewayId }),
+        })
+        .returning();
+
+      if (!chargeResult.success) {
+        this.logger.error(`결제 실패: ${chargeResult.transactionId}`);
+        // 실패했어도 PaymentEvent는 기록되고, 트랜잭션은 롤백됩니다.
+        throw new BadRequestException('결제 요청에 실패했습니다.');
+      }
+
+      // --- 6. 성공 시, 내부 상태 업데이트 ---
+      this.logger.log(`결제 예약 성공: ${chargeResult.transactionId}`);
+
+      // 6a. 내부 회계 장부 기록 (bnplTransaction)
+      await tx.insert(schema.bnplTransaction).values({
+        id: ulid(),
+        bnplAccountId: bnplAccount.id,
+        invoiceId: invoice.id,
+        transactionType: 'DEBIT',
+        status: 'AUTHORIZED', // PG사와 동일하게 '승인됨(예약됨)' 상태로 기록
+        amount: invoice.amount,
+      });
+
+      // 6b. 청구서 상태 업데이트
+      await tx
+        .update(schema.invoice)
+        .set({ status: 'PAID' }) // 사용자 경험을 위해 'PAID'로 즉시 처리
+        .where(eq(schema.invoice.id, invoiceId));
+
+      this.logger.log(`내부 상태 업데이트 완료: Invoice ID ${invoiceId}`);
+
+      return {
+        success: true,
+        paymentEventId: paymentEvent.id,
+        paymentStatus: chargeResult.status,
+      };
+    });
+  }
+
+  /**
+   * 다음 정산일(출금일)을 계산하는 헬퍼 메서드
+   */
+  private calculateNextPaymentDate(): string {
     const now = new Date();
-    const eventId = ulid();
-
-    // DB 저장용 데이터 변환
-    const dbPayload = {
-      id: eventId,
-      invoiceId: payload.invoiceId,
-      paymentMethodId: payload.paymentMethodId,
-      amount: payload.amount,
-      status: 'REQUESTED' as const,
-      actor: payload.actor,
-      metadata: payload.metadata ? JSON.stringify(payload.metadata) : null,
-      pgTransactionId: null,
-      pgResponse: null,
-      errorMessage: null,
-      createdAt: now,
-      updatedAt: null, // 생성 시에는 null
-    };
-
-    const [createdEvent] = await this.dbService.db
-      .insert(schema.paymentEvents)
-      .values(dbPayload)
-      .returning();
-
-    this.logger.log(`결제 요청 생성됨: ${createdEvent.id}`);
-    // this.eventEmitter.emit('payment.requested', createdEvent);
-    return createdEvent;
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 15);
+    const year = nextMonth.getFullYear();
+    const month = (nextMonth.getMonth() + 1).toString().padStart(2, '0');
+    const day = nextMonth.getDate().toString().padStart(2, '0');
+    return `${year}${month}${day}`;
   }
-
-  /**
-   * 💡 [상태 업데이트] 기존 결제를 'AUTHORIZED' 상태로 변경합니다.
-   * @param payload 승인에 필요한 데이터 (업데이트할 이벤트 ID 포함)
-   * @returns 업데이트된 PaymentEvent 객체
-   */
-  async authorizePayment(
-    payload: paymentZod.Event['Authorize'],
-  ): Promise<paymentZod.Event['Select']> {
-    const { id, pgTransactionId, pgResponse, actor } = payload;
-
-    // const eventToUpdate = await this.findAndValidateState(id, 'REQUESTED');
-
-    const [updatedEvent] = await this.dbService.db
-      .update(schema.paymentEvents)
-      .set({
-        status: 'AUTHORIZED',
-        pgTransactionId,
-        pgResponse,
-        actor,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentEvents.id, id))
-      .returning();
-
-    this.logger.log(`결제 승인됨: ${updatedEvent.id}`);
-    // this.eventEmitter.emit('payment.authorized', updatedEvent);
-    return updatedEvent;
-  }
-
-  /**
-   * 💡 [상태 업데이트] 기존 결제를 'CAPTURED' 상태로 변경합니다.
-   * @param payload 캡처에 필요한 데이터 (업데이트할 이벤트 ID 포함)
-   * @returns 업데이트된 PaymentEvent 객체
-   */
-  async capturePayment(
-    payload: paymentZod.Event['Capture'],
-  ): Promise<paymentZod.Event['Select']> {
-    const { id, actor } = payload;
-
-    // 캡처는 보통 'AUTHORIZED' 상태의 결제에 대해 이루어집니다.
-    // const eventToUpdate = await this.findAndValidateState(id, 'AUTHORIZED');
-
-    const [updatedEvent] = await this.dbService.db
-      .update(schema.paymentEvents)
-      .set({
-        status: 'CAPTURED',
-        actor,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentEvents.id, id))
-      .returning();
-
-    this.logger.log(`결제 캡처됨: ${updatedEvent.id}`);
-    // this.eventEmitter.emit('payment.captured', updatedEvent);
-    return updatedEvent;
-  }
-
-  /**
-   * 💡 [상태 업데이트] 기존 결제를 'FAILED' 상태로 변경합니다.
-   * @param payload 실패 처리에 필요한 데이터 (업데이트할 이벤트 ID 포함)
-   * @returns 업데이트된 PaymentEvent 객체
-   */
-  async failPayment(
-    payload: paymentZod.Event['Fail'],
-  ): Promise<paymentZod.Event['Select']> {
-    const { id, errorMessage, actor } = payload;
-
-    // 실패는 어떤 상태에서든 발생할 수 있으므로, 이미 완료된 상태가 아닌지만 확인합니다.
-    const eventToUpdate = await this.dbService.db.query.paymentEvents.findFirst(
-      {
-        where: eq(schema.paymentEvents.id, id),
-      },
-    );
-
-    if (!eventToUpdate) {
-      throw new NotFoundException(`결제 이벤트를 찾을 수 없습니다: ${id}`);
-    }
-    if (
-      eventToUpdate.status === 'CAPTURED' ||
-      eventToUpdate.status === 'FAILED'
-    ) {
-      throw new ConflictException(
-        `이미 처리 완료된 결제입니다: ${eventToUpdate.status}`,
-      );
-    }
-
-    const [updatedEvent] = await this.dbService.db
-      .update(schema.paymentEvents)
-      .set({
-        status: 'FAILED',
-        errorMessage,
-        actor,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentEvents.id, id))
-      .returning();
-
-    this.logger.warn(
-      `결제 실패 처리됨: ${updatedEvent.id}, 사유: ${errorMessage}`,
-    );
-    // this.eventEmitter.emit('payment.failed', updatedEvent);
-    return updatedEvent;
-  }
-
-  /**
-   * 인보이스 ID로 결제 이벤트 목록을 조회합니다.
-   * @param invoiceId
-   * @returns PaymentEvent 객체 배열
-   */
-  async getPaymentEventsByInvoiceId(
-    invoiceId: string,
-  ): Promise<paymentZod.Event['Select'][]> {
-    const events = await this.dbService.db.query.paymentEvents.findMany({
-      where: eq(schema.paymentEvents.invoiceId, invoiceId),
-    });
-    return events;
-  }
-
-  /**
-   * 헬퍼 함수: 특정 ID의 이벤트를 찾아 상태를 검증합니다.
-   * @param id 이벤트 ID
-   * @param expectedStatus 기대하는 현재 상태
-   * @returns 찾아낸 PaymentEvent 객체
-   */
-  private async findAndValidateState(
-    id: string,
-    expectedStatus: paymentZod.Event['Select']['status'],
-  ): Promise<paymentZod.Event['Select']> {
-    const event = await this.dbService.db.query.paymentEvents.findFirst({
-      where: eq(schema.paymentEvents.id, id),
-    });
-
-    if (!event) {
-      throw new NotFoundException(`결제 이벤트를 찾을 수 없습니다: ${id}`);
-    }
-
-    if (event.status !== expectedStatus) {
-      throw new ConflictException(
-        `잘못된 결제 상태입니다. 현재: ${event.status}, 필요: ${expectedStatus}`,
-      );
-    }
-
-    return event;
-  }
-
-  // ... (환불 관련 로직도 위와 유사한 패턴으로 리팩토링 가능)
 }

@@ -14,9 +14,8 @@ import { eq } from 'drizzle-orm';
 import { EventProcessorService } from '../../shared/events/event-processor.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { BnplPaymentMethodRegisteredEvent } from '../events/bnpl-payment-method-registered.event';
-
 import { MethodManagementPort } from '../port/method-management.port';
-import { WalletTx } from '../../shared/types';
+import { RegisterAgreementRequest } from 'hms-api-wrapper';
 
 /**
  * 결제수단(PaymentMethod) 도메인 서비스
@@ -177,65 +176,8 @@ export class PaymentMethodService {
     return updated;
   }
 
-  /**
-   * BNPL 결제수단 등록 처리
-   * - PG사(HMS)에 회원 등록 요청
-   * - BatchCMS 테이블에 기록 (PENDING_APPROVAL 상태)
-   * - BatchCmsMethodRegisteredEvent 발행
-   */
-  private async handleBatchCmsRegistration(
-    paymentMethod: typeof schema.paymentMethod.$inferSelect,
-    dto: Method['Create'],
-    tx: WalletTx,
-  ) {
-    try {
-      this.logger.log(`BNPL 등록 처리 시작: ${paymentMethod.id}`);
-
-      // 실제 어댑터를 통해 BatchCMS(목업) 회원등록 API 호출
-      const registerResult = await this.methodManager.registerMember(
-        dto,
-        tx,
-        paymentMethod,
-      );
-
-      // registerResult의 memberId 등 활용 가능
-      // 이후 batchCmsMethod insert 등은 기존대로 진행
-
-      // 반드시 paymentMethod.id를 id, paymentMethodId 모두에 사용
-      const [batchCmsMethod] = await tx
-        .insert(schema.batchCmsMethod)
-        .values({
-          id: paymentMethod.id,
-          paymentMethodId: paymentMethod.id,
-          hmsMemberId: registerResult.member.memberId,
-          hmsCustId: 'default-cust',
-          creditLimit: 0,
-          approvedLimit: 0,
-          billingCycleDay: 0,
-          hmsMetadata: undefined,
-          termsUrl: undefined,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          status: 'PENDING',
-        })
-        .returning();
-      this.logger.log(
-        `BatchCMS 기록 생성: ${batchCmsMethod.id}, 상태: PENDING_APPROVAL`,
-      );
-      this.logger.log(`BNPL 등록 이벤트 발행 완료: ${paymentMethod.id}`);
-    } catch (error) {
-      this.logger.error(`BNPL 등록 처리 실패: ${error}`, {
-        paymentMethodId: paymentMethod.id,
-        userId: dto.userId,
-        error: error as Error,
-      });
-      // PaymentMethod 상태를 FAILED로 변경
-      await tx
-        .update(schema.paymentMethod)
-        .set({ status: 'FAILED', updatedAt: new Date() })
-        .where(eq(schema.paymentMethod.id, paymentMethod.id));
-      throw error;
-    }
+  async submitConsent(dto: RegisterAgreementRequest) {
+    return await this.methodManager.submitConsent(dto);
   }
 
   /**
