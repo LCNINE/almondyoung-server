@@ -14,10 +14,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   if (id) selector.id = Array.isArray(id) ? id : [id];
 
   const options: any = {
-    relations: ['categories'],
+    relations: [
+      'categories',
+      'variants',
+      'options',
+      'images',
+      'tags',
+      'type',
+      'collection',
+    ],
   };
 
   const product = await productModuleService.retrieveProduct(id, options);
 
-  res.json(product);
+  res.json({ product });
 }
