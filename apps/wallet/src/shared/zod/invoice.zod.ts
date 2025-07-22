@@ -32,6 +32,8 @@ const updateStatus = z.object({
   reason: z.string().optional(),
 });
 
+
+
 // Export namespaces (no Invoice prefix - file already indicates domain)
 export type Invoice = {
   Select: typeof invoiceTable.$inferSelect;

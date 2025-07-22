@@ -188,21 +188,50 @@ REFUND_LIST_RESPONSE=$(curl -s "$BASE_URL/admin/refunds")
 echo "환불 요청 목록:"
 echo "$REFUND_LIST_RESPONSE" | jq '.data | length'
 
-# 8-2. 환불 요청 생성 (첫 번째 결제에 대해)
+# 8-1.5. 사전 환불 계좌 등록 (포트와 어댑터 패턴)
+echo -e "\n8️⃣-1.5 사전 환불 계좌 등록 (BNPL 수동 처리용)..."
+REFUND_ACCOUNT_RESPONSE=$(curl -s -X POST "$BASE_URL/refund-accounts" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"userId\": \"$TEST_USER_ID\",
+    \"bankCode\": \"004\",
+    \"bankName\": \"국민은행\",
+    \"accountNumber\": \"110-123-456789\",
+    \"accountHolderName\": \"테스트사용자\",
+    \"isDefault\": true
+  }")
+
+echo "환불 계좌 등록 결과:"
+echo "$REFUND_ACCOUNT_RESPONSE" | jq '.'
+
+REFUND_ACCOUNT_ID=$(echo "$REFUND_ACCOUNT_RESPONSE" | jq -r '.data.id // empty')
+
+if [ -z "$REFUND_ACCOUNT_ID" ] || [ "$REFUND_ACCOUNT_ID" = "null" ]; then
+    echo "⚠️ 환불 계좌 등록 실패, 기본값 사용"
+    REFUND_ACCOUNT_ID="default-refund-account-$TEST_USER_ID"
+else
+    echo "✅ 환불 계좌 등록 성공: $REFUND_ACCOUNT_ID"
+fi
+
+# 8-2. 환불 요청 생성 (첫 번째 결제에 대해) - 포트와 어댑터 패턴 적용
 if [ ${#PAYMENT_EVENT_IDS[@]} -gt 0 ]; then
     FIRST_PAYMENT_EVENT_ID="${PAYMENT_EVENT_IDS[0]}"
     REFUND_AMOUNT=50000  # 부분 환불
     
-    echo -e "\n8️⃣-2 환불 요청 생성..."
+    echo -e "\n8️⃣-2 환불 요청 생성 (포트와 어댑터 패턴)..."
     echo "PaymentEvent ID: $FIRST_PAYMENT_EVENT_ID"
+    echo "환불 계좌 ID: $REFUND_ACCOUNT_ID"
     echo "환불 금액: ${REFUND_AMOUNT}원"
+    echo "🏭 RefundGatewayFactory가 BNPL → ManualRefundAdapter 선택 예정"
     
     REFUND_REQUEST=$(curl -s -X POST "$BASE_URL/refunds" \
       -H "Content-Type: application/json" \
       -d "{
+        \"userId\": \"$TEST_USER_ID\",
         \"paymentEventId\": \"$FIRST_PAYMENT_EVENT_ID\",
+        \"refundAccountId\": \"$REFUND_ACCOUNT_ID\",
         \"amount\": $REFUND_AMOUNT,
-        \"reason\": \"자동화 테스트 환불 요청\"
+        \"reason\": \"자동화 테스트 환불 요청 (BNPL 수동 처리)\"
       }")
     
     echo "환불 요청 결과:"
@@ -212,6 +241,7 @@ if [ ${#PAYMENT_EVENT_IDS[@]} -gt 0 ]; then
     
     if [ -n "$REFUND_ID" ]; then
         echo "✅ 환불 요청 생성 성공! Refund ID: $REFUND_ID"
+        echo "📋 ManualRefundAdapter가 CS팀 대기열에 추가했습니다."
         
         # 8-3. 관리자 환불 목록 확인
         echo -e "\n8️⃣-3 관리자 환불 목록 확인..."
@@ -286,14 +316,17 @@ if [ ${#PAYMENT_EVENT_IDS[@]} -gt 1 ]; then
     
     echo -e "\n9️⃣-1 거절용 환불 요청 생성..."
     echo "PaymentEvent ID: $SECOND_PAYMENT_EVENT_ID"
+    echo "환불 계좌 ID: $REFUND_ACCOUNT_ID"
     echo "환불 금액: ${REJECT_REFUND_AMOUNT}원"
     
     REJECT_REFUND_REQUEST=$(curl -s -X POST "$BASE_URL/refunds" \
       -H "Content-Type: application/json" \
       -d "{
+        \"userId\": \"$TEST_USER_ID\",
         \"paymentEventId\": \"$SECOND_PAYMENT_EVENT_ID\",
+        \"refundAccountId\": \"$REFUND_ACCOUNT_ID\",
         \"amount\": $REJECT_REFUND_AMOUNT,
-        \"reason\": \"자동화 테스트 거절 시나리오\"
+        \"reason\": \"자동화 테스트 거절 시나리오 (BNPL 수동 처리)\"
       }")
     
     echo "거절용 환불 요청 결과:"
@@ -336,9 +369,11 @@ if [ ${#PAYMENT_EVENT_IDS[@]} -gt 1 ]; then
     THIRD_REFUND_REQUEST=$(curl -s -X POST "$BASE_URL/refunds" \
       -H "Content-Type: application/json" \
       -d "{
+        \"userId\": \"$TEST_USER_ID\",
         \"paymentEventId\": \"$SECOND_PAYMENT_EVENT_ID\",
+        \"refundAccountId\": \"$REFUND_ACCOUNT_ID\",
         \"amount\": $THIRD_REFUND_AMOUNT,
-        \"reason\": \"자동화 테스트 정상 완료 시나리오\"
+        \"reason\": \"자동화 테스트 정상 완료 시나리오 (BNPL 수동 처리)\"
       }")
     
     echo "정상 완료용 환불 요청 결과:"

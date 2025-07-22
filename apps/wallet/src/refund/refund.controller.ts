@@ -1,8 +1,17 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { RefundService, RefundRequest } from './refund.service';
 
 export interface CreateRefundRequestDto {
+  userId: string;
   paymentEventId: string;
+  refundAccountId: string; // ✅ 환불 계좌 ID 추가
   amount: number;
   reason: string;
 }
@@ -23,19 +32,15 @@ export class RefundController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async requestRefund(
-    @Body() createRefundDto: CreateRefundRequestDto,
-    // TODO: 인증 연동 후 @Req() req: any 추가하여 userId 추출
-  ) {
+  async requestRefund(@Body() createRefundDto: CreateRefundRequestDto) {
     this.logger.log(`환불 요청 API 호출: ${JSON.stringify(createRefundDto)}`);
 
     try {
-      // TODO: 실제 인증 연동 후 req.user.id로 변경
-      const userId = 'temp-user-id'; // 임시 사용자 ID
-
+      // userId를 DTO에서 명확히 추출
       const refundRequest: RefundRequest = {
-        userId,
+        userId: createRefundDto.userId,
         paymentEventId: createRefundDto.paymentEventId,
+        refundAccountId: createRefundDto.refundAccountId,
         amount: createRefundDto.amount,
         reason: createRefundDto.reason,
       };
@@ -45,7 +50,8 @@ export class RefundController {
       if (result.success) {
         return {
           success: true,
-          message: '환불 요청이 접수되었습니다. CS팀에서 검토 후 처리해드리겠습니다.',
+          message:
+            '환불 요청이 접수되었습니다. CS팀에서 검토 후 처리해드리겠습니다.',
           refundId: result.refundId,
         };
       } else {

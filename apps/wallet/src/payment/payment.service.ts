@@ -11,6 +11,8 @@ import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
 import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PaymentAuthorizedEvent } from './events/payment.events';
 
 // 이 서비스가 컨트롤러로부터 받을 요청 데이터 타입 정의
 interface ProcessPaymentPayload {
@@ -29,6 +31,7 @@ export class PaymentService {
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly bnplAccountService: BnplAccountService,
+    private readonly eventEmitter: EventEmitter2,
   ) { }
 
   /**
@@ -39,7 +42,7 @@ export class PaymentService {
     const { invoiceId, paymentMethodId } = payload;
 
     // 여러 DB 작업을 하나의 원자적 단위로 묶기 위해 트랜잭션을 사용합니다.
-    return this.dbService.db.transaction(async (tx) => {
+    const result = await this.dbService.db.transaction(async (tx) => {
       // --- 1. 사전 검증 (Guard Clauses) ---
       this.logger.log(`결제 처리 시작: Invoice ID ${invoiceId}`);
 
@@ -99,44 +102,42 @@ export class PaymentService {
       // --- ❌ PG사(어댑터) 호출 로직 완전 삭제 ---
       // 외부와 통신 없이, 내부적으로 모든 것을 처리합니다.
 
-      // --- 4. 내부 기록 생성 ---
-      // 4a. PaymentEvent 기록 (상태: AUTHORIZED)
-      const [paymentEvent] = await tx
-        .insert(schema.paymentEvents)
-        .values({
-          id: ulid(),
-          invoiceId: invoice.id,
-          paymentMethodId: paymentMethod.id,
-          amount: invoice.amount,
-          status: FINANCIAL_TRANSACTION_STATUS.AUTHORIZED, // ✅ '내부 승인 완료' 상태로 즉시 기록
-          actor: 'USER',
-        })
-        .returning();
+      // --- 5. ✅ 이벤트 소싱 패턴 적용: 직접 DB 기록 대신 이벤트 발행 준비 ---
+      const paymentEventId = ulid();
 
-      // 4b. bnplTransaction 기록 (상태: AUTHORIZED)
-      await tx.insert(schema.bnplTransaction).values({
-        id: ulid(),
-        bnplAccountId: bnplAccount.id,
-        invoiceId: invoice.id,
-        transactionType: 'DEBIT',
-        status: FINANCIAL_TRANSACTION_STATUS.AUTHORIZED, // ✅ '내부 승인 완료' 상태로 즉시 기록
-        amount: invoice.amount,
-      });
-
-      // 4c. 청구서 상태 PAID로 업데이트
-      await tx
-        .update(schema.invoice)
-        .set({ status: INVOICE_STATUS.PAID })
-        .where(eq(schema.invoice.id, invoiceId));
+      // ❌ 기존 직접 DB 기록 코드 제거
+      // 이제 PaymentEventHandler에서 이벤트를 수신하여 처리합니다.
 
       this.logger.log(`내부 결제 승인 완료: Invoice ID ${invoiceId}`);
 
       return {
         success: true,
-        paymentEventId: paymentEvent.id,
+        paymentEventId,
         paymentStatus: 'AUTHORIZED',
+        userId,
+        invoice,
       };
     });
+
+    // 🎯 트랜잭션 완료 후 이벤트 발행 (Event Sourcing)
+    // 트랜잭션 외부에서 이벤트를 발행하여 데드락 방지
+    this.eventEmitter.emit(
+      'payment.authorized',
+      new PaymentAuthorizedEvent(
+        result.paymentEventId,
+        invoiceId,
+        paymentMethodId,
+        Number(result.invoice.amount),
+        result.userId,
+        new Date(),
+      ),
+    );
+
+    return {
+      success: result.success,
+      paymentEventId: result.paymentEventId,
+      paymentStatus: result.paymentStatus,
+    };
   }
 
   /**

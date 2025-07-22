@@ -30,22 +30,23 @@ export const newMemberId = (): string => getTsid().toString();
 // 적용 대상: paymentEvents, bnplTransaction
 // 역할: 실제 돈의 흐름을 나타내는 일관된 상태
 export const FINANCIAL_TRANSACTION_STATUS = {
-  AUTHORIZED: 'AUTHORIZED',           // 내부 승인 완료 / PG사 예약 접수 완료
+  AUTHORIZED: 'AUTHORIZED', // 내부 승인 완료 / PG사 예약 접수 완료
   SETTLEMENT_REQUESTED: 'SETTLEMENT_REQUESTED', // 정산(출금) 요청됨
-  CAPTURED: 'CAPTURED',               // 최종 출금 성공 (수금 완료)
-  FAILED: 'FAILED',                   // 최종 출금 실패
+  CAPTURED: 'CAPTURED', // 최종 출금 성공 (수금 완료)
+  FAILED: 'FAILED', // 최종 출금 실패
 } as const;
-export type FinancialTransactionStatus = keyof typeof FINANCIAL_TRANSACTION_STATUS;
+export type FinancialTransactionStatus =
+  keyof typeof FINANCIAL_TRANSACTION_STATUS;
 
 // 🎯 그룹 2: 배치 작업 상태 (Batch Job Status)
 // 적용 대상: settlementBatch
 // 역할: 백그라운드 작업의 진행 상태를 나타내는 명확한 상태
 export const BATCH_JOB_STATUS = {
-  PENDING: 'PENDING',                 // 배치 작업 대기 중
-  PROCESSING: 'PROCESSING',           // 배치 작업 처리 중
-  COMPLETED: 'COMPLETED',             // 배치 작업 성공적으로 완료
-  FAILED: 'FAILED',                   // 배치 작업 실패
-  CANCELLED: 'CANCELLED',             // 관리자에 의해 취소됨
+  PENDING: 'PENDING', // 배치 작업 대기 중
+  PROCESSING: 'PROCESSING', // 배치 작업 처리 중
+  COMPLETED: 'COMPLETED', // 배치 작업 성공적으로 완료
+  FAILED: 'FAILED', // 배치 작업 실패
+  CANCELLED: 'CANCELLED', // 관리자에 의해 취소됨
 } as const;
 export type BatchJobStatus = keyof typeof BATCH_JOB_STATUS;
 
@@ -54,54 +55,54 @@ export type BatchJobStatus = keyof typeof BATCH_JOB_STATUS;
 
 // 결제수단 상태
 export const PAYMENT_METHOD_STATUS = {
-  PENDING: 'PENDING',                 // 등록 처리 중
-  ACTIVE: 'ACTIVE',                   // 활성화됨
-  FAILED: 'FAILED',                   // 등록 실패
-  INACTIVE: 'INACTIVE',               // 비활성화됨
-  DELETED: 'DELETED',                 // 삭제됨
+  PENDING: 'PENDING', // 등록 처리 중
+  ACTIVE: 'ACTIVE', // 활성화됨
+  FAILED: 'FAILED', // 등록 실패
+  INACTIVE: 'INACTIVE', // 비활성화됨
+  DELETED: 'DELETED', // 삭제됨
 } as const;
 export type PaymentMethodStatus = keyof typeof PAYMENT_METHOD_STATUS;
 
 // BNPL 계정 상태
 export const BNPL_ACCOUNT_STATUS = {
-  ACTIVE: 'ACTIVE',                   // 정상 활성화
-  INACTIVE: 'INACTIVE',               // 비활성화
-  OVERDUE: 'OVERDUE',                 // 연체 상태
-  SUSPENDED: 'SUSPENDED',             // 일시 정지
+  ACTIVE: 'ACTIVE', // 정상 활성화
+  INACTIVE: 'INACTIVE', // 비활성화
+  OVERDUE: 'OVERDUE', // 연체 상태
+  SUSPENDED: 'SUSPENDED', // 일시 정지
 } as const;
 export type BnplAccountStatus = keyof typeof BNPL_ACCOUNT_STATUS;
 
 // 청구서 상태
 export const INVOICE_STATUS = {
-  ISSUED: 'ISSUED',                   // 발행됨
-  PAID: 'PAID',                       // 결제 완료
+  ISSUED: 'ISSUED', // 발행됨
+  PAID: 'PAID', // 결제 완료
   PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED', // 부분 환불
-  REFUNDED: 'REFUNDED',               // 전액 환불
-  CANCELLED: 'CANCELLED',             // 취소됨
-  EXPIRED: 'EXPIRED',                 // 만료됨
-  OVERDUE: 'OVERDUE',                 // 연체됨
-  FAILED: 'FAILED',                   // 결제 실패
+  REFUNDED: 'REFUNDED', // 전액 환불
+  CANCELLED: 'CANCELLED', // 취소됨
+  EXPIRED: 'EXPIRED', // 만료됨
+  OVERDUE: 'OVERDUE', // 연체됨
+  FAILED: 'FAILED', // 결제 실패
 } as const;
 export type InvoiceStatus = keyof typeof INVOICE_STATUS;
 
 // 💸 환불 상태 (refundEvents)
 export const REFUND_STATUS = {
-  REQUESTED: 'REQUESTED',             // 환불 요청됨
-  PROCESSING: 'PROCESSING',           // CS팀 처리 중 (수동 확인/입금)
-  COMPLETED: 'COMPLETED',             // 최종 환불 완료
-  FAILED: 'FAILED',                   // 환불 처리 실패
-  REJECTED: 'REJECTED',               // 환불 요청 거절
+  REQUESTED: 'REQUESTED', // 환불 요청됨
+  PROCESSING: 'PROCESSING', // CS팀 처리 중 (수동 확인/입금)
+  COMPLETED: 'COMPLETED', // 최종 환불 완료
+  FAILED: 'FAILED', // 환불 처리 실패
+  REJECTED: 'REJECTED', // 환불 요청 거절
 } as const;
 export type RefundStatus = keyof typeof REFUND_STATUS;
 
 // 📋 Invoice 이벤트 타입 (Invoice Event Sourcing)
 export const INVOICE_EVENT_TYPE = {
-  INVOICE_ISSUED: 'INVOICE_ISSUED',                     // 청구서 생성
-  INVOICE_PAID: 'INVOICE_PAID',                         // 결제 완료 (CAPTURED)
-  INVOICE_FAILED: 'INVOICE_FAILED',                     // 결제 실패 (FAILED)
+  INVOICE_ISSUED: 'INVOICE_ISSUED', // 청구서 생성
+  INVOICE_PAID: 'INVOICE_PAID', // 결제 완료 (CAPTURED)
+  INVOICE_FAILED: 'INVOICE_FAILED', // 결제 실패 (FAILED)
   INVOICE_PARTIALLY_REFUNDED: 'INVOICE_PARTIALLY_REFUNDED', // 부분 환불 완료
-  INVOICE_FULLY_REFUNDED: 'INVOICE_FULLY_REFUNDED',     // 전액 환불 완료
-  INVOICE_CANCELLED: 'INVOICE_CANCELLED',               // 주문 취소
+  INVOICE_FULLY_REFUNDED: 'INVOICE_FULLY_REFUNDED', // 전액 환불 완료
+  INVOICE_CANCELLED: 'INVOICE_CANCELLED', // 주문 취소
   INVOICE_MARKED_AS_OVERDUE: 'INVOICE_MARKED_AS_OVERDUE', // 연체 처리
 } as const;
 export type InvoiceEventType = keyof typeof INVOICE_EVENT_TYPE;
@@ -319,10 +320,7 @@ export const settlementBatch = pgTable('settlement_batch', {
     .notNull()
     .default(0),
   dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
-  status: text('status')
-    .$type<BatchJobStatus>()
-    .notNull()
-    .default('PENDING'),
+  status: text('status').$type<BatchJobStatus>().notNull().default('PENDING'),
   pgTransactionId: varchar('pg_transaction_id', { length: 255 }), // HMS에서 받은 배치 거래 ID
   batchPeriodStart: timestamp('batch_period_start', {
     withTimezone: true,
@@ -471,23 +469,73 @@ export const paymentEvents = pgTable('payment_events', {
   metadata: text('metadata'), // Event Sourcing을 위한 메타데이터 (JSON 문자열)
 });
 
+// ────────────────────────────────────────────
+// User Refund Account Schemas
+// ────────────────────────────────────────────
+
+// User refund accounts
+export const userRefundAccounts = pgTable(
+  'user_refund_accounts',
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => ulid()),
+    userId: varchar('user_id', { length: 64 }).notNull(), // 어떤 유저의 계좌인지
+
+    bankCode: varchar('bank_code', { length: 32 }).notNull(),
+    bankName: varchar('bank_name', { length: 64 }).notNull(),
+    accountNumber: varchar('account_number', { length: 64 }).notNull(),
+    accountHolderName: varchar('account_holder_name', {
+      length: 128,
+    }).notNull(),
+
+    isDefault: boolean('is_default').notNull().default(false),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    // 사용자당 하나의 기본 계좌만 허용
+    uniqueIndex('idx_user_default_refund_account')
+      .on(table.userId)
+      .where(sql`${table.isDefault} = true`),
+  ],
+);
+
+// ────────────────────────────────────────────
+// Refund Event Schemas
+// ────────────────────────────────────────────
+
 // Refund events
 export const refundEvents = pgTable('refund_events', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   paymentEventId: varchar('payment_event_id', { length: 26 })
     .notNull()
     .references(() => paymentEvents.id),
+
+  // ✅ 환불이 어떤 계좌로 처리되었는지 ID로 참조합니다.
+  refundAccountId: varchar('refund_account_id', { length: 26 })
+    .notNull()
+    .references(() => userRefundAccounts.id),
+
   amount: numeric('amount', { precision: 19, scale: 4 })
     .$type<number>()
     .notNull(),
-  status: varchar('status', { length: 255 })
-    .$type<RefundStatus>()
-    .notNull(),
+  status: varchar('status', { length: 255 }).$type<RefundStatus>().notNull(),
   reason: text('reason'),
+
+  // CS팀의 처리 기록을 위한 컬럼
+  completedBy: varchar('completed_by', { length: 64 }), // 처리한 관리자 ID
+  completedAt: timestamp('completed_at', { withTimezone: true }), // CS팀 환불 완료 시점
+  rejectionReason: text('rejection_reason'), // 거절 사유
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
-  completedAt: timestamp('completed_at', { withTimezone: true }), // CS팀 환불 완료 시점
 });
 
 // ────────────────────────────────────────────
@@ -608,23 +656,38 @@ export const invoiceEventRelations = relations(invoiceEvent, ({ one }) => ({
 }));
 
 // Payment event relations
-export const paymentEventsRelations = relations(paymentEvents, ({ one, many }) => ({
-  invoice: one(invoice, {
-    fields: [paymentEvents.invoiceId],
-    references: [invoice.id],
+export const paymentEventsRelations = relations(
+  paymentEvents,
+  ({ one, many }) => ({
+    invoice: one(invoice, {
+      fields: [paymentEvents.invoiceId],
+      references: [invoice.id],
+    }),
+    paymentMethod: one(paymentMethod, {
+      fields: [paymentEvents.paymentMethodId],
+      references: [paymentMethod.id],
+    }),
+    refunds: many(refundEvents),
   }),
-  paymentMethod: one(paymentMethod, {
-    fields: [paymentEvents.paymentMethodId],
-    references: [paymentMethod.id],
+);
+
+// User refund account relations
+export const userRefundAccountsRelations = relations(
+  userRefundAccounts,
+  ({ many }) => ({
+    refundEvents: many(refundEvents),
   }),
-  refunds: many(refundEvents),
-}));
+);
 
 // Refund event relations
 export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
   paymentEvent: one(paymentEvents, {
     fields: [refundEvents.paymentEventId],
     references: [paymentEvents.id],
+  }),
+  userRefundAccount: one(userRefundAccounts, {
+    fields: [refundEvents.refundAccountId],
+    references: [userRefundAccounts.id],
   }),
 }));
 

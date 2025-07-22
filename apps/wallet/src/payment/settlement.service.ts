@@ -9,6 +9,13 @@ import { PaymentProcessingPort } from './port/payment-processing.port';
 import { WalletTx } from '../shared/types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InvoicePaidEvent, InvoiceFailedEvent } from '../invoice/events/invoice.events';
+import { PaymentCapturedEvent, PaymentFailedEvent, SettlementBatchStartedEvent, SettlementBatchCompletedEvent } from './events/payment.events';
+import {
+  SettlementBatchCreatedEvent,
+  SettlementBatchFailedEvent,
+  SettlementBatchItemAddedEvent,
+  SettlementBatchStatusChangedEvent,
+} from './events/settlement.events';
 /**
  * 정산(Settlement) 도메인 서비스
  * - 역할: 사용자 중심 배치 정산 처리를 담당합니다.
@@ -126,6 +133,19 @@ export class SettlementService {
         `사용자 ${userGroup.userId} 정산 배치 생성: ${settlementBatch.id}, 총액: ${userGroup.totalAmount}원`,
       );
 
+      // 🎯 정산 배치 생성 이벤트 발행 (Event Sourcing)
+      this.eventEmitter.emit(
+        'settlement.batch.created',
+        new SettlementBatchCreatedEvent(
+          settlementBatch.id,
+          userGroup.bnplAccountId,
+          settlementBatch.batchNumber,
+          userGroup.totalAmount,
+          userGroup.transactions.length,
+          settlementBatch.dueDate,
+        ),
+      );
+
       // 사용자의 결제수단 정보 조회
       const paymentMethod = await tx.query.paymentMethod.findFirst({
         where: eq(schema.paymentMethod.userId, userGroup.userId),
@@ -175,12 +195,34 @@ export class SettlementService {
             transactionDate: transaction.createdAt,
           });
 
+          // 🎯 정산 배치 아이템 추가 이벤트 발행 (Event Sourcing)
+          this.eventEmitter.emit(
+            'settlement.batch.item.added',
+            new SettlementBatchItemAddedEvent(
+              settlementBatch.id,
+              transaction.id,
+              Number(transaction.amount),
+            ),
+          );
+
           // (추가) 해당 거래의 invoiceId로 paymentEvents.pgTransactionId도 업데이트
           await tx
             .update(schema.paymentEvents)
             .set({ pgTransactionId: chargeResult.transactionId })
             .where(eq(schema.paymentEvents.invoiceId, transaction.invoiceId));
         }
+
+        // 🎯 정산 배치 시작 이벤트 발행
+        this.eventEmitter.emit(
+          'settlement.batch.started',
+          new SettlementBatchStartedEvent(
+            settlementBatch.id,
+            userGroup.bnplAccountId,
+            userGroup.totalAmount,
+            userGroup.transactions.length,
+            new Date(),
+          ),
+        );
 
         this.logger.log(
           `사용자 ${userGroup.userId} 배치 정산 요청 성공: pgTransactionId=${chargeResult.transactionId}`,
@@ -202,6 +244,18 @@ export class SettlementService {
             .set({ status: FINANCIAL_TRANSACTION_STATUS.FAILED })
             .where(eq(schema.bnplTransaction.id, transaction.id));
         }
+
+        // 🎯 정산 배치 실패 이벤트 발행 (Event Sourcing)
+        const errorMessage = 'error' in chargeResult ? chargeResult.error : '알 수 없는 오류';
+        this.eventEmitter.emit(
+          'settlement.batch.failed',
+          new SettlementBatchFailedEvent(
+            settlementBatch.id,
+            userGroup.bnplAccountId,
+            userGroup.totalAmount,
+            errorMessage,
+          ),
+        );
 
         if ('error' in chargeResult) {
           this.logger.error(
@@ -337,7 +391,7 @@ export class SettlementService {
         // 4. PaymentEvent (마스터 원장) 상태도 함께 업데이트 및 Invoice 이벤트 발행
         for (const item of batch.items) {
           const transaction = item.bnplTransaction;
-          
+
           // PaymentEvent 상태 업데이트
           await tx
             .update(schema.paymentEvents)
@@ -347,14 +401,26 @@ export class SettlementService {
             })
             .where(eq(schema.paymentEvents.invoiceId, transaction.invoiceId));
 
-          // ✅ Invoice 이벤트 발행 (Event Sourcing)
+          // ✅ Payment & Invoice 이벤트 발행 (Event Sourcing)
           const paymentEvent = await tx.query.paymentEvents.findFirst({
             where: eq(schema.paymentEvents.invoiceId, transaction.invoiceId),
           });
 
           if (paymentEvent) {
             if (transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.CAPTURED) {
-              // 결제 완료 이벤트 발행
+              // 🎯 Payment 완료 이벤트 발행
+              this.eventEmitter.emit(
+                'payment.captured',
+                new PaymentCapturedEvent(
+                  paymentEvent.id,
+                  transaction.invoiceId,
+                  Number(transaction.amount),
+                  batch.pgTransactionId,
+                  new Date(),
+                ),
+              );
+
+              // 🎯 Invoice 결제 완료 이벤트 발행
               this.eventEmitter.emit(
                 'invoice.paid',
                 new InvoicePaidEvent(
@@ -365,7 +431,19 @@ export class SettlementService {
                 ),
               );
             } else if (transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.FAILED) {
-              // 결제 실패 이벤트 발행
+              // 🎯 Payment 실패 이벤트 발행
+              this.eventEmitter.emit(
+                'payment.failed',
+                new PaymentFailedEvent(
+                  paymentEvent.id,
+                  transaction.invoiceId,
+                  Number(transaction.amount),
+                  `정산 실패: ${statusResult.status}`,
+                  new Date(),
+                ),
+              );
+
+              // 🎯 Invoice 결제 실패 이벤트 발행
               this.eventEmitter.emit(
                 'invoice.failed',
                 new InvoiceFailedEvent(
@@ -380,7 +458,19 @@ export class SettlementService {
         }
       }
 
-      if (batchFinalStatus === 'COMPLETED') {
+      // 🎯 정산 배치 완료 이벤트 발행
+      this.eventEmitter.emit(
+        'settlement.batch.completed',
+        new SettlementBatchCompletedEvent(
+          batch.id,
+          batch.bnplAccountId,
+          Number(batch.totalAmount),
+          batchFinalStatus === BATCH_JOB_STATUS.COMPLETED ? 'COMPLETED' : 'FAILED',
+          new Date(),
+        ),
+      );
+
+      if (batchFinalStatus === BATCH_JOB_STATUS.COMPLETED) {
         this.logger.log(`배치 ${batch.id} 정산 성공: ${batch.totalAmount}원. 사용자 한도가 복원됩니다.`);
       } else {
         this.logger.error(`배치 ${batch.id} 정산 실패: ${batch.totalAmount}원`);

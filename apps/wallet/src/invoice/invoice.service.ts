@@ -139,13 +139,8 @@ export class InvoiceService {
         })
         .returning();
 
-      await tx.insert(schema.invoiceEvent).values({
-        invoiceId: created.id,
-        eventType: 'ISSUED',
-        occurredAt: now,
-        eventUuid: ulid(),
-        createdAt: now,
-      });
+      // ❌ 기존 직접 DB 기록 코드 제거
+      // 이제 이벤트 소싱 패턴(InvoiceListener)에서 처리됩니다.
 
       return created;
     });
@@ -202,14 +197,9 @@ export class InvoiceService {
         .set({ status, updatedAt: now })
         .where(eq(schema.invoice.id, id));
 
-      await tx.insert(schema.invoiceEvent).values({
-        invoiceId: id,
-        eventType: status,
-        reason,
-        occurredAt: now,
-        eventUuid: ulid(),
-        createdAt: now,
-      });
+      // ❌ 기존 직접 DB 기록 코드 제거
+      // 이제 이벤트 소싱 패턴을 통해 처리해야 합니다.
+      // 하지만 이 메서드는 레거시 메서드이므로 당분간 유지합니다.
     });
 
     // 💡 업데이트 후 findOne을 재사용하여 일관된 객체를 반환합니다.

@@ -5,14 +5,22 @@ import { BnplPaymentMethodRegisteredEvent } from '../../payment-method/events/bn
 import { newMemberId, FINANCIAL_TRANSACTION_STATUS } from '../../shared/schemas/schema';
 import { ulid } from 'ulid';
 import { eq, desc, and, count, inArray, sql } from 'drizzle-orm';
-
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  BnplAccountCreatedEvent,
+  BnplCreditUsedEvent,
+  BnplCreditRestoredEvent,
+  BnplCreditLimitChangedEvent,
+  BnplAccountStatusChangedEvent,
+} from '../events/bnpl.events';
 @Injectable()
 export class BnplAccountService {
   private readonly logger = new Logger(BnplAccountService.name);
 
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
-  ) {}
+    private readonly eventEmitter: EventEmitter2,
+  ) { }
 
   async createFromEvent(
     event: BnplPaymentMethodRegisteredEvent,
@@ -64,6 +72,16 @@ export class BnplAccountService {
         this.logger.log(
           `BNPL 활성화 이벤트 기록 완료: BNPL Account ID ${newAccount.id}`,
         );
+
+        // 🎯 BNPL 계정 생성 이벤트 발행 (Event Sourcing)
+        this.eventEmitter.emit(
+          'bnpl.account.created',
+          new BnplAccountCreatedEvent(
+            newAccount.id,
+            event.userId,
+            Number(newAccount.approvedLimit),
+          ),
+        );
       });
     } catch (error) {
       this.logger.error(
@@ -76,8 +94,16 @@ export class BnplAccountService {
   /**
    * 사용자의 현재 사용 가능한 BNPL 신용 한도를 계산합니다.
    * @param userId 사용자 ID
+   * @param emitEvents 이벤트 발행 여부 (기본값: false)
+   * @param transactionId 거래 ID (이벤트 발행 시 필요)
+   * @param usedAmount 사용 금액 (이벤트 발행 시 필요)
    */
-  async getAvailableCredit(userId: string): Promise<number> {
+  async getAvailableCredit(
+    userId: string,
+    emitEvents: boolean = false,
+    transactionId?: string,
+    usedAmount?: number,
+  ): Promise<number> {
     // 1. 사용자의 BNPL 계정 정보를 가져옵니다.
     const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
       where: eq(schema.bnplAccount.userId, userId),
@@ -110,10 +136,150 @@ export class BnplAccountService {
 
     // 3. 사용 가능 한도를 계산하여 반환합니다.
     const availableCredit = approvedLimit - currentUsage;
-    
+
     this.logger.log(`사용자 ${userId} 사용 가능 한도: ${availableCredit} (총 한도: ${approvedLimit}, 사용액: ${currentUsage})`);
 
+    // 4. 이벤트 발행 (요청 시)
+    if (emitEvents && transactionId && usedAmount !== undefined) {
+      // 🎯 신용 한도 사용 이벤트 발행 (Event Sourcing)
+      this.eventEmitter.emit(
+        'bnpl.credit.used',
+        new BnplCreditUsedEvent(
+          bnplAccount.id,
+          userId,
+          transactionId,
+          usedAmount,
+          availableCredit,
+        ),
+      );
+    }
+
     return availableCredit;
+  }
+
+  /**
+   * 신용 한도 복원 이벤트를 발행합니다.
+   * 정산 완료 후 호출됩니다.
+   */
+  async restoreCredit(userId: string, transactionId: string, amount: number): Promise<void> {
+    // 1. 사용자의 BNPL 계정 정보를 가져옵니다.
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, userId),
+    });
+
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    // 2. 현재 가용 한도를 계산합니다.
+    const availableCredit = await this.getAvailableCredit(userId);
+    const newAvailableCredit = availableCredit + amount;
+
+    // 3. 신용 한도 복원 이벤트 발행
+    this.eventEmitter.emit(
+      'bnpl.credit.restored',
+      new BnplCreditRestoredEvent(
+        bnplAccount.id,
+        userId,
+        transactionId,
+        amount,
+        newAvailableCredit,
+      ),
+    );
+
+    this.logger.log(`사용자 ${userId} 신용 한도 복원: ${amount}원 (새 가용한도: ${newAvailableCredit}원)`);
+  }
+
+  /**
+   * 신용 한도를 변경하고 이벤트를 발행합니다.
+   * 관리자 요청에 의해 호출됩니다.
+   */
+  async updateCreditLimit(
+    userId: string,
+    newLimit: number,
+    reason: string,
+    changedBy: string,
+  ): Promise<void> {
+    // 1. 사용자의 BNPL 계정 정보를 가져옵니다.
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, userId),
+    });
+
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    const oldLimit = Number(bnplAccount.approvedLimit);
+
+    // 2. 한도 변경
+    await this.dbService.db
+      .update(schema.bnplAccount)
+      .set({
+        approvedLimit: newLimit,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bnplAccount.id, bnplAccount.id));
+
+    // 3. 신용 한도 변경 이벤트 발행
+    this.eventEmitter.emit(
+      'bnpl.credit.limit.changed',
+      new BnplCreditLimitChangedEvent(
+        bnplAccount.id,
+        userId,
+        oldLimit,
+        newLimit,
+        reason,
+        changedBy,
+      ),
+    );
+
+    this.logger.log(`사용자 ${userId} 신용 한도 변경: ${oldLimit}원 → ${newLimit}원 (사유: ${reason})`);
+  }
+
+  /**
+   * 계정 상태를 변경하고 이벤트를 발행합니다.
+   * 관리자 요청에 의해 호출됩니다.
+   */
+  async updateAccountStatus(
+    userId: string,
+    newStatus: schema.BnplAccountStatus,
+    reason: string,
+    changedBy: string,
+  ): Promise<void> {
+    // 1. 사용자의 BNPL 계정 정보를 가져옵니다.
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, userId),
+    });
+
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    const oldStatus = bnplAccount.status;
+
+    // 2. 상태 변경
+    await this.dbService.db
+      .update(schema.bnplAccount)
+      .set({
+        status: newStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bnplAccount.id, bnplAccount.id));
+
+    // 3. 계정 상태 변경 이벤트 발행
+    this.eventEmitter.emit(
+      'bnpl.account.status.changed',
+      new BnplAccountStatusChangedEvent(
+        bnplAccount.id,
+        userId,
+        oldStatus,
+        newStatus,
+        reason,
+        changedBy,
+      ),
+    );
+
+    this.logger.log(`사용자 ${userId} 계정 상태 변경: ${oldStatus} → ${newStatus} (사유: ${reason})`);
   }
 
   /**
@@ -185,7 +351,7 @@ export class BnplAccountService {
       .from(schema.bnplTransaction)
       .where(eq(schema.bnplTransaction.bnplAccountId, bnplAccount.id));
 
-    return { 
+    return {
       transactions: transactions.map(tx => ({
         id: tx.id,
         transactionType: tx.transactionType,
@@ -194,7 +360,7 @@ export class BnplAccountService {
         createdAt: tx.createdAt,
         invoice: tx.invoice,
       })),
-      total: totalResult[0].total 
+      total: totalResult[0].total
     };
   }
 

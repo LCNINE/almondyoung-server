@@ -8,7 +8,15 @@ import { BatchCmsAdapter } from '../pg-provider/adapters/batch-cms.adapter';
 import { PgProviderModule } from '../pg-provider/pg-provider.module';
 import { PaymentController } from './payment.controller';
 import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
+import { PaymentEventHandler } from './events/payment-event.handler';
+import { SettlementEventHandler } from './listeners/settlement-event.handler';
 
+/**
+ * Payment 모듈 - Event Sourcing Pattern 적용
+ * - PaymentService: 결제 비즈니스 로직 및 이벤트 발행
+ * - PaymentEventHandler: 결제 이벤트 수신 및 DB 기록 (Event Sourcing)
+ * - SettlementService: 정산 처리 및 이벤트 발행
+ */
 @Module({
   imports: [PgProviderModule],
   controllers: [
@@ -18,6 +26,8 @@ import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
     PaymentService,
     BnplAccountService,
     SettlementService,
+    PaymentEventHandler, // ✅ Event Sourcing 리스너 등록
+    SettlementEventHandler, // ✅ Settlement Event Sourcing 리스너 등록
     {
       provide: PaymentProcessingPort,
       useClass: BatchCmsAdapter,

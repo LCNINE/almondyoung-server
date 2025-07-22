@@ -16,6 +16,7 @@ import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { EventsModule } from './shared/events/events.module';
 import { PaymentModule } from './payment/payment.module';
 import { RefundModule } from './refund/refund.module';
+import { EventMonitorModule } from './shared/events/event-monitor.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -43,6 +44,7 @@ import { RefundModule } from './refund/refund.module';
       schema: { ...schema },
     }),
     EventsModule,
+    EventMonitorModule, // ✅ 통합 이벤트 모니터링 모듈 등록
     InvoiceModule,
     BnplModule,
     // PaymentModule,
