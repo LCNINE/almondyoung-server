@@ -22,9 +22,8 @@ export async function POST(
     const cartService = req.scope.resolve(Modules.CART);
 
     // 장바구니 생성 시 사용자 정보 추가
-    const cartData: CreateCartDTO = {
-      currency_code: 'KRW',
-      ...(req.validatedBody as object),
+    const cartData = {
+      ...(req.validatedBody as Partial<CreateCartDTO>),
     };
 
     const userId = req.auth_context.actor_id;
@@ -51,14 +50,14 @@ export async function POST(
       cartData.customer_id = user.id;
     }
 
-    return res.json(cartData);
-    // const { result } = await createCartWorkflow(req.scope).run({
-    //   input: {
-    //     ...cartData,
-    //   },
-    // });
+    // return res.json(cartData);
+    const { result } = await createCartWorkflow(req.scope).run({
+      input: {
+        ...cartData,
+      },
+    });
 
-    // res.json(result);
+    return res.json(result);
   } catch (error) {
     console.log('error:', error);
     if (error instanceof MedusaError) {
@@ -95,6 +94,8 @@ export async function POST(
           return;
       }
     }
+
+    console.log('error::::::::', error);
 
     res.status(500).json({
       message: '서버 오류가 발생했습니다.',
