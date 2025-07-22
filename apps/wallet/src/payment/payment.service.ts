@@ -6,9 +6,11 @@ import {
 } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import * as schema from '../shared/schemas/schema';
+import { FINANCIAL_TRANSACTION_STATUS, PAYMENT_METHOD_STATUS, INVOICE_STATUS } from '../shared/schemas/schema';
 import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { ProcessPaymentDto } from './dto/process-payment.dto';
+import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
 
 // 이 서비스가 컨트롤러로부터 받을 요청 데이터 타입 정의
 interface ProcessPaymentPayload {
@@ -26,6 +28,7 @@ export class PaymentService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
+    private readonly bnplAccountService: BnplAccountService,
   ) { }
 
   /**
@@ -47,7 +50,7 @@ export class PaymentService {
       if (!invoice) {
         throw new NotFoundException('존재하지 않는 청구서입니다.');
       }
-      if (invoice.status === 'PAID' || invoice.status === 'CANCELLED') {
+      if (invoice.status === INVOICE_STATUS.PAID || invoice.status === INVOICE_STATUS.CANCELLED) {
         throw new BadRequestException('이미 처리되었거나 폐기된 청구서입니다.');
       }
 
@@ -65,7 +68,7 @@ export class PaymentService {
       }
 
       // ✅ 중요: 이 결제수단이 'ACTIVE' 상태인지 확인하는 것이 유일한 관문입니다.
-      if (paymentMethod.status !== 'ACTIVE') {
+      if (paymentMethod.status !== PAYMENT_METHOD_STATUS.ACTIVE) {
         throw new BadRequestException('활성화된 BNPL 결제수단이 아닙니다.');
       }
 
@@ -84,6 +87,15 @@ export class PaymentService {
         throw new NotFoundException('BNPL 계정이 존재하지 않습니다.');
       }
 
+      // --- 4. ✅ 신용 한도 검증 (새로 추가된 핵심 로직) ---
+      const availableCredit = await this.bnplAccountService.getAvailableCredit(userId);
+      const purchaseAmount = Number(invoice.amount);
+
+      if (purchaseAmount > availableCredit) {
+        this.logger.warn(`신용 한도 초과 시도: 사용자 ${userId}, 요청 금액 ${purchaseAmount}, 사용 가능액 ${availableCredit}`);
+        throw new BadRequestException(`신용 한도를 초과했습니다. (사용 가능액: ${availableCredit}원)`);
+      }
+
       // --- ❌ PG사(어댑터) 호출 로직 완전 삭제 ---
       // 외부와 통신 없이, 내부적으로 모든 것을 처리합니다.
 
@@ -96,7 +108,7 @@ export class PaymentService {
           invoiceId: invoice.id,
           paymentMethodId: paymentMethod.id,
           amount: invoice.amount,
-          status: 'AUTHORIZED', // ✅ '내부 승인 완료' 상태로 즉시 기록
+          status: FINANCIAL_TRANSACTION_STATUS.AUTHORIZED, // ✅ '내부 승인 완료' 상태로 즉시 기록
           actor: 'USER',
         })
         .returning();
@@ -107,14 +119,14 @@ export class PaymentService {
         bnplAccountId: bnplAccount.id,
         invoiceId: invoice.id,
         transactionType: 'DEBIT',
-        status: 'AUTHORIZED', // ✅ '내부 승인 완료' 상태로 즉시 기록
+        status: FINANCIAL_TRANSACTION_STATUS.AUTHORIZED, // ✅ '내부 승인 완료' 상태로 즉시 기록
         amount: invoice.amount,
       });
 
       // 4c. 청구서 상태 PAID로 업데이트
       await tx
         .update(schema.invoice)
-        .set({ status: 'PAID' })
+        .set({ status: INVOICE_STATUS.PAID })
         .where(eq(schema.invoice.id, invoiceId));
 
       this.logger.log(`내부 결제 승인 완료: Invoice ID ${invoiceId}`);

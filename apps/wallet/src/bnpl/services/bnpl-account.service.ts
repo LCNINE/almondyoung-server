@@ -2,9 +2,9 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import * as schema from '../../shared/schemas/schema';
 import { BnplPaymentMethodRegisteredEvent } from '../../payment-method/events/bnpl-payment-method-registered.event';
-import { newMemberId } from '../../shared/schemas/schema';
+import { newMemberId, FINANCIAL_TRANSACTION_STATUS } from '../../shared/schemas/schema';
 import { ulid } from 'ulid';
-import { eq, desc, and, count } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, sql } from 'drizzle-orm';
 
 @Injectable()
 export class BnplAccountService {
@@ -71,6 +71,49 @@ export class BnplAccountService {
         error,
       );
     }
+  }
+
+  /**
+   * 사용자의 현재 사용 가능한 BNPL 신용 한도를 계산합니다.
+   * @param userId 사용자 ID
+   */
+  async getAvailableCredit(userId: string): Promise<number> {
+    // 1. 사용자의 BNPL 계정 정보를 가져옵니다.
+    const bnplAccount = await this.dbService.db.query.bnplAccount.findFirst({
+      where: eq(schema.bnplAccount.userId, userId),
+    });
+
+    if (!bnplAccount) {
+      throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
+    }
+
+    const approvedLimit = Number(bnplAccount.approvedLimit);
+
+    // 2. 아직 정산되지 않은 모든 거래(현재 사용액)를 합산합니다.
+    const result = await this.dbService.db
+      .select({
+        totalUsage: sql<number>`sum(${schema.bnplTransaction.amount})`.mapWith(Number),
+      })
+      .from(schema.bnplTransaction)
+      .where(
+        and(
+          eq(schema.bnplTransaction.bnplAccountId, bnplAccount.id),
+          // 정산 요청되었거나, 내부 승인만 된 거래들이 현재 사용액에 해당합니다.
+          inArray(schema.bnplTransaction.status, [
+            FINANCIAL_TRANSACTION_STATUS.AUTHORIZED,
+            FINANCIAL_TRANSACTION_STATUS.SETTLEMENT_REQUESTED
+          ]),
+        ),
+      );
+
+    const currentUsage = result[0]?.totalUsage || 0;
+
+    // 3. 사용 가능 한도를 계산하여 반환합니다.
+    const availableCredit = approvedLimit - currentUsage;
+    
+    this.logger.log(`사용자 ${userId} 사용 가능 한도: ${availableCredit} (총 한도: ${approvedLimit}, 사용액: ${currentUsage})`);
+
+    return availableCredit;
   }
 
   /**

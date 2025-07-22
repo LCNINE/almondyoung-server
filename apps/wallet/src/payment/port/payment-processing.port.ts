@@ -7,13 +7,18 @@ export interface ChargeResult {
   gatewayId?: string; // 추후 필요
 }
 
+export interface ErrorResult {
+  success: false;
+  error: string;
+}
+
 export abstract class PaymentProcessingPort {
   abstract charge(request: {
     memberId: string;
     invoiceId: string;
     amount: number;
     paymentDate: string;
-  }): Promise<ChargeResult>;
+  }): Promise<ChargeResult | ErrorResult>;
   abstract refund(request: any): Promise<any>;
   abstract getPaymentStatus(transactionId: string): Promise<any>;
 }

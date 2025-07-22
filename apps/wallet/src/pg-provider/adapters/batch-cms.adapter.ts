@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   ChargeResult,
+  ErrorResult,
   PaymentProcessingPort,
 } from '../../payment/port/payment-processing.port';
 import { MethodManagementPort } from '../../payment-method/port/method-management.port';
@@ -9,7 +10,6 @@ import {
   MockHmsAPI,
   RegisterAgreementRequest,
 } from 'hms-api-wrapper';
-import * as paymentZod from '../../shared/zod/payment.zod';
 import { CreatePaymentMethodPayload } from '../../shared/zod/payment-method.zod';
 import tsid from 'tsid-ts';
 import { WalletTx } from '../../shared/types';
@@ -38,7 +38,7 @@ export class BatchCmsAdapter
     amount: number;
     paymentDate: string;
     memberId: string;
-  }): Promise<ChargeResult> {
+  }): Promise<ChargeResult | ErrorResult> {
     this.logger.log(
       `BatchCMS 결제 요청: ${request.invoiceId}, 금액: ${request.amount}`,
     );
@@ -70,11 +70,13 @@ export class BatchCmsAdapter
         rawResponse: result,
       };
     } catch (error) {
+      this.logger.error(`BatchCMS 결제 요청 실패: ${request.invoiceId}`, error);
       return {
         success: false,
         transactionId: '',
         status: 'FAILED',
         rawResponse: error,
+        error: error.message || 'HMS API 호출 실패',
       };
     }
   }
@@ -130,7 +132,9 @@ export class BatchCmsAdapter
           standardStatus = 'CANCELLED';
           break;
         default:
-          this.logger.warn(`알 수 없는 HMS 결제 상태: ${result.payment.status}`);
+          this.logger.warn(
+            `알 수 없는 HMS 결제 상태: ${result.payment.status}`,
+          );
           standardStatus = 'REQUESTED';
       }
       return {

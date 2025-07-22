@@ -130,7 +130,7 @@ done
 echo -e "\n6️⃣ 생성된 거래 확인..."
 TRANSACTIONS_RESPONSE=$(curl -s "$BASE_URL/bnpl/accounts/me/transactions?userId=$TEST_USER_ID")
 echo "거래 내역:"
-echo "$TRANSACTIONS_RESPONSE" | jq '.data.transactions[] | {id, status, amount, createdAt}'
+echo "$TRANSACTIONS_RESPONSE" | jq '.data.transactions[] | {id, status, amount, createdAt, pg_transaction_id}'
 
 TRANSACTION_COUNT=$(echo "$TRANSACTIONS_RESPONSE" | jq '.data.transactions | length')
 echo "총 거래 수: $TRANSACTION_COUNT"
@@ -192,11 +192,11 @@ fi
 echo -e "\n================================"
 echo "📋 최종 상태 확인 명령어:"
 echo "================================"
-echo "# 거래 내역 확인"
-echo "curl -s \"$BASE_URL/bnpl/accounts/me/transactions?userId=$TEST_USER_ID\" | jq '.'"
+echo "# 거래 내역 확인 (PG 거래ID 포함)"
+echo "curl -s \"$BASE_URL/bnpl/accounts/me/transactions?userId=$TEST_USER_ID\" | jq '.data.transactions[] | {id, status, amount, createdAt, pg_transaction_id}'"
 echo ""
-echo "# 정산 배치 확인"
-echo "curl -s \"$BASE_URL/bnpl/accounts/me/settlements?userId=$TEST_USER_ID\" | jq '.'"
+echo "# 정산 배치 확인 (PG 거래ID 포함)"
+echo "curl -s \"$BASE_URL/bnpl/accounts/me/settlements?userId=$TEST_USER_ID\" | jq '.data.settlements[] | {id, status, totalAmount, batchNumber, pg_transaction_id}'"
 echo ""
 echo "# 서버 로그 확인"
 echo "docker logs -f <container-name> | grep -E \"정산|Settlement|$TEST_USER_ID\""

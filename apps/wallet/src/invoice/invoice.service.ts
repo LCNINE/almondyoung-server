@@ -8,6 +8,8 @@ import * as schema from '../shared/schemas/schema'; // DB 스키마
 import { ulid } from 'ulid';
 import { and, eq, SQL, desc, lt } from 'drizzle-orm';
 import { Cron } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { InvoiceIssuedEvent, InvoiceMarkedAsOverdueEvent } from './events/invoice.events';
 
 // 💡 1. 역할에 맞는 타입을 명확하게 import 합니다.
 // 서비스 로직을 위한 순수 타입만 가져옵니다.
@@ -19,6 +21,7 @@ const INVOICE_EXPIRATION_MINUTES = 30;
 export class InvoiceService {
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -49,6 +52,33 @@ export class InvoiceService {
    */
   async findOne(id: string): Promise<invoiceZod.Invoice['Select'] | null> {
     return this.findOneRaw(id);
+  }
+
+  /**
+   * Invoice의 모든 이벤트를 조회합니다. (Event Sourcing)
+   * @param id Invoice ID
+   * @returns Invoice 이벤트 목록
+   */
+  async getInvoiceEvents(id: string) {
+    const events = await this.dbService.db.query.invoiceEvent.findMany({
+      where: eq(schema.invoiceEvent.invoiceId, id),
+      orderBy: [desc(schema.invoiceEvent.occurredAt)],
+    });
+
+    return {
+      success: true,
+      data: {
+        invoiceId: id,
+        events: events.map(event => ({
+          id: event.id,
+          eventType: event.eventType,
+          reason: event.reason,
+          occurredAt: event.occurredAt,
+          createdAt: event.createdAt,
+        })),
+        totalEvents: events.length,
+      },
+    };
   }
 
   /**
@@ -119,6 +149,18 @@ export class InvoiceService {
 
       return created;
     });
+
+    // ✅ Invoice 생성 이벤트 발행 (Event Sourcing)
+    this.eventEmitter.emit(
+      'invoice.issued',
+      new InvoiceIssuedEvent(
+        newInvoice.id,
+        userId,
+        Number(amount),
+        invoiceType,
+        now,
+      ),
+    );
 
     // 💡 생성 후 findOne을 재사용하여 일관된 객체를 반환합니다.
     const result = await this.findOne(newInvoice.id);
@@ -192,12 +234,22 @@ export class InvoiceService {
 
     // Promise.all을 사용하여 여러 업데이트를 병렬로 처리합니다.
     await Promise.all(
-      expiredInvoices.map((invoice) =>
-        this.updateStatus(invoice.id, {
+      expiredInvoices.map(async (invoice) => {
+        await this.updateStatus(invoice.id, {
           status: 'EXPIRED',
           reason: 'Invoice expired automatically.',
-        }),
-      ),
+        });
+
+        // ✅ Invoice 연체 처리 이벤트 발행 (Event Sourcing)
+        this.eventEmitter.emit(
+          'invoice.marked-as-overdue',
+          new InvoiceMarkedAsOverdueEvent(
+            invoice.id,
+            now, // dueDate로 사용
+            now, // markedAt
+          ),
+        );
+      }),
     );
   }
 

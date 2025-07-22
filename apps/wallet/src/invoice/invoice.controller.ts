@@ -33,6 +33,11 @@ export class InvoiceController {
     return this.invoiceService.findOne(id);
   }
 
+  @Get(':id/events')
+  getInvoiceEvents(@Param('id') id: string) {
+    return this.invoiceService.getInvoiceEvents(id);
+  }
+
   @Patch(':id/status')
   updateStatus(
     @Param('id', ParseIntPipe) id: string,

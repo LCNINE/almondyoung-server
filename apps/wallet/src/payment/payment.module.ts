@@ -7,6 +7,7 @@ import { PaymentProcessingPort } from './port/payment-processing.port';
 import { BatchCmsAdapter } from '../pg-provider/adapters/batch-cms.adapter';
 import { PgProviderModule } from '../pg-provider/pg-provider.module';
 import { PaymentController } from './payment.controller';
+import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
 
 @Module({
   imports: [PgProviderModule],
@@ -15,6 +16,7 @@ import { PaymentController } from './payment.controller';
   ],
   providers: [
     PaymentService,
+    BnplAccountService,
     SettlementService,
     {
       provide: PaymentProcessingPort,

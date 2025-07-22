@@ -57,3 +57,13 @@ Content-Type: application/json
   "invoiceId": "01K0NB9XK8ECM5HNBMDMKPDBRH",
   "paymentMethodId": "01K0NA1GNG9FYMV2EQYCS5K81J"
 }
+
+
+POST http://localhost:5000/refunds
+Content-Type: application/json
+
+    {
+    "paymentEventId": "01K0P115Y6JAKE4K0YEH3K1XWT",
+    "amount": 125000,
+    "reason": "테스트 환불"
+  }
