@@ -1,16 +1,19 @@
-import { defineMiddlewares, authenticate } from '@medusajs/framework/http';
+import {
+  defineMiddlewares,
+  authenticate,
+  type MiddlewareVerb,
+  MiddlewareRoute,
+} from '@medusajs/framework/http';
 
-export const adminMiddlewares = {
-  routes: [
-    {
-      matcher: '/admin/*',
-      method: 'POST',
-      middlewares: [authenticate('user', ['session', 'bearer'])],
-    },
-    {
-      matcher: '/admin/*',
-      method: 'GET',
-      middlewares: [authenticate('user', ['session', 'bearer'])],
-    },
-  ],
-};
+export const adminRouteMiddlewares: MiddlewareRoute[] = [
+  {
+    matcher: '/admin/*',
+    method: ['POST'],
+    middlewares: [authenticate('user', ['session', 'bearer'])],
+  },
+  {
+    matcher: '/admin/*',
+    method: ['GET'],
+    middlewares: [authenticate('user', ['session', 'bearer'])],
+  },
+];
