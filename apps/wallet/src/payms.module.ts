@@ -17,6 +17,7 @@ import { EventsModule } from './shared/events/events.module';
 import { PaymentModule } from './payment/payment.module';
 import { RefundModule } from './refund/refund.module';
 import { EventMonitorModule } from './shared/events/event-monitor.module';
+import { PointModule } from './point/point.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -51,6 +52,7 @@ import { EventMonitorModule } from './shared/events/event-monitor.module';
     PaymentModule,
     PaymentMethodModule,
     RefundModule,
+    PointModule,
   ],
   controllers: [],
   providers: [

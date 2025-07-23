@@ -10,6 +10,7 @@ import {
 import { PaymentMethodService } from './services/payment-method.service';
 import * as paymentMethodZod from '../shared/zod/payment-method.zod';
 import { FastifyRequest } from 'fastify';
+
 @Controller('payment-methods')
 export class PaymentMethodController {
   constructor(private readonly paymentMethodService: PaymentMethodService) {}

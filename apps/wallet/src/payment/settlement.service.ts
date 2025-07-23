@@ -2,20 +2,67 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectDb, DbService } from '@app/db';
 import * as schema from '../shared/schemas/schema';
-import { FINANCIAL_TRANSACTION_STATUS, BATCH_JOB_STATUS } from '../shared/schemas/schema';
+import {
+  FINANCIAL_TRANSACTION_STATUS,
+  BATCH_JOB_STATUS,
+} from '../shared/schemas/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { PaymentProcessingPort } from './port/payment-processing.port';
 import { WalletTx } from '../shared/types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { InvoicePaidEvent, InvoiceFailedEvent } from '../invoice/events/invoice.events';
-import { PaymentCapturedEvent, PaymentFailedEvent, SettlementBatchStartedEvent, SettlementBatchCompletedEvent } from './events/payment.events';
+import {
+  InvoicePaidEvent,
+  InvoiceFailedEvent,
+} from '../invoice/events/invoice.events';
+import {
+  PaymentCapturedEvent,
+  PaymentFailedEvent,
+  SettlementBatchStartedEvent,
+  SettlementBatchCompletedEvent,
+} from './events/payment.events';
 import {
   SettlementBatchCreatedEvent,
   SettlementBatchFailedEvent,
   SettlementBatchItemAddedEvent,
-  SettlementBatchStatusChangedEvent,
 } from './events/settlement.events';
+
+// 타입 정의
+interface BnplTransactionWithAccount {
+  id: string;
+  bnplAccountId: string;
+  invoiceId: string;
+  amount: number;
+  createdAt: Date;
+  bnplAccount: {
+    userId: string;
+  };
+}
+
+interface UserGroup {
+  userId: string;
+  bnplAccountId: string;
+  totalAmount: number;
+  transactions: BnplTransactionWithAccount[];
+}
+
+interface BatchItem {
+  bnplTransaction: BnplTransactionWithAccount;
+}
+
+interface SettlementBatchWithItems {
+  id: string;
+  bnplAccountId: string;
+  totalAmount: number;
+  pgTransactionId: string | null;
+  items: BatchItem[];
+}
+
+interface PaymentStatusResult {
+  status: string;
+  [key: string]: any;
+}
+
 /**
  * 정산(Settlement) 도메인 서비스
  * - 역할: 사용자 중심 배치 정산 처리를 담당합니다.
@@ -31,7 +78,7 @@ export class SettlementService {
     private readonly paymentProcessor: PaymentProcessingPort,
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly eventEmitter: EventEmitter2,
-  ) { }
+  ) {}
 
   /**
    * 월말 정산 배치 생성 (테스트 환경: 1분마다 실행)
@@ -82,8 +129,8 @@ export class SettlementService {
   /**
    * 거래를 사용자별로 그룹화하는 헬퍼 메서드
    */
-  private groupTransactionsByUser(transactions: any[]) {
-    const userMap = new Map();
+  private groupTransactionsByUser(transactions: BnplTransactionWithAccount[]) {
+    const userMap = new Map<string, UserGroup>();
 
     for (const transaction of transactions) {
       const userId = transaction.bnplAccount.userId;
@@ -98,7 +145,7 @@ export class SettlementService {
         });
       }
 
-      const userGroup = userMap.get(userId);
+      const userGroup = userMap.get(userId)!; // 위에서 set했으므로 확실히 존재
       userGroup.totalAmount += Number(transaction.amount);
       userGroup.transactions.push(transaction);
     }
@@ -110,7 +157,7 @@ export class SettlementService {
    * 사용자별 배치 정산을 처리하는 헬퍼 메서드
    * 사용자의 모든 거래를 합산하여 1회 PG사에 출금 요청
    */
-  private async processUserBatchSettlement(tx: WalletTx, userGroup: any) {
+  private async processUserBatchSettlement(tx: WalletTx, userGroup: UserGroup) {
     try {
       // 사용자별 정산 배치 생성 (내부 회계용)
       const now = new Date();
@@ -157,7 +204,9 @@ export class SettlementService {
       }
 
       // 사용자별 총액으로 1회 PG사에 배치 출금 요청
-      this.logger.log(`HMS API 호출 시작: memberId=${paymentMethod.batchCms.hmsMemberId}, amount=${userGroup.totalAmount}`);
+      this.logger.log(
+        `HMS API 호출 시작: memberId=${paymentMethod.batchCms.hmsMemberId}, amount=${userGroup.totalAmount}`,
+      );
 
       const chargeResult = await this.paymentProcessor.charge({
         memberId: paymentMethod.batchCms.hmsMemberId,
@@ -168,7 +217,9 @@ export class SettlementService {
 
       if (chargeResult.success) {
         // 타입 가드 이후: chargeResult는 이제 ChargeResult 타입으로 좁혀짐
-        this.logger.log(`HMS API 응답: success=true, transactionId=${chargeResult.transactionId}`);
+        this.logger.log(
+          `HMS API 응답: success=true, transactionId=${chargeResult.transactionId}`,
+        );
         // pgTransactionId를 settlementBatch 테이블에 저장
         await tx
           .update(schema.settlementBatch)
@@ -246,7 +297,8 @@ export class SettlementService {
         }
 
         // 🎯 정산 배치 실패 이벤트 발행 (Event Sourcing)
-        const errorMessage = 'error' in chargeResult ? chargeResult.error : '알 수 없는 오류';
+        const errorMessage =
+          'error' in chargeResult ? chargeResult.error : '알 수 없는 오류';
         this.eventEmitter.emit(
           'settlement.batch.failed',
           new SettlementBatchFailedEvent(
@@ -290,7 +342,11 @@ export class SettlementService {
           with: {
             items: {
               with: {
-                bnplTransaction: true,
+                bnplTransaction: {
+                  with: {
+                    bnplAccount: true,
+                  },
+                },
               },
             },
           },
@@ -319,7 +375,10 @@ export class SettlementService {
    * 개별 배치의 결과를 확인하는 헬퍼 메서드
    * 배치 중심 모델: settlementBatch의 pgTransactionId로 배치 전체 상태를 확인
    */
-  private async checkBatchResult(tx: WalletTx, batch: any) {
+  private async checkBatchResult(
+    tx: WalletTx,
+    batch: SettlementBatchWithItems,
+  ) {
     try {
       if (!batch.pgTransactionId) {
         this.logger.warn(`배치 ${batch.id}에 pgTransactionId가 없습니다.`);
@@ -332,11 +391,14 @@ export class SettlementService {
       }
 
       // PG사에서 배치 전체 상태 확인 (1회 API 호출)
-      const statusResult = await this.paymentProcessor.getPaymentStatus(
+      const statusResult = (await this.paymentProcessor.getPaymentStatus(
         batch.pgTransactionId,
-      );
+      )) as PaymentStatusResult;
 
-      let batchFinalStatus: typeof BATCH_JOB_STATUS.COMPLETED | typeof BATCH_JOB_STATUS.FAILED | null = null;
+      let batchFinalStatus:
+        | typeof BATCH_JOB_STATUS.COMPLETED
+        | typeof BATCH_JOB_STATUS.FAILED
+        | null = null;
       let transactionFinalStatus:
         | typeof FINANCIAL_TRANSACTION_STATUS.CAPTURED
         | typeof FINANCIAL_TRANSACTION_STATUS.FAILED
@@ -378,7 +440,7 @@ export class SettlementService {
         where: eq(schema.settlementBatchItem.batchId, batch.id),
         columns: { bnplTransactionId: true },
       });
-      const transactionIds = batchItems.map(item => item.bnplTransactionId);
+      const transactionIds = batchItems.map((item) => item.bnplTransactionId);
 
       if (transactionIds.length > 0) {
         // 3. ✅ 모든 관련 bnplTransaction의 상태를 최종 상태로 업데이트
@@ -407,7 +469,9 @@ export class SettlementService {
           });
 
           if (paymentEvent) {
-            if (transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.CAPTURED) {
+            if (
+              transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.CAPTURED
+            ) {
               // 🎯 Payment 완료 이벤트 발행
               this.eventEmitter.emit(
                 'payment.captured',
@@ -420,6 +484,16 @@ export class SettlementService {
                 ),
               );
 
+              // 🎯 포인트 시스템 연동을 위한 payment.completed 이벤트 발행
+              this.eventEmitter.emit('payment.completed', {
+                paymentEventId: paymentEvent.id,
+                userId: transaction.bnplAccount?.userId,
+                amount: Number(transaction.amount),
+                invoiceId: transaction.invoiceId,
+                pgTransactionId: batch.pgTransactionId,
+                completedAt: new Date(),
+              });
+
               // 🎯 Invoice 결제 완료 이벤트 발행
               this.eventEmitter.emit(
                 'invoice.paid',
@@ -430,7 +504,9 @@ export class SettlementService {
                   new Date(),
                 ),
               );
-            } else if (transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.FAILED) {
+            } else if (
+              transactionFinalStatus === FINANCIAL_TRANSACTION_STATUS.FAILED
+            ) {
               // 🎯 Payment 실패 이벤트 발행
               this.eventEmitter.emit(
                 'payment.failed',
@@ -465,13 +541,17 @@ export class SettlementService {
           batch.id,
           batch.bnplAccountId,
           Number(batch.totalAmount),
-          batchFinalStatus === BATCH_JOB_STATUS.COMPLETED ? 'COMPLETED' : 'FAILED',
+          batchFinalStatus === BATCH_JOB_STATUS.COMPLETED
+            ? 'COMPLETED'
+            : 'FAILED',
           new Date(),
         ),
       );
 
       if (batchFinalStatus === BATCH_JOB_STATUS.COMPLETED) {
-        this.logger.log(`배치 ${batch.id} 정산 성공: ${batch.totalAmount}원. 사용자 한도가 복원됩니다.`);
+        this.logger.log(
+          `배치 ${batch.id} 정산 성공: ${batch.totalAmount}원. 사용자 한도가 복원됩니다.`,
+        );
       } else {
         this.logger.error(`배치 ${batch.id} 정산 실패: ${batch.totalAmount}원`);
         // TODO: 실패 시 운영팀에 알림 발송 및 사용자에게 통보 로직 추가

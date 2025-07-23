@@ -539,6 +539,64 @@ export const refundEvents = pgTable('refund_events', {
 });
 
 // ────────────────────────────────────────────
+// Point Schemas
+// ────────────────────────────────────────────
+
+export const POINT_TRANSACTION_TYPE = {
+  EARN: 'EARN', // 적립
+  REDEEM: 'REDEEM', // 사용
+  EARN_CANCEL: 'EARN_CANCEL', // 적립 취소 (환불 등)
+  EXPIRE: 'EXPIRE', // 기간 만료로 인한 소멸
+} as const;
+export type PointTransactionType = keyof typeof POINT_TRANSACTION_TYPE;
+
+// 사용자의 현재 포인트 총액을 저장하는 테이블 (빠른 조회용)
+export const points = pgTable('points', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(() => ulid()),
+
+  // 우리 User 테이블과의 연결고리
+  userId: varchar('user_id', { length: 64 }).notNull().unique(),
+
+  // 현재 잔액 (빠른 조회를 위함)
+  balance: integer('balance').notNull().default(0),
+
+  version: bigint('version', { mode: 'number' }).notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// 포인트의 모든 변동 내역을 기록하는 거래 원장 테이블
+export const pointTransactions = pgTable('point_transactions', {
+  id: varchar('id', { length: 26 })
+    .primaryKey()
+    .$defaultFn(() => ulid()),
+
+  // points 테이블과의 연결고리
+  pointId: varchar('point_id', { length: 26 })
+    .notNull()
+    .references(() => points.id),
+
+  type: text('type').$type<PointTransactionType>().notNull(),
+  amount: integer('amount').notNull(), // 변경된 포인트 양 (적립: 양수, 사용/차감: 음수)
+
+  // 어떤 이벤트로 인해 발생했는지 추적하기 위한 ID
+  // 예: paymentEvents.id, refundEvents.id 등
+  relatedEventId: varchar('related_event_id', { length: 26 }),
+
+  reason: varchar('reason', { length: 255 }), // 사유 (e.g., '주문(inv_123) 구매 적립')
+  expiresAt: timestamp('expires_at', { withTimezone: true }), // 소멸 예정일
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ────────────────────────────────────────────
 // Relations
 // ────────────────────────────────────────────
 
@@ -690,6 +748,21 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
     references: [userRefundAccounts.id],
   }),
 }));
+
+// Point Relations
+export const pointsRelations = relations(points, ({ many }) => ({
+  transactions: many(pointTransactions),
+}));
+
+export const pointTransactionsRelations = relations(
+  pointTransactions,
+  ({ one }) => ({
+    pointAccount: one(points, {
+      fields: [pointTransactions.pointId],
+      references: [points.id],
+    }),
+  }),
+);
 
 // ────────────────────────────────────────────
 // Zod Schemas for Validation

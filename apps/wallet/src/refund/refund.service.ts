@@ -239,6 +239,7 @@ export class RefundService {
     let shouldEmit = false;
     let refundEventData: RefundEvent | undefined;
     let invoiceData: InvoiceData | undefined;
+    let userId: string | undefined;
     try {
       await this.dbService.db.transaction(async (tx) => {
         const refundEvent = await tx.query.refundEvents.findFirst({
@@ -278,6 +279,13 @@ export class RefundService {
           const currentRefundedAmount = Number(invoice.refundedAmount || 0);
           const totalRefundedAmount = currentRefundedAmount + refundAmount;
 
+          // userId 추출을 위해 invoice 전체 조회
+          const fullInvoice = await tx.query.invoice.findFirst({
+            where: eq(schema.invoice.id, invoice.id),
+            columns: { userId: true },
+          });
+          userId = fullInvoice?.userId;
+
           invoiceData = {
             invoiceId: invoice.id,
             refundAmount,
@@ -295,6 +303,18 @@ export class RefundService {
           'refund.completed',
           new RefundCompletedEvent(refundId, refundEventData),
         );
+
+        // 🎯 포인트 시스템 연동을 위한 별도 이벤트 발행
+        if (refundEventData && userId) {
+          this.eventEmitter.emit('refund.completed.points', {
+            refundId,
+            userId,
+            refundAmount: Number(refundEventData.amount),
+            originalPaymentEventId: refundEventData.paymentEventId,
+            completedAt: new Date(),
+          });
+        }
+
         if (invoiceData) {
           const { invoiceId, refundAmount, isFullRefund, remainingAmount } =
             invoiceData;

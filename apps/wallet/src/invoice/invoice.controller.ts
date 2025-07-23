@@ -29,7 +29,7 @@ export class InvoiceController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: string) {
+  findOne(@Param('id') id: string) {
     return this.invoiceService.findOne(id);
   }
 
