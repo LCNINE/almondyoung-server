@@ -1,3 +1,4 @@
+import { USER_ROLES } from '@/roles/src/constants/roles.constant';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -8,7 +9,6 @@ import {
   MedusaError,
 } from '@medusajs/framework/utils';
 import CustomUserModuleService from '../custom-user/service';
-import { USER_ROLES } from '@/roles/src/constants/roles.constant';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
@@ -34,16 +34,16 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       };
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
+        // console.log('data.body!.password:', data.body!.password);
         // provider_identity 테이블에 생성됌
         const createdAuthIdentity = await authIdentityProviderService.create({
           entity_id: data.body!.user_id, // email or some ID
           provider_metadata: {
             user_id: data.body!.user_id,
+            // password: data.body!.password,
             // can include password or any other relevant information
           },
         });
-
-        // ToDO roles medusa-admin 권한 있으면 USEr 테이블 생성
 
         return {
           success: true,
