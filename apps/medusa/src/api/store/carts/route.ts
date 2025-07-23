@@ -25,7 +25,7 @@ export async function POST(
     const cartData = {
       ...(req.validatedBody as Partial<CreateCartDTO>),
     };
-
+    console.log('cartData', cartData);
     const userId = req.auth_context.actor_id;
 
     if (userId) {
@@ -95,8 +95,6 @@ export async function POST(
       }
     }
 
-    console.log('error::::::::', error);
-
     res.status(500).json({
       message: '서버 오류가 발생했습니다.',
       error: error instanceof Error ? error.message : '알 수 없는 오류',
@@ -107,11 +105,16 @@ export async function POST(
 /**
  * 장바구니 조회
  */
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
+export async function GET(
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+) {
   try {
     const cartService = req.scope.resolve(Modules.CART);
     const { id } = req.params;
 
+    console.log('req', req.auth_context.actor_id);
+    console.log('user', req.user);
     if (!id) {
       res.status(400).json({
         message: '장바구니 ID가 필요합니다.',
