@@ -21,9 +21,12 @@ export async function POST(
   try {
     const cartService = req.scope.resolve(Modules.CART);
 
+    console.log('Original body:', req.body);
+    console.log('Validated body:', req.validatedBody);
+
     // 장바구니 생성 시 사용자 정보 추가
     const cartData = {
-      ...(req.validatedBody as Partial<CreateCartDTO>),
+      ...((req.validatedBody || req.body) as Partial<CreateCartDTO>),
     };
     console.log('cartData', cartData);
     const userId = req.auth_context.actor_id;
@@ -50,16 +53,26 @@ export async function POST(
       cartData.customer_id = user.id;
     }
 
-    // return res.json(cartData);
+    // createCartWorkflow는 shipping_address_id와 billing_address_id를 지원하지 않으므로 제거
+    const { shipping_address_id, billing_address_id, ...workflowData } =
+      cartData;
+
+    // TODO: 필요하다면 여기서 address_id로 실제 주소 데이터를 조회하여
+    // workflowData.shipping_address나 workflowData.billing_address에 할당할 수 있습니다.
+    // 예:
+    // if (shipping_address_id) {
+    //   const addressService = req.scope.resolve(Modules.ADDRESS);
+    //   workflowData.shipping_address = await addressService.retrieve(shipping_address_id);
+    // }
+
     const { result } = await createCartWorkflow(req.scope).run({
       input: {
-        ...cartData,
+        ...workflowData,
       },
     });
 
     return res.json(result);
   } catch (error) {
-    console.log('error:', error);
     if (error instanceof MedusaError) {
       switch (error.type) {
         case 'invalid_data':
