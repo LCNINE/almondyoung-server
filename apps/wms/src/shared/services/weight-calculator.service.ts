@@ -1,4 +1,3 @@
-// apps/wms/src/shared/services/weight-calculator.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

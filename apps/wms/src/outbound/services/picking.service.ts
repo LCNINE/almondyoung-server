@@ -1,4 +1,3 @@
-// apps/wms/src/outbound/services/picking.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

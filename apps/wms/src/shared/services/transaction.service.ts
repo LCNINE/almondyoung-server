@@ -1,4 +1,3 @@
-// apps/wms/src/shared/services/transaction.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';

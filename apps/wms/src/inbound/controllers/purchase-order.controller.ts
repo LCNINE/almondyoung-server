@@ -1,4 +1,3 @@
-// apps/wms/src/inbound/controllers/purchase-order.controller.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

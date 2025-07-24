@@ -1,4 +1,3 @@
-// apps/wms/src/outbound/controllers/picking.controller.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

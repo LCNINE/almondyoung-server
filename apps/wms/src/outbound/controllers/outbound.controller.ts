@@ -1,4 +1,3 @@
-// apps/wms/src/outbound/controllers/outbound.controller.ts
 import { Controller, Post, Param, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { OutboundService } from '../services/outbound.service';

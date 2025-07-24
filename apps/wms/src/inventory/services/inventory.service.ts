@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/services/inventory.service.ts
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';

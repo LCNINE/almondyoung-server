@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/sku/add-barcode.dto.ts
 import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

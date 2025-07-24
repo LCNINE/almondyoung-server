@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/product-matching/option-matching.dto.ts
 import { IsUUID, IsString, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';

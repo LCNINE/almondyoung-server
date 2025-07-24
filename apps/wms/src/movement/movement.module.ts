@@ -1,4 +1,3 @@
-// apps/wms/src/movement/movement.module.ts
 import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
 import { wmsTables } from '../../database/schemas/wms-schema';

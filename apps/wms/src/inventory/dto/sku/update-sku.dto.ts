@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/sku/update-sku.dto.ts
 import { PartialType, OmitType } from '@nestjs/mapped-types';
 import { CreateSkuDto } from './create-sku.dto';
 

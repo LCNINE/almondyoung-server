@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/repositories/stock-event.store.ts
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';

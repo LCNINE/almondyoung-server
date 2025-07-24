@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/controllers/inventory.controller.ts
 import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';

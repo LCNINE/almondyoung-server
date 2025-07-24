@@ -1,4 +1,3 @@
-// apps/wms/src/movement/services/movement.service.ts
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
@@ -6,6 +5,8 @@ import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, gte, isNull } from 'drizzle-orm';
 import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { IntraWarehouseMoveDto } from '../dto/intra-warehouse-move.dto';
+import { StockEventStore } from '../../inventory/repositories/stock-event.store';
+import { StockSummaryRepository } from '../../inventory/repositories/ stock-summary.repository';
 
 @Injectable()
 export class MovementService {
@@ -13,6 +14,8 @@ export class MovementService {
 
     constructor(
         @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        private readonly eventStore: StockEventStore,
+        private readonly summaryRepo: StockSummaryRepository,
     ) { }
 
     private get db() {
@@ -31,7 +34,6 @@ export class MovementService {
         }
 
         return this.db.transaction(async (tx) => {
-            // 출발 창고의 재고 현황 확인
             const fromSummary = await tx.query.stockSummary.findFirst({
                 where: and(
                     eq(wmsTables.stockSummary.skuId, skuId),
@@ -45,7 +47,6 @@ export class MovementService {
                 );
             }
 
-            // 실제 재고 레코드 조회 (FIFO)
             const sourceStocks = await tx.query.stocks.findMany({
                 where: and(
                     eq(wmsTables.stocks.skuId, skuId),
@@ -73,23 +74,25 @@ export class MovementService {
 
                 const transferQuantity = Math.min(sourceStock.availableQuantity, remainingQuantity);
 
-                // 출고 이벤트 (음수 델타값)
-                const [outEvent] = await tx.insert(wmsTables.stockEvents).values({
-                    relatedStockId: sourceStock.id, // stockId -> relatedStockId
+                // 출고 이벤트 생성 - 이벤트 스토어 사용
+                const outEvent = await this.eventStore.createEvent({
+                    type: 'MOVE_INTER_WAREHOUSE',
                     skuId: sourceStock.skuId,
                     warehouseId: fromWarehouseId,
+                    locationId: sourceStock.locationId,
+                    deltaQuantity: -transferQuantity,
                     fromWarehouseId: fromWarehouseId,
                     toWarehouseId: toWarehouseId,
-                    eventType: 'MOVE_INTER_WAREHOUSE',
-                    deltaQuantity: -transferQuantity, // quantity -> deltaQuantity (음수)
+                    relatedStockId: sourceStock.id,
                     reason: `창고 이동: ${fromWarehouseId} → ${toWarehouseId} - ${reason}`,
                     expiresStockRowId: sourceStock.id,
-                }).returning();
+                }, tx);
 
                 await tx.update(wmsTables.stocks)
                     .set({ destroyerEventId: outEvent.id })
                     .where(eq(wmsTables.stocks.id, sourceStock.id));
 
+                // 부분 이동인 경우 새 재고 레코드 생성
                 if (sourceStock.realQuantity > transferQuantity) {
                     const [newSourceStock] = await tx.insert(wmsTables.stocks).values({
                         ...sourceStock,
@@ -115,49 +118,37 @@ export class MovementService {
                 remainingQuantity -= transferQuantity;
             }
 
-            // 2. 재고 현황 테이블 업데이트 - 출발 창고
-            const outResult = await tx.update(wmsTables.stockSummary)
-                .set({
-                    currentQuantity: fromSummary.currentQuantity - quantity, // totalQuantity -> currentQuantity
-                    availableQuantity: fromSummary.availableQuantity - quantity,
-                    movingQuantity: fromSummary.movingQuantity + quantity, // 이동 중 수량 증가
-                    lastEventId: transferDetails[0] ? wmsTables.stockEvents.id : fromSummary.lastEventId,
-                    lastUpdated: new Date(),
-                    version: fromSummary.version + 1,
-                })
-                .where(and(
-                    eq(wmsTables.stockSummary.skuId, skuId),
-                    eq(wmsTables.stockSummary.warehouseId, fromWarehouseId),
-                    eq(wmsTables.stockSummary.version, fromSummary.version)
-                ))
-                .returning();
+            // 재고 현황 업데이트 - 출발 창고 (Repository 사용)
+            await this.summaryRepo.applyDelta(
+                skuId,
+                fromWarehouseId,
+                -quantity,
+                'MOVE_INTER_WAREHOUSE',
+                transferDetails[0] ? transferDetails[0].stockId : '',
+                tx
+            );
 
-            if (outResult.length === 0) {
-                throw new Error('Concurrent update detected on source warehouse. Please retry.');
-            }
-
-            // 3. 도착 창고에 입고 처리
+            // 도착 창고에 입고 처리
             const inEventIds: string[] = [];
             for (const detail of transferDetails) {
-                // 입고 이벤트 (양수 델타값)
-                const [inEvent] = await tx.insert(wmsTables.stockEvents).values({
+                const inEvent = await this.eventStore.createEvent({
+                    type: 'MOVE_INTER_WAREHOUSE',
                     skuId,
                     warehouseId: toWarehouseId,
+                    deltaQuantity: detail.transferQuantity,
                     fromWarehouseId: fromWarehouseId,
                     toWarehouseId: toWarehouseId,
-                    eventType: 'MOVE_INTER_WAREHOUSE',
-                    deltaQuantity: detail.transferQuantity, // quantity -> deltaQuantity (양수)
-                    expiryDate: detail.expiryDate,
-                    manufacturedAt: detail.manufacturedAt,
+                    expiryDate: detail.expiryDate || undefined,
+                    manufacturedAt: detail.manufacturedAt || undefined,
                     reason: `창고 이동: ${fromWarehouseId} → ${toWarehouseId} - ${reason}`,
-                }).returning();
+                }, tx);
 
                 inEventIds.push(inEvent.id);
 
                 const [newStock] = await tx.insert(wmsTables.stocks).values({
                     skuId,
                     warehouseId: toWarehouseId,
-                    locationId: null,
+                    locationId: null, // 입고 시 위치 미지정
                     stockType: 'physical',
                     realQuantity: detail.transferQuantity,
                     reservedQuantity: 0,
@@ -170,55 +161,20 @@ export class MovementService {
                 await tx.update(wmsTables.stockEvents)
                     .set({
                         createsStockRowId: newStock.id,
-                        relatedStockId: newStock.id // stockId -> relatedStockId
+                        relatedStockId: newStock.id
                     })
                     .where(eq(wmsTables.stockEvents.id, inEvent.id));
             }
 
-            // 4. 재고 현황 테이블 업데이트 - 도착 창고
-            const toSummary = await tx.query.stockSummary.findFirst({
-                where: and(
-                    eq(wmsTables.stockSummary.skuId, skuId),
-                    eq(wmsTables.stockSummary.warehouseId, toWarehouseId)
-                ),
-            });
-
-            if (toSummary) {
-                const inResult = await tx.update(wmsTables.stockSummary)
-                    .set({
-                        currentQuantity: toSummary.currentQuantity + quantity, // totalQuantity -> currentQuantity
-                        availableQuantity: toSummary.availableQuantity + quantity,
-                        movingQuantity: Math.max(0, toSummary.movingQuantity - quantity), // 이동 중 수량 감소
-                        lastEventId: inEventIds[inEventIds.length - 1] || toSummary.lastEventId,
-                        lastUpdated: new Date(),
-                        version: toSummary.version + 1,
-                    })
-                    .where(and(
-                        eq(wmsTables.stockSummary.skuId, skuId),
-                        eq(wmsTables.stockSummary.warehouseId, toWarehouseId),
-                        eq(wmsTables.stockSummary.version, toSummary.version)
-                    ))
-                    .returning();
-
-                if (inResult.length === 0) {
-                    throw new Error('Concurrent update detected on destination warehouse. Please retry.');
-                }
-            } else {
-                await tx.insert(wmsTables.stockSummary).values({
-                    skuId,
-                    warehouseId: toWarehouseId,
-                    currentQuantity: quantity, // totalQuantity -> currentQuantity
-                    availableQuantity: quantity,
-                    reservedQuantity: 0,
-                    inboundPendingQuantity: 0,
-                    outboundPendingQuantity: 0,
-                    movingQuantity: 0,
-                    damageQuantity: 0,
-                    returnPendingQuantity: 0, // returnQuantity -> returnPendingQuantity
-                    lastEventId: inEventIds[inEventIds.length - 1],
-                    version: 1,
-                });
-            }
+            // 재고 현황 업데이트 - 도착 창고
+            await this.summaryRepo.applyDelta(
+                skuId,
+                toWarehouseId,
+                quantity,
+                'MOVE_INTER_WAREHOUSE',
+                inEventIds[inEventIds.length - 1] || '',
+                tx
+            );
 
             this.logger.log(
                 `창고 간 이동 완료: SKU ${skuId}, 수량 ${quantity}, ` +
@@ -263,16 +219,17 @@ export class MovementService {
                 throw new BadRequestException('다른 창고의 위치로는 이동할 수 없습니다. 창고 간 이동을 사용하세요.');
             }
 
-            const [moveEvent] = await tx.insert(wmsTables.stockEvents).values({
-                relatedStockId: currentStock.id,
+            // 창고 내 이동 이벤트 생성 (델타값 0)
+            const moveEvent = await this.eventStore.createEvent({
+                type: 'MOVE_INTRA_WAREHOUSE',
                 skuId: currentStock.skuId,
                 warehouseId: currentStock.warehouseId,
-                eventType: 'MOVE_INTRA_WAREHOUSE',
-                deltaQuantity: 0,
                 locationId: newLocationId,
+                deltaQuantity: 0,
+                relatedStockId: currentStock.id,
                 reason: `위치 이동: ${currentStock.locationId || 'N/A'} → ${newLocationId} - ${reason}`,
                 expiresStockRowId: currentStock.id,
-            }).returning();
+            }, tx);
 
             await tx.update(wmsTables.stocks)
                 .set({ destroyerEventId: moveEvent.id })
@@ -287,8 +244,13 @@ export class MovementService {
             }).returning();
 
             await tx.update(wmsTables.stockEvents)
-                .set({ createsStockRowId: newStock.id })
+                .set({
+                    createsStockRowId: newStock.id,
+                    relatedStockId: newStock.id
+                })
                 .where(eq(wmsTables.stockEvents.id, moveEvent.id));
+
+            // 창고 내 이동은 재고 현황에 영향 없음
 
             this.logger.log(
                 `창고 내 위치 이동 완료: Stock ${stockId}, ` +
@@ -338,14 +300,49 @@ export class MovementService {
                     stockCount: stocks.length,
                     skuCount,
                     totalQuantity,
+                    isEmpty: stocks.length === 0,
                 };
             })
         );
 
-        return utilization;
+        // 활용도 통계
+        const stats = {
+            totalLocations: locations.length,
+            occupiedLocations: utilization.filter(u => !u.isEmpty).length,
+            emptyLocations: utilization.filter(u => u.isEmpty).length,
+            utilizationRate: Math.round((utilization.filter(u => !u.isEmpty).length / locations.length) * 100),
+            locations: utilization.sort((a, b) => b.totalQuantity - a.totalQuantity),
+        };
+
+        return stats;
     }
 
-    // TODO: 이동 작업 생성 메서드
+    // 이동 진행 상황 추적
+    async getMovementHistory(skuId: string, warehouseId?: string, days: number = 7) {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
 
-    // TODO: 이동 진행 상황 추적 메서드
+        const events = await this.eventStore.getEventHistory(
+            skuId,
+            warehouseId,
+            startDate.toISOString().split('T')[0],
+            new Date().toISOString().split('T')[0]
+        );
+
+        // 이동 관련 이벤트만 필터링
+        const movementEvents = events.filter(e =>
+            e.eventType === 'MOVE_INTER_WAREHOUSE' ||
+            e.eventType === 'MOVE_INTRA_WAREHOUSE'
+        );
+
+        return {
+            skuId,
+            warehouseId,
+            period: `Last ${days} days`,
+            totalMovements: movementEvents.length,
+            interWarehouseMovements: movementEvents.filter(e => e.eventType === 'MOVE_INTER_WAREHOUSE').length,
+            intraWarehouseMovements: movementEvents.filter(e => e.eventType === 'MOVE_INTRA_WAREHOUSE').length,
+            movements: movementEvents,
+        };
+    }
 }

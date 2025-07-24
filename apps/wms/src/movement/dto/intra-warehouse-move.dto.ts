@@ -1,4 +1,3 @@
-// apps/wms/src/movement/dto/intra-warehouse-move.dto.ts
 import { IsUUID, IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
