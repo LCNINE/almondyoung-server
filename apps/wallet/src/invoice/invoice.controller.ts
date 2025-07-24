@@ -13,7 +13,7 @@ import { InvoiceService } from './invoice.service';
 import * as invoiceZod from '../shared/zod/invoice.zod';
 @Controller('invoices')
 export class InvoiceController {
-  constructor(private readonly invoiceService: InvoiceService) {}
+  constructor(private readonly invoiceService: InvoiceService) { }
 
   @Post()
   create(@Body() createInvoiceDto: invoiceZod.Invoice['Create']) {

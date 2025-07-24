@@ -14,6 +14,7 @@ import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
 import { PointService } from '../point/point.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentAuthorizedEvent } from './events/payment.events';
+import { InvoicePaidEvent } from '../invoice/events/invoice.events';
 
 // 이 서비스가 컨트롤러로부터 받을 요청 데이터 타입 정의
 interface ProcessPaymentPayload {
@@ -172,13 +173,8 @@ export class PaymentService {
         }
       }
 
-      // --- 6. Invoice 상태를 PAID로 업데이트 ---
-      await tx.update(schema.invoice)
-        .set({ 
-          status: INVOICE_STATUS.PAID,
-          updatedAt: new Date()
-        })
-        .where(eq(schema.invoice.id, invoiceId));
+      // --- 6. Invoice 상태 업데이트는 이벤트 리스너에서 처리 ---
+      // 직접 DB 업데이트 대신 이벤트 발행으로 변경 (Event Sourcing 패턴)
 
       // --- 7. 이벤트 발행 준비 ---
       const paymentEventId = ulid();
@@ -213,6 +209,19 @@ export class PaymentService {
       );
       this.logger.log(`BNPL 결제 이벤트 발행: ${result.bnplAmount}원`);
     }
+
+    // ✅ Invoice 결제 완료 이벤트 발행 (Event Sourcing)
+    this.logger.log(`🚀 [PaymentService] invoice.paid 이벤트 발행 시작: ${invoiceId}`);
+    this.eventEmitter.emit(
+      'invoice.paid',
+      new InvoicePaidEvent(
+        invoiceId,
+        result.paymentEventId,
+        Number(result.invoice.amount),
+        new Date(),
+      )
+    );
+    this.logger.log(`🚀 [PaymentService] invoice.paid 이벤트 발행 완료: ${invoiceId}, paymentEventId: ${result.paymentEventId}`);
 
     // 혼합 결제 완료 이벤트 발행 (전체 결제 완료 알림)
     this.eventEmitter.emit(

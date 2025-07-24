@@ -126,8 +126,18 @@ INVOICE_RESPONSE=$(curl -s -X POST "$BASE_URL/invoices" \
     \"currency\": \"KRW\"
   }")
 
+echo "Invoice 생성 응답:"
+echo "$INVOICE_RESPONSE" | jq '.'
+
 INVOICE_ID=$(echo "$INVOICE_RESPONSE" | jq -r '.id')
 echo "✅ Invoice 생성 완료: $INVOICE_ID (${INVOICE_AMOUNT}원)"
+
+# Invoice ID 검증
+if [ "$INVOICE_ID" = "null" ] || [ -z "$INVOICE_ID" ]; then
+    echo "❌ Invoice 생성 실패: ID가 null이거나 비어있습니다."
+    echo "응답 내용: $INVOICE_RESPONSE"
+    exit 1
+fi
 
 # 2. 혼합 결제 실행 (Act)
 echo -e "\n================================"
@@ -232,7 +242,7 @@ fi
 # 3-4. Invoice 상태 검증 (PAID가 되어야 함)
 echo -e "\n3️⃣-4 Invoice 상태 검증..."
 INVOICE_STATUS_RESPONSE=$(curl -s "$BASE_URL/invoices/$INVOICE_ID")
-INVOICE_STATUS=$(echo "$INVOICE_STATUS_RESPONSE" | jq -r '.data.status')
+INVOICE_STATUS=$(echo "$INVOICE_STATUS_RESPONSE" | jq -r '.status')
 
 echo "Invoice 상태 변화:"
 echo "- Invoice ID: $INVOICE_ID"

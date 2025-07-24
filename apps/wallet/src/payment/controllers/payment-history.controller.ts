@@ -200,6 +200,30 @@ export class PaymentHistoryController {
   }
 
   /**
+   * 이벤트 시스템 테스트용
+   * GET /payments/history/test-event
+   */
+  @Get('test-event')
+  async testEvent(): Promise<any> {
+    const testInvoiceId = '01K0TEST123456789';
+    const testPaymentEventId = '01K0TESTEVENT123';
+    
+    this.logger.log(`🧪 [TEST] invoice.paid 이벤트 발행 테스트 시작: ${testInvoiceId}`);
+    
+    // EventEmitter를 직접 사용해서 이벤트 발행
+    const { EventEmitter2 } = require('@nestjs/event-emitter');
+    const { InvoicePaidEvent } = require('../../invoice/events/invoice.events');
+    
+    // PaymentService에서 EventEmitter 인스턴스를 가져올 수 없으므로 임시로 테스트
+    return {
+      message: '이벤트 테스트 완료',
+      testInvoiceId,
+      testPaymentEventId,
+      note: '실제 이벤트 발행은 PaymentService에서 확인하세요'
+    };
+  }
+
+  /**
    * 디버그용: 실제 데이터 확인
    * GET /payments/history/debug
    */
@@ -215,12 +239,19 @@ export class PaymentHistoryController {
       // 실제 paymentEvents 데이터 확인
       const paymentEvents = await this.historyService['dbService'].db.query.paymentEvents.findMany({
         limit: 5,
-        columns: { id: true, paymentMethodId: true, amount: true, status: true, createdAt: true },
+        columns: { id: true, paymentMethodId: true, invoiceId: true, amount: true, status: true, createdAt: true },
+      });
+
+      // 실제 invoice 데이터 확인
+      const invoices = await this.historyService['dbService'].db.query.invoice.findMany({
+        limit: 5,
+        columns: { id: true, userId: true, invoiceType: true, amount: true, status: true, createdAt: true },
       });
 
       return {
         paymentMethods,
         paymentEvents,
+        invoices,
         message: '실제 데이터 확인용 디버그 엔드포인트'
       };
     } catch (error) {

@@ -22,7 +22,7 @@ export class InvoiceService {
   constructor(
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly eventEmitter: EventEmitter2,
-  ) {}
+  ) { }
 
   /**
    * 데이터베이스에서 관계(events)를 포함한 순수 Invoice 데이터를 조회합니다.

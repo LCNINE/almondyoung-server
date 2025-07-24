@@ -59,7 +59,8 @@ export class InvoiceListener {
    */
   @OnEvent('invoice.paid')
   async handleInvoicePaid(event: InvoicePaidEvent) {
-    this.logger.log(`청구서 결제 완료 이벤트 처리: ${event.invoiceId}`);
+    this.logger.log(`🎯 [InvoiceListener] invoice.paid 이벤트 수신: ${event.invoiceId}`);
+    this.logger.log(`🎯 [InvoiceListener] 이벤트 상세: paymentEventId=${event.paymentEventId}, amount=${event.amount}`);
 
     try {
       await this.dbService.db.transaction(async (tx) => {
