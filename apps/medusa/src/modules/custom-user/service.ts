@@ -103,7 +103,7 @@ export default class CustomUserModuleService {
   ): Promise<UserRole> {
     try {
       const response = await this.client.get<UserServiceResponse<UserRole>>(
-        `/users/${userId}/roles`,
+        `/users/roles/${userId}`,
         {
           headers: {
             Authorization: `Bearer ${userServiceToken}`,

@@ -1,4 +1,3 @@
-import { USER_ROLES } from '@/roles/src/constants/roles.constant';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -9,6 +8,8 @@ import {
   MedusaError,
 } from '@medusajs/framework/utils';
 import CustomUserModuleService from '../custom-user/service';
+import { USER_ROLES } from '@/roles/src/constants/roles.constant';
+import { createCustomerAccountWorkflow } from '@medusajs/medusa/core-flows';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
@@ -25,7 +26,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
   ): Promise<AuthenticationResponse> {
     try {
       await authIdentityProviderService.retrieve({
-        entity_id: data.body!.user_id, // email or some ID
+        entity_id: data.body!.email, // email or some ID
       });
 
       return {
@@ -34,13 +35,12 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       };
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
-        // console.log('data.body!.password:', data.body!.password);
         // provider_identity 테이블에 생성됌
         const createdAuthIdentity = await authIdentityProviderService.create({
-          entity_id: data.body!.user_id, // email or some ID
+          entity_id: data.body!.email, // email or some ID
           provider_metadata: {
-            user_id: data.body!.user_id,
-            // password: data.body!.password,
+            // user_id: data.body!.user_id,
+            password: data.body!.password,
             // can include password or any other relevant information
           },
         });
@@ -63,14 +63,30 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     try {
       // 토큰 인증 처리
       const authHeader = data?.headers?.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
+      let token;
+
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      } else {
+        // 쿠키에서 토큰 조회
+        const cookies = data?.headers?.cookie;
+        if (cookies) {
+          const tokenCookie = cookies
+            .split(';')
+            .find((cookie) => cookie.trim().startsWith('accessToken='));
+          if (tokenCookie) {
+            token = tokenCookie.split('=')[1];
+          }
+        }
+      }
+
+      if (!token) {
         return {
           success: false,
-          error: 'No Bearer token found',
+          error: 'No token found',
         };
       }
 
-      const token = authHeader.split(' ')[1];
       const user = await this.userCustomModule.getUserDetailsByToken(token);
 
       if (!user) {
@@ -82,7 +98,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({
-        entity_id: user.id,
+        entity_id: user.email,
       });
 
       const userRoles = await this.userCustomModule.getUserRoles(
@@ -103,7 +119,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           ...authIdentity,
           app_metadata: {
             actor_type: actorType,
-            user_id: user.id,
+            user_id: authIdentity?.app_metadata?.user_id,
             email: user.email,
             role: userRoles.roles[0].role.name,
           },
@@ -111,7 +127,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             {
               id: authIdentity.id,
               provider: 'my-auth',
-              entity_id: user.id,
+              entity_id: user.email,
               provider_metadata: {
                 roles: userRoles.roles[0].role.name || [],
               },

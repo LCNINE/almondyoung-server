@@ -51,11 +51,14 @@ export class UsersController {
    * 사용자의 권한 정보를 조회합니다.
    * 역할과 스코프 정보를 포함합니다.
    */
-  @Get(':userId/roles')
+  @Get('/roles/:userId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async getUserRoles(@Param('userId') userId: string) {
-    return this.usersService.getUserRoles(userId);
+  async getUserRoles(
+    @Query('userId') userId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.usersService.getUserRoles(userId ?? user.id);
   }
 
   /**
@@ -83,5 +86,17 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async findUserByEmail(@Query('email') email: string) {
     return this.usersService.findUserByEmail(email);
+  }
+
+  /**
+   * 현재 사용자의 정보를 조회합니다.
+   * @param user - 현재 사용자의 정보
+   * @returns 현재 사용자의 정보
+   */
+  @Get('me')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  async getMe(@CurrentUser() user: User) {
+    return this.usersService.retrieveMe(user.id);
   }
 }
