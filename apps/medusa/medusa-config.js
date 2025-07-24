@@ -81,6 +81,12 @@ module.exports = defineConfig({
         userServiceUrl: process.env.USER_SERVICE_URL,
       },
     },
+    {
+      resolve: './src/modules/wms',
+      options: {
+        apiKey: process.env.WMS_SERVICE_URL,
+      },
+    },
   ],
   middlewares: {
     store: [

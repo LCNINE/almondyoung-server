@@ -324,11 +324,8 @@ export class AuthService {
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
 
-    // 기본 역할 설정, 포스트맨으로 회원가입 테스트시 주석제
-    // const userRole = await this.rolesService.setRole(
-    //   user.id,
-    //   'user',
-    // );
+    // 기본 역할 설정, 포스트맨으로 회원가입 테스트시 주석제거 후 사용
+    // const userRole = await this.rolesService.setRole(user.id, 'user');
     // const assignment = await this.rolesService.assignUserRole(
     //   user.id,
     //   userRole.roleId,

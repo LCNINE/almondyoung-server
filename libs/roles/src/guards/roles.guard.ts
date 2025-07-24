@@ -40,6 +40,7 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    return requiredScopes.every((scope) => userScopeSet.has(scope));
+    // 필요한 스코프 중 하나라도 있으면 통과
+    return requiredScopes.some((scope) => userScopeSet.has(scope));
   }
 }
