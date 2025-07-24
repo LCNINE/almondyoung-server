@@ -22,14 +22,9 @@ export function generateJwtTokenForAuthIdentity(
 ) {
   const expiresIn_ = expiresIn ?? options?.expiresIn;
   const entityIdKey = `${actorType}_id`;
-  // const entityId = authIdentity?.app_11metadata?.user_id as string | undefined;
   const entityId = authIdentity?.app_metadata?.[entityIdKey] as
     | string
     | undefined;
-
-  console.log('entityIdKey:', entityIdKey);
-  console.log('entityId:', entityId);
-  console.log('???:', authIdentity);
 
   const token = generateJwtToken(
     {
