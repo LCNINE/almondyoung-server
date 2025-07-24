@@ -1,18 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { WMSStockResponse } from '../../types/wms.type';
-
-export interface InventoryPolicy {
-  inventoryManagement: boolean;
-  preStockSellable: boolean;
-  alwaysSellableZeroStock: boolean;
-}
-
-export interface ProductStockStatus {
-  isAvailable: boolean;
-  availableQuantity: number;
-  status: 'in_stock' | 'out_of_stock' | 'backorder' | 'always_available';
-  message?: string;
-}
+import { SkuResponseDto } from '../../types/wms';
 
 export class WmsModuleService {
   private client: AxiosInstance;
@@ -26,14 +13,30 @@ export class WmsModuleService {
     });
   }
 
-  // 재고 조회 기본 메서드
-  private async getStocks(skuId: string): Promise<WMSStockResponse[]> {
+  // SKU 정보 조회
+  async getSkuById(skuId: string): Promise<SkuResponseDto> {
+    try {
+      const skuInfo = await this.client.get<SkuResponseDto>(
+        `/wms/inventory/skus/${skuId}`,
+      );
+
+      return skuInfo.data;
+    } catch (error) {
+      console.error('SKU 정보 조회 중 오류 발생:', error);
+      throw new Error('SKU 정보 조회에 실패했습니다.');
+    }
+  }
+
+  // 재고 조회
+  async getCurrentStock(params: {
+    skuId: string;
+  }): Promise<WMSStockResponse[]> {
     try {
       const response = await this.client.get<WMSStockResponse[]>(
         '/wms/inventory/stocks',
         {
           params: {
-            skuId,
+            skuId: params.skuId,
             stockType: 'physical',
           },
         },
@@ -46,6 +49,75 @@ export class WmsModuleService {
     }
   }
 
+  // 3. 장바구니 추가 가능 여부 확인 - 새로운 통합 메서드
+  async checkAvailableForCart(
+    skuId: string,
+    requestedQuantity: number,
+  ): Promise<CheckAvailableForCartResult> {
+    try {
+      // 1. SKU 정보 조회
+      const skuInfo = await this.getSkuById(skuId);
+
+      // 2. 재고 관리 대상인지 확인
+      if (!skuInfo.inventoryManagement) {
+        return {
+          canAddToCart: true,
+          availableQuantity: 999999,
+          skuInfo,
+        };
+      }
+
+      // 3. 무재고 판매 가능 상품인지 확인
+      if (skuInfo.alwaysSellableZeroStock) {
+        return {
+          canAddToCart: true,
+          availableQuantity: 0,
+          skuInfo,
+        };
+      }
+
+      // 4. 실제 재고 확인
+      const stocks = await this.getCurrentStock({ skuId });
+      const totalAvailable = stocks.reduce(
+        (sum, stock) => sum + (stock.availableQuantity || 0),
+        0,
+      );
+
+      // 5. 재고가 없는 경우
+      if (totalAvailable === 0) {
+        if (skuInfo.preStockSellable) {
+          return {
+            canAddToCart: true,
+            availableQuantity: 0,
+            reason: '선판매 가능 상품',
+            skuInfo,
+          };
+        }
+        return {
+          canAddToCart: false,
+          availableQuantity: 0,
+          reason: '재고가 없습니다',
+          skuInfo,
+        };
+      }
+
+      // 6. 요청 수량과 재고 수량 비교
+      const canAdd = totalAvailable >= requestedQuantity;
+      return {
+        canAddToCart: canAdd,
+        availableQuantity: totalAvailable,
+        reason: canAdd
+          ? undefined
+          : `재고 부족 (가용: ${totalAvailable}, 요청: ${requestedQuantity})`,
+        skuInfo,
+      };
+    } catch (error) {
+      console.error('장바구니 추가 가능 여부 확인 중 오류 발생:', error);
+      throw new Error('재고 확인에 실패했습니다.');
+    }
+  }
+
+  // Helper 메서드들
   private calculateTotalQuantity(stocks: WMSStockResponse[]): number {
     return stocks.reduce(
       (sum, stock) => sum + (stock.availableQuantity || 0),
@@ -66,11 +138,17 @@ export class WmsModuleService {
     );
   }
 
-  // 상품의 판매 가능 여부 확인
+  // 기존 메서드들 (하위 호환성을 위해 유지)
+  private async getStocks(skuId: string): Promise<WMSStockResponse[]> {
+    return this.getCurrentStock({ skuId });
+  }
+
   async checkStockAvailability(
     skuId: string,
     policy: InventoryPolicy,
   ): Promise<ProductStockStatus> {
+    const result = await this.checkAvailableForCart(skuId, 1);
+
     if (!policy.inventoryManagement) {
       return {
         isAvailable: true,
@@ -80,51 +158,39 @@ export class WmsModuleService {
       };
     }
 
-    try {
-      const stocks = await this.getStocks(skuId);
-      const availableQty = this.calculateTotalQuantity(stocks);
-
-      if (availableQty > 0) {
-        return {
-          isAvailable: true,
-          availableQuantity: availableQty,
-          status: 'in_stock',
-          message: '재고 있음',
-        };
-      }
-
-      if (policy.alwaysSellableZeroStock) {
-        return {
-          isAvailable: true,
-          availableQuantity: 0,
-          status: 'always_available',
-          message: '재고 없음 - 주문 가능',
-        };
-      }
-
-      if (policy.preStockSellable) {
-        // TODO: 입고 예정 수량 확인 로직 추가 필요
-        const hasIncomingStock = false; // 임시
-        if (hasIncomingStock) {
-          return {
-            isAvailable: true,
-            availableQuantity: 0,
-            status: 'backorder',
-            message: '입고 예정',
-          };
-        }
-      }
-
+    if (result.availableQuantity > 0) {
       return {
-        isAvailable: false,
-        availableQuantity: 0,
-        status: 'out_of_stock',
-        message: '품절',
+        isAvailable: true,
+        availableQuantity: result.availableQuantity,
+        status: 'in_stock',
+        message: '재고 있음',
       };
-    } catch (error) {
-      console.error('재고 확인 중 오류 발생:', error);
-      throw new Error('재고 확인에 실패했습니다.');
     }
+
+    if (policy.alwaysSellableZeroStock) {
+      return {
+        isAvailable: true,
+        availableQuantity: 0,
+        status: 'always_available',
+        message: '재고 없음 - 주문 가능',
+      };
+    }
+
+    if (policy.preStockSellable && result.canAddToCart) {
+      return {
+        isAvailable: true,
+        availableQuantity: 0,
+        status: 'backorder',
+        message: '입고 예정',
+      };
+    }
+
+    return {
+      isAvailable: false,
+      availableQuantity: 0,
+      status: 'out_of_stock',
+      message: '품절',
+    };
   }
 
   // 여러 상품의 재고 상태 확인
@@ -218,38 +284,6 @@ export class WmsModuleService {
     return {
       canAdd: true,
       availableQuantity: status.availableQuantity,
-    };
-  }
-
-  // 창고별 상세 재고 정보 조회
-  async getWarehouseStock(
-    skuId: string,
-    warehouseId: string,
-  ): Promise<{
-    realQuantity: number;
-    reservedQuantity: number;
-    availableQuantity: number;
-    stockRows: WMSStockResponse['stockRows'];
-  }> {
-    const stocks = await this.getStocks(skuId);
-    const warehouseStock = stocks.find(
-      (stock) => stock.warehouseId === warehouseId,
-    );
-
-    if (!warehouseStock) {
-      return {
-        realQuantity: 0,
-        reservedQuantity: 0,
-        availableQuantity: 0,
-        stockRows: [],
-      };
-    }
-
-    return {
-      realQuantity: warehouseStock.realQuantity,
-      reservedQuantity: warehouseStock.reservedQuantity,
-      availableQuantity: warehouseStock.availableQuantity,
-      stockRows: warehouseStock.stockRows,
     };
   }
 }
