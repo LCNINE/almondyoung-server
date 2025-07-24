@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/roles';
+import { RequireScopes, USER_SCOPES } from '@app/roles';
 import {
   Body,
   Controller,
@@ -38,7 +38,7 @@ export class UsersController {
    */
   @Get('/details')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['users:read', 'master'])
+  @RequireScopes([USER_SCOPES.USER.READ, USER_SCOPES.MASTER])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
     @CurrentUser() user: User,
@@ -67,7 +67,7 @@ export class UsersController {
    */
   @Patch(':userId')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['users:update', 'master'])
+  @RequireScopes([USER_SCOPES.USER.UPDATE, USER_SCOPES.MASTER])
   @HttpCode(HttpStatus.OK)
   async updateUser(
     @Param('userId') userId: string,

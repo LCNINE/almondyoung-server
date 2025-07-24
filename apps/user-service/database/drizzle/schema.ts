@@ -73,7 +73,8 @@ export const userRoleAssignments = pgTable('user_roles', {
     .notNull(),
   roleId: uuid('role_id')
     .references(() => roles.roleId, { onDelete: 'cascade' })
-    .notNull(),
+    .notNull()
+    .unique(),
   assignedAt: timestamp('assigned_at').defaultNow().notNull(),
   expiresAt: timestamp('expires_at'),
   ...timestampColumns,

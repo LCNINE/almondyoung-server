@@ -11,7 +11,9 @@ export const storeRouteMiddlewares: MiddlewareRoute[] = [
     method: ['POST'],
     matcher: '/store/carts',
     middlewares: [
-      authenticate(['user', 'customer'], ['session', 'bearer']),
+      authenticate(['user', 'customer'], ['session', 'bearer'], {
+        allowUnauthenticated: true,
+      }),
       validateAndTransformBody(CreateCartSchema),
     ],
   },
