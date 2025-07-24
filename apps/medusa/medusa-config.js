@@ -19,6 +19,7 @@ module.exports = defineConfig({
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
   },
+  presets: [require('@medusajs/ui-preset')],
 
   modules: [
     {

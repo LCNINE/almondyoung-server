@@ -8,11 +8,18 @@ import {
   MedusaError,
   Modules,
 } from '@medusajs/framework/utils';
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import {
+  AuthenticatedMedusaRequest,
+  MedusaRequest,
+  MedusaResponse,
+} from '@medusajs/framework/http';
 import { generateJwtTokenForAuthIdentity } from '../../../../utils/generate-jwt-token';
 import { setAuthCookie } from '../../../../utils/set-auth-cookie';
 
-export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
+export const GET = async (
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+) => {
   try {
     const { actor_type, auth_provider } = req.params;
 
@@ -85,6 +92,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   }
 };
 
-export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
+export const POST = async (
+  req: AuthenticatedMedusaRequest,
+  res: MedusaResponse,
+) => {
   await GET(req, res);
 };

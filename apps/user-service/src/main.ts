@@ -22,22 +22,26 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   const port = configService.get('PORT') || 5000;
-  const corsOrigin =
-    configService.get('CORS_ORIGIN_DOMAIN') || 'http://localhost:3000';
+  const corsOrigins = process.env.CORS_ORIGIN_DOMAIN
+    ? process.env.CORS_ORIGIN_DOMAIN.split(',').map((origin) => origin.trim())
+    : ['http://localhost:3000'];
 
-  logger.log('CORS:', corsOrigin);
+  logger.log('CORS:', corsOrigins);
 
   // Passport와 Fastify 호환성을 위한 훅 추가
-  app.getHttpAdapter().getInstance().addHook('onRequest', (request, reply, done) => {
-    (reply as any).setHeader = function (key, value) {
-      return this.raw.setHeader(key, value);
-    };
-    (reply as any).end = function () {
-      this.raw.end();
-    };
-    (request as any).res = reply;
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', (request, reply, done) => {
+      (reply as any).setHeader = function (key, value) {
+        return this.raw.setHeader(key, value);
+      };
+      (reply as any).end = function () {
+        this.raw.end();
+      };
+      (request as any).res = reply;
+      done();
+    });
 
   await app.register(fastifyHelmet);
   await app.register(fastifyCookie);
@@ -57,8 +61,12 @@ async function bootstrap() {
   await app.register(fastifyCors, {
     origin:
       process.env.NODE_ENV === 'production'
-        ? [corsOrigin]
-        : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+        ? corsOrigins
+        : [
+            'http://localhost:3000',
+            'http://localhost:9000',
+            'http://127.0.0.1:3000',
+          ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

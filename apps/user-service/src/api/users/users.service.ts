@@ -262,4 +262,9 @@ export class UsersService {
       );
     }
   }
+
+  // 현재 사용자의 정보를 조회합니다.
+  async retrieveMe(userId: string) {
+    return this.getUserBaseInfo(userId);
+  }
 }
