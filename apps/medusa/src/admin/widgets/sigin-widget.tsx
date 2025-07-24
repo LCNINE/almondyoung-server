@@ -60,9 +60,6 @@ const SigninWidget = () => {
         email: userData?.email,
         password,
       });
-      console.log('result', result);
-      // const { user } = await sdk.admin.user.retrieve(customer.id);
-      // console.log('user', user);
 
       // 5. 메두사 어드민 페이지로 리다이렉트
       window.location.href = '/app/';
