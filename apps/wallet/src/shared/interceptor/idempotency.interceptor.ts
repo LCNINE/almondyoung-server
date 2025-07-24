@@ -86,12 +86,24 @@ export class IdempotencyInterceptor implements NestInterceptor {
             response.statusCode,
             data
           );
-          this.logger.log(`멱등성 처리 완료: ${idempotencyKey} (성공)`);
+          this.logger.log(`🔄 [IdempotencyInterceptor] 멱등성 처리 완료: ${idempotencyKey} (성공 - ${response.statusCode})`);
         }),
         catchError(async (error) => {
-          // 실패 시 멱등키 삭제
-          await this.idempotencyService.deleteIdempotencyKey(idempotencyKey);
-          this.logger.log(`멱등성 처리 완료: ${idempotencyKey} (실패, 키 삭제)`);
+          // 실패 시에도 응답 저장 (멱등성 보장을 위해)
+          const errorStatusCode = error.status || error.statusCode || 500;
+          const errorResponse = {
+            statusCode: errorStatusCode,
+            message: error.message || 'Internal Server Error',
+            error: error.name || 'Error'
+          };
+
+          await this.idempotencyService.completeIdempotencyKey(
+            idempotencyKey,
+            errorStatusCode,
+            errorResponse
+          );
+
+          this.logger.log(`🔄 [IdempotencyInterceptor] 멱등성 처리 완료: ${idempotencyKey} (실패 - ${errorStatusCode})`);
           throw error;
         })
       );
@@ -119,9 +131,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
    * 기존 멱등키 처리 로직
    */
   private handleExistingKey(record: IdempotencyRecord, request: any): Observable<any> {
-    const { id: key, status, requestHash, responseBody } = record;
+    const { id: key, status, requestHash, responseBody, responseCode } = record;
 
-    this.logger.log(`🔍 [IdempotencyInterceptor] 기존 멱등키 처리: ${key}, 상태: ${status}`);
+    this.logger.log(`🔍 [IdempotencyInterceptor] 기존 멱등키 처리: ${key}, 상태: ${status}, 응답코드: ${responseCode}`);
 
     // 처리 중인 요청
     if (status === 'PROCESSING') {
@@ -136,6 +148,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     if (!this.idempotencyService.validateRequestHash(requestHash, request.body)) {
       this.logger.warn(`🚨 [IdempotencyInterceptor] 페이로드 불일치 감지: ${key}`);
+      this.logger.warn(`🚨 [IdempotencyInterceptor] 기존 레코드는 유지되며, 422 에러를 반환합니다`);
       throw new IdempotencyPayloadMismatchException();
     }
 
@@ -144,9 +157,25 @@ export class IdempotencyInterceptor implements NestInterceptor {
     // 저장된 응답 반환
     try {
       const savedResponse = JSON.parse(responseBody || '{}');
-      this.logger.log(`✅ [IdempotencyInterceptor] 멱등키 중복 요청 처리: ${key} (저장된 응답 반환)`);
+      const savedStatusCode = responseCode || 200;
+
+      this.logger.log(`✅ [IdempotencyInterceptor] 멱등키 중복 요청 처리: ${key} (저장된 응답 반환 - ${savedStatusCode})`);
+
+      // 저장된 상태코드가 에러 코드인 경우 예외를 던져서 원래 상태코드 유지
+      if (savedStatusCode >= 400) {
+        const error = new Error(savedResponse.message || 'Stored Error Response');
+        (error as any).status = savedStatusCode;
+        (error as any).response = savedResponse;
+        throw error;
+      }
+
       return of(savedResponse);
     } catch (error) {
+      // 저장된 에러 응답인 경우 그대로 던지기
+      if ((error as any).status >= 400) {
+        throw error;
+      }
+
       this.logger.error(`🚨 [IdempotencyInterceptor] 저장된 응답 파싱 실패: ${key}`, error);
       // 파싱 실패 시 키 삭제하고 새로 처리하도록 예외 발생
       this.idempotencyService.deleteIdempotencyKey(key);
