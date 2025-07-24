@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   foreignKey,
   unique,
+  index,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -539,6 +540,43 @@ export const refundEvents = pgTable('refund_events', {
 });
 
 // ────────────────────────────────────────────
+// Idempotency Schemas
+// ────────────────────────────────────────────
+
+// 멱등성 처리 상태
+export const IDEMPOTENCY_STATUS = {
+  PROCESSING: 'PROCESSING', // 처리 중
+  COMPLETED: 'COMPLETED', // 완료됨
+} as const;
+export type IdempotencyStatus = keyof typeof IDEMPOTENCY_STATUS;
+
+// 멱등키 저장 테이블
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: varchar('id', { length: 255 }).primaryKey(), // 멱등키 자체를 PK로 사용
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    requestPath: varchar('request_path', { length: 255 }).notNull(), // 요청 경로
+    requestHash: varchar('request_hash', { length: 64 }).notNull(), // 요청 Body SHA-256 해시
+    responseCode: integer('response_code'), // HTTP 응답 코드
+    responseBody: text('response_body'), // 응답 Body (JSON)
+    status: text('status').$type<IdempotencyStatus>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), // 24시간 후 만료
+  },
+  (table) => [
+    // 성능 최적화를 위한 인덱스 (unique 제거)
+    index('idx_idempotency_keys_user_id').on(table.userId),
+    index('idx_idempotency_keys_expires_at').on(table.expiresAt),
+    index('idx_idempotency_keys_status').on(table.status),
+    // 복합 인덱스: 사용자별 + 상태별 조회 최적화
+    index('idx_idempotency_keys_user_status').on(table.userId, table.status),
+  ],
+);
+
+// ────────────────────────────────────────────
 // Point Schemas
 // ────────────────────────────────────────────
 
@@ -747,6 +785,16 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
     fields: [refundEvents.refundAccountId],
     references: [userRefundAccounts.id],
   }),
+}));
+
+// Idempotency Relations
+export const idempotencyKeysRelations = relations(idempotencyKeys, ({ one }) => ({
+  // 현재는 User 테이블이 없으므로 userId로만 연결
+  // 향후 User 테이블 추가 시 관계 설정 가능
+  // user: one(users, {
+  //   fields: [idempotencyKeys.userId],
+  //   references: [users.id],
+  // }),
 }));
 
 // Point Relations

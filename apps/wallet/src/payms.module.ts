@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { PaymsService } from './payms.service';
-import { InvoiceModule } from './invoice/invoice.module';
 import { SharedModule } from '@app/shared';
 import { DbModule } from '@app/db';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -9,8 +8,10 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { BnplModule } from './bnpl/bnpl.module';
 import { ConfigModule } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import * as schema from './shared/schemas/schema';
+import { IdempotencyInterceptor } from './shared/interceptor/idempotency.interceptor';
+import { IdempotencyModule } from './shared/modules/idempotency.module';
 // import { PaymentModule } from './payment/payment.module';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { EventsModule } from './shared/events/events.module';
@@ -18,6 +19,7 @@ import { PaymentModule } from './payment/payment.module';
 import { RefundModule } from './refund/refund.module';
 import { EventMonitorModule } from './shared/events/event-monitor.module';
 import { PointModule } from './point/point.module';
+import { InvoiceModule } from './invoice/invoice.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -44,6 +46,7 @@ import { PointModule } from './point/point.module';
       },
       schema: { ...schema },
     }),
+    IdempotencyModule, // 멱등성 모듈 추가
     EventsModule,
     EventMonitorModule, // ✅ 통합 이벤트 모니터링 모듈 등록
     InvoiceModule,
@@ -60,6 +63,10 @@ import { PointModule } from './point/point.module';
     {
       provide: APP_PIPE, // 전역 파이프로 등록
       useClass: ZodValidationPipe, // ZodValidationPipe 사용
+    },
+    {
+      provide: APP_INTERCEPTOR, // 전역 인터셉터로 등록
+      useClass: IdempotencyInterceptor, // 멱등성 인터셉터 사용
     },
   ],
 })

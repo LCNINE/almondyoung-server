@@ -14,6 +14,8 @@ import { PointService } from '../point/point.service';
 // CQRS 패턴 - 조회 전담 서비스 및 컨트롤러
 import { PaymentHistoryService } from './services/payment-history.service';
 import { PaymentHistoryController } from './controllers/payment-history.controller';
+// 멱등성 모듈
+import { IdempotencyModule } from '../shared/modules/idempotency.module';
 
 /**
  * Payment 모듈 - Event Sourcing Pattern + CQRS 적용
@@ -23,7 +25,10 @@ import { PaymentHistoryController } from './controllers/payment-history.controll
  * - SettlementService: 정산 처리 및 이벤트 발행
  */
 @Module({
-  imports: [PgProviderModule],
+  imports: [
+    PgProviderModule,
+    IdempotencyModule, // 멱등성 모듈 추가
+  ],
   controllers: [
     PaymentController, // ✅ 결제 명령 처리 Controller
     PaymentHistoryController, // ✅ 결제 조회 전담 Controller (CQRS)
