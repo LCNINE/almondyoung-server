@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/inventory/get-stock-query.dto.ts
 import { IsUUID, IsOptional, IsDateString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { stockTypeEnum } from 'apps/wms/database/schemas/wms-schema';

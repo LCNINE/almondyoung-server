@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/sku/sku-stock-summary.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SkuStockSummaryDto {

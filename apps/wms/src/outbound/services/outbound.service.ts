@@ -1,3 +1,4 @@
+// apps/wms/src/outbound/services/outbound.service.ts
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
@@ -42,16 +43,44 @@ export class OutboundService {
             }
 
             const [outboundEvent] = await tx.insert(wmsTables.stockEvents).values({
-                stockId: currentStock.id,
+                relatedStockId: currentStock.id,
                 skuId: currentStock.skuId,
                 warehouseId: currentStock.warehouseId,
                 locationId: currentStock.locationId,
                 eventType: 'OUT_ORDER',
-                quantity: -quantity,
+                deltaQuantity: -quantity,
                 orderId,
                 reason: `출고 - ${reason}`,
                 expiresStockRowId: currentStock.id,
             }).returning();
+
+            const existingSummary = await tx.query.stockSummary.findFirst({
+                where: and(
+                    eq(wmsTables.stockSummary.skuId, currentStock.skuId),
+                    eq(wmsTables.stockSummary.warehouseId, currentStock.warehouseId)
+                ),
+            });
+
+            if (existingSummary) {
+                const result = await tx.update(wmsTables.stockSummary)
+                    .set({
+                        currentQuantity: existingSummary.currentQuantity - quantity,
+                        availableQuantity: existingSummary.availableQuantity - quantity,
+                        lastEventId: outboundEvent.id,
+                        lastUpdated: new Date(),
+                        version: existingSummary.version + 1,
+                    })
+                    .where(and(
+                        eq(wmsTables.stockSummary.skuId, currentStock.skuId),
+                        eq(wmsTables.stockSummary.warehouseId, currentStock.warehouseId),
+                        eq(wmsTables.stockSummary.version, existingSummary.version)
+                    ))
+                    .returning();
+
+                if (result.length === 0) {
+                    throw new Error('Concurrent update detected. Please retry.');
+                }
+            }
 
             await tx.update(wmsTables.stocks)
                 .set({ destroyerEventId: outboundEvent.id })

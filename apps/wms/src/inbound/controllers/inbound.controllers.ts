@@ -1,3 +1,4 @@
+// apps/wms/src/inbound/controllers/inbound.controllers.ts
 import { Controller, Post, Body, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InboundService } from '../services/inbound.service';

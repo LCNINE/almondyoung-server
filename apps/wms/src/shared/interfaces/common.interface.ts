@@ -1,3 +1,4 @@
+// apps/wms/src/shared/interfaces/common.interface.ts
 export interface PaginationParams {
     page: number;
     limit: number;

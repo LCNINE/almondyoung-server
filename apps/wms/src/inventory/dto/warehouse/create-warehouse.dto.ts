@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/warehouse/create-warehouse.dto.ts
 import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { warehouseTypeEnum } from 'apps/wms/database/schemas/wms-schema';

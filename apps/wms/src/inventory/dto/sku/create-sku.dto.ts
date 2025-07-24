@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/sku/create-sku.dto.ts
 import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsUUID, IsNumber, IsEnum, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

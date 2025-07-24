@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/product-matching/variant-sku-lookup.dto.ts
 import { IsArray, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';

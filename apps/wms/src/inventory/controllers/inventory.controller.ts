@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/controllers/inventory.controller.ts
 import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
@@ -17,7 +18,10 @@ import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 export class InventoryController {
     constructor(private readonly inventoryService: InventoryService) { }
 
-    // stock
+    // ═══════════════════════════════════════════════════════════════
+    // 재고 관리 API
+    // ═══════════════════════════════════════════════════════════════
+
     @Get('/stocks')
     @ApiOperation({ summary: '현재 재고 조회 (SKU, 창고, 위치, 재고 유형, 특정 시점 기준)' })
     @ApiQuery({ name: 'skuId', required: false, description: '검색할 SKU ID (UUID 형식)' })
@@ -28,6 +32,39 @@ export class InventoryController {
     @ApiResponse({ status: 200, description: '현재 재고 정보를 반환합니다.' })
     async getCurrentStock(@Query() query: GetStockQueryDto) {
         return this.inventoryService.getCurrentStock(query);
+    }
+
+    @Get('/stocks/summary')
+    @ApiOperation({ summary: '재고 현황 요약 조회 (이중 원장 기반 빠른 조회)' })
+    @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID로 필터링' })
+    @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID로 필터링' })
+    @ApiResponse({
+        status: 200,
+        description: '재고 현황 요약 정보를 반환합니다.',
+        schema: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    skuId: { type: 'string' },
+                    skuName: { type: 'string' },
+                    warehouseId: { type: 'string' },
+                    warehouseName: { type: 'string' },
+                    currentQuantity: { type: 'number' },
+                    availableQuantity: { type: 'number' },
+                    reservedQuantity: { type: 'number' },
+                    inboundPendingQuantity: { type: 'number' },
+                    outboundPendingQuantity: { type: 'number' },
+                    lastUpdated: { type: 'string', format: 'date-time' }
+                }
+            }
+        }
+    })
+    async getQuickStockSummary(
+        @Query('skuId') skuId?: string,
+        @Query('warehouseId') warehouseId?: string
+    ) {
+        return this.inventoryService.getQuickStockSummary(skuId, warehouseId);
     }
 
     @Get('/stocks/sku/:skuId/total')
@@ -51,7 +88,43 @@ export class InventoryController {
 
     @Get('/stocks/sku/:skuId/warehouse/:warehouseId')
     @ApiOperation({ summary: '특정 창고의 SKU별 재고 상세 조회' })
-    @ApiResponse({ status: 200, description: '창고별 SKU 재고 상세 정보를 반환합니다.' })
+    @ApiResponse({
+        status: 200,
+        description: '창고별 SKU 재고 상세 정보를 반환합니다.',
+        schema: {
+            type: 'object',
+            properties: {
+                summary: {
+                    type: 'object',
+                    properties: {
+                        currentQuantity: { type: 'number' },
+                        availableQuantity: { type: 'number' },
+                        reservedQuantity: { type: 'number' },
+                        inboundPendingQuantity: { type: 'number' },
+                        outboundPendingQuantity: { type: 'number' },
+                        movingQuantity: { type: 'number' },
+                        damageQuantity: { type: 'number' },
+                        returnPendingQuantity: { type: 'number' },
+                        lastUpdated: { type: 'string', format: 'date-time' }
+                    }
+                },
+                details: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string' },
+                            realQuantity: { type: 'number' },
+                            reservedQuantity: { type: 'number' },
+                            availableQuantity: { type: 'number' },
+                            location: { type: 'object' },
+                            expiryDate: { type: 'string', format: 'date-time' }
+                        }
+                    }
+                }
+            }
+        }
+    })
     async getStockBySkuAndWarehouse(
         @Param('skuId') skuId: string,
         @Param('warehouseId') warehouseId: string
@@ -73,12 +146,29 @@ export class InventoryController {
     }
 
     @Get('/stocks/history')
-    @ApiOperation({ summary: '재고 이력 조회 (SKU, 창고, 기간 기준)' })
+    @ApiOperation({ summary: '재고 이벤트 이력 조회 (SKU, 창고, 기간 기준)' })
     @ApiQuery({ name: 'skuId', required: true, description: '조회할 SKU ID (UUID 형식)' })
     @ApiQuery({ name: 'warehouseId', required: false, description: '조회할 창고 ID (UUID 형식)' })
     @ApiQuery({ name: 'startDate', required: false, description: '조회 시작일 (YYYY-MM-DD)' })
     @ApiQuery({ name: 'endDate', required: false, description: '조회 종료일 (YYYY-MM-DD)' })
-    @ApiResponse({ status: 200, description: '재고 이력 목록을 반환합니다.' })
+    @ApiResponse({
+        status: 200,
+        description: '재고 이벤트 이력 목록을 반환합니다.',
+        schema: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    eventType: { type: 'string' },
+                    deltaQuantity: { type: 'number' },
+                    eventTimestamp: { type: 'string', format: 'date-time' },
+                    reason: { type: 'string' },
+                    orderId: { type: 'string' }
+                }
+            }
+        }
+    })
     async getStockHistory(
         @Query('skuId') skuId: string,
         @Query('warehouseId') warehouseId?: string,
@@ -88,7 +178,35 @@ export class InventoryController {
         return this.inventoryService.getStockHistory(skuId, warehouseId, startDate, endDate);
     }
 
-    // sku
+    @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({ summary: '재고 현황 재구축 (이벤트 소싱으로부터)' })
+    @ApiParam({ name: 'skuId', description: 'SKU ID' })
+    @ApiParam({ name: 'warehouseId', description: '창고 ID' })
+    @ApiResponse({ status: 204, description: '재고 현황이 성공적으로 재구축되었습니다.' })
+    async rebuildStockSummary(
+        @Param('skuId') skuId: string,
+        @Param('warehouseId') warehouseId: string
+    ) {
+        await this.inventoryService.rebuildStockSummary(skuId, warehouseId);
+    }
+
+    @Delete('/stocks/events/:eventId/cancel')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({ summary: '재고 이벤트 취소 (반대 이벤트 생성)' })
+    @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
+    @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
+    async cancelStockEvent(
+        @Param('eventId') eventId: string,
+        @Body('reason') reason: string
+    ) {
+        await this.inventoryService.cancelStockEvent(eventId, reason);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SKU 관리 API
+    // ═══════════════════════════════════════════════════════════════
+
     @Post('/skus')
     @ApiOperation({ summary: 'SKU 생성' })
     @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
@@ -239,7 +357,10 @@ export class InventoryController {
         return this.inventoryService.batchUpdateAlwaysSellableZeroStock(batchUpdateDto.updates);
     }
 
-    // warehouse
+    // ═══════════════════════════════════════════════════════════════
+    // 창고 관리 API
+    // ═══════════════════════════════════════════════════════════════
+
     @Post('/warehouses')
     @ApiOperation({ summary: '새 창고 생성' })
     @ApiResponse({ status: 201, description: '창고가 생성되었습니다.' })

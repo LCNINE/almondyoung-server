@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/sku/sku-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 
 export class BarcodeDto {

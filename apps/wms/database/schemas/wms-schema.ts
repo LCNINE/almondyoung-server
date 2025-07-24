@@ -13,6 +13,7 @@ import {
     primaryKey,
     unique,
     decimal,
+    index,
 } from 'drizzle-orm/pg-core';
 
 /*───────────────────────────
@@ -221,11 +222,13 @@ export const locations = pgTable('locations', {
  *──────────────────────────*/
 export const stockEvents = pgTable('stock_events', {
     id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'cascade' }),
     skuId: uuid('sku_id').references(() => skus.id).notNull(),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
     eventType: eventTypeEnum('event_type').notNull(),
-    quantity: integer('quantity').notNull(),
+
+    // 델타값
+    deltaQuantity: integer('delta_quantity').notNull(),
 
     // 창고 간 이동 시 사용
     fromWarehouseId: uuid('from_warehouse_id').references(() => warehouses.id),
@@ -233,8 +236,8 @@ export const stockEvents = pgTable('stock_events', {
 
     expiryDate: timestamp('expiry_date', { withTimezone: true }),
     manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
-    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }), // orders 테이블 참조 추가
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    relatedStockId: uuid('related_stock_id').references(() => stocks.id, { onDelete: 'set null' }),
     reason: varchar('reason', { length: 255 }),
     eventTimestamp: timestamp('event_timestamp', { withTimezone: true }).notNull().defaultNow(),
     sequenceNo: integer('sequence_no'),
@@ -242,11 +245,8 @@ export const stockEvents = pgTable('stock_events', {
     expiresStockRowId: uuid('expires_stock_row_id').references(() => stocks.id),
 });
 
-// stocks (append‑only)
 export const stocks = pgTable('stocks', {
     id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-
-    /* FK */
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'restrict' })
         .notNull(),
@@ -256,26 +256,52 @@ export const stocks = pgTable('stocks', {
     locationId: uuid('location_id')
         .references(() => locations.id, { onDelete: 'set null' }),
     stockType: stockTypeEnum('stock_type').notNull().default('physical'),
-
-    /** 수량 */
     realQuantity: integer('real_quantity').notNull(),
     reservedQuantity: integer('reserved_quantity').notNull().default(0),
-    availableQuantity: integer('available_quantity').notNull(),
+    availableQuantity: integer('available_quantity').notNull().default(0),
     safetyStock: integer('safety_stock'),
-
     creatorEventId: uuid('creator_event_id')
         .references(() => stockEvents.id)
         .notNull(),
     destroyerEventId: uuid('destroyer_event_id')
         .references(() => stockEvents.id),
-
-    /** 메타 */
     expiryDate: timestamp('expiry_date', { withTimezone: true }),
     manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
     barcodeType: barcodeTypeEnum('barcode_type'),
     subBarcode: varchar('sub_barcode', { length: 64 }),
     packingUnit: varchar('packing_unit', { length: 64 }),
 });
+
+// 재고 현황 테이블
+export const stockSummary = pgTable('stock_summary', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    warehouseId: uuid('warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'cascade' })
+        .notNull(),
+
+    currentQuantity: integer('current_quantity').notNull().default(0),
+    availableQuantity: integer('available_quantity').notNull().default(0),
+    reservedQuantity: integer('reserved_quantity').notNull().default(0),
+
+    // 상태별 재고 현황
+    inboundPendingQuantity: integer('inbound_pending_quantity').notNull().default(0),
+    outboundPendingQuantity: integer('outbound_pending_quantity').notNull().default(0),
+    movingQuantity: integer('moving_quantity').notNull().default(0),
+    damageQuantity: integer('damage_quantity').notNull().default(0),
+    returnPendingQuantity: integer('return_pending_quantity').notNull().default(0),
+
+    lastEventId: uuid('last_event_id').references(() => stockEvents.id),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).defaultNow(),
+    version: integer('version').notNull().default(1),
+
+}, t => ({
+    uniqueSkuWarehouse: unique().on(t.skuId, t.warehouseId),
+    skuIdx: index('stock_summary_sku_idx').on(t.skuId),
+    warehouseIdx: index('stock_summary_warehouse_idx').on(t.warehouseId),
+}));
 
 /*───────────────────────────
  * PRODUCT / VARIANT / SKU MAPPING
@@ -620,9 +646,10 @@ export const wmsTables = {
     locations,
     stockEvents,
     stocks,
+    stockSummary,
     productMatchings,
     productVariantSkuLinks,
-    productOptionMatchings, // 추가
+    productOptionMatchings,
     orders,
     orderItems,
     orderEvents,

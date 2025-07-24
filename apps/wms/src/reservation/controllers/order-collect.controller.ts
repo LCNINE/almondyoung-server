@@ -1,3 +1,4 @@
+// apps/wms/src/reservation/controllers/order-collect.controller.ts
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { OrderCollectService } from '../services/order-collect.service';

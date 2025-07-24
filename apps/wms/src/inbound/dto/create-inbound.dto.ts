@@ -1,3 +1,4 @@
+// apps/wms/src/inbound/dto/create-inbound.dto.ts
 import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional, IsDateString, IsEnum, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

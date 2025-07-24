@@ -1,8 +1,9 @@
+// apps/wms/src/inbound/services/inbound.service.ts
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { CreateInboundDto } from '../dto/create-inbound.dto';
 import { CreateStockEntryDto } from '../dto/create-stock-entry.dto';
 import { InventoryService } from '../../inventory/services/inventory.service';
@@ -36,19 +37,62 @@ export class InboundService {
 
         return this.db.transaction(async (tx) => {
             const targetWarehouseId = warehouseId || this.inventoryService.getDefaultWarehouseIdByType(supplierType);
-
             const eventType = supplierType === 'overseas' ? 'IN_OVERSEAS' : 'IN_DOMESTIC';
+
             const [inboundEvent] = await tx.insert(wmsTables.stockEvents).values({
                 skuId,
                 warehouseId: targetWarehouseId,
                 locationId,
                 eventType,
-                quantity,
+                deltaQuantity: quantity,
                 expiryDate: expiryDate ? new Date(expiryDate) : null,
                 manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : null,
                 orderId: purchaseOrderId,
                 reason: `${supplierType} 거래처 입고 - ${reason}`,
             }).returning();
+
+            const existingSummary = await tx.query.stockSummary.findFirst({
+                where: and(
+                    eq(wmsTables.stockSummary.skuId, skuId),
+                    eq(wmsTables.stockSummary.warehouseId, targetWarehouseId)
+                ),
+            });
+
+            if (existingSummary) {
+                const result = await tx.update(wmsTables.stockSummary)
+                    .set({
+                        currentQuantity: existingSummary.currentQuantity + quantity,
+                        availableQuantity: existingSummary.availableQuantity + quantity,
+                        lastEventId: inboundEvent.id,
+                        lastUpdated: new Date(),
+                        version: existingSummary.version + 1,
+                    })
+                    .where(and(
+                        eq(wmsTables.stockSummary.skuId, skuId),
+                        eq(wmsTables.stockSummary.warehouseId, targetWarehouseId),
+                        eq(wmsTables.stockSummary.version, existingSummary.version)
+                    ))
+                    .returning();
+
+                if (result.length === 0) {
+                    throw new Error('Concurrent update detected. Please retry.');
+                }
+            } else {
+                await tx.insert(wmsTables.stockSummary).values({
+                    skuId,
+                    warehouseId: targetWarehouseId,
+                    currentQuantity: quantity,
+                    availableQuantity: quantity,
+                    reservedQuantity: 0,
+                    inboundPendingQuantity: 0,
+                    outboundPendingQuantity: 0,
+                    movingQuantity: 0,
+                    damageQuantity: 0,
+                    returnPendingQuantity: 0,
+                    lastEventId: inboundEvent.id,
+                    version: 1,
+                });
+            }
 
             const [newStock] = await tx.insert(wmsTables.stocks).values({
                 skuId,
@@ -64,7 +108,10 @@ export class InboundService {
             }).returning();
 
             await tx.update(wmsTables.stockEvents)
-                .set({ createsStockRowId: newStock.id, stockId: newStock.id })
+                .set({
+                    createsStockRowId: newStock.id,
+                    relatedStockId: newStock.id
+                })
                 .where(eq(wmsTables.stockEvents.id, inboundEvent.id));
 
             if (sku.preStockSellable && quantity > 0) {

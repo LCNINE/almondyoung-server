@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/dto/sku/update-always-sellable.dto.ts
 import { IsBoolean, IsArray, ValidateNested, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';

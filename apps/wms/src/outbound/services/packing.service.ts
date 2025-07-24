@@ -1,3 +1,4 @@
+// apps/wms/src/outbound/services/packing.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

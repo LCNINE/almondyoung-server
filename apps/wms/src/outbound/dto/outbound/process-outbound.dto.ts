@@ -1,3 +1,4 @@
+// apps/wms/src/outbound/dto/outbound/process-outbound.dto.ts
 import { IsNumber, IsString, IsOptional, IsUUID, Min, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 

@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/handlers/pim-event.hadler.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ProductMatchingService } from '../services/product-matching.service';
 

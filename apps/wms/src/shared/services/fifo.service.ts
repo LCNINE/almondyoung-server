@@ -1,3 +1,4 @@
+// apps/wms/src/shared/services/fifo.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()

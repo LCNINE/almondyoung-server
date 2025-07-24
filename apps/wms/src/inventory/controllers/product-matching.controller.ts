@@ -1,3 +1,4 @@
+// apps/wms/src/inventory/controllers/product-matching.controller.ts
 import { Controller, Get, Query, Patch, Param, Body, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { ProductMatchingService } from '../services/product-matching.service';
