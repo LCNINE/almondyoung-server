@@ -23,11 +23,10 @@ export async function POST(
       ...((req.validatedBody || req.body) as Partial<CreateCartWorkflowInput>),
     };
 
-    // auth_context가 있을 때만 customer_id 설정
+    // 로그인 상태일 때 장바구니에 customer_id 데이터 삽입
     if (req.auth_context?.actor_id) {
       cartData.customer_id = req.auth_context.actor_id;
     }
-    console.log('req.auth_context', req.auth_context.actor_id);
 
     const { result } = await createCartWorkflow(req.scope).run({
       input: cartData,
