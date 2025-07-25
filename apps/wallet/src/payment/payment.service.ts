@@ -12,6 +12,7 @@ import { ulid } from 'ulid';
 import { ProcessPaymentDto, PaymentDetailDto } from './dto/process-payment.dto';
 import { BnplAccountService } from '../bnpl/services/bnpl-account.service';
 import { PointService } from '../point/point.service';
+import { InvoiceSessionService } from '../invoice/invoice-session.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentAuthorizedEvent } from './events/payment.events';
 import { InvoicePaidEvent } from '../invoice/events/invoice.events';
@@ -34,6 +35,7 @@ export class PaymentService {
     @InjectDb() private readonly dbService: DbService<typeof schema>,
     private readonly bnplAccountService: BnplAccountService,
     private readonly pointService: PointService,
+    private readonly invoiceSessionService: InvoiceSessionService,
     private readonly eventEmitter: EventEmitter2,
   ) { }
 
@@ -42,7 +44,7 @@ export class PaymentService {
    * @param payload 결제에 필요한 정보 (청구서 ID, 결제 정보 배열)
    */
   async processPayment(payload: ProcessPaymentDto) {
-    const { invoiceId, payments, paymentMethodId } = payload;
+    const { invoiceId, invoiceSessionId, payments, paymentMethodId } = payload;
 
     // 하위 호환성: 기존 단일 결제 방식 지원
     let paymentDetails: PaymentDetailDto[];
@@ -75,6 +77,10 @@ export class PaymentService {
       if (invoice.status === INVOICE_STATUS.PAID || invoice.status === INVOICE_STATUS.CANCELLED) {
         throw new BadRequestException('이미 처리되었거나 폐기된 청구서입니다.');
       }
+
+      // --- 1.5. 청구서 세션 검증 ---
+      this.logger.log(`청구서 세션 검증: ${invoiceSessionId}`);
+      await this.invoiceSessionService.validateInvoiceSession(invoiceId, invoiceSessionId);
 
       // --- 2. 🚨 임시 조치: 청구서에서 userId 가져오기 ---
       const userId = invoice.userId;
@@ -222,6 +228,9 @@ export class PaymentService {
       )
     );
     this.logger.log(`🚀 [PaymentService] invoice.paid 이벤트 발행 완료: ${invoiceId}, paymentEventId: ${result.paymentEventId}`);
+
+    // 결제 완료 후 세션 정리
+    await this.invoiceSessionService.clearInvoiceSession(invoiceId);
 
     // 혼합 결제 완료 이벤트 발행 (전체 결제 완료 알림)
     this.eventEmitter.emit(

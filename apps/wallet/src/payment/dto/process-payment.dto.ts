@@ -32,6 +32,10 @@ export class ProcessPaymentDto {
   @IsNotEmpty()
   invoiceId: string;
 
+  @IsString()
+  @IsNotEmpty()
+  invoiceSessionId: string; // 청구서 세션 ID 필수 추가
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PaymentDetailDto)

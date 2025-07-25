@@ -7,8 +7,10 @@ import {
 import { MethodManagementPort } from '../../payment-method/port/method-management.port';
 import {
   AgreementFileResponseDto,
-  MockHmsAPI,
   RegisterAgreementRequest,
+  ApiClientFactory,
+  HmsAPI,
+  MockHmsAPI,
 } from 'hms-api-wrapper';
 import { CreatePaymentMethodPayload } from '../../shared/zod/payment-method.zod';
 import tsid from 'tsid-ts';
@@ -18,18 +20,27 @@ import { ulid } from 'ulid';
 
 @Injectable()
 export class BatchCmsAdapter
-  implements PaymentProcessingPort, MethodManagementPort
-{
+  implements PaymentProcessingPort, MethodManagementPort {
   private readonly logger = new Logger(BatchCmsAdapter.name);
-  private readonly mockApi: MockHmsAPI;
+  private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   constructor() {
-    this.mockApi = new MockHmsAPI({
-      swKey: process.env.HMS_SW_KEY || 'mock-sw',
-      custKey: process.env.HMS_CUST_KEY || 'mock-cust',
-      isTest: process.env.NODE_ENV !== 'production',
-    });
-    this.logger.log('BatchCmsAdapter 초기화 완료');
+    // 환경 변수 검증
+    if (process.env.USE_MOCK !== 'true') {
+      if (!process.env.SW_KEY || !process.env.CUST_KEY) {
+        throw new Error('실제 HMS API 사용 시 SW_KEY와 CUST_KEY가 필요합니다.');
+      }
+    }
+
+    // ApiClientFactory를 사용하여 환경 변수에 따라 자동으로 목업/실제 API 선택
+    this.hmsApi = ApiClientFactory.createFromEnv();
+
+    const apiType = process.env.USE_MOCK === 'true' ? 'Mock' : 'Real HMS Test';
+    this.logger.log(`BatchCmsAdapter 초기화 완료 - ${apiType} 서버 사용`);
+
+    if (process.env.USE_MOCK !== 'true') {
+      this.logger.log('⚠️  실제 HMS 테스트 서버 사용 중 - 회원 등록 및 출금 승인은 수기 처리 필요');
+    }
   }
 
   // 결제 처리
@@ -45,7 +56,7 @@ export class BatchCmsAdapter
 
     console.log(request, 'requwat');
     try {
-      const result = await this.mockApi.withdrawals.request({
+      const result = await this.hmsApi.withdrawals.request({
         memberId: request.memberId,
         callAmount: request.amount,
         paymentDate: request.paymentDate,
@@ -56,9 +67,9 @@ export class BatchCmsAdapter
         transactionId: result.payment.transactionId,
         status:
           result.payment.status === '출금대기' ||
-          result.payment.status === '출금중' ||
-          result.payment.status === '출금실패' ||
-          result.payment.status === '출금성공'
+            result.payment.status === '출금중' ||
+            result.payment.status === '출금실패' ||
+            result.payment.status === '출금성공'
             ? 'AUTHORIZED'
             : result.payment.status === '출금대기'
               ? 'AUTHORIZED'
@@ -113,7 +124,7 @@ export class BatchCmsAdapter
   }> {
     this.logger.log(`BatchCMS 결제 상태 조회: ${transactionId}`);
     try {
-      const result = await this.mockApi.withdrawals.get(transactionId);
+      const result = await this.hmsApi.withdrawals.get(transactionId);
       let standardStatus: 'REQUESTED' | 'CAPTURED' | 'CANCELLED' | 'FAILED';
       switch (result.payment.status) {
         case '출금대기':
@@ -162,7 +173,7 @@ export class BatchCmsAdapter
     this.logger.log(`BatchCMS 회원 등록: ${request.userId}`);
 
     // 1. 외부 API 호출
-    const hmsResponse = await this.mockApi.members.create({
+    const hmsResponse = await this.hmsApi.members.create({
       memberId: paymentMethod.id,
       memberName: request.methodName,
       payerName: request.methodName,
@@ -199,7 +210,7 @@ export class BatchCmsAdapter
     request: RegisterAgreementRequest,
   ): Promise<{ success: boolean; rawResponse: AgreementFileResponseDto }> {
     this.logger.log(`BatchCMS 동의자료 제출: ${request.memberId}`);
-    const result = await this.mockApi.agreements.register(
+    const result = await this.hmsApi.agreements.register(
       'default-cust',
       request.memberId,
       {
@@ -219,7 +230,7 @@ export class BatchCmsAdapter
   }> {
     this.logger.log(`BatchCMS 회원 상태 조회: ${memberId}`);
     try {
-      const result = await this.mockApi.members.get(memberId);
+      const result = await this.hmsApi.members.get(memberId);
 
       // HMS API 응답의 한국어 상태를 우리 시스템 상태로 변환
       switch (result.member.status) {

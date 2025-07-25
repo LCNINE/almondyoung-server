@@ -16,6 +16,8 @@ import { PaymentHistoryService } from './services/payment-history.service';
 import { PaymentHistoryController } from './controllers/payment-history.controller';
 // 멱등성 모듈
 import { IdempotencyModule } from '../shared/modules/idempotency.module';
+// Invoice 모듈 (InvoiceSessionService 사용을 위해)
+import { InvoiceModule } from '../invoice/invoice.module';
 
 /**
  * Payment 모듈 - Event Sourcing Pattern + CQRS 적용
@@ -28,6 +30,7 @@ import { IdempotencyModule } from '../shared/modules/idempotency.module';
   imports: [
     PgProviderModule,
     IdempotencyModule, // 멱등성 모듈 추가
+    InvoiceModule, // InvoiceSessionService 사용을 위해 추가
   ],
   controllers: [
     PaymentController, // ✅ 결제 명령 처리 Controller
@@ -46,6 +49,6 @@ import { IdempotencyModule } from '../shared/modules/idempotency.module';
       useClass: BatchCmsAdapter,
     },
   ],
-  exports: [PaymentService, PaymentHistoryService], // ✅ 조회 서비스도 export
+  exports: [PaymentService, PaymentHistoryService], // ✅ 조회 서비스 export
 })
 export class PaymentModule {}

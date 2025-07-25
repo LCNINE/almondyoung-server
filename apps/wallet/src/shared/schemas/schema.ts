@@ -84,7 +84,8 @@ export const INVOICE_STATUS = {
   OVERDUE: 'OVERDUE', // 연체됨
   FAILED: 'FAILED', // 결제 실패
 } as const;
-export type InvoiceStatus = keyof typeof INVOICE_STATUS;
+export type InvoiceStatus =
+  (typeof INVOICE_STATUS)[keyof typeof INVOICE_STATUS];
 
 // 💸 환불 상태 (refundEvents)
 export const REFUND_STATUS = {
@@ -415,6 +416,11 @@ export const invoice = pgTable('invoice', {
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   dueAt: timestamp('due_at', { withTimezone: true }),
+  // 결제 세션 관련 컬럼 추가
+  invoiceSessionId: varchar('invoice_session_id', { length: 255 }).unique(),
+  invoiceSessionExpiresAt: timestamp('invoice_session_expires_at', {
+    withTimezone: true,
+  }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -788,14 +794,17 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
 }));
 
 // Idempotency Relations
-export const idempotencyKeysRelations = relations(idempotencyKeys, ({ one }) => ({
-  // 현재는 User 테이블이 없으므로 userId로만 연결
-  // 향후 User 테이블 추가 시 관계 설정 가능
-  // user: one(users, {
-  //   fields: [idempotencyKeys.userId],
-  //   references: [users.id],
-  // }),
-}));
+export const idempotencyKeysRelations = relations(
+  idempotencyKeys,
+  ({ one }) => ({
+    // 현재는 User 테이블이 없으므로 userId로만 연결
+    // 향후 User 테이블 추가 시 관계 설정 가능
+    // user: one(users, {
+    //   fields: [idempotencyKeys.userId],
+    //   references: [users.id],
+    // }),
+  }),
+);
 
 // Point Relations
 export const pointsRelations = relations(points, ({ many }) => ({
