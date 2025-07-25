@@ -97,14 +97,7 @@ export const salesChannelEnum = pgEnum('sales_channel', [
     'medusa',         // 메두사 (자체 몰)
     'naver',          // 네이버 스마트스토어
     'coupang',        // 쿠팡
-    'gmarket',        // 지마켓
-    'auction',        // 옥션
-    'elevenstst',     // 11번가
-    'tmon',           // 티몬
-    'wemakeprice',    // 위메프
-    'lotte',          // 롯데온
-    'interpark',      // 인터파크
-    'selfmate_3pl'    // 3PL (셀메이트)
+    '3pl'    // 3PL
 ]);
 
 export const eventTypeOrderEnum = pgEnum('event_type_order', [

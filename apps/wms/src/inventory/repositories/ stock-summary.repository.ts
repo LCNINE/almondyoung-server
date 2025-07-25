@@ -3,12 +3,13 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
 import { eq, and, sql, inArray } from 'drizzle-orm';
+import { STOCK_RULES, applyRule, createInitialState } from '../rules/stock-update.rules';
+import { EventType, StockUpdateData } from '../rules/stock-rule.types';
 
 // ****************************************************************
 // 재고 현황 저장소
 // 이중 원장의 현재 상태 관리
 // ****************************************************************
-
 
 @Injectable()
 export class StockSummaryRepository {
@@ -39,7 +40,8 @@ export class StockSummaryRepository {
         deltaQuantity: number,
         eventType: string,
         eventId: string,
-        tx: any
+        tx: any,
+        additionalContext?: { fromWarehouseId?: string; toWarehouseId?: string }
     ): Promise<void> {
         const existing = await tx.query.stockSummary.findFirst({
             where: and(
@@ -49,7 +51,22 @@ export class StockSummaryRepository {
         });
 
         if (existing) {
-            const updateData = this._calculateUpdate(existing, deltaQuantity, eventType);
+            // Rule 기반 계산
+            const rule = STOCK_RULES[eventType as EventType];
+            if (!rule) {
+                this.logger.warn(`Unknown event type: ${eventType}, using default rule`);
+            }
+
+            const updateData = applyRule(
+                {
+                    existing: existing as StockUpdateData,
+                    delta: deltaQuantity,
+                    eventType: eventType as EventType,
+                    ...additionalContext
+                },
+                rule || { fields: { currentQuantity: '+', availableQuantity: '+' } },
+                { onNegative: 'log-and-clamp' }
+            );
 
             const result = await tx.update(wmsTables.stockSummary)
                 .set({
@@ -74,7 +91,7 @@ export class StockSummaryRepository {
                 `currentQuantity ${existing.currentQuantity} → ${updateData.currentQuantity}`
             );
         } else {
-            await this._createNew(skuId, warehouseId, deltaQuantity, eventType, eventId, tx);
+            await this._createNew(skuId, warehouseId, deltaQuantity, eventType as EventType, eventId, tx);
         }
     }
 
@@ -89,60 +106,33 @@ export class StockSummaryRepository {
                 orderBy: (e, { asc }) => [asc(e.eventTimestamp)]
             });
 
-            let currentQuantity = 0;
-            let inboundPendingQuantity = 0;
-            let outboundPendingQuantity = 0;
-            let damageQuantity = 0;
-            let returnPendingQuantity = 0;
-            let movingQuantity = 0;
+            let state = createInitialState();
 
             for (const event of events) {
-                currentQuantity += event.deltaQuantity;
+                const rule = STOCK_RULES[event.eventType as EventType];
+                if (rule) {
+                    const updates = applyRule(
+                        {
+                            existing: state,
+                            delta: event.deltaQuantity,
+                            eventType: event.eventType as EventType,
+                            fromWarehouseId: event.fromWarehouseId ?? undefined,
+                            toWarehouseId: event.toWarehouseId ?? undefined
+                        },
+                        rule,
+                        { onNegative: 'clamp' }
+                    );
 
-                switch (event.eventType) {
-                    case 'IN':
-                    case 'IN_DOMESTIC':
-                    case 'IN_OVERSEAS':
-                        // 입고 이벤트 - 입고 대기 수량이 있다면 감소
-                        if (event.reason?.includes('pending')) {
-                            inboundPendingQuantity = Math.max(0, inboundPendingQuantity - event.deltaQuantity);
-                        }
-                        break;
-                    case 'IN_RETURN':
-                        // 반품 입고 - 반품 대기 수량 감소
-                        returnPendingQuantity = Math.max(0, returnPendingQuantity - event.deltaQuantity);
-                        break;
-                    case 'OUT':
-                    case 'OUT_ORDER':
-                        // 출고 이벤트 - 출고 대기 수량이 있다면 감소
-                        if (event.reason?.includes('pending')) {
-                            outboundPendingQuantity = Math.max(0, outboundPendingQuantity - Math.abs(event.deltaQuantity));
-                        }
-                        break;
-                    case 'OUT_DAMAGE':
-                    case 'OUT_LOSS':
-                    case 'OUT_DISPOSAL':
-                        damageQuantity += Math.abs(event.deltaQuantity);
-                        break;
-                    case 'MOVE_INTER_WAREHOUSE':
-                        if (event.deltaQuantity < 0) {
-                            // 출고 창고에서는 이동 중 수량 증가
-                            movingQuantity += Math.abs(event.deltaQuantity);
-                        } else if (event.fromWarehouseId === warehouseId) {
-                            // 입고 창고에서는 이동 중 수량 감소
-                            movingQuantity = Math.max(0, movingQuantity - event.deltaQuantity);
-                        }
-                        break;
-                    case 'RESERVE':
-                        // 예약 이벤트는 별도로 처리 (stocks 테이블에서 계산)
-                        break;
-                    case 'RELEASE':
-                        // 예약 해제 이벤트는 별도로 처리
-                        break;
+                    Object.assign(state, updates);
+                } else {
+                    this.logger.warn(`No rule found for event type: ${event.eventType}`);
+
+                    state.currentQuantity += event.deltaQuantity;
+                    state.availableQuantity += event.deltaQuantity;
                 }
             }
 
-
+            // 예약 수량은 stocks 테이블에서 별도 계산
             const activeStocks = await tx.query.stocks.findMany({
                 where: and(
                     eq(wmsTables.stocks.skuId, skuId),
@@ -151,7 +141,8 @@ export class StockSummaryRepository {
                 ),
             });
 
-            const reservedQuantity = activeStocks.reduce((sum, stock) => sum + stock.reservedQuantity, 0);
+            state.reservedQuantity = activeStocks.reduce((sum, stock) => sum + stock.reservedQuantity, 0);
+            state.availableQuantity = Math.max(0, state.currentQuantity - state.reservedQuantity);
 
             await tx.delete(wmsTables.stockSummary)
                 .where(and(
@@ -159,20 +150,13 @@ export class StockSummaryRepository {
                     eq(wmsTables.stockSummary.warehouseId, warehouseId)
                 ));
 
-            if (currentQuantity > 0 || events.length > 0) {
+            if (state.currentQuantity > 0 || events.length > 0) {
                 const lastEvent = events[events.length - 1];
 
                 await tx.insert(wmsTables.stockSummary).values({
                     skuId,
                     warehouseId,
-                    currentQuantity: Math.max(0, currentQuantity),
-                    availableQuantity: Math.max(0, currentQuantity - reservedQuantity),
-                    reservedQuantity: reservedQuantity,
-                    inboundPendingQuantity: inboundPendingQuantity,
-                    outboundPendingQuantity: outboundPendingQuantity,
-                    movingQuantity: movingQuantity,
-                    damageQuantity: damageQuantity,
-                    returnPendingQuantity: returnPendingQuantity,
+                    ...state,
                     lastEventId: lastEvent?.id,
                     version: 1,
                 });
@@ -263,148 +247,46 @@ export class StockSummaryRepository {
             ));
     }
 
-    // 재고 현황 업데이트 계산
-    private _calculateUpdate(existing: any, deltaQuantity: number, eventType: string) {
-        const update: any = {};
-
-        switch (eventType) {
-            // 입고 계열 (재고 증가)
-            case 'IN':
-            case 'IN_DOMESTIC':
-            case 'IN_OVERSEAS':
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                // 입고 대기 수량이 있다면 감소
-                break;
-
-            case 'IN_RETURN':
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                update.returnPendingQuantity = Math.max(0, existing.returnPendingQuantity - deltaQuantity);
-                break;
-
-            // 출고 계열 (재고 감소)
-            case 'OUT':
-            case 'OUT_ORDER':
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                // 출고 대기 수량이 있다면 감소
-                break;
-
-            case 'OUT_DAMAGE':
-            case 'OUT_LOSS':
-            case 'OUT_DISPOSAL':
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                update.damageQuantity = existing.damageQuantity + Math.abs(deltaQuantity);
-                break;
-
-            // 이동 계열
-            case 'MOVE_INTER_WAREHOUSE':
-                if (deltaQuantity < 0) {
-                    // 출고 창고
-                    update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                    update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                    update.movingQuantity = existing.movingQuantity + Math.abs(deltaQuantity);
-                } else {
-                    // 입고 창고
-                    update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                    update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                    update.movingQuantity = Math.max(0, existing.movingQuantity - deltaQuantity);
-                }
-                break;
-
-            // 조정 계열
-            case 'ADJUST':
-            case 'ADJUST_MANUAL':
-            case 'ADJUST_INVENTORY':
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                break;
-
-            // 예약 계열 (수량 변경 없음, 예약 수량만 변경)
-            case 'RESERVE':
-            case 'CONFIRM':
-            case 'RELEASE':
-                // 예약은 별도 메서드에서 처리 (reserveQuantity, releaseReservation)
-                update.currentQuantity = existing.currentQuantity;
-                update.availableQuantity = existing.availableQuantity;
-                break;
-
-            // 취소
-            case 'CANCEL':
-                // 반대 델타값이 이미 적용되어 있으므로 단순 업데이트
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-                break;
-
-            default:
-                this.logger.warn(`Unknown event type: ${eventType}`);
-                update.currentQuantity = existing.currentQuantity + deltaQuantity;
-                update.availableQuantity = existing.availableQuantity + deltaQuantity;
-        }
-
-        // 음수 방지
-        Object.keys(update).forEach(key => {
-            if (typeof update[key] === 'number' && update[key] < 0) {
-                this.logger.warn(`Negative value prevented for ${key}: ${update[key]}`);
-                update[key] = 0;
-            }
-        });
-
-        return update;
-    }
-
     // 새 재고 현황 생성
     private async _createNew(
         skuId: string,
         warehouseId: string,
         deltaQuantity: number,
-        eventType: string,
+        eventType: EventType,
         eventId: string,
         tx: any
     ) {
-        const initialData: any = {
-            skuId,
-            warehouseId,
-            currentQuantity: 0,
-            availableQuantity: 0,
-            reservedQuantity: 0,
-            inboundPendingQuantity: 0,
-            outboundPendingQuantity: 0,
-            movingQuantity: 0,
-            damageQuantity: 0,
-            returnPendingQuantity: 0,
-            lastEventId: eventId,
-            version: 1,
-        };
+        const initialState = createInitialState();
 
-        // 초기값 설정
-        switch (eventType) {
-            case 'IN':
-            case 'IN_DOMESTIC':
-            case 'IN_OVERSEAS':
-                initialData.currentQuantity = Math.max(0, deltaQuantity);
-                initialData.availableQuantity = Math.max(0, deltaQuantity);
-                break;
-            case 'RESERVE':
-                // 예약은 수량 변경 없이 예약 정보만 설정
-                initialData.reservedQuantity = deltaQuantity;
-                break;
-            default:
-                // 일반적으로 첫 이벤트가 음수인 경우는 없어야 함
-                if (deltaQuantity < 0) {
-                    this.logger.error(`First event has negative delta: ${deltaQuantity}`);
-                }
-                initialData.currentQuantity = Math.max(0, deltaQuantity);
-                initialData.availableQuantity = Math.max(0, deltaQuantity);
+        const rule = STOCK_RULES[eventType];
+        if (rule) {
+            const updates = applyRule(
+                {
+                    existing: initialState,
+                    delta: deltaQuantity,
+                    eventType
+                },
+                rule,
+                { onNegative: 'clamp' }
+            );
+            Object.assign(initialState, updates);
+        } else {
+            this.logger.warn(`No rule found for event type: ${eventType}, applying default`);
+            initialState.currentQuantity = Math.max(0, deltaQuantity);
+            initialState.availableQuantity = Math.max(0, deltaQuantity);
         }
 
-        await tx.insert(wmsTables.stockSummary).values(initialData);
+        await tx.insert(wmsTables.stockSummary).values({
+            skuId,
+            warehouseId,
+            ...initialState,
+            lastEventId: eventId,
+            version: 1,
+        });
 
         this.logger.debug(
             `Created new stock summary for SKU ${skuId} in warehouse ${warehouseId} ` +
-            `with initial quantity ${initialData.currentQuantity}`
+            `with initial quantity ${initialState.currentQuantity}`
         );
     }
 
