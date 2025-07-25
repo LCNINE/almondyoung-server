@@ -1,43 +1,16 @@
-import { AbstractEventBusModuleService } from '@medusajs/framework/utils';
-import { Message } from '@medusajs/types';
+import { EventPublisherService } from '@/shared/src/events/src';
+import { EventBusService as MedusaEventBus } from '@medusajs/framework';
 
-class EventModuleService extends AbstractEventBusModuleService {
-  protected groupedEventsMap_: Map<string, Message[]>;
-
-  constructor() {
-    // @ts-ignore
-    super(...arguments);
-
-    this.groupedEventsMap_ = new Map();
+export class KafkaBridgedEventBusService extends MedusaEventBus {
+  constructor(
+    private readonly kafka: EventPublisherService,
+    ...args: ConstructorParameters<typeof MedusaEventBus>
+  ) {
+    super(...args);
   }
 
-  async emit<T>(
-    data: Message<T> | Message<T>[],
-    options: Record<string, unknown>,
-  ): Promise<void> {
-    const events = Array.isArray(data) ? data : [data];
-
-    for (const event of events) {
-      console.log(`Received the event ${event.name} with data ${event.data}`);
-
-      // TODO push the event somewhere
-    }
-  }
-
-  async releaseGroupedEvents(eventGroupId: string): Promise<void> {
-    const groupedEvents = this.groupedEventsMap_.get(eventGroupId) || [];
-
-    for (const event of groupedEvents) {
-      const { options, ...eventBody } = event;
-
-      // TODO emit event
-    }
-
-    await this.clearGroupedEvents(eventGroupId);
-  }
-  async clearGroupedEvents(eventGroupId: string): Promise<void> {
-    this.groupedEventsMap_.delete(eventGroupId);
+  override async emit<T = unknown>(eventName: string, data: T): Promise<void> {
+    await super.emit(eventName, data); // 기존 이벤트도 메모리에 전달
+    await this.kafka.publishEvent(eventName as any, data as any); // 카프카에도 발행
   }
 }
-
-export default EventModuleService;
