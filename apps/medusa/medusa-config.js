@@ -30,21 +30,6 @@ module.exports = defineConfig({
           brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
           groupId: process.env.KAFKA_GROUP_ID || 'medusa-consumer',
         },
-        events: {
-          'order.created': {
-            topic: 'order.created',
-            payload: {
-              orderId: String,
-            },
-          },
-          'order.cancelled': {
-            topic: 'order.cancelled',
-            payload: {
-              orderId: String,
-            },
-          },
-        },
-        serviceName: 'medusa',
       },
     },
     {

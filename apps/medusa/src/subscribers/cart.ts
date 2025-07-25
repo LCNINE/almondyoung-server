@@ -1,19 +1,9 @@
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
-import { EventPublisherService } from '../../../../libs/events/src';
-import {
-  Events,
-  CART_EVENTS,
-} from '../../../../libs/shared/src/events/cart.events';
+import { CART_EVENTS } from '../../../../libs/shared/src/events/cart.events';
 import { container } from '@medusajs/framework';
 import { Modules } from '@medusajs/framework/utils';
-
-interface MedusaCartData {
-  name: string;
-  data: {
-    id: string;
-  };
-  metadata: Record<string, unknown>;
-}
+import EventModuleService from '../modules/events/service';
+import { EVENT_MODULE } from '../modules/events';
 
 export const config: SubscriberConfig = {
   event: ['cart.created', 'cart.updated'],
@@ -25,36 +15,40 @@ export const config: SubscriberConfig = {
 export default async function handler({
   event,
   container,
-}: SubscriberArgs<MedusaCartData>) {
-  const eventPublisher =
-    container.resolve<EventPublisherService<Events>>('eventPublisher');
+}: SubscriberArgs<{ id: string }>) {
+  const eventService = container.resolve<EventModuleService>(EVENT_MODULE);
 
-  console.log('eventPublisher:', eventPublisher);
-  // // Medusa 이벤트를 Kafka 이벤트로 변환
-  // const eventType = data.event.name;
-  // const eventData = data.event.data;
+  const eventName = event.name;
+  const cartId = event.data.id;
 
-  // const cartService = data.container.resolve(Modules.CART);
-  // const cart = await cartService.retrieveCart(data.event.data.id, {
-  //   relations: ['items'],
-  // });
+  // Cart 서비스로 상세 정보 조회
+  const cartService = container.resolve(Modules.CART);
 
-  // console.log('cart:', cart);
+  const cart = await cartService.retrieveCart(cartId, {
+    relations: ['items'],
+  });
 
-  // if (eventType === 'cart.created') {
-  //   await eventPublisher.publishEvent(CART_EVENTS.CART_CREATED.topic, {
-  //     id: eventData.id,
-  //     customer_id: eventData.customer_id,
-  //     region_id: eventData.region_id,
-  //     created_at: new Date().toISOString(),
-  //   });
-  // } else if (eventType === 'cart.updated') {
-  //   await eventPublisher.publishEvent(CART_EVENTS.CART_UPDATED.topic, {
-  //     id: eventData.id,
-  //     items: eventData.items,
-  //     total: eventData.total,
-  //     subtotal: eventData.subtotal,
-  //     updated_at: new Date().toISOString(),
-  //   });
-  // }
+  // Medusa 이벤트를 Kafka 이벤트로 변환
+  if (eventName === 'cart.created') {
+    await eventService.publishEvent(CART_EVENTS.CART_CREATED.topic, {
+      id: cart.id,
+      customer_id: cart.customer_id,
+      region_id: cart.region_id,
+      email: cart.email,
+      created_at: cart.created_at,
+    });
+  } else if (eventName === 'cart.updated') {
+    await eventService.publishEvent(CART_EVENTS.CART_UPDATED.topic, {
+      id: cart.id,
+      items:
+        cart.items?.map((item) => ({
+          id: item.id,
+          variant_id: item.variant_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price, // 상품 하나당 순수 가격
+        })) || [],
+
+      updated_at: cart.updated_at,
+    });
+  }
 }
