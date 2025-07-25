@@ -1,29 +1,49 @@
 import { defineWidgetConfig } from '@medusajs/admin-sdk';
-import { Button, Divider, Drawer, Input, Label, Text } from '@medusajs/ui';
-import { useState } from 'react';
+import {
+  Button,
+  Divider,
+  Drawer,
+  Input,
+  Label,
+  Text,
+  Checkbox,
+} from '@medusajs/ui';
+import { useState, useEffect } from 'react';
 import { sdk } from '../lib/sdk';
-
-interface Role {
-  role: {
-    name: string;
-  };
-}
 
 const USER_SERVICE_URL =
   import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:5000';
-const MEDUSA_URL = import.meta.env.VITE_MEDUSA_URL || 'http://localhost:9000';
+
+const STORAGE_KEY = 'almondyoung_saved_id';
 
 const SigninWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    // 저장된 아이디가 있다면 불러오기
+    const savedId = localStorage.getItem(STORAGE_KEY);
+    if (savedId) {
+      setLoginId(savedId);
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     try {
+      // 아이디 저장 처리
+      if (rememberMe) {
+        localStorage.setItem(STORAGE_KEY, loginId);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+
       // 1. user-service 로그인
       const loginResponse = await fetch(`${USER_SERVICE_URL}/auth/signin`, {
         method: 'POST',
@@ -56,7 +76,7 @@ const SigninWidget = () => {
 
       const { data: userData } = await userResponse.json();
 
-      const result = await sdk.auth.login('user', 'my-auth', {
+      await sdk.auth.login('user', 'my-auth', {
         email: userData?.email,
         password,
       });
@@ -118,6 +138,19 @@ const SigninWidget = () => {
                   placeholder="비밀번호를 입력하세요"
                   required
                 />
+              </div>
+
+              <div className="flex items-center">
+                <Checkbox
+                  checked={rememberMe}
+                  onCheckedChange={(checked) =>
+                    setRememberMe(checked as boolean)
+                  }
+                  id="remember-me"
+                />
+                <Label htmlFor="remember-me" className="ml-2 cursor-pointer">
+                  아이디 저장
+                </Label>
               </div>
 
               <Button type="submit" variant="primary" className="w-full mt-4">
