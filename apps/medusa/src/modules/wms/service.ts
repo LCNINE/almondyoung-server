@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { GetStockResponse, Sku } from '../../types/wms';
+import { MedusaError } from '@medusajs/framework/utils';
 
 type ModuleOptions = {
   apiKey: string;
@@ -25,14 +26,36 @@ export class WmsModuleService {
   // SKU 정보 조회
   async getSkuById(skuId: string): Promise<Sku> {
     try {
+      console.log('[WMS] SKU 조회 시작:', skuId);
+
       const skuInfo = await this.client.get<Sku>(
         `/wms/inventory/skus/${skuId}`,
       );
 
+      console.log('[WMS] SKU 조회 성공:', skuInfo.data);
       return skuInfo.data;
     } catch (error) {
-      console.error('SKU 정보 조회 중 오류 발생:', error);
-      throw new Error('SKU 정보 조회에 실패했습니다.');
+      // axios 에러인 경우
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 404) {
+          throw new MedusaError(
+            MedusaError.Types.NOT_FOUND,
+            error.response.data?.message || `SKU(${skuId})를 찾을 수 없습니다.`,
+          );
+        }
+
+        // 다른 HTTP 에러
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          error.response?.data?.message ||
+            `WMS 오류: ${error.response?.status}`,
+        );
+      }
+
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        error?.message || '재고 확인 중 오류가 발생했습니다.',
+      );
     }
   }
 
@@ -48,13 +71,11 @@ export class WmsModuleService {
           },
         },
       );
-
-      console.log('재고조회:', response);
-
       return response.data;
-    } catch (error) {
-      console.error('WMS 재고 조회 중 오류 발생:', error);
-      throw new Error('재고 조회에 실패했습니다.');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message || '재고 조회에 실패했습니다.';
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, message);
     }
   }
 
@@ -62,32 +83,46 @@ export class WmsModuleService {
     skuId: string,
     requestedQuantity: number,
   ): Promise<boolean> {
-    // 1SKU 정보 조회
-    const skuInfo = await this.getSkuById(skuId);
+    try {
+      console.log('[WMS] 재고 확인 시작:', { skuId, requestedQuantity });
 
-    // 재고 관리 대상인지 확인
-    if (!skuInfo.inventoryManagement) {
-      return true; // 재고 관리 안하는 상품은 수량 제한 없음
+      const skuInfo = await this.getSkuById(skuId);
+
+      if (!skuInfo.inventoryManagement) {
+        console.log('[WMS] 재고 관리 대상 아님');
+        return true;
+      }
+
+      if (skuInfo.alwaysSellableZeroStock) {
+        console.log('[WMS] 항상 판매 가능 설정됨');
+        return true;
+      }
+
+      const stocks = await this.getCurrentStock({ skuId });
+      const totalAvailable = stocks.reduce(
+        (sum, stock) => sum + stock.availableQuantity,
+        0,
+      );
+
+      console.log('[WMS] 재고 확인 결과:', {
+        totalAvailable,
+        requestedQuantity,
+        preStockSellable: skuInfo.preStockSellable,
+      });
+
+      if (totalAvailable === 0) {
+        return skuInfo.preStockSellable;
+      }
+
+      return totalAvailable >= requestedQuantity;
+    } catch (error) {
+      if (error instanceof MedusaError) {
+        throw error;
+      }
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        error.message || '재고 확인 중 오류가 발생했습니다.',
+      );
     }
-
-    //  무재고 판매 가능 상품인지 확인
-    if (skuInfo.alwaysSellableZeroStock) {
-      return true; // 직배송/신상품 등 재고와 무관하게 판매 가능
-    }
-
-    // 실제 재고 확인
-    const stocks = await this.getCurrentStock({ skuId });
-    const totalAvailable = stocks.reduce(
-      (sum, stock) => sum + stock.availableQuantity,
-      0,
-    );
-
-    // 재고가 없는 경우
-    if (totalAvailable === 0) {
-      return skuInfo.preStockSellable; // 선판매 가능 여부에 따라 결정
-    }
-
-    // 요청 수량과 재고 수량 비교
-    return totalAvailable >= requestedQuantity;
   }
 }
