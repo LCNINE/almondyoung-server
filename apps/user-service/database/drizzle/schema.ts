@@ -233,7 +233,6 @@ export const shops = pgTable('shops', {
   yearsOperating: integer('years_operating'),
   shopType: shopTypeEnum('shop_type').notNull(),
   categories: jsonb('categories').notNull(),
-  customCategory: jsonb('custom_category'),
   targetCustomers: jsonb('target_customers'),
   openDays: jsonb('open_days'),
   ...timestampColumns,
