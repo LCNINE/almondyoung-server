@@ -7,12 +7,38 @@ import {
   AddToCartWorkflowInputDTO,
   CreateCartWorkflowInputDTO,
 } from '@medusajs/framework/types';
+import { Modules } from '@medusajs/framework/utils';
 
 type CartInput = CreateCartWorkflowInputDTO | AddToCartWorkflowInputDTO;
 
-const validateInventory = async ({ input }, { container }) => {
-  console.log('input', input);
-  // await validateInventoryForItems(input, container);
+type ValidItem = {
+  variant_id: string;
+  quantity: number;
+}[];
+
+const validateInventory = async (
+  { input }: { input: CartInput },
+  { container },
+) => {
+  if (input.items?.length) {
+    const validItems = input.items as ValidItem;
+
+    if (validItems.length) {
+      const productModuleService = container.resolve(Modules.PRODUCT);
+
+      const variants = await productModuleService.listProductVariants(
+        {
+          id: validItems.map((item) => item.variant_id),
+        },
+        { relations: ['product'] },
+      );
+
+      await validateInventoryForItems(
+        { items: validItems, variants },
+        container,
+      );
+    }
+  }
 };
 
 // 장바구니 생성 시 재고 검증
