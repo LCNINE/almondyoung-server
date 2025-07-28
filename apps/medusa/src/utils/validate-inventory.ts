@@ -1,13 +1,19 @@
 import { MedusaError } from '@medusajs/framework/utils';
-import { Modules } from '@medusajs/framework/utils';
 import { WMS_MODULE } from '../modules/wms';
 import { WmsModuleService } from '../modules/wms/service';
 
 export type ValidateInventoryInput = {
-  items: Array<{
+  items: {
     variant_id: string;
     quantity: number;
-  }>;
+  }[];
+  variants: {
+    id: string;
+    sku: string;
+    product?: {
+      title: string;
+    };
+  }[];
 };
 
 export const validateInventoryForItems = async (
@@ -15,23 +21,13 @@ export const validateInventoryForItems = async (
   container: any,
 ) => {
   const wmsService: WmsModuleService = container.resolve(WMS_MODULE);
-  const productModuleService = container.resolve(Modules.PRODUCT);
 
-  const variants = await productModuleService.listProductVariants(
-    {
-      id: input.items
-        ?.map((item) => item.variant_id)
-        .filter(Boolean) as string[],
-    },
-    { relations: ['product'] },
-  );
-
-  if (!variants?.length) return;
+  if (!input.variants?.length) return;
 
   const errors: MedusaError[] = [];
 
   await Promise.all(
-    variants.map(async (variant) => {
+    input.variants.map(async (variant) => {
       const item = input.items.find((i) => i.variant_id === variant.id)!;
       const skuId = variant.sku;
       const productName = variant.product?.title || variant.id;
