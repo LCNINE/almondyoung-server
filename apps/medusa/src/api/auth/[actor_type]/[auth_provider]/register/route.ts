@@ -4,13 +4,20 @@ import { AuthenticationInput } from '@medusajs/framework/types';
 import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflows/register-customer-workflow';
 import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
 
+type RegisterCustomerInput = {
+  almond_user_id: string;
+  email: string;
+  first_name?: string;
+  last_name?: string;
+};
+
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     const { actor_type, auth_provider } = req.params;
 
     // actor_type이 customer인 경우
     if (actor_type === 'customer') {
-      const body = req.body as any;
+      const body = req.body as RegisterCustomerInput;
 
       const { result } = await registerCustomerWorkflow(req.scope).run({
         input: {
@@ -22,10 +29,14 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
             body: req.body as Record<string, string>,
             protocol: req.protocol,
           } as AuthenticationInput,
+
           customerData: {
-            email: body.email || body.user_id,
+            email: body.email,
             first_name: body.first_name || '',
             last_name: body.last_name || '',
+            metadata: {
+              almond_user_id: body.almond_user_id,
+            },
           },
         },
       });
