@@ -1,6 +1,6 @@
+import { MedusaError } from '@medusajs/framework/utils';
 import axios, { AxiosInstance } from 'axios';
 import { GetStockResponse, Sku } from '../../types/wms';
-import { MedusaError } from '@medusajs/framework/utils';
 
 type ModuleOptions = {
   apiKey: string;

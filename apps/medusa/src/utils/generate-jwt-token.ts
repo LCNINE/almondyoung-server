@@ -26,6 +26,8 @@ export function generateJwtTokenForAuthIdentity(
     | string
     | undefined;
 
+  console.log('entityId:', entityId);
+
   const token = generateJwtToken(
     {
       actor_id: entityId ?? '',
