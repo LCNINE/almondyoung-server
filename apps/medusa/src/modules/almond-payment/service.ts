@@ -32,7 +32,7 @@ import {
  * ======================================================
  */
 class PaymentDataTranslator {
-    // 새로운 authorize API를 위한 변환 메서드
+    // Medusa → 기존 서비스 데이터 변환 메서드
     static medusaToAuthorizePaymentDto(input: AuthorizePaymentInput): any {
         const sessionData = input.data || {};
         const invoiceId = sessionData.invoiceId as string;
@@ -42,47 +42,61 @@ class PaymentDataTranslator {
             throw new Error("Payment Session에 필수 정보(invoiceId)가 없습니다.");
         }
 
-        // 새로운 AuthorizePaymentDto 구조로 변환
+        // 깔끔한 AuthorizePaymentDto 구조로 변환
         const result: any = {
             invoiceId: invoiceId,
         };
 
-        // paymentEventId가 있으면 단일 결제수단으로 처리
-        if (paymentEventId) {
-            result.paymentMethodId = paymentEventId;
-        }
-
-        // 추가 결제 정보가 있으면 포함
+        // 결제 수단 정보가 있으면 포함
         if (sessionData.paymentMethods) {
             result.paymentMethods = sessionData.paymentMethods;
-        }
-
-        if (sessionData.pointAmount) {
+        } else if (sessionData.pointAmount) {
             result.pointAmount = sessionData.pointAmount;
+        } else if (paymentEventId) {
+            // 기본적으로 단일 결제수단으로 처리
+            result.paymentMethodId = paymentEventId;
         }
 
         return result;
     }
 
-    // 하위 호환성을 위한 기존 메서드 (deprecated)
-    static medusaToProcessPaymentDto(input: AuthorizePaymentInput): ProcessPaymentDto {
-        const sessionData = input.data || {};
-        const invoiceId = sessionData.invoiceId as string;
-        const invoiceSessionId = sessionData.invoiceSessionId as string;
+    // Medusa → 캡처 요청 변환
+    static medusaToCapturePaymentDto(input: CapturePaymentInput): any {
+        const paymentEventId = input.data?.paymentEventId as string;
+        const amount = (input.data as any)?.amount;
 
-        if (!invoiceId || !invoiceSessionId) {
-            throw new Error("Payment Session에 필수 정보(invoiceId, invoiceSessionId)가 없습니다.");
+        if (!paymentEventId) {
+            throw new Error("PaymentEvent ID가 필요합니다.");
+        }
+
+        const result: any = {
+            paymentEventId: paymentEventId,
+        };
+
+        if (amount) {
+            result.amount = amount;
+        }
+
+        return result;
+    }
+
+    // Medusa → 환불 요청 변환
+    static medusaToRefundRequest(input: RefundPaymentInput): any {
+        const paymentEventId = input.data?.paymentEventId as string;
+
+        if (!paymentEventId) {
+            throw new Error("PaymentEvent ID가 필요합니다.");
         }
 
         return {
-            invoiceId,
-            invoiceSessionId,
-            payments: sessionData.payments as any || [{
-                methodType: 'BNPL',
-                paymentMethodId: sessionData.paymentMethodId as string,
-            }],
+            paymentEventId: paymentEventId,
+            amount: input.amount,
+            reason: "Refund initiated from Medusa"
         };
     }
+
+    // 하위 호환성을 위한 기존 메서드 (deprecated) - 제거됨
+    // 새로운 깔끔한 구조로 완전히 전환
 
     static paymentResultToMedusaAuthorize(result: any): AuthorizePaymentOutput {
         // 새로운 API 응답 구조 처리
@@ -132,14 +146,12 @@ class PaymentDataTranslator {
  */
 class AlmondApiClient {
     private readonly endpoint: string;
-    private readonly apiKey: string;
     private readonly timeout: number;
     private readonly logger: any;
 
-    constructor(options: { endpoint: string; apiKey: string; timeout?: number; logger: any; }) {
+    constructor(options: { endpoint: string; logger: any; }) {
         this.endpoint = options.endpoint.replace(/\/$/, '');
-        this.apiKey = options.apiKey;
-        this.timeout = options.timeout || 30000;
+        this.timeout = 30000; // 기본 타임아웃
         this.logger = options.logger;
     }
 
@@ -154,8 +166,8 @@ class AlmondApiClient {
             const response = await fetch(url, {
                 method,
                 headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
+                    // API 키 인증 제거 - 우리 시스템에서는 불필요
                 },
                 body: body ? JSON.stringify(body) : undefined,
                 signal: controller.signal,
@@ -298,7 +310,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPayment
     }
 
     // 추후 웹훅 구현할것
-    static identifier = "almond-payment-provider";
+    static identifier = "almond-payment";
 
     protected readonly logger_: any;
     protected readonly options_: AlmondPaymentOptions;
@@ -312,32 +324,42 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPayment
     }
 
     async initiatePayment(input: InitiatePaymentInput): Promise<InitiatePaymentOutput> {
-        const invoiceId = (input.context as any)?.cart_id;
-        if (!invoiceId) {
-            throw new Error("Context에 cart_id (invoiceId)가 없습니다.");
-        }
+        // cart_id 대신 결제에 실제 필요한 정보만 추출
+        const { amount, currency_code } = input;
+        const customerId = (input.context as any)?.customer_id;
 
-        this.logger_.info(`[initiatePayment] 결제 세션 생성 시작: invoiceId=${invoiceId}`);
+        this.logger_.info(`[initiatePayment] 새로운 결제 세션 생성: ${amount} ${currency_code || 'KRW'}`);
 
         try {
-            // 기존 결제 서비스에서 PaymentEvent를 생성하여 세션 역할로 사용
-            // invoiceSessionId 대신 PaymentEvent ID를 직접 사용하여 단순화
+            // 1. Wallet 서비스에서 새로운 Invoice 생성 (cart_id 없이)
+            const createInvoicePayload = {
+                amount: amount,
+                currency: currency_code || 'KRW',
+                userId: customerId,
+                metadata: {
+                    source: 'MEDUSA'
+                }
+            };
+
+            const invoiceResponse = await this.apiClient_.post('/invoices', createInvoicePayload);
+            const invoiceId = invoiceResponse.invoiceId;
+
+            // 2. 생성된 Invoice에 대한 결제 세션 생성
             const sessionResponse = await this.apiClient_.post(`/invoices/${invoiceId}/create-session`);
+            const paymentEventId = sessionResponse.paymentEventId;
 
-            // PaymentEvent ID를 세션 ID로 사용 (invoiceSessionId 제거)
-            const paymentEventId = sessionResponse.paymentEventId || sessionResponse.invoiceSessionId;
-
-            this.logger_.info(`[initiatePayment] 결제 세션 생성 완료: paymentEventId=${paymentEventId}`);
+            this.logger_.info(`[initiatePayment] Invoice ${invoiceId}, PaymentEvent ${paymentEventId} 생성 완료`);
 
             return {
                 id: paymentEventId, // Medusa PaymentSession의 고유 ID
-                data: { // 다음 단계로 전달할 데이터 (단순화)
-                    invoiceId: invoiceId,
-                    paymentEventId: paymentEventId,
+                data: {
+                    invoiceId: invoiceId,           // Wallet에서 생성한 실제 Invoice ID
+                    paymentEventId: paymentEventId
+                    // cart_id 완전히 제거
                 }
             };
         } catch (error) {
-            this.logger_.error(`[initiatePayment] 결제 세션 생성 실패: invoiceId=${invoiceId}`, error);
+            this.logger_.error(`[initiatePayment] Invoice 생성 실패: amount=${amount}`, error);
             throw new Error(`결제 세션 생성에 실패했습니다: ${error.message}`);
         }
     }
@@ -365,21 +387,11 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPayment
     }
 
     async capturePayment(input: CapturePaymentInput): Promise<CapturePaymentOutput> {
-        const paymentEventId = input.data?.paymentEventId as string;
-        // CapturePaymentInput에는 amount 속성이 없으므로 data에서 가져오거나 생략
-        const amount = (input.data as any)?.amount;
-
-        this.logger_.info(`[capturePayment] 결제 캡처 시작: paymentEventId=${paymentEventId}, amount=${amount}`);
+        this.logger_.info(`[capturePayment] 결제 캡처 시작: ${JSON.stringify(input.data)}`);
 
         try {
-            // 실제 캡처 API 호출
-            const capturePayload: any = {
-                paymentEventId: paymentEventId,
-            };
-
-            if (amount) {
-                capturePayload.amount = amount;
-            }
+            // 새로운 데이터 변환 메서드 사용
+            const capturePayload = PaymentDataTranslator.medusaToCapturePaymentDto(input);
 
             const result = await this.apiClient_.post('/payments/capture', capturePayload);
 
@@ -399,7 +411,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPayment
 
             throw new Error("Capture response format is invalid");
         } catch (error) {
-            this.logger_.error(`[capturePayment] 결제 캡처 실패: paymentEventId=${paymentEventId}`, error);
+            this.logger_.error(`[capturePayment] 결제 캡처 실패: ${error.message}`, error);
             throw error;
         }
     }
@@ -413,26 +425,72 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPayment
     }
 
     async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
-        const paymentEventId = input.data?.paymentEventId as string;
-        const payload = {
-            paymentEventId,
-            amount: input.amount,
-            reason: "Refund initiated from Medusa"
-        };
-        const result = await this.apiClient_.post('/refunds', payload);
-        return { data: { id: input.data?.id, ...result } };
+        this.logger_.info(`[refundPayment] 환불 처리 시작: ${JSON.stringify(input.data)}`);
+
+        try {
+            // 새로운 데이터 변환 메서드 사용
+            const refundPayload = PaymentDataTranslator.medusaToRefundRequest(input);
+
+            const result = await this.apiClient_.post('/refunds', refundPayload);
+
+            this.logger_.info(`[refundPayment] 환불 처리 완료: ${refundPayload.paymentEventId}`);
+
+            return {
+                data: {
+                    id: input.data?.id,
+                    ...result
+                }
+            };
+        } catch (error) {
+            this.logger_.error(`[refundPayment] 환불 처리 실패: ${error.message}`, error);
+            throw error;
+        }
     }
 
     async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
         const paymentEventId = input.data?.paymentEventId as string;
-        const result = await this.apiClient_.post(`/payments/${paymentEventId}/cancel`, { reason: "Cancelled from Medusa" });
-        return { data: { id: input.data?.id, ...result } };
+
+        this.logger_.info(`[cancelPayment] 결제 취소 시작: paymentEventId=${paymentEventId}`);
+
+        try {
+            const result = await this.apiClient_.post(`/payments/${paymentEventId}/cancel`, {
+                reason: "Cancelled from Medusa"
+            });
+
+            this.logger_.info(`[cancelPayment] 결제 취소 완료: paymentEventId=${paymentEventId}`);
+
+            return {
+                data: {
+                    id: input.data?.id,
+                    ...result
+                }
+            };
+        } catch (error) {
+            this.logger_.error(`[cancelPayment] 결제 취소 실패: paymentEventId=${paymentEventId}`, error);
+            throw error;
+        }
     }
 
     async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {
         const paymentEventId = input.data?.paymentEventId as string;
-        const result = await this.apiClient_.get(`/payments/events/${paymentEventId}`);
-        return { data: { id: input.data?.id, ...result.data } };
+
+        this.logger_.info(`[retrievePayment] 결제 정보 조회: paymentEventId=${paymentEventId}`);
+
+        try {
+            const result = await this.apiClient_.get(`/payments/events/${paymentEventId}`);
+
+            this.logger_.info(`[retrievePayment] 결제 정보 조회 완료: paymentEventId=${paymentEventId}`);
+
+            return {
+                data: {
+                    id: input.data?.id,
+                    ...result.data
+                }
+            };
+        } catch (error) {
+            this.logger_.error(`[retrievePayment] 결제 정보 조회 실패: paymentEventId=${paymentEventId}`, error);
+            throw error;
+        }
     }
 
     async updatePayment(input: UpdatePaymentInput): Promise<UpdatePaymentOutput> {
