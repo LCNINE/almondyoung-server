@@ -1,7 +1,7 @@
 // 아몬드 결제 시스템과의 연동을 위한 타입 정의
 
 export interface AlmondPaymentOptions {
-  endpoint: string;         // 기존 서비스 엔드포인트 URL
+  apiKey: string; // 기존 서비스 엔드포인트 URL
   // API 키나 timeout 등은 우리 시스템에서 불필요
 }
 
