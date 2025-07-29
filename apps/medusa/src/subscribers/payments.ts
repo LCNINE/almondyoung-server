@@ -36,13 +36,18 @@ export default async function handler({
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data: paymentCollections } = await query.graph({
     entity: 'payment_collection',
-    fields: ['order.*'],
+    fields: [
+      'order.*',
+      'amount',
+      'currency_code',
+      'created_at',
+      'refunded_amount',
+    ],
     filters: { id: paymentCollection.id },
   });
 
   const orderId = paymentCollections[0]?.order?.id ?? null;
 
-  // TODO 잘 조회되는지 확인 필요
   console.log('paymentCollections', paymentCollections);
 
   // 결제 포착 시 발행
@@ -56,7 +61,7 @@ export default async function handler({
     });
   }
 
-  // 환불 완료 시 발행
+  // 환불 완료 시 발행 : TODO 확인 필요
   if (name === 'payment.refunded') {
     await eventService.publishEvent('payment.refunded', {
       order_id: orderId,

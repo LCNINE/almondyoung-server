@@ -6,6 +6,8 @@ import { Modules } from '@medusajs/framework/utils';
 import EventModuleService from '../modules/events/service';
 import { ORDER_EVENTS } from '../../../../libs/shared/src/events/order.events';
 import { EVENT_MODULE } from '../modules/events';
+import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 
 export const config: SubscriberConfig = {
   event: [
@@ -31,8 +33,6 @@ export default async function handler({
     order = await orderService.retrieveOrder(data.id, {
       relations: ['items'],
     });
-
-    console.log('order', order); // TODO 잘 조회되는지 확인 필요
   }
 
   // 주문 취소 및 반품 요청시 발생
@@ -53,23 +53,21 @@ export default async function handler({
     });
   }
 
-  // 주문 취소 시 발생 :TODO 리턴 잘 되는지 확인 필요
+  // 주문 취소 시 발생
   if (name === 'order.canceled') {
     await eventService.publishEvent('order.canceled', {
       order_id: order.id,
       canceled_at: order.canceled_at,
-      reason: order.reason,
     });
   }
 
-  // 반품 요청 시 발생 :TODO 리턴 잘 되는지 확인 필요
+  // 반품 요청 시 발생
   if (name === 'order.return_requested') {
     await eventService.publishEvent('order.return_requested', {
       order_id: order.id,
       return_id: order.return_id,
       items: order.items,
-      return_reason: order.return_reason,
-      requested_at: order.requested_at,
+      requested_at: format(new Date(), 'yyyy-MM-dd HH:mm:ss', { locale: ko }),
     });
   }
 }
