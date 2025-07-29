@@ -18,6 +18,10 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
+    // 개발 환경에서 API 키 검증 비활성화 (테스트용)
+    ...(process.env.NODE_ENV === 'development' && {
+      apiKeyAuthentication: false,
+    }),
   },
   presets: [require('@medusajs/ui-preset')],
 
@@ -70,6 +74,21 @@ module.exports = defineConfig({
       resolve: './src/modules/wms',
       options: {
         apiKey: process.env.WMS_SERVICE_URL,
+      },
+    },
+    {
+      resolve: '@medusajs/medusa/payment',
+      options: {
+        providers: [
+          {
+            resolve: './src/modules/almond-payment',
+            id: 'almond-payment',
+            options: {
+              apiKey:"",
+           
+            },
+          },
+        ],
       },
     },
   ],
