@@ -1,11 +1,8 @@
 // 아몬드 결제 시스템과의 연동을 위한 타입 정의
 
 export interface AlmondPaymentOptions {
-  apiKey: string;           // 기존 서비스 API 키
   endpoint: string;         // 기존 서비스 엔드포인트 URL
-  timeout?: number;         // HTTP 요청 타임아웃 (기본: 30초)
-  retryAttempts?: number;   // 재시도 횟수 (기본: 3회)
-  logLevel?: 'debug' | 'info' | 'warn' | 'error';
+  // API 키나 timeout 등은 우리 시스템에서 불필요
 }
 
 export interface PaymentDetailDto {

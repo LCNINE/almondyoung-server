@@ -1,6 +1,6 @@
 import AlmondPaymentProviderService from "./service"
-import { ModuleProvider, Modules } from "@medusajs/framework/utils"
-
-export default ModuleProvider(Modules.PAYMENT, {
+import { ModuleProvider,} from "@medusajs/framework/utils"
+export const ALMOND_PAYMENT_MODULE = "almond-payment"
+export default ModuleProvider(ALMOND_PAYMENT_MODULE, {
   services: [AlmondPaymentProviderService],
 })
