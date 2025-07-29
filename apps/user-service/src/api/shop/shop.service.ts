@@ -28,7 +28,6 @@ export class ShopService {
       userId: user.id,
       shopType: createShopDto.shopType,
       categories: createShopDto.categories,
-      customCategory: createShopDto.customCategory,
       targetCustomers: createShopDto.targetCustomers,
       openDays: createShopDto.openDays,
       isOperating: createShopDto.isOperating,
@@ -54,7 +53,6 @@ export class ShopService {
       .set({
         shopType: updateShopDto.shopType,
         categories: updateShopDto.categories,
-        customCategory: updateShopDto.customCategory,
         targetCustomers: updateShopDto.targetCustomers,
         openDays: updateShopDto.openDays,
       })

@@ -1,6 +1,5 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
-import { storeRouteMiddlewares } from './store/middleware';
 
 export default defineMiddlewares({
   routes: [
@@ -10,6 +9,5 @@ export default defineMiddlewares({
       middlewares: [authenticate('*', 'bearer', { allowUnregistered: true })],
     },
     ...adminRouteMiddlewares,
-    ...storeRouteMiddlewares,
   ],
 });
