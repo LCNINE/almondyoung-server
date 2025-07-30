@@ -16,7 +16,7 @@ type ValidItem = {
   quantity: number;
 }[];
 
-const handleCartInventoryValidation = async (
+const handleValidateCartItemsInventory = async (
   { input }: { input: CartInput },
   { container },
 ) => {
@@ -42,7 +42,7 @@ const handleCartInventoryValidation = async (
 };
 
 // 장바구니 생성 시 재고 검증
-createCartWorkflow.hooks.validate(handleCartInventoryValidation);
+createCartWorkflow.hooks.validate(handleValidateCartItemsInventory);
 
 // 장바구니에 상품 추가 시 재고 검증
-addToCartWorkflow.hooks.validate(handleCartInventoryValidation);
+addToCartWorkflow.hooks.validate(handleValidateCartItemsInventory);
