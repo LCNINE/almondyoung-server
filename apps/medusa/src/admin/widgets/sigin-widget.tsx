@@ -1,13 +1,5 @@
 import { defineWidgetConfig } from '@medusajs/admin-sdk';
-import {
-  Button,
-  Divider,
-  Drawer,
-  Input,
-  Label,
-  Text,
-  Checkbox,
-} from '@medusajs/ui';
+import { Button, Drawer, Input, Label, Text, Checkbox } from '@medusajs/ui';
 import { useState, useEffect } from 'react';
 import { sdk } from '../lib/sdk';
 
@@ -98,7 +90,7 @@ const SigninWidget = () => {
         아몬드영 관리자 계정으로 로그인
       </Button>
 
-      <Divider />
+      <hr className="my-4 border-gray-200" />
 
       <Drawer open={isOpen} onOpenChange={setIsOpen}>
         <Drawer.Content>
