@@ -1,8 +1,15 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { MedusaError } from '@medusajs/framework/utils';
+import {
+  AuthenticatedMedusaRequest,
+  MedusaRequest,
+  MedusaResponse,
+} from '@medusajs/framework/http';
+import {
+  ContainerRegistrationKeys,
+  MedusaError,
+} from '@medusajs/framework/utils';
 import { AuthenticationInput } from '@medusajs/framework/types';
-import { registerCustomerWorkflow } from '../../../../../workflows/auth/workflows/register-customer-workflow';
-import { registerUserWorkflow } from '../../../../../workflows/auth/workflows/register-user-workflow';
+import { registerCustomerWorkflow } from '@workflows/auth/workflows/register-customer-workflow';
+import { registerUserWorkflow } from '@workflows/auth/workflows/register-user-workflow';
 
 type RegisterCustomerInput = {
   almond_user_id: string;

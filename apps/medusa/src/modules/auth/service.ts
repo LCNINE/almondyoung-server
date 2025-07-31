@@ -1,4 +1,4 @@
-import { USER_SCOPES } from '@/roles/src';
+import { USER_SCOPES } from '@libs/roles/src';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -8,7 +8,7 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import CustomUserModuleService from '../custom-user/service';
+import CustomUserModuleService from '@modules/custom-user/service';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
