@@ -159,7 +159,8 @@ export default class EventModuleService extends MedusaService({}) {
   }
 
   /**
-   * 외부 시스템의 Kafka 이벤트 구독 설정
+   * 외부 Kafka 발행 이벤트를 구독하고,
+   * Medusa 내부 이벤트 버스로 변환하여 전달합니다.
    */
   private async setupExternalSubscriptions() {
     console.log('🔌 Setting up external Kafka subscriptions...');
@@ -175,7 +176,7 @@ export default class EventModuleService extends MedusaService({}) {
         const message = JSON.parse(payload.message.value.toString());
         console.log('💰 Received payment.refunded:', message);
 
-        // 외부에서 받은 데이터 구조: { refundId, data, completedAt }
+        // 외부에서 받은 데이터 구조
         const { refundId, data, completedAt } = message;
 
         // Medusa 내부 이벤트 버스로 변환
@@ -200,7 +201,6 @@ export default class EventModuleService extends MedusaService({}) {
           }
         } catch (err) {
           console.log('EventBus not available yet, processing directly');
-          // EventBus를 사용할 수 없으면 직접 처리
         }
       } catch (error) {
         console.error('Error processing payment.refunded:', error);

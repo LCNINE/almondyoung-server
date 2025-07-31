@@ -2,7 +2,7 @@ import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 /**
- * 외부 Kafka에서 수신한 payment.refunded 이벤트를 처리
+ * 외부 Kafka에서 수신한 payment.refunded 이벤트를 메두사가 내부적으로 처리
  */
 export default async function handlePaymentRefundReceived({
   event,

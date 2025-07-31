@@ -1,8 +1,9 @@
 import { DbService, InjectDb } from '@app/db';
+import { EventPublisherService, InjectEventPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/events/user.events';
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -22,11 +23,6 @@ import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 import { SocialSignUpDto } from './dto/social-sign-up.dto';
-import {
-  EventPublisherService,
-  InjectEventPublisher,
-} from '@app/shared/events/src';
-import { UserEvents } from '@app/shared/events/user.events';
 
 @Injectable()
 export class AuthService {

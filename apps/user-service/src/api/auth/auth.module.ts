@@ -1,5 +1,5 @@
 import { DbModule } from '@app/db';
-import { EventsModule } from '@app/shared/events/src';
+import { EventsModule } from '@app/events';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';

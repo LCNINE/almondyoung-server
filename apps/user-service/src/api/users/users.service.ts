@@ -1,8 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import {
-  EventPublisherService,
-  InjectEventPublisher,
-} from '@app/shared/events/src';
+import { EventPublisherService, InjectEventPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/events/user.events';
 import {
   BadRequestException,
@@ -12,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
-import { User } from '../../../database/drizzle/schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
