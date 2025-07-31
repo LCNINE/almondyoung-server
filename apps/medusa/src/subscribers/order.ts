@@ -43,7 +43,7 @@ export default async function handler({
 
   // 주문 생성 시 발생
   if (name === 'order.placed') {
-    await eventService.publishEvent('order.created', {
+    await eventService.publishEvent(ORDER_EVENTS.ORDER_CREATED.topic, {
       orderId: order.id,
       orderTotal: order.total,
       orderStatus: order.status,
@@ -52,7 +52,7 @@ export default async function handler({
 
   // 주문 취소 시 발생
   if (name === 'order.canceled') {
-    await eventService.publishEvent('order.canceled', {
+    await eventService.publishEvent(ORDER_EVENTS.ORDER_CANCELLED.topic, {
       order_id: order.id,
       canceled_at: order.canceled_at,
     });
@@ -60,7 +60,7 @@ export default async function handler({
 
   // 반품 요청 시 발생
   if (name === 'order.return_requested') {
-    await eventService.publishEvent('order.return_requested', {
+    await eventService.publishEvent(ORDER_EVENTS.ORDER_RETURN_REQUESTED.topic, {
       order_id: order.id,
       return_id: order.return_id,
       items: order.items,

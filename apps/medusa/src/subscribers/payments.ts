@@ -9,6 +9,7 @@ import {
 } from '@medusajs/framework/utils';
 import { EVENT_MODULE } from '../modules/events';
 import EventModuleService from '../modules/events/service';
+import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
 
 export const config: SubscriberConfig = {
   event: [
@@ -56,7 +57,7 @@ export default async function handler({
 
   // 결제 포착 시 발행
   if (name === 'payment.captured') {
-    await eventService.publishEvent('payment.captured', {
+    await eventService.publishEvent(PAYMENT_EVENTS.PAYMENT_CAPTURED.topic, {
       order_id: orderId,
       payment_id: payment.id,
       amount: payment.amount,
