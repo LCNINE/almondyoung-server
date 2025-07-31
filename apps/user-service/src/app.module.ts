@@ -1,8 +1,9 @@
 import { DbModule } from '@app/db';
-import { createKafkaConfigFromEnv, EventsModule } from '@app/shared/events/src';
+import { EventsModule } from '@app/events';
+import { createKafkaConfigFromEnv } from '@app/events/types';
 import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { userSchema } from '../database/drizzle/schema';
