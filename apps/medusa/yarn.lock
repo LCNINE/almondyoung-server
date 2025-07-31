@@ -8919,6 +8919,18 @@ media-typer@0.3.0:
   resolved "https://registry.npmjs.org/media-typer/-/media-typer-0.3.0.tgz"
   integrity sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==
 
+medusa-digital-asset-plugin@^0.0.6:
+  version "0.0.6"
+  resolved "https://registry.npmjs.org/medusa-digital-asset-plugin/-/medusa-digital-asset-plugin-0.0.6.tgz"
+  integrity sha512-7VQHJvQIg6jV51piH6JxVbQuYrAp0X551rrAHfP9oEIUTW/wTsQvjHPK4DvCVB31KvITGetv5SVqmbFTchS5jQ==
+  dependencies:
+    "@medusajs/js-sdk" "^2.8.8"
+    "@medusajs/types" "^2.8.8"
+    dayjs "^1.11.13"
+    uuid "^11.1.0"
+    zod "^3.22.4"
+    zustand "^5.0.4"
+
 merge-descriptors@1.0.3:
   version "1.0.3"
   resolved "https://registry.npmjs.org/merge-descriptors/-/merge-descriptors-1.0.3.tgz"
