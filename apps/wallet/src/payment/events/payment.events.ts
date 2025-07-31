@@ -7,7 +7,7 @@
 export class PaymentAuthorizedEvent {
   constructor(
     public readonly paymentEventId: string,
-    public readonly invoiceId: string,
+    public readonly paymentSessionId: string,
     public readonly paymentMethodId: string,
     public readonly amount: number,
     public readonly userId: string,
@@ -21,7 +21,7 @@ export class PaymentAuthorizedEvent {
 export class PaymentCapturedEvent {
   constructor(
     public readonly paymentEventId: string,
-    public readonly invoiceId: string,
+    public readonly paymentSessionId: string,
     public readonly amount: number,
     public readonly pgTransactionId: string,
     public readonly capturedAt: Date,
@@ -34,7 +34,7 @@ export class PaymentCapturedEvent {
 export class PaymentFailedEvent {
   constructor(
     public readonly paymentEventId: string,
-    public readonly invoiceId: string,
+    public readonly paymentSessionId: string,
     public readonly amount: number,
     public readonly reason: string,
     public readonly failedAt: Date,

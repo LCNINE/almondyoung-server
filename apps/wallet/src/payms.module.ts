@@ -19,7 +19,7 @@ import { PaymentModule } from './payment/payment.module';
 import { RefundModule } from './refund/refund.module';
 import { EventMonitorModule } from './shared/events/event-monitor.module';
 import { PointModule } from './point/point.module';
-import { InvoiceModule } from './invoice/invoice.module';
+import { PaymentSessionModule } from './payment-session/payment-session.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -49,7 +49,7 @@ import { InvoiceModule } from './invoice/invoice.module';
     IdempotencyModule, // 멱등성 모듈 추가
     EventsModule,
     EventMonitorModule, // ✅ 통합 이벤트 모니터링 모듈 등록
-    InvoiceModule,
+    PaymentSessionModule,
     BnplModule,
     // PaymentModule,
     PaymentModule,

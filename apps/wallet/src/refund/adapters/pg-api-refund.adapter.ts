@@ -14,15 +14,16 @@ import {
   RefundCompletedEvent,
 } from '../events/refund.events';
 
-// PG 결제 정보 타입 정의
+// PG 결제 정보 타입 정의 (PaymentSession 기반)
 interface PaymentEvent {
   id: string;
   pgTransactionId: string | null;
   amount: number;
   status: string;
-  invoice?: {
+  paymentSession?: {
     id: string;
     amount: number;
+    userId: string;
   };
   paymentMethod?: {
     id: string;
@@ -160,7 +161,7 @@ export class PgApiRefundAdapter extends RefundProcessingPort {
     const paymentEvent = await this.dbService.db.query.paymentEvents.findFirst({
       where: eq(schema.paymentEvents.id, paymentEventId),
       with: {
-        invoice: true,
+        paymentSession: true,
         paymentMethod: true,
       },
     });

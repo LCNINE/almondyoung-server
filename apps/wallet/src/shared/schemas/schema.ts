@@ -28,88 +28,112 @@ export const newMemberId = (): string => getTsid().toString();
 // ────────────────────────────────────────────
 
 // 🎯 그룹 1: 금융 거래 상태 (Financial Transaction Status)
-// 적용 대상: paymentEvents, bnplTransaction
-// 역할: 실제 돈의 흐름을 나타내는 일관된 상태
 export const FINANCIAL_TRANSACTION_STATUS = {
-  AUTHORIZED: 'AUTHORIZED', // 내부 승인 완료 / PG사 예약 접수 완료
-  SETTLEMENT_REQUESTED: 'SETTLEMENT_REQUESTED', // 정산(출금) 요청됨
-  CAPTURED: 'CAPTURED', // 최종 출금 성공 (수금 완료)
-  FAILED: 'FAILED', // 최종 출금 실패
+  AUTHORIZED: 'AUTHORIZED',
+  SETTLEMENT_REQUESTED: 'SETTLEMENT_REQUESTED',
+  CAPTURED: 'CAPTURED',
+  FAILED: 'FAILED',
 } as const;
 export type FinancialTransactionStatus =
   keyof typeof FINANCIAL_TRANSACTION_STATUS;
 
 // 🎯 그룹 2: 배치 작업 상태 (Batch Job Status)
-// 적용 대상: settlementBatch
-// 역할: 백그라운드 작업의 진행 상태를 나타내는 명확한 상태
 export const BATCH_JOB_STATUS = {
-  PENDING: 'PENDING', // 배치 작업 대기 중
-  PROCESSING: 'PROCESSING', // 배치 작업 처리 중
-  COMPLETED: 'COMPLETED', // 배치 작업 성공적으로 완료
-  FAILED: 'FAILED', // 배치 작업 실패
-  CANCELLED: 'CANCELLED', // 관리자에 의해 취소됨
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
 } as const;
 export type BatchJobStatus = keyof typeof BATCH_JOB_STATUS;
 
 // 🎯 그룹 3: 고유 엔티티 상태 (Unique Entity Status)
-// 각 엔티티의 독립적인 생명주기를 나타내는 상태들
-
-// 결제수단 상태
 export const PAYMENT_METHOD_STATUS = {
-  PENDING: 'PENDING', // 등록 처리 중
-  ACTIVE: 'ACTIVE', // 활성화됨
-  FAILED: 'FAILED', // 등록 실패
-  INACTIVE: 'INACTIVE', // 비활성화됨
-  DELETED: 'DELETED', // 삭제됨
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  FAILED: 'FAILED',
+  INACTIVE: 'INACTIVE',
+  DELETED: 'DELETED',
 } as const;
 export type PaymentMethodStatus = keyof typeof PAYMENT_METHOD_STATUS;
 
-// BNPL 계정 상태
 export const BNPL_ACCOUNT_STATUS = {
-  ACTIVE: 'ACTIVE', // 정상 활성화
-  INACTIVE: 'INACTIVE', // 비활성화
-  OVERDUE: 'OVERDUE', // 연체 상태
-  SUSPENDED: 'SUSPENDED', // 일시 정지
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+  OVERDUE: 'OVERDUE',
+  SUSPENDED: 'SUSPENDED',
 } as const;
 export type BnplAccountStatus = keyof typeof BNPL_ACCOUNT_STATUS;
 
-// 청구서 상태
 export const INVOICE_STATUS = {
-  ISSUED: 'ISSUED', // 발행됨
-  PAID: 'PAID', // 결제 완료
-  PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED', // 부분 환불
-  REFUNDED: 'REFUNDED', // 전액 환불
-  CANCELLED: 'CANCELLED', // 취소됨
-  EXPIRED: 'EXPIRED', // 만료됨
-  OVERDUE: 'OVERDUE', // 연체됨
-  FAILED: 'FAILED', // 결제 실패
+  ISSUED: 'ISSUED',
+  PAID: 'PAID',
+  PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED',
+  REFUNDED: 'REFUNDED',
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
+  OVERDUE: 'OVERDUE',
+  FAILED: 'FAILED',
 } as const;
 export type InvoiceStatus =
   (typeof INVOICE_STATUS)[keyof typeof INVOICE_STATUS];
 
-// 💸 환불 상태 (refundEvents)
 export const REFUND_STATUS = {
-  REQUESTED: 'REQUESTED', // 환불 요청됨
-  PROCESSING: 'PROCESSING', // CS팀 처리 중 (수동 확인/입금)
-  COMPLETED: 'COMPLETED', // 최종 환불 완료
-  FAILED: 'FAILED', // 환불 처리 실패
-  REJECTED: 'REJECTED', // 환불 요청 거절
+  REQUESTED: 'REQUESTED',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  REJECTED: 'REJECTED',
 } as const;
 export type RefundStatus = keyof typeof REFUND_STATUS;
 
-// 📋 Invoice 이벤트 타입 (Invoice Event Sourcing)
-export const INVOICE_EVENT_TYPE = {
-  INVOICE_ISSUED: 'INVOICE_ISSUED', // 청구서 생성
-  INVOICE_PAID: 'INVOICE_PAID', // 결제 완료 (CAPTURED)
-  INVOICE_FAILED: 'INVOICE_FAILED', // 결제 실패 (FAILED)
-  INVOICE_PARTIALLY_REFUNDED: 'INVOICE_PARTIALLY_REFUNDED', // 부분 환불 완료
-  INVOICE_FULLY_REFUNDED: 'INVOICE_FULLY_REFUNDED', // 전액 환불 완료
-  INVOICE_CANCELLED: 'INVOICE_CANCELLED', // 주문 취소
-  INVOICE_MARKED_AS_OVERDUE: 'INVOICE_MARKED_AS_OVERDUE', // 연체 처리
+// 🎯 그룹 4: PaymentSession 관련 상태
+export const PAYMENT_SESSION_STATUS = {
+  PENDING: 'PENDING',
+  AUTHORIZED: 'AUTHORIZED',
+  CAPTURED: 'CAPTURED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+  REFUNDED: 'REFUNDED',
 } as const;
-export type InvoiceEventType = keyof typeof INVOICE_EVENT_TYPE;
+export type PaymentSessionStatus = keyof typeof PAYMENT_SESSION_STATUS;
 
-// 🔄 하위 호환성을 위한 별칭 (기존 코드와의 호환성 유지)
+export const PAYMENT_LOCK_STATUS = {
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  COMPLETED: 'COMPLETED',
+} as const;
+export type PaymentLockStatus = keyof typeof PAYMENT_LOCK_STATUS;
+
+export const PAYMENT_SESSION_EVENT_TYPE = {
+  SESSION_CREATED: 'SESSION_CREATED',
+  LOCK_CREATED: 'LOCK_CREATED',
+  PAYMENT_INITIATED: 'PAYMENT_INITIATED',
+  PAYMENT_AUTHORIZED: 'PAYMENT_AUTHORIZED',
+  PAYMENT_CAPTURED: 'PAYMENT_CAPTURED',
+  PAYMENT_FAILED: 'PAYMENT_FAILED',
+  PAYMENT_CANCELLED: 'PAYMENT_CANCELLED',
+  REFUND_REQUESTED: 'REFUND_REQUESTED',
+  REFUND_COMPLETED: 'REFUND_COMPLETED',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+} as const;
+export type PaymentSessionEventType = keyof typeof PAYMENT_SESSION_EVENT_TYPE;
+
+export const IDEMPOTENCY_STATUS = {
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+} as const;
+export type IdempotencyStatus = keyof typeof IDEMPOTENCY_STATUS;
+
+export const POINT_TRANSACTION_TYPE = {
+  EARN: 'EARN',
+  REDEEM: 'REDEEM',
+  EARN_CANCEL: 'EARN_CANCEL',
+  EXPIRE: 'EXPIRE',
+} as const;
+export type PointTransactionType = keyof typeof POINT_TRANSACTION_TYPE;
+
+// 🔄 하위 호환성을 위한 별칭
 export const TRANSACTION_STATUS = FINANCIAL_TRANSACTION_STATUS;
 export type TransactionStatus = FinancialTransactionStatus;
 
@@ -117,7 +141,6 @@ export type TransactionStatus = FinancialTransactionStatus;
 // Payment Method Schemas
 // ────────────────────────────────────────────
 
-// Core payment method schema
 export const paymentMethod = pgTable(
   'payment_method',
   {
@@ -150,7 +173,6 @@ export const paymentMethod = pgTable(
   ],
 );
 
-// BatchCMS (HMS BNPL) 전용 테이블
 export const batchCmsMethod = pgTable(
   'batch_cms_method',
   {
@@ -160,13 +182,10 @@ export const batchCmsMethod = pgTable(
     paymentMethodId: varchar('payment_method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
-    // BatchCMS (HMS) 고유 필드
     hmsMemberId: varchar('hms_member_id', { length: 64 }).notNull(),
     hmsCustId: varchar('hms_cust_id', { length: 64 })
       .notNull()
       .default('default-cust'),
-
-    // BNPL 관련 정보
     creditLimit: numeric('credit_limit', { precision: 18, scale: 2 })
       .$type<number>()
       .notNull(),
@@ -174,11 +193,8 @@ export const batchCmsMethod = pgTable(
       .$type<number>()
       .notNull(),
     billingCycleDay: integer('billing_cycle_day').notNull(),
-
-    // BatchCMS 메타데이터
-    hmsMetadata: text('hms_metadata'), // JSON 형태로 HMS 응답 원본 저장
+    hmsMetadata: text('hms_metadata'),
     termsUrl: text('terms_url'),
-
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -187,7 +203,6 @@ export const batchCmsMethod = pgTable(
   (table) => [uniqueIndex('idx_hms_member_unique').on(table.hmsMemberId)],
 );
 
-// Card-specific payment method details (기존 유지 - 향후 Toss 등 추가 예정)
 export const cardMethod = pgTable(
   'card_method',
   {
@@ -220,7 +235,6 @@ export const cardMethod = pgTable(
 // BNPL Schemas
 // ────────────────────────────────────────────
 
-// BNPL account details
 export const bnplAccount = pgTable(
   'bnpl_account',
   {
@@ -237,7 +251,6 @@ export const bnplAccount = pgTable(
     approvedLimit: numeric('approved_limit', { precision: 18, scale: 2 })
       .$type<number>()
       .notNull(),
-
     status: text('status')
       .$type<BnplAccountStatus>()
       .notNull()
@@ -255,7 +268,6 @@ export const bnplAccount = pgTable(
   (table) => [uniqueIndex('idx_bnpl_account_user_unique').on(table.userId)],
 );
 
-// BNPL activation events
 export const bnplActivationEvent = pgTable(
   'bnpl_activation_event',
   {
@@ -283,7 +295,6 @@ export const bnplActivationEvent = pgTable(
   ],
 );
 
-// BNPL transactions
 export const bnplTransaction = pgTable('bnpl_transaction', {
   id: varchar('id', { length: 26 })
     .primaryKey()
@@ -291,7 +302,7 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
   bnplAccountId: varchar('bnpl_account_id', { length: 21 })
     .notNull()
     .references(() => bnplAccount.id),
-  invoiceId: varchar('invoice_id', { length: 64 }).notNull(),
+  paymentSessionId: varchar('payment_session_id', { length: 26 }).notNull(),
   transactionType: text('transaction_type')
     .$type<'DEBIT' | 'CREDIT'>()
     .notNull(),
@@ -308,7 +319,6 @@ export const bnplTransaction = pgTable('bnpl_transaction', {
 // Settlement Schemas
 // ────────────────────────────────────────────
 
-// Settlement batch for aggregating transactions
 export const settlementBatch = pgTable('settlement_batch', {
   id: varchar('id', { length: 26 })
     .primaryKey()
@@ -323,7 +333,7 @@ export const settlementBatch = pgTable('settlement_batch', {
     .default(0),
   dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
   status: text('status').$type<BatchJobStatus>().notNull().default('PENDING'),
-  pgTransactionId: varchar('pg_transaction_id', { length: 255 }), // HMS에서 받은 배치 거래 ID
+  pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
   batchPeriodStart: timestamp('batch_period_start', {
     withTimezone: true,
   }).notNull(),
@@ -338,7 +348,6 @@ export const settlementBatch = pgTable('settlement_batch', {
     .notNull(),
 });
 
-// Settlement batch items linking transactions to batches
 export const settlementBatchItem = pgTable('settlement_batch_item', {
   id: varchar('id', { length: 26 })
     .primaryKey()
@@ -360,7 +369,6 @@ export const settlementBatchItem = pgTable('settlement_batch_item', {
     .notNull(),
 });
 
-// Settlement process events
 export const settlementProcessEvent = pgTable('settlement_process_event', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   batchId: varchar('batch_id', { length: 26 })
@@ -396,64 +404,105 @@ export const settlementProcessEvent = pgTable('settlement_process_event', {
 });
 
 // ────────────────────────────────────────────
-// Invoice Schemas
+// Payment Session Schemas
 // ────────────────────────────────────────────
 
-// Invoice details
-export const invoice = pgTable('invoice', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-  userId: varchar('user_id', { length: 64 }).notNull(),
-  invoiceType: varchar('invoice_type', { length: 32 }).notNull(),
-  amount: numeric('amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull(),
-  refundedAmount: numeric('refunded_amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull()
-    .default(0),
-  currency: varchar('currency', { length: 3 }).notNull(),
-  status: varchar('status', { length: 24 }).notNull().$type<InvoiceStatus>(),
-  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  dueAt: timestamp('due_at', { withTimezone: true }),
-  // 결제 세션 관련 컬럼 추가
-  invoiceSessionId: varchar('invoice_session_id', { length: 255 }).unique(),
-  invoiceSessionExpiresAt: timestamp('invoice_session_expires_at', {
-    withTimezone: true,
-  }),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const paymentSessions = pgTable(
+  'payment_sessions',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    amount: numeric('amount', { precision: 19, scale: 4 })
+      .$type<number>()
+      .notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    status: varchar('status', { length: 24 })
+      .$type<PaymentSessionStatus>()
+      .notNull()
+      .default('PENDING'),
 
-// Invoice events
-export const invoiceEvent = pgTable('invoice_event', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-  eventUuid: varchar('event_uuid', { length: 64 }).notNull(),
-  invoiceId: varchar('invoice_id', { length: 26 })
-    .notNull()
-    .references(() => invoice.id),
-  eventType: varchar('event_type', { length: 32 }).notNull(),
-  reason: varchar('reason', { length: 255 }),
-  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    // 추가 정보는 metadata로
+    metadata: text('metadata'), // JSON string
+
+    // 타임스탬프
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    authorizedAt: timestamp('authorized_at', { withTimezone: true }),
+    capturedAt: timestamp('captured_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_payment_sessions_status').on(table.status),
+    index('idx_payment_sessions_user_id').on(table.userId),
+    index('idx_payment_sessions_expires_at').on(table.expiresAt),
+  ],
+);
+
+export const paymentLocks = pgTable(
+  'payment_locks',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+    paymentSessionId: varchar('payment_session_id', { length: 26 })
+      .notNull()
+      .references(() => paymentSessions.id, { onDelete: 'cascade' }),
+    lockToken: varchar('lock_token', { length: 128 }).notNull().unique(),
+    deviceFingerprint: varchar('device_fingerprint', { length: 64 }),
+    userAgent: text('user_agent'),
+    ipAddress: varchar('ip_address', { length: 45 }),
+    status: varchar('status', { length: 20 })
+      .$type<PaymentLockStatus>()
+      .notNull()
+      .default('ACTIVE'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_active_payment_lock')
+      .on(table.paymentSessionId)
+      .where(sql`${table.status} = 'ACTIVE'`),
+    index('idx_payment_locks_expires_at').on(table.expiresAt),
+    index('idx_payment_locks_status').on(table.status),
+    uniqueIndex('idx_payment_locks_token_unique').on(table.lockToken),
+  ],
+);
+
+export const paymentSessionEvents = pgTable(
+  'payment_session_events',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+    paymentSessionId: varchar('payment_session_id', { length: 26 })
+      .notNull()
+      .references(() => paymentSessions.id, { onDelete: 'cascade' }),
+    eventType: varchar('event_type', { length: 32 })
+      .$type<PaymentSessionEventType>()
+      .notNull(),
+    eventData: text('event_data'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_payment_session_events_session_id').on(table.paymentSessionId),
+    index('idx_payment_session_events_occurred_at').on(table.occurredAt),
+    index('idx_payment_session_events_event_type').on(table.eventType),
+  ],
+);
 
 // ────────────────────────────────────────────
 // Payment Event Schemas
 // ────────────────────────────────────────────
 
-// Payment events
 export const paymentEvents = pgTable('payment_events', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-  invoiceId: varchar('invoice_id', { length: 26 })
+  paymentSessionId: varchar('payment_session_id', { length: 26 })
     .notNull()
-    .references(() => invoice.id),
+    .references(() => paymentSessions.id),
   paymentMethodId: varchar('payment_method_id', { length: 26 })
     .notNull()
     .references(() => paymentMethod.id),
@@ -473,31 +522,27 @@ export const paymentEvents = pgTable('payment_events', {
     .notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }),
   errorMessage: varchar('error_message', { length: 255 }),
-  metadata: text('metadata'), // Event Sourcing을 위한 메타데이터 (JSON 문자열)
+  metadata: text('metadata'),
 });
 
 // ────────────────────────────────────────────
 // User Refund Account Schemas
 // ────────────────────────────────────────────
 
-// User refund accounts
 export const userRefundAccounts = pgTable(
   'user_refund_accounts',
   {
     id: varchar('id', { length: 26 })
       .primaryKey()
       .$defaultFn(() => ulid()),
-    userId: varchar('user_id', { length: 64 }).notNull(), // 어떤 유저의 계좌인지
-
+    userId: varchar('user_id', { length: 64 }).notNull(),
     bankCode: varchar('bank_code', { length: 32 }).notNull(),
     bankName: varchar('bank_name', { length: 64 }).notNull(),
     accountNumber: varchar('account_number', { length: 64 }).notNull(),
     accountHolderName: varchar('account_holder_name', {
       length: 128,
     }).notNull(),
-
     isDefault: boolean('is_default').notNull().default(false),
-
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -506,7 +551,6 @@ export const userRefundAccounts = pgTable(
       .notNull(),
   },
   (table) => [
-    // 사용자당 하나의 기본 계좌만 허용
     uniqueIndex('idx_user_default_refund_account')
       .on(table.userId)
       .where(sql`${table.isDefault} = true`),
@@ -517,29 +561,22 @@ export const userRefundAccounts = pgTable(
 // Refund Event Schemas
 // ────────────────────────────────────────────
 
-// Refund events
 export const refundEvents = pgTable('refund_events', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
   paymentEventId: varchar('payment_event_id', { length: 26 })
     .notNull()
     .references(() => paymentEvents.id),
-
-  // ✅ 환불이 어떤 계좌로 처리되었는지 ID로 참조합니다.
   refundAccountId: varchar('refund_account_id', { length: 26 })
     .notNull()
     .references(() => userRefundAccounts.id),
-
   amount: numeric('amount', { precision: 19, scale: 4 })
     .$type<number>()
     .notNull(),
   status: varchar('status', { length: 255 }).$type<RefundStatus>().notNull(),
   reason: text('reason'),
-
-  // CS팀의 처리 기록을 위한 컬럼
-  completedBy: varchar('completed_by', { length: 64 }), // 처리한 관리자 ID
-  completedAt: timestamp('completed_at', { withTimezone: true }), // CS팀 환불 완료 시점
-  rejectionReason: text('rejection_reason'), // 거절 사유
-
+  completedBy: varchar('completed_by', { length: 64 }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  rejectionReason: text('rejection_reason'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -549,35 +586,25 @@ export const refundEvents = pgTable('refund_events', {
 // Idempotency Schemas
 // ────────────────────────────────────────────
 
-// 멱등성 처리 상태
-export const IDEMPOTENCY_STATUS = {
-  PROCESSING: 'PROCESSING', // 처리 중
-  COMPLETED: 'COMPLETED', // 완료됨
-} as const;
-export type IdempotencyStatus = keyof typeof IDEMPOTENCY_STATUS;
-
-// 멱등키 저장 테이블
 export const idempotencyKeys = pgTable(
   'idempotency_keys',
   {
-    id: varchar('id', { length: 255 }).primaryKey(), // 멱등키 자체를 PK로 사용
+    id: varchar('id', { length: 255 }).primaryKey(),
     userId: varchar('user_id', { length: 64 }).notNull(),
-    requestPath: varchar('request_path', { length: 255 }).notNull(), // 요청 경로
-    requestHash: varchar('request_hash', { length: 64 }).notNull(), // 요청 Body SHA-256 해시
-    responseCode: integer('response_code'), // HTTP 응답 코드
-    responseBody: text('response_body'), // 응답 Body (JSON)
+    requestPath: varchar('request_path', { length: 255 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    responseCode: integer('response_code'),
+    responseBody: text('response_body'),
     status: text('status').$type<IdempotencyStatus>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), // 24시간 후 만료
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
   (table) => [
-    // 성능 최적화를 위한 인덱스 (unique 제거)
     index('idx_idempotency_keys_user_id').on(table.userId),
     index('idx_idempotency_keys_expires_at').on(table.expiresAt),
     index('idx_idempotency_keys_status').on(table.status),
-    // 복합 인덱스: 사용자별 + 상태별 조회 최적화
     index('idx_idempotency_keys_user_status').on(table.userId, table.status),
   ],
 );
@@ -586,26 +613,12 @@ export const idempotencyKeys = pgTable(
 // Point Schemas
 // ────────────────────────────────────────────
 
-export const POINT_TRANSACTION_TYPE = {
-  EARN: 'EARN', // 적립
-  REDEEM: 'REDEEM', // 사용
-  EARN_CANCEL: 'EARN_CANCEL', // 적립 취소 (환불 등)
-  EXPIRE: 'EXPIRE', // 기간 만료로 인한 소멸
-} as const;
-export type PointTransactionType = keyof typeof POINT_TRANSACTION_TYPE;
-
-// 사용자의 현재 포인트 총액을 저장하는 테이블 (빠른 조회용)
 export const points = pgTable('points', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
-
-  // 우리 User 테이블과의 연결고리
   userId: varchar('user_id', { length: 64 }).notNull().unique(),
-
-  // 현재 잔액 (빠른 조회를 위함)
   balance: integer('balance').notNull().default(0),
-
   version: bigint('version', { mode: 'number' }).notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -615,26 +628,18 @@ export const points = pgTable('points', {
     .notNull(),
 });
 
-// 포인트의 모든 변동 내역을 기록하는 거래 원장 테이블
 export const pointTransactions = pgTable('point_transactions', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
-
-  // points 테이블과의 연결고리
   pointId: varchar('point_id', { length: 26 })
     .notNull()
     .references(() => points.id),
-
   type: text('type').$type<PointTransactionType>().notNull(),
-  amount: integer('amount').notNull(), // 변경된 포인트 양 (적립: 양수, 사용/차감: 음수)
-
-  // 어떤 이벤트로 인해 발생했는지 추적하기 위한 ID
-  // 예: paymentEvents.id, refundEvents.id 등
+  amount: integer('amount').notNull(),
   relatedEventId: varchar('related_event_id', { length: 26 }),
-
-  reason: varchar('reason', { length: 255 }), // 사유 (e.g., '주문(inv_123) 구매 적립')
-  expiresAt: timestamp('expires_at', { withTimezone: true }), // 소멸 예정일
+  reason: varchar('reason', { length: 255 }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -698,10 +703,8 @@ export const bnplTransactionRelations = relations(
       fields: [bnplTransaction.bnplAccountId],
       references: [bnplAccount.id],
     }),
-    invoice: one(invoice, {
-      fields: [bnplTransaction.invoiceId],
-      references: [invoice.id],
-    }),
+    // paymentSession 관계는 순환 참조 문제로 인해 제거
+    // 필요시 서비스 레이어에서 별도 조회
     settlementBatchItems: many(settlementBatchItem),
   }),
 );
@@ -745,25 +748,42 @@ export const settlementProcessEventRelations = relations(
   }),
 );
 
-// Invoice relations
-export const invoiceRelations = relations(invoice, ({ many }) => ({
-  events: many(invoiceEvent),
-}));
+// Payment session relations
+export const paymentSessionsRelations = relations(
+  paymentSessions,
+  ({ many }) => ({
+    locks: many(paymentLocks),
+    events: many(paymentSessionEvents),
+    paymentEvents: many(paymentEvents),
+    // bnplTransactions 관계는 순환 참조 문제로 인해 제거
+    // 필요시 서비스 레이어에서 별도 조회
+  }),
+);
 
-export const invoiceEventRelations = relations(invoiceEvent, ({ one }) => ({
-  invoice: one(invoice, {
-    fields: [invoiceEvent.invoiceId],
-    references: [invoice.id],
+export const paymentLocksRelations = relations(paymentLocks, ({ one }) => ({
+  paymentSession: one(paymentSessions, {
+    fields: [paymentLocks.paymentSessionId],
+    references: [paymentSessions.id],
   }),
 }));
+
+export const paymentSessionEventsRelations = relations(
+  paymentSessionEvents,
+  ({ one }) => ({
+    paymentSession: one(paymentSessions, {
+      fields: [paymentSessionEvents.paymentSessionId],
+      references: [paymentSessions.id],
+    }),
+  }),
+);
 
 // Payment event relations
 export const paymentEventsRelations = relations(
   paymentEvents,
   ({ one, many }) => ({
-    invoice: one(invoice, {
-      fields: [paymentEvents.invoiceId],
-      references: [invoice.id],
+    paymentSession: one(paymentSessions, {
+      fields: [paymentEvents.paymentSessionId],
+      references: [paymentSessions.id],
     }),
     paymentMethod: one(paymentMethod, {
       fields: [paymentEvents.paymentMethodId],
@@ -793,19 +813,6 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
   }),
 }));
 
-// Idempotency Relations
-export const idempotencyKeysRelations = relations(
-  idempotencyKeys,
-  ({ one }) => ({
-    // 현재는 User 테이블이 없으므로 userId로만 연결
-    // 향후 User 테이블 추가 시 관계 설정 가능
-    // user: one(users, {
-    //   fields: [idempotencyKeys.userId],
-    //   references: [users.id],
-    // }),
-  }),
-);
-
 // Point Relations
 export const pointsRelations = relations(points, ({ many }) => ({
   transactions: many(pointTransactions),
@@ -820,7 +827,3 @@ export const pointTransactionsRelations = relations(
     }),
   }),
 );
-
-// ────────────────────────────────────────────
-// Zod Schemas for Validation
-// ────────────────────────────────────────────

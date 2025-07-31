@@ -326,23 +326,13 @@ export class BnplAccountService {
       throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
     }
 
-    // 거래 내역 조회
+    // 거래 내역 조회 (PaymentSession 기반)
     const transactions = await this.dbService.db.query.bnplTransaction.findMany({
       where: eq(schema.bnplTransaction.bnplAccountId, bnplAccount.id),
       orderBy: desc(schema.bnplTransaction.createdAt),
       limit,
       offset,
-      with: {
-        invoice: {
-          columns: {
-            id: true,
-            amount: true,
-            invoiceType: true,
-            status: true,
-            createdAt: true,
-          },
-        },
-      },
+      // PaymentSession 관계는 순환 참조 문제로 인해 제거되었으므로 별도 조회
     });
 
     // count() 함수를 사용하여 전체 거래 수 조회
@@ -351,15 +341,34 @@ export class BnplAccountService {
       .from(schema.bnplTransaction)
       .where(eq(schema.bnplTransaction.bnplAccountId, bnplAccount.id));
 
+    // PaymentSession 정보를 별도로 조회 (필요한 경우)
+    const transactionsWithPaymentSession = await Promise.all(
+      transactions.map(async (tx) => {
+        // PaymentSession 정보 별도 조회
+        const paymentSession = await this.dbService.db.query.paymentSessions.findFirst({
+          where: eq(schema.paymentSessions.id, tx.paymentSessionId),
+          columns: {
+            id: true,
+            amount: true,
+            platform: true,
+            status: true,
+            createdAt: true,
+          },
+        });
+
+        return {
+          id: tx.id,
+          transactionType: tx.transactionType,
+          status: tx.status,
+          amount: tx.amount,
+          createdAt: tx.createdAt,
+          paymentSession: paymentSession,
+        };
+      })
+    );
+
     return {
-      transactions: transactions.map(tx => ({
-        id: tx.id,
-        transactionType: tx.transactionType,
-        status: tx.status,
-        amount: tx.amount,
-        createdAt: tx.createdAt,
-        invoice: tx.invoice,
-      })),
+      transactions: transactionsWithPaymentSession,
       total: totalResult[0].total
     };
   }
@@ -377,24 +386,14 @@ export class BnplAccountService {
       throw new NotFoundException('BNPL 계정을 찾을 수 없습니다.');
     }
 
-    // 정산 배치 내역 조회
+    // 정산 배치 내역 조회 (PaymentSession 기반)
     const settlements = await this.dbService.db.query.settlementBatch.findMany({
       where: eq(schema.settlementBatch.bnplAccountId, bnplAccount.id),
       orderBy: desc(schema.settlementBatch.createdAt),
       with: {
         items: {
           with: {
-            bnplTransaction: {
-              with: {
-                invoice: {
-                  columns: {
-                    id: true,
-                    invoiceType: true,
-                    amount: true,
-                  },
-                },
-              },
-            },
+            bnplTransaction: true, // PaymentSession 관계는 별도 조회
           },
         },
       },
@@ -413,7 +412,7 @@ export class BnplAccountService {
       transactions: settlement.items?.map(item => ({
         id: item.bnplTransaction.id,
         amount: item.bnplTransaction.amount,
-        invoice: item.bnplTransaction.invoice,
+        paymentSessionId: item.bnplTransaction.paymentSessionId, // PaymentSession ID 참조
       })) || [],
     }));
   }
@@ -440,11 +439,7 @@ export class BnplAccountService {
       with: {
         items: {
           with: {
-            bnplTransaction: {
-              with: {
-                invoice: true,
-              },
-            },
+            bnplTransaction: true, // PaymentSession 관계는 별도 조회
           },
         },
       },
@@ -470,13 +465,7 @@ export class BnplAccountService {
         status: item.bnplTransaction.status,
         amount: item.bnplTransaction.amount,
         createdAt: item.bnplTransaction.createdAt,
-        invoice: {
-          id: item.bnplTransaction.invoice.id,
-          invoiceType: item.bnplTransaction.invoice.invoiceType,
-          amount: item.bnplTransaction.invoice.amount,
-          status: item.bnplTransaction.invoice.status,
-          createdAt: item.bnplTransaction.invoice.createdAt,
-        },
+        paymentSessionId: item.bnplTransaction.paymentSessionId, // PaymentSession ID 참조
       })) || [],
     };
   }

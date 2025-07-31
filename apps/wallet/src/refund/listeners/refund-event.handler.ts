@@ -34,11 +34,11 @@ export class RefundEventHandler {
         // 1. [WRITE MODEL] RefundEvents 테이블에 이벤트 기록 (Event Sourcing)
         //    - 불변(Immutable) 원장: 모든 '사건'을 INSERT만 하고 절대 수정/삭제하지 않음
 
-        // 🔧 실제 사용자 정보 추출 (PaymentEvent에서 userId 가져오기)
+        // 🔧 실제 사용자 정보 추출 (PaymentEvent에서 PaymentSession을 통해 userId 가져오기)
         const paymentEvent = await tx.query.paymentEvents.findFirst({
           where: eq(schema.paymentEvents.id, event.data.paymentEventId),
           with: {
-            invoice: true,
+            paymentSession: true,
           },
         });
 
@@ -46,7 +46,7 @@ export class RefundEventHandler {
           throw new Error(`PaymentEvent ${event.data.paymentEventId}를 찾을 수 없습니다.`);
         }
 
-        const actualUserId = paymentEvent.invoice?.userId;
+        const actualUserId = paymentEvent.paymentSession?.userId;
         if (!actualUserId) {
           throw new Error(`PaymentEvent ${event.data.paymentEventId}에서 userId를 찾을 수 없습니다.`);
         }

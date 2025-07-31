@@ -38,7 +38,10 @@ export class SettlementEventHandler {
         `✅ 정산 배치 생성 이벤트 처리 완료: batchId=${event.batchId}, 총액=${event.totalAmount}원, 거래수=${event.transactionCount}건`,
       );
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 생성 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 생성 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 
@@ -59,7 +62,10 @@ export class SettlementEventHandler {
       // 🔔 운영팀에 정산 시작 알림 (선택사항)
       // await this.notificationService.notifySettlementStarted(event);
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 시작 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 시작 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 
@@ -83,7 +89,10 @@ export class SettlementEventHandler {
       // 📊 정산 통계 업데이트 (선택사항)
       // await this.statisticsService.updateSettlementStats(event);
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 완료 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 완료 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 
@@ -107,7 +116,10 @@ export class SettlementEventHandler {
       // 📝 실패 로그를 별도 테이블에 기록 (선택사항)
       // await this.errorTrackingService.recordSettlementFailure(event);
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 실패 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 실패 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 
@@ -124,7 +136,10 @@ export class SettlementEventHandler {
         `✅ 정산 배치 아이템 추가 이벤트 처리 완료: batchId=${event.batchId}, transactionId=${event.bnplTransactionId}, 금액=${event.amount}원`,
       );
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 아이템 추가 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 아이템 추가 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 
@@ -132,7 +147,9 @@ export class SettlementEventHandler {
    * 정산 배치 상태 변경 이벤트 처리
    */
   @OnEvent('settlement.batch.status.changed')
-  async handleSettlementBatchStatusChanged(event: SettlementBatchStatusChangedEvent) {
+  async handleSettlementBatchStatusChanged(
+    event: SettlementBatchStatusChangedEvent,
+  ) {
     this.logger.log(`📨 정산 배치 상태 변경 이벤트 처리: ${event.batchId}`);
 
     try {
@@ -144,7 +161,10 @@ export class SettlementEventHandler {
       // 📊 상태별 통계 업데이트 (선택사항)
       // await this.statisticsService.updateBatchStatusStats(event);
     } catch (error) {
-      this.logger.error(`❌ 정산 배치 상태 변경 이벤트 처리 실패: ${event.batchId}`, error);
+      this.logger.error(
+        `❌ 정산 배치 상태 변경 이벤트 처리 실패: ${event.batchId}`,
+        error,
+      );
     }
   }
 }

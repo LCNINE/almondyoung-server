@@ -73,11 +73,10 @@ export class RefundAdminService {
                   userId: true,
                 },
               },
-              // 관련 청구서 정보 JOIN
-              invoice: {
+              // 관련 PaymentSession 정보 JOIN
+              paymentSession: {
                 columns: {
                   id: true,
-                  invoiceType: true,
                   amount: true,
                   status: true,
                   userId: true,
@@ -133,13 +132,12 @@ export class RefundAdminService {
           methodName: refund.paymentEvent.paymentMethod.methodName,
         },
 
-        // 관련 청구서 정보
-        invoice: {
-          invoiceId: refund.paymentEvent.invoice.id,
-          invoiceType: refund.paymentEvent.invoice.invoiceType,
-          invoiceAmount: Number(refund.paymentEvent.invoice.amount),
-          invoiceStatus: refund.paymentEvent.invoice.status,
-          invoiceCreatedAt: refund.paymentEvent.invoice.createdAt,
+        // 관련 PaymentSession 정보
+        paymentSession: {
+          sessionId: refund.paymentEvent.paymentSession.id,
+          sessionAmount: Number(refund.paymentEvent.paymentSession.amount),
+          sessionStatus: refund.paymentEvent.paymentSession.status,
+          sessionCreatedAt: refund.paymentEvent.paymentSession.createdAt,
         },
 
         // 사용자 정보
@@ -187,12 +185,12 @@ export class RefundAdminService {
             with: {
               // 결제 수단 정보
               paymentMethod: true,
-              // 청구서 정보
-              invoice: {
+              // PaymentSession 정보
+              paymentSession: {
                 with: {
-                  // 청구서 이벤트 히스토리
+                  // PaymentSession 이벤트 히스토리
                   events: {
-                    orderBy: [desc(schema.invoiceEvent.occurredAt)],
+                    orderBy: [desc(schema.paymentSessionEvents.occurredAt)],
                     limit: 10, // 최근 10개 이벤트만
                   },
                 },
@@ -257,21 +255,19 @@ export class RefundAdminService {
           createdAt: refund.paymentEvent.paymentMethod.createdAt,
         },
 
-        // 청구서 상세 정보
-        invoice: {
-          id: refund.paymentEvent.invoice.id,
-          userId: refund.paymentEvent.invoice.userId,
-          invoiceType: refund.paymentEvent.invoice.invoiceType,
-          amount: Number(refund.paymentEvent.invoice.amount),
-          refundedAmount: Number(refund.paymentEvent.invoice.refundedAmount),
-          currency: refund.paymentEvent.invoice.currency,
-          status: refund.paymentEvent.invoice.status,
-          issuedAt: refund.paymentEvent.invoice.issuedAt,
-          createdAt: refund.paymentEvent.invoice.createdAt,
-          // 청구서 이벤트 히스토리 (Event Sourcing 활용)
-          eventHistory: refund.paymentEvent.invoice.events.map((event) => ({
+        // PaymentSession 상세 정보
+        paymentSession: {
+          id: refund.paymentEvent.paymentSession.id,
+          userId: refund.paymentEvent.paymentSession.userId,
+          amount: Number(refund.paymentEvent.paymentSession.amount),
+          currency: refund.paymentEvent.paymentSession.currency,
+          status: refund.paymentEvent.paymentSession.status,
+          expiresAt: refund.paymentEvent.paymentSession.expiresAt,
+          createdAt: refund.paymentEvent.paymentSession.createdAt,
+          // PaymentSession 이벤트 히스토리 (Event Sourcing 활용)
+          eventHistory: refund.paymentEvent.paymentSession.events.map((event) => ({
             eventType: event.eventType,
-            reason: event.reason,
+            eventData: event.eventData,
             occurredAt: event.occurredAt,
           })),
         },

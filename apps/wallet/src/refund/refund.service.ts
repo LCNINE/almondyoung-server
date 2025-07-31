@@ -8,10 +8,11 @@ import {
 import { eq, and } from 'drizzle-orm';
 import { ulid } from 'ulid';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import {
-  InvoicePartiallyRefundedEvent,
-  InvoiceFullyRefundedEvent,
-} from '../invoice/events/invoice.events';
+// PaymentSession 이벤트로 변경 (Invoice 이벤트 대신)
+// import {
+//   InvoicePartiallyRefundedEvent,
+//   InvoiceFullyRefundedEvent,
+// } from '../invoice/events/invoice.events';
 import {
   RefundProcessingEvent,
   RefundCompletedEvent,
@@ -56,7 +57,7 @@ export interface RefundRejectedEventData {
   rejectedAt?: Date;
 }
 
-// 예시: RefundEvent 타입 명확 선언 (DB에 없으므로 직접 선언)
+// PaymentSession 기반 RefundEvent 타입 선언
 export interface RefundEvent {
   id: string;
   paymentEventId: string;
@@ -67,12 +68,13 @@ export interface RefundEvent {
   createdAt: Date;
   completedAt?: Date | null;
   rejectionReason?: string | null;
-  // 필요한 필드 추가
+  // PaymentSession 기반 필드로 변경
   paymentEvent?: {
-    invoice?: {
+    paymentSession?: {
       id: string;
       amount: number;
-      refundedAmount?: number;
+      userId: string;
+      status: string;
     };
   };
 }
@@ -165,7 +167,7 @@ export class RefundService {
           with: {
             paymentEvent: {
               with: {
-                invoice: true,
+                paymentSession: true,
                 paymentMethod: true,
               },
             },
@@ -247,7 +249,7 @@ export class RefundService {
           with: {
             paymentEvent: {
               with: {
-                invoice: true,
+                paymentSession: true,
               },
             },
           },
@@ -272,27 +274,22 @@ export class RefundService {
           .set({ status: REFUND_STATUS.COMPLETED, completedAt: new Date() })
           .where(eq(schema.refundEvents.id, refundId));
         refundEventData = refundEvent;
-        if (refundEvent.paymentEvent?.invoice) {
-          const invoice = refundEvent.paymentEvent.invoice;
+        if (refundEvent.paymentEvent?.paymentSession) {
+          const paymentSession = refundEvent.paymentEvent.paymentSession;
           const refundAmount = Number(refundEvent.amount);
-          const originalAmount = Number(invoice.amount);
-          const currentRefundedAmount = Number(invoice.refundedAmount || 0);
-          const totalRefundedAmount = currentRefundedAmount + refundAmount;
+          const originalAmount = Number(paymentSession.amount);
+          
+          // PaymentSession에서 직접 userId 추출
+          userId = paymentSession.userId;
 
-          // userId 추출을 위해 invoice 전체 조회
-          const fullInvoice = await tx.query.invoice.findFirst({
-            where: eq(schema.invoice.id, invoice.id),
-            columns: { userId: true },
-          });
-          userId = fullInvoice?.userId;
-
+          // PaymentSession 기반 데이터 구조로 변경
           invoiceData = {
-            invoiceId: invoice.id,
+            invoiceId: paymentSession.id, // PaymentSession ID 사용
             refundAmount,
             originalAmount,
-            totalRefundedAmount,
-            isFullRefund: totalRefundedAmount >= originalAmount,
-            remainingAmount: originalAmount - totalRefundedAmount,
+            totalRefundedAmount: refundAmount, // 현재는 단순화
+            isFullRefund: refundAmount >= originalAmount,
+            remainingAmount: originalAmount - refundAmount,
           } as InvoiceData;
         }
         shouldEmit = true;
@@ -315,31 +312,20 @@ export class RefundService {
           });
         }
 
+        // PaymentSession 기반 환불 이벤트 발행 (Invoice 이벤트 대신)
         if (invoiceData) {
           const { invoiceId, refundAmount, isFullRefund, remainingAmount } =
             invoiceData;
-          if (isFullRefund) {
-            this.eventEmitter.emit(
-              'invoice.fully-refunded',
-              new InvoiceFullyRefundedEvent(
-                invoiceId,
-                refundId,
-                refundAmount,
-                new Date(),
-              ),
-            );
-          } else {
-            this.eventEmitter.emit(
-              'invoice.partially-refunded',
-              new InvoicePartiallyRefundedEvent(
-                invoiceId,
-                refundId,
-                refundAmount,
-                remainingAmount,
-                new Date(),
-              ),
-            );
-          }
+          
+          // PaymentSession 환불 이벤트 발행
+          this.eventEmitter.emit('payment-session.refunded', {
+            paymentSessionId: invoiceId, // PaymentSession ID
+            refundId,
+            refundAmount,
+            isFullRefund,
+            remainingAmount,
+            refundedAt: new Date(),
+          });
         }
       }
     } catch (error) {
@@ -409,7 +395,7 @@ export class RefundService {
     const paymentEvent = await this.dbService.db.query.paymentEvents.findFirst({
       where: eq(schema.paymentEvents.id, request.paymentEventId),
       with: {
-        invoice: true,
+        paymentSession: true,
       },
     });
     if (!paymentEvent) {
