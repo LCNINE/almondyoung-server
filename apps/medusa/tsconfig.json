@@ -18,9 +18,20 @@
     "resolveJsonModule": true,
     "checkJs": false,
     "strictNullChecks": true,
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["../../libs/*"],
-      "@app/*": ["../../libs/*"]
+      "@medusa/*": ["src/*"],
+      "@medusa": ["src"],
+      "@modules/*": ["src/modules/*"],
+      "@api/*": ["src/api/*"],
+      "@workflows/*": ["src/workflows/*"],
+      "@subscribers/*": ["src/subscribers/*"],
+      "@loaders/*": ["src/loaders/*"],
+      "@types/*": ["src/types/*"],
+      "@utils/*": ["src/utils/*"],
+      "@scripts/*": ["src/scripts/*"],
+      "@admin/*": ["src/admin/*"],
+      "@libs/*": ["../../libs/*"]
     }
   },
   "ts-node": {

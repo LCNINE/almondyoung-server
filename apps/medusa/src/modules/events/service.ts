@@ -17,6 +17,8 @@ export default class EventModuleService extends MedusaService({}) {
   private isConnected_: boolean = false;
   private options_: ModuleOptions;
   private container_: any;
+  private maxRetries_ = 5;
+  private retryDelay_ = 5000; // 5초
 
   constructor(container: any, options: ModuleOptions) {
     super(container);
@@ -37,61 +39,123 @@ export default class EventModuleService extends MedusaService({}) {
     this.kafka_ = new Kafka({
       clientId: this.options_.kafka.clientId,
       brokers: this.options_.kafka.brokers,
+      retry: {
+        initialRetryTime: 1000,
+        retries: 8,
+      },
     });
 
-    this.producer_ = this.kafka_.producer();
+    this.producer_ = this.kafka_.producer({
+      allowAutoTopicCreation: true,
+      retry: {
+        initialRetryTime: 1000,
+        retries: 8,
+      },
+    });
+
     this.consumer_ = this.kafka_.consumer({
       groupId: this.options_.kafka.groupId,
+      retry: {
+        initialRetryTime: 1000,
+        retries: 8,
+      },
     });
 
     this.connect();
     EventModuleService.instance_ = this;
   }
 
+  private async retryConnect_(attempt = 1): Promise<void> {
+    try {
+      await this.producer_.connect();
+      await this.consumer_.connect();
+      this.isConnected_ = true;
+      console.log('✅ Successfully connected to Kafka');
+    } catch (error) {
+      console.error(
+        `❌ Failed to connect to Kafka (attempt ${attempt}/${this.maxRetries_}):`,
+        error.message,
+      );
+
+      if (attempt < this.maxRetries_) {
+        console.log(`⏳ Retrying in ${this.retryDelay_ / 1000} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, this.retryDelay_));
+        return this.retryConnect_(attempt + 1);
+      } else {
+        console.error(
+          '❌ Max retry attempts reached. Failed to connect to Kafka.',
+        );
+        throw error;
+      }
+    }
+  }
+
   async connect() {
     if (this.isConnected_) return;
 
-    await this.producer_.connect();
-    await this.consumer_.connect();
-    this.isConnected_ = true;
+    await this.retryConnect_();
 
     // 외부 Kafka 이벤트 구독 설정
-    this.setupExternalSubscriptions();
+    if (this.isConnected_) {
+      await this.setupExternalSubscriptions();
+    }
   }
 
   async publishEvent(eventName: string, data: any): Promise<void> {
-    await this.connect();
+    try {
+      if (!this.isConnected_) {
+        await this.connect();
+      }
 
-    await this.producer_.send({
-      topic: eventName,
-      messages: [
-        {
-          value: JSON.stringify({
-            eventName,
-            data,
-            timestamp: new Date().toISOString(),
-          }),
-        },
-      ],
-    });
+      await this.producer_.send({
+        topic: eventName,
+        messages: [
+          {
+            value: JSON.stringify({
+              eventName,
+              data,
+              timestamp: new Date().toISOString(),
+            }),
+          },
+        ],
+      });
+      console.log(`✅ Successfully published event: ${eventName}`);
+    } catch (error) {
+      console.error(`❌ Failed to publish event ${eventName}:`, error);
+      throw error;
+    }
   }
 
   async subscribe(
     topics: string[],
     handler: (payload: EachMessagePayload) => Promise<void>,
   ) {
-    await this.connect();
+    try {
+      if (!this.isConnected_) {
+        await this.connect();
+      }
 
-    await this.consumer_.subscribe({ topics, fromBeginning: false });
-    await this.consumer_.run({
-      eachMessage: handler,
-    });
+      await this.consumer_.subscribe({ topics, fromBeginning: false });
+      await this.consumer_.run({
+        eachMessage: handler,
+      });
+      console.log(`✅ Successfully subscribed to topics:`, topics);
+    } catch (error) {
+      console.error(`❌ Failed to subscribe to topics ${topics}:`, error);
+      throw error;
+    }
   }
 
   async disconnect() {
-    await this.producer_.disconnect();
-    await this.consumer_.disconnect();
-    this.isConnected_ = false;
+    try {
+      await this.producer_.disconnect();
+      await this.consumer_.disconnect();
+      this.isConnected_ = false;
+      console.log('✅ Successfully disconnected from Kafka');
+    } catch (error) {
+      console.error('❌ Failed to disconnect from Kafka:', error);
+      throw error;
+    }
   }
 
   /**
@@ -115,7 +179,6 @@ export default class EventModuleService extends MedusaService({}) {
         const { refundId, data, completedAt } = message;
 
         // Medusa 내부 이벤트 버스로 변환
-        // container가 아직 완전히 초기화되지 않았을 수 있으므로 try-catch 사용
         try {
           const { Modules } = await import('@medusajs/framework/utils');
           const eventBus = this.container_?.resolve(Modules.EVENT_BUS);
@@ -125,12 +188,12 @@ export default class EventModuleService extends MedusaService({}) {
               name: 'payment.refund.received',
               data: {
                 refundId,
-                paymentId: data?.paymentId || data?.payment_id, // 외부 시스템의 데이터 구조에 따라
+                paymentId: data?.paymentId || data?.payment_id,
                 orderId: data?.orderId || data?.order_id,
                 amount: data?.amount,
                 currency: data?.currency,
                 refundedAt: completedAt || new Date(),
-                rawData: data, // 원본 데이터 보존
+                rawData: data,
               },
             });
             console.log('✅ Refund event forwarded to internal event bus');

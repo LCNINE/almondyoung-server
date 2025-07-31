@@ -101,4 +101,11 @@ module.exports = defineConfig({
       },
     ],
   },
+
+  plugins: [
+    {
+      resolve: 'medusa-digital-asset-plugin',
+      options: {},
+    },
+  ],
 });
