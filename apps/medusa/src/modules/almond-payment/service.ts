@@ -1,628 +1,306 @@
-import { AbstractPaymentProvider } from '@medusajs/framework/utils';
 import {
-  InitiatePaymentInput,
-  InitiatePaymentOutput,
+  AbstractPaymentProvider,
+  PaymentSessionStatus,
+} from "@medusajs/framework/utils"
+import {
   AuthorizePaymentInput,
   AuthorizePaymentOutput,
-  CapturePaymentInput,
-  CapturePaymentOutput,
-  RefundPaymentInput,
-  RefundPaymentOutput,
   CancelPaymentInput,
   CancelPaymentOutput,
-  RetrievePaymentInput,
-  RetrievePaymentOutput,
-  UpdatePaymentInput,
-  UpdatePaymentOutput,
+  CapturePaymentInput,
+  CapturePaymentOutput,
   DeletePaymentInput,
   DeletePaymentOutput,
   GetPaymentStatusInput,
   GetPaymentStatusOutput,
-  PaymentSessionStatus,
+  InitiatePaymentInput,
+  InitiatePaymentOutput,
   ProviderWebhookPayload,
+  RefundPaymentInput,
+  RefundPaymentOutput,
+  RetrievePaymentInput,
+  RetrievePaymentOutput,
+  UpdatePaymentInput,
+  UpdatePaymentOutput,
   WebhookActionResult,
-} from '@medusajs/framework/types';
+} from "@medusajs/framework/types"
+import { createApiHeaders } from "./types";
 
-import {
-  AlmondPaymentOptions,
-  AuthorizePaymentDto,
-  CapturePaymentDto,
-  PaymentAuthorizationResult,
-  PaymentCaptureResult,
-  ProcessPaymentDto,
-  PaymentResponse as WalletPaymentResponse,
-} from './types';
+// --- Helper Functions and Types ---
 
-// 타입들은 types.ts에서 import하여 사용
+type AlmondPaymentSession = {
+  id: string;
+  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  payment_url: string;
+  expires_at: string;
+  requires_authentication?: boolean;
+  authentication_url?: string;
+}
 
-/**
- * ======================================================
- * 데이터 번역기 클래스
- * ======================================================
- */
-class PaymentDataTranslator {
-  // Medusa → 기존 서비스 데이터 변환 메서드
-  static medusaToAuthorizePaymentDto(input: AuthorizePaymentInput): any {
-    const sessionData = input.data || {};
-    const invoiceId = sessionData.invoiceId as string;
-    const paymentEventId = sessionData.paymentEventId as string;
+type AlmondApiError = {
+  error: {
+    type: string;
+    message: string;
+  };
+}
 
-    if (!invoiceId) {
-      throw new Error('Payment Session에 필수 정보(invoiceId)가 없습니다.');
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelay: 500,
+}
+
+async function executeWithRetry<T>(apiCall: () => Promise<T>): Promise<T> {
+  let attempt = 0
+  while (true) {
+    try {
+      return await apiCall()
+    } catch (error) {
+      attempt++
+      if (
+        (error instanceof TypeError || (error.cause && error.cause.code === 'ECONNRESET')) &&
+        attempt <= RETRY_CONFIG.maxRetries
+      ) {
+        const delay = RETRY_CONFIG.baseDelay * Math.pow(2, attempt - 1) * (0.5 + Math.random() * 0.5)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      throw error
     }
-
-    // 깔끔한 AuthorizePaymentDto 구조로 변환
-    const result: any = {
-      invoiceId: invoiceId,
-    };
-
-    // 결제 수단 정보가 있으면 포함
-    if (sessionData.paymentMethods) {
-      result.paymentMethods = sessionData.paymentMethods;
-    } else if (sessionData.pointAmount) {
-      result.pointAmount = sessionData.pointAmount;
-    } else if (paymentEventId) {
-      // 기본적으로 단일 결제수단으로 처리
-      result.paymentMethodId = paymentEventId;
-    }
-
-    return result;
-  }
-
-  // Medusa → 캡처 요청 변환
-  static medusaToCapturePaymentDto(input: CapturePaymentInput): any {
-    const paymentEventId = input.data?.paymentEventId as string;
-    const amount = (input.data as any)?.amount;
-
-    if (!paymentEventId) {
-      throw new Error('PaymentEvent ID가 필요합니다.');
-    }
-
-    const result: any = {
-      paymentEventId: paymentEventId,
-    };
-
-    if (amount) {
-      result.amount = amount;
-    }
-
-    return result;
-  }
-
-  // Medusa → 환불 요청 변환
-  static medusaToRefundRequest(input: RefundPaymentInput): any {
-    const paymentEventId = input.data?.paymentEventId as string;
-
-    if (!paymentEventId) {
-      throw new Error('PaymentEvent ID가 필요합니다.');
-    }
-
-    return {
-      paymentEventId: paymentEventId,
-      amount: input.amount,
-      reason: 'Refund initiated from Medusa',
-    };
-  }
-
-  // 하위 호환성을 위한 기존 메서드 (deprecated) - 제거됨
-  // 새로운 깔끔한 구조로 완전히 전환
-
-  static paymentResultToMedusaAuthorize(result: any): AuthorizePaymentOutput {
-    // 새로운 API 응답 구조 처리
-    if (result.entityBody) {
-      return {
-        status: 'authorized',
-        data: {
-          id: result.entityId,
-          paymentEventId: result.entityBody.paymentEventId,
-          paymentStatus: result.entityBody.paymentStatus,
-          totalAmount: result.entityBody.totalAmount,
-          rawResponse: result,
-        },
-      };
-    }
-
-    // 기존 응답 구조 처리 (하위 호환성)
-    const walletResponse = result as WalletPaymentResponse;
-    return {
-      status: 'authorized',
-      data: {
-        id: walletResponse.paymentEventId,
-        paymentEventId: walletResponse.paymentEventId,
-        rawResponse: walletResponse,
-      },
-    };
-  }
-
-  static toMedusaStatus(almondStatus: string): PaymentSessionStatus {
-    const statusMap: Record<string, PaymentSessionStatus> = {
-      AUTHORIZED: 'authorized',
-      CAPTURED: 'authorized', // Medusa에서는 'capture'라는 별도 액션이므로 일단 authorized로 둡니다.
-      FAILED: 'error',
-      PENDING: 'pending',
-      SETTLEMENT_REQUESTED: 'pending',
-      CANCELLED: 'canceled',
-    };
-    return statusMap[almondStatus] || 'pending';
   }
 }
 
-/**
- * ======================================================
- * API 통신 전담 클라이언트
- * ======================================================
- */
-class AlmondApiClient {
-  private readonly apiKey: string;
-  private readonly timeout: number;
-  private readonly logger: any;
+// --- Payment Provider Implementation ---
 
-  constructor(options: { apiKey: string; logger: any }) {
-    this.apiKey = options.apiKey.replace(/\/$/, '');
-    this.timeout = 30000; // 기본 타임아웃
-    this.logger = options.logger;
+class AlmondPaymentProviderService extends AbstractPaymentProvider {
+  getWebhookActionAndData(data: ProviderWebhookPayload["payload"]): Promise<WebhookActionResult> {
+    throw new Error("Method not implemented.");
+  }
+  static identifier = "almond-payment"
+
+  protected readonly apiUrl_: string
+  protected readonly logger_: any
+  private readonly pollingInterval = 2000
+
+  constructor(
+    container: { logger: any },
+    options: { apiUrl: string }
+  ) {
+    super(container, options)
+    this.apiUrl_ = options.apiUrl || "http://localhost:9001"
+    this.logger_ = container.logger
   }
 
-  private async request(
-    method: 'POST' | 'GET' | 'PUT' | 'DELETE',
-    path: string,
-    body?: Record<string, any>,
-  ): Promise<any> {
-    const url = `${this.apiKey}${path}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+  async initiatePayment({ amount, currency_code, data, context }: InitiatePaymentInput): Promise<InitiatePaymentOutput> {
+    try {
+      const payload = {
+        amount: amount,
+        currency: currency_code,
+        metadata: {
+          customer_id: context?.customer?.id,
+          email: context?.customer?.email,
+          billing_address: context?.customer?.billing_address,
+        },
+        expires_in_minutes: 30,
+      }
 
-    console.log('url', url);
+      const response = await executeWithRetry(async () => {
+        const res = await fetch(`${this.apiUrl_}/payment-sessions`, {
+          method: 'POST',
+          headers: createApiHeaders(context),
+          body: JSON.stringify(payload),
+        })
+
+        if (res.status >= 400 && res.status < 500) {
+          const errorData: AlmondApiError = await res.json()
+          throw new Error(`[AlmondPayment] Payment session creation failed (HTTP ${res.status}): ${errorData.error.message}`)
+        }
+
+        if (!res.ok) {
+          throw new Error(`[AlmondPayment] Server error (HTTP ${res.status})`)
+        }
+
+        return res
+      })
+
+      const paymentSession: AlmondPaymentSession = await response.json()
+
+      return {
+        id: paymentSession.id,
+        data: {
+          payment_session_id: paymentSession.id,
+          payment_url: paymentSession.payment_url,
+          expires_at: paymentSession.expires_at,
+          currency_code: currency_code,
+          should_poll: true,
+          poll_interval: this.pollingInterval,
+        },
+      }
+    } catch (error) {
+      this.logger_.error("Failed to initiate payment:", error)
+      throw error
+    }
+  }
+
+  async getPaymentStatus({ data }: GetPaymentStatusInput): Promise<GetPaymentStatusOutput> {
+    const sessionId = data?.payment_session_id as string
+    if (!sessionId) {
+      throw new Error("Payment session ID not found in data.")
+    }
 
     try {
-      this.logger?.info(
-        `Almond API Request: ${method} ${url}`,
-        body ? { body } : {},
-      );
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          // API 키 인증 제거 - 우리 시스템에서는 불필요
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      let responseBody;
-      try {
-        responseBody = await response.json();
-      } catch (parseError) {
-        // JSON 파싱 실패 시 텍스트로 처리
-        const textResponse = await response.text();
-        this.logger?.warn(`Failed to parse JSON response: ${textResponse}`);
-        responseBody = { message: textResponse };
-      }
+      const response = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}`)
 
       if (!response.ok) {
-        const errorMessage =
-          responseBody?.message ||
-          `HTTP Error: ${response.status} ${response.statusText}`;
-        const error = new Error(errorMessage);
-        (error as any).status = response.status;
-        (error as any).response = responseBody;
-        throw error;
+        this.logger_.warn(`Failed to fetch payment status for ${sessionId}. Status: ${response.status}`)
+        return { status: PaymentSessionStatus.ERROR, data }
       }
 
-      this.logger?.info(`Almond API Success: ${method} ${url}`, {
-        status: response.status,
-      });
-      return responseBody;
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      // 타임아웃 오류 처리
-      if (error.name === 'AbortError') {
-        const timeoutError = new Error(
-          `Request timeout after ${this.timeout}ms`,
-        );
-        (timeoutError as any).code = 'TIMEOUT_ERROR';
-        (timeoutError as any).retryable = true;
-        this.logger?.error(
-          `Almond API TIMEOUT: ${method} ${url}`,
-          timeoutError,
-        );
-        throw timeoutError;
+      const session: AlmondPaymentSession = await response.json()
+      const statusMap: Record<AlmondPaymentSession['status'], PaymentSessionStatus> = {
+        'PENDING': PaymentSessionStatus.PENDING,
+        'AUTHORIZED': PaymentSessionStatus.AUTHORIZED,
+        'CAPTURED': PaymentSessionStatus.CAPTURED,
+        'FAILED': PaymentSessionStatus.ERROR,
+        'CANCELLED': PaymentSessionStatus.CANCELED,
+        'REFUNDED': PaymentSessionStatus.CANCELED,
       }
-
-      // 네트워크 오류 처리
-      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-        const networkError = new Error(
-          `Network error: Cannot connect to ${this.apiKey}`,
-        );
-        (networkError as any).code = 'NETWORK_ERROR';
-        (networkError as any).retryable = true;
-        this.logger?.error(
-          `Almond API NETWORK ERROR: ${method} ${url}`,
-          networkError,
-        );
-        throw networkError;
-      }
-
-      this.logger?.error(`Almond API FAILED: ${method} ${url}`, {
-        error: error.message,
-        status: (error as any).status,
-        response: (error as any).response,
-      });
-      throw error;
-    }
-  }
-  public post(path: string, body: Record<string, any> = {}): Promise<any> {
-    return this.request('POST', path, body);
-  }
-  public get(path: string): Promise<any> {
-    return this.request('GET', path);
-  }
-  public put(path: string, body: Record<string, any> = {}): Promise<any> {
-    return this.request('PUT', path, body);
-  }
-  public delete(path: string): Promise<any> {
-    return this.request('DELETE', path);
-  }
-}
-
-/**
- * ======================================================
- * 최종 Medusa Payment Provider 서비스
- * ======================================================
- */
-class AlmondPaymentProviderService extends AbstractPaymentProvider<AlmondPaymentOptions> {
-  async getWebhookActionAndData(
-    data: ProviderWebhookPayload['payload'],
-  ): Promise<WebhookActionResult> {
-    this.logger_.info(
-      `[getWebhookActionAndData] 웹훅 데이터 수신: ${JSON.stringify(data)}`,
-    );
-
-    try {
-      // 웹훅 데이터에서 이벤트 타입과 결제 정보 추출
-      const webhookData = data as any;
-      const eventType = webhookData.eventType || webhookData.type;
-      const paymentEventId =
-        webhookData.paymentEventId || webhookData.payment_id;
-
-      if (!eventType || !paymentEventId) {
-        this.logger_.warn(
-          `[getWebhookActionAndData] 필수 웹훅 데이터 누락: eventType=${eventType}, paymentEventId=${paymentEventId}`,
-        );
-        return {
-          action: 'not_supported',
-          data: {
-            session_id: '',
-            amount: 0,
-          },
-        };
-      }
-
-      // 이벤트 타입에 따른 액션 결정
-      switch (eventType) {
-        case 'payment.completed':
-        case 'payment.captured':
-          return {
-            action: 'authorized', // Medusa에서 지원하는 액션
-            data: {
-              session_id: paymentEventId,
-              amount: webhookData.amount || 0,
-            },
-          };
-
-        case 'payment.failed':
-          return {
-            action: 'failed',
-            data: {
-              session_id: paymentEventId,
-              amount: webhookData.amount || 0,
-            },
-          };
-
-        case 'payment.refunded':
-          return {
-            action: 'not_supported', // 환불은 별도 처리
-            data: {
-              session_id: paymentEventId,
-              amount: webhookData.amount || 0,
-            },
-          };
-
-        default:
-          this.logger_.warn(
-            `[getWebhookActionAndData] 지원하지 않는 이벤트 타입: ${eventType}`,
-          );
-          return {
-            action: 'not_supported',
-            data: {
-              session_id: '',
-              amount: 0,
-            },
-          };
-      }
-    } catch (error) {
-      this.logger_.error(`[getWebhookActionAndData] 웹훅 처리 실패:`, error);
-      return {
-        action: 'not_supported',
-        data: {
-          session_id: '',
-          amount: 0,
-        },
-      };
-    }
-  }
-
-  // 추후 웹훅 구현할것
-  static identifier = 'almond-payment';
-
-  protected readonly logger_: any;
-  protected readonly options_: AlmondPaymentOptions;
-  protected readonly apiClient_: AlmondApiClient;
-
-  constructor(container: { logger: any }, options: AlmondPaymentOptions) {
-    super(container, options);
-    this.options_ = options;
-    this.logger_ = container.logger;
-    this.apiClient_ = new AlmondApiClient({ ...options, logger: this.logger_ });
-  }
-
-  async initiatePayment(
-    input: InitiatePaymentInput,
-  ): Promise<InitiatePaymentOutput> {
-    // cart_id 대신 결제에 실제 필요한 정보만 추출
-    const { amount, currency_code } = input;
-    const customerId = (input.context as any)?.customer_id;
-
-    this.logger_.info(
-      `[initiatePayment] 새로운 결제 세션 생성: ${amount} ${currency_code || 'KRW'}`,
-    );
-
-    try {
-      // 1. Wallet 서비스에서 새로운 Invoice 생성 (cart_id 없이)
-      const createInvoicePayload = {
-        amount: amount,
-        currency: currency_code || 'KRW',
-        userId: customerId,
-        metadata: {
-          source: 'MEDUSA',
-        },
-      };
-
-      const invoiceResponse = await this.apiClient_.post(
-        '/invoices',
-        createInvoicePayload,
-      );
-      const invoiceId = invoiceResponse.invoiceId;
-
-      // 2. 생성된 Invoice에 대한 결제 세션 생성
-      const sessionResponse = await this.apiClient_.post(
-        `/invoices/${invoiceId}/create-session`,
-      );
-      const paymentEventId = sessionResponse.paymentEventId;
-
-      this.logger_.info(
-        `[initiatePayment] Invoice ${invoiceId}, PaymentEvent ${paymentEventId} 생성 완료`,
-      );
 
       return {
-        id: paymentEventId, // Medusa PaymentSession의 고유 ID
+        status: statusMap[session.status] || PaymentSessionStatus.PENDING,
         data: {
-          invoiceId: invoiceId, // Wallet에서 생성한 실제 Invoice ID
-          paymentEventId: paymentEventId,
-          // cart_id 완전히 제거
+          ...data,
+          requires_action: session.requires_authentication,
+          authentication_url: session.authentication_url,
         },
-      };
+      }
     } catch (error) {
-      this.logger_.error(
-        `[initiatePayment] Invoice 생성 실패: amount=${amount}`,
-        error,
-      );
-      throw new Error(`결제 세션 생성에 실패했습니다: ${error.message}`);
+      this.logger_.error(`Error getting payment status for ${sessionId}:`, error)
+      return { status: PaymentSessionStatus.ERROR, data }
     }
   }
 
-  async authorizePayment(
-    input: AuthorizePaymentInput,
-  ): Promise<AuthorizePaymentOutput> {
-    this.logger_.info(
-      `[authorizePayment] 결제 승인 시작: ${JSON.stringify(input.data)}`,
-    );
+  async authorizePayment(input: AuthorizePaymentInput): Promise<AuthorizePaymentOutput> {
+    return this.getPaymentStatus(input)
+  }
+
+  async capturePayment({ data, context }: CapturePaymentInput): Promise<CapturePaymentOutput> {
+    const sessionId = data?.payment_session_id as string
 
     try {
-      // 새로운 AuthorizePaymentDto 구조로 변환
-      const payload = PaymentDataTranslator.medusaToAuthorizePaymentDto(input);
+      // 먼저 현재 상태 확인
+      const statusResponse = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}`)
+      if (statusResponse.ok) {
+        const currentSession: AlmondPaymentSession = await statusResponse.json()
 
-      // 새로운 authorize API 호출
-      const result = await this.apiClient_.post('/payments/authorize', payload);
-
-      if (result.entityBody && result.entityBody.paymentEventId) {
-        this.logger_.info(
-          `[authorizePayment] 결제 승인 완료: ${result.entityBody.paymentEventId}`,
-        );
-        return PaymentDataTranslator.paymentResultToMedusaAuthorize(result);
+        // 이미 캡처된 경우 추가 처리 없이 반환
+        if (currentSession.status === 'CAPTURED') {
+          this.logger_.info(`Payment session ${sessionId} is already captured`)
+          return { data: { ...data, status: 'CAPTURED' } }
+        }
       }
 
-      throw new Error(result.message || 'Payment authorization failed');
+      const response = await executeWithRetry(async () => {
+        const res = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}/capture`, {
+          method: 'POST',
+          headers: createApiHeaders(context),
+        })
+
+        // 이미 캡처된 경우 성공으로 처리
+        if (res.status === 400) {
+          const errorData = await res.json()
+          if (errorData.message?.includes('already captured')) {
+            return { ok: true, json: () => Promise.resolve({ status: 'CAPTURED' }) }
+          }
+        }
+
+        if (!res.ok) throw new Error(`Capture failed with status ${res.status}`)
+        return res
+      })
+
+      const session: AlmondPaymentSession = await response.json()
+      return { data: { ...data, ...session } }
+
     } catch (error) {
-      this.logger_.error(
-        `[authorizePayment] 결제 승인 실패: ${error.message}`,
-        error,
-      );
-      throw error;
-    }
-  }
+      this.logger_.error(`Failed to capture payment for ${sessionId}:`, error)
 
-  async capturePayment(
-    input: CapturePaymentInput,
-  ): Promise<CapturePaymentOutput> {
-    this.logger_.info(
-      `[capturePayment] 결제 캡처 시작: ${JSON.stringify(input.data)}`,
-    );
-
-    try {
-      // 새로운 데이터 변환 메서드 사용
-      const capturePayload =
-        PaymentDataTranslator.medusaToCapturePaymentDto(input);
-
-      const result = await this.apiClient_.post(
-        '/payments/capture',
-        capturePayload,
-      );
-
-      if (result.entityBody) {
-        this.logger_.info(
-          `[capturePayment] 결제 캡처 완료: ${result.entityBody.paymentEventId}`,
-        );
-
-        return {
-          data: {
-            id: result.entityId,
-            paymentEventId: result.entityBody.paymentEventId,
-            capturedAmount: result.entityBody.capturedAmount,
-            paymentStatus: result.entityBody.paymentStatus,
-            rawResponse: result,
-          },
-        };
+      // 캡처 실패 시 현재 상태 다시 확인
+      try {
+        const statusResponse = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}`)
+        if (statusResponse.ok) {
+          const currentSession: AlmondPaymentSession = await statusResponse.json()
+          if (currentSession.status === 'CAPTURED') {
+            this.logger_.info(`Payment session ${sessionId} was captured despite API error`)
+            return { data: { ...data, status: 'CAPTURED' } }
+          }
+        }
+      } catch (statusError) {
+        this.logger_.warn(`Failed to check status after capture error:`, statusError)
       }
 
-      throw new Error('Capture response format is invalid');
-    } catch (error) {
-      this.logger_.error(
-        `[capturePayment] 결제 캡처 실패: ${error.message}`,
-        error,
-      );
-      throw error;
+      throw error
     }
   }
 
-  async getPaymentStatus(
-    input: GetPaymentStatusInput,
-  ): Promise<GetPaymentStatusOutput> {
-    // authorizePayment 또는 다른 메서드에서 반환된 data가 input.data로 전달됩니다.
-    const paymentEventId = input.data?.id as string;
-    const result = await this.apiClient_.get(
-      `/payments/events/${paymentEventId}`,
-    );
-    const medusaStatus = PaymentDataTranslator.toMedusaStatus(
-      result.data.status,
-    );
-    return { status: medusaStatus };
-  }
-
-  async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
-    this.logger_.info(
-      `[refundPayment] 환불 처리 시작: ${JSON.stringify(input.data)}`,
-    );
+  async refundPayment({ amount, data, context }: RefundPaymentInput): Promise<RefundPaymentOutput> {
+    const sessionId = data?.payment_session_id as string
+    const currencyCode = data?.currency_code as string
 
     try {
-      // 새로운 데이터 변환 메서드 사용
-      const refundPayload = PaymentDataTranslator.medusaToRefundRequest(input);
+      const response = await executeWithRetry(async () => {
+        const res = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}/refund`, {
+          method: 'POST',
+          headers: createApiHeaders(context),
+          body: JSON.stringify({
+            amount: amount,
+            currency: currencyCode,
+          }),
+        })
+        if (!res.ok) throw new Error(`Refund failed with status ${res.status}`)
+        return res
+      })
 
-      const result = await this.apiClient_.post('/refunds', refundPayload);
-
-      this.logger_.info(
-        `[refundPayment] 환불 처리 완료: ${refundPayload.paymentEventId}`,
-      );
-
-      return {
-        data: {
-          id: input.data?.id,
-          ...result,
-        },
-      };
+      const result = await response.json()
+      return { data: { ...data, refund_id: result.refund_id } }
     } catch (error) {
-      this.logger_.error(
-        `[refundPayment] 환불 처리 실패: ${error.message}`,
-        error,
-      );
-      throw error;
+      this.logger_.error(`Failed to refund payment for ${sessionId}:`, error)
+      throw error
     }
   }
 
-  async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
-    const paymentEventId = input.data?.paymentEventId as string;
-
-    this.logger_.info(
-      `[cancelPayment] 결제 취소 시작: paymentEventId=${paymentEventId}`,
-    );
+  async cancelPayment({ data, context }: CancelPaymentInput): Promise<CancelPaymentOutput> {
+    const sessionId = data?.payment_session_id as string
+    if (!sessionId) return { data }
 
     try {
-      const result = await this.apiClient_.post(
-        `/payments/${paymentEventId}/cancel`,
-        {
-          reason: 'Cancelled from Medusa',
-        },
-      );
-
-      this.logger_.info(
-        `[cancelPayment] 결제 취소 완료: paymentEventId=${paymentEventId}`,
-      );
-
-      return {
-        data: {
-          id: input.data?.id,
-          ...result,
-        },
-      };
+      await executeWithRetry(async () => {
+        const res = await fetch(`${this.apiUrl_}/payment-sessions/${sessionId}/cancel`, {
+          method: 'POST',
+          headers: createApiHeaders(context),
+        })
+        if (!res.ok) throw new Error(`Cancel failed with status ${res.status}`)
+        return res
+      })
     } catch (error) {
-      this.logger_.error(
-        `[cancelPayment] 결제 취소 실패: paymentEventId=${paymentEventId}`,
-        error,
-      );
-      throw error;
+      this.logger_.error(`Failed to cancel payment for ${sessionId}:`, error)
     }
-  }
 
-  async retrievePayment(
-    input: RetrievePaymentInput,
-  ): Promise<RetrievePaymentOutput> {
-    const paymentEventId = input.data?.paymentEventId as string;
-
-    this.logger_.info(
-      `[retrievePayment] 결제 정보 조회: paymentEventId=${paymentEventId}`,
-    );
-
-    try {
-      const result = await this.apiClient_.get(
-        `/payments/events/${paymentEventId}`,
-      );
-
-      this.logger_.info(
-        `[retrievePayment] 결제 정보 조회 완료: paymentEventId=${paymentEventId}`,
-      );
-
-      return {
-        data: {
-          id: input.data?.id,
-          ...result.data,
-        },
-      };
-    } catch (error) {
-      this.logger_.error(
-        `[retrievePayment] 결제 정보 조회 실패: paymentEventId=${paymentEventId}`,
-        error,
-      );
-      throw error;
-    }
-  }
-
-  async updatePayment(input: UpdatePaymentInput): Promise<UpdatePaymentOutput> {
-    this.logger_.info(
-      'updatePayment called, but no corresponding action is defined.',
-    );
-    return { data: input.data }; // 받은 데이터를 그대로 반환
+    return { data }
   }
 
   async deletePayment(input: DeletePaymentInput): Promise<DeletePaymentOutput> {
-    this.logger_.info(
-      'deletePayment called, but no corresponding action is defined.',
-    );
-    return {}; // 빈 객체 반환
+    return {}
+  }
+
+  async retrievePayment(input: RetrievePaymentInput): Promise<RetrievePaymentOutput> {
+    const status = await this.getPaymentStatus(input)
+    return { data: status.data }
+  }
+
+
+
+  async updatePayment(input: UpdatePaymentInput): Promise<UpdatePaymentOutput> {
+    return { data: input.data }
   }
 }
 
-export default AlmondPaymentProviderService;
+export default AlmondPaymentProviderService
