@@ -2,7 +2,11 @@ import {
   type SubscriberArgs,
   type SubscriberConfig,
 } from '@medusajs/framework';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import {
+  AbstractPaymentProvider,
+  ContainerRegistrationKeys,
+  Modules,
+} from '@medusajs/framework/utils';
 import { EVENT_MODULE } from '../modules/events';
 import EventModuleService from '../modules/events/service';
 
@@ -56,18 +60,6 @@ export default async function handler({
       order_id: orderId,
       payment_id: payment.id,
       amount: payment.amount,
-      currency_code: payment.currency_code,
-      created_at: payment.created_at,
-    });
-  }
-
-  // 환불 완료 시 발행 : TODO 확인 필요
-  if (name === 'payment.refunded') {
-    await eventService.publishEvent('payment.refunded', {
-      order_id: orderId,
-      payment_id: payment.id,
-      amount: payment.amount,
-      refunded_amount: payment.refunded_amount,
       currency_code: payment.currency_code,
       created_at: payment.created_at,
     });
