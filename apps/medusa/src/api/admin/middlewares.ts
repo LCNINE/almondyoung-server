@@ -1,9 +1,5 @@
-import {
-  defineMiddlewares,
-  authenticate,
-  type MiddlewareVerb,
-  MiddlewareRoute,
-} from '@medusajs/framework/http';
+import { authenticate, MiddlewareRoute } from '@medusajs/framework/http';
+import { adminPaymentRoutesMiddlewares } from './payments/middlewares';
 
 export const adminRouteMiddlewares: MiddlewareRoute[] = [
   {
@@ -16,4 +12,5 @@ export const adminRouteMiddlewares: MiddlewareRoute[] = [
     method: ['GET'],
     middlewares: [authenticate('user', ['session', 'bearer'])],
   },
+  ...adminPaymentRoutesMiddlewares,
 ];
