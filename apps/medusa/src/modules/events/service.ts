@@ -1,5 +1,6 @@
 import { Kafka, Producer, Consumer, EachMessagePayload } from 'kafkajs';
 import { MedusaService } from '@medusajs/framework/utils';
+import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
 
 type ModuleOptions = {
   kafka: {
@@ -166,46 +167,49 @@ export default class EventModuleService extends MedusaService({}) {
     console.log('🔌 Setting up external Kafka subscriptions...');
 
     // payment.refunded 이벤트 구독
-    await this.subscribe(['payment.refunded'], async (payload) => {
-      try {
-        if (!payload.message?.value) {
-          console.warn('Received empty payment.refunded message');
-          return;
-        }
-
-        const message = JSON.parse(payload.message.value.toString());
-        console.log('💰 Received payment.refunded:', message);
-
-        // 외부에서 받은 데이터 구조
-        const { refundId, data, completedAt } = message;
-
-        // Medusa 내부 이벤트 버스로 변환
+    await this.subscribe(
+      [PAYMENT_EVENTS.REFUND_COMPLETED.topic],
+      async (payload) => {
         try {
-          const { Modules } = await import('@medusajs/framework/utils');
-          const eventBus = this.container_?.resolve(Modules.EVENT_BUS);
-
-          if (eventBus) {
-            await eventBus.emit({
-              name: 'payment.refund.received',
-              data: {
-                refundId,
-                paymentId: data?.paymentId || data?.payment_id,
-                orderId: data?.orderId || data?.order_id,
-                amount: data?.amount,
-                currency: data?.currency,
-                refundedAt: completedAt || new Date(),
-                rawData: data,
-              },
-            });
-            console.log('✅ Refund event forwarded to internal event bus');
+          if (!payload.message?.value) {
+            console.warn('Received empty payment.refunded message');
+            return;
           }
-        } catch (err) {
-          console.log('EventBus not available yet, processing directly');
+
+          const message = JSON.parse(payload.message.value.toString());
+          console.log('💰 Received payment.refunded:', message);
+
+          // 외부에서 받은 데이터 구조
+          const { refundId, data, completedAt } = message;
+
+          // Medusa 내부 이벤트 버스로 변환
+          try {
+            const { Modules } = await import('@medusajs/framework/utils');
+            const eventBus = this.container_?.resolve(Modules.EVENT_BUS);
+
+            if (eventBus) {
+              await eventBus.emit({
+                name: 'payment.refund.received',
+                data: {
+                  refundId,
+                  paymentId: data?.paymentId || data?.payment_id,
+                  orderId: data?.orderId || data?.order_id,
+                  amount: data?.amount,
+                  currency: data?.currency,
+                  refundedAt: completedAt || new Date(),
+                  rawData: data,
+                },
+              });
+              console.log('✅ Refund event forwarded to internal event bus');
+            }
+          } catch (err) {
+            console.log('EventBus not available yet, processing directly');
+          }
+        } catch (error) {
+          console.error('Error processing payment.refunded:', error);
         }
-      } catch (error) {
-        console.error('Error processing payment.refunded:', error);
-      }
-    });
+      },
+    );
 
     console.log('✅ External Kafka subscriptions ready');
   }

@@ -57,7 +57,7 @@ export default async function handler({
 
   // 결제 포착 시 발행
   if (name === 'payment.captured') {
-    await eventService.publishEvent(PAYMENT_EVENTS.PAYMENT_CAPTURED.topic, {
+    await eventService.publishEvent(PAYMENT_EVENTS.CAPTURED.topic, {
       order_id: orderId,
       payment_id: payment.id,
       amount: payment.amount,
