@@ -63,7 +63,7 @@ describe('ZodValidationPipe', () => {
       } catch (error) {
         // Assert
         expect(error).toBeInstanceOf(BadRequestException);
-        const response = error.getResponse() as any;
+        const response = error.getResponse();
         expect(response.message).toBe('입력값 검증에 실패했습니다');
         expect(response.errors).toEqual(
           expect.arrayContaining([
@@ -109,7 +109,7 @@ describe('ZodValidationPipe', () => {
       } catch (error) {
         // Assert
         expect(error).toBeInstanceOf(BadRequestException);
-        const response = error.getResponse() as any;
+        const response = error.getResponse();
         expect(response.errors).toEqual(
           expect.arrayContaining([
             expect.objectContaining({

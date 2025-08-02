@@ -38,7 +38,9 @@ describe('Exception Filters', () => {
       ],
     }).compile();
 
-    subscriptionFilter = module.get<SubscriptionExceptionFilter>(SubscriptionExceptionFilter);
+    subscriptionFilter = module.get<SubscriptionExceptionFilter>(
+      SubscriptionExceptionFilter,
+    );
     httpFilter = module.get<HttpExceptionFilter>(HttpExceptionFilter);
     globalFilter = module.get<GlobalExceptionFilter>(GlobalExceptionFilter);
 
@@ -99,7 +101,10 @@ describe('Exception Filters', () => {
   describe('HttpExceptionFilter', () => {
     it('should handle HttpException with string message', () => {
       // Arrange
-      const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
+      const exception = new HttpException(
+        'Bad Request',
+        HttpStatus.BAD_REQUEST,
+      );
 
       // Act
       httpFilter.catch(exception, mockArgumentsHost);
@@ -161,7 +166,9 @@ describe('Exception Filters', () => {
       globalFilter.catch(exception, mockArgumentsHost);
 
       // Assert
-      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(mockResponse.status).toHaveBeenCalledWith(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
       expect(mockResponse.json).toHaveBeenCalledWith({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         timestamp: expect.any(String),
@@ -178,7 +185,9 @@ describe('Exception Filters', () => {
       globalFilter.catch(exception, mockArgumentsHost);
 
       // Assert
-      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(mockResponse.status).toHaveBeenCalledWith(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
       expect(mockResponse.json).toHaveBeenCalledWith({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         timestamp: expect.any(String),

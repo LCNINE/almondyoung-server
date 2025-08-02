@@ -45,7 +45,7 @@ export class EventPublisherService<
   ): Promise<void> {
     try {
       const topic = String(eventKey);
-      
+
       const enrichedPayload = {
         ...payload,
         timestamp: new Date().toISOString(),
@@ -58,7 +58,7 @@ export class EventPublisherService<
           value: JSON.stringify(enrichedPayload),
           partition: options?.partition,
           headers: options?.headers,
-        })
+        }),
       );
 
       this.logger.log(`Event published: ${topic}`, {
@@ -97,7 +97,7 @@ export class EventPublisherService<
   ): Promise<TResponse> {
     try {
       const topic = String(eventKey);
-      
+
       const enrichedPayload = {
         ...payload,
         timestamp: new Date().toISOString(),
@@ -106,9 +106,7 @@ export class EventPublisherService<
       } as TEvents[K]['payload'];
 
       const response = await firstValueFrom(
-        this.kafkaClient.send(topic, enrichedPayload).pipe(
-          timeout(timeoutMs)
-        )
+        this.kafkaClient.send(topic, enrichedPayload).pipe(timeout(timeoutMs)),
       );
 
       this.logger.log(`Request sent and response received: ${topic}`, {
@@ -122,4 +120,4 @@ export class EventPublisherService<
       throw error;
     }
   }
-} 
+}

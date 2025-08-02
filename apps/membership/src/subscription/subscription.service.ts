@@ -23,7 +23,7 @@ export class SubscriptionService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
     private readonly eventPublisher: EventPublisherService,
-  ) { }
+  ) {}
 
   /**
    * 현재 활성 구독 조회
@@ -324,7 +324,8 @@ export class SubscriptionService {
 
       // 3. 다운그레이드 예약 이벤트 생성
       const eventId = uuidv4();
-      const effectiveDate = currentSub.nextBillingDate || new Date().toISOString().split('T')[0];
+      const effectiveDate =
+        currentSub.nextBillingDate || new Date().toISOString().split('T')[0];
 
       await tx.insert(schema.subscriptionEvents).values({
         id: eventId,
@@ -473,7 +474,9 @@ export class SubscriptionService {
       tierName: tier.name,
       status: subscription.status,
       startedAt: subscription.startedAt,
-      endedAt: subscription.isVoided ? subscription.voidedAt?.toISOString() : null,
+      endedAt: subscription.isVoided
+        ? subscription.voidedAt?.toISOString()
+        : null,
       changeType: subscription.changeType,
       adjustmentAmount: subscription.adjustmentAmount,
       price: plan.price,

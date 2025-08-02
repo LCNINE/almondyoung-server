@@ -10,17 +10,16 @@ import {
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
-  CreateSubscriptionSchema,
-  CreateSubscriptionDto,
-  UpgradeSubscriptionSchema,
-  UpgradeSubscriptionDto,
-  DowngradeSubscriptionSchema,
-  DowngradeSubscriptionDto,
-  CancelSubscriptionSchema,
-  CancelSubscriptionDto,
-} from '../shared/dtos/subscription.dto';
+  CreateSubscriptionRequestSchema,
+  CreateSubscriptionRequest,
+  UpgradeSubscriptionRequestSchema,
+  UpgradeSubscriptionRequest,
+  DowngradeSubscriptionRequestSchema,
+  DowngradeSubscriptionRequest,
+  CancelSubscriptionRequestSchema,
+  CancelSubscriptionRequest,
+} from '../shared/schemas';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-
 
 /**
  * 구독 관리 컨트롤러
@@ -28,7 +27,7 @@ import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 @Controller('subscriptions')
 @UseFilters(SubscriptionExceptionFilter)
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) { }
+  constructor(private readonly subscriptionService: SubscriptionService) {}
 
   /**
    * 현재 구독 상태 조회
@@ -42,9 +41,9 @@ export class SubscriptionController {
    * 구독 생성
    */
   @Post()
-  @UsePipes(new ZodValidationPipe(CreateSubscriptionSchema))
+  @UsePipes(new ZodValidationPipe(CreateSubscriptionRequestSchema))
   async createSubscription(
-    @Body() createSubscriptionDto: CreateSubscriptionDto,
+    @Body() createSubscriptionDto: CreateSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.createSubscription(
@@ -57,9 +56,9 @@ export class SubscriptionController {
    * 구독 업그레이드
    */
   @Post('upgrade')
-  @UsePipes(new ZodValidationPipe(UpgradeSubscriptionSchema))
+  @UsePipes(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
   async upgradeSubscription(
-    @Body() upgradeSubscriptionDto: UpgradeSubscriptionDto,
+    @Body() upgradeSubscriptionDto: UpgradeSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.upgradeSubscription(
@@ -72,9 +71,9 @@ export class SubscriptionController {
    * 구독 다운그레이드
    */
   @Post('downgrade')
-  @UsePipes(new ZodValidationPipe(DowngradeSubscriptionSchema))
+  @UsePipes(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
   async downgradeSubscription(
-    @Body() downgradeSubscriptionDto: DowngradeSubscriptionDto,
+    @Body() downgradeSubscriptionDto: DowngradeSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.downgradeSubscription(
@@ -87,9 +86,9 @@ export class SubscriptionController {
    * 구독 취소
    */
   @Post('cancel')
-  @UsePipes(new ZodValidationPipe(CancelSubscriptionSchema))
+  @UsePipes(new ZodValidationPipe(CancelSubscriptionRequestSchema))
   async cancelSubscription(
-    @Body() cancelSubscriptionDto: CancelSubscriptionDto,
+    @Body() cancelSubscriptionDto: CancelSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.cancelSubscription(

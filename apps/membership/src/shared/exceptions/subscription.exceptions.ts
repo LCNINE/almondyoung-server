@@ -77,11 +77,7 @@ export class SubscriptionPausedException extends SubscriptionException {
  */
 export class PlanNotFoundException extends SubscriptionException {
   constructor() {
-    super(
-      '유효하지 않은 플랜입니다',
-      'PLAN_NOT_FOUND',
-      HttpStatus.NOT_FOUND,
-    );
+    super('유효하지 않은 플랜입니다', 'PLAN_NOT_FOUND', HttpStatus.NOT_FOUND);
   }
 }
 
@@ -134,5 +130,14 @@ export class PolicyViolationException extends SubscriptionException {
       'POLICY_VIOLATION',
       HttpStatus.BAD_REQUEST,
     );
+  }
+}
+
+/**
+ * 권한을 찾을 수 없음
+ */
+export class RightsNotFoundException extends SubscriptionException {
+  constructor() {
+    super('활성 권한이 없습니다', 'RIGHTS_NOT_FOUND', HttpStatus.NOT_FOUND);
   }
 }

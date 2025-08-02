@@ -1,6 +1,9 @@
 import { Inject, applyDecorators } from '@nestjs/common';
 import { EventPattern, MessagePattern } from '@nestjs/microservices';
-import { EventPublisherService, EVENT_PUBLISHER_CLIENT } from './event-publisher.service';
+import {
+  EventPublisherService,
+  EVENT_PUBLISHER_CLIENT,
+} from './event-publisher.service';
 import { EventDefinition } from './types';
 
 // Publisher 서비스 주입을 위한 데코레이터
@@ -14,9 +17,7 @@ export function TypedEventPattern<
   TEvents extends Record<string, EventDefinition>,
   K extends keyof TEvents,
 >(eventKey: K) {
-  return applyDecorators(
-    EventPattern(String(eventKey))
-  );
+  return applyDecorators(EventPattern(String(eventKey)));
 }
 
 // 타입 안전한 메시지 패턴 데코레이터 (Request-Response)
@@ -24,9 +25,7 @@ export function TypedMessagePattern<
   TEvents extends Record<string, EventDefinition>,
   K extends keyof TEvents,
 >(eventKey: K) {
-  return applyDecorators(
-    MessagePattern(String(eventKey))
-  );
+  return applyDecorators(MessagePattern(String(eventKey)));
 }
 
 // 이벤트 핸들러 메서드 시그니처를 위한 타입 헬퍼
@@ -40,4 +39,4 @@ export type MessageHandler<
   TEvents extends Record<string, EventDefinition>,
   K extends keyof TEvents,
   TResponse = any,
-> = (payload: TEvents[K]['payload']) => Promise<TResponse> | TResponse; 
+> = (payload: TEvents[K]['payload']) => Promise<TResponse> | TResponse;

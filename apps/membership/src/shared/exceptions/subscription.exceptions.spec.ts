@@ -60,7 +60,9 @@ describe('Subscription Exceptions', () => {
       const limit = 2;
       const exception = new PauseQuotaExceededException(used, limit);
 
-      expect(exception.message).toBe(`연간 일시정지 한도를 초과했습니다 (${used}/${limit})`);
+      expect(exception.message).toBe(
+        `연간 일시정지 한도를 초과했습니다 (${used}/${limit})`,
+      );
       expect(exception.code).toBe('PAUSE_QUOTA_EXCEEDED');
       expect(exception.getStatus()).toBe(HttpStatus.BAD_REQUEST);
     });
@@ -71,7 +73,9 @@ describe('Subscription Exceptions', () => {
       const action = '플랜 변경';
       const exception = new SubscriptionPausedException(action);
 
-      expect(exception.message).toBe(`일시정지 중에는 ${action}을(를) 할 수 없습니다`);
+      expect(exception.message).toBe(
+        `일시정지 중에는 ${action}을(를) 할 수 없습니다`,
+      );
       expect(exception.code).toBe('SUBSCRIPTION_PAUSED');
       expect(exception.getStatus()).toBe(HttpStatus.BAD_REQUEST);
     });
@@ -113,7 +117,9 @@ describe('Subscription Exceptions', () => {
       const eventType = 'SUBSCRIPTION_CREATED';
       const exception = new EventPublishException(eventType);
 
-      expect(exception.message).toBe(`이벤트 발행에 실패했습니다: ${eventType}`);
+      expect(exception.message).toBe(
+        `이벤트 발행에 실패했습니다: ${eventType}`,
+      );
       expect(exception.code).toBe('EVENT_PUBLISH_FAILED');
       expect(exception.getStatus()).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
     });

@@ -79,15 +79,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
 
-    this.logger.error(
-      `HTTP Exception: ${exception.message}`,
-      exception.stack,
-      {
-        url: request.url,
-        method: request.method,
-        status,
-      },
-    );
+    this.logger.error(`HTTP Exception: ${exception.message}`, exception.stack, {
+      url: request.url,
+      method: request.method,
+      status,
+    });
 
     const errorResponse: ErrorResponse = {
       statusCode: status,
@@ -96,7 +92,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message:
         typeof exceptionResponse === 'string'
           ? exceptionResponse
-          : (exceptionResponse as Record<string, any>)?.message || exception.message,
+          : (exceptionResponse as Record<string, any>)?.message ||
+            exception.message,
     };
 
     response.status(status).json(errorResponse);

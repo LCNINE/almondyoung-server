@@ -9,12 +9,9 @@ import * as schema from '../shared/schemas/entities/schema';
  * 구독 관리 모듈
  */
 @Module({
-  imports: [
-    DbModule,
-    EventsModule,
-  ],
+  imports: [DbModule, EventsModule],
   controllers: [SubscriptionController],
   providers: [SubscriptionService],
   exports: [SubscriptionService],
 })
-export class SubscriptionModule { }
+export class SubscriptionModule {}

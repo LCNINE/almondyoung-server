@@ -13,4 +13,4 @@ import { BaseEventPayload, EventDefinition } from '@app/events';
 //   },
 // } as const satisfies Record<string, EventDefinition>;
 
-// export type UserEvents = typeof USER_EVENTS; 
+// export type UserEvents = typeof USER_EVENTS;

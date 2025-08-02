@@ -113,7 +113,10 @@ describe('SubscriptionController', () => {
 
       // Assert
       expect(result).toEqual(mockResult);
-      expect(service.createSubscription).toHaveBeenCalledWith('user-123', 'plan-123');
+      expect(service.createSubscription).toHaveBeenCalledWith(
+        'user-123',
+        'plan-123',
+      );
     });
   });
 
@@ -129,21 +132,29 @@ describe('SubscriptionController', () => {
       service.upgradeSubscription.mockResolvedValue(mockResult);
 
       // Act
-      const result = await controller.upgradeSubscription(upgradeDto, 'user-123');
+      const result = await controller.upgradeSubscription(
+        upgradeDto,
+        'user-123',
+      );
 
       // Assert
       expect(result).toEqual(mockResult);
-      expect(service.upgradeSubscription).toHaveBeenCalledWith('user-123', 'new-plan-123');
+      expect(service.upgradeSubscription).toHaveBeenCalledWith(
+        'user-123',
+        'new-plan-123',
+      );
     });
 
     it('should throw SubscriptionNotFoundException when no active subscription', async () => {
       // Arrange
       const upgradeDto = { newPlanId: 'new-plan-123' };
-      service.upgradeSubscription.mockRejectedValue(new SubscriptionNotFoundException());
+      service.upgradeSubscription.mockRejectedValue(
+        new SubscriptionNotFoundException(),
+      );
 
       // Act & Assert
       await expect(
-        controller.upgradeSubscription(upgradeDto, 'user-123')
+        controller.upgradeSubscription(upgradeDto, 'user-123'),
       ).rejects.toThrow(SubscriptionNotFoundException);
     });
   });
@@ -154,14 +165,14 @@ describe('SubscriptionController', () => {
       const downgradeDto = { newPlanId: 'basic-plan-123' };
       const mockResult = {
         scheduledDate: '2024-02-01',
-        currentPlan: { 
-          id: 'plan-123', 
+        currentPlan: {
+          id: 'plan-123',
           price: 10000,
           durationDays: 30,
-          currency: 'KRW'
+          currency: 'KRW',
         },
-        scheduledPlan: { 
-          id: 'basic-plan-123', 
+        scheduledPlan: {
+          id: 'basic-plan-123',
           tierId: 'tier-basic',
           price: 5000,
           durationDays: 30,
@@ -175,11 +186,17 @@ describe('SubscriptionController', () => {
       service.downgradeSubscription.mockResolvedValue(mockResult);
 
       // Act
-      const result = await controller.downgradeSubscription(downgradeDto, 'user-123');
+      const result = await controller.downgradeSubscription(
+        downgradeDto,
+        'user-123',
+      );
 
       // Assert
       expect(result).toEqual(mockResult);
-      expect(service.downgradeSubscription).toHaveBeenCalledWith('user-123', 'basic-plan-123');
+      expect(service.downgradeSubscription).toHaveBeenCalledWith(
+        'user-123',
+        'basic-plan-123',
+      );
     });
   });
 
@@ -198,7 +215,10 @@ describe('SubscriptionController', () => {
 
       // Assert
       expect(result).toEqual(mockResult);
-      expect(service.cancelSubscription).toHaveBeenCalledWith('user-123', 'User requested cancellation');
+      expect(service.cancelSubscription).toHaveBeenCalledWith(
+        'user-123',
+        'User requested cancellation',
+      );
     });
 
     it('should cancel subscription without reason', async () => {
@@ -215,7 +235,10 @@ describe('SubscriptionController', () => {
 
       // Assert
       expect(result).toEqual(mockResult);
-      expect(service.cancelSubscription).toHaveBeenCalledWith('user-123', undefined);
+      expect(service.cancelSubscription).toHaveBeenCalledWith(
+        'user-123',
+        undefined,
+      );
     });
   });
 

@@ -276,11 +276,13 @@ describe('SubscriptionService', () => {
       });
 
       dbService.db.transaction = mockTransaction;
-      jest.spyOn(service, 'getCurrentSubscription').mockResolvedValue(existingSubscription);
+      jest
+        .spyOn(service, 'getCurrentSubscription')
+        .mockResolvedValue(existingSubscription);
 
       // Act & Assert
       await expect(
-        service.createSubscription('user-123', 'plan-123')
+        service.createSubscription('user-123', 'plan-123'),
       ).rejects.toThrow(ActiveSubscriptionExistsException);
     });
 
@@ -304,7 +306,7 @@ describe('SubscriptionService', () => {
 
       // Act & Assert
       await expect(
-        service.createSubscription('user-123', 'invalid-plan')
+        service.createSubscription('user-123', 'invalid-plan'),
       ).rejects.toThrow(PlanNotFoundException);
     });
   });
@@ -337,7 +339,9 @@ describe('SubscriptionService', () => {
       const newTier = { ...mockTier, priorityLevel: 3 }; // Higher priority
       const newPlan = { ...mockPlan, id: 'new-plan-123', price: 15000 };
 
-      jest.spyOn(service, 'getCurrentSubscription').mockResolvedValue(currentSub);
+      jest
+        .spyOn(service, 'getCurrentSubscription')
+        .mockResolvedValue(currentSub);
 
       const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
@@ -345,9 +349,9 @@ describe('SubscriptionService', () => {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
                 where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([
-                    { plan: newPlan, tier: newTier },
-                  ]),
+                  limit: jest
+                    .fn()
+                    .mockResolvedValue([{ plan: newPlan, tier: newTier }]),
                 }),
               }),
             }),
@@ -367,7 +371,10 @@ describe('SubscriptionService', () => {
       dbService.db.transaction = mockTransaction;
 
       // Act
-      const result = await service.upgradeSubscription('user-123', 'new-plan-123');
+      const result = await service.upgradeSubscription(
+        'user-123',
+        'new-plan-123',
+      );
 
       // Assert
       expect(result).toHaveProperty('newSubscriptionId');
@@ -388,7 +395,7 @@ describe('SubscriptionService', () => {
 
       // Act & Assert
       await expect(
-        service.upgradeSubscription('user-123', 'new-plan-123')
+        service.upgradeSubscription('user-123', 'new-plan-123'),
       ).rejects.toThrow(SubscriptionNotFoundException);
     });
 
@@ -422,11 +429,13 @@ describe('SubscriptionService', () => {
       });
 
       dbService.db.transaction = mockTransaction;
-      jest.spyOn(service, 'getCurrentSubscription').mockResolvedValue(pausedSub);
+      jest
+        .spyOn(service, 'getCurrentSubscription')
+        .mockResolvedValue(pausedSub);
 
       // Act & Assert
       await expect(
-        service.upgradeSubscription('user-123', 'new-plan-123')
+        service.upgradeSubscription('user-123', 'new-plan-123'),
       ).rejects.toThrow(SubscriptionPausedException);
     });
 
@@ -457,7 +466,9 @@ describe('SubscriptionService', () => {
       const lowerTier = { ...mockTier, priorityLevel: 2 }; // Lower priority
       const newPlan = { ...mockPlan, id: 'new-plan-123' };
 
-      jest.spyOn(service, 'getCurrentSubscription').mockResolvedValue(currentSub);
+      jest
+        .spyOn(service, 'getCurrentSubscription')
+        .mockResolvedValue(currentSub);
 
       const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
@@ -465,9 +476,9 @@ describe('SubscriptionService', () => {
             from: jest.fn().mockReturnValue({
               innerJoin: jest.fn().mockReturnValue({
                 where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([
-                    { plan: newPlan, tier: lowerTier },
-                  ]),
+                  limit: jest
+                    .fn()
+                    .mockResolvedValue([{ plan: newPlan, tier: lowerTier }]),
                 }),
               }),
             }),
@@ -480,7 +491,7 @@ describe('SubscriptionService', () => {
 
       // Act & Assert
       await expect(
-        service.upgradeSubscription('user-123', 'new-plan-123')
+        service.upgradeSubscription('user-123', 'new-plan-123'),
       ).rejects.toThrow(InvalidPlanChangeException);
     });
   });
