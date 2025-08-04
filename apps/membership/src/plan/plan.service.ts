@@ -257,7 +257,7 @@ export class PlanService {
         id: crypto.randomUUID(),
         eventType: 'TIER_CREATED',
         userId: adminId,
-        subscriptionId: null,
+        subscriptionId: undefined,
         effectiveDate: new Date().toISOString().split('T')[0],
         eventPayload: {
           tierId,

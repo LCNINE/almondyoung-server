@@ -53,40 +53,40 @@ export class PolicyEngineService {
     policyIds?: string[],
   ): Promise<PolicyValidationResult> {
     const startTime = Date.now();
-    
+
     try {
       // 1. 사용자 컨텍스트 구성
       const policyContext = await this.buildPolicyContext(userId, context);
-      
+
       // 2. 적용 가능한 정책들 조회
       const applicablePolicies = await this.getApplicablePoliciesInternal(
-        policyContext, 
-        policyIds
+        policyContext,
+        policyIds,
       );
-      
+
       // 3. 정책 규칙 평가
       const evaluationResults = await Promise.all(
-        (applicablePolicies || []).map(policy => 
-          this.evaluatePolicyRule(policy, action, policyContext)
-        )
+        (applicablePolicies || []).map((policy) =>
+          this.evaluatePolicyRule(policy, action, policyContext),
+        ),
       );
-      
+
       // 4. 결과 집계
       const violatedPolicies: PolicyViolation[] = [];
       const warnings: PolicyWarning[] = [];
       const appliedPolicies: AppliedPolicy[] = [];
-      
+
       evaluationResults.forEach((result, index) => {
         const policy = applicablePolicies[index];
-        
+
         if (result.violations.length > 0) {
           violatedPolicies.push(...result.violations);
         }
-        
+
         if (result.warnings.length > 0) {
           warnings.push(...result.warnings);
         }
-        
+
         if (result.applied) {
           appliedPolicies.push({
             policyId: policy.id,
@@ -97,9 +97,9 @@ export class PolicyEngineService {
           });
         }
       });
-      
+
       const executionTime = Date.now() - startTime;
-      
+
       return {
         isValid: violatedPolicies.length === 0,
         violatedPolicies,
@@ -107,7 +107,6 @@ export class PolicyEngineService {
         appliedPolicies,
         executionTime,
       };
-      
     } catch (error) {
       this.logger.error(`Policy validation failed for user ${userId}:`, error);
       throw error;
@@ -123,8 +122,8 @@ export class PolicyEngineService {
   ): Promise<PolicyResponse[]> {
     const policyContext = await this.buildPolicyContext(userId, context);
     const policies = await this.getApplicablePoliciesInternal(policyContext);
-    
-    return (policies || []).map(policy => ({
+
+    return (policies || []).map((policy) => ({
       id: policy.id,
       ruleType: policy.ruleType,
       ruleValue: policy.ruleValue as Record<string, any>,
@@ -142,34 +141,36 @@ export class PolicyEngineService {
    */
   async getApplicablePoliciesWithPriority(
     userId: string,
-    context: Record<string, any>
+    context: Record<string, any>,
   ): Promise<ApplicablePolicy[]> {
     const policyContext = await this.buildPolicyContext(userId, context);
     const policies = await this.getApplicablePoliciesInternal(policyContext);
-    
-    return (policies || []).map(policy => {
-      const priority = this.calculatePolicyPriority(policy, policyContext);
-      return {
-        policy: {
-          id: policy.id,
-          ruleType: policy.ruleType,
-          ruleValue: policy.ruleValue as Record<string, any>,
-          tierId: policy.tierId || undefined,
-          isActive: policy.isActive,
-          validFrom: policy.validFrom || undefined,
-          validUntil: policy.validUntil || undefined,
-          createdAt: policy.createdAt.toISOString(),
-          updatedAt: policy.updatedAt.toISOString(),
-        },
-        isApplicable: true,
-        priority,
-      };
-    }).sort((a, b) => b.priority - a.priority);
+
+    return (policies || [])
+      .map((policy) => {
+        const priority = this.calculatePolicyPriority(policy, policyContext);
+        return {
+          policy: {
+            id: policy.id,
+            ruleType: policy.ruleType,
+            ruleValue: policy.ruleValue as Record<string, any>,
+            tierId: policy.tierId || undefined,
+            isActive: policy.isActive,
+            validFrom: policy.validFrom || undefined,
+            validUntil: policy.validUntil || undefined,
+            createdAt: policy.createdAt.toISOString(),
+            updatedAt: policy.updatedAt.toISOString(),
+          },
+          isApplicable: true,
+          priority,
+        };
+      })
+      .sort((a, b) => b.priority - a.priority);
   }
 
   /**
    * 정책을 사용자에게 적용하고 결과를 반환합니다.
-   * 
+   *
    * @param userId - 사용자 ID
    * @param action - 수행할 액션
    * @param context - 추가 컨텍스트 정보
@@ -178,10 +179,14 @@ export class PolicyEngineService {
   async applyPolicies(
     userId: string,
     action: string,
-    context: Record<string, any>
+    context: Record<string, any>,
   ): Promise<PolicyEngineResult> {
-    const validationResult = await this.validateRequest(userId, action, context);
-    
+    const validationResult = await this.validateRequest(
+      userId,
+      action,
+      context,
+    );
+
     const baseResult = {
       policies: validationResult.appliedPolicies,
       metadata: {
@@ -232,12 +237,16 @@ export class PolicyEngineService {
    */
   async checkPolicyCompliance(
     userId: string,
-    policies: Policy[]
+    policies: Policy[],
   ): Promise<ComplianceResult> {
     const policyContext = await this.buildPolicyContext(userId, {});
     const complianceChecks = await Promise.all(
-      policies.map(async policy => {
-        const result = await this.evaluatePolicyRule(policy, 'COMPLIANCE_CHECK', policyContext);
+      policies.map(async (policy) => {
+        const result = await this.evaluatePolicyRule(
+          policy,
+          'COMPLIANCE_CHECK',
+          policyContext,
+        );
         return {
           policyId: policy.id,
           ruleType: policy.ruleType,
@@ -245,16 +254,22 @@ export class PolicyEngineService {
           violations: result.violations,
           warnings: result.warnings,
         };
-      })
+      }),
     );
 
-    const totalViolations = complianceChecks.reduce((sum, check) => sum + check.violations.length, 0);
-    const totalWarnings = complianceChecks.reduce((sum, check) => sum + check.warnings.length, 0);
+    const totalViolations = complianceChecks.reduce(
+      (sum, check) => sum + check.violations.length,
+      0,
+    );
+    const totalWarnings = complianceChecks.reduce(
+      (sum, check) => sum + check.warnings.length,
+      0,
+    );
 
     return {
       isCompliant: totalViolations === 0,
       totalPolicies: policies.length,
-      compliantPolicies: complianceChecks.filter(c => c.isCompliant).length,
+      compliantPolicies: complianceChecks.filter((c) => c.isCompliant).length,
       violationCount: totalViolations,
       warningCount: totalWarnings,
       details: complianceChecks,
@@ -266,10 +281,10 @@ export class PolicyEngineService {
    */
   async filterPoliciesByTier(
     policies: Policy[],
-    tierId: string
+    tierId: string,
   ): Promise<Policy[]> {
-    return policies.filter(policy => 
-      !policy.tierId || policy.tierId === tierId
+    return policies.filter(
+      (policy) => !policy.tierId || policy.tierId === tierId,
     );
   }
 
@@ -282,33 +297,34 @@ export class PolicyEngineService {
     this.logger.log('Policy cache refreshed');
   }
 
-
-
   /**
    * 캐시에서 정책을 조회합니다.
    */
   async getPolicyFromCache(policyId: string): Promise<Policy | null> {
     const now = Date.now();
     const expiry = this.cacheExpiry.get(policyId);
-    
+
     if (expiry && now > expiry) {
       this.policyCache.delete(policyId);
       this.cacheExpiry.delete(policyId);
       return null;
     }
-    
+
     const cachedPolicy = this.policyCache.get(policyId);
     if (cachedPolicy) {
       return cachedPolicy;
     }
-    
+
     return null;
   }
 
   /**
    * 사용자 컨텍스트를 구성합니다.
    */
-  private async buildPolicyContext(userId: string, context: Record<string, any>): Promise<PolicyContext> {
+  private async buildPolicyContext(
+    userId: string,
+    context: Record<string, any>,
+  ): Promise<PolicyContext> {
     // 사용자의 현재 구독 정보 조회
     const subscription = await this.dbService.db
       .select({
@@ -321,9 +337,10 @@ export class PolicyEngineService {
       .where(eq(schema.subscriptions.userId, userId))
       .orderBy(schema.subscriptions.createdAt)
       .limit(1)
-      .then(results => results[0] || null);
+      .then((results) => results[0] || null);
 
-    let tierInfo: { id: string; code: string; priorityLevel: number } | null = null;
+    let tierInfo: { id: string; code: string; priorityLevel: number } | null =
+      null;
     if (subscription?.planId) {
       const plan = await this.dbService.db
         .select({
@@ -332,7 +349,7 @@ export class PolicyEngineService {
         .from(schema.subscriptionPlans)
         .where(eq(schema.subscriptionPlans.id, subscription.planId))
         .limit(1)
-        .then(results => results[0] || null);
+        .then((results) => results[0] || null);
 
       if (plan?.tierId) {
         tierInfo = await this.dbService.db
@@ -344,7 +361,7 @@ export class PolicyEngineService {
           .from(schema.subscriptionTiers)
           .where(eq(schema.subscriptionTiers.id, plan.tierId))
           .limit(1)
-          .then(results => results[0] || null);
+          .then((results) => results[0] || null);
       }
     }
 
@@ -366,21 +383,21 @@ export class PolicyEngineService {
    * 적용 가능한 정책들을 내부적으로 조회합니다.
    */
   private async getApplicablePoliciesInternal(
-    context: PolicyContext, 
-    policyIds?: string[]
+    context: PolicyContext,
+    policyIds?: string[],
   ): Promise<Policy[]> {
     const currentDateString = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 형식
-    
+
     let whereConditions = and(
       eq(schema.subscriptionPolicies.isActive, true),
       or(
         isNull(schema.subscriptionPolicies.validFrom),
-        lte(schema.subscriptionPolicies.validFrom, currentDateString)
+        lte(schema.subscriptionPolicies.validFrom, currentDateString),
       ),
       or(
         isNull(schema.subscriptionPolicies.validUntil),
-        gte(schema.subscriptionPolicies.validUntil, currentDateString)
-      )
+        gte(schema.subscriptionPolicies.validUntil, currentDateString),
+      ),
     );
 
     // 특정 정책 ID들이 지정된 경우 필터링
@@ -398,13 +415,13 @@ export class PolicyEngineService {
         whereConditions,
         or(
           isNull(schema.subscriptionPolicies.tierId),
-          eq(schema.subscriptionPolicies.tierId, context.tierId)
-        )
+          eq(schema.subscriptionPolicies.tierId, context.tierId),
+        ),
       );
     } else {
       whereConditions = and(
         whereConditions,
-        isNull(schema.subscriptionPolicies.tierId)
+        isNull(schema.subscriptionPolicies.tierId),
       );
     }
 
@@ -421,9 +438,9 @@ export class PolicyEngineService {
    * 정책 규칙을 평가합니다.
    */
   private async evaluatePolicyRule(
-    policy: Policy, 
-    action: string, 
-    context: PolicyContext
+    policy: Policy,
+    action: string,
+    context: PolicyContext,
   ): Promise<{
     violations: PolicyViolation[];
     warnings: PolicyWarning[];
@@ -500,22 +517,29 @@ export class PolicyEngineService {
    * 연간 최대 일시정지 횟수 정책을 평가합니다.
    */
   private async evaluateMaxPausesPerYear(
-    policy: Policy, 
-    context: PolicyContext
-  ): Promise<{ isValid: boolean; message: string; appliedValue?: any; minDays?: number }> {
+    policy: Policy,
+    context: PolicyContext,
+  ): Promise<{
+    isValid: boolean;
+    message: string;
+    appliedValue?: any;
+    minDays?: number;
+  }> {
     const ruleValue = policy.ruleValue as { maxPauses: number };
     const currentYear = new Date().getFullYear();
-    
+
     // 올해 일시정지 사용량 조회
     const usageTracker = await this.dbService.db
       .select()
       .from(schema.pauseUsageTracker)
-      .where(and(
-        eq(schema.pauseUsageTracker.userId, context.userId),
-        eq(schema.pauseUsageTracker.year, currentYear)
-      ))
+      .where(
+        and(
+          eq(schema.pauseUsageTracker.userId, context.userId),
+          eq(schema.pauseUsageTracker.year, currentYear),
+        ),
+      )
       .limit(1)
-      .then(results => results[0] || null);
+      .then((results) => results[0] || null);
 
     const currentUsage = usageTracker?.pauseCount || 0;
     const maxPauses = ruleValue.maxPauses;
@@ -530,7 +554,11 @@ export class PolicyEngineService {
     return {
       isValid: true,
       message: `일시정지 가능 (${currentUsage}/${maxPauses})`,
-      appliedValue: { currentUsage, maxPauses, remaining: maxPauses - currentUsage },
+      appliedValue: {
+        currentUsage,
+        maxPauses,
+        remaining: maxPauses - currentUsage,
+      },
     };
   }
 
@@ -538,16 +566,21 @@ export class PolicyEngineService {
    * 최소 일시정지 기간 정책을 평가합니다.
    */
   private async evaluateMinPauseDuration(
-    policy: Policy, 
-    context: PolicyContext
-  ): Promise<{ isValid: boolean; message: string; appliedValue?: any; minDays?: number }> {
+    policy: Policy,
+    context: PolicyContext,
+  ): Promise<{
+    isValid: boolean;
+    message: string;
+    appliedValue?: any;
+    minDays?: number;
+  }> {
     const ruleValue = policy.ruleValue as { minDays: number };
     const minDays = ruleValue.minDays;
-    
+
     // 컨텍스트에서 요청된 일시정지 기간 확인
     const startDate = context.userMetadata?.startDate;
     const endDate = context.userMetadata?.endDate;
-    
+
     if (!startDate || !endDate) {
       return {
         isValid: true,
@@ -557,7 +590,8 @@ export class PolicyEngineService {
     }
 
     const requestedDays = Math.ceil(
-      (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)
+      (new Date(endDate).getTime() - new Date(startDate).getTime()) /
+        (1000 * 60 * 60 * 24),
     );
 
     if (requestedDays < minDays) {
@@ -578,38 +612,40 @@ export class PolicyEngineService {
   /**
    * 정책 우선순위를 계산합니다.
    */
-  private calculatePolicyPriority(policy: Policy, context: PolicyContext): number {
+  private calculatePolicyPriority(
+    policy: Policy,
+    context: PolicyContext,
+  ): number {
     let priority = 0;
-    
+
     // 티어별 정책이 글로벌 정책보다 높은 우선순위
     if (policy.tierId) {
       priority += 100;
-      
+
       // 사용자의 현재 티어와 일치하면 추가 점수
       if (policy.tierId === context.tierId) {
         priority += 50;
       }
     }
-    
+
     // 최신 정책일수록 높은 우선순위
     const daysSinceCreation = Math.floor(
-      (Date.now() - new Date(policy.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+      (Date.now() - new Date(policy.createdAt).getTime()) /
+        (1000 * 60 * 60 * 24),
     );
     priority += Math.max(0, 30 - daysSinceCreation);
-    
+
     // 정책 타입별 우선순위
     const typesPriority: Record<string, number> = {
-      'MAX_PAUSES_PER_YEAR': 10,
-      'MIN_PAUSE_DURATION_DAYS': 8,
-      'PAUSE_COOLDOWN_DAYS': 6,
-      'PLAN_CHANGE_COOLDOWN_DAYS': 5,
-      'TIER_SPECIFIC_LIMITS': 15,
+      MAX_PAUSES_PER_YEAR: 10,
+      MIN_PAUSE_DURATION_DAYS: 8,
+      PAUSE_COOLDOWN_DAYS: 6,
+      PLAN_CHANGE_COOLDOWN_DAYS: 5,
+      TIER_SPECIFIC_LIMITS: 15,
     };
-    
+
     priority += typesPriority[policy.ruleType] || 0;
-    
+
     return priority;
   }
-
-
 }

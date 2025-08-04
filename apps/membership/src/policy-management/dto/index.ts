@@ -16,4 +16,4 @@ export {
   BulkPolicyValidationRequestSchema,
   GetPoliciesQuerySchema,
   GetApplicablePoliciesQuerySchema,
-} from '../../shared/schemas/requests';
+} from '../../shared/schemas';

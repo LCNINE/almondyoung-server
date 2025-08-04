@@ -2,17 +2,9 @@
  * 정책 관리 DTO (nestjs-zod 기반)
  */
 
-import { createZodDto } from 'nestjs-zod';
-import {
-  CreatePolicyRequestSchema,
-  UpdatePolicyRequestSchema,
-  GetPoliciesQuerySchema,
-} from '../../shared/schemas/requests';
+import { CreatePolicyRequest } from '../../shared/schemas';
 
 // nestjs-zod로 DTO 생성 - 기본 검증 포함
-export class CreatePolicyDto extends createZodDto(CreatePolicyRequestSchema) {}
-export class UpdatePolicyDto extends createZodDto(UpdatePolicyRequestSchema) {}
-export class GetPoliciesDto extends createZodDto(GetPoliciesQuerySchema) {}
 
 // Additional DTOs for policy management
 export interface DeactivatePolicyDto {
@@ -37,7 +29,7 @@ export interface PolicyTemplateDto {
   description?: string;
   category: string;
   templateData: {
-    policies: CreatePolicyDto[];
+    policies: CreatePolicyRequest[];
     variables: Record<string, any>;
     conditions: Record<string, any>;
   };

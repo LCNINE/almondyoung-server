@@ -45,7 +45,7 @@ export class AdminOperationsController {
   @UsePipes(new ZodValidationPipe(CreateTierRequestSchema))
   async createTier(@Body() createTierRequest: CreateTierRequest) {
     // TODO: 실제 구현 시 JWT에서 adminId 추출
-    const adminId = 'admin-temp-id';
+    const adminId = '550e8400-e29b-41d4-a716-446655440000';
 
     return this.adminOperationsService.createTier(createTierRequest, adminId);
   }
@@ -60,7 +60,7 @@ export class AdminOperationsController {
     @Body() updateTierRequest: UpdateTierRequest,
   ) {
     // TODO: 실제 구현 시 JWT에서 adminId 추출
-    const adminId = 'admin-temp-id';
+    const adminId = '550e8400-e29b-41d4-a716-446655440000';
 
     return this.adminOperationsService.updateTier(
       tierId,
@@ -77,7 +77,7 @@ export class AdminOperationsController {
   @UsePipes(new ZodValidationPipe(CreatePlanRequestSchema))
   async createPlan(@Body() createPlanRequest: CreatePlanRequest) {
     // TODO: 실제 구현 시 JWT에서 adminId 추출
-    const adminId = 'admin-temp-id';
+    const adminId = '550e8400-e29b-41d4-a716-446655440000';
 
     return this.adminOperationsService.createPlan(createPlanRequest, adminId);
   }
@@ -92,7 +92,7 @@ export class AdminOperationsController {
     @Body() updatePlanRequest: UpdatePlanRequest,
   ) {
     // TODO: 실제 구현 시 JWT에서 adminId 추출
-    const adminId = 'admin-temp-id';
+    const adminId = '550e8400-e29b-41d4-a716-446655440000';
 
     return this.adminOperationsService.updatePlan(
       planId,
@@ -111,7 +111,7 @@ export class AdminOperationsController {
     @Body() deactivatePlanRequest: DeactivatePlanRequest,
   ) {
     // TODO: 실제 구현 시 JWT에서 adminId 추출
-    const adminId = 'admin-temp-id';
+    const adminId = '550e8400-e29b-41d4-a716-446655440000';
 
     return this.adminOperationsService.deactivatePlan(
       planId,

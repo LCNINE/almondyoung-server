@@ -3,18 +3,6 @@
  * 정책 검증 관련 데이터 전송 객체들
  */
 
-import { createZodDto } from 'nestjs-zod';
-import {
-  PolicyValidationRequestSchema,
-  BulkPolicyValidationRequestSchema,
-  GetApplicablePoliciesQuerySchema,
-} from '../../shared/schemas/requests';
-
-// nestjs-zod 기반 DTO 생성
-export class PolicyValidationDto extends createZodDto(PolicyValidationRequestSchema) {}
-export class BulkValidationDto extends createZodDto(BulkPolicyValidationRequestSchema) {}
-export class PolicyContextDto extends createZodDto(GetApplicablePoliciesQuerySchema) {}
-
 // Additional validation DTOs
 export interface PolicyComplianceCheckDto {
   userId: string;

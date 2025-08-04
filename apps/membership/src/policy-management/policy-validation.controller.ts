@@ -1,16 +1,23 @@
-import { Controller, Post, Get, Body, Param, Query, UsePipes } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { PolicyEngineService } from './policy-engine.service';
-import { ZodValidationPipe } from 'nestjs-zod';
-import {
-  PolicyValidationDto,
-  BulkValidationDto,
-  PolicyContextDto,
-} from './dto/policy-validation.dto';
+import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
+
 import {
   PolicyValidationRequestSchema,
   BulkPolicyValidationRequestSchema,
   GetApplicablePoliciesQuerySchema,
+  PolicyValidationRequest,
+  BulkPolicyValidationRequest,
+  GetApplicablePoliciesQuery,
 } from '../shared/schemas/requests';
 import type {
   PolicyValidationResult,
@@ -33,10 +40,15 @@ export class PolicyValidationController {
   @ApiOperation({ summary: '정책 준수 검증' })
   @UsePipes(new ZodValidationPipe(PolicyValidationRequestSchema))
   async validatePolicyCompliance(
-    @Body() validationDto: PolicyValidationDto,
+    @Body() validationDto: PolicyValidationRequest,
   ): Promise<PolicyValidationResult> {
     const { userId, action, context, policyIds } = validationDto;
-    return this.policyEngineService.validateRequest(userId, action, context, policyIds);
+    return this.policyEngineService.validateRequest(
+      userId,
+      action,
+      context,
+      policyIds,
+    );
   }
 
   /**
@@ -46,11 +58,14 @@ export class PolicyValidationController {
   @ApiOperation({ summary: '벌크 정책 검증' })
   @UsePipes(new ZodValidationPipe(BulkPolicyValidationRequestSchema))
   async bulkValidatePolicies(
-    @Body() bulkValidationDto: BulkValidationDto,
-  ): Promise<{ results: PolicyValidationResult[]; totalExecutionTime: number }> {
+    @Body() bulkValidationDto: BulkPolicyValidationRequest,
+  ): Promise<{
+    results: PolicyValidationResult[];
+    totalExecutionTime: number;
+  }> {
     const { requests } = bulkValidationDto;
     const results: PolicyValidationResult[] = [];
-    
+
     for (const request of requests) {
       const result = await this.policyEngineService.validateRequest(
         request.userId,
@@ -60,10 +75,10 @@ export class PolicyValidationController {
       );
       results.push(result);
     }
-    
-    return { 
-      results, 
-      totalExecutionTime: results.reduce((sum, r) => sum + r.executionTime, 0) 
+
+    return {
+      results,
+      totalExecutionTime: results.reduce((sum, r) => sum + r.executionTime, 0),
     };
   }
 
@@ -75,7 +90,7 @@ export class PolicyValidationController {
   @UsePipes(new ZodValidationPipe(GetApplicablePoliciesQuerySchema))
   async getApplicablePolicies(
     @Param('userId') userId: string,
-    @Query() context: PolicyContextDto,
+    @Query() context: GetApplicablePoliciesQuery,
   ): Promise<PolicyResponse[]> {
     return this.policyEngineService.getApplicablePolicies(userId, context);
   }

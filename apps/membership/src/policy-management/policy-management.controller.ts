@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UsePipes } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { ZodValidationPipe } from 'nestjs-zod';
+import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { PolicyManagementService } from './policy-management.service';
 import {
-  CreatePolicyDto,
-  UpdatePolicyDto,
-  GetPoliciesDto,
-} from './dto/policy-management.dto';
+  CreatePolicyRequest,
+  UpdatePolicyRequest,
+  GetPoliciesQuery,
+} from '../shared/schemas';
 import { UpdatePolicyRequestSchema } from '../shared/schemas/requests';
 import type {
   PolicyResponse,
@@ -20,14 +30,18 @@ import type {
 @ApiTags('policies')
 @Controller('policies')
 export class PolicyManagementController {
-  constructor(private readonly policyManagementService: PolicyManagementService) {}
+  constructor(
+    private readonly policyManagementService: PolicyManagementService,
+  ) {}
 
   /**
    * 모든 정책을 조회합니다.
    */
   @Get()
   @ApiOperation({ summary: '정책 목록 조회' })
-  async getAllPolicies(@Query() query: GetPoliciesDto): Promise<PolicyListResponse> {
+  async getAllPolicies(
+    @Query() query: GetPoliciesQuery,
+  ): Promise<PolicyListResponse> {
     return this.policyManagementService.getAllPolicies(query);
   }
 
@@ -36,7 +50,9 @@ export class PolicyManagementController {
    */
   @Get(':policyId')
   @ApiOperation({ summary: '특정 정책 조회' })
-  async getPolicyById(@Param('policyId') policyId: string): Promise<PolicyResponse | null> {
+  async getPolicyById(
+    @Param('policyId') policyId: string,
+  ): Promise<PolicyResponse | null> {
     return this.policyManagementService.getPolicyById(policyId);
   }
 
@@ -45,7 +61,9 @@ export class PolicyManagementController {
    */
   @Post()
   @ApiOperation({ summary: '새 정책 생성' })
-  async createPolicy(@Body() createPolicyDto: CreatePolicyDto): Promise<PolicyResponse | null> {
+  async createPolicy(
+    @Body() createPolicyDto: CreatePolicyRequest,
+  ): Promise<PolicyResponse | null> {
     return this.policyManagementService.createPolicy(createPolicyDto);
   }
 
@@ -57,7 +75,7 @@ export class PolicyManagementController {
   @UsePipes(new ZodValidationPipe(UpdatePolicyRequestSchema))
   async updatePolicy(
     @Param('policyId') policyId: string,
-    @Body() updatePolicyDto: UpdatePolicyDto,
+    @Body() updatePolicyDto: UpdatePolicyRequest,
   ): Promise<PolicyResponse | null> {
     return this.policyManagementService.updatePolicy(policyId, updatePolicyDto);
   }

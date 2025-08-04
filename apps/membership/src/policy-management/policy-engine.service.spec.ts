@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PolicyEngineService } from './policy-engine.service';
 import { DbService } from '@app/db';
 
-
 describe('PolicyEngineService', () => {
   let service: PolicyEngineService;
   let mockDbService: any;
@@ -51,10 +50,16 @@ describe('PolicyEngineService', () => {
         userMetadata: {},
       });
 
-      jest.spyOn(service as any, 'getApplicablePoliciesInternal').mockResolvedValue([]);
+      jest
+        .spyOn(service as any, 'getApplicablePoliciesInternal')
+        .mockResolvedValue([]);
 
       // Act
-      const result = await service.validateRequest('user-123', 'PAUSE_SUBSCRIPTION', {});
+      const result = await service.validateRequest(
+        'user-123',
+        'PAUSE_SUBSCRIPTION',
+        {},
+      );
 
       // Assert
       expect(result).toEqual({
@@ -82,10 +87,16 @@ describe('PolicyEngineService', () => {
         userMetadata: context,
       });
 
-      jest.spyOn(service as any, 'getApplicablePoliciesInternal').mockResolvedValue([]);
+      jest
+        .spyOn(service as any, 'getApplicablePoliciesInternal')
+        .mockResolvedValue([]);
 
       // Act
-      const result = await service.validateRequest('user-123', 'UPGRADE_SUBSCRIPTION', context);
+      const result = await service.validateRequest(
+        'user-123',
+        'UPGRADE_SUBSCRIPTION',
+        context,
+      );
 
       // Assert
       expect(result).toEqual({
@@ -109,7 +120,9 @@ describe('PolicyEngineService', () => {
         userMetadata: {},
       });
 
-      jest.spyOn(service as any, 'getApplicablePoliciesInternal').mockResolvedValue([]);
+      jest
+        .spyOn(service as any, 'getApplicablePoliciesInternal')
+        .mockResolvedValue([]);
 
       // Act
       const result = await service.getApplicablePolicies('user-123', {});
@@ -134,7 +147,9 @@ describe('PolicyEngineService', () => {
         userMetadata: context,
       });
 
-      jest.spyOn(service as any, 'getApplicablePoliciesInternal').mockResolvedValue([]);
+      jest
+        .spyOn(service as any, 'getApplicablePoliciesInternal')
+        .mockResolvedValue([]);
 
       // Act
       const result = await service.getApplicablePolicies('user-123', context);
@@ -180,13 +195,19 @@ describe('PolicyEngineService', () => {
         userMetadata: {},
       });
 
-      jest.spyOn(service as any, 'getApplicablePoliciesInternal').mockResolvedValue(mockPolicies);
-      jest.spyOn(service as any, 'calculatePolicyPriority')
+      jest
+        .spyOn(service as any, 'getApplicablePoliciesInternal')
+        .mockResolvedValue(mockPolicies);
+      jest
+        .spyOn(service as any, 'calculatePolicyPriority')
         .mockReturnValueOnce(50) // policy-1
         .mockReturnValueOnce(150); // policy-2 (tier-specific, higher priority)
 
       // Act
-      const result = await service.getApplicablePoliciesWithPriority('user-123', {});
+      const result = await service.getApplicablePoliciesWithPriority(
+        'user-123',
+        {},
+      );
 
       // Assert
       expect(result).toHaveLength(2);
@@ -204,23 +225,31 @@ describe('PolicyEngineService', () => {
       // Arrange
       const mockValidationResult = {
         isValid: false,
-        violatedPolicies: [{
-          policyId: 'policy-1',
-          policyName: 'MAX_PAUSES_PER_YEAR',
-          ruleType: 'MAX_PAUSES_PER_YEAR',
-          violationType: 'QUOTA_EXCEEDED',
-          message: 'Exceeded maximum pauses',
-          severity: 'ERROR' as const,
-        }],
+        violatedPolicies: [
+          {
+            policyId: 'policy-1',
+            policyName: 'MAX_PAUSES_PER_YEAR',
+            ruleType: 'MAX_PAUSES_PER_YEAR',
+            violationType: 'QUOTA_EXCEEDED',
+            message: 'Exceeded maximum pauses',
+            severity: 'ERROR' as const,
+          },
+        ],
         warnings: [],
         appliedPolicies: [],
         executionTime: 100,
       };
 
-      jest.spyOn(service, 'validateRequest').mockResolvedValue(mockValidationResult);
+      jest
+        .spyOn(service, 'validateRequest')
+        .mockResolvedValue(mockValidationResult);
 
       // Act
-      const result = await service.applyPolicies('user-123', 'PAUSE_SUBSCRIPTION', {});
+      const result = await service.applyPolicies(
+        'user-123',
+        'PAUSE_SUBSCRIPTION',
+        {},
+      );
 
       // Assert
       expect(result.decision).toBe('DENY');
@@ -233,25 +262,35 @@ describe('PolicyEngineService', () => {
       const mockValidationResult = {
         isValid: true,
         violatedPolicies: [],
-        warnings: [{
-          policyId: 'policy-1',
-          policyName: 'PAUSE_WARNING',
-          message: 'Consider the timing',
-          context: {},
-        }],
+        warnings: [
+          {
+            policyId: 'policy-1',
+            policyName: 'PAUSE_WARNING',
+            message: 'Consider the timing',
+            context: {},
+          },
+        ],
         appliedPolicies: [],
         executionTime: 100,
       };
 
-      jest.spyOn(service, 'validateRequest').mockResolvedValue(mockValidationResult);
+      jest
+        .spyOn(service, 'validateRequest')
+        .mockResolvedValue(mockValidationResult);
 
       // Act
-      const result = await service.applyPolicies('user-123', 'PAUSE_SUBSCRIPTION', {});
+      const result = await service.applyPolicies(
+        'user-123',
+        'PAUSE_SUBSCRIPTION',
+        {},
+      );
 
       // Assert
       expect(result.decision).toBe('WARNING');
       expect(result.warnings).toHaveLength(1);
-      expect(result.metadata.reason).toBe('Warnings detected but action allowed');
+      expect(result.metadata.reason).toBe(
+        'Warnings detected but action allowed',
+      );
     });
 
     it('should return ALLOW when all policies are satisfied', async () => {
@@ -260,20 +299,28 @@ describe('PolicyEngineService', () => {
         isValid: true,
         violatedPolicies: [],
         warnings: [],
-        appliedPolicies: [{
-          policyId: 'policy-1',
-          policyName: 'MAX_PAUSES_PER_YEAR',
-          ruleType: 'MAX_PAUSES_PER_YEAR',
-          appliedValue: { currentUsage: 1, maxPauses: 2 },
-          context: {},
-        }],
+        appliedPolicies: [
+          {
+            policyId: 'policy-1',
+            policyName: 'MAX_PAUSES_PER_YEAR',
+            ruleType: 'MAX_PAUSES_PER_YEAR',
+            appliedValue: { currentUsage: 1, maxPauses: 2 },
+            context: {},
+          },
+        ],
         executionTime: 100,
       };
 
-      jest.spyOn(service, 'validateRequest').mockResolvedValue(mockValidationResult);
+      jest
+        .spyOn(service, 'validateRequest')
+        .mockResolvedValue(mockValidationResult);
 
       // Act
-      const result = await service.applyPolicies('user-123', 'PAUSE_SUBSCRIPTION', {});
+      const result = await service.applyPolicies(
+        'user-123',
+        'PAUSE_SUBSCRIPTION',
+        {},
+      );
 
       // Assert
       expect(result.decision).toBe('ALLOW');
@@ -316,7 +363,10 @@ describe('PolicyEngineService', () => {
       });
 
       // Act
-      const result = await service.checkPolicyCompliance('user-123', mockPolicies);
+      const result = await service.checkPolicyCompliance(
+        'user-123',
+        mockPolicies,
+      );
 
       // Assert
       expect(result.isCompliant).toBe(true);
@@ -367,13 +417,16 @@ describe('PolicyEngineService', () => {
       ];
 
       // Act
-      const result = await service.filterPoliciesByTier(mockPolicies, 'tier-123');
+      const result = await service.filterPoliciesByTier(
+        mockPolicies,
+        'tier-123',
+      );
 
       // Assert
       expect(result).toHaveLength(2); // tier-123 policy + global policy
-      expect(result.map(p => p.id)).toContain('policy-1');
-      expect(result.map(p => p.id)).toContain('policy-3');
-      expect(result.map(p => p.id)).not.toContain('policy-2');
+      expect(result.map((p) => p.id)).toContain('policy-1');
+      expect(result.map((p) => p.id)).toContain('policy-3');
+      expect(result.map((p) => p.id)).not.toContain('policy-2');
     });
   });
 
@@ -451,5 +504,4 @@ describe('PolicyEngineService', () => {
       expect(result).toBeNull();
     });
   });
-
 });

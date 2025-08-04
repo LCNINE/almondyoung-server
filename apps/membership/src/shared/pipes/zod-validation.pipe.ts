@@ -4,14 +4,12 @@ import {
   ArgumentMetadata,
   BadRequestException,
 } from '@nestjs/common';
-import { ZodError, type ZodSchema } from 'zod';
+import { ZodError, ZodType } from 'zod';
 
-/**
- * Zod 스키마를 사용한 유효성 검사 파이프
- */
+
 @Injectable()
 export class ZodValidationPipe implements PipeTransform {
-  constructor(private schema: ZodSchema) { }
+  constructor(private schema: ZodType) {}
 
   transform(value: any, _metadata: ArgumentMetadata) {
     try {

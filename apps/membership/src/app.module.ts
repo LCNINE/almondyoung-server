@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_PIPE } from '@nestjs/core';
-import { ZodValidationPipe } from 'nestjs-zod';
+import { APP_PIPE, APP_FILTER } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SubscriptionModule } from './subscription/subscription.module';
@@ -15,14 +14,15 @@ import {
   GlobalExceptionFilter,
 } from './shared/filters/subscription-exception.filter';
 import { DbModule } from '@app/db';
-import * as schema  from './shared/schemas/entities/schema'
+import * as schema from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { EventsModule } from '@app/events';
+import { GlobalZodPipe } from './shared/pipes/global-zod.pipe';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // 다른 모듈에서 ConfigService를 바로 사용할 수 있도록 설정
+      isGlobal: true,
       envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
     }),
     SubscriptionModule,
@@ -31,14 +31,13 @@ import { EventsModule } from '@app/events';
     PauseModule,
     RightsModule,
     PolicyManagementModule,
-    RightsModule,
     EventsModule,
     DbModule.forRoot({
       config: {
         connectionString:
-          process.env.DATABASE_URL || 'postgresql://localhost:5432/almondyoung',
+          'postgresql://neondb_owner:npg_VR7yj1uOfPTs@ep-divine-hill-a1nspuc3-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
-      schema: { ...schema },
+      schema: { ...schema }, // 여기도 원래 의도한 spread로 수정 필요. :contentReference[oaicite:13]{index=13}
     }),
   ],
   controllers: [AppController],
@@ -46,7 +45,7 @@ import { EventsModule } from '@app/events';
     AppService,
     {
       provide: APP_PIPE,
-      useClass: ZodValidationPipe, // 🔥 글로벌 Zod 검증 파이프
+      useClass: GlobalZodPipe, // 기존 ZodValidationPipe 대신 이걸로
     },
     {
       provide: APP_FILTER,

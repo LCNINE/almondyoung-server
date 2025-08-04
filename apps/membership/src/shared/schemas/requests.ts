@@ -37,7 +37,7 @@ export const UpdateTierRequestSchema = z.object({
 });
 
 export const CreatePlanRequestSchema = z.object({
-  tierId: z.string().uuid('유효한 티어 ID여야 합니다'),
+  tierId: z.uuid('유효한 티어 ID여야 합니다'),
   price: z.number().min(0, '가격은 0 이상이어야 합니다'),
   durationDays: z.number().min(1, '기간은 1일 이상이어야 합니다'),
   currency: z
@@ -89,8 +89,8 @@ export const DowngradeSubscriptionRequestSchema = z.object({
 
 export const PauseSubscriptionRequestSchema = z
   .object({
-    startDate: z.string().datetime('유효한 날짜 형식이어야 합니다'),
-    endDate: z.string().datetime('유효한 날짜 형식이어야 합니다'),
+    startDate: z.iso.datetime('유효한 날짜 형식이어야 합니다'),
+    endDate: z.iso.datetime('유효한 날짜 형식이어야 합니다'),
     reason: z.string().optional(),
   })
   .refine((data) => new Date(data.startDate) < new Date(data.endDate), {
@@ -165,71 +165,93 @@ export const POLICY_RULE_TYPES = [
  * 정책 규칙 값에 대한 기본 스키마
  * 각 정책 타입별로 더 구체적인 검증이 필요할 수 있습니다
  */
-const PolicyRuleValueSchema = z.record(z.string(), z.unknown()).refine(
-  (value) => Object.keys(value).length > 0,
-  { message: '정책 값은 최소 하나의 속성을 가져야 합니다' }
-);
+const PolicyRuleValueSchema = z
+  .record(z.string(), z.unknown())
+  .refine((value) => Object.keys(value).length > 0, {
+    message: '정책 값은 최소 하나의 속성을 가져야 합니다',
+  });
 
-export const CreatePolicyRequestSchema = z.object({
-  ruleType: z.enum(POLICY_RULE_TYPES, '유효한 정책 타입이어야 합니다'),
-  ruleValue: PolicyRuleValueSchema,
-  tierId: z.string().uuid('유효한 티어 ID여야 합니다').optional(),
-  validFrom: z.string().datetime('유효한 날짜 형식이어야 합니다').optional(),
-  validUntil: z.string().datetime('유효한 날짜 형식이어야 합니다').optional(),
-}).refine((data) => {
-  if (data.validFrom && data.validUntil) {
-    return new Date(data.validFrom) < new Date(data.validUntil);
-  }
-  return true;
-}, {
-  message: '유효 시작일은 종료일보다 이전이어야 합니다',
-  path: ['validFrom'],
-});
+export const CreatePolicyRequestSchema = z
+  .object({
+    ruleType: z.enum(POLICY_RULE_TYPES, '유효한 정책 타입이어야 합니다'),
+    ruleValue: PolicyRuleValueSchema,
+    tierId: z.uuid('유효한 티어 ID여야 합니다').optional(),
+    validFrom: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+    validUntil: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.validFrom && data.validUntil) {
+        return new Date(data.validFrom) < new Date(data.validUntil);
+      }
+      return true;
+    },
+    {
+      message: '유효 시작일은 종료일보다 이전이어야 합니다',
+      path: ['validFrom'],
+    },
+  );
 
-export const UpdatePolicyRequestSchema = z.object({
-  ruleValue: PolicyRuleValueSchema.optional(),
-  isActive: z.boolean().optional(),
-  validFrom: z.string().datetime('유효한 날짜 형식이어야 합니다').optional(),
-  validUntil: z.string().datetime('유효한 날짜 형식이어야 합니다').optional(),
-}).refine((data) => {
-  if (data.validFrom && data.validUntil) {
-    return new Date(data.validFrom) < new Date(data.validUntil);
-  }
-  return true;
-}, {
-  message: '유효 시작일은 종료일보다 이전이어야 합니다',
-  path: ['validFrom'],
-});
+export const UpdatePolicyRequestSchema = z
+  .object({
+    ruleValue: PolicyRuleValueSchema.optional(),
+    isActive: z.boolean().optional(),
+    validFrom: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+    validUntil: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.validFrom && data.validUntil) {
+        return new Date(data.validFrom) < new Date(data.validUntil);
+      }
+      return true;
+    },
+    {
+      message: '유효 시작일은 종료일보다 이전이어야 합니다',
+      path: ['validFrom'],
+    },
+  );
 
 export const PolicyValidationRequestSchema = z.object({
-  userId: z.string().uuid('유효한 사용자 ID여야 합니다'),
-  action: z.string().min(1, '액션은 필수입니다').max(100, '액션은 100자 이하여야 합니다'),
+  userId: z.uuid('유효한 사용자 ID여야 합니다'),
+  action: z
+    .string()
+    .min(1, '액션은 필수입니다')
+    .max(100, '액션은 100자 이하여야 합니다'),
   context: z.record(z.string(), z.unknown(), '컨텍스트는 객체 형태여야 합니다'),
   policyIds: z.array(z.string().uuid('유효한 정책 ID여야 합니다')).optional(),
 });
 
 export const BulkPolicyValidationRequestSchema = z.object({
-  requests: z.array(PolicyValidationRequestSchema).min(1, '최소 1개의 요청이 필요합니다'),
+  requests: z
+    .array(PolicyValidationRequestSchema)
+    .min(1, '최소 1개의 요청이 필요합니다'),
 });
 
 export const GetPoliciesQuerySchema = z.object({
   ruleType: z.string().optional(),
-  tierId: z.string().uuid().optional(),
+  tierId: z.uuid().optional(),
   isActive: z.boolean().optional(),
   page: z.number().min(1).default(1).optional(),
   limit: z.number().min(1).max(100).default(20).optional(),
 });
 
 export const GetApplicablePoliciesQuerySchema = z.object({
-  tierId: z.string().uuid().optional(),
-  subscriptionId: z.string().uuid().optional(),
-  currentDate: z.string().datetime().optional(),
+  tierId: z.uuid().optional(),
+  subscriptionId: z.uuid().optional(),
+  currentDate: z.iso.datetime().optional(),
 });
 
 // Policy Management Request Types
 export type CreatePolicyRequest = z.infer<typeof CreatePolicyRequestSchema>;
 export type UpdatePolicyRequest = z.infer<typeof UpdatePolicyRequestSchema>;
-export type PolicyValidationRequest = z.infer<typeof PolicyValidationRequestSchema>;
-export type BulkPolicyValidationRequest = z.infer<typeof BulkPolicyValidationRequestSchema>;
+export type PolicyValidationRequest = z.infer<
+  typeof PolicyValidationRequestSchema
+>;
+export type BulkPolicyValidationRequest = z.infer<
+  typeof BulkPolicyValidationRequestSchema
+>;
 export type GetPoliciesQuery = z.infer<typeof GetPoliciesQuerySchema>;
-export type GetApplicablePoliciesQuery = z.infer<typeof GetApplicablePoliciesQuerySchema>;
+export type GetApplicablePoliciesQuery = z.infer<
+  typeof GetApplicablePoliciesQuerySchema
+>;
