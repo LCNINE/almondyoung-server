@@ -6,7 +6,7 @@ import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 /**
  * 외부 Kafka에서 수신한 paymentRefundCompleted 이벤트를 메두사가 내부적으로 처리
  */
-export default async function handlePaymentRefundReceived({
+export default async function handlePaymentRefundCompleted({
   event,
   container,
 }: SubscriberArgs<{
@@ -43,8 +43,8 @@ export default async function handlePaymentRefundReceived({
 }
 
 export const config: SubscriberConfig = {
-  event: 'payment.refund.received',
+  event: 'payment.refund.completed',
   context: {
-    subscriberId: 'payment-refund-received-handler',
+    subscriberId: 'payment-refund-completed-handler',
   },
 };

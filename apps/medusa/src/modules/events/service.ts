@@ -189,7 +189,7 @@ export default class EventModuleService extends MedusaService({}) {
 
             if (eventBus) {
               await eventBus.emit({
-                name: 'payment.refund.received',
+                name: 'payment.refund.completed',
                 data: {
                   refundId,
                   paymentId: data?.paymentId || data?.payment_id,
