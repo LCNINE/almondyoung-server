@@ -43,7 +43,7 @@ export default async function handlePaymentRefundCompleted({
 }
 
 export const config: SubscriberConfig = {
-  event: 'payment.refund.completed',
+  event: 'payment.refunded',
   context: {
     subscriberId: 'payment-refund-completed-handler',
   },
