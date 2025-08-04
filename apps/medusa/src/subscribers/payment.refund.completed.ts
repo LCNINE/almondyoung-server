@@ -11,17 +11,21 @@ export default async function handlePaymentRefundCompleted({
   container,
 }: SubscriberArgs<{
   refundId: string;
-  data: any;
-  completedAt: Date;
+  rawData: any;
+  refundedAt: Date;
 }>) {
-  console.log('🔄 Processing external refund event:', event.data);
+  const logger = container.resolve('logger');
+
+  logger.info(
+    `🔄 Processing external refund event: ${JSON.stringify(event.data)}`,
+  );
 
   const paymentModuleService = container.resolve<IPaymentModuleService>(
     Modules.PAYMENT,
   );
 
   const refunds = await paymentModuleService.listRefunds(
-    { id: ['refund_id'] },
+    { id: [event.data.refundId] },
     { relations: ['payment'] },
   );
 
@@ -35,9 +39,11 @@ export default async function handlePaymentRefundCompleted({
       },
     });
 
-    console.log(`✅ External refund processed: ${event.data.refundId}`, result);
+    logger.info(
+      `✅ External refund processed: ${event.data.refundId} ${JSON.stringify(result)}`,
+    );
   } catch (error) {
-    console.error('❌ Failed to process external refund:', error);
+    logger.error('❌ Failed to process external refund:', error);
     throw error;
   }
 }

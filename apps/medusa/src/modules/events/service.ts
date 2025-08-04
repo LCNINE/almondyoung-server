@@ -192,11 +192,7 @@ export default class EventModuleService extends MedusaService({}) {
                 name: 'payment.refunded',
                 data: {
                   refundId,
-                  paymentId: data?.paymentId || data?.payment_id,
-                  orderId: data?.orderId || data?.order_id,
-                  amount: data?.amount,
-                  currency: data?.currency,
-                  refundedAt: completedAt || new Date(),
+                  refundedAt: completedAt,
                   rawData: data,
                 },
               });
