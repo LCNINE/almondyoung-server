@@ -324,13 +324,7 @@ export type BulkPolicyValidationResult = {
 };
 
 // 정책 관리 입력 타입
-export type CreatePolicyInput = {
-  ruleType: Policy['ruleType'];
-  ruleValue: Record<string, any>;
-  tierId?: string;
-  validFrom?: string;
-  validUntil?: string;
-};
+
 
 export type UpdatePolicyInput = Partial<{
   ruleValue: Record<string, any>;
@@ -338,6 +332,15 @@ export type UpdatePolicyInput = Partial<{
   validFrom: string;
   validUntil: string;
 }>;
+
+// 정책 조회 쿼리 타입 추가
+export type GetPoliciesDto = {
+  ruleType?: string;
+  tierId?: string;
+  isActive?: boolean;
+  page?: number;
+  limit?: number;
+};
 
 // 정책 응답 타입
 export type PolicyResponse = {

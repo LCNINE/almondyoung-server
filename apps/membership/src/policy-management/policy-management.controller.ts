@@ -1,24 +1,23 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, Query, UsePipes } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ZodValidationPipe } from 'nestjs-zod';
 import { PolicyManagementService } from './policy-management.service';
-import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import {
   CreatePolicyDto,
   UpdatePolicyDto,
   GetPoliciesDto,
-  CreatePolicyRequestSchema,
-  UpdatePolicyRequestSchema,
-  GetPoliciesQuerySchema,
-} from './dto';
+} from './dto/policy-management.dto';
+import { UpdatePolicyRequestSchema } from '../shared/schemas/requests';
 import type {
-  CreatePolicyInput,
-  UpdatePolicyInput,
   PolicyResponse,
+  PolicyListResponse,
 } from '../shared/schemas/types';
 
 /**
  * 정책 관리 컨트롤러
  * 정책의 CRUD 작업을 위한 REST API를 제공합니다.
  */
+@ApiTags('policies')
 @Controller('policies')
 export class PolicyManagementController {
   constructor(private readonly policyManagementService: PolicyManagementService) {}
@@ -27,8 +26,8 @@ export class PolicyManagementController {
    * 모든 정책을 조회합니다.
    */
   @Get()
-  @UsePipes(new ZodValidationPipe(GetPoliciesQuerySchema))
-  async getAllPolicies(@Query() query: GetPoliciesDto): Promise<PolicyResponse[]> {
+  @ApiOperation({ summary: '정책 목록 조회' })
+  async getAllPolicies(@Query() query: GetPoliciesDto): Promise<PolicyListResponse> {
     return this.policyManagementService.getAllPolicies(query);
   }
 
@@ -36,6 +35,7 @@ export class PolicyManagementController {
    * 특정 정책을 조회합니다.
    */
   @Get(':policyId')
+  @ApiOperation({ summary: '특정 정책 조회' })
   async getPolicyById(@Param('policyId') policyId: string): Promise<PolicyResponse | null> {
     return this.policyManagementService.getPolicyById(policyId);
   }
@@ -44,7 +44,7 @@ export class PolicyManagementController {
    * 새로운 정책을 생성합니다.
    */
   @Post()
-  @UsePipes(new ZodValidationPipe(CreatePolicyRequestSchema))
+  @ApiOperation({ summary: '새 정책 생성' })
   async createPolicy(@Body() createPolicyDto: CreatePolicyDto): Promise<PolicyResponse | null> {
     return this.policyManagementService.createPolicy(createPolicyDto);
   }
@@ -53,6 +53,7 @@ export class PolicyManagementController {
    * 기존 정책을 업데이트합니다.
    */
   @Put(':policyId')
+  @ApiOperation({ summary: '정책 업데이트' })
   @UsePipes(new ZodValidationPipe(UpdatePolicyRequestSchema))
   async updatePolicy(
     @Param('policyId') policyId: string,
@@ -65,6 +66,7 @@ export class PolicyManagementController {
    * 정책을 비활성화합니다.
    */
   @Delete(':policyId')
+  @ApiOperation({ summary: '정책 비활성화' })
   async deactivatePolicy(
     @Param('policyId') policyId: string,
   ): Promise<{ success: boolean; message: string } | null> {

@@ -9,12 +9,14 @@ import {
   PlanNotFoundException,
   SubscriptionPausedException,
   InvalidPlanChangeException,
+  PolicyViolationException,
 } from '../shared/exceptions/subscription.exceptions';
 
 import * as schema from '../shared/schemas/entities/schema';
 import { DbService } from '@app/db';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { EventPublisherService } from '@app/events';
+import { PolicyEngineService } from '../policy-management/policy-engine.service';
 import { v4 as uuidv4 } from 'uuid';
 import { addDays, differenceInDays } from 'date-fns';
 
@@ -22,7 +24,9 @@ import { addDays, differenceInDays } from 'date-fns';
 export class SubscriptionService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
-    private readonly eventPublisher: EventPublisherService,
+    // TODO: Uncomment when event publishing is implemented
+    // private readonly eventPublisher: EventPublisherService,
+    private readonly policyEngine: PolicyEngineService,
   ) {}
 
   /**
@@ -216,6 +220,31 @@ export class SubscriptionService {
         );
       }
 
+      // 4. 정책 검증
+      try {
+        const policyResult = await this.policyEngine.validateRequest(
+          userId,
+          'PLAN_CHANGE',
+          {
+            currentPlanId: currentSub.plan.id,
+            newPlanId,
+            changeType: 'UPGRADE',
+            currentTierPriority: currentSub.currentTier.priorityLevel,
+            newTierPriority: newTier.priorityLevel,
+          }
+        );
+
+        if (!policyResult.isValid) {
+          const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
+          throw new PolicyViolationException('UPGRADE_POLICY_VIOLATION', violations);
+        }
+      } catch (error) {
+        if (error instanceof PolicyViolationException) {
+          throw error;
+        }
+        // 정책 엔진 오류 시 계속 진행 (폴백)
+      }
+
       // 4. 정산 금액 계산
       const remainingDays = differenceInDays(currentSub.endsAt!, new Date());
       const currentDailyRate =
@@ -322,7 +351,32 @@ export class SubscriptionService {
         throw new InvalidPlanChangeException('유효한 다운그레이드가 아닙니다.');
       }
 
-      // 3. 다운그레이드 예약 이벤트 생성
+      // 3. 정책 검증
+      try {
+        const policyResult = await this.policyEngine.validateRequest(
+          userId,
+          'PLAN_CHANGE',
+          {
+            currentPlanId: currentSub.plan.id,
+            newPlanId,
+            changeType: 'DOWNGRADE',
+            currentTierPriority: currentSub.currentTier.priorityLevel,
+            newTierPriority: newPlan[0].tier.priorityLevel,
+          }
+        );
+
+        if (!policyResult.isValid) {
+          const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
+          throw new PolicyViolationException('DOWNGRADE_POLICY_VIOLATION', violations);
+        }
+      } catch (error) {
+        if (error instanceof PolicyViolationException) {
+          throw error;
+        }
+        // 정책 엔진 오류 시 계속 진행 (폴백)
+      }
+
+      // 4. 다운그레이드 예약 이벤트 생성
       const eventId = uuidv4();
       const effectiveDate =
         currentSub.nextBillingDate || new Date().toISOString().split('T')[0];

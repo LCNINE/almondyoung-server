@@ -46,6 +46,7 @@ import { userSchema, UserSchema } from './schema';
 
 @Module({
   imports: [
+    // DbModule은 전역 모듈로 설정되어 있어 한 번만 import하면 됩니다
     DbModule.forRoot<UserSchema>({
       config: createDbConfigFromEnv({
         DB_HOST: process.env.DB_HOST!,
@@ -66,14 +67,15 @@ export class AppModule {}
 ```typescript
 // apps/user-service/src/user.service.ts
 import { Injectable } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService } from '@app/db';
 import { UserSchema, users } from './schema';
 import { eq } from 'drizzle-orm';
 
 @Injectable()
 export class UserService {
   constructor(
-    @InjectDb() private readonly dbService: DbService<UserSchema>,
+    // 전역 모듈이므로 별도의 import 없이 DbService를 주입받을 수 있습니다
+    private readonly dbService: DbService<UserSchema>,
   ) {}
 
   async createUser(name: string, email: string) {
@@ -143,13 +145,14 @@ export type OrderSchema = typeof orderSchema;
 
 // apps/order-service/src/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService } from '@app/db';
 import { OrderSchema, orders } from './schema';
 
 @Injectable()
 export class OrderService {
   constructor(
-    @InjectDb() private readonly dbService: DbService<OrderSchema>,
+    // 전역 모듈이므로 별도의 import 없이 DbService를 주입받을 수 있습니다
+    private readonly dbService: DbService<OrderSchema>,
   ) {}
 
   async createOrder(userId: number, productName: string, quantity: number) {

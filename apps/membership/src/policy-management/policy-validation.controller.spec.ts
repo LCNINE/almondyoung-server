@@ -61,7 +61,8 @@ describe('PolicyValidationController', () => {
       expect(service.validateRequest).toHaveBeenCalledWith(
         'user-123',
         'PAUSE_SUBSCRIPTION',
-        { subscriptionId: 'sub-123' }
+        { subscriptionId: 'sub-123' },
+        undefined
       );
     });
 
@@ -143,10 +144,13 @@ describe('PolicyValidationController', () => {
       const result = await controller.bulkValidatePolicies(bulkValidationDto);
 
       // Assert
-      expect(result).toEqual(mockResults);
+      expect(result).toEqual({
+        results: mockResults,
+        totalExecutionTime: expect.any(Number)
+      });
       expect(service.validateRequest).toHaveBeenCalledTimes(2);
-      expect(service.validateRequest).toHaveBeenNthCalledWith(1, 'user-1', 'PAUSE_SUBSCRIPTION', {});
-      expect(service.validateRequest).toHaveBeenNthCalledWith(2, 'user-2', 'UPGRADE_SUBSCRIPTION', {});
+      expect(service.validateRequest).toHaveBeenNthCalledWith(1, 'user-1', 'PAUSE_SUBSCRIPTION', {}, undefined);
+      expect(service.validateRequest).toHaveBeenNthCalledWith(2, 'user-2', 'UPGRADE_SUBSCRIPTION', {}, undefined);
     });
 
     it('should handle empty requests array', async () => {
@@ -157,7 +161,10 @@ describe('PolicyValidationController', () => {
       const result = await controller.bulkValidatePolicies(bulkValidationDto);
 
       // Assert
-      expect(result).toEqual([]);
+      expect(result).toEqual({
+        results: [],
+        totalExecutionTime: 0
+      });
       expect(service.validateRequest).not.toHaveBeenCalled();
     });
   });

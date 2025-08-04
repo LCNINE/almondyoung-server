@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PolicyManagementController } from './policy-management.controller';
 import { PolicyManagementService } from './policy-management.service';
-
+import type { PolicyResponse, PolicyListResponse } from '../shared/schemas/types';
 describe('PolicyManagementController', () => {
   let controller: PolicyManagementController;
   let service: jest.Mocked<PolicyManagementService>;
@@ -36,24 +36,29 @@ describe('PolicyManagementController', () => {
   describe('getAllPolicies', () => {
     it('should return all policies', async () => {
       // Arrange
-      const mockPolicies = [
-        { 
-          id: 'policy-1', 
-          ruleType: 'MAX_PAUSES_PER_YEAR', 
+      const mockPolicies: PolicyListResponse = {
+        policies: [
+        {
+          id: 'policy-1',
+          ruleType: 'MAX_PAUSES_PER_YEAR',
           ruleValue: { limit: 2 },
           isActive: true,
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
         },
-        { 
-          id: 'policy-2', 
-          ruleType: 'MIN_PAUSE_DURATION_DAYS', 
+        {
+          id: 'policy-2',
+          ruleType: 'MIN_PAUSE_DURATION_DAYS',
           ruleValue: { minDays: 7 },
           isActive: true,
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
         },
-      ];
+      ],
+        total: 2,
+        page: 1,
+        limit: 20,
+      };
       service.getAllPolicies.mockResolvedValue(mockPolicies);
 
       // Act
@@ -66,23 +71,29 @@ describe('PolicyManagementController', () => {
 
     it('should handle query parameters', async () => {
       // Arrange
-      const query = { active: true, ruleType: 'MAX_PAUSES_PER_YEAR' };
-      service.getAllPolicies.mockResolvedValue([]);
+      const query = { isActive: true, ruleType: 'MAX_PAUSES_PER_YEAR' };
+      const emptyResponse: PolicyListResponse = {
+        policies: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+      };
+      service.getAllPolicies.mockResolvedValue(emptyResponse);
 
       // Act
       const result = await controller.getAllPolicies(query);
 
       // Assert
-      expect(result).toEqual([]);
-      expect(service.getAllPolicies).toHaveBeenCalled();
+      expect(result).toEqual(emptyResponse);
+      expect(service.getAllPolicies).toHaveBeenCalledWith(query);
     });
   });
 
   describe('getPolicyById', () => {
     it('should return policy by id', async () => {
       // Arrange
-      const mockPolicy = { 
-        id: 'policy-1', 
+      const mockPolicy: PolicyResponse = {
+        id: 'policy-1',
         ruleType: 'MAX_PAUSES_PER_YEAR',
         ruleValue: { limit: 2 },
         isActive: true,
@@ -120,8 +131,8 @@ describe('PolicyManagementController', () => {
         ruleValue: { limit: 3 },
         tierId: 'tier-123',
       };
-      const mockCreatedPolicy = { 
-        id: 'policy-new', 
+      const mockCreatedPolicy: PolicyResponse = {
+        id: 'policy-new',
         ...createDto,
         isActive: true,
         createdAt: '2024-01-01T00:00:00.000Z',
@@ -142,8 +153,8 @@ describe('PolicyManagementController', () => {
     it('should update existing policy', async () => {
       // Arrange
       const updateDto = { ruleValue: { limit: 5 } };
-      const mockUpdatedPolicy = { 
-        id: 'policy-1', 
+      const mockUpdatedPolicy: PolicyResponse = {
+        id: 'policy-1',
         ruleType: 'MAX_PAUSES_PER_YEAR',
         ruleValue: { limit: 5 },
         isActive: true,

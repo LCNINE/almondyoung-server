@@ -2,10 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PauseService } from './pause.service';
 import { DbService } from '@app/db';
 import { EventPublisherService } from '@app/events';
+import { PolicyEngineService } from '../policy-management/policy-engine.service';
 import {
   SubscriptionNotFoundException,
   SubscriptionPausedException,
-  PauseQuotaExceededException,
 } from '../shared/exceptions/subscription.exceptions';
 import * as schema from '../shared/schemas/entities/schema';
 
@@ -84,6 +84,16 @@ describe('PauseService', () => {
       publishEvent: jest.fn(),
     };
 
+    const mockPolicyEngine = {
+      validateRequest: jest.fn().mockResolvedValue({
+        isValid: true,
+        violatedPolicies: [],
+        warnings: [],
+        appliedPolicies: [],
+        executionTime: 10,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PauseService,
@@ -94,6 +104,10 @@ describe('PauseService', () => {
         {
           provide: EventPublisherService,
           useValue: mockEventPublisher,
+        },
+        {
+          provide: PolicyEngineService,
+          useValue: mockPolicyEngine,
         },
       ],
     }).compile();
@@ -131,23 +145,14 @@ describe('PauseService', () => {
             })
             .mockReturnValueOnce({
               from: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({
-                  limit: jest
-                    .fn()
-                    .mockResolvedValue([{ pauseCount: 0, totalPausedDays: 0 }]),
-                }),
-              }),
-            })
-            .mockReturnValueOnce({
-              from: jest.fn().mockReturnValue({
-                where: jest
-                  .fn()
-                  .mockResolvedValue([{ ruleValue: { limit: 2 } }]),
-              }),
-            })
-            .mockReturnValueOnce({
-              from: jest.fn().mockReturnValue({
-                where: jest.fn().mockResolvedValue([]),
+                where: jest.fn().mockResolvedValue([
+                  {
+                    id: 'right-1',
+                    userId: 'user-123',
+                    endsAt: '2024-12-31',
+                    isActive: true,
+                  },
+                ]),
               }),
             })
             .mockReturnValueOnce({
@@ -172,12 +177,20 @@ describe('PauseService', () => {
 
       dbService.db.transaction = mockTransaction;
 
-      // Mock the database select for policies
-      dbService.db.select = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue([{ ruleValue: { minDays: 7 } }]),
+      // Mock policy engine to return valid result
+      const mockPolicyEngine = {
+        validateRequest: jest.fn().mockResolvedValue({
+          isValid: true,
+          violatedPolicies: [],
+          appliedPolicies: [
+            {
+              ruleType: 'MAX_PAUSES_PER_YEAR',
+              appliedValue: { maxPauses: 2, currentUsage: 0, remaining: 2 },
+            },
+          ],
         }),
-      });
+      };
+      (service as any).policyEngine = mockPolicyEngine;
 
       // Act
       const result = await service.pauseSubscription(
@@ -259,7 +272,7 @@ describe('PauseService', () => {
       ).rejects.toThrow(SubscriptionPausedException);
     });
 
-    it('should throw PauseQuotaExceededException when quota exceeded', async () => {
+    it('should throw PolicyViolationException when policy validation fails', async () => {
       // Arrange
       const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
@@ -279,29 +292,35 @@ describe('PauseService', () => {
                   }),
                 }),
               }),
-            })
-            .mockReturnValueOnce({
-              from: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue([{ pauseCount: 2 }]), // Already used quota
-                }),
-              }),
-            })
-            .mockReturnValueOnce({
-              from: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue([{ ruleValue: { limit: 2 } }]),
-              }),
             }),
+          insert: jest.fn().mockReturnValue({
+            values: jest.fn().mockResolvedValue(undefined),
+          }),
+          update: jest.fn().mockReturnValue({
+            set: jest.fn().mockReturnValue({
+              where: jest.fn().mockResolvedValue(undefined),
+            }),
+          }),
         };
         return callback(mockTx);
       });
 
       dbService.db.transaction = mockTransaction;
 
+      // Mock policy engine to return invalid result
+      const mockPolicyEngine = {
+        validateRequest: jest.fn().mockResolvedValue({
+          isValid: false,
+          violatedPolicies: [{ message: 'Maximum pauses per year exceeded' }],
+          appliedPolicies: [],
+        }),
+      };
+      (service as any).policyEngine = mockPolicyEngine;
+
       // Act & Assert
       await expect(
         service.pauseSubscription('user-123', mockPauseRequest),
-      ).rejects.toThrow(PauseQuotaExceededException);
+      ).rejects.toThrow('PAUSE_POLICY_VIOLATION');
     });
   });
 

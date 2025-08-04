@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PlanService } from '../plan/plan.service';
-import { SubscriptionService } from '../subscription/subscription.service';
-import { EventPublisherService } from '@app/events';
+// import { SubscriptionService } from '../subscription/subscription.service';
+// import { EventPublisherService } from '@app/events';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -18,8 +18,8 @@ import {
 export class AdminOperationsService {
   constructor(
     private readonly planService: PlanService,
-    private readonly subscriptionService: SubscriptionService,
-    private readonly eventPublisher: EventPublisherService,
+    // private readonly subscriptionService: SubscriptionService,
+    // private readonly eventPublisher: EventPublisherService,
   ) {}
 
   /**

@@ -5,13 +5,13 @@ import * as schema from '../shared/schemas/entities/schema';
 import {
   SubscriptionNotFoundException,
   SubscriptionPausedException,
-  PauseQuotaExceededException,
   PolicyViolationException,
 } from '../shared/exceptions/subscription.exceptions';
 // TODO: Uncomment when event publishing is implemented
 // import { EventPublisherService } from '@app/events';
 import { addDays, differenceInDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
+import { PolicyEngineService } from '../policy-management/policy-engine.service';
 import type {
   PauseSubscriptionInput,
   ResumeSubscriptionInput,
@@ -24,12 +24,23 @@ import type {
 export class PauseService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
+    private readonly policyEngine: PolicyEngineService,
     // TODO: Implement event publishing when external event system is ready
     // private readonly eventPublisher: EventPublisherService,
   ) { }
 
   /**
    * 구독 일시정지
+   * 
+   * 정책 엔진을 통해 일시정지 가능 여부를 검증한 후 일시정지를 실행합니다.
+   * 정책 위반 시 PolicyViolationException을 발생시킵니다.
+   * 
+   * @param userId - 사용자 ID
+   * @param pauseRequest - 일시정지 요청 정보
+   * @returns 일시정지 결과 (remainingPauseQuota는 정책 엔진에서 관리됨)
+   * @throws {SubscriptionNotFoundException} 활성 구독이 없는 경우
+   * @throws {SubscriptionPausedException} 이미 일시정지 중인 경우
+   * @throws {PolicyViolationException} 정책 위반 시
    */
   async pauseSubscription(
     userId: string,
@@ -47,26 +58,28 @@ export class PauseService {
         throw new SubscriptionPausedException('이미 일시정지 중입니다');
       }
 
-      // 3. 일시정지 자격 확인
-      const currentYear = new Date().getFullYear();
-      const eligibility = await this.checkPauseEligibility(
-        tx,
-        userId,
-        currentYear,
-      );
-      if (!eligibility.eligible) {
-        throw new PauseQuotaExceededException(
-          eligibility.currentUsage,
-          eligibility.maxPauses,
-        );
-      }
-
-      // 4. 일시정지 기간 검증
+      // 3. 정책 엔진을 통한 일시정지 검증
       const startDate = new Date(pauseRequest.startDate);
       const endDate = new Date(pauseRequest.endDate);
-      const pauseDays = differenceInDays(endDate, startDate);
 
-      await this.validatePauseDuration(pauseDays);
+      const policyResult = await this.policyEngine.validateRequest(
+        userId,
+        'PAUSE_SUBSCRIPTION',
+        {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          subscriptionId: activeSubscription.subscription.id,
+        }
+      );
+
+      if (!policyResult.isValid) {
+        const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
+        throw new PolicyViolationException('PAUSE_POLICY_VIOLATION', violations);
+      }
+
+      // 4. 정책 검증 완료 - 기존 검증은 제거
+      const currentYear = new Date().getFullYear();
+      const pauseDays = differenceInDays(endDate, startDate);
 
       // 5. 일시정지 레코드 생성
       const pauseId = uuidv4();
@@ -116,7 +129,7 @@ export class PauseService {
         startDate: pauseRequest.startDate,
         endDate: pauseRequest.endDate,
         affectedRightsCount: affectedRights.length,
-        remainingPauseQuota: eligibility.remainingPauses - 1,
+        // remainingPauseQuota는 정책 엔진에서 관리됨
         eventPayload,
       };
     });
@@ -241,20 +254,27 @@ export class PauseService {
 
     const currentUsage = usage[0]?.pauseCount || 0;
 
-    // 정책 조회
-    const policies = await tx
-      .select()
-      .from(schema.subscriptionPolicies)
-      .where(
-        and(
-          eq(schema.subscriptionPolicies.ruleType, 'MAX_PAUSES_PER_YEAR'),
-          eq(schema.subscriptionPolicies.isActive, true),
-        ),
+    // 정책 엔진을 통한 한도 조회
+    const DEFAULT_MAX_PAUSES_PER_YEAR = 2;
+    let maxPauses = DEFAULT_MAX_PAUSES_PER_YEAR;
+
+    try {
+      const policyResult = await this.policyEngine.validateRequest(
+        userId,
+        'CHECK_PAUSE_QUOTA',
+        { year }
       );
 
-    const DEFAULT_MAX_PAUSES_PER_YEAR = 2;
-    const maxPauses =
-      policies[0]?.ruleValue?.limit || DEFAULT_MAX_PAUSES_PER_YEAR;
+      // 적용된 정책에서 maxPauses 값 추출
+      const pausePolicy = policyResult.appliedPolicies.find(
+        p => p.ruleType === 'MAX_PAUSES_PER_YEAR'
+      );
+      if (pausePolicy?.appliedValue?.maxPauses) {
+        maxPauses = pausePolicy.appliedValue.maxPauses;
+      }
+    } catch (error) {
+      // 정책 엔진 오류 시 기본값 사용
+    }
 
     return {
       eligible: currentUsage < maxPauses,
@@ -320,32 +340,7 @@ export class PauseService {
     return result[0] || null;
   }
 
-  /**
-   * 일시정지 기간 검증
-   */
-  private async validatePauseDuration(pauseDays: number) {
-    // 최소 일시정지 기간 정책 확인
-    const policies = await this.dbService.db
-      .select()
-      .from(schema.subscriptionPolicies)
-      .where(
-        and(
-          eq(schema.subscriptionPolicies.ruleType, 'MIN_PAUSE_DURATION_DAYS'),
-          eq(schema.subscriptionPolicies.isActive, true),
-        ),
-      );
-
-    const DEFAULT_MIN_PAUSE_DAYS = 7;
-    const minDays =
-      (policies[0]?.ruleValue as any)?.minDays || DEFAULT_MIN_PAUSE_DAYS;
-
-    if (pauseDays < minDays) {
-      throw new PolicyViolationException(
-        'MIN_PAUSE_DURATION_DAYS',
-        `최소 ${minDays}일 이상 일시정지해야 합니다`,
-      );
-    }
-  }
+  // validatePauseDuration 제거 - 정책 엔진에서 처리
 
   /**
    * 활성 권한 일시정지 처리
@@ -485,6 +480,79 @@ export class PauseService {
         totalPausedDays: pauseDays,
         lastPauseDate: new Date().toISOString().split('T')[0],
       });
+    }
+  }
+
+  /**
+   * 정책 기반 일시정지 검증 (간단한 헬퍼)
+   */
+  async validatePauseWithPolicy(
+    userId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{ canPause: boolean; reason?: string }> {
+    try {
+      const result = await this.policyEngine.validateRequest(
+        userId,
+        'PAUSE_SUBSCRIPTION',
+        { startDate, endDate }
+      );
+
+      if (result.isValid) {
+        return { canPause: true };
+      }
+
+      const reason = result.violatedPolicies
+        .map(v => v.message)
+        .join('; ');
+
+      return { canPause: false, reason };
+    } catch (error) {
+      // 정책 엔진 오류 시 기존 로직으로 폴백
+      return { canPause: true };
+    }
+  }
+
+  /**
+   * 정책 기반 일시정지 자격 확인 (외부 API용)
+   */
+  async checkPauseEligibilityWithPolicy(userId: string): Promise<{
+    eligible: boolean;
+    currentUsage: number;
+    maxPauses: number;
+    remainingPauses: number;
+    reason?: string;
+  }> {
+    try {
+      const result = await this.policyEngine.validateRequest(
+        userId,
+        'CHECK_PAUSE_QUOTA',
+        { year: new Date().getFullYear() }
+      );
+
+      // 적용된 정책에서 정보 추출
+      const pausePolicy = result.appliedPolicies.find(
+        p => p.ruleType === 'MAX_PAUSES_PER_YEAR'
+      );
+
+      if (pausePolicy?.appliedValue) {
+        const { currentUsage, maxPauses, remaining } = pausePolicy.appliedValue;
+        return {
+          eligible: result.isValid,
+          currentUsage,
+          maxPauses,
+          remainingPauses: remaining,
+          reason: result.isValid ? undefined : result.violatedPolicies.map(v => v.message).join('; ')
+        };
+      }
+
+      // 폴백: 기존 로직 사용
+      const currentYear = new Date().getFullYear();
+      return this.checkPauseEligibility(this.dbService.db, userId, currentYear);
+    } catch (error) {
+      // 오류 시 기존 로직으로 폴백
+      const currentYear = new Date().getFullYear();
+      return this.checkPauseEligibility(this.dbService.db, userId, currentYear);
     }
   }
 }

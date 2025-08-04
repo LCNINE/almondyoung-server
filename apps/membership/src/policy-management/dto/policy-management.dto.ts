@@ -1,20 +1,20 @@
 /**
- * 정책 관리 DTO
- * Controller 레이어에서 사용되는 데이터 전송 객체들
+ * 정책 관리 DTO (nestjs-zod 기반)
  */
 
+import { createZodDto } from 'nestjs-zod';
 import {
-  CreatePolicyRequest,
-  UpdatePolicyRequest,
-  GetPoliciesQuery,
+  CreatePolicyRequestSchema,
+  UpdatePolicyRequestSchema,
+  GetPoliciesQuerySchema,
 } from '../../shared/schemas/requests';
 
-// Re-export request types as DTOs for consistency
-export type CreatePolicyDto = CreatePolicyRequest;
-export type UpdatePolicyDto = UpdatePolicyRequest;
-export type GetPoliciesDto = GetPoliciesQuery;
+// nestjs-zod로 DTO 생성 - 기본 검증 포함
+export class CreatePolicyDto extends createZodDto(CreatePolicyRequestSchema) {}
+export class UpdatePolicyDto extends createZodDto(UpdatePolicyRequestSchema) {}
+export class GetPoliciesDto extends createZodDto(GetPoliciesQuerySchema) {}
 
-// Additional DTOs specific to policy management
+// Additional DTOs for policy management
 export interface DeactivatePolicyDto {
   reason?: string;
 }

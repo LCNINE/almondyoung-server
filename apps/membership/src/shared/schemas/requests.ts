@@ -165,15 +165,13 @@ export const POLICY_RULE_TYPES = [
  * 정책 규칙 값에 대한 기본 스키마
  * 각 정책 타입별로 더 구체적인 검증이 필요할 수 있습니다
  */
-const PolicyRuleValueSchema = z.record(z.unknown()).refine(
+const PolicyRuleValueSchema = z.record(z.string(), z.unknown()).refine(
   (value) => Object.keys(value).length > 0,
   { message: '정책 값은 최소 하나의 속성을 가져야 합니다' }
 );
 
 export const CreatePolicyRequestSchema = z.object({
-  ruleType: z.enum(POLICY_RULE_TYPES, {
-    errorMap: () => ({ message: '유효한 정책 타입이어야 합니다' })
-  }),
+  ruleType: z.enum(POLICY_RULE_TYPES, '유효한 정책 타입이어야 합니다'),
   ruleValue: PolicyRuleValueSchema,
   tierId: z.string().uuid('유효한 티어 ID여야 합니다').optional(),
   validFrom: z.string().datetime('유효한 날짜 형식이어야 합니다').optional(),
@@ -206,7 +204,7 @@ export const UpdatePolicyRequestSchema = z.object({
 export const PolicyValidationRequestSchema = z.object({
   userId: z.string().uuid('유효한 사용자 ID여야 합니다'),
   action: z.string().min(1, '액션은 필수입니다').max(100, '액션은 100자 이하여야 합니다'),
-  context: z.record(z.unknown(), '컨텍스트는 객체 형태여야 합니다'),
+  context: z.record(z.string(), z.unknown(), '컨텍스트는 객체 형태여야 합니다'),
   policyIds: z.array(z.string().uuid('유효한 정책 ID여야 합니다')).optional(),
 });
 

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionService } from './subscription.service';
 import { DbService } from '@app/db';
 import { EventPublisherService } from '@app/events';
+import { PolicyEngineService } from '../policy-management/policy-engine.service';
 import {
   SubscriptionNotFoundException,
   ActiveSubscriptionExistsException,
@@ -90,6 +91,16 @@ describe('SubscriptionService', () => {
       setServiceName: jest.fn(),
     };
 
+    const mockPolicyEngine = {
+      validateRequest: jest.fn().mockResolvedValue({
+        isValid: true,
+        violatedPolicies: [],
+        warnings: [],
+        appliedPolicies: [],
+        executionTime: 10,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionService,
@@ -100,6 +111,10 @@ describe('SubscriptionService', () => {
         {
           provide: EventPublisherService,
           useValue: mockEventPublisher,
+        },
+        {
+          provide: PolicyEngineService,
+          useValue: mockPolicyEngine,
         },
       ],
     }).compile();
