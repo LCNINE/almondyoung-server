@@ -271,6 +271,9 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     return this.getPaymentStatus(input);
   }
 
+  /*
+    이 코드는 관리자가 결제 캡쳐를 수동으로 진행 할 때 사용되는것으로 보임 
+  */
   async capturePayment({
     data,
     context,
