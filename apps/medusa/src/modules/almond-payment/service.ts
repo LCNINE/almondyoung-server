@@ -154,7 +154,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
       const mockPaymentSession: AlmondPaymentSession = {
         id: `mock_payment_${Date.now()}`,
         status: 'PENDING',
-        payment_url: 'https://mock-payment.almond.com/pay',
+        payment_url: 'http://localhost:8000/wallet',
         expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         requires_authentication: false,
       };
@@ -194,6 +194,27 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     }
   }
 
+  /**
+   *  이 코드 의문
+   *  1. authorizePayment()가 getPaymentStatus를 호출하고 있음
+   *  2. 근데 authorizePayment()는 paymentKey를 받아서 윌렛에 결제 승인요청을 해야하는건데 그런 코드로직이 없는거같음
+   *  3. 아직 미흡한 부분인거같음
+   *  4. retrievePayment() 에서도 getPaymentStatus()를 호출하고있는데
+   *  5. 그러면 getPaymentStatus()의 파라미터로 paymentKey가 들어오는 경우와, 단순히 payment_session_id만 들어오는 경우가 있는데
+   *  6. 이거 두개 구분해서 처리해줘야하는거 아닌가 싶음
+   *  7. 이 모든걸 종합해봤을 때, authorizePayment()변경이 필요한거같음
+   *  8. 어떤 사용자가 결제를 요청했는지같은 정보가 필요할지도 고려해봐야함, 필요하다면 authorizePayment() 파라미터에 아몬드영 user.id를 받아야할수도있음
+   *  9. 왜냐면, 메두사는 아몬드영의 토큰을 모름 (정확하게는 cookie에 아몬드영, 메두사 각각의 토큰이 저장되어있긴하지만, 이 쿠키를 가지고 현재 로그인한 사용자가 누구인지를 백엔드쪽에서 판별하기보다는
+   *     프론트 측에서 판별해서 user_id만 넘겨주는게 더 좋은 방법인거같다는 생각이 듦 )
+   */
+
+  /**
+   *  추가로, Stripe의 결제 처리 방식이 그럼 뭐길래 메두사 깃헙 코드 stripe-base에서
+   *  왜 authorizePayment() => getPaymentStatus() 흐름으로 작성되어있는건지 의문이 들어서 검색해보고 찾아보니,
+   *  stripe는 프론트에서 이미 결제 완료하고 , 백엔드는 단순히 상태 확인만 하는 방식이라서 그런거같음
+   *  근데 아몬드는 프론트에서 결제 완료하고 백엔드는 결제 승인요청을 해야하는데 그런 로직이 없음
+   *  그래서 이거 커스텀해야함
+   */
   async getPaymentStatus({
     data,
   }: GetPaymentStatusInput): Promise<GetPaymentStatusOutput> {
