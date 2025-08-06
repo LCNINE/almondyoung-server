@@ -93,15 +93,6 @@ module.exports = defineConfig({
       },
     },
   ],
-  middlewares: {
-    store: [
-      {
-        resolve: './src/api/middlewares',
-        options: {},
-      },
-    ],
-  },
-
   plugins: [
     {
       resolve: 'medusa-digital-asset-plugin',
