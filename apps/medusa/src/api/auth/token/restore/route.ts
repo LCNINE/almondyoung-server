@@ -1,9 +1,9 @@
-import { IAuthModuleService } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import {
   AuthenticatedMedusaRequest,
   MedusaResponse,
 } from '@medusajs/framework/http';
+import { IAuthModuleService } from '@medusajs/framework/types';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { generateJwtTokenForAuthIdentity } from '../../../../utils/generate-jwt-token';
 
 // 새로 생성된 JWT 토큰을 가져옵니다. 기존 토큰이 유효한지에 대한 모든 검사는 이미 auth 미들웨어에서 처리됩니다.
