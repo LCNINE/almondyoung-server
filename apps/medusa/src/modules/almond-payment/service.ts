@@ -99,10 +99,6 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     this.logger_ = container.logger;
   }
 
-  /**
-   * TODO:  Payment Collection의 ID는 pay_col_로, Payment Session의 ID는 payses_로 시작하는 규칙이 있습니다.
-   * 외부 결제 모듈(예: wallet )을 연동할 때도 이런 ID 규칙을 반드시 따라야 할까요?
-   */
   async initiatePayment({
     amount,
     currency_code,
@@ -121,6 +117,8 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
         expires_in_minutes: 30,
       };
 
+      // 실제 API 호출 코드 (주석 처리)
+      /*
       const response = await executeWithRetry(async () => {
         const res = await fetch(`${this.apiUrl_}/payment-sessions`, {
           method: 'POST',
@@ -143,13 +141,41 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
       });
 
       const paymentSession: AlmondPaymentSession = await response.json();
+      */
+
+      // 목업 데이터로 대체
+      const mockPaymentSession: AlmondPaymentSession = {
+        id: `mock_payment_${Date.now()}`,
+        status: 'PENDING',
+        payment_url: 'https://mock-payment.almond.com/pay',
+        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        requires_authentication: false,
+      };
+
+      // 실제 API 호출 대신 목업 데이터 사용
+      this.logger_.info('[AlmondPayment] Using mock data:', {
+        payload,
+        mockResponse: mockPaymentSession,
+      });
+
+      // return {
+      //   id: mockPaymentSession.id,
+      //   data: {
+      //     payment_session_id: paymentSession.id,
+      //     payment_url: paymentSession.payment_url,
+      //     expires_at: paymentSession.expires_at,
+      //     currency_code: currency_code,
+      //     should_poll: true,
+      //     poll_interval: this.pollingInterval,
+      //   },
+      // };
 
       return {
-        id: paymentSession.id,
+        id: mockPaymentSession.id,
         data: {
-          payment_session_id: paymentSession.id,
-          payment_url: paymentSession.payment_url,
-          expires_at: paymentSession.expires_at,
+          payment_session_id: mockPaymentSession.id,
+          payment_url: mockPaymentSession.payment_url,
+          expires_at: mockPaymentSession.expires_at,
           currency_code: currency_code,
           should_poll: true,
           poll_interval: this.pollingInterval,
@@ -221,7 +247,8 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     data,
     context,
   }: CapturePaymentInput): Promise<CapturePaymentOutput> {
-    const sessionId = data?.payment_session_id as string;
+    // payment_session_id
+    const sessionId = data?.id as string;
 
     try {
       // 먼저 현재 상태 확인
