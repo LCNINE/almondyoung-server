@@ -81,6 +81,10 @@ async function executeWithRetry<T>(apiCall: () => Promise<T>): Promise<T> {
 
 // --- Payment Provider Implementation ---
 
+type ModuleOptions = {
+  apiKey: string;
+};
+
 class AlmondPaymentProviderService extends AbstractPaymentProvider {
   getWebhookActionAndData(
     data: ProviderWebhookPayload['payload'],
@@ -89,13 +93,16 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
   }
   static identifier = 'almond-payment';
 
-  protected readonly apiUrl_: string;
   protected readonly logger_: any;
+  protected options_: ModuleOptions;
   private readonly pollingInterval = 2000;
 
-  constructor(container: { logger: any }, options: { apiUrl: string }) {
+  constructor(container: { logger: any }, options: ModuleOptions) {
     super(container, options);
-    this.apiUrl_ = options.apiUrl || 'http://localhost:9001';
+    this.options_ = options || {
+      apiKey:
+        process.env.ALMOND_PAYMENT_API_ENDPOINT || 'http://localhost:9001',
+    };
     this.logger_ = container.logger;
   }
 
@@ -197,7 +204,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
 
     try {
       const response = await fetch(
-        `${this.apiUrl_}/payment-sessions/${sessionId}`,
+        `${this.options_.apiKey}/payment-sessions/${sessionId}`,
       );
 
       if (!response.ok) {
@@ -253,7 +260,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     try {
       // 먼저 현재 상태 확인
       const statusResponse = await fetch(
-        `${this.apiUrl_}/payment-sessions/${sessionId}`,
+        `${this.options_.apiKey}/payment-sessions/${sessionId}`,
       );
       if (statusResponse.ok) {
         const currentSession: AlmondPaymentSession =
@@ -268,7 +275,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
 
       const response = await executeWithRetry(async () => {
         const res = await fetch(
-          `${this.apiUrl_}/payment-sessions/${sessionId}/capture`,
+          `${this.options_.apiKey}/payment-sessions/${sessionId}/capture`,
           {
             method: 'POST',
             headers: createApiHeaders(context),
@@ -299,7 +306,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
       // 캡처 실패 시 현재 상태 다시 확인
       try {
         const statusResponse = await fetch(
-          `${this.apiUrl_}/payment-sessions/${sessionId}`,
+          `${this.options_.apiKey}/payment-sessions/${sessionId}`,
         );
         if (statusResponse.ok) {
           const currentSession: AlmondPaymentSession =
@@ -333,7 +340,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     try {
       const response = await executeWithRetry(async () => {
         const res = await fetch(
-          `${this.apiUrl_}/payment-sessions/${sessionId}/refund`,
+          `${this.options_.apiKey}/payment-sessions/${sessionId}/refund`,
           {
             method: 'POST',
             headers: createApiHeaders(context),
@@ -365,7 +372,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
     try {
       await executeWithRetry(async () => {
         const res = await fetch(
-          `${this.apiUrl_}/payment-sessions/${sessionId}/cancel`,
+          `${this.options_.apiKey}/payment-sessions/${sessionId}/cancel`,
           {
             method: 'POST',
             headers: createApiHeaders(context),
