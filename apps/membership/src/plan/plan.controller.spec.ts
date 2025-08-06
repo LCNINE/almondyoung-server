@@ -1,237 +1,196 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, HttpStatus } from '@nestjs/common';
+import * as request from 'supertest';
 import { PlanController } from './plan.controller';
 import { PlanService } from './plan.service';
+import {
+  SubscriptionExceptionFilter,
+  HttpExceptionFilter,
+} from '../shared/filters/subscription-exception.filter';
 import { PlanNotFoundException } from '../shared/exceptions/subscription.exceptions';
 
-describe('PlanController', () => {
-  let controller: PlanController;
-  let service: jest.Mocked<PlanService>;
+// PlanService를 모킹(Mocking)합니다.
+const mockPlanService = {
+  getAllPlans: jest.fn(),
+  getPlanDetails: jest.fn(),
+  getAllTiers: jest.fn(),
+  getPlansByTier: jest.fn(),
+  getTierBenefits: jest.fn(),
+};
 
-  const mockPlanWithTier = {
-    id: 'plan-123',
-    tierId: 'tier-123',
-    tierCode: 'PREMIUM',
-    tierName: 'Premium',
-    priorityLevel: 3,
-    price: 10000,
-    durationDays: 30,
-    currency: 'KRW',
-    trialDays: 7,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  };
+describe('PlanController (Integration)', () => {
+  let app: INestApplication;
+  let httpServer: any;
 
-  const mockPlanDetails = {
-    id: 'plan-123',
-    tier: {
-      id: 'tier-123',
-      code: 'PREMIUM',
-      name: 'Premium',
-      priorityLevel: 3,
-      createdAt: '2024-01-01T00:00:00.000Z',
-      updatedAt: '2024-01-01T00:00:00.000Z',
-    },
-    price: 10000,
-    durationDays: 30,
-    currency: 'KRW',
-    trialDays: 7,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  };
-
-  const mockTier = {
-    id: 'tier-123',
-    code: 'PREMIUM',
-    name: 'Premium',
-    priorityLevel: 3,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  };
-
-  const mockPlan = {
-    id: 'plan-123',
-    price: 10000,
-    durationDays: 30,
-    currency: 'KRW',
-    trialDays: 7,
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-  };
-
-  const mockTierBenefits = {
-    tier: {
-      id: 'tier-123',
-      code: 'PREMIUM',
-      name: 'Premium',
-      priorityLevel: 3,
-      createdAt: '2024-01-01T00:00:00.000Z',
-      updatedAt: '2024-01-01T00:00:00.000Z',
-    },
-    plans: [mockPlan],
-    benefits: [
-      {
-        type: 'storage',
-        description: 'Premium 티어 스토리지 혜택',
-        value: '40GB',
-      },
-      {
-        type: 'support',
-        description: 'Premium 티어 지원 혜택',
-        value: '24/7 지원',
-      },
-    ],
-  };
-
-  beforeEach(async () => {
-    const mockService = {
-      getAllPlans: jest.fn(),
-      getPlanDetails: jest.fn(),
-      getAllTiers: jest.fn(),
-      getPlansByTier: jest.fn(),
-      getTierBenefits: jest.fn(),
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [PlanController],
       providers: [
         {
           provide: PlanService,
-          useValue: mockService,
+          useValue: mockPlanService,
         },
       ],
     }).compile();
 
-    controller = module.get<PlanController>(PlanController);
-    service = module.get(PlanService);
+    app = moduleRef.createNestApplication();
+
+    // 컨트롤러에 적용된 ExceptionFilter를 테스트 환경에도 동일하게 적용합니다.
+    app.useGlobalFilters(
+      new SubscriptionExceptionFilter(),
+      new HttpExceptionFilter(),
+    );
+
+    await app.init();
+    httpServer = app.getHttpServer();
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+  // 각 테스트가 끝나면 모킹된 함수의 호출 기록을 초기화하여 테스트 간 독립성을 보장합니다.
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('getAllPlans', () => {
-    it('should return all active plans', async () => {
-      // Arrange
-      service.getAllPlans.mockResolvedValue([mockPlanWithTier]);
-
-      // Act
-      const result = await controller.getAllPlans();
-
-      // Assert
-      expect(result).toEqual([mockPlanWithTier]);
-      expect(service.getAllPlans).toHaveBeenCalled();
-    });
-
-    it('should return empty array when no plans exist', async () => {
-      // Arrange
-      service.getAllPlans.mockResolvedValue([]);
-
-      // Act
-      const result = await controller.getAllPlans();
-
-      // Assert
-      expect(result).toEqual([]);
-      expect(service.getAllPlans).toHaveBeenCalled();
-    });
+  afterAll(async () => {
+    await app.close();
   });
 
-  describe('getPlanDetails', () => {
-    it('should return plan details', async () => {
-      // Arrange
-      service.getPlanDetails.mockResolvedValue(mockPlanDetails);
-
-      // Act
-      const result = await controller.getPlanDetails('plan-123');
-
-      // Assert
-      expect(result).toEqual(mockPlanDetails);
-      expect(service.getPlanDetails).toHaveBeenCalledWith('plan-123');
-    });
-
-    it('should throw PlanNotFoundException when plan does not exist', async () => {
-      // Arrange
-      service.getPlanDetails.mockRejectedValue(new PlanNotFoundException());
+  // =================================================================
+  // GET /plans
+  // =================================================================
+  describe('GET /plans', () => {
+    it('성공: 모든 플랜 목록과 200 OK 상태코드를 반환해야 한다', async () => {
+      // Arrange: 서비스가 반환할 가짜 데이터를 준비합니다.
+      const mockResult = [
+        { id: 'plan-1', name: '베이직 플랜', price: 10000 },
+        { id: 'plan-2', name: '프리미엄 플랜', price: 20000 },
+      ];
+      mockPlanService.getAllPlans.mockResolvedValue(mockResult);
 
       // Act & Assert
-      await expect(controller.getPlanDetails('invalid-plan')).rejects.toThrow(
-        PlanNotFoundException,
+      await request(httpServer)
+        .get('/plans')
+        .expect(HttpStatus.OK)
+        .then((response) => {
+          expect(response.body).toEqual(mockResult);
+          expect(mockPlanService.getAllPlans).toHaveBeenCalledTimes(1);
+        });
+    });
+  });
+
+  // =================================================================
+  // GET /plans/:planId
+  // =================================================================
+  describe('GET /plans/:planId', () => {
+    const planId = 'test-plan-id';
+
+    it('성공: 유효한 planId로 특정 플랜의 상세 정보와 200 OK를 반환해야 한다', async () => {
+      // Arrange
+      const mockResult = {
+        id: planId,
+        name: '상세 플랜',
+        price: 15000,
+        durationDays: 30,
+      };
+      mockPlanService.getPlanDetails.mockResolvedValue(mockResult);
+
+      // Act & Assert
+      await request(httpServer)
+        .get(`/plans/${planId}`)
+        .expect(HttpStatus.OK)
+        .then((response) => {
+          expect(response.body).toEqual(mockResult);
+          expect(mockPlanService.getPlanDetails).toHaveBeenCalledWith(planId);
+        });
+    });
+
+    it('실패: 존재하지 않는 planId의 경우 404 Not Found를 반환해야 한다', async () => {
+      // Arrange: 서비스가 PlanNotFoundException을 던지도록 설정합니다.
+      const nonExistentId = 'non-existent-id';
+      mockPlanService.getPlanDetails.mockRejectedValue(
+        new PlanNotFoundException(),
+      );
+
+      // Act & Assert
+      await request(httpServer)
+        .get(`/plans/${nonExistentId}`)
+        .expect(HttpStatus.NOT_FOUND)
+        .then((response) => {
+          // SubscriptionExceptionFilter가 반환하는 에러 형식을 검증합니다.
+          expect(response.body.error.code).toBe('PLAN_NOT_FOUND');
+          expect(response.body.error.message).toBe('유효하지 않은 플랜입니다');
+        });
+
+      expect(mockPlanService.getPlanDetails).toHaveBeenCalledWith(
+        nonExistentId,
       );
     });
   });
 
-  describe('getAllTiers', () => {
-    it('should return all tiers', async () => {
+  // =================================================================
+  // GET /tiers
+  // =================================================================
+  describe('GET /tiers', () => {
+    it('성공: 모든 티어 목록과 200 OK 상태코드를 반환해야 한다', async () => {
       // Arrange
-      service.getAllTiers.mockResolvedValue([mockTier]);
-
-      // Act
-      const result = await controller.getAllTiers();
-
-      // Assert
-      expect(result).toEqual([mockTier]);
-      expect(service.getAllTiers).toHaveBeenCalled();
-    });
-
-    it('should return empty array when no tiers exist', async () => {
-      // Arrange
-      service.getAllTiers.mockResolvedValue([]);
-
-      // Act
-      const result = await controller.getAllTiers();
-
-      // Assert
-      expect(result).toEqual([]);
-      expect(service.getAllTiers).toHaveBeenCalled();
-    });
-  });
-
-  describe('getPlansByTier', () => {
-    it('should return plans for specific tier', async () => {
-      // Arrange
-      service.getPlansByTier.mockResolvedValue([mockPlan]);
-
-      // Act
-      const result = await controller.getPlansByTier('tier-123');
-
-      // Assert
-      expect(result).toEqual([mockPlan]);
-      expect(service.getPlansByTier).toHaveBeenCalledWith('tier-123');
-    });
-
-    it('should return empty array when tier has no plans', async () => {
-      // Arrange
-      service.getPlansByTier.mockResolvedValue([]);
-
-      // Act
-      const result = await controller.getPlansByTier('tier-123');
-
-      // Assert
-      expect(result).toEqual([]);
-      expect(service.getPlansByTier).toHaveBeenCalledWith('tier-123');
-    });
-  });
-
-  describe('getTierBenefits', () => {
-    it('should return tier benefits', async () => {
-      // Arrange
-      service.getTierBenefits.mockResolvedValue(mockTierBenefits);
-
-      // Act
-      const result = await controller.getTierBenefits('tier-123');
-
-      // Assert
-      expect(result).toEqual(mockTierBenefits);
-      expect(service.getTierBenefits).toHaveBeenCalledWith('tier-123');
-    });
-
-    it('should throw PlanNotFoundException when tier does not exist', async () => {
-      // Arrange
-      service.getTierBenefits.mockRejectedValue(new PlanNotFoundException());
+      const mockResult = [
+        { id: 'tier-1', code: 'FREE' },
+        { id: 'tier-2', code: 'PRO' },
+      ];
+      mockPlanService.getAllTiers.mockResolvedValue(mockResult);
 
       // Act & Assert
-      await expect(controller.getTierBenefits('invalid-tier')).rejects.toThrow(
-        PlanNotFoundException,
-      );
+      await request(httpServer)
+        .get('/tiers')
+        .expect(HttpStatus.OK)
+        .then((response) => {
+          expect(response.body).toEqual(mockResult);
+          expect(mockPlanService.getAllTiers).toHaveBeenCalledTimes(1);
+        });
+    });
+  });
+
+  // =================================================================
+  // GET /tiers/:tierId/plans
+  // =================================================================
+  describe('GET /tiers/:tierId/plans', () => {
+    const tierId = 'pro-tier-id';
+    it('성공: 특정 티어에 속한 플랜 목록과 200 OK를 반환해야 한다', async () => {
+      // Arrange
+      const mockResult = [{ id: 'pro-plan-1', name: '프로 플랜' }];
+      mockPlanService.getPlansByTier.mockResolvedValue(mockResult);
+
+      // Act & Assert
+      await request(httpServer)
+        .get(`/tiers/${tierId}/plans`)
+        .expect(HttpStatus.OK)
+        .then((response) => {
+          expect(response.body).toEqual(mockResult);
+          expect(mockPlanService.getPlansByTier).toHaveBeenCalledWith(tierId);
+        });
+    });
+  });
+
+  // =================================================================
+  // GET /tiers/:tierId/benefits
+  // =================================================================
+  describe('GET /tiers/:tierId/benefits', () => {
+    const tierId = 'pro-tier-id';
+    it('성공: 특정 티어의 혜택 정보와 200 OK를 반환해야 한다', async () => {
+      // Arrange
+      const mockResult = {
+        tierCode: 'PRO',
+        benefits: ['Benefit A', 'Benefit B'],
+      };
+      mockPlanService.getTierBenefits.mockResolvedValue(mockResult);
+
+      // Act & Assert
+      await request(httpServer)
+        .get(`/tiers/${tierId}/benefits`)
+        .expect(HttpStatus.OK)
+        .then((response) => {
+          expect(response.body).toEqual(mockResult);
+          expect(mockPlanService.getTierBenefits).toHaveBeenCalledWith(tierId);
+        });
     });
   });
 });

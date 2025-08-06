@@ -124,12 +124,20 @@ export class EventPublishException extends SubscriptionException {
  * 정책 위반
  */
 export class PolicyViolationException extends SubscriptionException {
-  constructor(policyType: string, details: string) {
+  public violations: any[];
+
+  constructor(violations: any[]) {
+    const message = violations.length > 0 
+      ? violations.map(v => v.message).join(', ')
+      : '정책 위반이 발생했습니다.';
+    
     super(
-      `정책 위반: ${policyType} - ${details}`,
+      `정책 위반: ${message}`,
       'POLICY_VIOLATION',
       HttpStatus.BAD_REQUEST,
     );
+    
+    this.violations = violations;
   }
 }
 

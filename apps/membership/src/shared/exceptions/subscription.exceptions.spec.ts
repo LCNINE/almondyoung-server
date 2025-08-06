@@ -129,7 +129,7 @@ describe('Subscription Exceptions', () => {
     it('should create exception with policy information', () => {
       const policyType = 'MAX_PAUSES_PER_YEAR';
       const details = '연간 최대 2회까지만 일시정지 가능';
-      const exception = new PolicyViolationException(policyType, details);
+      const exception = new PolicyViolationException([policyType, details]);
 
       expect(exception.message).toBe(`정책 위반: ${policyType} - ${details}`);
       expect(exception.code).toBe('POLICY_VIOLATION');

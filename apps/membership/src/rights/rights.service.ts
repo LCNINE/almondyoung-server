@@ -202,14 +202,12 @@ export class RightsService {
       // 2. 권한 재개 처리
       const resumedAt = new Date();
       for (const right of actualPausedRights) {
-        const updateData: any = {
+        const updateData = {
           pausedAt: null,
+          ...(newEndsAt !== undefined && {
+            endsAt: newEndsAt.toISOString().split('T')[0],
+          }),
         };
-
-        // 새로운 종료일이 제공된 경우 업데이트
-        if (newEndsAt) {
-          updateData.endsAt = newEndsAt.toISOString().split('T')[0];
-        }
 
         await tx
           .update(schema.subscriptionRights)

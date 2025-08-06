@@ -17,7 +17,7 @@ import type {
 
 @Injectable()
 export class PlanService {
-  constructor(private readonly dbService: DbService<typeof schema>) {}
+  constructor(private readonly dbService: DbService<typeof schema>) { }
 
   /**
    * Retrieves all active subscription plans with their tier information.

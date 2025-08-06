@@ -4,7 +4,7 @@
   "description": "Automatically performs code review, runs tests, updates documentation, checks for sensitive information, and validates type dependencies when files are saved",
   "version": "1",
   "when": {
-    "type": "userTriggered",
+    "type": "fileEdited",
     "patterns": [
       "**/*.ts",
       "**/*.js",

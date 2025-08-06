@@ -15,7 +15,7 @@ import {
 import * as schema from '../shared/schemas/entities/schema';
 import { DbService } from '@app/db';
 import { eq, and, gte, lte } from 'drizzle-orm';
-import { EventPublisherService } from '@app/events';
+// import { EventPublisherService } from '@app/events';
 import { PolicyEngineService } from '../policy-management/policy-engine.service';
 import { v4 as uuidv4 } from 'uuid';
 import { addDays, differenceInDays } from 'date-fns';
@@ -231,12 +231,17 @@ export class SubscriptionService {
             changeType: 'UPGRADE',
             currentTierPriority: currentSub.currentTier.priorityLevel,
             newTierPriority: newTier.priorityLevel,
-          }
+          },
         );
 
         if (!policyResult.isValid) {
-          const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
-          throw new PolicyViolationException('UPGRADE_POLICY_VIOLATION', violations);
+          const violations = policyResult.violations
+            .map((v) => v.message)
+            .join(', ');
+          throw new PolicyViolationException([
+            'UPGRADE_POLICY_VIOLATION',
+            violations,
+          ]);
         }
       } catch (error) {
         if (error instanceof PolicyViolationException) {
@@ -362,12 +367,17 @@ export class SubscriptionService {
             changeType: 'DOWNGRADE',
             currentTierPriority: currentSub.currentTier.priorityLevel,
             newTierPriority: newPlan[0].tier.priorityLevel,
-          }
+          },
         );
 
         if (!policyResult.isValid) {
-          const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
-          throw new PolicyViolationException('DOWNGRADE_POLICY_VIOLATION', violations);
+          const violations = policyResult.violations
+            .map((v) => v.message)
+            .join(', ');
+          throw new PolicyViolationException([
+            'DOWNGRADE_POLICY_VIOLATION',
+            violations,
+          ]);
         }
       } catch (error) {
         if (error instanceof PolicyViolationException) {
@@ -489,7 +499,7 @@ export class SubscriptionService {
         ),
       );
 
-    const maxPauses = (policies[0]?.ruleValue as any)?.limit || 2;
+    const maxPauses = (policies[0]?.ruleValue as { limit: number })?.limit || 2;
 
     return {
       eligible: currentUsage < maxPauses,

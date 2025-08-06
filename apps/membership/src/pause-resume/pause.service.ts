@@ -73,8 +73,8 @@ export class PauseService {
       );
 
       if (!policyResult.isValid) {
-        const violations = policyResult.violatedPolicies.map(v => v.message).join(', ');
-        throw new PolicyViolationException('PAUSE_POLICY_VIOLATION', violations);
+        const violations = policyResult.violations.map(v => v.message).join(', ');
+        throw new PolicyViolationException(policyResult.violations);
       }
 
       // 4. 정책 검증 완료 - 기존 검증은 제거
@@ -502,7 +502,7 @@ export class PauseService {
         return { canPause: true };
       }
 
-      const reason = result.violatedPolicies
+      const reason = result.violations
         .map(v => v.message)
         .join('; ');
 
@@ -542,7 +542,7 @@ export class PauseService {
           currentUsage,
           maxPauses,
           remainingPauses: remaining,
-          reason: result.isValid ? undefined : result.violatedPolicies.map(v => v.message).join('; ')
+          reason: result.isValid ? undefined : result.violations.map(v => v.message).join('; ')
         };
       }
 

@@ -47,18 +47,18 @@ export const policyRuleTypeEnum = pgEnum('policy_rule_type', [
   'MAX_PAUSE_DURATION_DAYS',
   'PAUSE_COOLDOWN_DAYS',
   'PAUSE_BLACKOUT_PERIODS',
-  
+
   // Plan change policies
   'PLAN_CHANGE_COOLDOWN_DAYS',
   'ALLOWED_PLAN_CHANGES',
   'DOWNGRADE_RESTRICTIONS',
   'UPGRADE_BENEFITS',
-  
+
   // Tier-specific policies
   'TIER_SPECIFIC_LIMITS',
   'VIP_USER_BENEFITS',
   'NEW_USER_GRACE_PERIOD',
-  
+
   // Promotional policies
   'PROMOTIONAL_PERIODS',
   'SEASONAL_RESTRICTIONS',
@@ -295,7 +295,7 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
 // src/schemas/relations.ts
 // =================================================================
 
-export const usersRelations = relations(users, ({ one, many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
   subscriptions: many(subscriptions),
   subscriptionRights: many(subscriptionRights),
   subscriptionEvents: many(subscriptionEvents),
@@ -311,5 +311,3 @@ export const subscriptionTiersRelations = relations(
     subscriptionPolicies: many(subscriptionPolicies),
   }),
 );
-
-

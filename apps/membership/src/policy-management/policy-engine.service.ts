@@ -3,16 +3,16 @@ import { DbService } from '@app/db';
 import { eq, and, isNull, or, lte, gte } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
 import type {
+  Policy,
+  PolicyContext,
+  ApplicablePolicy,
+  PolicyEngineResult,
   PolicyValidationResult,
   PolicyViolation,
   PolicyWarning,
   AppliedPolicy,
-  PolicyContext,
   PolicyResponse,
-  Policy,
-  ApplicablePolicy,
-  PolicyEngineResult,
-} from '../shared/schemas/types';
+} from '../shared/schemas';
 
 // 추가 타입 정의
 interface ComplianceResult {
@@ -72,7 +72,7 @@ export class PolicyEngineService {
       );
 
       // 4. 결과 집계
-      const violatedPolicies: PolicyViolation[] = [];
+      const violations: PolicyViolation[] = [];
       const warnings: PolicyWarning[] = [];
       const appliedPolicies: AppliedPolicy[] = [];
 
@@ -80,7 +80,7 @@ export class PolicyEngineService {
         const policy = applicablePolicies[index];
 
         if (result.violations.length > 0) {
-          violatedPolicies.push(...result.violations);
+          violations.push(...result.violations);
         }
 
         if (result.warnings.length > 0) {
@@ -98,11 +98,22 @@ export class PolicyEngineService {
         }
       });
 
+      // if (appliedPolicies.length === 0) {
+      //   violations.push({
+      //     policyId: 'SYSTEM',
+      //     policyName: 'NO_APPLICABLE_POLICY',
+      //     ruleType: 'SYSTEM_CHECK',
+      //     violationType: 'CONFIGURATION_ERROR',
+      //     message: `요청하신 '${action}'에 대해 적용할 수 있는 정책이 없습니다.`,
+      //     severity: 'ERROR',
+      //   });
+      // }
+
       const executionTime = Date.now() - startTime;
 
       return {
-        isValid: violatedPolicies.length === 0,
-        violatedPolicies,
+        isValid: violations.length === 0,
+        violations,
         warnings,
         appliedPolicies,
         executionTime,
@@ -198,7 +209,7 @@ export class PolicyEngineService {
       return {
         ...baseResult,
         decision: 'DENY',
-        violations: validationResult.violatedPolicies,
+        violations: validationResult.violations,
         warnings: validationResult.warnings,
         metadata: {
           ...baseResult.metadata,
@@ -369,6 +380,7 @@ export class PolicyEngineService {
       userId,
       tierId: tierInfo?.id,
       subscriptionId: subscription?.id,
+      currentYear: new Date().getFullYear(),
       currentDate: new Date().toISOString(),
       userMetadata: {
         subscriptionStatus: subscription?.status,

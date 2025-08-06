@@ -8,10 +8,10 @@ import { DbService } from '@app/db';
 import { eq, and, isNull, desc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
 import type {
-  PolicyResponse,
   PolicyListResponse,
+  PolicyResponse,
   TierInfo,
-} from '../shared/schemas/types';
+} from '../shared/schemas';
 import {
   CreatePolicyRequest,
   GetPoliciesQuery,
@@ -102,9 +102,7 @@ export class PolicyManagementService {
       }
 
       if (ruleType) {
-        conditions.push(
-          eq(schema.subscriptionPolicies.ruleType, ruleType as any),
-        );
+        conditions.push(eq(schema.subscriptionPolicies.ruleType, ruleType));
       }
 
       if (tierId) {
@@ -275,7 +273,7 @@ export class PolicyManagementService {
       const newPolicy = await this.dbService.db
         .insert(schema.subscriptionPolicies)
         .values({
-          ruleType: createPolicyDto.ruleType as any,
+          ruleType: createPolicyDto.ruleType,
           ruleValue: createPolicyDto.ruleValue,
           tierId: createPolicyDto.tierId || null,
           validFrom: createPolicyDto.validFrom || null,
@@ -310,25 +308,22 @@ export class PolicyManagementService {
       }
 
       // 업데이트할 필드 구성
-      const updateData: any = {
+
+      const updateData = {
         updatedAt: new Date(),
+        ...(updatePolicyDto.ruleValue !== undefined && {
+          ruleValue: updatePolicyDto.ruleValue,
+        }),
+        ...(updatePolicyDto.isActive !== undefined && {
+          isActive: updatePolicyDto.isActive,
+        }),
+        ...(updatePolicyDto.validFrom !== undefined && {
+          validFrom: updatePolicyDto.validFrom || null,
+        }),
+        ...(updatePolicyDto.validUntil !== undefined && {
+          validUntil: updatePolicyDto.validUntil || null,
+        }),
       };
-
-      if (updatePolicyDto.ruleValue !== undefined) {
-        updateData.ruleValue = updatePolicyDto.ruleValue;
-      }
-
-      if (updatePolicyDto.isActive !== undefined) {
-        updateData.isActive = updatePolicyDto.isActive;
-      }
-
-      if (updatePolicyDto.validFrom !== undefined) {
-        updateData.validFrom = updatePolicyDto.validFrom || null;
-      }
-
-      if (updatePolicyDto.validUntil !== undefined) {
-        updateData.validUntil = updatePolicyDto.validUntil || null;
-      }
 
       // 정책 업데이트
       await this.dbService.db
@@ -617,10 +612,7 @@ export class PolicyManagementService {
         .from(schema.subscriptionPolicies)
         .where(
           and(
-            eq(
-              schema.subscriptionPolicies.ruleType,
-              basePolicy.ruleType as any,
-            ),
+            eq(schema.subscriptionPolicies.ruleType, basePolicy.ruleType),
             basePolicy.tierId
               ? eq(schema.subscriptionPolicies.tierId, basePolicy.tierId)
               : isNull(schema.subscriptionPolicies.tierId),

@@ -72,7 +72,7 @@ export const DeactivatePlanRequestSchema = z.object({
 
 // Subscription Operations
 export const CreateSubscriptionRequestSchema = z.object({
-  planId: z.string().uuid('유효한 UUID 형식이어야 합니다'),
+  planId: z.uuid('유효한 UUID 형식이어야 합니다'),
 });
 
 export const UpgradeSubscriptionRequestSchema = z.object({
@@ -81,10 +81,7 @@ export const UpgradeSubscriptionRequestSchema = z.object({
 
 export const DowngradeSubscriptionRequestSchema = z.object({
   newPlanId: z.string().uuid('유효한 UUID 형식이어야 합니다'),
-  effectiveDate: z
-    .string()
-    .datetime('유효한 날짜 형식이어야 합니다')
-    .optional(),
+  effectiveDate: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
 });
 
 export const PauseSubscriptionRequestSchema = z
@@ -100,10 +97,7 @@ export const PauseSubscriptionRequestSchema = z
 
 export const CancelSubscriptionRequestSchema = z.object({
   reason: z.string().optional(),
-  effectiveDate: z
-    .string()
-    .datetime('유효한 날짜 형식이어야 합니다')
-    .optional(),
+  effectiveDate: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
 });
 
 export const ResumeSubscriptionRequestSchema = z.object({
@@ -143,6 +137,7 @@ export type CancelSubscriptionRequest = z.infer<
  * 지원되는 정책 규칙 타입들
  * 새로운 정책 타입 추가 시 이 배열을 업데이트하세요
  */
+
 export const POLICY_RULE_TYPES = [
   'MAX_PAUSES_PER_YEAR',
   'MIN_PAUSE_DURATION_DAYS',
@@ -229,7 +224,7 @@ export const BulkPolicyValidationRequestSchema = z.object({
 });
 
 export const GetPoliciesQuerySchema = z.object({
-  ruleType: z.string().optional(),
+  ruleType: z.enum(POLICY_RULE_TYPES).optional(),
   tierId: z.uuid().optional(),
   isActive: z.boolean().optional(),
   page: z.number().min(1).default(1).optional(),

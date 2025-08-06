@@ -5,3 +5,8 @@
 
 export * from './requests';
 export * from './types';
+export * from './right.type';
+export * from './plan.type';
+export * from './subscription.type';
+export * from './pasue.type';
+export * from './policy.type';

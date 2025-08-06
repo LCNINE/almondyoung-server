@@ -5,7 +5,8 @@ import {
   Body,
   Query,
   UseFilters,
-  UsePipes,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
@@ -41,9 +42,11 @@ export class SubscriptionController {
    * 구독 생성
    */
   @Post()
-  @UsePipes(new ZodValidationPipe(CreateSubscriptionRequestSchema))
+  @HttpCode(HttpStatus.CREATED)
   async createSubscription(
-    @Body() createSubscriptionDto: CreateSubscriptionRequest,
+    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
+    createSubscriptionDto: CreateSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.createSubscription(
@@ -56,9 +59,11 @@ export class SubscriptionController {
    * 구독 업그레이드
    */
   @Post('upgrade')
-  @UsePipes(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
+  @HttpCode(HttpStatus.CREATED) // 일관성을 위해 HttpCode 추가
   async upgradeSubscription(
-    @Body() upgradeSubscriptionDto: UpgradeSubscriptionRequest,
+    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
+    upgradeSubscriptionDto: UpgradeSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.upgradeSubscription(
@@ -71,9 +76,11 @@ export class SubscriptionController {
    * 구독 다운그레이드
    */
   @Post('downgrade')
-  @UsePipes(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
+  @HttpCode(HttpStatus.OK) // 다운그레이드는 즉시 생성되는 것이 아니므로 200 OK가 더 적합할 수 있습니다.
   async downgradeSubscription(
-    @Body() downgradeSubscriptionDto: DowngradeSubscriptionRequest,
+    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
+    downgradeSubscriptionDto: DowngradeSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.downgradeSubscription(
@@ -86,9 +93,11 @@ export class SubscriptionController {
    * 구독 취소
    */
   @Post('cancel')
-  @UsePipes(new ZodValidationPipe(CancelSubscriptionRequestSchema))
+  @HttpCode(HttpStatus.OK) // 취소도 200 OK가 더 적합합니다.
   async cancelSubscription(
-    @Body() cancelSubscriptionDto: CancelSubscriptionRequest,
+    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
+    cancelSubscriptionDto: CancelSubscriptionRequest,
     @Query('userId') userId: string,
   ) {
     return this.subscriptionService.cancelSubscription(
@@ -104,6 +113,4 @@ export class SubscriptionController {
   async getSubscriptionHistory(@Query('userId') userId: string) {
     return this.subscriptionService.getSubscriptionHistory(userId);
   }
-
-  // TODO: 일시정지/재개 기능은 다음 태스크에서 구현
 }

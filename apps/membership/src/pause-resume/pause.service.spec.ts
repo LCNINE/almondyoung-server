@@ -87,7 +87,7 @@ describe('PauseService', () => {
     const mockPolicyEngine = {
       validateRequest: jest.fn().mockResolvedValue({
         isValid: true,
-        violatedPolicies: [],
+        violations: [],
         warnings: [],
         appliedPolicies: [],
         executionTime: 10,
@@ -181,7 +181,7 @@ describe('PauseService', () => {
       const mockPolicyEngine = {
         validateRequest: jest.fn().mockResolvedValue({
           isValid: true,
-          violatedPolicies: [],
+          violations: [],
           appliedPolicies: [
             {
               ruleType: 'MAX_PAUSES_PER_YEAR',
@@ -276,23 +276,21 @@ describe('PauseService', () => {
       // Arrange
       const mockTransaction = jest.fn().mockImplementation(async (callback) => {
         const mockTx = {
-          select: jest
-            .fn()
-            .mockReturnValueOnce({
-              from: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValueOnce({
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({
                 innerJoin: jest.fn().mockReturnValue({
-                  innerJoin: jest.fn().mockReturnValue({
-                    leftJoin: jest.fn().mockReturnValue({
-                      where: jest.fn().mockReturnValue({
-                        limit: jest
-                          .fn()
-                          .mockResolvedValue([mockActiveSubscription]),
-                      }),
+                  leftJoin: jest.fn().mockReturnValue({
+                    where: jest.fn().mockReturnValue({
+                      limit: jest
+                        .fn()
+                        .mockResolvedValue([mockActiveSubscription]),
                     }),
                   }),
                 }),
               }),
             }),
+          }),
           insert: jest.fn().mockReturnValue({
             values: jest.fn().mockResolvedValue(undefined),
           }),
@@ -311,7 +309,12 @@ describe('PauseService', () => {
       const mockPolicyEngine = {
         validateRequest: jest.fn().mockResolvedValue({
           isValid: false,
-          violatedPolicies: [{ message: 'Maximum pauses per year exceeded' }],
+          violations: [
+            {
+              policyId: 'MAX_PAUSES_PER_YEAR',
+              message: 'Maximum pauses per year exceeded',
+            },
+          ],
           appliedPolicies: [],
         }),
       };

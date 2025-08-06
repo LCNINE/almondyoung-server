@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_PIPE, APP_FILTER } from '@nestjs/core';
+import { APP_FILTER } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SubscriptionModule } from './subscription/subscription.module';
@@ -9,7 +9,7 @@ import { PauseModule } from './pause-resume/pause.module';
 import { RightsModule } from './rights/rights.module';
 import { PolicyManagementModule } from './policy-management/policy-management.module';
 import {
-  SubscriptionExceptionFilter,
+  // SubscriptionExceptionFilter,
   HttpExceptionFilter,
   GlobalExceptionFilter,
 } from './shared/filters/subscription-exception.filter';
@@ -17,7 +17,6 @@ import { DbModule } from '@app/db';
 import * as schema from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { EventsModule } from '@app/events';
-import { GlobalZodPipe } from './shared/pipes/global-zod.pipe';
 
 @Module({
   imports: [
@@ -43,22 +42,22 @@ import { GlobalZodPipe } from './shared/pipes/global-zod.pipe';
   controllers: [AppController],
   providers: [
     AppService,
-    {
-      provide: APP_PIPE,
-      useClass: GlobalZodPipe, // 기존 ZodValidationPipe 대신 이걸로
-    },
-    {
-      provide: APP_FILTER,
-      useClass: SubscriptionExceptionFilter,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: HttpExceptionFilter,
-    },
-    {
-      provide: APP_FILTER,
-      useClass: GlobalExceptionFilter,
-    },
+    // {
+    //   provide: APP_PIPE,
+    //   useClass: GlobalZodPipe, // 기존 ZodValidationPipe 대신 이걸로
+    // },
+    // {
+    //   provide: APP_FILTER,
+    //   useClass: SubscriptionExceptionFilter,
+    // },
+    // {
+    //   provide: APP_FILTER,
+    //   useClass: HttpExceptionFilter,
+    // },
+    // {
+    //   provide: APP_FILTER,
+    //   useClass: GlobalExceptionFilter,
+    // },
   ],
 })
 export class AppModule {}

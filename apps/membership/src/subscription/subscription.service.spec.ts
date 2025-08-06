@@ -94,7 +94,7 @@ describe('SubscriptionService', () => {
     const mockPolicyEngine = {
       validateRequest: jest.fn().mockResolvedValue({
         isValid: true,
-        violatedPolicies: [],
+        violations: [],
         warnings: [],
         appliedPolicies: [],
         executionTime: 10,
