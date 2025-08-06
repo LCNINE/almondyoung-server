@@ -212,7 +212,7 @@ class AlmondPaymentProviderService extends AbstractPaymentProvider {
    *  추가로, Stripe의 결제 처리 방식이 그럼 뭐길래 메두사 깃헙 코드 stripe-base에서
    *  왜 authorizePayment() => getPaymentStatus() 흐름으로 작성되어있는건지 의문이 들어서 검색해보고 찾아보니,
    *  stripe는 프론트에서 이미 결제 완료하고 , 백엔드는 단순히 상태 확인만 하는 방식이라서 그런거같음
-   *  근데 아몬드는 프론트에서 결제 완료하고 백엔드는 결제 승인요청을 해야하는데 그런 로직이 없음
+   *  근데 아몬드는 프론트에서 결제 요청하고 백엔드는 결제 승인요청을 해야하는데 그런 로직이 없음
    *  그래서 이거 커스텀해야함
    */
   async getPaymentStatus({
