@@ -3,8 +3,10 @@ import { EventPublisherService, InjectEventPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/events/user.events';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -13,6 +15,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectDb() private readonly dbService: DbService<schema.User>,
     @InjectEventPublisher()
@@ -262,5 +266,66 @@ export class UsersService {
   // 현재 사용자의 정보를 조회합니다.
   async retrieveMe(userId: string) {
     return this.getUserBaseInfo(userId);
+  }
+
+  async setUserRole(userId: string, role: 'user') {
+    try {
+      this.logger.debug(
+        `setDefaultRoles 시작 - userId: ${userId}, role: ${role}`,
+      );
+
+      //  'role' 역할이 있는지 확인하고 없으면 생성
+      let userRole = await this.dbService.db
+        .select()
+        .from(schema.roles)
+        .where(eq(schema.roles.name, role))
+        .limit(1);
+
+      this.logger.debug(`기존 role 조회 결과: ${JSON.stringify(userRole)}`);
+
+      if (!userRole.length) {
+        this.logger.debug('새로운 role 생성 시작');
+
+        const description = '일반 사용자 역할';
+
+        userRole = await this.dbService.db
+          .insert(schema.roles)
+          .values({
+            name: role,
+            description,
+          })
+          .returning();
+
+        this.logger.debug(
+          `새로운 role 생성 완료: ${JSON.stringify(userRole[0])}`,
+        );
+      }
+
+      return userRole[0];
+    } catch (error) {
+      this.logger.error('setDefaultRoles 에러:', error.stack);
+
+      if (error.code === '23505') {
+        throw new ConflictException('이미 역할이 할당되어 있습니다.');
+      }
+
+      throw error;
+    }
+  }
+
+  async assignUserRole(userId: string, roleId: string) {
+    //  사용자-역할 할당
+    this.logger.debug('사용자-역할 할당 시작');
+    const [assignment] = await this.dbService.db
+      .insert(schema.userRoleAssignments)
+      .values({
+        userId: userId,
+        roleId: roleId,
+      })
+      .returning();
+
+    this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
+
+    return assignment;
   }
 }

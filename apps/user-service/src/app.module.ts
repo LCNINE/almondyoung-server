@@ -15,6 +15,7 @@ import { ScopesModule } from './api/scopes/scopes.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
+import { AdminModule } from './apps/user-service/api/admin/admin.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     EmailModule,
     ShopModule,
     DormantModule,
+    AdminModule,
   ],
   providers: [
     {
