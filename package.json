@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
     "test:user": "jest --config ./apps/user-service/jest.config.js",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
+    "seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
     "db:push.user": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts"
   },
   "dependencies": {

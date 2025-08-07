@@ -6,6 +6,7 @@ import * as schema from '../../../database/drizzle/schema';
 @Injectable()
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
+  private readonly ALLOWED_DEFAULT_ROLES = ['user'] as const;
 
   constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
 
