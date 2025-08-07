@@ -233,6 +233,16 @@ export const GetApplicablePoliciesQuerySchema = z.object({
   currentDate: z.iso.datetime().optional(),
 });
 
+// =================================================================
+// Entitlement Management - 구독 권한 관리 요청 검증용
+// =================================================================
+
+export const ExtendEntitlementRequestSchema = z.object({
+  userId: z.uuid('유효한 사용자 ID여야 합니다'),
+  days: z.number().int().min(-365, '최대 365일까지 차감 가능합니다').max(365, '최대 365일까지 연장 가능합니다'),
+  reason: z.string().min(1, '사유는 필수입니다').max(500, '사유는 500자 이하여야 합니다'),
+});
+
 // Policy Management Request Types
 export type CreatePolicyRequest = z.infer<typeof CreatePolicyRequestSchema>;
 export type UpdatePolicyRequest = z.infer<typeof UpdatePolicyRequestSchema>;
@@ -246,3 +256,6 @@ export type GetPoliciesQuery = z.infer<typeof GetPoliciesQuerySchema>;
 export type GetApplicablePoliciesQuery = z.infer<
   typeof GetApplicablePoliciesQuerySchema
 >;
+
+// Entitlement Management Request Types
+export type ExtendEntitlementRequest = z.infer<typeof ExtendEntitlementRequestSchema>;

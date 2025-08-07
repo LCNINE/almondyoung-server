@@ -12,6 +12,7 @@ import type {
   PauseSubscriptionRequest,
   ResumeSubscriptionRequest,
   CancelSubscriptionRequest,
+  ExtendEntitlementRequest,
 } from '../../src/shared/schemas/requests';
 
 /**
@@ -126,6 +127,24 @@ export const resumeSubscriptionRequestData = (): ResumeSubscriptionRequest => ({
  */
 export const cancelSubscriptionRequestData = (): CancelSubscriptionRequest => ({
   reason: 'E2E Test Cancel',
+});
+
+/**
+ * 구독 기간 연장 요청 데이터
+ */
+export const extendEntitlementRequestData = (userId: string, days: number = 30): ExtendEntitlementRequest => ({
+  userId,
+  days,
+  reason: `E2E Test - ${days > 0 ? 'Extend' : 'Reduce'} ${Math.abs(days)} days`,
+});
+
+/**
+ * 구독 기간 차감 요청 데이터
+ */
+export const reduceEntitlementRequestData = (userId: string, days: number = -7): ExtendEntitlementRequest => ({
+  userId,
+  days,
+  reason: `E2E Test - Reduce ${Math.abs(days)} days`,
 });
 
 /**

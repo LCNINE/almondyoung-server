@@ -14,6 +14,6 @@ import { PlanModule } from '../plan/plan.module';
   imports: [EventsModule, PolicyManagementModule, PlanModule],
   controllers: [SubscriptionController],
   providers: [SubscriptionService, EntitlementService, DevAuthGuard],
-  exports: [SubscriptionService],
+  exports: [SubscriptionService, EntitlementService],
 })
 export class SubscriptionModule {}

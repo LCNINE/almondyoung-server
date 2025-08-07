@@ -16,7 +16,7 @@ export class EntitlementService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
     private readonly planService: PlanService, // Tier 정보 조회를 위해 주입
-  ) {}
+  ) { }
 
   /**
    * 새로운 사용자 권한을 생성합니다.
@@ -147,18 +147,24 @@ export class EntitlementService {
   //   }
 
   /**
-   * 사용자 권한을 연장합니다.
+   * 사용자 권한을 연장하거나 차감합니다.
    * @param userId - 사용자 ID
-   * @param additionalDays - 추가할 일수
-   * @param reason - 연장 사유
+   * @param days - 추가/차감할 일수 (양수: 연장, 음수: 차감)
+   * @param reason - 연장/차감 사유
+   * @param adminId - 관리자 ID
    */
-  async extendEntitlement(
+  async adjustEntitlement(
     userId: string,
-    additionalDays: number,
+    days: number,
     reason: string,
-    adminId?: string,
-  ): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    adminId: string,
+  ): Promise<{
+    previousEndsAt: string;
+    newEndsAt: string;
+    adjustedDays: number;
+    action: 'extended' | 'reduced';
+  }> {
+    return await this.dbService.db.transaction(async (tx) => {
       const [activeEntitlement] = await tx
         .select()
         .from(schema.subscriptionEntitlement)
@@ -174,27 +180,73 @@ export class EntitlementService {
         throw new EntitlementNotFoundException();
       }
 
-      // 권한 연장 이벤트를 기록합니다.
-      await tx
+      const currentEndDate = new Date(activeEntitlement.endsAt);
+      const newEndDate = addDays(currentEndDate, days);
+      const today = new Date();
+
+      // 차감으로 인해 종료일이 오늘보다 이전이 되는 경우 방지
+      if (newEndDate < today && days < 0) {
+        const maxReducibleDays = Math.floor((currentEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        throw new Error(`최대 ${maxReducibleDays}일까지만 차감할 수 있습니다. 현재 구독이 즉시 만료됩니다.`);
+      }
+
+      const action = days > 0 ? 'extended' : 'reduced';
+      const eventType = days > 0 ? 'ENTITLEMENT_EXTENDED' : 'ENTITLEMENT_REDUCED';
+
+      // 이벤트 배치 생성
+      const [eventBatch] = await tx
         .insert(schema.eventBatches)
         .values({
-          type: 'ENTITLEMENT_EXTENDED',
+          type: eventType,
           effectiveDate: new Date().toISOString().split('T')[0],
-          adminId: adminId, // 관리자 ID 기록
+          adminId: adminId,
         })
         .returning();
 
-      const currentEndDate = new Date(activeEntitlement.endsAt);
-      const newEndDate = addDays(currentEndDate, additionalDays);
-
-      // 권한의 종료일을 업데이트합니다.
+      // 기존 entitlement 닫기 (이력 보존)
       await tx
         .update(schema.subscriptionEntitlement)
         .set({
-          endsAt: newEndDate.toISOString().split('T')[0],
+          isCurrent: false,
+          closedAt: new Date(),
+          closedBatchId: eventBatch.id,
         })
         .where(eq(schema.subscriptionEntitlement.id, activeEntitlement.id));
+
+      // 새로운 entitlement 생성 (조정된 기간으로)
+      await tx
+        .insert(schema.subscriptionEntitlement)
+        .values({
+          userId,
+          tierId: activeEntitlement.tierId,
+          startsAt: activeEntitlement.startsAt, // 시작일은 동일
+          endsAt: newEndDate.toISOString().split('T')[0], // 조정된 종료일
+          isCurrent: true,
+          sourceBatchId: eventBatch.id,
+        });
+
+      return {
+        previousEndsAt: activeEntitlement.endsAt,
+        newEndsAt: newEndDate.toISOString().split('T')[0],
+        adjustedDays: days,
+        action,
+      };
     });
+  }
+
+  /**
+   * 사용자 권한을 연장합니다. (기존 메서드 - 호환성 유지)
+   * @param userId - 사용자 ID
+   * @param additionalDays - 추가할 일수
+   * @param reason - 연장 사유
+   */
+  async extendEntitlement(
+    userId: string,
+    additionalDays: number,
+    reason: string,
+    adminId?: string,
+  ): Promise<void> {
+    await this.adjustEntitlement(userId, additionalDays, reason, adminId || 'system');
   }
 
   /**

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PlanService } from '../plan/plan.service';
 import { PolicyManagementService } from '../policy-management/policy-management.service';
 import { SubscriptionService } from '../subscription/subscription.service';
+import { EntitlementService } from '../subscription/entitlement.service';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -10,6 +11,7 @@ import {
   DeactivatePlanRequest,
   CreatePolicyRequest,
   UpdatePolicyRequest,
+  ExtendEntitlementRequest,
 } from '../shared/schemas';
 
 /**
@@ -23,6 +25,7 @@ export class AdminOperationsService {
     private readonly planService: PlanService,
     private readonly policyService: PolicyManagementService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly entitlementService: EntitlementService,
   ) {}
 
   // =================================================================
@@ -87,5 +90,35 @@ export class AdminOperationsService {
     console.log(`Admin ${adminId} is forcing cancellation for user ${userId}`);
     // SubscriptionService의 cancelSubscription 메소드를 호출합니다.
     return this.subscriptionService.cancelSubscription(userId, reason);
+  }
+
+  // =================================================================
+  // Entitlement Management - 구독 권한 관리
+  // =================================================================
+
+  /**
+   * 사용자의 구독 기간을 연장하거나 차감합니다.
+   * @param dto - 구독 기간 조정 요청 데이터
+   * @param adminId - 관리자 ID
+   */
+  async adjustUserEntitlement(dto: ExtendEntitlementRequest, adminId: string) {
+    const result = await this.entitlementService.adjustEntitlement(
+      dto.userId,
+      dto.days,
+      dto.reason,
+      adminId,
+    );
+
+    return {
+      message: `사용자 구독 기간이 ${result.action === 'extended' ? '연장' : '차감'}되었습니다.`,
+      userId: dto.userId,
+      adjustedDays: result.adjustedDays,
+      action: result.action,
+      previousEndsAt: result.previousEndsAt,
+      newEndsAt: result.newEndsAt,
+      reason: dto.reason,
+      adminId,
+      processedAt: new Date().toISOString(),
+    };
   }
 }

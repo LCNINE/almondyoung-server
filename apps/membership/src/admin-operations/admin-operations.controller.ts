@@ -23,6 +23,7 @@ import {
   DeactivatePlanRequest,
   CreatePolicyRequest,
   UpdatePolicyRequest,
+  ExtendEntitlementRequest,
   CreateTierRequestSchema,
   UpdateTierRequestSchema,
   CreatePlanRequestSchema,
@@ -30,6 +31,7 @@ import {
   DeactivatePlanRequestSchema,
   CreatePolicyRequestSchema,
   UpdatePolicyRequestSchema,
+  ExtendEntitlementRequestSchema,
 } from '../shared/schemas';
 import { FastifyRequest } from 'fastify';
 /**
@@ -128,5 +130,20 @@ export class AdminOperationsController {
   @Delete('policies/:policyId')
   async deactivatePolicy(@Param('policyId') policyId: string) {
     return this.adminOperationsService.deactivatePolicy(policyId);
+  }
+
+  // ===================================================================
+  // Entitlement Management - 구독 권한 관리
+  // ===================================================================
+
+  @Post('entitlements/adjust')
+  @HttpCode(HttpStatus.OK)
+  async adjustUserEntitlement(
+    @Req() req: FastifyRequest,
+    @Body(new ZodValidationPipe(ExtendEntitlementRequestSchema))
+    dto: ExtendEntitlementRequest,
+  ) {
+    const adminId = req.user!.userId;
+    return this.adminOperationsService.adjustUserEntitlement(dto, adminId);
   }
 }

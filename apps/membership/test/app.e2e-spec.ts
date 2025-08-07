@@ -256,7 +256,62 @@ describe('Membership Subscription E2E Test', () => {
       console.log('✅ Subscription Cancelled:', response.body);
     });
 
-    it('2-6. [GET /subscriptions/current] should return null for cancelled subscription', async () => {
+    it('2-6. [POST /admin/entitlements/adjust] should extend user subscription', async () => {
+      // 먼저 새로운 구독을 생성 (이전 테스트에서 취소했으므로)
+      const newSubscriptionRequest = { ...userJourneyData.subscriptionRequest, planId: monthlyPlanId };
+      await request(app.getHttpServer())
+        .post('/subscriptions')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .send(newSubscriptionRequest)
+        .expect(201);
+
+      // 구독 기간 30일 연장
+      const extendRequest = {
+        userId: userJourneyData.ids.userId,
+        days: 30,
+        reason: 'E2E Test - Extend 30 days'
+      };
+
+      const response = await request(app.getHttpServer())
+        .post('/admin/entitlements/adjust')
+        .set('x-user-id', adminSetupData.ids.adminId)
+        .send(extendRequest)
+        .expect(200);
+
+      console.log('✅ Subscription Extended:', response.body);
+      expect(response.body.action).toBe('extended');
+      expect(response.body.adjustedDays).toBe(30);
+      expect(response.body.userId).toBe(userJourneyData.ids.userId);
+    });
+
+    it('2-7. [POST /admin/entitlements/adjust] should reduce user subscription', async () => {
+      // 구독 기간 7일 차감
+      const reduceRequest = {
+        userId: userJourneyData.ids.userId,
+        days: -7,
+        reason: 'E2E Test - Reduce 7 days'
+      };
+
+      const response = await request(app.getHttpServer())
+        .post('/admin/entitlements/adjust')
+        .set('x-user-id', adminSetupData.ids.adminId)
+        .send(reduceRequest)
+        .expect(200);
+
+      console.log('✅ Subscription Reduced:', response.body);
+      expect(response.body.action).toBe('reduced');
+      expect(response.body.adjustedDays).toBe(-7);
+      expect(response.body.userId).toBe(userJourneyData.ids.userId);
+    });
+
+    it('2-8. [GET /subscriptions/current] should return null for cancelled subscription', async () => {
+      // 구독 취소
+      await request(app.getHttpServer())
+        .post('/subscriptions/cancel')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .send(userJourneyData.cancelRequest)
+        .expect(200);
+
       const response = await request(app.getHttpServer())
         .get('/subscriptions/current')
         .set('x-user-id', userJourneyData.ids.userId)
