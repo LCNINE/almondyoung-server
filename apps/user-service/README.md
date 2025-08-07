@@ -60,6 +60,24 @@ npm run seed:user-service
 - 스코프 기반 권한 체크
 - 역할 할당 및 관리
 
+### 이벤트 발행
+
+User Service는 다음과 같은 이벤트를 발행합니다:
+
+#### 사용자 관련 이벤트
+
+- USER_CREATED: 사용자 생성 시 발행
+- USER_UPDATED: 사용자 정보 업데이트 시 발행
+- USER_DELETED: 사용자 삭제 시 발행
+- USER_VERIFICATION: 이메일 인증 요청 시 발행
+- USER_FIND_ID: ID 찾기 요청 시 발행
+- USER_RESET_PASSWORD: 비밀번호 재설정 요청 시 발행
+- DORMANT_ACCOUNT_CONVERTED: 휴면 계정 전환 시 발행
+
+각 이벤트는 Kafka를 통해 발행되며, 다른 마이크로서비스에서 구독하여 처리할 수 있습니다.
+
+각 이벤트의 payload는 @/libs/shared/src/events 에서 확인 가능합니다.
+
 ## API 문서
 
 API 문서는 Swagger를 통해 제공됩니다.
