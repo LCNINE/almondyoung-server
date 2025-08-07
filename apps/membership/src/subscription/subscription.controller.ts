@@ -70,7 +70,7 @@ export class SubscriptionController {
   @Post('upgrade')
   @HttpCode(HttpStatus.OK)
   @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
-  @CheckPolicies('UPGRADE_PLAN')
+  @CheckPolicies('CHANGE_PLAN')
   async upgradeSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
@@ -89,7 +89,7 @@ export class SubscriptionController {
   @Post('downgrade')
   @HttpCode(HttpStatus.OK)
   @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
-  @CheckPolicies('DOWNGRADE_PLAN')
+  @CheckPolicies('CHANGE_PLAN')
   async downgradeSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))

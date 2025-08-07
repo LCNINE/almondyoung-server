@@ -31,7 +31,7 @@ import {
   CreatePolicyRequestSchema,
   UpdatePolicyRequestSchema,
 } from '../shared/schemas';
-
+import { FastifyRequest } from 'fastify';
 /**
  * 관리자 운영 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -51,55 +51,55 @@ export class AdminOperationsController {
   @Post('tiers')
   @HttpCode(HttpStatus.CREATED)
   async createTier(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CreateTierRequestSchema))
     dto: CreateTierRequest,
   ) {
-    const adminId = req.user.userId;
+    const adminId = req.user!.userId;
     return this.adminOperationsService.createTier(dto, adminId);
   }
 
   @Put('tiers/:tierId')
   async updateTier(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Param('tierId') tierId: string,
     @Body(new ZodValidationPipe(UpdateTierRequestSchema))
     dto: UpdateTierRequest,
   ) {
-    const adminId = req.user.userId;
+    const adminId = req.user!.userId;
     return this.adminOperationsService.updateTier(tierId, dto, adminId);
   }
 
   @Post('plans')
   @HttpCode(HttpStatus.CREATED)
   async createPlan(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CreatePlanRequestSchema))
     dto: CreatePlanRequest,
   ) {
-    const adminId = req.user.userId;
+    const adminId = req.user!.userId;
     return this.adminOperationsService.createPlan(dto, adminId);
   }
 
   @Put('plans/:planId')
   async updatePlan(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(UpdatePlanRequestSchema))
     dto: UpdatePlanRequest,
   ) {
-    const adminId = req.user.userId;
+    const adminId = req.user!.userId;
     return this.adminOperationsService.updatePlan(planId, dto, adminId);
   }
 
   @Delete('plans/:planId')
   async deactivatePlan(
-    @Req() req: any,
+    @Req() req: FastifyRequest,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(DeactivatePlanRequestSchema))
     dto: DeactivatePlanRequest,
   ) {
-    const adminId = req.user.userId;
+    const adminId = req.user!.userId;
     return this.adminOperationsService.deactivatePlan(planId, dto, adminId);
   }
 

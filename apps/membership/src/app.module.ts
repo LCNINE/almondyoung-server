@@ -18,6 +18,7 @@ import { DbModule } from '@app/db';
 import * as schema from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { EventsModule } from '@app/events';
+import { DevAuthModule } from './auth/dev-auth-module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { EventsModule } from '@app/events';
       isGlobal: true,
       envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
     }),
+    DevAuthModule,
     SubscriptionModule,
     PlanModule,
     AdminOperationsModule,

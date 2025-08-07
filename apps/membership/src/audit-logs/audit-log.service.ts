@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, gte, lte, desc, asc, like } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, asc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface AuditLogEntry {
   id: string;

@@ -13,10 +13,6 @@ export const CreateTierRequestSchema = z.object({
     .min(1, '티어 코드는 필수입니다')
     .max(20, '티어 코드는 20자 이하여야 합니다')
     .regex(/^[A-Z_]+$/, '티어 코드는 대문자와 언더스코어만 사용할 수 있습니다'),
-  name: z
-    .string()
-    .min(1, '티어 이름은 필수입니다')
-    .max(50, '티어 이름은 50자 이하여야 합니다'),
   priorityLevel: z
     .number()
     .min(1, '우선순위는 1 이상이어야 합니다')

@@ -30,7 +30,7 @@ import { FastifyRequest } from 'fastify';
 @Controller('subscriptions/pause')
 @UseFilters(SubscriptionExceptionFilter)
 export class PauseController {
-  constructor(private readonly pauseService: PauseService) {}
+  constructor(private readonly pauseService: PauseService) { }
 
   /**
    * 구독 일시정지

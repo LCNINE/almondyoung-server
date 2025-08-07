@@ -1,23 +1,19 @@
+// policy.module.ts
 import { Module } from '@nestjs/common';
-import { PolicyService } from './policy.service';
+import { PolicyManagementService } from './policy-management.service';
+import { PolicyValidationService } from './policy-validation.service';
 import { PolicyGuard } from './policy.guard';
-import { SubscriptionModule } from '../subscription/subscription.module'; // SubscriptionService를 사용하기 위해 import
 
-/**
- * 정책 관리 모듈
- * 정책의 CRUD와 검증 로직을 제공합니다.
- */
 @Module({
   imports: [
-    SubscriptionModule, // PolicyGuard가 SubscriptionService를 사용하므로 해당 모듈을 import 해야합니다.
+    // DbModule 등 필요한 모듈
   ],
-  providers: [
-    PolicyService,
-    PolicyGuard, // Guard도 의존성 주입을 사용하는 Provider이므로 등록해야 합니다.
-  ],
+  providers: [PolicyManagementService, PolicyValidationService, PolicyGuard],
+  controllers: [],
   exports: [
-    PolicyService,
-    PolicyGuard, // 다른 모듈에서 Guard를 사용할 수 있도록 export합니다.
+    PolicyManagementService, // 관리자 모듈에서 사용
+    PolicyValidationService, // SubscriptionModule, Guard에서 사용
+    PolicyGuard, // 컨트롤러에서 사용
   ],
 })
 export class PolicyManagementModule {}

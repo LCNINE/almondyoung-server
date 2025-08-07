@@ -28,9 +28,23 @@ export interface PolicyListResponse {
 export type PolicyValidationContext = {
   userId: string;
   tierId?: string;
-  // 각 action에 따라 필요한 추가 데이터
-  pauseCount?: number; // 예: 'PAUSE_SUBSCRIPTION' 액션 시 필요
+
+  // PAUSE_SUBSCRIPTION 관련
+  pauseCount?: number;
   pauseStartDate?: string;
   pauseEndDate?: string;
-  // ... 기타 필요한 컨텍스트 데이터
+  lastPauseEndDate?: string; // 마지막 일시정지 종료일
+
+  // CHANGE_PLAN 관련
+  lastPlanChangeDate?: string | Date; // 마지막 플랜 변경일
+  isDowngrade?: boolean; // 다운그레이드 여부
+  newPlanId?: string; // 변경할 플랜 ID
+
+  // CANCEL_SUBSCRIPTION 관련
+  subscriptionStartDate?: string | Date;
+
+  cancellationReason?: string; // 취소 사유
+
+  // 기타 필요한 컨텍스트 데이터
+  [key: string]: any; // 확장 가능하도록
 };

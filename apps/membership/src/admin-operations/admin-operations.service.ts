@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PlanService } from '../plan/plan.service';
-import { PolicyService } from '../policy-management/policy.service';
+import { PolicyManagementService } from '../policy-management/policy-management.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import {
   CreateTierRequest,
@@ -21,7 +21,7 @@ import {
 export class AdminOperationsService {
   constructor(
     private readonly planService: PlanService,
-    private readonly policyService: PolicyService,
+    private readonly policyService: PolicyManagementService,
     private readonly subscriptionService: SubscriptionService,
   ) {}
 
