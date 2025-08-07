@@ -11,20 +11,28 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { Public } from '../../commons/decorators/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
+@ApiTags('사용자')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  /**
-   * 사용자의 기본 정보를 조회합니다.
-   * 민감한 정보는 제외된 기본 정보만 반환됩니다.
-   */
+  @ApiOperation({ summary: '사용자 기본 정보 조회' })
+  @ApiResponse({ status: 200, description: '사용자 기본 정보 조회 성공' })
+  @ApiParam({ name: 'id', description: '사용자 ID' })
   @Get(':id')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -32,10 +40,14 @@ export class UsersController {
     return this.usersService.findUserById(id);
   }
 
-  /**
-   * 사용자의 상세 정보를 조회합니다.
-   * 기본 정보, 프로필, 상점 정보를 포함합니다.
-   */
+  @ApiOperation({ summary: '사용자 상세 정보 조회' })
+  @ApiResponse({ status: 200, description: '사용자 상세 정보 조회 성공' })
+  @ApiQuery({
+    name: 'userId',
+    description: '조회할 사용자 ID',
+    required: false,
+  })
+  @ApiBearerAuth()
   @Get('/details')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes([USER_SCOPES.USER.READ, USER_SCOPES.MASTER])
@@ -47,10 +59,10 @@ export class UsersController {
     return this.usersService.getUserDetails(userId ?? user.id);
   }
 
-  /**
-   * 사용자의 권한 정보를 조회합니다.
-   * 역할과 스코프 정보를 포함합니다.
-   */
+  @ApiOperation({ summary: '사용자 권한 정보 조회' })
+  @ApiResponse({ status: 200, description: '사용자 권한 정보 조회 성공' })
+  @ApiParam({ name: 'userId', description: '사용자 ID' })
+  @ApiBearerAuth()
   @Get('/roles/:userId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -61,10 +73,10 @@ export class UsersController {
     return this.usersService.getUserRoles(userId ?? user.id);
   }
 
-  /**
-   * 사용자 정보를 업데이트합니다.
-   * 사용자명과 주소 정보를 수정할 수 있습니다.
-   */
+  @ApiOperation({ summary: '사용자 정보 수정' })
+  @ApiResponse({ status: 200, description: '사용자 정보 수정 성공' })
+  @ApiParam({ name: 'userId', description: '수정할 사용자 ID' })
+  @ApiBearerAuth()
   @Patch(':userId')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes([USER_SCOPES.USER.UPDATE, USER_SCOPES.MASTER])
@@ -77,10 +89,9 @@ export class UsersController {
     return;
   }
 
-  /**
-   * 이메일로 사용자 찾기
-   * @Query email - 찾고자 하는 사용자의 이메일
-   */
+  @ApiOperation({ summary: '이메일로 사용자 찾기' })
+  @ApiResponse({ status: 200, description: '사용자 조회 성공' })
+  @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
   @Get('find-by-email')
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -88,11 +99,9 @@ export class UsersController {
     return this.usersService.findUserByEmail(email);
   }
 
-  /**
-   * 현재 사용자의 정보를 조회합니다.
-   * @param user - 현재 사용자의 정보
-   * @returns 현재 사용자의 정보
-   */
+  @ApiOperation({ summary: '현재 사용자 정보 조회' })
+  @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
+  @ApiBearerAuth()
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
