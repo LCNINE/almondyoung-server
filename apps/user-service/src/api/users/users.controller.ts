@@ -25,7 +25,7 @@ import { Public } from '../../commons/decorators/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
-@ApiTags('사용자')
+@ApiTags('Users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -50,7 +50,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Get('/details')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes([USER_SCOPES.USER.READ, USER_SCOPES.MASTER])
+  @RequireScopes(['user:read', 'master'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
     @CurrentUser() user: User,
@@ -79,7 +79,7 @@ export class UsersController {
   @ApiBearerAuth()
   @Patch(':userId')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes([USER_SCOPES.USER.UPDATE, USER_SCOPES.MASTER])
+  @RequireScopes(['users:update', 'master'])
   @HttpCode(HttpStatus.OK)
   async updateUser(
     @Param('userId') userId: string,

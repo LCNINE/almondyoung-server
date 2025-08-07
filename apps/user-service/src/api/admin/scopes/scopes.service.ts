@@ -4,7 +4,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import * as schema from '../../../database/drizzle/schema';
+import * as schema from '../../../../database/drizzle/schema';
 import { SetUserScopesDto } from './dto/set-user-scopes.dto';
 import { eq } from 'drizzle-orm';
 
@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm';
 export class ScopesService {
   constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
 
-  async createScopes(UserScopesDto: SetUserScopesDto) {
+  async createScopes(UserScopesDto: SetUserScopesDto): Promise<void> {
     const { scopes, description } = UserScopesDto;
 
     try {
@@ -31,6 +31,8 @@ export class ScopesService {
         scopeName: scopes,
         description: description,
       });
+
+      return;
     } catch (err) {
       console.error('[ScopesService.createScopes] error:', err);
       throw new InternalServerErrorException(

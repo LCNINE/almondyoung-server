@@ -1,17 +1,17 @@
+import { RequireScopes } from '@app/roles';
 import { Body, Controller, Post, ValidationPipe } from '@nestjs/common';
 import {
-  ApiTags,
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiTags,
 } from '@nestjs/swagger';
-import { ScopesService } from './scopes.service';
 import { SetUserScopesDto } from './dto/set-user-scopes.dto';
-import { RequireScopes } from '@app/roles';
+import { ScopesService } from './scopes.service';
 
-@ApiTags('권한 범위')
-@ApiBearerAuth()
-@Controller('scopes')
+@ApiTags('Admin/Scopes')
+@ApiBearerAuth('access-token')
+@Controller('admin/scopes')
 export class ScopesController {
   constructor(private readonly scopesService: ScopesService) {}
 
@@ -19,7 +19,9 @@ export class ScopesController {
   @ApiResponse({ status: 201, description: '권한 범위 생성 성공' })
   @Post('/create-scopes')
   @RequireScopes(['master'])
-  async createScopes(@Body(ValidationPipe) setUserScopesDto: SetUserScopesDto) {
+  async createScopes(
+    @Body(ValidationPipe) setUserScopesDto: SetUserScopesDto,
+  ): Promise<void> {
     return this.scopesService.createScopes(setUserScopesDto);
   }
 }

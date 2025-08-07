@@ -1,9 +1,10 @@
 import { DbService, InjectDb } from '@app/db';
+import { EventPublisherService, InjectEventPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/events/user.events';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, isNull, isNotNull, lt, inArray } from 'drizzle-orm';
-import * as schema from '../../../database/drizzle/schema';
-import { EmailService } from '../email/email.service';
+import { and, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import * as schema from '../../../../database/drizzle/schema';
 
 @Injectable()
 export class DormantService {
@@ -11,7 +12,8 @@ export class DormantService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<schema.User>,
-    private readonly emailService: EmailService,
+    @InjectEventPublisher()
+    private readonly eventPublisher: EventPublisherService<UserEvents>,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
@@ -19,7 +21,7 @@ export class DormantService {
     this.logger.log('휴면 계정 전환/삭제 점검 시작');
 
     try {
-      const dormantCount = await this.convertToDormant();
+      const dormantCount = await this.markDormantUsersAndNotify();
       const deletedCount = await this.permanentDelete();
 
       this.logger.log(
@@ -30,7 +32,7 @@ export class DormantService {
     }
   }
 
-  private async convertToDormant(): Promise<number> {
+  private async markDormantUsersAndNotify(): Promise<number> {
     const oneMinuteAgo = new Date();
     oneMinuteAgo.setFullYear(oneMinuteAgo.getFullYear() - 1);
 
@@ -70,13 +72,17 @@ export class DormantService {
           ),
         );
 
-      // 각 사용자에게 휴면 계정 전환 알림 이메일 발송
+      // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {
         try {
-          await this.emailService.sendDormantAccountNotification(user.email);
+          await this.eventPublisher.publishEvent('DORMANT_ACCOUNT_CONVERTED', {
+            userId: user.id,
+            email: user.email,
+            convertedAt: new Date(),
+          });
         } catch (error) {
           this.logger.error(
-            `휴면 계정 전환 이메일 발송 실패 (사용자 ID: ${user.id})`,
+            `휴면 계정 전환 이벤트 발행 실패 (사용자 ID: ${user.id})`,
             error,
           );
         }

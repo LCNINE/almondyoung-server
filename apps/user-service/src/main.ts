@@ -34,7 +34,24 @@ async function bootstrap() {
     .setTitle('User Service API')
     .setDescription('The User Service API description')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addTag('Auth', '인증 관련 API')
+    .addTag('Users', '사용자 관련 API')
+    .addTag('Admin', '관리자 관련 API')
+    .addTag('Admin/Roles', '관리자 권한 관련 API')
+    .addTag('Admin/Scopes', '관리자 스코프 관련 API')
+    .addTag('Admin/Dormant', '휴면 계정 관련 API')
+    .addTag('Shop', '상점 관련 API')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'access-token',
+    )
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);

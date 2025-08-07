@@ -21,8 +21,8 @@ import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { User } from 'apps/user-service/database/drizzle/schema';
 
-@ApiTags('상점')
-@ApiBearerAuth()
+@ApiTags('Shop')
+@ApiBearerAuth('access-token')
 @Controller('shop')
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
