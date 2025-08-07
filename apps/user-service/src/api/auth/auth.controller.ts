@@ -31,7 +31,7 @@ import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto, SignUpDto } from './dto/sign-up.dto';
 import { SocialSignUpDto } from './dto/social-sign-up.dto';
 
-@ApiTags('인증')
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(

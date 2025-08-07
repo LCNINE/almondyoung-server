@@ -18,7 +18,6 @@ import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
 import { EmailService } from '../email/email.service';
-import { RolesService } from '../roles/roles.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
@@ -32,7 +31,6 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly rolesService: RolesService,
     private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
     @InjectEventPublisher()
@@ -219,18 +217,10 @@ export class AuthService {
         .delete(schema.tokens)
         .where(eq(schema.tokens.value, token));
 
-      // 기본 역할 설정
-      const userRole = await this.rolesService.setRole(
+      // 기본 역할 설정을 'user'로 하고 기본권한 부여
+      await this.usersService.assignDefaultRoleToUser(
         verificationToken.user.id,
-        'user',
       );
-      // 권한 설정
-      const assignment = await this.rolesService.assignUserRole(
-        verificationToken.user.id,
-        userRole.roleId,
-      );
-
-      this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
       // access 토큰 발급
       const { accessToken } = await this.getAccessToken(

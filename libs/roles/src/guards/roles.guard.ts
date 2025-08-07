@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
 import { REQUIRED_SCOPES } from '../decorators/require-scopes.decorator';
+import { UserScope } from '../constants/scopes.constant';
 
 export interface JwtPayload {
   sub: string;
@@ -18,7 +19,7 @@ export class RolesGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredScopes = this.reflector.getAllAndOverride<string[]>(
+    const requiredScopes = this.reflector.getAllAndOverride<UserScope[]>(
       REQUIRED_SCOPES,
       [context.getHandler(), context.getClass()],
     );

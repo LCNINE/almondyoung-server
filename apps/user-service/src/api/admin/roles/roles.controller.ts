@@ -1,15 +1,16 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { RequireScopes, RolesGuard, USER_SCOPES } from '@app/roles';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import {
-  ApiTags,
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiTags,
 } from '@nestjs/swagger';
-import { RequireScopes, RolesGuard } from '@app/roles';
+import { AssignUserRoleDto, SetRoleDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';
 
-@ApiTags('역할')
-@ApiBearerAuth()
+@ApiTags('Admin/Roles')
+@ApiBearerAuth('access-token')
 @Controller('/admin/roles')
 @UseGuards(RolesGuard)
 export class RolesController {
@@ -19,15 +20,19 @@ export class RolesController {
   @ApiResponse({ status: 201, description: '역할 설정 성공' })
   @Post('set-role')
   @RequireScopes(['master'])
-  async setRole(@Body() body: { userId: string; role: string }) {
-    return await this.rolesService.setRole(body.userId, body.role);
+  async setRole(@Body() body: SetRoleDto): Promise<void> {
+    return await this.rolesService.setRole(
+      body.userId,
+      body.role,
+      body.description,
+    );
   }
 
   @ApiOperation({ summary: '사용자에게 역할 할당' })
   @ApiResponse({ status: 201, description: '역할 할당 성공' })
   @Post('assign')
   @RequireScopes(['master'])
-  async assignUserRole(@Body() body: { userId: string; roleId: string }) {
+  async assignUserRole(@Body() body: AssignUserRoleDto): Promise<void> {
     return await this.rolesService.assignUserRole(body.userId, body.roleId);
   }
 }

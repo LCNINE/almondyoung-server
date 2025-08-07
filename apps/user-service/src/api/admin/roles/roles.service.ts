@@ -9,7 +9,11 @@ export class RolesService {
 
   constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
 
-  async setRole(userId: string, role: string) {
+  async setRole(
+    userId: string,
+    role: string,
+    description: string,
+  ): Promise<void> {
     try {
       this.logger.debug(
         `setDefaultRoles 시작 - userId: ${userId}, role: ${role}`,
@@ -27,8 +31,6 @@ export class RolesService {
       if (!userRole.length) {
         this.logger.debug('새로운 role 생성 시작');
 
-        const description =
-          role === 'admin' ? '관리자 역할' : '일반 사용자 역할';
         [userRole[0]] = await this.dbService.db
           .insert(schema.roles)
           .values({
@@ -42,7 +44,7 @@ export class RolesService {
         );
       }
 
-      return userRole[0];
+      return;
     } catch (error) {
       this.logger.error('setDefaultRoles 에러:', error.stack);
 
@@ -54,7 +56,7 @@ export class RolesService {
     }
   }
 
-  async assignUserRole(userId: string, roleId: string) {
+  async assignUserRole(userId: string, roleId: string): Promise<void> {
     //  사용자-역할 할당
     this.logger.debug('사용자-역할 할당 시작');
     const [assignment] = await this.dbService.db
@@ -67,6 +69,6 @@ export class RolesService {
 
     this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
 
-    return assignment;
+    return;
   }
 }

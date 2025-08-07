@@ -1,10 +1,11 @@
+import { DbModule } from '@app/db';
+import { EventsModule } from '@app/events';
 import { Module } from '@nestjs/common';
 import { DormantController } from './dormant.controller';
 import { DormantService } from './dormant.service';
-import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [EmailModule],
+  imports: [DbModule, EventsModule],
   controllers: [DormantController],
   providers: [DormantService],
 })

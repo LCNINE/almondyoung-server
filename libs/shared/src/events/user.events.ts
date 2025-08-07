@@ -15,6 +15,12 @@ export interface UserDeletedPayload extends BaseEventPayload {
   userId: string;
 }
 
+export interface UserDormantConvertedPayload extends BaseEventPayload {
+  userId: string;
+  email: string;
+  convertedAt: Date;
+}
+
 export const USER_EVENTS = {
   USER_CREATED: {
     topic: 'user.created',
@@ -27,6 +33,10 @@ export const USER_EVENTS = {
   USER_DELETED: {
     topic: 'user.deleted',
     payload: {} as UserDeletedPayload,
+  },
+  DORMANT_ACCOUNT_CONVERTED: {
+    topic: 'user.dormant.converted',
+    payload: {} as UserDormantConvertedPayload,
   },
 } as const satisfies Record<string, EventDefinition>;
 
