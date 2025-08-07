@@ -74,6 +74,8 @@ export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'receiv
 export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
+export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
+
 // 주문 관련 enum 추가
 export const orderStatusEnum = pgEnum('order_status', [
     'pending',        // 주문 생성 (결제 대기)
@@ -120,8 +122,17 @@ export const suppliers = pgTable('suppliers', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
+export const holders = pgTable('holders', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 255 }).notNull(),
+    isOurAsset: boolean('is_our_asset').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
 export const skus = pgTable('skus', {
     id: uuid('id').primaryKey().defaultRandom(),
+    holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     code: varchar('code', { length: 64 }).notNull().unique(),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
@@ -194,21 +205,65 @@ export const warehouses = pgTable('warehouses', {
 /*───────────────────────────
  * LOCATION
  *──────────────────────────*/
+export const locationColumns = pgTable('location_columns', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+    columnName: varchar('column_name', { length: 10 }).notNull(),
+    displayOrder: integer('display_order'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => [
+    unique().on(t.warehouseId, t.columnName)
+]);
+
+export const locationRacks = pgTable('location_racks', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    columnId: uuid('column_id').references(() => locationColumns.id, { onDelete: 'cascade' }).notNull(),
+    rackNumber: integer('rack_number').notNull(),
+    defaultBinStart: integer('default_bin_start').default(1),
+    defaultBinEnd: integer('default_bin_end').default(20),
+    autoGenerateBins: boolean('auto_generate_bins').default(true),
+    physicalWidth: integer('physical_width'),
+    physicalHeight: integer('physical_height'),
+    notes: text('notes'),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => [
+    unique().on(t.columnId, t.rackNumber)
+]);
+
 export const locations = pgTable('locations', {
     id: uuid('id').primaryKey().defaultRandom(),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    code: varchar('code', { length: 64 }).notNull(), // 로케이션 코드 추가 (예: A-1-1)
-    xCoordinate: integer('x_coordinate').notNull(),
-    yCoordinate: integer('y_coordinate').notNull(),
-    width: integer('width'),
-    height: integer('height'),
+    code: varchar('code', { length: 64 }).notNull(),
+    locationType: locationTypeEnum('location_type').notNull(),
+    rackId: uuid('rack_id').references(() => locationRacks.id, { onDelete: 'cascade' }),
+    binIdentifier: varchar('bin_identifier', { length: 20 }),
+    displayName: varchar('display_name', { length: 128 }),
+    capacityLimit: integer('capacity_limit'),
     fifoRank: integer('fifo_rank'),
     isExpirySeparated: boolean('is_expiry_separated'),
+    isActive: boolean('is_active').default(true),
+    notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, t => ({
-    uniqueCodePerWarehouse: unique().on(t.warehouseId, t.code), // 창고별 로케이션 코드 유니크
-}));
+}, t => [
+    unique().on(t.warehouseId, t.code),
+    sql`CHECK (
+        (location_type = 'standard' AND rack_id IS NOT NULL AND bin_identifier IS NOT NULL)
+        OR 
+        (location_type = 'zone' AND rack_id IS NULL AND bin_identifier IS NULL)
+    )`
+]);
+
+export const locationIndexes = {
+    locationsWarehouseType: index('idx_locations_warehouse_type').on(locations.warehouseId, locations.locationType),
+    locationsRackBin: index('idx_locations_rack_bin').on(locations.rackId, locations.binIdentifier),
+    locationRacksColumnNumber: index('idx_racks_column_number').on(locationRacks.columnId, locationRacks.rackNumber),
+    locationColumnsWarehouseName: index('idx_columns_warehouse_name').on(locationColumns.warehouseId, locationColumns.columnName),
+};
 
 /*───────────────────────────
  * STOCK LEDGER
@@ -629,6 +684,7 @@ export const inboundLists = pgTable('inbound_lists', {
  *──────────────────────────*/
 export const wmsTables = {
     suppliers,
+    holders,
     skus,
     skuSuppliers,
     skuBarcodes,
@@ -636,6 +692,8 @@ export const wmsTables = {
     skuCategories,
     deliveryProfiles,
     warehouses,
+    locationColumns,
+    locationRacks,
     locations,
     stockEvents,
     stocks,

@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { SharedModule } from '../shared/shared.module';
 import { InventoryController } from './controllers/inventory.controller';
 import { ProductMatchingController } from './controllers/product-matching.controller';
+import { LocationController } from './controllers/location.controller';
 import { InventoryService } from './services/inventory.service';
 import { ProductMatchingService } from './services/product-matching.service';
 import { StockEventService } from './services/stock-event.service';
@@ -29,7 +30,8 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
   ],
   controllers: [
     InventoryController,
-    ProductMatchingController
+    ProductMatchingController,
+    LocationController
   ],
   providers: [
     InventoryService,
