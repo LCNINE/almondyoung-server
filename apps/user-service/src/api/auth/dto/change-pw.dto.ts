@@ -1,6 +1,13 @@
 import { IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class ChangePasswordDto {
+  @ApiProperty({
+    description: '새 비밀번호',
+    example: 'newpassword123',
+    minLength: 8,
+    maxLength: 20,
+  })
   @IsString({
     message: '비밀번호는 문자열이어야 합니다.',
   })
