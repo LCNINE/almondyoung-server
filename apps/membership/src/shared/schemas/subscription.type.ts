@@ -1,16 +1,23 @@
 import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import * as schema from './entities/schema';
-import { PlanInfo, TierInfo } from './plan.type';
+import { PlanInfo, Tier, TierInfo } from './plan.type';
 
-export type Subscription = InferSelectModel<typeof schema.subscriptions>;
-export type NewSubscription = InferInsertModel<typeof schema.subscriptions>;
+export type SubscriptionContract = InferSelectModel<
+  typeof schema.subscriptionContracts
+>;
+export type NewSubscriptionContract = InferInsertModel<
+  typeof schema.subscriptionContracts
+>;
 
-export type SubscriptionEvent = InferSelectModel<
-  typeof schema.subscriptionEvents
+export type SubscriptionEntitlement = InferSelectModel<
+  typeof schema.subscriptionEntitlement
 >;
-export type NewSubscriptionEvent = InferInsertModel<
-  typeof schema.subscriptionEvents
+export type NewSubscriptionEntitlement = InferInsertModel<
+  typeof schema.subscriptionEntitlement
 >;
+
+export type EventBatch = InferSelectModel<typeof schema.eventBatches>;
+export type NewEventBatch = InferInsertModel<typeof schema.eventBatches>;
 
 export type BulkSubscriptionCheckResponse = Record<
   string,
@@ -28,7 +35,6 @@ export type CreateSubscriptionInput = {
 
 export type CurrentSubscriptionResponse = {
   id: string;
-  status: Subscription['status'];
   currentTier: TierInfo;
   plan: PlanInfo;
   nextBillingDate: string | null;
@@ -40,4 +46,27 @@ export type CurrentSubscriptionResponse = {
 export type CancelSubscriptionInput = {
   reason?: string;
   effectiveDate?: string;
+};
+
+export type SubscriptionEntiltment = InferSelectModel<
+  typeof schema.subscriptionEntitlement
+>;
+export type NewSubscriptionEntiltment = InferInsertModel<
+  typeof schema.subscriptionEntitlement
+>;
+
+type TierForApiResponse = Omit<Tier, 'createdAt' | 'updatedAt'> & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserEntitlementResponse = {
+  contract: Pick<SubscriptionContract, 'id' | 'nextBillingDate' | 'isVoided'>;
+  entitlement: Pick<
+    SubscriptionEntitlement,
+    'id' | 'startsAt' | 'endsAt' | 'isCurrent' | 'pausedAt'
+  >;
+  plan: PlanInfo;
+  tier: TierForApiResponse;
+  isPaused: boolean;
 };

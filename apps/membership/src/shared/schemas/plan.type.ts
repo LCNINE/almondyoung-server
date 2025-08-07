@@ -1,14 +1,14 @@
 import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import * as schema from './entities/schema';
 
-export type Tier = InferSelectModel<typeof schema.subscriptionTiers>;
-export type NewTier = InferInsertModel<typeof schema.subscriptionTiers>;
+export type Tier = InferSelectModel<typeof schema.tiers>;
+export type NewTier = InferInsertModel<typeof schema.tiers>;
 
-export type Plan = InferSelectModel<typeof schema.subscriptionPlans>;
-export type NewPlan = InferInsertModel<typeof schema.subscriptionPlans>;
+export type Plan = InferSelectModel<typeof schema.plan>;
+export type NewPlan = InferInsertModel<typeof schema.plan>;
 
-export type CreateTierInput = Pick<NewTier, 'code' | 'name' | 'priorityLevel'>;
-export type UpdateTierInput = Partial<Pick<Tier, 'name' | 'priorityLevel'>>;
+export type CreateTierInput = Pick<NewTier, 'code' | 'priorityLevel'>;
+export type UpdateTierInput = Partial<Pick<Tier, 'priorityLevel'>>;
 export type CreatePlanInput = Pick<
   NewPlan,
   'tierId' | 'price' | 'durationDays' | 'currency' | 'trialDays'
@@ -20,7 +20,7 @@ export type DeactivatePlanInput = {
   reason: string;
 };
 
-export type TierInfo = Pick<Tier, 'id' | 'code' | 'name' | 'priorityLevel'>;
+export type TierInfo = Pick<Tier, 'id' | 'code' | 'priorityLevel'>;
 
 export type PlanInfo = Pick<
   Plan,
@@ -33,7 +33,7 @@ export type PlanDetailsResponse = {
   tier: {
     id: string;
     code: string;
-    name: string;
+
     priorityLevel: number;
     createdAt: string;
     updatedAt: string;
@@ -50,7 +50,7 @@ export type PlanDetailsResponse = {
 export type TierListResponse = Array<{
   id: string;
   code: string;
-  name: string;
+
   priorityLevel: number;
   createdAt: string;
   updatedAt: string;

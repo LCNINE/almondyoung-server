@@ -1,18 +1,19 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { PlanModule } from './plan/plan.module';
 import { AdminOperationsModule } from './admin-operations/admin-operations.module';
 import { PauseModule } from './pause-resume/pause.module';
-import { RightsModule } from './rights/rights.module';
+
 import { PolicyManagementModule } from './policy-management/policy-management.module';
-import {
-  // SubscriptionExceptionFilter,
-  HttpExceptionFilter,
-  GlobalExceptionFilter,
-} from './shared/filters/subscription-exception.filter';
+// import { APP_FILTER } from '@nestjs/core';
+// import {
+//   // SubscriptionExceptionFilter,
+//   HttpExceptionFilter,
+//   GlobalExceptionFilter,
+// } from './shared/filters/subscription-exception.filter';
 import { DbModule } from '@app/db';
 import * as schema from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
@@ -28,7 +29,6 @@ import { EventsModule } from '@app/events';
     PlanModule,
     AdminOperationsModule,
     PauseModule,
-    RightsModule,
     PolicyManagementModule,
     EventsModule,
     DbModule.forRoot({
@@ -42,10 +42,7 @@ import { EventsModule } from '@app/events';
   controllers: [AppController],
   providers: [
     AppService,
-    // {
-    //   provide: APP_PIPE,
-    //   useClass: GlobalZodPipe, // 기존 ZodValidationPipe 대신 이걸로
-    // },
+
     // {
     //   provide: APP_FILTER,
     //   useClass: SubscriptionExceptionFilter,

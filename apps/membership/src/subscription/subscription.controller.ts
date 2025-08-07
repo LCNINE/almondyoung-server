@@ -3,11 +3,14 @@ import {
   Get,
   Post,
   Body,
-  Query,
   UseFilters,
   HttpCode,
   HttpStatus,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
+// import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
+import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import { SubscriptionService } from './subscription.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
@@ -21,9 +24,13 @@ import {
   CancelSubscriptionRequest,
 } from '../shared/schemas';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-
+import { PolicyGuard } from '../policy-management/policy.guard';
+import { CheckPolicies } from '../policy-management/policy.decorator';
+import { FastifyRequest } from 'fastify';
 /**
  * 구독 관리 컨트롤러
+ * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
+ * 실제 프로덕션 배포 전 반드시 실제 인증 가드(AuthGuard('jwt'))로 교체해야 합니다.
  */
 @Controller('subscriptions')
 @UseFilters(SubscriptionExceptionFilter)
@@ -34,21 +41,23 @@ export class SubscriptionController {
    * 현재 구독 상태 조회
    */
   @Get('current')
-  async getCurrentSubscription(@Query('userId') userId: string) {
-    return this.subscriptionService.getCurrentSubscription(userId);
+  @UseGuards(DevAuthGuard) // 🚨 AuthGuard('jwt') 대신 임시 가드 사용
+  async getCurrentSubscriptionDetails(@Req() req: FastifyRequest) {
+    const userId = req.user!.userId;
+    return this.subscriptionService.getCurrentSubscriptionDetails(userId);
   }
-
   /**
    * 구독 생성
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
   async createSubscription(
-    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
-    @Query('userId') userId: string,
   ) {
+    const userId = req.user!.userId;
     return this.subscriptionService.createSubscription(
       userId,
       createSubscriptionDto.planId,
@@ -59,13 +68,15 @@ export class SubscriptionController {
    * 구독 업그레이드
    */
   @Post('upgrade')
-  @HttpCode(HttpStatus.CREATED) // 일관성을 위해 HttpCode 추가
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
+  @CheckPolicies('UPGRADE_PLAN')
   async upgradeSubscription(
-    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
     upgradeSubscriptionDto: UpgradeSubscriptionRequest,
-    @Query('userId') userId: string,
   ) {
+    const userId = req.user!.userId;
     return this.subscriptionService.upgradeSubscription(
       userId,
       upgradeSubscriptionDto.newPlanId,
@@ -76,14 +87,17 @@ export class SubscriptionController {
    * 구독 다운그레이드
    */
   @Post('downgrade')
-  @HttpCode(HttpStatus.OK) // 다운그레이드는 즉시 생성되는 것이 아니므로 200 OK가 더 적합할 수 있습니다.
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
+  @CheckPolicies('DOWNGRADE_PLAN')
   async downgradeSubscription(
-    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
-    @Query('userId') userId: string,
   ) {
-    return this.subscriptionService.downgradeSubscription(
+    const userId = req.user!.userId;
+    // 참고: 서비스 로직에 downgradeSubscription 메소드가 필요합니다.
+    return this.subscriptionService.upgradeSubscription(
       userId,
       downgradeSubscriptionDto.newPlanId,
     );
@@ -93,13 +107,15 @@ export class SubscriptionController {
    * 구독 취소
    */
   @Post('cancel')
-  @HttpCode(HttpStatus.OK) // 취소도 200 OK가 더 적합합니다.
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
+  @CheckPolicies('CANCEL_SUBSCRIPTION')
   async cancelSubscription(
-    // ✅ 파이프를 @Body 파라미터에 직접 적용
+    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
-    @Query('userId') userId: string,
   ) {
+    const userId = req.user!.userId;
     return this.subscriptionService.cancelSubscription(
       userId,
       cancelSubscriptionDto.reason,
@@ -110,7 +126,9 @@ export class SubscriptionController {
    * 구독 이력 조회
    */
   @Get('history')
-  async getSubscriptionHistory(@Query('userId') userId: string) {
+  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
+  async getSubscriptionHistory(@Req() req: FastifyRequest) {
+    const userId = req.user!.userId;
     return this.subscriptionService.getSubscriptionHistory(userId);
   }
 }

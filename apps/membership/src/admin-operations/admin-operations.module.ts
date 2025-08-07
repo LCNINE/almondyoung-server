@@ -7,7 +7,8 @@ import { PolicyManagementModule } from '../policy-management/policy-management.m
 
 /**
  * 관리자 운영 모듈
- * 플랜, 티어, 정책 관리를 위한 통합 관리자 모듈
+ * 각 기능별 모듈을 import하여 AdminOperationsService가
+ * 모든 하위 서비스를 사용할 수 있도록 구성합니다.
  */
 @Module({
   imports: [PlanModule, SubscriptionModule, PolicyManagementModule],

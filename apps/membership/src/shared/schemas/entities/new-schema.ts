@@ -6,88 +6,26 @@ import {
   integer,
   boolean,
   date,
-  pgEnum,
-  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
-// ... 나머지 테이블에 대한 relations도 유사하게 정의할 수 있습니다.
-export const subscriptionStatusEnum = pgEnum('subscription_status', [
-  'ACTIVE',
-  'PAUSED',
-  'CANCELLED',
-  'EXPIRED',
-  'PENDING_CHANGE',
-]);
-export const subscriptionChangeTypeEnum = pgEnum('subscription_change_type', [
-  'UPGRADE',
-  'DOWNGRADE',
-  'RENEWAL',
-  'INITIAL',
-]);
-export const eventPublishStatusEnum = pgEnum('event_publish_status', [
-  'PENDING',
-  'PUBLISHED',
-  'FAILED',
-]);
-export const pauseStatusEnum = pgEnum('pause_status', [
-  'ACTIVE',
-  'ENDED',
-  'CANCELLED',
-]);
 /**
- * Policy rule type enumeration for subscription management system.
- * Defines various policy types that can be applied to subscriptions, plans, and users.
+ * New simplified schema for membership subscription system
+ * Based on CTO-approved 7-table design
  */
-export const policyRuleTypeEnum = pgEnum('policy_rule_type', [
-  // Pause-related policies
-  'MAX_PAUSES_PER_YEAR',
-  'MIN_PAUSE_DURATION_DAYS',
-  'MAX_PAUSE_DURATION_DAYS',
-  'PAUSE_COOLDOWN_DAYS',
-  'PAUSE_BLACKOUT_PERIODS',
-
-  // Plan change policies
-  'PLAN_CHANGE_COOLDOWN_DAYS',
-  'ALLOWED_PLAN_CHANGES',
-  'DOWNGRADE_RESTRICTIONS',
-  'UPGRADE_BENEFITS',
-
-  // Tier-specific policies
-  'TIER_SPECIFIC_LIMITS',
-  'VIP_USER_BENEFITS',
-  'NEW_USER_GRACE_PERIOD',
-
-  // Promotional policies
-  'PROMOTIONAL_PERIODS',
-  'SEASONAL_RESTRICTIONS',
-  'SPECIAL_EVENT_RULES',
-]);
-// =================================================================
-// Users (기존 유지)
-// =================================================================
-
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
 
 // =================================================================
-// 새로운 7개 테이블 구조
+// Core Tables (New Schema)
 // =================================================================
 
 /**
- * Tiers - 더 직관적인 네이밍
+ * Tiers table - simplified from subscription_tiers
+ * Removed: name field (only code and rank needed)
  */
 export const tiers = pgTable('tiers', {
   id: uuid('id').primaryKey().defaultRandom(),
   code: text('code').notNull().unique(),
-  priorityLevel: integer('priority_level').notNull().unique(),
+  rank: integer('rank').notNull().unique(), // renamed from priority_level
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -97,7 +35,8 @@ export const tiers = pgTable('tiers', {
 });
 
 /**
- * Plan - 단수형으로 더 직관적
+ * Plan table - simplified from subscription_plans
+ * Removed: trial_days field
  */
 export const plan = pgTable('plan', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -107,7 +46,6 @@ export const plan = pgTable('plan', {
   price: integer('price').notNull(),
   durationDays: integer('duration_days').notNull(),
   currency: text('currency').notNull().default('KRW'),
-  trialDays: integer('trial_days').default(0),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -118,30 +56,34 @@ export const plan = pgTable('plan', {
 });
 
 /**
- * Subscription contracts - 계약 개념으로 명확화
+ * Subscription contracts - simplified from subscriptions
+ * Removed: status, started_at, previous_subscription_id, change_type,
+ *          adjustment_amount, void_reason, updated_at
+ * Added: lead_days field
  */
 export const subscriptionContracts = pgTable('subscription_contracts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: uuid('user_id').notNull(), // references users(id) - assuming users table exists
   planId: uuid('plan_id')
     .notNull()
     .references(() => plan.id),
   nextBillingDate: date('next_billing_date'),
-  leadDays: integer('lead_days').notNull().default(0),
+  leadDays: integer('lead_days').notNull().default(0), // new field
   isVoided: boolean('is_voided').notNull().default(false),
   voidedAt: timestamp('voided_at', { withTimezone: true }),
-  reason: text('reason'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
 
 /**
- * Subscription entitlement - 권한 개념으로 명확화
+ * Subscription entitlement - evolved from subscription_rights
+ * Added: closed_at, is_current, source_batch_id, closed_batch_id fields
+ * Removed: subscription_id, is_active, created_by_event_id, closed_by_event_id
  */
 export const subscriptionEntitlement = pgTable('subscription_entitlement', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: uuid('user_id').notNull(), // references users(id)
   tierId: uuid('tier_id')
     .notNull()
     .references(() => tiers.id),
@@ -158,12 +100,16 @@ export const subscriptionEntitlement = pgTable('subscription_entitlement', {
 });
 
 /**
- * Event batches - 배치 개념으로 명확화
+ * Event batches - simplified from subscription_events
+ * Removed: user_id, subscription_id, event_payload, initiated_by,
+ *          topic_name, publish_status, retry_count
+ * Added: admin_id field
+ * Renamed: event_type -> type
  */
 export const eventBatches = pgTable('event_batches', {
   id: uuid('id').primaryKey().defaultRandom(),
-  type: text('type').notNull(),
-  adminId: uuid('admin_id'), // 관리자 ID
+  type: text('type').notNull(), // renamed from event_type
+  adminId: uuid('admin_id'), // new field for admin who initiated the batch
   effectiveDate: date('effective_date').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -171,28 +117,31 @@ export const eventBatches = pgTable('event_batches', {
 });
 
 /**
- * Pause periods - 일시정지 기간으로 명확화
+ * Pause periods - simplified from subscription_pauses
+ * Removed: subscription_id, status, actual_resumed_at
+ * Added: reason field
  */
 export const pausePeriods = pgTable('pause_periods', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: uuid('user_id').notNull(), // references users(id)
   startsAt: date('starts_at').notNull(),
   endsAt: date('ends_at').notNull(),
-  reason: text('reason'),
+  reason: text('reason'), // new field for pause reason
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
 });
 
 /**
- * Pause entitlement voids - 일시정지로 인한 권한 무효화
+ * Pause entitlement voids - evolved from pause_affected_rights
+ * Renamed: right_id -> entitlement_id
  */
 export const pauseEntitlementVoids = pgTable('pause_entitlement_voids', {
   id: uuid('id').primaryKey().defaultRandom(),
   pauseId: uuid('pause_id')
     .notNull()
     .references(() => pausePeriods.id),
-  entitlementId: uuid('entitlement_id')
+  entitlementId: uuid('entitlement_id') // renamed from right_id
     .notNull()
     .references(() => subscriptionEntitlement.id),
   originalEndsAt: date('original_ends_at').notNull(),
@@ -203,19 +152,8 @@ export const pauseEntitlementVoids = pgTable('pause_entitlement_voids', {
 });
 
 // =================================================================
-// Drizzle ORM Relations (선택 사항이지만, 쿼리 시 유용)
-// src/schemas/relations.ts
-// =================================================================
-
-// =================================================================
 // Relations for New Schema
 // =================================================================
-
-export const usersRelations = relations(users, ({ many }) => ({
-  contracts: many(subscriptionContracts),
-  entitlements: many(subscriptionEntitlement),
-  pausePeriods: many(pausePeriods),
-}));
 
 export const tiersRelations = relations(tiers, ({ many }) => ({
   plans: many(plan),
@@ -233,10 +171,6 @@ export const planRelations = relations(plan, ({ one, many }) => ({
 export const subscriptionContractsRelations = relations(
   subscriptionContracts,
   ({ one }) => ({
-    user: one(users, {
-      fields: [subscriptionContracts.userId],
-      references: [users.id],
-    }),
     plan: one(plan, {
       fields: [subscriptionContracts.planId],
       references: [plan.id],
@@ -247,10 +181,6 @@ export const subscriptionContractsRelations = relations(
 export const subscriptionEntitlementRelations = relations(
   subscriptionEntitlement,
   ({ one, many }) => ({
-    user: one(users, {
-      fields: [subscriptionEntitlement.userId],
-      references: [users.id],
-    }),
     tier: one(tiers, {
       fields: [subscriptionEntitlement.tierId],
       references: [tiers.id],
@@ -276,16 +206,9 @@ export const eventBatchesRelations = relations(eventBatches, ({ many }) => ({
   }),
 }));
 
-export const pausePeriodsRelations = relations(
-  pausePeriods,
-  ({ one, many }) => ({
-    user: one(users, {
-      fields: [pausePeriods.userId],
-      references: [users.id],
-    }),
-    entitlementVoids: many(pauseEntitlementVoids),
-  }),
-);
+export const pausePeriodsRelations = relations(pausePeriods, ({ many }) => ({
+  entitlementVoids: many(pauseEntitlementVoids),
+}));
 
 export const pauseEntitlementVoidsRelations = relations(
   pauseEntitlementVoids,
@@ -300,21 +223,3 @@ export const pauseEntitlementVoidsRelations = relations(
     }),
   }),
 );
-
-// 구독정책
-
-export const subscriptionPolicies = pgTable('subscription_policies', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  ruleType: policyRuleTypeEnum('rule_type').notNull(),
-  ruleValue: jsonb('rule_value').notNull(),
-  tierId: uuid('tier_id').references(() => tiers.id), // tierId가 NULL이면 모든 티어에 적용
-  isActive: boolean('is_active').default(true).notNull(),
-  validFrom: date('valid_from'),
-  validUntil: date('valid_until'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});

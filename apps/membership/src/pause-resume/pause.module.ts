@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { EventsModule } from '@app/events';
 import { PauseService } from './pause.service';
 import { PauseController } from './pause.controller';
 import { PolicyManagementModule } from '../policy-management/policy-management.module';
@@ -8,7 +7,8 @@ import { PolicyManagementModule } from '../policy-management/policy-management.m
  * 일시정지 관리 모듈
  */
 @Module({
-  imports: [EventsModule, PolicyManagementModule],
+  // PolicyGuard가 PolicyService를 사용하므로 PolicyManagementModule을 import합니다.
+  imports: [PolicyManagementModule],
   controllers: [PauseController],
   providers: [PauseService],
   exports: [PauseService],

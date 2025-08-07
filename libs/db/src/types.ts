@@ -32,3 +32,5 @@ export function createDbConfigFromEnv(env: DbEnvironmentConfig) {
     password: env.DB_PASSWORD,
   };
 }
+
+

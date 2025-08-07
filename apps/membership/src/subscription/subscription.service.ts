@@ -1,554 +1,246 @@
-// ============================================
-// features/subscription/subscription.service.ts
-// ============================================
-
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   SubscriptionNotFoundException,
   ActiveSubscriptionExistsException,
   PlanNotFoundException,
-  SubscriptionPausedException,
-  InvalidPlanChangeException,
-  PolicyViolationException,
+  SubscriptionException,
 } from '../shared/exceptions/subscription.exceptions';
-
 import * as schema from '../shared/schemas/entities/schema';
 import { DbService } from '@app/db';
-import { eq, and, gte, lte } from 'drizzle-orm';
-// import { EventPublisherService } from '@app/events';
-import { PolicyEngineService } from '../policy-management/policy-engine.service';
-import { v4 as uuidv4 } from 'uuid';
-import { addDays, differenceInDays } from 'date-fns';
+import { eq, desc } from 'drizzle-orm';
+import { addDays } from 'date-fns';
+import { PlanService } from '../plan/plan.service';
+import { EntitlementService } from './entitlement.service';
+import { UserEntitlementResponse } from '../shared/schemas';
+import { PostgresJsTransaction } from 'drizzle-orm/postgres-js';
+import { ExtractTablesWithRelations } from 'drizzle-orm';
+
+// Drizzle 트랜잭션 객체에 대한 정확한 타입 정의
+// 이 타입은 EntitlementService에서도 동일하게 사용되어야 합니다.
+type DrizzleTransaction = PostgresJsTransaction<
+  typeof schema,
+  ExtractTablesWithRelations<typeof schema>
+>;
 
 @Injectable()
 export class SubscriptionService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
-    // TODO: Uncomment when event publishing is implemented
-    // private readonly eventPublisher: EventPublisherService,
-    private readonly policyEngine: PolicyEngineService,
+    private readonly planService: PlanService,
+    private readonly entitlementService: EntitlementService,
   ) {}
 
   /**
-   * 현재 활성 구독 조회
+   * 사용자의 현재 구독 및 권한 상세 정보를 조회합니다.
+   * @param userId - 사용자 ID
    */
-  async getCurrentSubscription(userId: string) {
-    const result = await this.dbService.db
-      .select({
-        subscription: schema.subscriptions,
-        plan: schema.subscriptionPlans,
-        tier: schema.subscriptionTiers,
-        activeRight: schema.subscriptionRights,
-      })
-      .from(schema.subscriptions)
-      .innerJoin(
-        schema.subscriptionPlans,
-        eq(schema.subscriptions.planId, schema.subscriptionPlans.id),
-      )
-      .innerJoin(
-        schema.subscriptionTiers,
-        eq(schema.subscriptionPlans.tierId, schema.subscriptionTiers.id),
-      )
-      .leftJoin(
-        schema.subscriptionRights,
-        and(
-          eq(schema.subscriptionRights.subscriptionId, schema.subscriptions.id),
-          eq(schema.subscriptionRights.isActive, true),
-          lte(schema.subscriptionRights.startsAt, new Date().toISOString()),
-          gte(schema.subscriptionRights.endsAt, new Date().toISOString()),
-        ),
-      )
-      .where(
-        and(
-          eq(schema.subscriptions.userId, userId),
-          eq(schema.subscriptions.status, 'ACTIVE'),
-        ),
-      )
-      .limit(1);
-
-    if (!result.length) {
-      return null;
-    }
-
-    const { subscription, plan, tier, activeRight } = result[0];
-
-    // 일시정지 상태 확인
-    const isPaused = activeRight?.pausedAt !== null;
-
-    return {
-      id: subscription.id,
-      status: isPaused ? 'PAUSED' : subscription.status,
-      currentTier: {
-        id: tier.id,
-        code: tier.code,
-        name: tier.name,
-        priorityLevel: tier.priorityLevel,
-      },
-      plan: {
-        id: plan.id,
-        price: plan.price,
-        durationDays: plan.durationDays,
-        currency: plan.currency,
-      },
-      nextBillingDate: subscription.nextBillingDate,
-      startsAt: activeRight?.startsAt,
-      endsAt: activeRight?.endsAt,
-      isPaused,
-      pausedAt: activeRight?.pausedAt,
-    };
+  async getCurrentSubscriptionDetails(
+    userId: string,
+  ): Promise<UserEntitlementResponse | null> {
+    return this.entitlementService.getUserEntitlement(userId);
   }
 
   /**
-   * 새 구독 생성
+   * 새로운 구독을 생성합니다.
+   * 구독 계약(Contract)과 권한(Entitlement)을 함께 생성하고, 이를 발생시킨 이벤트 배치를 기록합니다.
+   * @param userId - 사용자 ID
+   * @param planId - 구독할 플랜 ID
    */
   async createSubscription(userId: string, planId: string) {
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. 기존 활성 구독 확인
-      const existingSubscription = await this.getCurrentSubscription(userId);
-      if (existingSubscription) {
-        throw new ActiveSubscriptionExistsException();
-      }
+    return await this.dbService.db.transaction(
+      async (tx: DrizzleTransaction) => {
+        const existingEntitlement =
+          await this.entitlementService.getUserEntitlement(userId);
+        if (existingEntitlement) {
+          throw new ActiveSubscriptionExistsException();
+        }
 
-      // 2. 플랜 정보 조회
-      const plan = await tx
-        .select()
-        .from(schema.subscriptionPlans)
-        .where(
-          and(
-            eq(schema.subscriptionPlans.id, planId),
-            eq(schema.subscriptionPlans.isActive, true),
-          ),
-        )
-        .limit(1);
+        const plan = await this.planService.getPlanDetails(planId);
+        if (!plan) {
+          throw new PlanNotFoundException();
+        }
 
-      if (!plan.length) {
-        throw new PlanNotFoundException();
-      }
+        const now = new Date();
+        const startsAt = now;
+        const endsAt = addDays(
+          startsAt,
+          plan.durationDays + (plan.trialDays || 0),
+        );
+        const nextBillingDate = addDays(startsAt, plan.trialDays || 0);
 
-      const selectedPlan = plan[0];
-      const subscriptionId = uuidv4();
-      const now = new Date();
-      const startDate = now;
-      const billingStartDate = selectedPlan.trialDays
-        ? addDays(now, selectedPlan.trialDays)
-        : now;
+        // 1. 이벤트 배치 생성
+        const [batch] = await tx
+          .insert(schema.eventBatches)
+          .values({
+            type: 'SUBSCRIPTION_CREATED',
+            effectiveDate: now.toISOString().split('T')[0],
+          })
+          .returning();
 
-      // 3. 구독 생성
-      await tx.insert(schema.subscriptions).values({
-        id: subscriptionId,
-        userId,
-        planId,
-        status: 'ACTIVE',
-        startedAt: startDate.toISOString().split('T')[0],
-        nextBillingDate: billingStartDate.toISOString().split('T')[0],
-        changeType: 'INITIAL',
-        adjustmentAmount: 0,
-      });
+        // 2. 구독 계약 생성
+        const [contract] = await tx
+          .insert(schema.subscriptionContracts)
+          .values({
+            userId,
+            planId,
+            nextBillingDate: nextBillingDate.toISOString().split('T')[0],
+          })
+          .returning();
 
-      // 4. 구독 권리 생성
-      const rightId = uuidv4();
-      const endDate = addDays(startDate, selectedPlan.durationDays);
+        // 3. EntitlementService를 통해 구독 권한 생성
+        const entitlement = await this.entitlementService.createEntitlement(
+          tx,
+          userId,
+          plan.tier.id,
+          startsAt,
+          endsAt,
+          batch.id,
+        );
 
-      await tx.insert(schema.subscriptionRights).values({
-        id: rightId,
-        userId,
-        tierId: selectedPlan.tierId,
-        subscriptionId,
-        startsAt: startDate.toISOString().split('T')[0],
-        endsAt: endDate.toISOString().split('T')[0],
-        isActive: true,
-      });
-
-      // 5. 이벤트 생성 (카프카는 나중에 구현)
-      const eventId = uuidv4();
-      await tx.insert(schema.subscriptionEvents).values({
-        id: eventId,
-        eventType: 'CREATE',
-        userId,
-        subscriptionId,
-        effectiveDate: startDate.toISOString().split('T')[0],
-        eventPayload: {
-          planId,
-          tierId: selectedPlan.tierId,
-          trialDays: selectedPlan.trialDays || 0,
-        },
-      });
-
-      return { subscriptionId, rightId };
-    });
+        return {
+          contractId: contract.id,
+          entitlementId: entitlement.id,
+        };
+      },
+    );
   }
 
   /**
-   * 구독 업그레이드
+   * 구독을 즉시 업그레이드합니다.
+   * 기존 권한은 종료되고, 새로운 플랜으로 즉시 새로운 권한이 시작됩니다.
+   * @param userId - 사용자 ID
+   * @param newPlanId - 업그레이드할 새 플랜 ID
    */
   async upgradeSubscription(userId: string, newPlanId: string) {
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. 현재 구독 조회
-      const currentSub = await this.getCurrentSubscription(userId);
-      if (!currentSub) {
-        throw new SubscriptionNotFoundException();
-      }
+    return await this.dbService.db.transaction(
+      async (tx: DrizzleTransaction) => {
+        const current =
+          await this.entitlementService.getUserEntitlement(userId);
+        if (!current) {
+          throw new SubscriptionNotFoundException();
+        }
 
-      if (currentSub.isPaused) {
-        throw new SubscriptionPausedException('플랜 변경');
-      }
+        const newPlan = await this.planService.getPlanDetails(newPlanId);
+        if (!newPlan) {
+          throw new PlanNotFoundException();
+        }
 
-      // 2. 새 플랜 정보 조회
-      const newPlan = await tx
-        .select({
-          plan: schema.subscriptionPlans,
-          tier: schema.subscriptionTiers,
-        })
-        .from(schema.subscriptionPlans)
-        .innerJoin(
-          schema.subscriptionTiers,
-          eq(schema.subscriptionPlans.tierId, schema.subscriptionTiers.id),
-        )
-        .where(eq(schema.subscriptionPlans.id, newPlanId))
-        .limit(1);
+        // 랭크 비교로 업그레이드 여부 확인
+        if (newPlan.tier.priorityLevel <= current.tier.priorityLevel) {
+          throw new SubscriptionException(
+            '새 플랜이 현재 플랜보다 등급이 높지 않습니다.',
+            'INVALID_PLAN_CHANGE',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
 
-      if (!newPlan.length) {
-        throw new PlanNotFoundException();
-      }
+        const now = new Date();
+        // TODO: 남은 기간에 대한 크레딧 계산 로직 추가 가능
+        // 여기서는 즉시 새 플랜의 전체 기간으로 갱신하는 것으로 가정
+        const newEndsAt = addDays(now, newPlan.durationDays);
 
-      const { plan: newPlanData, tier: newTier } = newPlan[0];
+        // 1. 업그레이드 이벤트 배치 생성
+        const [batch] = await tx
+          .insert(schema.eventBatches)
+          .values({
+            type: 'SUBSCRIPTION_UPGRADED',
+            effectiveDate: now.toISOString().split('T')[0],
+          })
+          .returning();
 
-      // 3. 우선순위 검증 (업그레이드인지 확인)
-      if (newTier.priorityLevel <= currentSub.currentTier.priorityLevel) {
-        throw new InvalidPlanChangeException(
-          '업그레이드가 아닙니다. 다운그레이드는 별도 API를 사용하세요.',
-        );
-      }
+        // 2. 기존 계약의 플랜을 새 플랜으로 업데이트
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ planId: newPlanId })
+          .where(eq(schema.subscriptionContracts.id, current.contract.id));
 
-      // 4. 정책 검증
-      try {
-        const policyResult = await this.policyEngine.validateRequest(
+        // 3. EntitlementService를 통해 새 권한 생성 (기존 권한은 내부적으로 종료됨)
+        const newEntitlement = await this.entitlementService.createEntitlement(
+          tx,
           userId,
-          'PLAN_CHANGE',
-          {
-            currentPlanId: currentSub.plan.id,
-            newPlanId,
-            changeType: 'UPGRADE',
-            currentTierPriority: currentSub.currentTier.priorityLevel,
-            newTierPriority: newTier.priorityLevel,
-          },
+          newPlan.tier.id,
+          now,
+          newEndsAt,
+          batch.id,
         );
 
-        if (!policyResult.isValid) {
-          const violations = policyResult.violations
-            .map((v) => v.message)
-            .join(', ');
-          throw new PolicyViolationException([
-            'UPGRADE_POLICY_VIOLATION',
-            violations,
-          ]);
-        }
-      } catch (error) {
-        if (error instanceof PolicyViolationException) {
-          throw error;
-        }
-        // 정책 엔진 오류 시 계속 진행 (폴백)
-      }
-
-      // 4. 정산 금액 계산
-      const remainingDays = differenceInDays(currentSub.endsAt!, new Date());
-      const currentDailyRate =
-        currentSub.plan.price / currentSub.plan.durationDays;
-      const newDailyRate = newPlanData.price / newPlanData.durationDays;
-      const adjustmentAmount = Math.ceil(
-        (newDailyRate - currentDailyRate) * remainingDays,
-      );
-
-      // 5. 기존 권리 종료
-      await tx
-        .update(schema.subscriptionRights)
-        .set({
-          isActive: false,
-          closedAt: new Date(),
-          closedByEventId: uuidv4(), // 추후 이벤트 ID로 업데이트
-        })
-        .where(
-          and(
-            eq(schema.subscriptionRights.userId, userId),
-            eq(schema.subscriptionRights.isActive, true),
-          ),
-        );
-
-      // 6. 새 구독 생성
-      const newSubscriptionId = uuidv4();
-      await tx.insert(schema.subscriptions).values({
-        id: newSubscriptionId,
-        userId,
-        planId: newPlanId,
-        status: 'ACTIVE',
-        startedAt: new Date().toISOString().split('T')[0],
-        nextBillingDate: currentSub.nextBillingDate, // 기존 결제일 유지
-        previousSubscriptionId: currentSub.id,
-        changeType: 'UPGRADE',
-        adjustmentAmount,
-      });
-
-      // 7. 새 권리 생성
-      const newRightId = uuidv4();
-      await tx.insert(schema.subscriptionRights).values({
-        id: newRightId,
-        userId,
-        tierId: newTier.id,
-        subscriptionId: newSubscriptionId,
-        startsAt: new Date().toISOString().split('T')[0],
-        endsAt: currentSub.endsAt!, // 기존 종료일 유지
-        isActive: true,
-      });
-
-      // 8. 이벤트 생성 (카프카는 나중에 구현)
-      const eventId = uuidv4();
-      await tx.insert(schema.subscriptionEvents).values({
-        id: eventId,
-        eventType: 'UPGRADE',
-        userId,
-        subscriptionId: newSubscriptionId,
-        effectiveDate: new Date().toISOString().split('T')[0],
-        eventPayload: {
-          fromPlanId: currentSub.plan.id,
-          toPlanId: newPlanId,
-          adjustmentAmount,
-          remainingDays,
-        },
-      });
-
-      return {
-        newSubscriptionId,
-        adjustmentAmount,
-        effectiveDate: new Date(),
-      };
-    });
+        return {
+          newEntitlementId: newEntitlement.id,
+          effectiveDate: now,
+        };
+      },
+    );
   }
 
   /**
-   * 구독 다운그레이드 (다음 결제 주기에 적용)
-   */
-  async downgradeSubscription(userId: string, newPlanId: string) {
-    return await this.dbService.db.transaction(async (tx) => {
-      // 1. 현재 구독 조회
-      const currentSub = await this.getCurrentSubscription(userId);
-      if (!currentSub) {
-        throw new SubscriptionNotFoundException();
-      }
-
-      // 2. 새 플랜 검증
-      const newPlan = await tx
-        .select({
-          plan: schema.subscriptionPlans,
-          tier: schema.subscriptionTiers,
-        })
-        .from(schema.subscriptionPlans)
-        .innerJoin(
-          schema.subscriptionTiers,
-          eq(schema.subscriptionPlans.tierId, schema.subscriptionTiers.id),
-        )
-        .where(eq(schema.subscriptionPlans.id, newPlanId))
-        .limit(1);
-
-      if (
-        !newPlan.length ||
-        newPlan[0].tier.priorityLevel >= currentSub.currentTier.priorityLevel
-      ) {
-        throw new InvalidPlanChangeException('유효한 다운그레이드가 아닙니다.');
-      }
-
-      // 3. 정책 검증
-      try {
-        const policyResult = await this.policyEngine.validateRequest(
-          userId,
-          'PLAN_CHANGE',
-          {
-            currentPlanId: currentSub.plan.id,
-            newPlanId,
-            changeType: 'DOWNGRADE',
-            currentTierPriority: currentSub.currentTier.priorityLevel,
-            newTierPriority: newPlan[0].tier.priorityLevel,
-          },
-        );
-
-        if (!policyResult.isValid) {
-          const violations = policyResult.violations
-            .map((v) => v.message)
-            .join(', ');
-          throw new PolicyViolationException([
-            'DOWNGRADE_POLICY_VIOLATION',
-            violations,
-          ]);
-        }
-      } catch (error) {
-        if (error instanceof PolicyViolationException) {
-          throw error;
-        }
-        // 정책 엔진 오류 시 계속 진행 (폴백)
-      }
-
-      // 4. 다운그레이드 예약 이벤트 생성
-      const eventId = uuidv4();
-      const effectiveDate =
-        currentSub.nextBillingDate || new Date().toISOString().split('T')[0];
-
-      await tx.insert(schema.subscriptionEvents).values({
-        id: eventId,
-        eventType: 'DOWNGRADE_SCHEDULED',
-        userId,
-        subscriptionId: currentSub.id,
-        effectiveDate,
-        eventPayload: {
-          currentPlanId: currentSub.plan.id,
-          scheduledPlanId: newPlanId,
-          effectiveDate,
-        },
-      });
-
-      // 카프카 이벤트는 나중에 구현
-
-      return {
-        scheduledDate: currentSub.nextBillingDate,
-        currentPlan: currentSub.plan,
-        scheduledPlan: newPlan[0].plan,
-      };
-    });
-  }
-
-  /**
-   * 구독 취소
+   * 구독을 취소합니다.
+   * 계약을 무효화하고 현재 권한을 종료 상태로 변경합니다.
+   * @param userId - 사용자 ID
+   * @param reason - 취소 사유 (선택)
    */
   async cancelSubscription(userId: string, reason?: string) {
-    return await this.dbService.db.transaction(async (tx) => {
-      const currentSub = await this.getCurrentSubscription(userId);
-      if (!currentSub) {
-        throw new SubscriptionNotFoundException();
-      }
+    return await this.dbService.db.transaction(
+      async (tx: DrizzleTransaction) => {
+        const current =
+          await this.entitlementService.getUserEntitlement(userId);
+        if (!current) {
+          throw new SubscriptionNotFoundException();
+        }
 
-      // 1. 구독 상태 업데이트
-      await tx
-        .update(schema.subscriptions)
-        .set({
-          status: 'CANCELLED',
-          isVoided: true,
-          voidedAt: new Date(),
-          voidReason: reason || 'User requested cancellation',
-        })
-        .where(eq(schema.subscriptions.id, currentSub.id));
+        const now = new Date();
 
-      // 2. 권리 종료
-      await tx
-        .update(schema.subscriptionRights)
-        .set({
-          isActive: false,
-          closedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.subscriptionRights.subscriptionId, currentSub.id),
-            eq(schema.subscriptionRights.isActive, true),
-          ),
-        );
+        // 1. 취소 이벤트 배치 생성
+        const [batch] = await tx
+          .insert(schema.eventBatches)
+          .values({
+            type: 'SUBSCRIPTION_CANCELLED',
+            effectiveDate: now.toISOString().split('T')[0],
+          })
+          .returning();
 
-      // 3. 이벤트 생성 (카프카는 나중에 구현)
-      const eventId = uuidv4();
-      await tx.insert(schema.subscriptionEvents).values({
-        id: eventId,
-        eventType: 'CANCEL',
-        userId,
-        subscriptionId: currentSub.id,
-        effectiveDate: new Date().toISOString().split('T')[0],
-        eventPayload: {
-          reason,
-          refundableAmount: 0, // 환불 정책에 따라 계산 필요
-        },
-      });
+        // 2. 계약 무효화
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({
+            isVoided: true,
+            voidedAt: now,
+            reason,
+          })
+          .where(eq(schema.subscriptionContracts.id, current.contract.id));
 
-      return {
-        cancelledAt: new Date(),
-        effectiveUntil: currentSub.endsAt,
-      };
-    });
+        // 3. 현재 권한 종료 (EntitlementService에 위임)
+        // terminateActiveEntitlement는 private이므로, 공개 메소드를 만들어 호출하거나
+        // 아래와 같이 직접 종료 로직을 수행할 수 있습니다.
+        // 여기서는 EntitlementService의 내부 로직을 직접 호출하는 대신,
+        // SubscriptionService의 책임 하에 직접 종료합니다.
+        await tx
+          .update(schema.subscriptionEntitlement)
+          .set({
+            isCurrent: false,
+            closedAt: now,
+            closedBatchId: batch.id,
+          })
+          .where(eq(schema.subscriptionEntitlement.id, current.entitlement.id));
+
+        return {
+          cancelledAt: now,
+          contractId: current.contract.id,
+        };
+      },
+    );
   }
 
   /**
-   * 일시정지 가능 여부 확인
-   */
-  private async checkPauseEligibility(userId: string, year: number) {
-    // 연간 일시정지 사용량 조회
-    const usage = await this.dbService.db
-      .select()
-      .from(schema.pauseUsageTracker)
-      .where(
-        and(
-          eq(schema.pauseUsageTracker.userId, userId),
-          eq(schema.pauseUsageTracker.year, year),
-        ),
-      )
-      .limit(1);
-
-    const currentUsage = usage[0]?.pauseCount || 0;
-
-    // 정책 조회
-    const policies = await this.dbService.db
-      .select()
-      .from(schema.subscriptionPolicies)
-      .where(
-        and(
-          eq(schema.subscriptionPolicies.ruleType, 'MAX_PAUSES_PER_YEAR'),
-          eq(schema.subscriptionPolicies.isActive, true),
-        ),
-      );
-
-    const maxPauses = (policies[0]?.ruleValue as { limit: number })?.limit || 2;
-
-    return {
-      eligible: currentUsage < maxPauses,
-      currentUsage,
-      maxPauses,
-      remainingPauses: maxPauses - currentUsage,
-    };
-  }
-
-  /**
-   * 구독 이력 조회
+   * 사용자의 구독 계약 이력을 조회합니다.
+   * @param userId - 사용자 ID
    */
   async getSubscriptionHistory(userId: string) {
-    const result = await this.dbService.db
-      .select({
-        subscription: schema.subscriptions,
-        plan: schema.subscriptionPlans,
-        tier: schema.subscriptionTiers,
-      })
-      .from(schema.subscriptions)
-      .innerJoin(
-        schema.subscriptionPlans,
-        eq(schema.subscriptions.planId, schema.subscriptionPlans.id),
-      )
-      .innerJoin(
-        schema.subscriptionTiers,
-        eq(schema.subscriptionPlans.tierId, schema.subscriptionTiers.id),
-      )
-      .where(eq(schema.subscriptions.userId, userId))
-      .orderBy(schema.subscriptions.createdAt);
+    const history = await this.dbService.db
+      .select()
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.userId, userId))
+      .orderBy(desc(schema.subscriptionContracts.createdAt));
 
-    return result.map(({ subscription, plan, tier }) => ({
-      id: subscription.id,
-      planId: plan.id,
-      tierCode: tier.code,
-      tierName: tier.name,
-      status: subscription.status,
-      startedAt: subscription.startedAt,
-      endedAt: subscription.isVoided
-        ? subscription.voidedAt?.toISOString()
-        : null,
-      changeType: subscription.changeType,
-      adjustmentAmount: subscription.adjustmentAmount,
-      price: plan.price,
-      currency: plan.currency,
-      durationDays: plan.durationDays,
-      createdAt: subscription.createdAt.toISOString(),
-    }));
+    return history;
   }
-
-  // 카프카 이벤트 발행은 나중에 구현
 }
