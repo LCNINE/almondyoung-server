@@ -58,7 +58,14 @@ export const createPausePolicyRequestData = (): CreatePolicyRequest => {
     'PAUSE_COOLDOWN_DAYS',
     'PLAN_CHANGE_COOLDOWN_DAYS',
     'NEW_USER_GRACE_PERIOD',
-    'TIER_SPECIFIC_LIMITS'
+    'TIER_SPECIFIC_LIMITS',
+    'ALLOWED_PLAN_CHANGES',
+    'DOWNGRADE_RESTRICTIONS',
+    'UPGRADE_BENEFITS',
+    'VIP_USER_BENEFITS',
+    'PROMOTIONAL_PERIODS',
+    'SEASONAL_RESTRICTIONS',
+    'SPECIAL_EVENT_RULES'
   ] as const;
   
   const selectedType = policyTypes[Math.floor(Math.random() * policyTypes.length)];
@@ -70,6 +77,13 @@ export const createPausePolicyRequestData = (): CreatePolicyRequest => {
     PLAN_CHANGE_COOLDOWN_DAYS: { days: 30 },
     NEW_USER_GRACE_PERIOD: { days: 14 },
     TIER_SPECIFIC_LIMITS: { maxPauses: 3, maxChanges: 2 },
+    ALLOWED_PLAN_CHANGES: { types: ['upgrade', 'downgrade'] },
+    DOWNGRADE_RESTRICTIONS: { minDays: 30 },
+    UPGRADE_BENEFITS: { discount: 10 },
+    VIP_USER_BENEFITS: { unlimitedPauses: true },
+    PROMOTIONAL_PERIODS: { active: true },
+    SEASONAL_RESTRICTIONS: { summer: false },
+    SPECIAL_EVENT_RULES: { enabled: false },
   };
 
   return {

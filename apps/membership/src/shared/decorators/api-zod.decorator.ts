@@ -1,7 +1,0 @@
-// shared/decorators/zod.decorator.ts
-import { SetMetadata } from '@nestjs/common';
-import { ZodObject } from 'zod';
-
-export const ZOD_SCHEMA_KEY = 'zod:schema';
-export const ValidateWithZod = (schema: ZodObject) =>
-  SetMetadata(ZOD_SCHEMA_KEY, schema);
