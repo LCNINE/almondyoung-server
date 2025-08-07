@@ -3,6 +3,8 @@ import { PlanService } from '../plan/plan.service';
 import { PolicyManagementService } from '../policy-management/policy-management.service';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { EntitlementService } from '../subscription/entitlement.service';
+import { eq, desc } from 'drizzle-orm';
+import * as schema from '../shared/schemas/entities/schema';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -120,5 +122,49 @@ export class AdminOperationsService {
       adminId,
       processedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * 사용자의 일시정지 이력과 pauseEntitlementVoids 데이터를 조회합니다.
+   * @param userId - 사용자 ID
+   */
+  async getUserPauseHistory(userId: string) {
+    // PauseService를 통해 일시정지 이력 조회
+    const pauseHistory = await this.getPauseHistoryWithVoids(userId);
+    
+    return {
+      userId,
+      pauseHistory,
+      totalPauses: pauseHistory.length,
+    };
+  }
+
+  /**
+   * pauseEntitlementVoids와 함께 일시정지 이력을 조회하는 헬퍼 메서드
+   */
+  private async getPauseHistoryWithVoids(userId: string) {
+    // 직접 DB 쿼리로 pauseEntitlementVoids 데이터 포함하여 조회
+    const result = await this.planService['dbService'].db
+      .select({
+        pauseId: schema.pausePeriods.id,
+        startsAt: schema.pausePeriods.startsAt,
+        endsAt: schema.pausePeriods.endsAt,
+        reason: schema.pausePeriods.reason,
+        createdAt: schema.pausePeriods.createdAt,
+        // pauseEntitlementVoids 데이터
+        voidId: schema.pauseEntitlementVoids.id,
+        originalEndsAt: schema.pauseEntitlementVoids.originalEndsAt,
+        adjustedEndsAt: schema.pauseEntitlementVoids.adjustedEndsAt,
+        entitlementId: schema.pauseEntitlementVoids.entitlementId,
+      })
+      .from(schema.pausePeriods)
+      .leftJoin(
+        schema.pauseEntitlementVoids,
+        eq(schema.pausePeriods.id, schema.pauseEntitlementVoids.pauseId)
+      )
+      .where(eq(schema.pausePeriods.userId, userId))
+      .orderBy(desc(schema.pausePeriods.createdAt));
+
+    return result;
   }
 }

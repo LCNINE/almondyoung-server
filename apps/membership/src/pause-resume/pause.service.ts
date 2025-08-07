@@ -44,7 +44,7 @@ export class PauseService {
       const now = new Date();
 
       // 2. 이벤트 배치를 생성합니다.
-      await tx
+      const [eventBatch] = await tx
         .insert(schema.eventBatches)
         .values({
           type: 'SUBSCRIPTION_PAUSED',
@@ -52,13 +52,16 @@ export class PauseService {
         })
         .returning();
 
-      // 3. 권한(Entitlement) 테이블에 일시정지 시각을 기록합니다.
-      await tx
-        .update(schema.subscriptionEntitlement)
-        .set({ pausedAt: now })
-        .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
+      // 3. 일시정지 기간 계산
+      const pauseDurationDays = Math.ceil(
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      
+      // 4. 기존 entitlement의 종료일에 일시정지 기간만큼 연장
+      const originalEndsAt = new Date(entitlement.endsAt);
+      const adjustedEndsAt = addDays(originalEndsAt, pauseDurationDays);
 
-      // 4. 일시정지 기간(pausePeriods) 레코드를 생성합니다.
+      // 5. 일시정지 기간(pausePeriods) 레코드를 생성합니다.
       const [pausePeriod] = await tx
         .insert(schema.pausePeriods)
         .values({
@@ -66,10 +69,41 @@ export class PauseService {
           startsAt: startDate.toISOString().split('T')[0],
           endsAt: endDate.toISOString().split('T')[0],
           reason,
-          // 참고: 이 일시정지가 어떤 권한에 대한 것인지 연결하려면
-          // 스키마에 entitlementId 컬럼을 추가하는 것이 좋습니다.
         })
         .returning();
+
+      // 6. pauseEntitlementVoids에 기록 (원래 종료일과 조정된 종료일 추적)
+      await tx
+        .insert(schema.pauseEntitlementVoids)
+        .values({
+          pauseId: pausePeriod.id,
+          entitlementId: entitlement.id,
+          originalEndsAt: originalEndsAt.toISOString().split('T')[0],
+          adjustedEndsAt: adjustedEndsAt.toISOString().split('T')[0],
+        });
+
+      // 7. 기존 entitlement 닫기
+      await tx
+        .update(schema.subscriptionEntitlement)
+        .set({
+          isCurrent: false,
+          closedAt: now,
+          closedBatchId: eventBatch.id,
+        })
+        .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
+
+      // 8. 새로운 entitlement 생성 (일시정지 상태 + 연장된 종료일)
+      await tx
+        .insert(schema.subscriptionEntitlement)
+        .values({
+          userId,
+          tierId: entitlement.tierId,
+          startsAt: entitlement.startsAt,
+          endsAt: adjustedEndsAt.toISOString().split('T')[0],
+          isCurrent: true,
+          sourceBatchId: eventBatch.id,
+          pausedAt: now,
+        });
 
       return {
         pauseId: pausePeriod.id,
@@ -97,14 +131,9 @@ export class PauseService {
       }
 
       const now = new Date();
-      const pausedAt = new Date(entitlement.pausedAt);
 
-      // 2. 실제 일시정지 기간을 계산하여 권한 종료일을 연장합니다.
-      const pauseDuration = differenceInDays(now, pausedAt);
-      const newEndsAt = addDays(new Date(entitlement.endsAt), pauseDuration);
-
-      // 3. 이벤트 배치를 생성합니다.
-      await tx
+      // 2. 이벤트 배치를 생성합니다.
+      const [eventBatch] = await tx
         .insert(schema.eventBatches)
         .values({
           type: 'SUBSCRIPTION_RESUMED',
@@ -112,21 +141,35 @@ export class PauseService {
         })
         .returning();
 
-      // 4. 권한(Entitlement) 테이블의 일시정지 상태를 해제하고, 연장된 종료일을 기록합니다.
+      // 3. 기존 entitlement 닫기
       await tx
         .update(schema.subscriptionEntitlement)
         .set({
-          pausedAt: null,
-          endsAt: newEndsAt.toISOString().split('T')[0],
+          isCurrent: false,
+          closedAt: now,
+          closedBatchId: eventBatch.id,
         })
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
+
+      // 4. 새로운 entitlement 생성 (일시정지 해제)
+      await tx
+        .insert(schema.subscriptionEntitlement)
+        .values({
+          userId,
+          tierId: entitlement.tierId,
+          startsAt: entitlement.startsAt,
+          endsAt: entitlement.endsAt, // 종료일은 이미 일시정지 시 연장됨
+          isCurrent: true,
+          sourceBatchId: eventBatch.id,
+          pausedAt: null, // 일시정지 해제
+        });
 
       // 참고: pausePeriods 테이블의 상태를 'ENDED'로 업데이트하는 로직이 필요하다면
       // 스키마에 status 컬럼을 추가하고 여기서 업데이트해야 합니다.
 
       return {
         resumedAt: now,
-        newEndsAt: newEndsAt,
+        newEndsAt: new Date(entitlement.endsAt),
       };
     });
   }

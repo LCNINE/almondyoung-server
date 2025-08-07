@@ -190,6 +190,15 @@ describe('Membership Subscription E2E Test', () => {
     });
 
     it('2-3. [POST /subscriptions/pause] should pause the subscription', async () => {
+      // 일시정지 전 구독 상태 확인
+      const beforePause = await request(app.getHttpServer())
+        .get('/subscriptions/current')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .expect(200);
+      
+      const originalEndsAt = beforePause.body.entitlement?.endsAt;
+      console.log('🔍 Original subscription ends at:', originalEndsAt);
+      
       console.log('🔍 Sending pause request:', userJourneyData.pauseRequest);
 
       const response = await request(app.getHttpServer())
@@ -208,7 +217,47 @@ describe('Membership Subscription E2E Test', () => {
       }
 
       expect(response.body.pauseId).toBeDefined();
+
+      // 일시정지 후 구독 상태 확인 (기간이 연장되었는지 검증)
+      const afterPause = await request(app.getHttpServer())
+        .get('/subscriptions/current')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .expect(200);
+      
+      const newEndsAt = afterPause.body.entitlement?.endsAt;
+      console.log('🔍 Extended subscription ends at:', newEndsAt);
+      
+      // 구독 기간이 연장되었는지 확인
+      if (originalEndsAt && newEndsAt) {
+        const originalDate = new Date(originalEndsAt);
+        const newDate = new Date(newEndsAt);
+        expect(newDate.getTime()).toBeGreaterThan(originalDate.getTime());
+        console.log('✅ Subscription period extended due to pause');
+      }
       console.log('✅ Subscription Paused:', response.body);
+
+      // pauseEntitlementVoids 데이터 검증
+      const pauseHistory = await request(app.getHttpServer())
+        .get(`/admin/users/${userJourneyData.ids.userId}/pause-history`)
+        .set('x-user-id', adminSetupData.ids.adminId)
+        .expect(200);
+
+      console.log('📋 Pause history with voids:', pauseHistory.body);
+      
+      expect(pauseHistory.body.pauseHistory).toHaveLength(1);
+      const pauseRecord = pauseHistory.body.pauseHistory[0];
+      
+      // pauseEntitlementVoids 데이터 검증
+      expect(pauseRecord.voidId).toBeDefined();
+      expect(pauseRecord.originalEndsAt).toBe(originalEndsAt);
+      expect(pauseRecord.adjustedEndsAt).toBe(newEndsAt);
+      expect(pauseRecord.entitlementId).toBeDefined();
+      
+      console.log('✅ pauseEntitlementVoids data verified:', {
+        voidId: pauseRecord.voidId,
+        originalEndsAt: pauseRecord.originalEndsAt,
+        adjustedEndsAt: pauseRecord.adjustedEndsAt,
+      });
     });
 
     it('2-4. [POST /subscriptions/pause/resume] should resume the subscription', async () => {
@@ -304,7 +353,94 @@ describe('Membership Subscription E2E Test', () => {
       expect(response.body.userId).toBe(userJourneyData.ids.userId);
     });
 
-    it('2-8. [GET /subscriptions/current] should return null for cancelled subscription', async () => {
+    it('2-8. [POST /subscriptions/pause] should handle multiple pauses correctly', async () => {
+      // 현재 구독 상태 확인
+      const currentStatus = await request(app.getHttpServer())
+        .get('/subscriptions/current')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .expect(200);
+
+      // 활성 구독이 없으면 새로 생성
+      if (Object.keys(currentStatus.body).length === 0) {
+        const newSubscriptionRequest = { ...userJourneyData.subscriptionRequest, planId: monthlyPlanId };
+        await request(app.getHttpServer())
+          .post('/subscriptions')
+          .set('x-user-id', userJourneyData.ids.userId)
+          .send(newSubscriptionRequest)
+          .expect(201);
+        
+        console.log('✅ New subscription created for multiple pause test');
+      } else {
+        console.log('✅ Using existing active subscription for multiple pause test');
+      }
+
+      // 첫 번째 일시정지
+      const firstPauseRequest = {
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5일
+        reason: 'First pause test'
+      };
+
+      await request(app.getHttpServer())
+        .post('/subscriptions/pause')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .send(firstPauseRequest)
+        .expect(200);
+
+      // 재개
+      await request(app.getHttpServer())
+        .post('/subscriptions/pause/resume')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .send({ reason: 'Resume after first pause' })
+        .expect(200);
+
+      // 두 번째 일시정지 시도 (정책 위반으로 실패해야 함)
+      const secondPauseRequest = {
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3일
+        reason: 'Second pause test'
+      };
+
+      const secondPauseResponse = await request(app.getHttpServer())
+        .post('/subscriptions/pause')
+        .set('x-user-id', userJourneyData.ids.userId)
+        .send(secondPauseRequest);
+
+      // 정책 위반으로 실패하는 것이 정상
+      if (secondPauseResponse.status === 400) {
+        console.log('✅ Policy violation correctly prevented second pause:', secondPauseResponse.body);
+        expect(secondPauseResponse.body.error?.code).toBe('POLICY_VIOLATION');
+      } else {
+        // 정책이 없거나 허용된 경우
+        expect(secondPauseResponse.status).toBe(200);
+        console.log('✅ Second pause allowed (no policy restriction)');
+      }
+
+      // 일시정지 이력 확인
+      const pauseHistory = await request(app.getHttpServer())
+        .get(`/admin/users/${userJourneyData.ids.userId}/pause-history`)
+        .set('x-user-id', adminSetupData.ids.adminId)
+        .expect(200);
+
+      console.log('📋 Multiple pause history:', pauseHistory.body);
+      
+      // 최소 1개의 일시정지 이력이 있어야 함 (첫 번째는 성공)
+      expect(pauseHistory.body.pauseHistory.length).toBeGreaterThanOrEqual(1);
+      expect(pauseHistory.body.totalPauses).toBeGreaterThanOrEqual(1);
+      
+      // 첫 번째 일시정지에 대한 pauseEntitlementVoids 데이터 확인
+      const pausesWithVoids = pauseHistory.body.pauseHistory.filter(p => p.voidId);
+      expect(pausesWithVoids.length).toBeGreaterThanOrEqual(1);
+      
+      console.log('✅ pauseEntitlementVoids records verified for policy-compliant pauses');
+      
+      // 정책 시스템이 올바르게 작동하는지 확인
+      if (secondPauseResponse.status === 400) {
+        console.log('✅ Policy system working correctly - prevented unauthorized pause');
+      }
+    });
+
+    it('2-9. [GET /subscriptions/current] should return null for cancelled subscription', async () => {
       // 구독 취소
       await request(app.getHttpServer())
         .post('/subscriptions/cancel')

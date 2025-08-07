@@ -3,6 +3,7 @@ import {
   Post,
   Put,
   Delete,
+  Get,
   Body,
   Param,
   UseFilters,
@@ -145,5 +146,12 @@ export class AdminOperationsController {
   ) {
     const adminId = req.user!.userId;
     return this.adminOperationsService.adjustUserEntitlement(dto, adminId);
+  }
+
+  @Get('users/:userId/pause-history')
+  async getUserPauseHistory(
+    @Param('userId') userId: string,
+  ) {
+    return this.adminOperationsService.getUserPauseHistory(userId);
   }
 }
