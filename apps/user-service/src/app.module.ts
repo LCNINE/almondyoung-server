@@ -8,10 +8,10 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { userSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
-import { AuthModule } from './api/auth/auth.module';
 import { DormantModule } from './api/admin/dormant/dormant.module';
-import { EmailModule } from './api/email/email.module';
 import { ScopesModule } from './api/admin/scopes/scopes.module';
+import { AuthModule } from './api/auth/auth.module';
+import { EventProcessorModule } from './api/events/events.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
@@ -43,10 +43,10 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     AuthModule,
     UsersModule,
     ScopesModule,
-    EmailModule,
     ShopModule,
     DormantModule,
     AdminModule,
+    EventProcessorModule,
   ],
   providers: [
     {
