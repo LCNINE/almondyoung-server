@@ -7,7 +7,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PublicPrivateGuard } from '../../commons/guards/auth.guard';
 import { RolesGuard } from '@app/roles';
-import { EmailModule } from '../email/email.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -30,7 +29,6 @@ import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
       }),
       inject: [ConfigService],
     }),
-    EmailModule,
     DbModule,
     EventsModule,
   ],

@@ -17,7 +17,7 @@ import * as bcrypt from 'bcrypt';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
-import { EmailService } from '../email/email.service';
+import { NotificationEventPublisher } from '../events/notification-event.publisher';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
@@ -31,10 +31,10 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly emailService: EmailService,
     @InjectDb() private readonly dbService: DbService<schema.User>,
     @InjectEventPublisher()
     private readonly eventPublisher: EventPublisherService<UserEvents>,
+    private readonly notificationPublisher: NotificationEventPublisher,
   ) {}
 
   async signUp(
@@ -90,8 +90,10 @@ export class AuthService {
         });
 
         // 이메일 재발송
-        await this.emailService.sendVerificationEmail(
-          signUpDto.email,
+        await this.notificationPublisher.publishUserVerificationEvent(
+          existingUser.id,
+          existingUser.email,
+          existingUser.username,
           verificationToken,
         );
 
@@ -155,8 +157,10 @@ export class AuthService {
         });
 
         // 이메일 발송
-        await this.emailService.sendVerificationEmail(
-          signUpDto.email,
+        await this.notificationPublisher.publishUserVerificationEvent(
+          user.id,
+          user.email,
+          user.username,
           verificationToken,
         );
 
@@ -277,7 +281,12 @@ export class AuthService {
     });
 
     // 이메일 재발송
-    await this.emailService.sendVerificationEmail(email, verificationToken);
+    this.notificationPublisher.publishUserVerificationEvent(
+      user.id,
+      user.email,
+      user.username,
+      verificationToken,
+    );
 
     return;
   }
@@ -640,18 +649,39 @@ export class AuthService {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
-    await this.emailService.sendForgetUserIdLink(email, user.loginId);
+    // ID 찾기 이벤트 발행
+    await this.notificationPublisher.publishUserFindIdEvent(
+      email,
+      user.loginId,
+    );
   }
 
   async forgotPassword(email: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
-    await this.emailService.sendResetPasswordLink(email);
+    const verificationToken = this.jwtService.sign(
+      { email },
+      {
+        secret: this.configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
+        expiresIn: `${this.configService.get('JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION')}`,
+      },
+    );
+
+    await this.notificationPublisher.publishUserResetPasswordEvent(
+      email,
+      verificationToken,
+    );
   }
 
   async resetPassword(token: string, password: string): Promise<void> {
-    const email = await this.emailService.decodeConfirmationToken(token);
+    const email = await this.jwtService.verify(token, {
+      secret: this.configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
+    });
+
+    if (typeof email !== 'string') {
+      throw new BadRequestException('Invalid token');
+    }
 
     const user = await this.usersService.findUserByEmail(email);
     if (!user) {
