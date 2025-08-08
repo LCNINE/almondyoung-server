@@ -4,83 +4,74 @@ import { v4 as uuidv4 } from 'uuid';
 import * as schema from './drizzle/schema';
 
 // 미리 정의된 UUID (고정 ID 사용)
-export const PREDEFINED_SCOPES = {
-  MASTER: '3a2b1c0d-9e8f-7a6b-5c4d-3e2f1a0b9c8d',
-  USER: '4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e',
-};
-
-export const PREDEFINED_ROLES = {
-  USER_READ: '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-  USER_WRITE: '2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d',
-  USER_DELETE: '3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d',
-  USER_UPDATE: '4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d',
-  MASTER: '7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d',
+export const PREDEFINED_IDS = {
+  // 역할 ID
+  ROLE_MASTER: '3a2b1c0d-9e8f-7a6b-5c4d-3e2f1a0b9c8d',
+  ROLE_USER: '4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e',
+  // 스코프 ID
+  SCOPE_MASTER: '9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d',
+  SCOPE_USER_READ: '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+  SCOPE_USER_WRITE: '2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d',
+  SCOPE_USER_DELETE: '3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d',
+  SCOPE_USER_UPDATE: '4a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d',
 };
 
 // 시드 데이터 정의
-const DEFAULT_SCOPES = [
+const DEFAULT_ROLES = [
   {
-    id: PREDEFINED_SCOPES.MASTER,
-    scopeName: 'master',
-    description: '모든 관리자 기능에 접근',
+    id: PREDEFINED_IDS.ROLE_MASTER,
+    name: 'master',
+    description: '마스터',
   },
   {
-    id: PREDEFINED_SCOPES.USER,
-    scopeName: 'user',
-    description: '일반 사용자 역할',
+    id: PREDEFINED_IDS.ROLE_USER,
+    name: 'user',
+    description: '일반 사용자',
   },
 ];
 
-const DEFAULT_ROLES = [
+const DEFAULT_SCOPES = [
   {
-    id: PREDEFINED_ROLES.MASTER,
+    id: PREDEFINED_IDS.SCOPE_MASTER,
     name: 'master',
-    description: '관리자',
+    description: '마스터 권한',
   },
   {
-    id: PREDEFINED_ROLES.USER_READ,
-    name: 'user_read',
-    description: '일반 사용자 읽기 권한',
+    id: PREDEFINED_IDS.SCOPE_USER_READ,
+    name: 'user:read',
+    description: '사용자 읽기 권한',
   },
   {
-    id: PREDEFINED_ROLES.USER_WRITE,
-    name: 'user_write',
-    description: '일반 사용자 쓰기 권한',
-  },
-
-  {
-    id: PREDEFINED_ROLES.USER_DELETE,
-    name: 'user_delete',
-    description: '일반 사용자 삭제 권한',
+    id: PREDEFINED_IDS.SCOPE_USER_WRITE,
+    name: 'user:write',
+    description: '사용자 쓰기 권한',
   },
   {
-    id: PREDEFINED_ROLES.USER_UPDATE,
-    name: 'user_update',
-    description: '일반 사용자 수정 권한',
+    id: PREDEFINED_IDS.SCOPE_USER_DELETE,
+    name: 'user:delete',
+    description: '사용자 삭제 권한',
+  },
+  {
+    id: PREDEFINED_IDS.SCOPE_USER_UPDATE,
+    name: 'user:update',
+    description: '사용자 수정 권한',
   },
 ];
 
 // 역할-스코프 연결 정의
 const DEFAULT_ROLE_SCOPE_MAPPINGS = [
   {
-    roleId: PREDEFINED_ROLES.MASTER,
-    scopeIds: [PREDEFINED_SCOPES.MASTER],
+    roleId: PREDEFINED_IDS.ROLE_MASTER,
+    scopeIds: [PREDEFINED_IDS.SCOPE_MASTER],
   },
   {
-    roleId: PREDEFINED_ROLES.USER_READ,
-    scopeIds: [PREDEFINED_SCOPES.USER],
-  },
-  {
-    roleId: PREDEFINED_ROLES.USER_WRITE,
-    scopeIds: [PREDEFINED_SCOPES.USER],
-  },
-  {
-    roleId: PREDEFINED_ROLES.USER_DELETE,
-    scopeIds: [PREDEFINED_SCOPES.USER],
-  },
-  {
-    roleId: PREDEFINED_ROLES.USER_UPDATE,
-    scopeIds: [PREDEFINED_SCOPES.USER],
+    roleId: PREDEFINED_IDS.ROLE_USER,
+    scopeIds: [
+      PREDEFINED_IDS.SCOPE_USER_READ,
+      PREDEFINED_IDS.SCOPE_USER_WRITE,
+      PREDEFINED_IDS.SCOPE_USER_DELETE,
+      PREDEFINED_IDS.SCOPE_USER_UPDATE,
+    ],
   },
 ];
 
@@ -107,20 +98,20 @@ async function seedScopes(client: DbService<schema.User>) {
     const exists = await client.db
       .select()
       .from(schema.scopes)
-      .where(eq(schema.scopes.scopeName, scope.scopeName))
+      .where(eq(schema.scopes.scopeName, scope.name))
       .limit(1);
 
     if (!exists || exists.length === 0) {
       // 존재하지 않으면 새로 생성
       await client.db.insert(schema.scopes).values({
         scopeId: scope.id,
-        scopeName: scope.scopeName,
+        scopeName: scope.name,
         description: scope.description,
       });
 
-      console.log(`스코프 생성됨: ${scope.scopeName}`);
+      console.log(`스코프 생성됨: ${scope.name}`);
     } else {
-      console.log(`스코프 이미 존재함: ${scope.scopeName}`);
+      console.log(`스코프 이미 존재함: ${scope.name}`);
     }
   }
 }
