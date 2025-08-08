@@ -319,14 +319,6 @@ export class AuthService {
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
 
-    // 기본 역할 설정, 포스트맨으로 회원가입 테스트시 주석제거 후 사용
-    // const userRole = await this.rolesService.setRole(user.id, 'user');
-    // const assignment = await this.rolesService.assignUserRole(
-    //   user.id,
-    //   userRole.roleId,
-    // );
-    // this.logger.debug(`사용자-역할 할당 완료: ${JSON.stringify(assignment)}`);
-
     if (redirectTo) {
       const whitelist = [
         'http://localhost:3000',
@@ -499,19 +491,20 @@ export class AuthService {
     const userScopes = await this.dbService.db
       .select({
         scopeName: schema.scopes.scopeName,
+        roleName: schema.roles.name,
       })
-      .from(schema.userRoleAssignments)
-      .innerJoin(
-        schema.roles,
-        eq(schema.userRoleAssignments.roleId, schema.roles.roleId),
-      )
+      .from(schema.scopes)
       .innerJoin(
         schema.roleScopes,
-        eq(schema.roles.roleId, schema.roleScopes.roleId),
+        eq(schema.scopes.scopeId, schema.roleScopes.scopeId),
       )
       .innerJoin(
-        schema.scopes,
-        eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
+        schema.roles,
+        eq(schema.roleScopes.roleId, schema.roles.roleId),
+      )
+      .innerJoin(
+        schema.userRoleAssignments,
+        eq(schema.roles.roleId, schema.userRoleAssignments.roleId),
       )
       .where(
         and(
@@ -523,7 +516,11 @@ export class AuthService {
         ),
       );
 
-    return userScopes.map((scope) => scope.scopeName);
+    const uniqueScopes = [
+      ...new Set(userScopes.map((scope) => scope.scopeName)),
+    ];
+
+    return uniqueScopes;
   }
 
   private async getAccessToken(
@@ -532,6 +529,12 @@ export class AuthService {
     db = this.dbService.db,
   ): Promise<{ accessToken: string }> {
     const scopes = await this.getUserScopes(user.id);
+
+    if (scopes.length === 0) {
+      throw new UnauthorizedException(
+        '사용자에게 할당된 권한이 없습니다. 관리자에게 문의해주세요.',
+      );
+    }
 
     const payload = {
       sub: user.id,
