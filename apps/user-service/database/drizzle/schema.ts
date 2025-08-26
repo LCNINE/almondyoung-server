@@ -66,19 +66,24 @@ export const roles = pgTable('roles', {
 });
 
 // 사용자-역할 할당 테이블
-export const userRoleAssignments = pgTable('user_roles', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
-  roleId: uuid('role_id')
-    .references(() => roles.roleId, { onDelete: 'cascade' })
-    .notNull()
-    .unique(),
-  assignedAt: timestamp('assigned_at').defaultNow().notNull(),
-  expiresAt: timestamp('expires_at'),
-  ...timestampColumns,
-});
+export const userRoleAssignments = pgTable(
+  'user_roles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    roleId: uuid('role_id')
+      .references(() => roles.roleId, { onDelete: 'cascade' })
+      .notNull(),
+    assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    userRoleUniqueIdx: unique().on(table.userId, table.roleId),
+  }),
+);
 
 // 역할-스코프 할당 테이블
 export const roleScopes = pgTable('role_scopes', {
