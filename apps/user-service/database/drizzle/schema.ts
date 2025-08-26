@@ -323,10 +323,10 @@ export const businessRegistrations = pgTable(
     shopId: uuid('shop_id')
       .references(() => shops.id, { onDelete: 'cascade' })
       .notNull(),
-    number: varchar('number', { length: 10 }).notNull(),
+    businessNumber: varchar('business_number', { length: 10 }).notNull(),
     representativeName: varchar('representative_name', { length: 100 }), // 대표자명
     status: statusEnum('status').notNull().default('under_review'),
-    reviewComment: text('review_comment'),
+    reviewComment: text('review_comment'), // 검토 코멘트
     reviewedAt: timestamp('reviewed_at'),
     verifiedAt: timestamp('verified_at'),
     verificationFile: varchar('verification_file', { length: 1024 }), // 증빙 검증 파일 url
@@ -335,7 +335,7 @@ export const businessRegistrations = pgTable(
     ...timestampColumns,
   },
   (table) => ({
-    numberUniqueIdx: unique().on(table.number),
+    businessNumberUniqueIdx: unique().on(table.businessNumber),
   }),
 );
 
