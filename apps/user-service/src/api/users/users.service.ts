@@ -3,7 +3,6 @@ import { EventPublisherService, InjectEventPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/events/user.events';
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -12,6 +11,12 @@ import {
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  UserRoleScopesResponseDto,
+  UserRolesResponse,
+} from './dto/user-role-scopes.response.dto';
+import { UserDetailsResponseDto } from './dto/user-details.response.dto';
+import { AddressDto } from '../../commons/dto/address.dto';
 
 @Injectable()
 export class UsersService {
@@ -57,7 +62,9 @@ export class UsersService {
   }
 
   // 사용자의 역할과 스코프 정보를 가져오는 메서드
-  private async getUserRolesAndScopes(userId: string) {
+  private async getUserRolesAndScopes(
+    userId: string,
+  ): Promise<UserRoleScopesResponseDto[]> {
     try {
       return await this.dbService.db
         .select({
@@ -217,7 +224,7 @@ export class UsersService {
   }
 
   // 사용자의 권한 정보 조회
-  async getUserRoles(userId: string) {
+  async getUserRoles(userId: string): Promise<UserRolesResponse> {
     try {
       const user = await this.getUserBaseInfo(userId);
       const roles = await this.getUserRolesAndScopes(userId);
@@ -237,7 +244,7 @@ export class UsersService {
   }
 
   // 특정 사용자의 상세 정보
-  async getUserDetails(userId: string) {
+  async getUserDetails(userId: string): Promise<UserDetailsResponseDto> {
     try {
       const [baseInfo, extendedInfo] = await Promise.all([
         this.getUserBaseInfo(userId),
@@ -250,7 +257,13 @@ export class UsersService {
 
       return {
         ...baseInfo,
-        ...extendedInfo,
+        shop: extendedInfo.shop,
+        profile: extendedInfo.profile
+          ? {
+              ...extendedInfo.profile,
+              address: extendedInfo.profile.address as AddressDto | null,
+            }
+          : null,
       };
     } catch (error) {
       console.log('error:', error);

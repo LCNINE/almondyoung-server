@@ -1,4 +1,4 @@
-import { RequireScopes, USER_SCOPES } from '@app/roles';
+import { RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -12,17 +12,20 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiOperation,
   ApiParam,
   ApiQuery,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { Public } from '../../commons/decorators/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
+import { UserResponseDto } from './dto/user.response.dto';
+import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
@@ -31,7 +34,11 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @ApiOperation({ summary: '사용자 기본 정보 조회' })
-  @ApiResponse({ status: 200, description: '사용자 기본 정보 조회 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 기본 정보 조회 성공',
+    type: UserResponseDto,
+  })
   @ApiParam({ name: 'id', description: '사용자 ID' })
   @Get(':id')
   @Public()
@@ -41,7 +48,19 @@ export class UsersController {
   }
 
   @ApiOperation({ summary: '사용자 상세 정보 조회' })
-  @ApiResponse({ status: 200, description: '사용자 상세 정보 조회 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 상세 정보 조회 성공',
+    type: UserDetailsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '사용자를 찾을 수 없습니다.',
+  })
+  @ApiResponse({
+    status: 500,
+    description: '사용자 상세 정보를 불러오는 중 오류가 발생했습니다.',
+  })
   @ApiQuery({
     name: 'userId',
     description: '조회할 사용자 ID',
@@ -55,22 +74,23 @@ export class UsersController {
   async getUserDetails(
     @CurrentUser() user: User,
     @Query('userId') userId?: string,
-  ) {
+  ): Promise<UserDetailsResponseDto> {
     return this.usersService.getUserDetails(userId ?? user.id);
   }
 
   @ApiOperation({ summary: '사용자 권한 정보 조회' })
-  @ApiResponse({ status: 200, description: '사용자 권한 정보 조회 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 권한 정보 조회 성공',
+    type: UserRolesResponse,
+  })
   @ApiParam({ name: 'userId', description: '사용자 ID' })
   @ApiBearerAuth()
   @Get('/roles/:userId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async getUserRoles(
-    @Query('userId') userId: string,
-    @CurrentUser() user: User,
-  ) {
-    return this.usersService.getUserRoles(userId ?? user.id);
+  async getUserRoles(@CurrentUser() user: User) {
+    return this.usersService.getUserRoles(user.id);
   }
 
   @ApiOperation({ summary: '사용자 정보 수정' })
@@ -90,7 +110,11 @@ export class UsersController {
   }
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
-  @ApiResponse({ status: 200, description: '사용자 조회 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 조회 성공',
+    type: UserResponseDto,
+  })
   @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
   @Get('find-by-email')
   @Public()
