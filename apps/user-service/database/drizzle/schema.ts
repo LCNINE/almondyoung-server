@@ -305,3 +305,52 @@ export const userRecentViewsRelations = relations(
 );
 
 export type RecentView = typeof userRecentViews.$inferSelect;
+
+/***
+ * business registrations (사업자등록번호)
+ */
+
+export const statusEnum = pgEnum('status', [
+  'under_review', // 검토중
+  'approved', // 승인됨
+  'rejected', // 거절됨
+]);
+
+export const businessRegistrations = pgTable(
+  'business_registrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shopId: uuid('shop_id')
+      .references(() => shops.id, { onDelete: 'cascade' })
+      .notNull(),
+    number: varchar('number', { length: 10 }).notNull(),
+    representativeName: varchar('representative_name', { length: 100 }), // 대표자명
+    status: statusEnum('status').notNull().default('under_review'),
+    reviewComment: text('review_comment'),
+    reviewedAt: timestamp('reviewed_at'),
+    verifiedAt: timestamp('verified_at'),
+    verificationFile: varchar('verification_file', { length: 1024 }), // 증빙 검증 파일 url
+    // 부가 정보 저장 가능
+    metadata: jsonb('metadata'),
+    ...timestampColumns,
+  },
+  (table) => ({
+    numberUniqueIdx: unique().on(table.number),
+  }),
+);
+
+export const businessRegistrationsRelations = relations(
+  businessRegistrations,
+  ({ one }) => ({
+    shop: one(shops, {
+      fields: [businessRegistrations.shopId],
+      references: [shops.id],
+    }),
+  }),
+);
+
+export const shopsRelations = relations(shops, ({ many }) => ({
+  businessRegistrations: many(businessRegistrations),
+}));
+
+export type BusinessRegistration = typeof businessRegistrations.$inferSelect;
