@@ -321,6 +321,9 @@ export const businessRegistrations = pgTable(
   'business_registrations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     shopId: uuid('shop_id').references(() => shops.id, { onDelete: 'cascade' }),
     businessNumber: varchar('business_number', { length: 10 }),
     representativeName: varchar('representative_name', { length: 100 }), // 대표자명
@@ -345,6 +348,10 @@ export const businessRegistrations = pgTable(
 export const businessRegistrationsRelations = relations(
   businessRegistrations,
   ({ one }) => ({
+    user: one(users, {
+      fields: [businessRegistrations.userId],
+      references: [users.id],
+    }),
     shop: one(shops, {
       fields: [businessRegistrations.shopId],
       references: [shops.id],
