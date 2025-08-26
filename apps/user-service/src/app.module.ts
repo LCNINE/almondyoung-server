@@ -14,6 +14,8 @@ import { AuthModule } from './api/auth/auth.module';
 import { EventProcessorModule } from './api/events/events.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
+import { WishlistModule } from './api/wishlist/wishlist.module';
+import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 
 @Module({
@@ -47,6 +49,8 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     DormantModule,
     AdminModule,
     EventProcessorModule,
+    WishlistModule,
+    RecentViewsModule,
   ],
   providers: [
     {

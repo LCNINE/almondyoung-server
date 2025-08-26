@@ -242,3 +242,61 @@ export type Shop = typeof shops.$inferSelect;
 
 export type ShopType = (typeof shopTypeEnum.enumValues)[number];
 export const SHOP_TYPES = shopTypeEnum.enumValues;
+
+/***
+ * wishlist (찜하기)
+ */
+export const wishlist = pgTable(
+  'wishlist',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    productId: varchar('product_id', { length: 255 }).notNull(),
+    ...timestampColumns,
+  },
+  (table) => ({
+    userProductUniqueIdx: unique().on(table.userId, table.productId),
+  }),
+);
+
+export const userWishlistRelations = relations(wishlist, ({ one }) => ({
+  user: one(users, {
+    fields: [wishlist.userId],
+    references: [users.id],
+  }),
+}));
+
+export type Wishlist = typeof wishlist.$inferSelect;
+
+/***
+ * recent views (최근 본 상품)
+ */
+export const userRecentViews = pgTable(
+  'recent_views',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    productId: varchar('product_id', { length: 255 }).notNull(),
+
+    ...timestampColumns,
+  },
+  (table) => ({
+    userProductUniqueIdx: unique().on(table.userId, table.productId),
+  }),
+);
+
+export const userRecentViewsRelations = relations(
+  userRecentViews,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [userRecentViews.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export type RecentView = typeof userRecentViews.$inferSelect;
