@@ -21,7 +21,8 @@
     "test:user": "jest --config ./apps/user-service/jest.config.js",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
     "seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
-    "db:push.user": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts"
+    "db:push.user": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
+    "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

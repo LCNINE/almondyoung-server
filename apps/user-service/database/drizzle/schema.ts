@@ -1,16 +1,16 @@
 import { relations, sql } from 'drizzle-orm';
 import {
-  pgEnum,
-  pgTable,
-  timestamp,
-  varchar,
-  uuid,
-  text,
   boolean,
-  unique,
+  check,
   integer,
   jsonb,
-  check,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+  varchar,
 } from 'drizzle-orm/pg-core';
 
 export const tokenTypeEnum = pgEnum('token_type', [
@@ -308,7 +308,7 @@ export const userRecentViewsRelations = relations(
 export type RecentView = typeof userRecentViews.$inferSelect;
 
 /***
- * business registrations (사업자등록번호)
+ * business_licenses (사업자등록번호)
  */
 
 export const statusEnum = pgEnum('status', [
@@ -317,8 +317,11 @@ export const statusEnum = pgEnum('status', [
   'rejected', // 거절됨
 ]);
 
-export const businessRegistrations = pgTable(
-  'business_registrations',
+/**
+ * 파일을 업로드하거나, 사업자 번호 및 사업자 이름을 다 입력해야됨
+ */
+export const businessLicenses = pgTable(
+  'business_licenses',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
@@ -338,6 +341,8 @@ export const businessRegistrations = pgTable(
   },
   (table) => ({
     businessNumberUniqueIdx: unique().on(table.businessNumber),
+    userUniqueIdx: unique().on(table.userId), // 사용자당 하나의 사업자 등록만 허용
+    shopUniqueIdx: unique().on(table.shopId), // 상점당 하나의 사업자 등록만 허용
     verificationOrFullInfo: check(
       'business_registrations_verification_or_full_info',
       sql`${table.verificationFile} is not null OR (${table.businessNumber} is not null AND ${table.representativeName} is not null)`,
@@ -345,22 +350,22 @@ export const businessRegistrations = pgTable(
   }),
 );
 
-export const businessRegistrationsRelations = relations(
-  businessRegistrations,
+export const businessLicensesRelations = relations(
+  businessLicenses,
   ({ one }) => ({
     user: one(users, {
-      fields: [businessRegistrations.userId],
+      fields: [businessLicenses.userId],
       references: [users.id],
     }),
     shop: one(shops, {
-      fields: [businessRegistrations.shopId],
+      fields: [businessLicenses.shopId],
       references: [shops.id],
     }),
   }),
 );
 
 export const shopsRelations = relations(shops, ({ many }) => ({
-  businessRegistrations: many(businessRegistrations),
+  businessLicenses: many(businessLicenses),
 }));
 
-export type BusinessRegistration = typeof businessRegistrations.$inferSelect;
+export type BusinessLicense = typeof businessLicenses.$inferSelect;
