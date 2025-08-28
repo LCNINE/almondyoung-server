@@ -25,6 +25,7 @@ import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
 
 @ApiTags('최근 본 상품')
+@ApiBearerAuth()
 @Controller('/recent-views')
 export class RecentViewsController {
   constructor(private readonly recentViewsService: RecentViewsService) {}
@@ -48,7 +49,6 @@ export class RecentViewsController {
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 400, description: '잘못된 요청 (상품 ID 누락 등)' })
-  @ApiBearerAuth()
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -87,7 +87,6 @@ export class RecentViewsController {
     required: false,
     description: '조회할 최대 항목 수 (기본값: 20)',
   })
-  @ApiBearerAuth()
   @Get()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -118,7 +117,6 @@ export class RecentViewsController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 404, description: '찾을 수 없는 최근 본 상품' })
   @ApiParam({ name: 'recentViewId', description: 'recent_views 테이블의 id' })
-  @ApiBearerAuth()
   @Delete(':recentViewId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)

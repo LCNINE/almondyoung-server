@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Post,
   Query,
-  Redirect,
   Req,
   Res,
   UseGuards,
@@ -24,14 +23,15 @@ import {
 import { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
-import { Public } from '../../commons/decorators/public.decorator';
+import { Public } from '../../constants/public.decorator';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
-import { LocalSignUpDto, SignUpDto } from './dto/sign-up.dto';
+import { LocalSignUpDto } from './dto/sign-up.dto';
 import { SocialSignUpDto } from './dto/social-sign-up.dto';
 
 @ApiTags('Auth')
+@ApiBearerAuth('access-token')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -65,7 +65,6 @@ export class AuthController {
 
   @ApiOperation({ summary: '로그아웃' })
   @ApiResponse({ status: 200, description: '로그아웃 성공' })
-  @ApiBearerAuth()
   @Post('signout')
   @UseGuards(AuthGuard('jwt'))
   async signOut(
@@ -77,7 +76,6 @@ export class AuthController {
 
   @ApiOperation({ summary: '토큰 재발급' })
   @ApiResponse({ status: 200, description: '토큰 재발급 성공' })
-  @ApiBearerAuth()
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
@@ -90,7 +88,6 @@ export class AuthController {
 
   @ApiOperation({ summary: '비밀번호 변경' })
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
-  @ApiBearerAuth()
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
   async changePassword(
@@ -150,7 +147,6 @@ export class AuthController {
 
   @ApiOperation({ summary: '회원 탈퇴' })
   @ApiResponse({ status: 200, description: '회원 탈퇴 성공' })
-  @ApiBearerAuth()
   @Delete('account')
   @UseGuards(AuthGuard('jwt'))
   async deleteAccount(@CurrentUser() user: schema.User) {
@@ -159,7 +155,6 @@ export class AuthController {
 
   @ApiOperation({ summary: '비밀번호 확인' })
   @ApiResponse({ status: 200, description: '비밀번호 확인 성공' })
-  @ApiBearerAuth()
   @Post('check-password')
   @UseGuards(AuthGuard('jwt'))
   async checkPassword(

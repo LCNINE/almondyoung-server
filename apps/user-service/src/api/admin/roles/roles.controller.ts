@@ -1,4 +1,4 @@
-import { RequireScopes, RolesGuard, USER_SCOPES } from '@app/roles';
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -6,13 +6,14 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
 import { AssignUserRoleDto, SetRoleDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';
 
 @ApiTags('Admin/Roles')
 @ApiBearerAuth('access-token')
 @Controller('/admin/roles')
-@UseGuards(RolesGuard)
+@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 

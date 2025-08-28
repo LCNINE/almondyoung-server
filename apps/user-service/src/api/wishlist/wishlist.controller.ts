@@ -23,6 +23,7 @@ import { WishlistService } from './wishlist.service';
 import { AddToWishlistDto } from './dto/wishlist.dto';
 
 @ApiTags('찜하기')
+@ApiBearerAuth('access-token')
 @Controller('wishlist')
 export class WishlistController {
   constructor(private readonly wishlistService: WishlistService) {}
@@ -46,7 +47,6 @@ export class WishlistController {
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 400, description: '잘못된 요청 (상품 ID 누락 등)' })
-  @ApiBearerAuth()
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -77,7 +77,6 @@ export class WishlistController {
     },
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  @ApiBearerAuth()
   @Get()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
@@ -102,7 +101,6 @@ export class WishlistController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 404, description: '찾을 수 없는 위시리스트 항목' })
   @ApiParam({ name: 'wishlistId', description: '제거할 해당 찜 ID' })
-  @ApiBearerAuth()
   @Delete(':wishlistId')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
