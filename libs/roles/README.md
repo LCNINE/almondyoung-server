@@ -1,130 +1,86 @@
 # Roles Library
 
-사용자 권한 및 스코프 관리를 위한 NestJS 라이브러리입니다.
+이 라이브러리는 사용자 권한 및 스코프 관리를 위한 핵심 기능을 제공합니다.
 
-## 기능
+## 주요 기능
 
-- 사용자 스코프 기반의 권한 관리
-- 데코레이터를 통한 간편한 권한 체크
-- Guard를 통한 자동 권한 검증
-
-## 디렉토리 구조
-
-```
-src/
-├── constants/           # 상수 및 타입 정의
-│   └── scopes.constant.ts  # 스코프 상수, 스키마, 타입 정의
-├── decorators/         # 커스텀 데코레이터
-├── guards/             # 권한 검증 가드
-└── index.ts           # 라이브러리 엔트리 포인트
-```
+- 사용자 권한(Role) 관리
+- 스코프 기반 권한 검증
+- 권한 데코레이터 및 가드 제공
 
 ## 사용 방법
 
-### 1. 모듈 임포트
+### 1. 스코프 타입 생성
 
-```typescript
-import { RolesModule } from '@libs/roles';
+데이터베이스에 저장된 권한과 스코프 정보를 TypeScript 타입으로 생성하려면 다음 명령어를 실행하세요:
 
-@Module({
-  imports: [RolesModule],
-})
-export class AppModule {}
+```bash
+npm run gen:scope-types
 ```
 
-### 2. 스코프 정의
+이 명령어는 다음과 같은 작업을 수행합니다:
 
-현재 정의된 스코프:
+- 데이터베이스에서 모든 roles와 scopes 정보를 조회
+- 스코프를 카테고리별로 그룹화
+- `libs/roles/src/constants/index.ts` 파일에 타입 정의를 생성
+- 생성된 타입은 `USER_SCOPES` 상수와 `UserScope` 타입을 포함
+
+### 2. 데코레이터 사용
 
 ```typescript
-// @/constants/scopes.constant.ts
-export const USER_SCOPES = {
-  USER: {
-    READ: 'user:read', // 사용자 조회 권한
-    UPDATE: 'users:update', // 사용자 수정 권한
-    DELETE: 'users:delete', // 사용자 삭제 권한
-    WRITE: 'users:write', // 사용자 생성 권한
-  },
-  MASTER: 'master', // 모든 권한
-} as const;
+import { Scopes } from '@app/roles';
 
-// Zod 스키마를 통한 타입 검증
-export const UserScopeSchema = z.enum([
-  USER_SCOPES.USER.READ,
-  USER_SCOPES.USER.UPDATE,
-  USER_SCOPES.USER.DELETE,
-  USER_SCOPES.USER.WRITE,
-  USER_SCOPES.MASTER,
-]);
 
-// 타입 추론
-export type UserScope = z.infer<typeof UserScopeSchema>;
+@UseGuards(AuthorizationGuard)
+export class UserController {
+  // ...
+  // authorization-guard.ts에서 jwt토큰에 담겨있는 값에 master가 있으면 통과시키는걸 하고있기 때문에
+  // 여기서 'master'를 적어줄 필요는 없지만, 다른 개발자가 코드를 읽을때 명시적으로 알 수 있어서, 적어주는게 좋습니다.
+   @RequireScopes(['master','user:read'])
+    async findOne(...){
+        ...
+    }
+}
 
-// 스코프 설명
-export const SCOPE_DESCRIPTIONS: Record<UserScope, string> = {
-  [USER_SCOPES.USER.READ]: '일반 사용자 조회 권한',
-  [USER_SCOPES.USER.UPDATE]: '일반 사용자 수정 권한',
-  [USER_SCOPES.USER.DELETE]: '일반 사용자 삭제 권한',
-  [USER_SCOPES.USER.WRITE]: '일반 사용자 작성 권한',
-  [USER_SCOPES.MASTER]: '모든 권한',
-} as const;
+@UseGuards(AuthorizationGuard)
+export class AdminController {
+    // ...
+    @RequireScopes(['master','admin:read'])
+    async findOne(...){
+        ...
+    }
+}
 ```
 
-### 3. 가드 사용하기
-
-#### 3.1 컨트롤러에 가드 적용
+### 3. 가드 설정
 
 ```typescript
-import { RequireScopes } from '@libs/roles';
-import { USER_SCOPES } from '@libs/roles';
+import { AuthorizationGuard } from '@app/roles';
 
-@Controller('users')
-@UseGuards(RolesGuard)
-export class UsersController {
-  @Get()
-  @RequireScopes([USER_SCOPES.USER.READ])
-  findAll() {
-    // 사용자 조회 권한이 있는 사용자만 접근 가능
-  }
-
-  @Post()
-  @RequireScopes([USER_SCOPES.USER.WRITE])
-  create() {
-    // 사용자 생성 권한이 있는 사용자만 접근 가능
+@UseGuards(AuthorizationGuard)
+export class AppModule {
+  // ...
+  async Post(...){
+    ...
   }
 }
 ```
 
-#### 3.2 가드 동작 방식
+## 디렉토리 구조
 
-1. `@RequireScopes` 데코레이터를 통해 필요한 스코프를 지정
-2. `RolesGuard`가 요청의 JWT 토큰에서 사용자 스코프를 확인
-3. 다음과 같은 순서로 권한 검증:
-   - 필수 스코프가 지정되지 않은 경우 → 접근 허용
-   - 사용자가 'master' 스코프를 가진 경우 → 모든 접근 허용
-   - 사용자가 필요한 스코프 중 하나 이상을 가진 경우 → 접근 허용
-   - 그 외의 경우 → 접근 거부
+```
+libs/roles/
+├── src/
+│   ├── constants/        # 스코프 상수 및 타입 정의
+│   ├── decorators/      # 스코프 데코레이터
+│   ├── guards/          # 권한 검증 가드
+│   ├── index.ts         # 공개 API
+│   └── roles.module.ts  # 모듈 정의
+└── README.md
+```
 
-## API 문서
+## 주의사항
 
-### 데코레이터
-
-#### @RequireScopes(scopes: UserScope[])
-
-- 설명: 해당 엔드포인트에 접근하기 위해 필요한 스코프를 지정
-- 매개변수:
-  - scopes: 필요한 스코프 배열
-- 사용 예:
-  ```typescript
-  @RequireScopes([USER_SCOPES.USER.READ])
-  ```
-
-### 가드
-
-#### RolesGuard
-
-- 설명: 사용자의 스코프를 검증하는 가드
-- 기능:
-  - JWT 토큰에서 사용자 정보 추출
-  - 필요한 스코프와 사용자의 스코프 비교
-  - 권한 검증 로직 수행
+1. `gen:scope-types` 명령어는 데이터베이스 연결이 필요하므로, 올바른 환경변수(`DATABASE_URL`)가 설정되어 있어야 합니다.
+2. 스코프 변경 시 반드시 `gen:scope-types`를 실행하여 타입 정의를 업데이트해야 합니다.
+3. 권한 검증은 런타임에 이루어지므로, 타입 체크만으로는 완벽한 보안을 보장할 수 없습니다.
