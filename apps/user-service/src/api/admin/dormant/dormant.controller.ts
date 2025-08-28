@@ -1,16 +1,18 @@
-import { RequireScopes } from '@app/roles';
-import { Controller, Post } from '@nestjs/common';
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { Controller, Post, UseGuards } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
-  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
 import { DormantService } from './dormant.service';
 
 @ApiTags('Admin/Dormant')
 @ApiBearerAuth('access-token')
 @Controller('admin/dormant')
+@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class DormantController {
   constructor(private readonly dormantService: DormantService) {}
 

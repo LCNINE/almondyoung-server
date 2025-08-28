@@ -1,4 +1,4 @@
-import { RequireScopes } from '@app/roles';
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -10,7 +10,6 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -21,15 +20,18 @@ import {
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
-import { Public } from '../../commons/decorators/public.decorator';
+import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
+import { Public } from '../../constants/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
-import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
+@ApiBearerAuth()
 @Controller('users')
+@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -66,9 +68,7 @@ export class UsersController {
     description: '조회할 사용자 ID',
     required: false,
   })
-  @ApiBearerAuth()
   @Get('/details')
-  @UseGuards(AuthGuard('jwt'))
   @RequireScopes(['user:read', 'master'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
@@ -85,9 +85,7 @@ export class UsersController {
     type: UserRolesResponse,
   })
   @ApiParam({ name: 'userId', description: '사용자 ID' })
-  @ApiBearerAuth()
   @Get('/roles/:userId')
-  @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   async getUserRoles(@CurrentUser() user: User) {
     return this.usersService.getUserRoles(user.id);
@@ -96,10 +94,8 @@ export class UsersController {
   @ApiOperation({ summary: '사용자 정보 수정' })
   @ApiResponse({ status: 200, description: '사용자 정보 수정 성공' })
   @ApiParam({ name: 'userId', description: '수정할 사용자 ID' })
-  @ApiBearerAuth()
   @Patch(':userId')
-  @UseGuards(AuthGuard('jwt'))
-  @RequireScopes(['users:update', 'master'])
+  @RequireScopes(['user:update', 'master'])
   @HttpCode(HttpStatus.OK)
   async updateUser(
     @Param('userId') userId: string,
@@ -125,9 +121,7 @@ export class UsersController {
 
   @ApiOperation({ summary: '현재 사용자 정보 조회' })
   @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
-  @ApiBearerAuth()
   @Get('me')
-  @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: User) {
     return this.usersService.retrieveMe(user.id);

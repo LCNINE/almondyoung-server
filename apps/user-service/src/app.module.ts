@@ -1,6 +1,7 @@
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { createKafkaConfigFromEnv } from '@app/events/types';
+import { AuthorizationGuard } from '@app/roles';
 import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -12,10 +13,11 @@ import { DormantModule } from './api/admin/dormant/dormant.module';
 import { ScopesModule } from './api/admin/scopes/scopes.module';
 import { AuthModule } from './api/auth/auth.module';
 import { EventProcessorModule } from './api/events/events.module';
+import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
-import { RecentViewsModule } from './api/recent-views/recent-views.module';
+import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 
 @Module({
@@ -55,7 +57,15 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
   providers: [
     {
       provide: APP_GUARD,
+      useClass: PublicPrivateGuard,
+    },
+    {
+      provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: AuthorizationGuard,
     },
   ],
 })
