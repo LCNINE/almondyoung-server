@@ -107,7 +107,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
 
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
       const actorType = userRoles.roles?.some(
-        (role) => role.role.name === USER_SCOPES.MASTER,
+        (role) => role.role.name === USER_SCOPES.MASTER.key,
       )
         ? 'user'
         : 'customer';
