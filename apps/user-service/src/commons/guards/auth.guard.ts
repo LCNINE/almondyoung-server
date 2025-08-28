@@ -4,11 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { Reflector } from '@nestjs/core';
-import { FastifyRequest } from 'fastify';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import { FastifyRequest } from 'fastify';
+import { IS_PUBLIC_KEY } from '../../constants/public.decorator';
 
 interface JwtPayload {
   sub: number;
