@@ -59,13 +59,8 @@ export class StockEventService {
 
                 sku = await this.inventoryService._createSkuInternal({
                     name: skuName,
-                    inventoryManagement: inventoryManagement ?? true,
                     source: creationSource,
                 }, executor);
-            } else {
-                if (!sku.inventoryManagement) {
-                    throw new BadRequestException(`기존 SKU ${sku.id}는 재고 관리 대상이 아닙니다.`);
-                }
             }
 
             if (quantity < 0) {
@@ -120,10 +115,6 @@ export class StockEventService {
                     relatedStockId: newStock.id
                 })
                 .where(eq(wmsTables.stockEvents.id, event.id));
-
-            if (sku.preStockSellable && quantity > 0) {
-                await this.inventoryService._updatePreStockSellableInternal(sku.id, false, executor);
-            }
 
             this.logger.log(`새 재고 항목 생성됨: ${newStock.id} for SKU ${sku.id}, 수량: ${quantity}.`);
 

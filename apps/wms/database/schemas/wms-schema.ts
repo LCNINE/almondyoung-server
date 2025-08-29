@@ -137,9 +137,6 @@ export const skus = pgTable('skus', {
     code: varchar('code', { length: 64 }).notNull().unique(),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
-    inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
-    preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
-    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -214,7 +211,8 @@ export const locationColumns = pgTable('location_columns', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => [
-    unique().on(t.warehouseId, t.columnName)
+    unique().on(t.warehouseId, t.columnName),
+    index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName)
 ]);
 
 export const locationRacks = pgTable('location_racks', {
@@ -231,7 +229,8 @@ export const locationRacks = pgTable('location_racks', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => [
-    unique().on(t.columnId, t.rackNumber)
+    unique().on(t.columnId, t.rackNumber),
+    index('idx_racks_column_number').on(t.columnId, t.rackNumber)
 ]);
 
 export const locations = pgTable('locations', {
@@ -251,6 +250,7 @@ export const locations = pgTable('locations', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => [
     unique().on(t.warehouseId, t.code),
+    index('idx_locations_warehouse_type').on(t.warehouseId, t.locationType),
     sql`CHECK (
         (location_type = 'standard' AND rack_id IS NOT NULL AND bin_identifier IS NOT NULL)
         OR 
@@ -258,12 +258,7 @@ export const locations = pgTable('locations', {
     )`
 ]);
 
-export const locationIndexes = {
-    locationsWarehouseType: index('idx_locations_warehouse_type').on(locations.warehouseId, locations.locationType),
-    locationsRackBin: index('idx_locations_rack_bin').on(locations.rackId, locations.binIdentifier),
-    locationRacksColumnNumber: index('idx_racks_column_number').on(locationRacks.columnId, locationRacks.rackNumber),
-    locationColumnsWarehouseName: index('idx_columns_warehouse_name').on(locationColumns.warehouseId, locationColumns.columnName),
-};
+
 
 /*───────────────────────────
  * STOCK LEDGER
@@ -361,6 +356,14 @@ export const productMatchings = pgTable('product_matchings', {
     priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
     strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
     isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
+    // 재고 정책 필드들 (skus에서 이동)
+    inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
+    preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
+    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
+
+    // 사은품 플래그 추가
+    isGift: boolean('is_gift').notNull().default(false), //사은품 여부
+
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => ({

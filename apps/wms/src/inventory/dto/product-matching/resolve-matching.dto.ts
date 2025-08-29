@@ -15,6 +15,24 @@ export class SkuMappingDto {
     quantity?: number;
 }
 
+// 재고 정책 DTO 추가
+export class StockPolicyDto {
+    @ApiProperty({ description: '재고 관리 여부 (true: 물리적 재고, false: 디지털)', default: true })
+    @IsBoolean()
+    @IsOptional()
+    inventoryManagement?: boolean = true;
+
+    @ApiProperty({ description: '재고 0이어도 선판매 가능 여부', default: true })
+    @IsBoolean()
+    @IsOptional()
+    preStockSellable?: boolean = true;
+
+    @ApiProperty({ description: '재고 0이어도 항상 판매 가능 (직배/신상품)', default: false })
+    @IsBoolean()
+    @IsOptional()
+    alwaysSellableZeroStock?: boolean = false;
+}
+
 export class ResolveMatchingDto {
     @ApiProperty({
         description: '매칭될 SKU ID 목록 (matched 상태일 경우 최소 하나 이상의 UUID 필수)',
@@ -50,4 +68,15 @@ export class ResolveMatchingDto {
     @IsEnum(matchingStrategyEnum.enumValues)
     @IsOptional()
     strategy?: typeof matchingStrategyEnum.enumValues[number];
+
+    @ApiProperty({ description: '재고 정책 설정', type: StockPolicyDto })
+    @ValidateNested()
+    @Type(() => StockPolicyDto)
+    @IsOptional()
+    stockPolicy?: StockPolicyDto;
+
+    @ApiProperty({ description: '사은품 여부', default: false })
+    @IsBoolean()
+    @IsOptional()
+    isGift?: boolean = false;
 }

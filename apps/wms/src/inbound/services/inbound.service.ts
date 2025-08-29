@@ -9,6 +9,7 @@ import { InventoryService } from '../../inventory/services/inventory.service';
 import { StockEventService } from '../../inventory/services/stock-event.service';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
 import { StockSummaryRepository } from '../../inventory/repositories/ stock-summary.repository';
+import { ProductMatchingService } from '../../inventory/services/product-matching.service';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 
@@ -22,6 +23,7 @@ export class InboundService {
         private readonly stockEventService: StockEventService,
         private readonly eventStore: StockEventStore,
         private readonly summaryRepo: StockSummaryRepository,
+        private readonly productMatchingService: ProductMatchingService,
     ) { }
 
     private get db() {
@@ -36,8 +38,31 @@ export class InboundService {
             throw new NotFoundException(`SKU ${skuId}를 찾을 수 없습니다.`);
         }
 
-        if (!sku.inventoryManagement) {
-            throw new BadRequestException(`SKU ${skuId}는 재고 관리 대상이 아닙니다.`);
+
+        // SKU와 연결된 모든 variant의 재고 관리 정책 확인
+        const links = await this.db
+            .select({
+                productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+                skuId: wmsTables.productVariantSkuLinks.skuId,
+                quantity: wmsTables.productVariantSkuLinks.quantity,
+                productMatching: wmsTables.productMatchings
+            })
+            .from(wmsTables.productVariantSkuLinks)
+            .innerJoin(
+                wmsTables.productMatchings,
+                eq(wmsTables.productVariantSkuLinks.productMatchingId, wmsTables.productMatchings.id)
+            )
+            .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId));
+
+        if (links.length === 0) {
+            throw new BadRequestException(`SKU ${skuId}는 어떤 상품과도 매칭되지 않았습니다.`);
+        }
+
+        // 하나라도 재고 관리가 필요한 매칭이 있는지 확인
+        const needsInventoryManagement = links.some(link => link.productMatching.inventoryManagement);
+
+        if (!needsInventoryManagement) {
+            throw new BadRequestException(`SKU ${skuId}와 연결된 모든 상품이 재고 관리 대상이 아닙니다.`);
         }
 
         return this.db.transaction(async (tx) => {
@@ -88,8 +113,17 @@ export class InboundService {
                 })
                 .where(eq(wmsTables.stockEvents.id, inboundEvent.id));
 
-            if (sku.preStockSellable && quantity > 0) {
-                await this.inventoryService._updatePreStockSellableInternal(sku.id, false, tx);
+
+            // 연결된 모든 product_matching의 preStockSellable 업데이트
+            for (const link of links) {
+                if (link.productMatching.preStockSellable && quantity > 0) {
+                    await tx.update(wmsTables.productMatchings)
+                        .set({
+                            preStockSellable: false,
+                            updatedAt: new Date()
+                        })
+                        .where(eq(wmsTables.productMatchings.id, link.productMatchingId));
+                }
             }
 
             this.logger.log(

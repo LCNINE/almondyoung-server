@@ -167,9 +167,6 @@ export class InventoryService implements OnModuleInit {
             code: sku.code,
             defaultBarcode: sku.defaultBarcode ?? undefined,
             deliveryProfileId: sku.deliveryProfileId ?? undefined,
-            inventoryManagement: sku.inventoryManagement,
-            preStockSellable: sku.preStockSellable,
-            alwaysSellableZeroStock: sku.alwaysSellableZeroStock,
             sale1m: sku.sale1m ?? undefined,
             sale3m: sku.sale3m ?? undefined,
             barcodes: barcodes.map(b => ({
@@ -211,9 +208,6 @@ export class InventoryService implements OnModuleInit {
         if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
         if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
         if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
-        if (query.inventoryManagement !== undefined) {
-            conditions.push(eq(wmsTables.skus.inventoryManagement, query.inventoryManagement));
-        }
 
         if (query.barcode) {
             const barcodeCondition = or(
@@ -267,9 +261,6 @@ export class InventoryService implements OnModuleInit {
             code: sku.code,
             defaultBarcode: sku.defaultBarcode,
             deliveryProfileId: sku.deliveryProfileId,
-            inventoryManagement: sku.inventoryManagement,
-            preStockSellable: sku.preStockSellable,
-            alwaysSellableZeroStock: sku.alwaysSellableZeroStock,
             sale1m: sku.sale1m,
             sale3m: sku.sale3m,
             barcodes: Array.from(sku.barcodes.values()),
@@ -331,59 +322,6 @@ export class InventoryService implements OnModuleInit {
         this.logger.log(`Barcode ${barcodeId} removed from SKU ${skuId}`);
     }
 
-    async updateAlwaysSellableZeroStock(skuId: string, value: boolean): Promise<void> {
-        const sku = await this.findSkuById(skuId);
-        if (!sku) {
-            throw new NotFoundException(`SKU with ID ${skuId} not found`);
-        }
-
-        if (!sku.inventoryManagement) {
-            throw new BadRequestException('Cannot set alwaysSellableZeroStock for non-inventory managed SKU');
-        }
-
-        if (value) {
-            const stockSummary = await this.getSkuStockSummary(skuId);
-            if (stockSummary.totalRealQuantity > 0) {
-                throw new BadRequestException(
-                    'Cannot enable alwaysSellableZeroStock when stock exists. ' +
-                    'This feature is only for drop-ship or pre-launch products with no physical stock.'
-                );
-            }
-        }
-
-        await this.db.update(wmsTables.skus)
-            .set({
-                alwaysSellableZeroStock: value,
-                preStockSellable: value ? false : sku.preStockSellable,
-                updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.skus.id, skuId));
-
-        this.logger.log(`SKU ${skuId} alwaysSellableZeroStock updated to ${value}`);
-    }
-
-    async batchUpdateAlwaysSellableZeroStock(
-        updates: Array<{ skuId: string; value: boolean }>
-    ): Promise<{ success: string[]; failed: Array<{ skuId: string; reason: string }> }> {
-        const results = {
-            success: [] as string[],
-            failed: [] as Array<{ skuId: string; reason: string }>,
-        };
-
-        for (const update of updates) {
-            try {
-                await this.updateAlwaysSellableZeroStock(update.skuId, update.value);
-                results.success.push(update.skuId);
-            } catch (error) {
-                results.failed.push({
-                    skuId: update.skuId,
-                    reason: error instanceof Error ? error.message : 'Unknown error',
-                });
-            }
-        }
-
-        return results;
-    }
 
     // ****************************************************************
     // 재고 관리 도메인
@@ -545,8 +483,8 @@ export class InventoryService implements OnModuleInit {
             }
 
             const sku = await this.findSkuById(currentStock.skuId, tx);
-            if (!sku || !sku.inventoryManagement) {
-                throw new BadRequestException(`SKU ${currentStock.skuId}가 물리적 재고 관리로 구성되지 않았습니다.`);
+            if (!sku) {
+                throw new NotFoundException(`SKU with ID ${currentStock.skuId}를 찾을 수 없습니다.`);
             }
 
             const newRealQuantity = currentStock.realQuantity + delta;
@@ -600,10 +538,6 @@ export class InventoryService implements OnModuleInit {
                     relatedStockId: newStock.id
                 })
                 .where(eq(wmsTables.stockEvents.id, event.id));
-
-            if (sku.preStockSellable && delta > 0 && newRealQuantity > 0) {
-                await this._updatePreStockSellableInternal(sku.id, false, tx);
-            }
 
             this.logger.log(`관리자 수동 조정 완료: 재고 ${stockId}, 델타 ${delta}, 새 수량 ${newRealQuantity}`);
             return newStock;
@@ -769,7 +703,7 @@ export class InventoryService implements OnModuleInit {
 
     async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode' | 'supplierIds' | 'categoryIds'>, tx?: DbOrTx) {
         const db = tx || this.db;
-        const preStockSellable = data.inventoryManagement === true;
+        // preStockSellable 제거
         const skuCode = this._generateSkuCode();
 
         let skuName: string;
@@ -785,9 +719,6 @@ export class InventoryService implements OnModuleInit {
             name: skuName,
             code: skuCode,
             deliveryProfileId: data.deliveryProfileId,
-            inventoryManagement: data.inventoryManagement,
-            preStockSellable: preStockSellable,
-            alwaysSellableZeroStock: data.alwaysSellableZeroStock ?? false,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
         }).returning();
@@ -808,8 +739,6 @@ export class InventoryService implements OnModuleInit {
         const updateData: Partial<typeof wmsTables.skus.$inferInsert> = {
             name: data.name,
             deliveryProfileId: data.deliveryProfileId,
-            inventoryManagement: data.inventoryManagement,
-            alwaysSellableZeroStock: data.alwaysSellableZeroStock,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
             updatedAt: new Date(),
@@ -827,22 +756,7 @@ export class InventoryService implements OnModuleInit {
         return updatedSku;
     }
 
-    async _updatePreStockSellableInternal(skuId: string, value: boolean, tx?: DbTx) {
-        const db = tx || this.db;
-        const [updatedSku] = await db.update(wmsTables.skus)
-            .set({
-                preStockSellable: value,
-                updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.skus.id, skuId))
-            .returning();
 
-        if (!updatedSku) {
-            throw new NotFoundException(`SKU with ID ${skuId} not found to update preStockSellable.`);
-        }
-        this.logger.log(`SKU ${skuId} preStockSellable updated to ${value}.`);
-        return updatedSku;
-    }
 
     async findSkuById(skuId: string, tx?: DbOrTx) {
         const db = tx || this.db;

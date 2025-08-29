@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/location-response.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LocationType } from '../types';
 
@@ -26,7 +25,7 @@ export class LocationResponseDto {
     @ApiProperty({ description: '표시명', example: 'A-01-01' })
     displayName: string;
 
-    @ApiProperty({ 
+    @ApiProperty({
         description: '로케이션 타입',
         enum: ['standard', 'zone'],
         example: 'standard'

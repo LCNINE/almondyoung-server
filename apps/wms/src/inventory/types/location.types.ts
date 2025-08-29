@@ -1,5 +1,3 @@
-// apps/wms/src/inventory/types/location.types.ts
-
 /**
  * 로케이션 타입 열거형
  */
@@ -60,18 +58,18 @@ export interface LocationRack {
     id: string;
     columnId: string;
     rackNumber: number;
-    
+
     // 빈 설정
     defaultBinStart: number;
     defaultBinEnd: number;
     autoGenerateBins: boolean;
-    
+
     // 물리적 정보
     physicalWidth?: number;
     physicalHeight?: number;
     notes?: string;
     isActive: boolean;
-    
+
     createdAt: Date;
     updatedAt: Date;
 }
@@ -83,7 +81,7 @@ export interface StandardLocationInfo extends LocationResponse {
     type: 'standard';
     rackId: string;
     binIdentifier: string;
-    
+
     // 계층 정보 (조인된 데이터)
     columnName?: string;
     rackNumber?: number;

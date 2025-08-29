@@ -104,7 +104,7 @@ export class OptionMatchingStrategy extends MatchingStrategy {
                 where: eq(wmsTables.skus.id, mapping.skuId)
             });
 
-            if (!sku || !sku.inventoryManagement) {
+            if (!sku) {
                 return false;
             }
         }

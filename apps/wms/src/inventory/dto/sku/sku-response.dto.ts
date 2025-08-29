@@ -30,14 +30,6 @@ export class SkuResponseDto {
     @ApiProperty({ required: false })
     deliveryProfileId?: string;
 
-    @ApiProperty()
-    inventoryManagement: boolean;
-
-    @ApiProperty()
-    preStockSellable: boolean;
-
-    @ApiProperty()
-    alwaysSellableZeroStock: boolean;
 
     @ApiProperty({ required: false })
     sale1m?: number;

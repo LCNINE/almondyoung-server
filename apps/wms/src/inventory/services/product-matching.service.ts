@@ -97,6 +97,11 @@ export class ProductMatchingService {
                     priority: 'normal',
                     strategy: 'void',
                     isResolved: true,
+                    // 디지털 상품의 재고 정책
+                    inventoryManagement: false,
+                    preStockSellable: true,
+                    alwaysSellableZeroStock: false,
+                    isGift: false,
                 }).onConflictDoNothing();
                 this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
                 continue;
@@ -109,6 +114,11 @@ export class ProductMatchingService {
                     priority: 'normal',
                     strategy: 'variant',
                     isResolved: true,
+                    // 물리적 상품의 기본 재고 정책
+                    inventoryManagement: true,
+                    preStockSellable: true,
+                    alwaysSellableZeroStock: false,
+                    isGift: false,
                 }).returning();
 
                 if (!newProductMatching) {
@@ -186,7 +196,7 @@ export class ProductMatchingService {
     }
 
     async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto) {
-        const { skuIds, skuMappings, ignore, strategy = 'variant' } = resolveDto;
+        const { skuIds, skuMappings, ignore, strategy = 'variant', stockPolicy, isGift = false } = resolveDto;
 
         const productMatching = await this.db.query.productMatchings.findFirst({
             where: and(
@@ -204,6 +214,11 @@ export class ProductMatchingService {
                 status: 'ignored',
                 strategy: 'void',
                 isResolved: true,
+                // 무시된 매칭의 기본 재고 정책
+                inventoryManagement: false,
+                preStockSellable: true,
+                alwaysSellableZeroStock: false,
+                isGift: false,
                 updatedAt: new Date(),
             }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
             this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
@@ -219,13 +234,11 @@ export class ProductMatchingService {
                         skuId: mapping.skuId,
                         quantity: mapping.quantity || 1
                     }));
-                    this.logger.log(`Using provided SKU mappings with quantities: ${JSON.stringify(mappings)}`);
                 } else if (skuIds && skuIds.length > 0) {
                     mappings = skuIds.map(skuId => ({
                         skuId,
                         quantity: 1
                     }));
-                    this.logger.log(`Using SKU IDs with default quantity 1: ${JSON.stringify(mappings)}`);
                 } else {
                     throw new BadRequestException('SKU 매핑 정보가 없습니다.');
                 }
@@ -243,16 +256,30 @@ export class ProductMatchingService {
 
                 await matchingStrategy.create(context, mappings, tx);
 
+                // 재고 정책 설정 (기본값 또는 제공된 값)
+                const finalStockPolicy = {
+                    inventoryManagement: stockPolicy?.inventoryManagement ?? true,
+                    preStockSellable: stockPolicy?.preStockSellable ?? true,
+                    alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
+                };
+
                 const [updatedMatching] = await tx.update(wmsTables.productMatchings).set({
                     status: 'matched',
                     strategy: strategy,
                     isResolved: true,
+                    ...finalStockPolicy,
+                    isGift,
                     updatedAt: new Date(),
                 }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
 
                 const totalSkus = mappings.length;
                 const totalQuantity = mappings.reduce((sum, m) => sum + m.quantity, 0);
-                this.logger.log(`Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}`);
+                this.logger.log(
+                    `Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. ` +
+                    `SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}, ` +
+                    `Stock Policy: ${JSON.stringify(finalStockPolicy)}, ` +
+                    `IsGift: ${isGift}`
+                );
                 return updatedMatching;
             });
         } else {
@@ -325,8 +352,6 @@ export class ProductMatchingService {
         return this.db.transaction(async (tx) => {
             const newSku = await this.inventoryService._createSkuInternal({
                 name: skuData.name,
-                inventoryManagement: skuData.inventoryManagement,
-                alwaysSellableZeroStock: skuData.alwaysSellableZeroStock,
                 source: SkuCreationSource.MANUAL_MATCHING,
             }, tx);
 
@@ -456,5 +481,51 @@ export class ProductMatchingService {
         };
 
         return strategy.lookup(context);
+    }
+
+    async getStockPolicyForVariant(variantId: string): Promise<{
+        inventoryManagement: boolean;
+        preStockSellable: boolean;
+        alwaysSellableZeroStock: boolean;
+        isGift: boolean;
+    } | null> {
+        const matching = await this.db.query.productMatchings.findFirst({
+            where: eq(wmsTables.productMatchings.variantId, variantId)
+        });
+
+        if (!matching) {
+            return null;
+        }
+
+        return {
+            inventoryManagement: matching.inventoryManagement,
+            preStockSellable: matching.preStockSellable,
+            alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
+            isGift: matching.isGift,
+        };
+    }
+
+    async updateStockPolicy(
+        matchingId: string,
+        stockPolicy: {
+            inventoryManagement?: boolean;
+            preStockSellable?: boolean;
+            alwaysSellableZeroStock?: boolean;
+        }
+    ) {
+        const [updated] = await this.db.update(wmsTables.productMatchings)
+            .set({
+                ...stockPolicy,
+                updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.productMatchings.id, matchingId))
+            .returning();
+
+        if (!updated) {
+            throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
+        }
+
+        this.logger.log(`Updated stock policy for matching ${matchingId}: ${JSON.stringify(stockPolicy)}`);
+        return updated;
     }
 }

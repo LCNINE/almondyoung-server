@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/location-query.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, IsBoolean, IsInt, IsEnum, Min, Max } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -37,10 +36,10 @@ export class LocationQueryDto {
     @IsString()
     search?: string;
 
-    @ApiPropertyOptional({ 
-        description: '페이지 번호 (1부터 시작)', 
+    @ApiPropertyOptional({
+        description: '페이지 번호 (1부터 시작)',
         example: 1,
-        default: 1 
+        default: 1
     })
     @IsOptional()
     @Transform(({ value }) => parseInt(value) || 1)
@@ -48,10 +47,10 @@ export class LocationQueryDto {
     @Min(1)
     page?: number = 1;
 
-    @ApiPropertyOptional({ 
-        description: '페이지당 항목 수', 
+    @ApiPropertyOptional({
+        description: '페이지당 항목 수',
         example: 20,
-        default: 20 
+        default: 20
     })
     @IsOptional()
     @Transform(({ value }) => parseInt(value) || 20)

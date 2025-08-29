@@ -3,18 +3,18 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
-import { 
-    CreateColumnDto, 
-    CreateRackDto, 
-    CreateZoneLocationDto, 
-    AddCustomBinDto, 
-    LocationCreateResultDto 
+import {
+    CreateColumnDto,
+    CreateRackDto,
+    CreateZoneLocationDto,
+    AddCustomBinDto,
+    LocationCreateResultDto
 } from '../dto/location-create.dto';
-import { 
-    UpdateLocationDto, 
-    UpdateColumnDto, 
-    UpdateRackDto, 
-    ExtendRackBinsDto 
+import {
+    UpdateLocationDto,
+    UpdateColumnDto,
+    UpdateRackDto,
+    ExtendRackBinsDto
 } from '../dto/location-update.dto';
 import { LocationQueryDto } from '../dto/location-query.dto';
 import { LocationType } from '../types';
@@ -35,7 +35,7 @@ export class LocationService {
 
     async createColumn(warehouseId: string, dto: CreateColumnDto) {
         this.logger.log(`Creating column ${dto.columnName} for warehouse ${warehouseId}`);
-        
+
         const existing = await this.db
             .select()
             .from(wmsTables.locationColumns)
@@ -96,7 +96,7 @@ export class LocationService {
 
     async createRack(warehouseId: string, dto: CreateRackDto): Promise<LocationCreateResultDto> {
         this.logger.log(`Creating rack ${dto.columnName}-${dto.rackNumber} for warehouse ${warehouseId}`);
-        
+
         return await this.db.transaction(async (tx) => {
             const [column] = await tx
                 .select()
@@ -148,7 +148,7 @@ export class LocationService {
                 for (let binNum = binStart; binNum <= binEnd; binNum++) {
                     const binIdentifier = binNum.toString().padStart(2, '0');
                     const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${binIdentifier}`;
-                    
+
                     locations.push({
                         warehouseId,
                         code: locationCode,
@@ -158,7 +158,7 @@ export class LocationService {
                         displayName: locationCode,
                         isActive: true,
                     });
-                    
+
                     createdLocationCodes.push(locationCode);
                 }
 
@@ -171,7 +171,7 @@ export class LocationService {
                 const customLocations: Array<typeof wmsTables.locations.$inferInsert> = dto.binSettings.customBins.map(customBinName => {
                     const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${customBinName}`;
                     createdLocationCodes.push(locationCode);
-                    
+
                     return {
                         warehouseId,
                         code: locationCode,
@@ -216,7 +216,7 @@ export class LocationService {
             }
 
             let locationCode = dto.code;
-            
+
             if (/[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(dto.code)) {
                 const [countResult] = await tx
                     .select({ count: count() })
@@ -229,7 +229,7 @@ export class LocationService {
 
                 const zoneNumber = (countResult?.count || 0) + 1;
                 locationCode = `zone-${zoneNumber}`;
-                
+
                 this.logger.log(`Korean characters detected in "${dto.code}", generated code: ${locationCode}`);
             }
 
@@ -295,13 +295,13 @@ export class LocationService {
             );
         }
 
-        const orderByColumn = sortBy === 'columnName' 
+        const orderByColumn = sortBy === 'columnName'
             ? wmsTables.locationColumns.columnName
-            : sortBy === 'rackNumber' 
-            ? wmsTables.locationRacks.rackNumber
-            : sortBy === 'createdAt'
-            ? wmsTables.locations.createdAt
-            : wmsTables.locations.code;
+            : sortBy === 'rackNumber'
+                ? wmsTables.locationRacks.rackNumber
+                : sortBy === 'createdAt'
+                    ? wmsTables.locations.createdAt
+                    : wmsTables.locations.code;
 
         const orderDirection = sortOrder === 'desc' ? desc : asc;
 

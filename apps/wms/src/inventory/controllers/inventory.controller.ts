@@ -8,7 +8,6 @@ import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
 import { SkuResponseDto } from '../dto/sku/sku-response.dto';
 import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
-import { UpdateAlwaysSellableDto, BatchUpdateAlwaysSellableDto } from '../dto/sku/update-always-sellable.dto';
 import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
 import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 
@@ -221,7 +220,6 @@ export class InventoryController {
     @ApiQuery({ name: 'barcode', required: false, description: 'SKU 기본 바코드 또는 서브 바코드' })
     @ApiQuery({ name: 'name', required: false, description: 'SKU 이름 (부분 일치)' })
     @ApiQuery({ name: 'supplierName', required: false, description: '공급사 이름 (부분 일치)' })
-    @ApiQuery({ name: 'inventoryManagement', required: false, type: Boolean, description: '재고 관리 여부' })
     @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
     async searchSkus(
         @Query('id') id?: string,
@@ -229,19 +227,13 @@ export class InventoryController {
         @Query('barcode') barcode?: string,
         @Query('name') name?: string,
         @Query('supplierName') supplierName?: string,
-        @Query('inventoryManagement') inventoryManagement?: string,
     ): Promise<SkuResponseDto[]> {
-        const inventoryManagementBool = inventoryManagement === 'true' ? true :
-            inventoryManagement === 'false' ? false :
-                undefined;
-
         return this.inventoryService.searchSkus({
             id,
             code,
             barcode,
             name,
             supplierName,
-            inventoryManagement: inventoryManagementBool
         });
     }
 
@@ -313,47 +305,6 @@ export class InventoryController {
     @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
     async getSkuStockSummary(@Param('id') id: string): Promise<SkuStockSummaryDto> {
         return this.inventoryService.getSkuStockSummary(id);
-    }
-
-    @Put('/skus/:id/always-sellable-zero-stock')
-    @HttpCode(HttpStatus.NO_CONTENT)
-    @ApiOperation({ summary: 'SKU의 재고 0 판매 가능 설정 업데이트' })
-    @ApiParam({ name: 'id', description: 'SKU ID' })
-    @ApiResponse({ status: 204, description: '설정이 성공적으로 업데이트되었습니다.' })
-    @ApiResponse({ status: 400, description: '재고가 있는 SKU는 설정할 수 없습니다.' })
-    @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
-    async updateAlwaysSellableZeroStock(
-        @Param('id') id: string,
-        @Body() updateDto: UpdateAlwaysSellableDto
-    ): Promise<void> {
-        return this.inventoryService.updateAlwaysSellableZeroStock(id, updateDto.value);
-    }
-
-    @Post('/skus/batch/always-sellable-zero-stock')
-    @ApiOperation({ summary: '여러 SKU의 재고 0 판매 가능 설정 일괄 업데이트' })
-    @ApiResponse({
-        status: 200,
-        description: '일괄 업데이트 결과',
-        schema: {
-            properties: {
-                success: { type: 'array', items: { type: 'string' } },
-                failed: {
-                    type: 'array',
-                    items: {
-                        type: 'object',
-                        properties: {
-                            skuId: { type: 'string' },
-                            reason: { type: 'string' }
-                        }
-                    }
-                }
-            }
-        }
-    })
-    async batchUpdateAlwaysSellableZeroStock(
-        @Body() batchUpdateDto: BatchUpdateAlwaysSellableDto
-    ): Promise<{ success: string[]; failed: Array<{ skuId: string; reason: string }> }> {
-        return this.inventoryService.batchUpdateAlwaysSellableZeroStock(batchUpdateDto.updates);
     }
 
     // ═══════════════════════════════════════════════════════════════

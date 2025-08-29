@@ -1,1 +1,1 @@
-export class Outbound {}
+export class Outbound { }

@@ -59,10 +59,6 @@ export class VariantMatchingStrategy extends MatchingStrategy {
             if (!sku) {
                 return false;
             }
-
-            if (!sku.inventoryManagement) {
-                return false;
-            }
         }
 
         return true;

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsBoolean, IsOptional, IsUUID, IsNumber, IsEnum, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum SkuCreationSource {
@@ -33,14 +33,15 @@ export class CreateSkuDto {
     @IsOptional()
     deliveryProfileId?: string;
 
-    @ApiProperty({ description: '재고 관리 여부 (true: 물리 재고, false: 디지털/무한 재고 등)', example: true })
-    @IsBoolean()
-    inventoryManagement: boolean;
+    // 재고 정책 필드들 제거 (이제 product_matchings에서 관리)
+    // @ApiProperty({ description: '재고 관리 여부 (true: 물리 재고, false: 디지털/무한 재고 등)', example: true })
+    // @IsBoolean()
+    // inventoryManagement: boolean;
 
-    @ApiProperty({ description: '재고 0이어도 항상 판매 가능한 상품 여부 (직배/신상품 등)', required: false, default: false })
-    @IsBoolean()
-    @IsOptional()
-    alwaysSellableZeroStock?: boolean;
+    // @ApiProperty({ description: '재고 0이어도 항상 판매 가능한 상품 여부 (직배/신상품 등)', required: false, default: false })
+    // @IsBoolean()
+    // @IsOptional()
+    // alwaysSellableZeroStock?: boolean;
 
     @ApiProperty({ description: '최근 1개월 판매량', example: 100, required: false })
     @IsNumber()

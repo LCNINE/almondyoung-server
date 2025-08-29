@@ -1,5 +1,3 @@
-// apps/wms/src/inventory/dto/index.ts
-
 // Response DTOs
 export * from './location-response.dto';
 

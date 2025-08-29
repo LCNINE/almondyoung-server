@@ -1,4 +1,3 @@
-// apps/wms/src/inventory/dto/location-create.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsInt, IsBoolean, IsOptional, IsArray, Min, Max, IsNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
