@@ -105,7 +105,7 @@ export const tokens = pgTable(
     userId: uuid('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
-    value: varchar('value', { length: 255 }).notNull(),
+    value: text('value').notNull(),
     type: tokenTypeEnum('type').notNull(),
     scopes: varchar('scopes', { length: 65535 }).notNull(),
     issuedAt: timestamp('issued_at').defaultNow().notNull(),
@@ -344,7 +344,7 @@ export const businessLicenses = pgTable(
     userUniqueIdx: unique().on(table.userId), // 사용자당 하나의 사업자 등록만 허용
     shopUniqueIdx: unique().on(table.shopId), // 상점당 하나의 사업자 등록만 허용
     verificationOrFullInfo: check(
-      'business_registrations_verification_or_full_info',
+      'business_licenses_verification_or_full_info',
       sql`${table.verificationFile} is not null OR (${table.businessNumber} is not null AND ${table.representativeName} is not null)`,
     ),
   }),
