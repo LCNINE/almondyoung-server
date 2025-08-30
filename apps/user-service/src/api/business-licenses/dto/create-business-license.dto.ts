@@ -1,83 +1,41 @@
+import { OmitType, PickType } from '@nestjs/swagger';
 import {
   IsNotEmpty,
-  IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
-  ValidateIf,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import { JsonValue } from 'type-fest';
 
-export class CreateBusinessLicenseDto {
-  @ApiProperty({
-    description: '사업자등록증 인증 파일',
-    required: false,
-    type: String,
-  })
-  @IsOptional({
-    message: 'verificationFile는 선택사항입니다.',
-  })
-  @IsString({
-    message: 'verificationFile는 문자열이어야 합니다.',
-  })
-  verificationFile?: string;
+export class BusinessLicenseBaseDto {
+  @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
+  @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
+  verificationFile: string;
 
-  @ApiProperty({
-    description: '상점 ID',
-    required: false,
-    type: String,
-  })
-  @IsOptional()
-  @IsString({
-    message: 'shopId는 문자열이어야 합니다.',
-  })
+  @IsOptional({ message: '상점ID는 선택사항입니다.' })
+  @IsUUID('4', { message: '상점ID는 UUID 형식이어야 합니다.' })
   shopId?: string;
 
-  @ApiProperty({
-    description: '사업자 등록 번호 (10자리)',
-    required: true,
-    type: String,
-    minLength: 10,
-    maxLength: 10,
-  })
-  @ValidateIf((o) => !o.verificationFile)
-  @IsNotEmpty({
-    message: 'businessNumber는 필수입니다.',
-  })
-  @IsString({
-    message: 'businessNumber는 문자열이어야 합니다.',
-  })
+  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10)
   businessNumber: string;
 
-  @ApiProperty({
-    description: '대표자 이름',
-    required: true,
-    type: String,
-    minLength: 1,
-    maxLength: 100,
-  })
-  @ValidateIf((o) => !o.verificationFile)
-  @IsNotEmpty({
-    message: 'representativeName는 필수입니다.',
-  })
-  @IsString({
-    message: 'representativeName는 문자열이어야 합니다.',
-  })
+  @IsNotEmpty({ message: '대표자명은 필수입니다.' })
   @Length(1, 100)
-  representativeName?: string;
+  representativeName: string;
 
-  @ApiProperty({
-    description: '추가 메타데이터',
-    required: false,
-    type: Object,
-  })
-  @IsOptional({
-    message: 'metadata는 선택사항입니다.',
-  })
-  @IsObject({
-    message: 'metadata는 객체이어야 합니다.',
-  })
-  metadata?: JsonValue;
+  @IsOptional({ message: '메타데이터는 선택사항입니다.' })
+  metadata?: string;
 }
+
+// 파일 업로드용 dto
+export class CreateBusinessLicenseWithFileDto extends PickType(
+  BusinessLicenseBaseDto,
+  ['verificationFile', 'shopId', 'metadata'] as const,
+) {}
+
+// 정보 입력용 dto
+export class CreateBusinessLicenseWithInfoDto extends PickType(
+  BusinessLicenseBaseDto,
+  ['businessNumber', 'representativeName', 'metadata'] as const,
+) {}

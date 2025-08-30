@@ -12,7 +12,9 @@ import { AdminModule } from './api/admin/admin.module';
 import { DormantModule } from './api/admin/dormant/dormant.module';
 import { ScopesModule } from './api/admin/scopes/scopes.module';
 import { AuthModule } from './api/auth/auth.module';
+import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
 import { EventProcessorModule } from './api/events/events.module';
+import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
@@ -53,6 +55,8 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     EventProcessorModule,
     WishlistModule,
     RecentViewsModule,
+    FileModule,
+    BusinessLicensesModule,
   ],
   providers: [
     {
