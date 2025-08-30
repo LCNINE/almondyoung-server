@@ -17,13 +17,18 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string }) {
+  async validate(payload: { sub: string; scopes: string[] }) {
     const user = await this.usersService.findUserById(payload.sub);
 
     if (!user) {
       throw new UnauthorizedException();
     }
 
-    return user;
+    // JWT payload 정보 반환
+    return {
+      ...user,
+      sub: payload.sub,
+      scopes: payload.scopes,
+    };
   }
 }

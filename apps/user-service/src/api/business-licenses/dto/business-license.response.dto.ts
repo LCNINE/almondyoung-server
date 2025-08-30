@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { JsonValue } from 'type-fest';
 
 export class BusinessLicenseResponseDto {
   @ApiProperty({
@@ -75,7 +74,7 @@ export class BusinessLicenseResponseDto {
     nullable: true,
     additionalProperties: true,
   })
-  metadata?: JsonValue;
+  metadata?: string;
 
   @ApiProperty({
     description: '생성 일시',

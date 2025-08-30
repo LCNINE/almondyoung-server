@@ -1,13 +1,11 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { IS_PUBLIC_KEY } from 'apps/user-service/src/constants/public.decorator';
 import { FastifyRequest } from 'fastify';
 import { UserScope } from '../constants';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {
   sub: string;
-  email: string;
   scopes: string[];
 }
 
@@ -16,13 +14,6 @@ export class AuthorizationGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // 퍼블릭이면 바로 통과
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
-
     // 요구 스코프 확인
     const requiredScopes = this.reflector.getAllAndOverride<UserScope[]>(
       SCOPES_KEY,
@@ -35,7 +26,8 @@ export class AuthorizationGuard implements CanActivate {
 
     // 사용자/JWT 확인
     const request = context.switchToHttp().getRequest<FastifyRequest>();
-    const user = request['user'] as JwtPayload | undefined;
+    const user = request['user'] as JwtPayload;
+
     if (!user || !user.sub || !user.scopes) {
       return false;
     }
@@ -50,6 +42,7 @@ export class AuthorizationGuard implements CanActivate {
     const nonMasterScopes = requiredScopes.filter(
       (scope) => scope !== 'master',
     );
+
     return nonMasterScopes.every((s) => have.has(s));
   }
 }

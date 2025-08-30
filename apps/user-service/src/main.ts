@@ -3,6 +3,7 @@ import { ResponseInterceptor } from '@app/shared/interceptors/response.intercept
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
 import fastifySession from '@fastify/session';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { FILE_SIZE_LIMIT } from './constants/file.constants';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -74,6 +76,13 @@ async function bootstrap() {
   await app.register(fastifyHelmet);
   await app.register(fastifyCookie);
 
+  // Multipart 설정 추가
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: FILE_SIZE_LIMIT,
+    },
+  });
+
   // 세션 설정(카카오 로그인을 위해 필요)
   await app.register(fastifySession, {
     secret: configService.get('KAKAO_CLIENT_SECRET') as string,
@@ -109,6 +118,9 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
