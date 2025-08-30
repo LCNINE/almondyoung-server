@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirect</title>
+  </head>
+  <body>
+    <h2>Redirect Page</h2>
+    <pre id="log"></pre>
+    <script>
+      const API_BASE = 'http://localhost:5000';
+      const log = (m) =>
+        (document.getElementById('log').textContent += m + '\n');
+
+      (async () => {
+        const params = new URLSearchParams(location.search);
+        const authorizedEventId = params.get('authorizedEventId');
+        if (!authorizedEventId) {
+          log('authorizedEventId missing');
+          return;
+        }
+        log('authorizedEventId=' + authorizedEventId);
+
+        try {
+          const resp = await fetch(
+            API_BASE + '/payments/' + authorizedEventId + '/capture',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Idempotency-Key': 'idem_capture_' + Date.now(),
+              },
+              body: JSON.stringify({
+                // 부분 캡처 테스트하려면 amount를 지정
+                metadata: { ui: 'redirect' },
+              }),
+            },
+          );
+          const data = await resp.json();
+          log('Capture response:\n' + JSON.stringify(data, null, 2));
+          if (!resp.ok) alert('Capture failed: ' + data.message);
+          else alert('Capture OK!');
+        } catch (e) {
+          alert('Error: ' + e);
+        }
+      })();
+    </script>
+  </body>
+</html>
