@@ -11,6 +11,8 @@ import { RefundsService } from './services/refunds.service';
 import { CheckoutController } from './controllers/checkout.controller';
 import { IdempotencyService } from './services/Idempotency.service';
 import { RefundsController } from './controllers/refunds.controller';
+import { SettlementController } from './controllers/settlement.controllet';
+import { SettlementService } from './services/settlement.service';
 
 @Module({
   imports: [
@@ -33,12 +35,14 @@ import { RefundsController } from './controllers/refunds.controller';
     PaymentsController,
     CheckoutController,
     RefundsController,
+    SettlementController,
   ],
   providers: [
     PaymentSessionsService,
     PaymentsService,
     RefundsService,
     IdempotencyService,
+    SettlementService,
   ],
 })
 export class AppModule {}
