@@ -4,7 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+} from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { UpdateBusinessLicenseDtoWithReviewCommentAndStatus } from '../../business-licenses/dto/update-business-license.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
@@ -20,7 +30,12 @@ export class BusinessLicensesService {
     businessLicenseQueryDto,
   }: {
     businessLicenseQueryDto: BusinessLicenseQueryDto;
-  }): Promise<schema.BusinessLicense[]> {
+  }): Promise<{
+    data: schema.BusinessLicense[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const {
       search,
       sortBy,
@@ -77,19 +92,32 @@ export class BusinessLicensesService {
         );
       }
 
-      const query = this.dbService.db
+      const whereClause = and(...whereConditions);
+
+      // total count
+      const countQuery = this.dbService.db
+        .select({ count: count() })
+        .from(schema.businessLicenses)
+        .where(whereClause);
+      const [{ count: total }] = await countQuery;
+
+      // data query
+      const orderExpr =
+        sortBy === 'createdAt'
+          ? asc(schema.businessLicenses.createdAt)
+          : desc(schema.businessLicenses.createdAt);
+
+      const dataQuery = this.dbService.db
         .select()
         .from(schema.businessLicenses)
-        .where(and(...whereConditions))
-        .orderBy(
-          sortBy === 'createdAt'
-            ? asc(schema.businessLicenses.createdAt)
-            : desc(schema.businessLicenses.createdAt),
-        )
+        .where(whereClause)
+        .orderBy(orderExpr)
         .limit(limit)
         .offset(offset);
 
-      return query;
+      const data = await dataQuery;
+
+      return { data, total, page, limit };
     } catch (error) {
       console.log('error::', error);
       throw new BadRequestException(
