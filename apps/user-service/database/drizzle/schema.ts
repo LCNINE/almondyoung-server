@@ -318,7 +318,8 @@ export const statusEnum = pgEnum('status', [
 ]);
 
 /**
- * 파일을 업로드하거나, 사업자 번호 및 사업자 이름을 다 입력해야됨
+ * 첨부파일을 업로드하면 사업자 번호, 사업자 대표이름은 입력 X,
+ * 첨부파일을 업로드하지 않으면 사업자 번호, 사업자 대표이름은 입력필수.
  */
 export const businessLicenses = pgTable(
   'business_licenses',
