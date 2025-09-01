@@ -1,34 +1,8 @@
-import { IsString, MinLength, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsDate, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class SetRoleDto {
-  @ApiProperty({
-    description: '사용자 ID',
-    example: 'user-123',
-  })
-  @IsString({ message: 'userId는 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: 'userId는 필수입니다.' })
-  userId: string;
-
-  @ApiProperty({
-    description: '역할 이름',
-    example: 'admin',
-  })
-  @IsString({ message: 'role는 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: 'role은 필수입니다.' })
-  role: string;
-
-  @ApiProperty({
-    description: '역할 설명',
-    example: '시스템 관리자 권한',
-  })
-  @IsString({ message: 'description는 문자열이어야 합니다.' })
-  @MinLength(1, { message: '룰 설명은 최소 1자 이상이어야 합니다.' })
-  @IsNotEmpty({ message: '룰 설명은 필수입니다.' })
-  description: string;
-}
-
-export class AssignUserRoleDto {
+export class SetUserRoleDto {
   @ApiProperty({
     description: '사용자 ID',
     example: 'user-123',
@@ -42,6 +16,17 @@ export class AssignUserRoleDto {
     example: 'role-123',
   })
   @IsString({ message: 'roleId는 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: 'roleId는 필수입니다.' })
+  @IsNotEmpty({ message: '연결할 roleId를 입력해주세요.' })
   roleId: string;
+
+  @ApiProperty({
+    description: '만료 일시',
+    example: '2025-08-28T06:37:21.019641',
+    type: String,
+    required: false,
+  })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate({ message: '만료일은 유효한 날짜여야 합니다.' })
+  expires_at?: Date;
 }

@@ -10,13 +10,14 @@ import {
 } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
+import { AddressDto } from '../../commons/dto/address.dto';
+import { isValidUUID } from '../../commons/utils/is-valid-uuid';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import {
   UserRoleScopesResponseDto,
   UserRolesResponse,
 } from './dto/user-role-scopes.response.dto';
-import { UserDetailsResponseDto } from './dto/user-details.response.dto';
-import { AddressDto } from '../../commons/dto/address.dto';
 
 @Injectable()
 export class UsersService {
@@ -31,6 +32,11 @@ export class UsersService {
   // 기본 사용자 정보를 가져오는 메서드
   private async getUserBaseInfo(userId: string) {
     try {
+      // UUID 형식 검증
+      if (!isValidUUID(userId)) {
+        throw new BadRequestException('유효하지 않은 사용자 ID 형식입니다.');
+      }
+
       const [user] = await this.dbService.db
         .select({
           id: schema.users.id,
@@ -52,11 +58,8 @@ export class UsersService {
 
       return user;
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
       throw new InternalServerErrorException(
-        '사용자 정보 조회 중 오류가 발생했습니다.',
+        error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.',
       );
     }
   }
