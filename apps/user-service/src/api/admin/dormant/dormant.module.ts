@@ -9,4 +9,4 @@ import { DormantService } from './dormant.service';
   controllers: [DormantController],
   providers: [DormantService],
 })
-export class DormantModule {}
+export class AdminDormantModule {}
