@@ -650,6 +650,19 @@ export const pointTransactions = pgTable('point_transactions', {
     .notNull(),
 });
 
+export const overdueAccounts = pgTable('overdue_accounts', {
+  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+  overdueCount: integer('overdue_count').notNull().default(1), // 연체 횟수 누적
+  lastFailedAt: timestamp('last_failed_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  status: varchar('status', { length: 20 })
+    .$type<'ACTIVE' | 'SUSPENDED'>()
+    .notNull()
+    .default('ACTIVE'),
+});
+
 // ────────────────────────────────────────────
 // Relations
 // ────────────────────────────────────────────
