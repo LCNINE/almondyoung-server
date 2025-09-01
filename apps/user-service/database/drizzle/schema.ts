@@ -307,10 +307,7 @@ export const userRecentViewsRelations = relations(
 
 export type RecentView = typeof userRecentViews.$inferSelect;
 
-/***
- * business_licenses (사업자등록번호)
- */
-
+//  business_licenses (사업자등록번호)
 export const statusEnum = pgEnum('status', [
   'under_review', // 검토중
   'approved', // 승인됨
