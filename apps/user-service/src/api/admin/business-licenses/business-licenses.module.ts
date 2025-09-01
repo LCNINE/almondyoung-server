@@ -7,4 +7,4 @@ import { BusinessLicensesService } from './business-licenses.service';
   providers: [BusinessLicensesService],
   exports: [BusinessLicensesService],
 })
-export class BusinessLicensesModule {}
+export class AdminBusinessLicensesModule {}

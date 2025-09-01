@@ -9,6 +9,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { userSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
+import { AdminBusinessLicensesModule } from './api/admin/business-licenses/business-licenses.module';
 import { DormantModule } from './api/admin/dormant/dormant.module';
 import { ScopesModule } from './api/admin/scopes/scopes.module';
 import { AuthModule } from './api/auth/auth.module';
@@ -57,6 +58,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     RecentViewsModule,
     FileModule,
     BusinessLicensesModule,
+    AdminBusinessLicensesModule,
   ],
   providers: [
     {

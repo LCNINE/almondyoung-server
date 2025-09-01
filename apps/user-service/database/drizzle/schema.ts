@@ -330,7 +330,6 @@ export const businessLicenses = pgTable(
     representativeName: varchar('representative_name', { length: 100 }), // 대표자명
     status: statusEnum('status').notNull().default('under_review'),
     reviewComment: text('review_comment'), // 검토 코멘트
-    reviewedAt: timestamp('reviewed_at'),
     verifiedAt: timestamp('verified_at'),
     verificationFile: varchar('verification_file', { length: 1024 }), // 증빙 검증 파일 url
     // 부가 정보 저장 가능
