@@ -1,5 +1,12 @@
 import { AuthorizationGuard, RequireScopes } from '@app/roles';
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Param,
+  Post,
+  UseGuards,
+  Delete,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -7,7 +14,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
-import { AssignUserRoleDto, SetRoleDto } from './dto/roles.dto';
+import { SetUserRoleDto } from './dto/roles.dto';
 import { RolesService } from './roles.service';
 
 @ApiTags('Admin/Roles')
@@ -17,23 +24,19 @@ import { RolesService } from './roles.service';
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
-  @ApiOperation({ summary: '역할 설정' })
-  @ApiResponse({ status: 201, description: '역할 설정 성공' })
-  @Post('set-role')
-  @RequireScopes(['master'])
-  async setRole(@Body() body: SetRoleDto): Promise<void> {
-    return await this.rolesService.setRole(
-      body.userId,
-      body.role,
-      body.description,
-    );
-  }
-
   @ApiOperation({ summary: '사용자에게 역할 할당' })
   @ApiResponse({ status: 201, description: '역할 할당 성공' })
-  @Post('assign')
+  @Post()
   @RequireScopes(['master'])
-  async assignUserRole(@Body() body: AssignUserRoleDto): Promise<void> {
-    return await this.rolesService.assignUserRole(body.userId, body.roleId);
+  async assignUserRole(@Body() setUserRoleDto: SetUserRoleDto): Promise<void> {
+    return await this.rolesService.setUserRole(setUserRoleDto);
+  }
+
+  @ApiOperation({ summary: '사용자의 역할 할당 삭제' })
+  @ApiResponse({ status: 201, description: '역할 할당 삭제 성공' })
+  @Delete(':id')
+  @RequireScopes(['master'])
+  async deleteUserRole(@Param('id') id: string): Promise<void> {
+    return await this.rolesService.deleteUserRoleByUserId(id);
   }
 }
