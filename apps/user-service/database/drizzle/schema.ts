@@ -223,6 +223,7 @@ export const userSchema = { users };
 export type UserSchema = typeof userSchema;
 
 export type User = typeof users.$inferSelect;
+export type UserWithoutPassword = Omit<User, 'password'>;
 
 /***
  * shope schema
