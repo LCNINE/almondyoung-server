@@ -2,10 +2,11 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Test Checkout</title>
+    <title>Test Checkout - V2 API</title>
   </head>
+
   <body>
-    <h2>Create Payment Session</h2>
+    <h2>Create Payment Session (V2)</h2>
     <label>Amount: <input id="amount" type="number" value="129000" /></label>
     <label>Currency: <input id="currency" value="KRW" /></label>
     <button id="create">Create Session</button>
@@ -21,7 +22,8 @@
         const amount = Number(document.getElementById('amount').value);
         const currency = document.getElementById('currency').value.trim();
         try {
-          const resp = await fetch(API_BASE + '/payment-sessions', {
+          // ✅ V2 API 사용
+          const resp = await fetch(API_BASE + '/v2/sessions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -41,16 +43,16 @@
             return;
           }
 
-          // 응답에 checkout.url이 포함되어 있다고 가정
-          const checkoutUrl =
-            data.checkout?.url ||
-            API_BASE +
-              '/wallet/checkout/' +
-              data.sessionId +
-              '?returnUrl=' +
-              encodeURIComponent(RETURN_URL);
-
-          location.href = checkoutUrl;
+          // ✅ design.md 스타일: checkout URL 사용
+          if (data.checkout && data.checkout.url) {
+            log('Redirecting to: ' + data.checkout.url);
+            location.href = data.checkout.url;
+          } else {
+            // 폴백: 직접 URL 구성
+            const checkoutUrl = `./checkout-v2.html?sessionId=${data.sessionId}&returnUrl=${encodeURIComponent(RETURN_URL)}`;
+            log('Fallback redirect to: ' + checkoutUrl);
+            location.href = checkoutUrl;
+          }
         } catch (e) {
           alert('Error: ' + e);
         }

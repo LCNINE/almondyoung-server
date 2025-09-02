@@ -7,13 +7,24 @@ import {
   VerificationResult,
   DeactivationResult,
 } from '../ports/payment-method-adapter.port';
+import {
+  PaymentAdapter,
+  AuthorizeRequest,
+  AuthorizeResponse,
+  CaptureRequest,
+  CaptureResponse,
+  RefundRequest,
+  RefundResponse,
+} from '../ports/payment-adapter.port';
 
 /**
  * 토스 카드 어댑터 (예시 구현 - 주석처리 예정)
  * TODO: 실제 토스 API 연동 시 활성화
  */
 @Injectable()
-export class TossCardAdapter implements PaymentMethodAdapterPort {
+export class TossCardAdapter
+  implements PaymentMethodAdapterPort, PaymentAdapter
+{
   private readonly logger = new Logger(TossCardAdapter.name);
 
   // TODO: 실제 구현 시 TossApiService 주입
@@ -139,6 +150,179 @@ export class TossCardAdapter implements PaymentMethodAdapterPort {
     if (cleaned.startsWith('3')) return 'AMEX';
 
     return 'UNKNOWN';
+  }
+
+  // === PaymentAdapter 구현 ===
+
+  async authorize(request: AuthorizeRequest): Promise<AuthorizeResponse> {
+    this.logger.log(
+      `토스 카드 승인 시작: ${request.paymentMethodId}, 금액: ${request.amount}`,
+    );
+
+    try {
+      // Mock 지연
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // TODO: 실제 토스 API 호출
+      /*
+      const cardMethod = await this.getCardMethod(request.paymentMethodId);
+      const authorizeResult = await this.tossApi.authorize({
+        billingKey: cardMethod.billingKey,
+        amount: request.amount,
+        currency: request.currency,
+        orderName: request.metadata?.orderName || '결제',
+      });
+
+      if (authorizeResult.success) {
+        return {
+          success: true,
+          pgTransactionId: authorizeResult.transactionId,
+          metadata: {
+            approvalNumber: authorizeResult.approvalNumber,
+            cardNumber: authorizeResult.maskedCardNumber,
+          }
+        };
+      }
+
+      return {
+        success: false,
+        error: authorizeResult.errorMessage || '카드 승인에 실패했습니다',
+      };
+      */
+
+      // MVP: Mock 응답
+      const pgTransactionId = `toss_auth_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      return {
+        success: true,
+        pgTransactionId,
+        metadata: {
+          approvalNumber: `${Math.floor(Math.random() * 100000000)}`,
+          cardNumber: '**** **** **** 1234',
+          authorizedAt: new Date().toISOString(),
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`토스 카드 승인 실패: ${errorMessage}`);
+
+      return {
+        success: false,
+        error: '카드 승인 처리 중 오류가 발생했습니다',
+      };
+    }
+  }
+
+  async capture(request: CaptureRequest): Promise<CaptureResponse> {
+    this.logger.log(
+      `토스 카드 캡처 시작: ${request.pgTransactionId}, 금액: ${request.amount}`,
+    );
+
+    try {
+      // Mock 지연
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // TODO: 실제 토스 API 호출
+      /*
+      const captureResult = await this.tossApi.capture({
+        transactionId: request.pgTransactionId,
+        amount: request.amount,
+      });
+
+      if (captureResult.success) {
+        return {
+          success: true,
+          pgTransactionId: captureResult.transactionId,
+          metadata: {
+            capturedAt: captureResult.capturedAt,
+          }
+        };
+      }
+
+      return {
+        success: false,
+        error: captureResult.errorMessage || '카드 캡처에 실패했습니다',
+      };
+      */
+
+      // MVP: Mock 응답
+      return {
+        success: true,
+        pgTransactionId: request.pgTransactionId,
+        metadata: {
+          capturedAt: new Date().toISOString(),
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`토스 카드 캡처 실패: ${errorMessage}`);
+
+      return {
+        success: false,
+        error: '카드 캡처 처리 중 오류가 발생했습니다',
+        pgTransactionId: '',
+      };
+    }
+  }
+
+  async refund(request: RefundRequest): Promise<RefundResponse> {
+    this.logger.log(
+      `토스 카드 환불 시작: ${request.pgTransactionId}, 금액: ${request.amount}`,
+    );
+
+    try {
+      // Mock 지연
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // TODO: 실제 토스 API 호출
+      /*
+      const refundResult = await this.tossApi.refund({
+        transactionId: request.pgTransactionId,
+        amount: request.amount,
+        reason: request.reason || '고객 요청',
+      });
+
+      if (refundResult.success) {
+        return {
+          success: true,
+          pgTransactionId: refundResult.refundTransactionId,
+          metadata: {
+            refundedAt: refundResult.refundedAt,
+            reason: request.reason,
+          }
+        };
+      }
+
+      return {
+        success: false,
+        error: refundResult.errorMessage || '카드 환불에 실패했습니다',
+      };
+      */
+
+      // MVP: Mock 응답
+      const refundTxId = `toss_refund_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      return {
+        success: true,
+        pgTransactionId: refundTxId,
+        metadata: {
+          refundedAt: new Date().toISOString(),
+          reason: request.reason || '고객 요청',
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`토스 카드 환불 실패: ${errorMessage}`);
+
+      return {
+        success: false,
+        error: '카드 환불 처리 중 오류가 발생했습니다',
+        pgTransactionId: '',
+      };
+    }
   }
 
   // TODO: 실제 구현 시 사용

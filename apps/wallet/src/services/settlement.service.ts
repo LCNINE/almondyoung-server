@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { and, eq, gte, inArray, lt } from 'drizzle-orm';
-import { BatchCmsService, HmsWithdrawalRequest } from './batch-cms.service';
+import { BNPLService, HmsWithdrawalRequest } from './bnpl.service';
 import { WalletTx } from '../shared/database';
 
 /**
@@ -25,7 +25,7 @@ export class SettlementService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly batchCmsService: BatchCmsService,
+    private readonly bnplService: BNPLService,
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -673,7 +673,7 @@ export class SettlementService {
       ),
     };
 
-    return await this.batchCmsService.requestWithdrawal(req);
+    return await this.bnplService.requestWithdrawal(req);
   }
 
   /**

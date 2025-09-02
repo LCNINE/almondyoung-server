@@ -1,0 +1,386 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment Checkout V2 - 결제</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f9f9f9;
+      }
+      .container {
+        max-width: 700px;
+        margin: 0 auto;
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .payment-section {
+        margin: 20px 0;
+        padding: 20px;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+      }
+      .payment-section.selected {
+        border-color: #007cba;
+        background-color: #f8fcff;
+      }
+      .payment-method {
+        margin: 15px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 6px;
+      }
+      input,
+      button,
+      select {
+        padding: 10px;
+        margin: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      button {
+        background: #007cba;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button:hover {
+        background: #005a8b;
+      }
+      .mixed-payment-btn {
+        background: #28a745;
+        padding: 15px 30px;
+        font-size: 16px;
+        width: 100%;
+      }
+      .mixed-payment-btn:hover {
+        background: #218838;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 4px;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .info {
+        background: #e7f3ff;
+        padding: 15px;
+        border-radius: 6px;
+        border-left: 4px solid #007cba;
+        margin: 20px 0;
+      }
+      .error-info {
+        background: #ffebee;
+        border-left: 4px solid #f44336;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>💳 결제 V2</h2>
+      <p>Session: <code id="sessionId"></code></p>
+
+      <div class="info">
+        <h4>💡 결제 규칙</h4>
+        <ul>
+          <li>✅ <strong>포인트 + 카드</strong> (혼합결제)</li>
+          <li>✅ <strong>포인트 + BNPL</strong> (혼합결제)</li>
+          <li>❌ <strong>카드 + BNPL</strong> (불가능)</li>
+          <li>
+            ✅ <strong>단일 결제수단만</strong> (카드 또는 BNPL 또는 포인트만)
+          </li>
+        </ul>
+        <p>
+          <small
+            >📍 세션 없이 이 페이지에 직접 접근하시면 결제가 불가합니다.
+            <a href="./checkout.html">결제 세션 생성하기</a></small
+          >
+        </p>
+      </div>
+
+      <!-- 결제수단 선택 -->
+      <div class="payment-section">
+        <h3>🏦 주결제수단 선택</h3>
+        <div class="payment-method">
+          <input
+            type="radio"
+            id="cardPayment"
+            name="paymentType"
+            value="card"
+          />
+          <label for="cardPayment">💳 카드 결제</label>
+          <div id="cardDetails" style="display: none; margin-top: 10px">
+            <label
+              >카드 결제수단 ID: <input id="cardMethodId" value="0MTMQKRVMX91F"
+            /></label>
+            <label
+              >금액: <input id="cardAmount" type="number" value="100000"
+            /></label>
+          </div>
+        </div>
+
+        <div class="payment-method">
+          <input
+            type="radio"
+            id="bnplPayment"
+            name="paymentType"
+            value="bnpl"
+          />
+          <label for="bnplPayment">📊 BNPL 후불결제</label>
+          <div id="bnplDetails" style="display: none; margin-top: 10px">
+            <label
+              >BNPL 결제수단 ID: <input id="bnplMethodId" value="0MTNE6EY1ZQWK"
+            /></label>
+            <label
+              >금액: <input id="bnplAmount" type="number" value="80000"
+            /></label>
+          </div>
+        </div>
+
+        <div class="payment-method">
+          <input
+            type="radio"
+            id="pointsOnly"
+            name="paymentType"
+            value="points"
+          />
+          <label for="pointsOnly">🪙 포인트만 사용</label>
+        </div>
+      </div>
+
+      <!-- 포인트 섹션 -->
+      <div class="payment-section">
+        <h3>🪙 포인트 사용 (선택사항)</h3>
+        <div class="payment-method">
+          <label>
+            <input type="checkbox" id="usePoints" />
+            포인트 사용하기
+          </label>
+          <div id="pointDetails" style="display: none; margin-top: 10px">
+            <label
+              >사용할 포인트:
+              <input id="pointAmount" type="number" value="20000"
+            /></label>
+          </div>
+        </div>
+      </div>
+
+      <button id="processPayment" class="mixed-payment-btn">
+        🚀 결제 실행
+      </button>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      const API_BASE = 'http://localhost:5000';
+      const params = new URLSearchParams(location.search);
+      const sessionId = params.get('sessionId');
+      const returnUrl = params.get('returnUrl');
+
+      // ✅ log 함수 먼저 정의
+      const log = (m) => {
+        document.getElementById('log').textContent += m + '\n';
+        console.log(m);
+      };
+
+      // ✅ sessionId 검증 및 로깅 개선
+      if (!sessionId) {
+        log('⚠️ 결제 세션이 없습니다. checkout.html에서 세션을 생성하세요.');
+        document.getElementById('sessionId').textContent = '❌ 세션 없음';
+
+        // 결제 버튼만 비활성화
+        const paymentButton = document.getElementById('processPayment');
+        paymentButton.disabled = true;
+        paymentButton.style.opacity = '0.5';
+        paymentButton.textContent = '❌ 세션 없음 - 결제 불가';
+      } else {
+        log('✅ 결제 세션 확인됨: ' + sessionId);
+        document.getElementById('sessionId').textContent = sessionId;
+      }
+
+      // 라디오 버튼 이벤트 처리
+      document
+        .querySelectorAll('input[name="paymentType"]')
+        .forEach((radio) => {
+          radio.addEventListener('change', function () {
+            // 모든 세부사항 숨기기
+            document.getElementById('cardDetails').style.display = 'none';
+            document.getElementById('bnplDetails').style.display = 'none';
+
+            // 선택된 것만 보이기
+            if (this.value === 'card') {
+              document.getElementById('cardDetails').style.display = 'block';
+            } else if (this.value === 'bnpl') {
+              document.getElementById('bnplDetails').style.display = 'block';
+            }
+
+            // 포인트만 선택시 포인트 체크박스 자동 활성화
+            if (this.value === 'points') {
+              document.getElementById('usePoints').checked = true;
+              document.getElementById('pointDetails').style.display = 'block';
+            }
+          });
+        });
+
+      // 포인트 체크박스 이벤트 처리
+      document
+        .getElementById('usePoints')
+        .addEventListener('change', function () {
+          document.getElementById('pointDetails').style.display = this.checked
+            ? 'block'
+            : 'none';
+        });
+
+      // 기본값 설정
+      document.getElementById('cardPayment').checked = true;
+      document.getElementById('cardDetails').style.display = 'block';
+
+      // ✅ 결제 버튼 이벤트 (sessionId 검증 포함)
+      document.getElementById('processPayment').onclick = async () => {
+        // sessionId가 없으면 경고 후 중단
+        if (!sessionId) {
+          alert('결제 세션이 없습니다. checkout.html에서 세션을 생성해주세요.');
+          return;
+        }
+        const paymentType = document.querySelector(
+          'input[name="paymentType"]:checked',
+        )?.value;
+        const usePoints = document.getElementById('usePoints').checked;
+        const pointAmount = usePoints
+          ? Number(document.getElementById('pointAmount').value) || 0
+          : 0;
+
+        if (!paymentType) {
+          alert('결제수단을 선택하세요');
+          return;
+        }
+
+        // 🎯 혼합결제 검증
+        let paymentMethods = [];
+        let paymentMethodSelected = false;
+
+        if (paymentType === 'card') {
+          const cardMethodId = document
+            .getElementById('cardMethodId')
+            .value.trim();
+          const cardAmount =
+            Number(document.getElementById('cardAmount').value) || 0;
+          if (cardMethodId && cardAmount > 0) {
+            paymentMethods.push({
+              paymentMethodId: cardMethodId,
+              amount: cardAmount,
+            });
+            paymentMethodSelected = true;
+          }
+        } else if (paymentType === 'bnpl') {
+          const bnplMethodId = document
+            .getElementById('bnplMethodId')
+            .value.trim();
+          const bnplAmount =
+            Number(document.getElementById('bnplAmount').value) || 0;
+          if (bnplMethodId && bnplAmount > 0) {
+            paymentMethods.push({
+              paymentMethodId: bnplMethodId,
+              amount: bnplAmount,
+            });
+            paymentMethodSelected = true;
+          }
+        }
+
+        // 포인트만 사용하는 경우
+        if (
+          paymentType === 'points' &&
+          !paymentMethodSelected &&
+          pointAmount > 0
+        ) {
+          // 포인트만 사용: paymentMethods는 빈 배열
+          paymentMethods = [];
+        } else if (!paymentMethodSelected && pointAmount === 0) {
+          alert('최소 하나의 결제수단이나 포인트를 선택하세요');
+          return;
+        }
+
+        try {
+          log('🚀 결제 시작...');
+          log(`결제 타입: ${paymentType}, 포인트: ${pointAmount}원`);
+
+          // ✅ 디버깅: 요청 전 상태 확인
+          log(`SessionId: ${sessionId}`);
+          log(`API Base: ${API_BASE}`);
+
+          const requestBody = {
+            sessionId,
+            paymentMethods,
+            usePoints: pointAmount > 0 ? pointAmount : undefined,
+            metadata: { ui: 'checkout-v2', paymentType, returnUrl },
+          };
+
+          log('📤 API 요청 데이터: ' + JSON.stringify(requestBody, null, 2));
+          log('📡 API 요청 시작...');
+
+          const resp = await fetch(API_BASE + '/v2/payments/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': 'idem_mixed_' + Date.now(),
+            },
+            body: JSON.stringify(requestBody),
+          });
+
+          const data = await resp.json();
+          log('📥 API 응답 수신: ' + JSON.stringify(data, null, 2));
+
+          if (resp.ok) {
+            // 결과 분석
+            const immediateCount = data.results?.immediate?.length || 0;
+            const deferredCount = data.results?.deferred?.length || 0;
+            const pointsUsed = data.results?.points?.amount || 0;
+
+            // 실제 혼합결제 여부 확인
+            const isMixedPayment =
+              (immediateCount > 0 || deferredCount > 0) && pointsUsed > 0;
+            let resultMessage = isMixedPayment
+              ? '💝 혼합결제 완료!\n\n'
+              : '💝 결제 완료!\n\n';
+            if (immediateCount > 0)
+              resultMessage += `✅ 즉시결제(카드): ${immediateCount}건\n`;
+            if (deferredCount > 0)
+              resultMessage += `📊 후불결제(BNPL): ${deferredCount}건 (승인완료, 스케줄러가 자동출금)\n`;
+            if (pointsUsed > 0)
+              resultMessage += `🪙 포인트: ${pointsUsed}원 차감\n`;
+
+            alert(resultMessage);
+
+            // 원래 페이지로 리다이렉트
+            if (returnUrl) {
+              const redirectParams = new URLSearchParams({
+                paymentId: data.paymentId,
+                sessionId: sessionId,
+                status: 'completed',
+                paymentType: paymentType,
+              });
+              location.href =
+                returnUrl +
+                (returnUrl.includes('?') ? '&' : '?') +
+                redirectParams.toString();
+            }
+          } else {
+            log('❌ 결제 실패: ' + data.message);
+            alert('❌ 결제 실패: ' + data.message);
+          }
+        } catch (e) {
+          log('💥 JavaScript 에러: ' + e);
+          log('💥 에러 스택: ' + (e.stack || 'No stack trace'));
+          console.error('결제 처리 에러:', e);
+          alert('에러 발생: ' + e.message);
+        }
+      };
+    </script>
+  </body>
+</html>

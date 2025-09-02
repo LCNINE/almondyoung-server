@@ -15,9 +15,7 @@ import {
 } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as crypto from 'node:crypto';
-
 import { CreatePaymentSessionDto } from '../shared/dtos/create-payment-session.dto';
-
 import * as schema from '../shared/database/schema';
 import { DbService } from '@app/db';
 export interface CreatePaymentSessionResponse {
@@ -37,8 +35,28 @@ export interface CreatePaymentSessionResponse {
 export class PaymentSessionsService {
   private readonly logger = new Logger(PaymentSessionsService.name);
   constructor(private readonly dbService: DbService<typeof schema>) {}
+  // createSessionV2 제거 - 불필요한 중복이었음
+  // 기존 createSession이 더 우수함 (멱등성, 이벤트 적재, 트랜잭션 안전성)
+
   /**
-   * 결제 세션 생성
+   * 결제 세션 조회
+   */
+  async getSession(sessionId: string) {
+    const [session] = await this.dbService.db
+      .select()
+      .from(schema.paymentSessions)
+      .where(eq(schema.paymentSessions.id, sessionId))
+      .limit(1);
+
+    if (!session) {
+      throw new NotFoundException('결제 세션을 찾을 수 없습니다');
+    }
+
+    return session;
+  }
+
+  /**
+   * 결제 세션 생성 (기존)
    * @param dto CreatePaymentSessionDto
    * @param idemKey Idempotency-Key 헤더
    * @returns { sessionId, status, checkout, metadata }

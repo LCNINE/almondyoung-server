@@ -426,7 +426,10 @@ export const paymentSessions = pgTable(
 
     // 추가 정보는 metadata로 (JSON string)
     metadata: text('metadata'),
-
+    refundedAmount: numeric('refunded_amount', { precision: 19, scale: 4 })
+    .$type<number>()
+    .notNull()
+    .default(0),
     // 타임스탬프
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),

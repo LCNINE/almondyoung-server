@@ -6,7 +6,10 @@ import {
   Body,
   Param,
   BadRequestException,
+  NotFoundException,
+  InternalServerErrorException,
   Req,
+  Logger,
 } from '@nestjs/common';
 
 import { FastifyRequest } from 'fastify';
@@ -39,10 +42,18 @@ import {
   PaymentMethodResponseDto,
 } from '../shared/dtos/bnpl/submit-consent.dto';
 import { BNPLService, type UploadedFileInfo } from '../services/bnpl.service';
+import {
+  BnplMemberNotFoundError,
+  BnplMemberAlreadyExistsError,
+  BnplAccountNotFoundError,
+  HmsMemberCreationFailedError,
+} from '../shared/errors/payment.errors';
 
 @ApiTags('BNPL 후불결제')
 @Controller('bnpl')
 export class BNPLController {
+  private readonly logger = new Logger(BNPLController.name);
+
   constructor(private readonly bnplService: BNPLService) {}
 
   @Post('register')
@@ -61,7 +72,11 @@ export class BNPLController {
     description: '잘못된 요청 데이터',
   })
   async registerMember(@Body() dto: CreateBNPLMethodDto) {
-    return await this.bnplService.registerMember(dto);
+    try {
+      return await this.bnplService.registerMember(dto);
+    } catch (error) {
+      this.handleBnplError(error);
+    }
   }
 
   @Post('consent')
@@ -146,12 +161,32 @@ export class BNPLController {
         throw new BadRequestException('consentFile이 필요합니다');
       }
 
+      // 파일 타입 검증 (Service에서 Controller로 이동)
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+      if (!allowedTypes.includes(fileInfo.mimetype)) {
+        throw new BadRequestException(
+          'PDF 또는 이미지 파일만 업로드 가능합니다',
+        );
+      }
+
       return await this.bnplService.submitConsent(memberId, fileInfo);
     } catch (error) {
+      // 안전한 에러 로깅
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      this.logger.error('출금동의서 제출 실패:', {
+        message: errorMessage,
+        stack: errorStack,
+      });
+
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException('파일 처리 중 오류가 발생했습니다');
+
+      // 커스텀 BNPL 에러 처리
+      this.handleBnplError(error);
     }
   }
 
@@ -177,7 +212,11 @@ export class BNPLController {
   async getMemberStatus(
     @Param('memberId') memberId: string,
   ): Promise<MemberStatusResponseDto> {
-    return await this.bnplService.getMemberStatus(memberId);
+    try {
+      return await this.bnplService.getMemberStatus(memberId);
+    } catch (error) {
+      this.handleBnplError(error);
+    }
   }
 
   @Get('account/:userId')
@@ -211,6 +250,39 @@ export class BNPLController {
     description: 'BNPL 계정을 찾을 수 없음',
   })
   async getBNPLAccount(@Param('userId') userId: string) {
-    return await this.bnplService.getBNPLAccount(userId);
+    try {
+      return await this.bnplService.getBNPLAccount(userId);
+    } catch (error) {
+      this.handleBnplError(error);
+    }
+  }
+
+  /**
+   * BNPL Service에서 던진 커스텀 에러를 HTTP 상태 코드로 매핑
+   */
+  private handleBnplError(error: unknown): never {
+    this.logger.error('BNPL 에러 처리:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      name: error instanceof Error ? error.constructor.name : 'Unknown',
+    });
+
+    // 커스텀 비즈니스 에러들을 HTTP 상태 코드로 매핑
+    if (error instanceof BnplMemberNotFoundError) {
+      throw new NotFoundException(error.message);
+    }
+    if (error instanceof BnplAccountNotFoundError) {
+      throw new NotFoundException(error.message);
+    }
+    if (error instanceof BnplMemberAlreadyExistsError) {
+      throw new BadRequestException(error.message);
+    }
+    if (error instanceof HmsMemberCreationFailedError) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    // 예상치 못한 에러
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.logger.error(`예상치 못한 BNPL 에러: ${errorMessage}`);
+    throw new InternalServerErrorException('내부 서버 오류가 발생했습니다');
   }
 }
