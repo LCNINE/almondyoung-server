@@ -6,6 +6,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  serial,
   text,
   timestamp,
   unique,
@@ -33,6 +34,32 @@ const timestampColumns = {
     .default(sql`now()`)
     .notNull(),
 };
+
+/**
+ *  유저 동의 항목 테이블
+ */
+export const userConsents = pgTable('user_consents', {
+  id: serial('id').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id)
+    .unique(),
+  // 필수 동의 항목들
+  isOver14: boolean('is_over_14').notNull().default(false), // 만 14세 이상
+  termsOfService: boolean('terms_of_service').notNull().default(false), // 서비스 이용약관 동의
+  electronicTransaction: boolean('electronic_transaction')
+    .notNull()
+    .default(false), // 전자금융거래 이용약관 동의
+  privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
+  thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
+  // 선택 동의 항목들
+  marketingConsent: boolean('marketing_consent').default(false), // 마케팅 정보 수신 동의 (광고성 정보 수신 동의)
+  emailConsent: boolean('email_consent').default(false), // 이메일 수신 동의
+  smsConsent: boolean('sms_consent').default(false), // SMS 수신 동의
+  pushConsent: boolean('push_consent').default(false), // 앱 푸시 알림 수신 동의
+  consentedAt: timestamp('consented_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 /***
  * user schema
@@ -367,3 +394,20 @@ export const shopsRelations = relations(shops, ({ many }) => ({
 }));
 
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
+
+export const userServiceSchema = {
+  users,
+  roles,
+  scopes,
+  userRoleAssignments,
+  roleScopes,
+  userIdentities,
+  businessLicenses,
+  shops,
+  userConsents,
+  tokens,
+  tokenTypeEnum,
+  profiles,
+};
+
+export type UserServiceSchema = typeof userServiceSchema;

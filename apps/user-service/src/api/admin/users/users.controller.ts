@@ -1,15 +1,15 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
 import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { UserService } from './user.service';
+import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
+import { UsersService } from './users.service';
 
 @ApiTags('사용자 관리')
 @ApiBearerAuth('access-token')
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, AuthorizationGuard)
-export class UserController {
-  constructor(private readonly userService: UserService) {}
+export class UsersController {
+  constructor(private readonly usersService: UsersService) {}
 
   @Get()
   @RequireScopes(['master'])
@@ -35,6 +35,6 @@ export class UserController {
       order: query.order,
     };
 
-    return this.userService.getUsers(filters);
+    return this.usersService.getUsers(filters);
   }
 }

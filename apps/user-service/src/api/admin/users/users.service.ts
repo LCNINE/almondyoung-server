@@ -1,9 +1,10 @@
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 
-export class UserService {
+@Injectable()
+export class UsersService {
   constructor(
     @InjectDb()
     private readonly dbService: DbService<schema.User>,

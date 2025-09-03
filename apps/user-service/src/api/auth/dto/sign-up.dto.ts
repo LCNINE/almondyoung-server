@@ -1,18 +1,95 @@
+import { PartialType } from '@nestjs/mapped-types';
+import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Length,
   Matches,
   MaxLength,
   MinLength,
-  IsOptional,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 import { AddressDto } from '../../../commons/dto/address.dto';
-import { PartialType } from '@nestjs/mapped-types';
+import { IConsent } from '../../consents/types/consent.type';
 
 // 기본 회원가입 DTO (공통 필드)
-export class BaseSignUpDto extends PartialType(AddressDto) {
+export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
+  @ApiProperty({
+    description: '만 14세 이상 여부',
+    example: true,
+    required: true,
+  })
+  @IsBoolean()
+  isOver14: boolean;
+
+  @ApiProperty({
+    description: '서비스 이용약관 동의',
+    example: true,
+    required: true,
+  })
+  @IsBoolean()
+  termsOfService: boolean;
+
+  @ApiProperty({
+    description: '전자금융거래 이용약관 동의',
+    example: true,
+    required: true,
+  })
+  @IsBoolean()
+  electronicTransaction: boolean;
+
+  @ApiProperty({
+    description: '개인정보 수집 및 이용 동의',
+    example: true,
+    required: true,
+  })
+  @IsBoolean()
+  privacyPolicy: boolean;
+
+  @ApiProperty({
+    description: '개인정보 제3자 제공 동의',
+    example: true,
+    required: true,
+  })
+  @IsBoolean()
+  thirdPartySharing: boolean;
+
+  @ApiProperty({
+    description: '마케팅 정보 수신 동의 (광고성 정보 수신 동의)',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsBoolean()
+  marketingConsent?: boolean;
+
+  @ApiProperty({
+    description: '이메일 수신 동의',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsBoolean()
+  emailConsent?: boolean;
+
+  @ApiProperty({
+    description: 'SMS 수신 동의',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsBoolean()
+  smsConsent?: boolean;
+
+  @ApiProperty({
+    description: '앱 푸시 알림 수신 동의',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsBoolean()
+  pushConsent?: boolean;
   @ApiProperty({
     description: '이메일',
     example: 'user@example.com',
@@ -50,8 +127,8 @@ export class LocalSignUpDto extends BaseSignUpDto {
   })
   @IsString({ message: 'ID는 문자열이어야 합니다.' })
   @Length(4, 20, { message: 'ID는 최소 4자 이상, 최대 20자 이하여야 합니다.' })
-  @Matches(/^[a-zA-Z0-9._]+$/, {
-    message: 'ID는 영문 대소문자, 숫자, ., _ 만 사용할 수 있습니다.',
+  @Matches(/^[a-z0-9]+$/, {
+    message: 'ID는 영문 소문자와 숫자만 사용할 수 있습니다.',
   })
   loginId: string;
 

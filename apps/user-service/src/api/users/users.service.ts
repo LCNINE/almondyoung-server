@@ -11,6 +11,7 @@ import {
 import { and, eq, isNull } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { AddressDto } from '../../commons/dto/address.dto';
+import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
@@ -28,6 +29,9 @@ export class UsersService {
     @InjectEventPublisher()
     private readonly eventPublisher: EventPublisherService<UserEvents>,
   ) {}
+  private getClient(tx?: DbTransaction) {
+    return tx ?? this.dbService.db;
+  }
 
   // 기본 사용자 정보를 가져오는 메서드
   private async getUserBaseInfo(userId: string) {
@@ -129,9 +133,13 @@ export class UsersService {
   }
 
   // 이메일로 사용자 찾기
-  async findUserByEmail(email: string): Promise<schema.User | null> {
+  async findUserByEmail(
+    email: string,
+    tx?: DbTransaction,
+  ): Promise<schema.User | null> {
+    const client = this.getClient(tx);
     try {
-      const [users] = await this.dbService.db
+      const [users] = await client
         .select()
         .from(schema.users)
         .where(eq(schema.users.email, email))
@@ -184,9 +192,15 @@ export class UsersService {
     return this.getUserBaseInfo(id);
   }
 
-  // 사용자 정보 업데이트
-  async update(userId: string, updateUserDto: UpdateUserDto): Promise<void> {
+  // 사용자 프로필 정보 업데이트
+  async update(
+    userId: string,
+    updateUserDto: UpdateUserDto,
+    tx?: DbTransaction,
+  ): Promise<void> {
     const { username, ...address } = updateUserDto;
+
+    const client = this.getClient(tx);
 
     if (!username && Object.keys(address).length === 0) {
       throw new BadRequestException('업데이트할 데이터가 없습니다.');
@@ -194,18 +208,18 @@ export class UsersService {
 
     try {
       if (username) {
-        await this.dbService.db
+        await client
           .update(schema.users)
           .set({ username })
           .where(eq(schema.users.id, userId));
       }
 
       if (Object.keys(address).length > 0) {
-        await this.dbService.db
+        await client
           .insert(schema.profiles)
           .values({
             userId,
-            address,
+            ...updateUserDto,
           })
           .onConflictDoUpdate({
             target: schema.profiles.userId,
@@ -215,10 +229,13 @@ export class UsersService {
           });
       }
 
-      await this.eventPublisher.publishEvent('USER_UPDATED', {
-        userId,
-        ...updateUserDto,
-      });
+      // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
+      if (!tx) {
+        await this.eventPublisher.publishEvent('USER_UPDATED', {
+          userId,
+          ...updateUserDto,
+        });
+      }
     } catch (error) {
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',
@@ -293,10 +310,16 @@ export class UsersService {
   }
 
   // 사용자에게 역할을 할당해줍니다.
-  async assignUserRole(userId: string, roleId: string): Promise<void> {
+  async assignUserRole(
+    userId: string,
+    roleId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+
     this.logger.debug('사용자-역할 할당 시작');
 
-    const [assignment] = await this.dbService.db
+    const [assignment] = await client
       .insert(schema.userRoleAssignments)
       .values({
         userId: userId,
