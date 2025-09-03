@@ -180,7 +180,10 @@ export class AuthController {
   @Get('kakao/callback')
   @UseGuards(AuthGuard('kakao'))
   @Public()
-  async kakaoCallback(@Req() req: any, @Res() res: FastifyReply) {
+  async kakaoCallback(
+    @Req() req: any,
+    @Res() res: FastifyReply,
+  ): Promise<void | { redirectUrl: string }> {
     const kakaoUser = req.user as {
       name: string;
       email: string;
