@@ -14,6 +14,7 @@ const SigninWidget = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     // 저장된 아이디가 있다면 불러오기
@@ -27,7 +28,7 @@ const SigninWidget = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
+    setIsLoading(true);
     try {
       // 아이디 저장 처리
       if (rememberMe) {
@@ -78,6 +79,8 @@ const SigninWidget = () => {
     } catch (error: any) {
       setError(error.message || '로그인 중 오류가 발생했습니다.');
       console.error('Login error:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -145,8 +148,13 @@ const SigninWidget = () => {
                 </Label>
               </div>
 
-              <Button type="submit" variant="primary" className="w-full mt-4">
-                로그인
+              <Button
+                type="submit"
+                variant="primary"
+                className="w-full mt-4"
+                disabled={isLoading}
+              >
+                {isLoading ? '로그인 중...' : '로그인'}
               </Button>
             </form>
           </Drawer.Body>
