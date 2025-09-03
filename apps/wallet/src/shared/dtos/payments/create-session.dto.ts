@@ -22,4 +22,15 @@ export class CreateSessionResponseDto {
 
   @ApiProperty({ example: '2024-01-15T10:00:00.000Z' })
   createdAt!: string;
+
+  @ApiProperty({
+    example: {
+      url: 'http://localhost:3000/checkout-v2.html?sessionId=ps_session_xyz789&returnUrl=http://localhost:3000/redirect.html',
+      phase: 'CHECKOUT',
+    },
+  })
+  checkout!: {
+    url: string;
+    phase: string;
+  };
 }

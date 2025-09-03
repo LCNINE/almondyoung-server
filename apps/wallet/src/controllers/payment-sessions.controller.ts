@@ -96,6 +96,7 @@ export class PaymentSessionsController {
         // ✅ design.md 기반 checkout URL 추가
         checkout: {
           url: checkoutUrl,
+          phase: 'CHECKOUT',
         },
         phase: session.status, // design.md 호환성
       };
@@ -153,21 +154,22 @@ export class PaymentSessionsController {
     @Param('sessionId') sessionId: string,
   ): Promise<CreateSessionResponseDto> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const sessionResult = await this.sessionService.getSession(sessionId);
 
-      // getSession은 NotFoundException을 던지므로 여기 도달하면 항상 존재
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-      const session = sessionResult as any; // PaymentSession 타입으로 단언
+      const session = sessionResult; // PaymentSession 타입으로 단언
 
       return {
         sessionId: session.id,
         userId: session.userId,
-        amount: session.amount,
+        amount: Number(session.amount),
         currency: session.currency,
         status: session.status,
         expiresAt: session.expiresAt.toISOString(),
         createdAt: session.createdAt.toISOString(),
+        checkout: {
+          url: `http://localhost:3000/checkout-v2.html?sessionId=${session.id}&returnUrl=http://localhost:3000/redirect.html`,
+          phase: 'CHECKOUT',
+        },
       };
     } catch (error) {
       this.logger.error(`결제 세션 조회 실패: ${sessionId}`, error);

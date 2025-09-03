@@ -341,4 +341,105 @@ export class TestSetupController {
       );
     }
   }
+
+  /**
+   * 🧪 환불 테스트: 환불 요청 → 승인 → 실행 플로우
+   */
+  @Post('refund-test/:sessionId')
+  @ApiOperation({
+    summary: '🧪 환불 테스트',
+    description:
+      '결제 완료된 세션에 대해 환불 요청 → 승인 → 실행 플로우를 테스트합니다.',
+  })
+  @ApiParam({ name: 'sessionId', description: '환불할 결제 세션 ID' })
+  async testRefundFlow(@Param('sessionId') sessionId: string) {
+    try {
+      this.logger.log(`🧪 환불 테스트 시작: ${sessionId}`);
+
+      // 1단계: 환불 요청 접수
+      const refundRequest = {
+        paymentSessionId: sessionId,
+        amount: 30000, // 부분 환불 테스트
+        reason: '테스트 환불',
+        metadata: { testFlow: 'automated' },
+      };
+
+      const requestResult = await fetch('http://localhost:5000/v2/refunds', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `refund_test_${Date.now()}`,
+        },
+        body: JSON.stringify(refundRequest),
+      });
+
+      if (!requestResult.ok) {
+        const errorText = await requestResult.text();
+        throw new Error(`환불 요청 실패: ${errorText}`);
+      }
+
+      const refundData = await requestResult.json();
+      const refundId = refundData.refundId;
+
+      this.logger.log(`✅ 1단계 완료 - 환불 요청: ${refundId}`);
+
+      // 2단계: 환불 승인 및 실행
+      const approvalRequest = {
+        approvalInfo: {
+          orderId: 'test_order_123',
+          orderLineIds: ['line_1', 'line_2'],
+          approvedBy: 'test_admin',
+          approvedAt: new Date().toISOString(),
+          finalAmount: 30000,
+        },
+      };
+
+      const approvalResult = await fetch(
+        `http://localhost:5000/v2/refunds/${refundId}/approve`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `refund_approve_${Date.now()}`,
+          },
+          body: JSON.stringify(approvalRequest),
+        },
+      );
+
+      if (!approvalResult.ok) {
+        const errorText = await approvalResult.text();
+        throw new Error(`환불 승인 실패: ${errorText}`);
+      }
+
+      const finalResult = await approvalResult.json();
+
+      this.logger.log(`✅ 2단계 완료 - 환불 승인 및 실행: ${refundId}`);
+
+      return {
+        success: true,
+        message: '🎉 환불 테스트 완료!',
+        results: {
+          step1_request: refundData,
+          step2_approval: finalResult,
+        },
+        summary: {
+          refundId: refundId,
+          sessionId: sessionId,
+          requestedAmount: 30000,
+          finalStatus: finalResult.status,
+          pointsRestored: finalResult.metadata?.pointsRestored || 0,
+        },
+      };
+    } catch (error) {
+      this.logger.error('환불 테스트 실패:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+
+      return {
+        success: false,
+        error: '환불 테스트 실패',
+        message: errorMessage,
+      };
+    }
+  }
 }

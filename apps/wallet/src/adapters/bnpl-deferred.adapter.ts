@@ -1,14 +1,14 @@
 // adapters/bnpl-deferred.adapter.ts
 import { Injectable, Logger } from '@nestjs/common';
 import {
-  DeferredPaymentAdapter,
-  DeferredAuthorizeRequest,
-  DeferredAuthorizeResponse,
-  DeferredCaptureRequest,
-  DeferredCaptureResponse,
-  DeferredRefundRequest,
-  DeferredRefundResponse,
-} from '../ports/deferred-payment.port';
+  PaymentAdapter,
+  AuthorizeRequest,
+  AuthorizeResponse,
+  CaptureRequest,
+  CaptureResponse,
+  RefundRequest,
+  RefundResponse,
+} from '../ports/payment-adapter.port';
 import { BNPLService } from '../services/bnpl.service';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
@@ -21,7 +21,7 @@ import { ulid } from 'ulid';
  * - capture: 실제 HMS 출금 요청 실행
  */
 @Injectable()
-export class BnplDeferredAdapter implements DeferredPaymentAdapter {
+export class BnplDeferredAdapter implements PaymentAdapter {
   private readonly logger = new Logger(BnplDeferredAdapter.name);
 
   constructor(
@@ -29,9 +29,7 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
     private readonly db: DbService<typeof schema>,
   ) {}
 
-  async authorize(
-    request: DeferredAuthorizeRequest,
-  ): Promise<DeferredAuthorizeResponse> {
+  async authorize(request: AuthorizeRequest): Promise<AuthorizeResponse> {
     this.logger.log(
       `BNPL 내부 승인: ${request.paymentMethodId}, 금액: ${request.amount}`,
     );
@@ -77,17 +75,15 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
 
         // 3. BNPL 트랜잭션 생성 (내부 승인만)
         const authorizationId = ulid();
-        const [bnplTransaction] = await tx
-          .insert(schema.bnplTransaction)
-          .values({
-            id: authorizationId,
-            bnplAccountId: bnplAccount.id,
-            paymentSessionId: request.metadata?.paymentSessionId || 'unknown',
-            transactionType: 'DEBIT',
-            status: 'AUTHORIZED', // 내부적으로만 승인
-            amount: request.amount,
-          })
-          .returning();
+        await tx.insert(schema.bnplTransaction).values({
+          id: authorizationId,
+          bnplAccountId: bnplAccount.id,
+          paymentSessionId:
+            (request.metadata?.paymentSessionId as string) || 'unknown',
+          transactionType: 'DEBIT',
+          status: 'AUTHORIZED', // 내부적으로만 승인
+          amount: request.amount,
+        });
 
         // 4. 잔여 한도 차감
         const newLimit = bnplAccount.approvedLimit - request.amount;
@@ -105,7 +101,9 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
 
         return {
           success: true,
+          paymentType: 'DEFERRED',
           authorizationId,
+          pgTransactionId: authorizationId, // BNPL의 경우 내부 승인 ID
           metadata: {
             bnplAccountId: bnplAccount.id,
             previousLimit: bnplAccount.approvedLimit,
@@ -128,10 +126,8 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
     }
   }
 
-  async capture(
-    request: DeferredCaptureRequest,
-  ): Promise<DeferredCaptureResponse> {
-    this.logger.log(`BNPL 출금 실행: ${request.authorizationId}`);
+  async capture(request: CaptureRequest): Promise<CaptureResponse> {
+    this.logger.log(`BNPL 출금 실행: ${request.pgTransactionId}`);
 
     try {
       return await this.db.db.transaction(async (tx) => {
@@ -139,13 +135,13 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
         const [bnplTransaction] = await tx
           .select()
           .from(schema.bnplTransaction)
-          .where(eq(schema.bnplTransaction.id, request.authorizationId))
+          .where(eq(schema.bnplTransaction.id, request.pgTransactionId))
           .limit(1);
 
         if (!bnplTransaction) {
           return {
             success: false,
-            transactionId: '',
+            pgTransactionId: '',
             error: 'BNPL 승인 트랜잭션을 찾을 수 없습니다',
           };
         }
@@ -153,7 +149,7 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
         if (bnplTransaction.status !== 'AUTHORIZED') {
           return {
             success: false,
-            transactionId: '',
+            pgTransactionId: '',
             error: '승인되지 않은 트랜잭션입니다',
           };
         }
@@ -163,17 +159,17 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
           memberId: bnplTransaction.bnplAccountId,
           amount: request.amount,
           paymentDate: new Date().toISOString().split('T')[0],
-          invoiceId: request.authorizationId,
+          invoiceId: request.pgTransactionId,
         });
 
         if (!hmsResult.success) {
           this.logger.error(
-            `HMS 출금 요청 실패: ${request.authorizationId}`,
+            `HMS 출금 요청 실패: ${request.pgTransactionId}`,
             hmsResult.error,
           );
           return {
             success: false,
-            transactionId: '',
+            pgTransactionId: '',
             error: hmsResult.error || 'HMS 출금 요청에 실패했습니다',
           };
         }
@@ -184,13 +180,13 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
           .set({
             status: 'CAPTURED',
           })
-          .where(eq(schema.bnplTransaction.id, request.authorizationId));
+          .where(eq(schema.bnplTransaction.id, request.pgTransactionId));
 
         return {
           success: true,
-          transactionId: hmsResult.transactionId,
+          pgTransactionId: hmsResult.transactionId,
           metadata: {
-            authorizationId: request.authorizationId,
+            authorizationId: request.pgTransactionId,
             hmsTransactionId: hmsResult.transactionId,
             capturedAt: new Date().toISOString(),
             hmsStatus: hmsResult.status,
@@ -204,48 +200,55 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
 
       return {
         success: false,
-        transactionId: '',
+        pgTransactionId: '',
         error: 'BNPL 출금 처리 중 오류가 발생했습니다',
       };
     }
   }
 
-  async refund(
-    request: DeferredRefundRequest,
-  ): Promise<DeferredRefundResponse> {
+  async refund(request: RefundRequest): Promise<RefundResponse> {
     this.logger.log(
-      `BNPL 환불: ${request.transactionId}, 금액: ${request.amount}`,
+      `BNPL 환불: ${request.pgTransactionId}, 금액: ${request.amount}`,
     );
 
     try {
       return await this.db.db.transaction(async (tx) => {
-        // 1. HMS 환불 요청 (기록만)
+        // 1. 원본 트랜잭션 조회
+        const [originalTransaction] = await tx
+          .select()
+          .from(schema.bnplTransaction)
+          .where(eq(schema.bnplTransaction.id, request.pgTransactionId))
+          .limit(1);
+
+        if (!originalTransaction) {
+          throw new Error('원본 BNPL 트랜잭션을 찾을 수 없습니다');
+        }
+
+        // 2. HMS 환불 요청 (기록만)
         const hmsRefundResult = this.bnplService.requestRefund({
-          transactionId: request.transactionId,
+          transactionId: request.pgTransactionId,
           amount: request.amount,
           reason: request.reason || '고객 요청',
         });
 
-        // 2. 환불 트랜잭션 생성
+        // 3. 환불 트랜잭션 생성
         const refundId = ulid();
-
-        // 실제로는 원래 트랜잭션을 조회해서 bnplAccountId를 찾아야 하지만
-        // 여기서는 간소화
-        const refundTransaction = {
+        await tx.insert(schema.bnplTransaction).values({
           id: refundId,
-          // bnplAccountId: originalTransaction.bnplAccountId,
-          transactionType: 'CREDIT' as const,
-          status: 'CAPTURED' as const,
+          bnplAccountId: originalTransaction.bnplAccountId,
+          paymentSessionId: originalTransaction.paymentSessionId,
+          transactionType: 'CREDIT',
+          status: 'CAPTURED',
           amount: request.amount,
-        };
+        });
 
         this.logger.log(`BNPL 환불 기록 완료: ${refundId}`);
 
         return {
           success: true,
-          refundId,
+          pgTransactionId: refundId,
           metadata: {
-            originalTransactionId: request.transactionId,
+            originalTransactionId: request.pgTransactionId,
             hmsRefundId: hmsRefundResult.refundId,
             refundedAt: new Date().toISOString(),
             reason: request.reason,
@@ -259,7 +262,7 @@ export class BnplDeferredAdapter implements DeferredPaymentAdapter {
 
       return {
         success: false,
-        refundId: '',
+        pgTransactionId: '',
         error: 'BNPL 환불 처리 중 오류가 발생했습니다',
       };
     }

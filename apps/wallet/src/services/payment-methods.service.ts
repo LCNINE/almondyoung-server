@@ -16,7 +16,7 @@ import {
 } from '../shared/dtos/payment-methods/payment-method-response.dto';
 import { RegisterMethodResult } from '../ports/payment-method-adapter.port';
 import { WalletTx } from '../shared/database';
-import { PaymentMethodFactoryService } from './payment-method-factory.service';
+
 import { BNPLService } from './bnpl.service';
 import { IdempotencyService } from './Idempotency.service';
 
@@ -26,7 +26,6 @@ export class PaymentMethodService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly factory: PaymentMethodFactoryService,
     private readonly bnplService: BNPLService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -245,9 +244,11 @@ export class PaymentMethodService {
         await this.clearDefaultMethods(dto.userId, tx);
       }
 
-      // 4. 외부 시스템 연동 (어댑터 패턴)
-      let adapterResult: RegisterMethodResult = { success: true };
+      // 4. 외부 시스템 연동 (어댑터 패턴) - TODO: 실제 어댑터 팩토리 구현 후 활성화
+      const adapterResult: RegisterMethodResult = { success: true };
 
+      // TODO: PaymentMethodAdapterFactory 구현 후 활성화
+      /*
       if (dto.methodType === 'CARD' || dto.methodType === 'REWARD_POINT') {
         const adapter = this.factory.getAdapter(dto.methodType);
         if (adapter) {
@@ -265,6 +266,7 @@ export class PaymentMethodService {
           adapterResult.error || '외부 시스템 등록 실패',
         );
       }
+      */
 
       // 5. DB 저장
       const [method] = await tx
@@ -398,13 +400,15 @@ export class PaymentMethodService {
       throw new BadRequestException('BNPL 해지는 고객센터로 문의해주세요');
     }
 
-    // 외부 시스템 정리
+    // 외부 시스템 정리 - TODO: 실제 어댑터 팩토리 구현 후 활성화
+    /*
     if (method.methodType === 'CARD' || method.methodType === 'REWARD_POINT') {
       const adapter = this.factory.getAdapter(method.methodType);
       if (adapter?.deactivate) {
         await adapter.deactivate(methodId);
       }
     }
+    */
 
     // DB 삭제
     await this.db.db
@@ -433,8 +437,10 @@ export class PaymentMethodService {
       );
     }
 
-    let result = { isValid: true, message: '검증 완료' };
+    const result = { isValid: true, message: '검증 완료' };
 
+    // TODO: 실제 어댑터 팩토리 구현 후 활성화
+    /*
     if (method.methodType === 'CARD' || method.methodType === 'REWARD_POINT') {
       const adapter = this.factory.getAdapter(method.methodType);
       if (adapter?.verify) {
@@ -445,6 +451,7 @@ export class PaymentMethodService {
         };
       }
     }
+    */
 
     return {
       isValid: result.isValid,

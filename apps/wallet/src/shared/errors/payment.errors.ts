@@ -136,3 +136,30 @@ export class HmsMemberCreationFailedError extends PaymentBusinessError {
     super(`HMS 회원 등록에 실패했습니다${reason ? `: ${reason}` : ''}`);
   }
 }
+
+/**
+ * 환불 관련 에러들
+ */
+export class RefundNotFoundError extends PaymentBusinessError {
+  constructor(message?: string) {
+    super(message || '환불을 찾을 수 없습니다');
+  }
+}
+
+export class RefundAlreadyProcessedError extends PaymentBusinessError {
+  constructor(message?: string) {
+    super(message || '이미 처리된 환불입니다');
+  }
+}
+
+export class RefundAmountExceedsLimitError extends PaymentBusinessError {
+  constructor(message?: string) {
+    super(message || '환불 요청 금액이 한도를 초과합니다');
+  }
+}
+
+export class RefundExecutionFailedError extends PaymentBusinessError {
+  constructor(message?: string) {
+    super(message || '환불 실행에 실패했습니다');
+  }
+}

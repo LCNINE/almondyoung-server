@@ -89,9 +89,11 @@ export type BnplAccountStatus = keyof typeof BNPL_ACCOUNT_STATUS;
  * ✅ 환불 상태 (단순화)
  */
 export const REFUND_STATUS = {
-  REQUESTED: 'REQUESTED',
-  COMPLETED: 'COMPLETED',
-  FAILED: 'FAILED',
+  REQUESTED: 'REQUESTED', // 외부에서 환불 요청 접수됨
+  APPROVED: 'APPROVED', // 외부에서 승인되어 실행 대기중
+  COMPLETED: 'COMPLETED', // 실제 환급 완료
+  CANCELLED: 'CANCELLED', // 환불 취소됨
+  FAILED: 'FAILED', // 환급 실행 실패
 } as const;
 export type RefundStatus = keyof typeof REFUND_STATUS;
 
@@ -427,9 +429,9 @@ export const paymentSessions = pgTable(
     // 추가 정보는 metadata로 (JSON string)
     metadata: text('metadata'),
     refundedAmount: numeric('refunded_amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull()
-    .default(0),
+      .$type<number>()
+      .notNull()
+      .default(0),
     // 타임스탬프
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),
