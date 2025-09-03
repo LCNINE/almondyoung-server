@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsOptional,
@@ -7,7 +8,6 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
 
 export class SignInDto {
   @ApiProperty({
@@ -18,8 +18,8 @@ export class SignInDto {
   })
   @IsString({ message: 'ID는 문자열이어야 합니다.' })
   @Length(4, 20, { message: 'ID는 최소 4자 이상, 최대 20자 이하여야 합니다.' })
-  @Matches(/^[a-zA-Z0-9._]+$/, {
-    message: 'ID는 영문 대소문자, 숫자, ., _ 만 사용할 수 있습니다.',
+  @Matches(/^[a-z0-9]+$/, {
+    message: 'ID는 영문 소문자와 숫자만 사용할 수 있습니다.',
   })
   loginId: string;
 

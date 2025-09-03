@@ -11,6 +11,7 @@ import { userSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
+import { ConsentsModule } from './api/consents/consents.module';
 import { EventProcessorModule } from './api/events/events.module';
 import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
@@ -47,6 +48,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
     AuthModule,
     UsersModule,
     ShopModule,
+    ConsentsModule,
     EventProcessorModule,
     WishlistModule,
     RecentViewsModule,

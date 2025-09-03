@@ -1,10 +1,12 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
   Post,
   Query,
   Req,
@@ -23,12 +25,12 @@ import {
 import { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
+import { ProviderType } from '../../commons/types';
 import { Public } from '../../constants/public.decorator';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-import { SocialSignUpDto } from './dto/social-sign-up.dto';
 
 @ApiTags('Auth')
 @ApiBearerAuth('access-token')
@@ -185,17 +187,31 @@ export class AuthController {
       providerId: string;
     };
 
-    return await this.authService.signInWithKakao(kakaoUser, res);
+    try {
+      return await this.authService.signInWithSocial(
+        kakaoUser,
+        ProviderType.KAKAO,
+        res,
+      );
+    } catch (error) {
+      if (error.message.includes('already exists')) {
+        throw new ConflictException('This email already exists');
+      }
+      if (error.message.includes('user role is not set')) {
+        throw new InternalServerErrorException('Default user role is not set');
+      }
+      throw error;
+    }
   }
 
-  @ApiOperation({ summary: '소셜 회원가입' })
-  @ApiResponse({ status: 201, description: '소셜 회원가입 성공' })
-  @Post('social-signup')
-  @Public()
-  async socialSignUp(
-    @Body(ValidationPipe) socialSignUpDto: SocialSignUpDto,
-    @Res() reply: FastifyReply,
-  ) {
-    return this.authService.socialSignUp(socialSignUpDto, reply);
-  }
+  // @ApiOperation({ summary: '소셜 회원가입' })
+  // @ApiResponse({ status: 201, description: '소셜 회원가입 성공' })
+  // @Post('social-signup')
+  // @Public()
+  // async socialSignUp(
+  //   @Body(ValidationPipe) socialSignUpDto: SocialSignUpDto,
+  //   @Res() reply: FastifyReply,
+  // ) {
+  //   return this.authService.socialSignUp(socialSignUpDto, reply);
+  // }
 }

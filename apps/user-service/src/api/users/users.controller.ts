@@ -92,7 +92,7 @@ export class UsersController {
     return this.usersService.getUserRoles(user.id);
   }
 
-  @ApiOperation({ summary: '사용자 정보 수정' })
+  @ApiOperation({ summary: '사용자 프로필 정보 수정' })
   @ApiResponse({ status: 200, description: '사용자 정보 수정 성공' })
   @ApiParam({ name: 'userId', description: '수정할 사용자 ID' })
   @Patch(':userId')
@@ -103,6 +103,7 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     await this.usersService.update(userId, updateUserDto);
+
     return;
   }
 
