@@ -1,4 +1,4 @@
-import { HttpExceptionFilter } from '@app/shared/filters/http-exception.filter';
+import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '@app/shared/interceptors/response.interceptor';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
@@ -112,7 +112,7 @@ async function bootstrap() {
   });
 
   app.useGlobalInterceptors(new ResponseInterceptor());
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
