@@ -29,6 +29,11 @@ export interface UserDormantConvertedPayload extends BaseEventPayload {
   convertedAt: Date;
 }
 
+export interface UserPermanentDeletedPayload extends BaseEventPayload {
+  userId: string;
+  deletedAt: Date;
+}
+
 export interface UserFindIdPayload extends BaseEventPayload {
   email: string;
   loginId: string;
@@ -56,9 +61,14 @@ export const USER_EVENTS = {
     topic: 'user.verification',
     payload: {} as UserVerification,
   },
-  DORMANT_ACCOUNT_CONVERTED: {
+  DORMANT_USER_CONVERTED: {
     topic: 'user.dormant.converted',
     payload: {} as UserDormantConvertedPayload,
+  },
+  // 유저 영구 삭제
+  USER_PERMANENT_DELETED: {
+    topic: 'user.permanent.deleted',
+    payload: {} as UserPermanentDeletedPayload,
   },
   USER_FIND_ID: {
     topic: 'user.find.id',
