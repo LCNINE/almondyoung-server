@@ -12,7 +12,6 @@ import { defaultStoreCartFields } from '../../query-config';
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const cart_id = req.params.id;
 
-  // TODO: 이 워크플로우를 커스텀해야함
   const { errors, result } = await completeCartWorkflow(req.scope).run({
     input: { id: cart_id },
     context: { transactionId: cart_id },
@@ -27,7 +26,6 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   if (errors?.[0]) {
     const error = errors[0].error;
     const statusOKErrors: string[] = [
-      // TODO: 재고 관련 특정 에러들 추가 필요
       MedusaError.Types.PAYMENT_AUTHORIZATION_ERROR,
       MedusaError.Types.PAYMENT_REQUIRES_MORE_ERROR,
     ];
