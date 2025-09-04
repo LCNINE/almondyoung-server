@@ -40,21 +40,7 @@ export class ConsentsController {
   })
   @Get()
   async getConsents(@CurrentUser() user: User): Promise<UserConsent | null> {
-    try {
-      const userConsent = await this.consentsService.getUserConsent(user.id);
-      if (!userConsent) {
-        throw new NotFoundException('User consent not found');
-      }
-      return userConsent;
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new InternalServerErrorException({
-        message: '사용자 동의 정보 조회 중 서버 오류가 발생했습니다.',
-      });
-    }
+    return await this.consentsService.getUserConsent(user.id);
   }
 
   @ApiOperation({ summary: '사용자 동의 정보 생성' })
