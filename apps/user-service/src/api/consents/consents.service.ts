@@ -8,6 +8,7 @@ import {
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
 import { UserConsent } from './types/consent.type';
+import { ConsentsNotFoundException } from './exceptions/consents.exceptions';
 
 @Injectable()
 export class ConsentsService {
@@ -30,7 +31,7 @@ export class ConsentsService {
       .where(eq(userConsents.userId, userId));
 
     if (!consents) {
-      return null;
+      throw new ConsentsNotFoundException('User consent not found');
     }
     return consents;
   }
