@@ -3,7 +3,7 @@ import { EventPublisherService, InjectEventPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/events/user.events';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 
 @Injectable()
@@ -46,10 +46,19 @@ export class DormantService {
           email: schema.users.email,
         })
         .from(schema.users)
+        .innerJoin(
+          schema.userRoleAssignments,
+          eq(schema.userRoleAssignments.userId, schema.users.id),
+        )
+        .innerJoin(
+          schema.roles,
+          eq(schema.roles.roleId, schema.userRoleAssignments.roleId),
+        )
         .where(
           and(
             lt(schema.users.lastActivityAt, oneMinuteAgo),
             isNull(schema.users.deletedAt),
+            eq(schema.roles.name, 'user'),
           ),
         )
         .limit(batchSize);
@@ -75,7 +84,7 @@ export class DormantService {
       // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {
         try {
-          await this.eventPublisher.publishEvent('DORMANT_ACCOUNT_CONVERTED', {
+          await this.eventPublisher.publishEvent('DORMANT_USER_CONVERTED', {
             userId: user.id,
             email: user.email,
             convertedAt: new Date(),
@@ -99,6 +108,7 @@ export class DormantService {
     return totalProcessed;
   }
 
+  // 휴면 상태에서(deletedAt) 2년 이상 지난 사용자를 영구 삭제
   private async permanentDelete(): Promise<number> {
     const twoYearsAgo = new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
@@ -127,6 +137,14 @@ export class DormantService {
       await this.dbService.db
         .delete(schema.users)
         .where(inArray(schema.users.id, userIds));
+
+      // 각 사용자에 대해 영구 삭제가 되었다는 안내 이벤트 발행
+      for (const user of targetUsers) {
+        await this.eventPublisher.publishEvent('USER_PERMANENT_DELETED', {
+          userId: user.id,
+          deletedAt: new Date(),
+        });
+      }
 
       totalDeleted += targetUsers.length;
       this.logger.log(`영구 삭제 진행 중: ${totalDeleted}건 삭제됨`);

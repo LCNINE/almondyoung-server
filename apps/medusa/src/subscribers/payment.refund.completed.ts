@@ -5,6 +5,7 @@ import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 
 /**
  * 외부 Kafka에서 수신한 paymentRefundCompleted 이벤트를 메두사가 내부적으로 처리
+ * 즉 modules/events/service.ts에서 payment.refunded라는 외부 이벤트를 메두사 내부 이벤트 버스로 변환하여 작업처리하는곳
  */
 export default async function handlePaymentRefundCompleted({
   event,

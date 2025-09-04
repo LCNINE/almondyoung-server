@@ -1,6 +1,7 @@
 import { Kafka, Producer, Consumer, EachMessagePayload } from 'kafkajs';
 import { MedusaService } from '@medusajs/framework/utils';
 import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
+import { USER_EVENTS } from '@libs/shared/src/events/user.events';
 
 type ModuleOptions = {
   kafka: {
@@ -196,6 +197,7 @@ export default class EventModuleService extends MedusaService({}) {
                   rawData: data,
                 },
               });
+
               console.log('✅ Refund event forwarded to internal event bus');
             }
           } catch (err) {
@@ -203,6 +205,48 @@ export default class EventModuleService extends MedusaService({}) {
           }
         } catch (error) {
           console.error('Error processing payment.refunded:', error);
+        }
+      },
+    );
+
+    // user.permanent.deleted 이벤트 구독
+    await this.subscribe(
+      [USER_EVENTS.USER_PERMANENT_DELETED.topic, 'USER_PERMANENT_DELETED'],
+      async (payload) => {
+        try {
+          if (!payload.message?.value) {
+            console.warn('Received empty user.permanent.deleted message');
+            return;
+          }
+
+          const message = JSON.parse(payload.message.value.toString());
+          console.log('🧹 Received user.permanent.deleted:', message);
+
+          const { userId, deletedAt } = message;
+
+          try {
+            const { Modules } = await import('@medusajs/framework/utils');
+            const eventBus = this.container_?.resolve(Modules.EVENT_BUS);
+
+            if (eventBus) {
+              await eventBus.emit({
+                name: 'user.deleted',
+                data: {
+                  userId,
+                  deletedAt,
+                  rawData: message,
+                },
+              });
+
+              console.log(
+                '✅ User deleted event forwarded to internal event bus',
+              );
+            }
+          } catch (err) {
+            console.log('EventBus not available yet, processing directly');
+          }
+        } catch (error) {
+          console.error('Error processing user.permanent.deleted:', error);
         }
       },
     );
