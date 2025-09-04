@@ -18,7 +18,8 @@ import {
   ApiNotFoundResponse,
   ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
-import { PaymentServiceV2 } from '../services/payment-v2.service';
+import { PaymentOrchestrationService } from '../services/payment-orchestration.service';
+import { BnplMethodService } from '../services/method-services/bnpl-method.service';
 import {
   ProcessPaymentDto,
   ProcessPaymentResponseDto,
@@ -38,10 +39,13 @@ import {
 
 @ApiTags('결제 (V2)')
 @Controller('v2/payments')
-export class PaymentsV2Controller {
-  private readonly logger = new Logger(PaymentsV2Controller.name);
+export class PaymentController {
+  private readonly logger = new Logger(PaymentController.name);
 
-  constructor(private readonly paymentService: PaymentServiceV2) {}
+  constructor(
+    private readonly paymentService: PaymentOrchestrationService,
+    private readonly bnplMethodService: BnplMethodService,
+  ) {}
 
   // 세션 관리는 PaymentSessionsController로 이동
 
@@ -117,18 +121,42 @@ export class PaymentsV2Controller {
         `혼합 결제 실행: sessionId=${dto.sessionId}, methods=${dto.paymentMethods.length}, points=${dto.usePoints || 0}`,
       );
 
-      const result = await this.paymentService.processPayment({
-        sessionId: dto.sessionId,
-        paymentMethods: dto.paymentMethods,
-        usePoints: dto.usePoints,
-        metadata: dto.metadata,
-      });
+      // 첫 번째 결제수단으로 표준 PaymentGateway 방식 결제 (간소화)
+      const firstMethod = dto.paymentMethods[0];
+      const methodType = firstMethod?.type || 'CARD';
 
-      this.logger.log(
-        `혼합 결제 완료: ${result.success ? '성공' : '실패'} - ${result.paymentId}`,
+      const result = await this.paymentService.processPaymentByMethodType(
+        methodType,
+        firstMethod.amount,
+        {
+          userId: dto.userId || '',
+          sessionId: dto.sessionId,
+          paymentMethodId: firstMethod.paymentMethodId,
+          orderName: dto.metadata?.orderName,
+        },
+        dto.idemKey,
       );
 
-      return result;
+      this.logger.log(
+        `결제 승인 완료: ${(result as any).status} - ${dto.sessionId}`,
+      );
+
+      // 오케스트레이션 결과를 ProcessPaymentResponseDto 형태로 변환
+      const typedResult = result as any;
+      return {
+        success: typedResult.success,
+        paymentId: typedResult.paymentEventId,
+        sessionId: dto.sessionId,
+        totalAmount: firstMethod.amount,
+        results: {
+          status: typedResult.status,
+          authorizationIds: typedResult.authorizationId
+            ? [typedResult.authorizationId]
+            : [],
+          capturedIds: typedResult.captureId ? [typedResult.captureId] : [],
+          pointsTxId: typedResult.transactionId,
+        },
+      };
     } catch (error) {
       this.logger.error('혼합 결제 실패', error);
 
@@ -234,27 +262,29 @@ BNPL 결제의 실제 출금을 실행합니다.
     try {
       this.logger.log(`BNPL 출금 실행 요청: ${authorizationId}`);
 
-      const result = await this.paymentService.captureDeferred(authorizationId);
+      const result = await this.bnplMethodService.batchCapture([
+        authorizationId,
+      ]);
 
-      if (result.success) {
-        this.logger.log(
-          `BNPL 출금 완료: ${authorizationId} -> ${result.transactionId}`,
-        );
+      const typedResult = result as any;
+      if (typedResult.success && typedResult.captureIds.length > 0) {
+        this.logger.log(`BNPL 출금 완료: ${authorizationId}`);
 
         return {
           success: true,
-          transactionId: result.transactionId,
+          authorizationId,
           message: 'BNPL 출금이 완료되었습니다.',
+          captureIds: typedResult.captureIds,
         };
       } else {
         this.logger.error(
-          `BNPL 출금 실패: ${authorizationId} - ${result.error}`,
+          `BNPL 출금 실패: ${authorizationId} - ${typedResult.error}`,
         );
 
         throw new HttpException(
           {
             statusCode: HttpStatus.BAD_REQUEST,
-            message: result.error || 'BNPL 출금에 실패했습니다',
+            message: typedResult.error || 'BNPL 출금에 실패했습니다',
             error: 'Capture Failed',
           },
           HttpStatus.BAD_REQUEST,

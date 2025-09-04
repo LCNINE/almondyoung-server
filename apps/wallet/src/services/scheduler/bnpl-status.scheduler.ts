@@ -9,7 +9,7 @@ import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { eq, and } from 'drizzle-orm';
-import { BNPLService } from '../bnpl.service';
+import { BnplMethodService } from '../method-services/bnpl-method.service';
 
 @Injectable()
 export class BnplStatusScheduler {
@@ -17,7 +17,7 @@ export class BnplStatusScheduler {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplService: BNPLService,
+    private readonly bnplMethodService: BnplMethodService,
   ) {}
 
   /**
@@ -96,13 +96,12 @@ export class BnplStatusScheduler {
 
     try {
       // HMS API로 회원 상태 확인
-      const memberStatus = await this.bnplService.checkMemberStatus(
-        method.userId,
+      const memberStatus = await this.bnplMethodService.getMemberStatus(
         method.id,
       );
 
       this.logger.log(
-        `📊 결제수단 ${method.id} HMS 상태: ${memberStatus.status}`,
+        `📊 결제수단 ${method.id} HMS 상태: ${memberStatus.hmsStatus}`,
       );
 
       return await this.db.db.transaction(async (tx) => {
@@ -113,7 +112,7 @@ export class BnplStatusScheduler {
           .where(eq(schema.bnplAccount.paymentMethodId, method.id))
           .limit(1);
 
-        switch (memberStatus.status) {
+        switch (memberStatus.hmsStatus) {
           case 'APPROVED':
             // 승인됨 → ACTIVE로 변경 (5만원 임시한도)
             await tx
@@ -125,20 +124,9 @@ export class BnplStatusScheduler {
               .where(eq(schema.paymentMethod.id, method.id));
 
             if (bnplAccount) {
-              // BNPL 계정 활성화 이벤트 기록
-              await this.bnplService.recordAccountEvent(
-                method.id, // paymentMethodId
-                bnplAccount.id, // 실제 bnplAccount ID
-                'ACCOUNT_ACTIVATED',
-                {
-                  previousStatus: 'PENDING',
-                  newStatus: 'ACTIVE',
-                  hmsResponse: memberStatus,
-                  activatedBy: 'SCHEDULER',
-                  initialLimit: 50000,
-                  limitType: 'TEMPORARY',
-                },
-                tx,
+              // BNPL 계정 활성화 이벤트 로그만 기록
+              this.logger.log(
+                `📊 BNPL 계정 활성화: ${bnplAccount.id} - 임시한도 50,000원`,
               );
             }
 
@@ -158,24 +146,14 @@ export class BnplStatusScheduler {
               .where(eq(schema.paymentMethod.id, method.id));
 
             if (bnplAccount) {
-              // BNPL 계정 거절 이벤트 기록
-              await this.bnplService.recordAccountEvent(
-                method.id, // paymentMethodId
-                bnplAccount.id, // 실제 bnplAccount ID
-                'ACCOUNT_REJECTED',
-                {
-                  previousStatus: 'PENDING',
-                  newStatus: 'REJECTED',
-                  hmsResponse: memberStatus,
-                  rejectedBy: 'SCHEDULER',
-                  reason: memberStatus.reason,
-                },
-                tx,
+              // BNPL 계정 거절 이벤트 로그만 기록
+              this.logger.log(
+                `❌ BNPL 계정 거절: ${bnplAccount.id} - HMS 응답: ${JSON.stringify(memberStatus)}`,
               );
             }
 
             this.logger.log(
-              `❌ 결제수단 ${method.id} INACTIVE로 변경 완료 (사유: ${memberStatus.reason || 'Unknown'})`,
+              `❌ 결제수단 ${method.id} INACTIVE로 변경 완료 (사유: HMS 거절)`,
             );
             return 'REJECTED';
 
@@ -194,7 +172,7 @@ export class BnplStatusScheduler {
 
           default:
             this.logger.warn(
-              `⚠️  결제수단 ${method.id} 알 수 없는 HMS 상태: ${memberStatus.status}`,
+              `⚠️  결제수단 ${method.id} 알 수 없는 HMS 상태: ${memberStatus.hmsStatus}`,
             );
             return 'PENDING';
         }

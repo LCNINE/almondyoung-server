@@ -27,8 +27,8 @@ import {
   RefundApprovalDto,
   RefundCancellationDto,
   RefundResponseDto,
-} from '../shared/dtos/refunds/refund-v2.dto';
-import { RefundsV2Service } from '../services/refunds-v2.service';
+} from '../shared/dtos/refunds/refund.dto';
+import { RefundService } from '../services/refund.service';
 import {
   RefundNotFoundError,
   RefundAlreadyProcessedError,
@@ -52,10 +52,10 @@ import {
  */
 @ApiTags('환불 V2')
 @Controller('v2/refunds')
-export class RefundsV2Controller {
-  private readonly logger = new Logger(RefundsV2Controller.name);
+export class RefundController {
+  private readonly logger = new Logger(RefundController.name);
 
-  constructor(private readonly refundsService: RefundsV2Service) {}
+  constructor(private readonly refundService: RefundService) {}
 
   /**
    * 환불 요청 접수 (외부 MSA에서 호출)
@@ -85,7 +85,7 @@ export class RefundsV2Controller {
     try {
       this.logger.log(`💰 환불 요청 접수: ${request.paymentSessionId}`);
 
-      return await this.refundsService.requestRefund(request, idempotencyKey);
+      return await this.refundService.requestRefund(request, idempotencyKey);
     } catch (error) {
       this.logger.error('환불 요청 접수 실패:', error);
 
@@ -137,7 +137,7 @@ export class RefundsV2Controller {
     try {
       this.logger.log(`✅ 환불 승인 처리: ${refundId}`);
 
-      return await this.refundsService.approveRefund(
+      return await this.refundService.approveRefund(
         { refundId, approvalInfo: request.approvalInfo },
         idempotencyKey,
       );
@@ -197,7 +197,7 @@ export class RefundsV2Controller {
     try {
       this.logger.log(`❌ 환불 취소: ${refundId}`);
 
-      return await this.refundsService.cancelRefund(
+      return await this.refundService.cancelRefund(
         { refundId, reason: request.reason, cancelledBy: request.cancelledBy },
         idempotencyKey,
       );
@@ -242,7 +242,7 @@ export class RefundsV2Controller {
     try {
       this.logger.log(`🔍 환불 조회: ${refundId}`);
 
-      return await this.refundsService.getRefund(refundId);
+      return await this.refundService.getRefund(refundId);
     } catch (error) {
       this.logger.error('환불 조회 실패:', error);
 

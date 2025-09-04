@@ -1,9 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { and, eq, gte, inArray, lt } from 'drizzle-orm';
-import { BNPLService, HmsWithdrawalRequest } from './bnpl.service';
+import { BnplMethodService } from './method-services/bnpl-method.service';
+import { BnplMethodGateway } from '../interfaces/payment-method-gateways.interface';
+import { HMS_BNPL_PAYMENT_ADAPTER } from '../shared/tokens/gateway.tokens';
 import { WalletTx } from '../shared/database';
+
+interface HmsWithdrawalRequest {
+  memberId: string;
+  amount: number;
+  paymentDate: string;
+  invoiceId: string;
+}
 
 /**
  * SettlementService (All-or-Nothing, Idempotent)
@@ -25,7 +34,9 @@ export class SettlementService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplService: BNPLService,
+    private readonly bnplService: BnplMethodService,
+    @Inject(HMS_BNPL_PAYMENT_ADAPTER)
+    private readonly hmsBnplAdapter: BnplMethodGateway,
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -673,7 +684,22 @@ export class SettlementService {
       ),
     };
 
-    return await this.bnplService.requestWithdrawal(req);
+    // HMS BNPL adapter의 batchCapture 메서드 사용 (표준 인터페이스)
+    try {
+      const result = await this.hmsBnplAdapter.batchCapture([], req.invoiceId);
+      return {
+        success: result.success,
+        transactionId: result.captureIds?.[0] || req.invoiceId,
+        error: result.error,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'HMS 출금 실패';
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
   }
 
   /**

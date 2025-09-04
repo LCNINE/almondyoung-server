@@ -1,42 +1,56 @@
 import { Module } from '@nestjs/common';
-import { SharedModule } from '@app/shared';
-import { DbModule } from '@app/db';
 import { ConfigModule } from '@nestjs/config';
-import * as schema from './shared/database/schema';
-import { PaymentSessionsController } from './controllers/payment-sessions.controller';
-import { PaymentSessionsService } from './services/payment-sessions.service';
-import { PaymentsV2Controller } from './controllers/payments.controller';
-import { TestSetupController } from './controllers/test-setup.controller';
-import { PaymentServiceV2 } from './services/payment-v2.service';
-import { TossImmediateAdapter } from './adapters/toss-immediate.adapter';
-import { BnplDeferredAdapter } from './adapters/bnpl-deferred.adapter';
-import { PointsService } from './services/point.service';
-import { RefundsService } from './services/refunds.service';
-import { RefundsV2Service } from './services/refunds-v2.service';
+import { DbModule } from '@app/db';
+import { EventsModule } from '@app/events';
 
-import { IdempotencyService } from './services/Idempotency.service';
-import { RefundsController } from './controllers/refunds.controller';
-import { RefundsV2Controller } from './controllers/refunds-v2.controller';
-import { SettlementController } from './controllers/settlement.controllet';
+// === 표준 컨트롤러들 ===
+import { PaymentMethodController } from './controllers/payment-method.controller';
+import { PaymentSessionController } from './controllers/payment-session.controller';
+import { PaymentController } from './controllers/payment.controller';
+import { RefundController } from './controllers/refund.controller';
+import { BnplController } from './controllers/bnpl.controller';
+
+import { SettlementController } from './controllers/settlement.controller';
+
+// === 표준 통합 서비스 (리팩토링 후) ===
+import { PaymentOrchestrationService } from './services/payment-orchestration.service';
+import { PaymentGatewayFactory } from './services/payment-gateway.factory';
+import { IdempotencyService } from './services/idempotency.service';
 import { SettlementService } from './services/settlement.service';
-import { BNPLService } from './services/bnpl.service';
 
-import { BNPLController } from './controllers/bnpl.controller';
-import { PaymentMethodsController } from './controllers/payment-methods.controller';
-import { PaymentMethodService } from './services/payment-methods.service';
+// === 결제수단별 전용 서비스들 ===
+import { BnplMethodService } from './services/method-services/bnpl-method.service';
+import { CardMethodService } from './services/method-services/card-method.service';
+import { PointMethodService } from './services/method-services/point-method.service';
+import { PaymentMethodService } from './services/payment-method.service';
+import { PaymentSessionService } from './services/payment-session.service';
 
-import { SettlementScheduler } from './services/scheduler/settlement.scheduler';
+// === 표준 PaymentGateway 어댑터들 (test3.md 기준) ===
+import { TossPaymentAdapter } from './adapters/toss-payment.adapter';
+import { HmsCardPaymentAdapter } from './adapters/hms-card-payment.adapter';
+import { HmsBnplPaymentAdapter } from './adapters/hms-bnpl-payment.adapter';
+import { InternalPointPaymentAdapter } from './adapters/internal-point-payment.adapter';
+
+// === 표준 게이트웨이 토큰들 ===
+import {
+  TOSS_PAYMENT_ADAPTER,
+  HMS_CARD_PAYMENT_ADAPTER,
+  HMS_BNPL_PAYMENT_ADAPTER,
+  INTERNAL_POINT_PAYMENT_ADAPTER,
+} from './shared/tokens/gateway.tokens';
+
+// === 스케줄러 ===
 import { BnplStatusScheduler } from './services/scheduler/bnpl-status.scheduler';
-import { ScheduleModule } from '@nestjs/schedule';
-import { PointAdapter } from './adapters/point.adapter';
+import { SettlementScheduler } from './services/scheduler/settlement.scheduler';
+
+import * as schema from './shared/database/schema';
+import { RefundService } from './services/refund.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // 다른 모듈에서 ConfigService를 바로 사용할 수 있도록 설정
-      envFilePath: ['.env.local', '.env'], // .env.local 먼저, 그 다음 .env
+      isGlobal: true,
     }),
-    SharedModule,
-    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString:
@@ -45,33 +59,67 @@ import { PointAdapter } from './adapters/point.adapter';
       },
       schema: { ...schema },
     }),
+    EventsModule,
   ],
   controllers: [
-    PaymentSessionsController,
-    // PaymentsController, // V1 컨트롤러 비활성화
-    PaymentsV2Controller, // V2 컨트롤러 활성화
-    TestSetupController, // 테스트용 컨트롤러 추가
-    RefundsController, // V1 환불 컨트롤러
-    RefundsV2Controller, // V2 환불 컨트롤러
+    // === 표준 컨트롤러들 ===
+    PaymentMethodController,
+    PaymentSessionController,
+    PaymentController,
+    RefundController,
+    BnplController,
     SettlementController,
-    BNPLController,
-    PaymentMethodsController,
   ],
   providers: [
-    PaymentSessionsService,
-    PaymentServiceV2, // V2 서비스 활성화
-    RefundsService,
-    RefundsV2Service, // V2 환불 서비스
+    // === 표준 통합 서비스들 (리팩토링 후) ===
+    PaymentOrchestrationService,
+    PaymentGatewayFactory,
     IdempotencyService,
     SettlementService,
-    BNPLService,
+    RefundService,
+
+    // === 결제수단별 전용 서비스들 ===
+    BnplMethodService,
+    CardMethodService,
+    PointMethodService,
     PaymentMethodService,
-    PointsService, // 포인트 서비스 추가
-    TossImmediateAdapter, // 즉시결제 어댑터 (V2용)
-    BnplDeferredAdapter, // 후불결제 어댑터 (V2용)
-    PointAdapter, // 포인트 어댑터 (V2용)
-    SettlementScheduler,
+    PaymentSessionService,
+    PaymentOrchestrationService,
+    // === 스케줄러 ===
     BnplStatusScheduler,
+    SettlementScheduler,
+
+    // === 표준 PaymentGateway 어댑터들 (Provider Token 방식) ===
+    {
+      provide: TOSS_PAYMENT_ADAPTER,
+      useClass: TossPaymentAdapter,
+    },
+    {
+      provide: HMS_CARD_PAYMENT_ADAPTER,
+      useClass: HmsCardPaymentAdapter,
+    },
+    {
+      provide: HMS_BNPL_PAYMENT_ADAPTER,
+      useClass: HmsBnplPaymentAdapter,
+    },
+    {
+      provide: INTERNAL_POINT_PAYMENT_ADAPTER,
+      useClass: InternalPointPaymentAdapter,
+    },
+  ],
+  exports: [
+    // === 표준 통합 서비스 Export (리팩토링 후) ===
+    PaymentOrchestrationService,
+    PaymentGatewayFactory,
+    IdempotencyService,
+    SettlementService,
+
+    // === 결제수단별 전용 서비스들 ===
+    BnplMethodService,
+    CardMethodService,
+    PointMethodService,
+    PaymentMethodService,
+    PaymentSessionService,
   ],
 })
 export class AppModule {}

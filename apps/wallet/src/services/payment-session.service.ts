@@ -32,8 +32,8 @@ export interface CreatePaymentSessionResponse {
 }
 
 @Injectable()
-export class PaymentSessionsService {
-  private readonly logger = new Logger(PaymentSessionsService.name);
+export class PaymentSessionService {
+  private readonly logger = new Logger(PaymentSessionService.name);
   constructor(private readonly dbService: DbService<typeof schema>) {}
   // createSessionV2 제거 - 불필요한 중복이었음
   // 기존 createSession이 더 우수함 (멱등성, 이벤트 적재, 트랜잭션 안전성)

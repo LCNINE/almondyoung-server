@@ -8,7 +8,7 @@ import * as schema from '../shared/database/schema';
 import { WalletTx } from '../shared/database';
 
 @Injectable()
-export class PointsService {
+export class PointService {
   constructor(private readonly db: DbService<typeof schema>) {}
 
   async getBalance(userId: string, tx?: WalletTx) {

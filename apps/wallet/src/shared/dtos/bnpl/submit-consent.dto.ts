@@ -22,9 +22,15 @@ export class ConsentResponseDto {
 
   @ApiProperty({ description: '등록 완료 여부' })
   registrationComplete: boolean;
+
+  @ApiProperty({ description: '다음 단계 안내', required: false })
+  nextSteps?: string[];
 }
 
 export class MemberStatusResponseDto {
+  @ApiProperty({ description: 'HMS 회원 ID' })
+  memberId: string;
+
   @ApiProperty({
     description: '회원 상태',
     enum: ['PENDING', 'REGISTERED', 'FAILED'],
@@ -42,6 +48,9 @@ export class MemberStatusResponseDto {
 
   @ApiProperty({ description: '승인된 한도' })
   approvedLimit: number;
+
+  @ApiProperty({ description: '원본 HMS 응답', required: false })
+  rawResponse?: any;
 }
 
 export class PaymentMethodResponseDto {

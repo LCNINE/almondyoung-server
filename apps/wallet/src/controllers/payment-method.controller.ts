@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   Headers,
+  BadRequestException,
   HttpCode,
 } from '@nestjs/common';
 import {
@@ -23,7 +24,7 @@ import {
   UserPaymentMethodsResponseDto,
   SetDefaultPaymentMethodDto,
 } from '../shared/dtos/payment-methods/payment-method-response.dto';
-import { PaymentMethodService } from '../services/payment-methods.service';
+import { PaymentMethodService } from '../services/payment-method.service';
 
 /**
  * 결제수단 관리 컨트롤러
@@ -33,7 +34,7 @@ import { PaymentMethodService } from '../services/payment-methods.service';
  */
 @ApiTags('결제수단 관리')
 @Controller('payment-methods')
-export class PaymentMethodsController {
+export class PaymentMethodController {
   constructor(private readonly paymentMethodService: PaymentMethodService) {}
 
   @Post()
@@ -63,7 +64,7 @@ export class PaymentMethodsController {
   ): Promise<PaymentMethodResponseDto> {
     // 📝 지원하는 타입: CARD, REWARD_POINT만 (BNPL은 /bnpl/register 사용)
 
-    return await this.paymentMethodService.createWithAdapter(dto, idemKey);
+    return await this.paymentMethodService.createWithIdempotency(dto, idemKey);
   }
 
   @Get('users/:userId')
@@ -136,7 +137,7 @@ export class PaymentMethodsController {
     },
   })
   async deletePaymentMethod(@Param('id') methodId: string) {
-    return await this.paymentMethodService.deleteWithAdapter(methodId);
+    return await this.paymentMethodService.delete(methodId);
   }
 
   @Get(':id/verify')
@@ -145,6 +146,9 @@ export class PaymentMethodsController {
     description: '외부 시스템에서 결제수단 유효성 확인',
   })
   async verifyPaymentMethod(@Param('id') methodId: string) {
-    return await this.paymentMethodService.verifyWithAdapter(methodId);
+    // 검증은 각 MethodService에서 처리
+    throw new BadRequestException(
+      '결제수단별 검증 API를 사용하세요 (/bnpl/status, /card/validate 등)',
+    );
   }
 }

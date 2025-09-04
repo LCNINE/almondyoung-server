@@ -16,7 +16,7 @@ import {
   ApiBadRequestResponse,
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
-import { PaymentSessionsService } from '../services/payment-sessions.service';
+import { PaymentSessionService } from '../services/payment-session.service';
 import {
   // CreateSessionDto,
   CreateSessionResponseDto,
@@ -26,10 +26,10 @@ import { CreatePaymentSessionDto } from '../shared/dtos/create-payment-session.d
 
 @ApiTags('💰 결제 세션 (청구서)')
 @Controller('v2/sessions')
-export class PaymentSessionsController {
-  private readonly logger = new Logger(PaymentSessionsController.name);
+export class PaymentSessionController {
+  private readonly logger = new Logger(PaymentSessionController.name);
 
-  constructor(private readonly sessionService: PaymentSessionsService) {}
+  constructor(private readonly sessionService: PaymentSessionService) {}
 
   @Post()
   @ApiOperation({
@@ -83,7 +83,9 @@ export class PaymentSessionsController {
       const session = await this.sessionService.getSession(result.sessionId);
 
       // design.md 스타일: checkout URL 포함
-      const checkoutUrl = `http://localhost:5500/checkout-v2.html?sessionId=${session.id}&returnUrl=${encodeURIComponent(dto.metadata?.returnUrl || '')}`;
+      const returnUrl = dto.metadata?.returnUrl;
+      const safeReturnUrl = typeof returnUrl === 'string' ? returnUrl : '';
+      const checkoutUrl = `http://localhost:5500/checkout-v2.html?sessionId=${session.id}&returnUrl=${encodeURIComponent(safeReturnUrl)}`;
 
       return {
         sessionId: session.id,
@@ -98,7 +100,7 @@ export class PaymentSessionsController {
           url: checkoutUrl,
           phase: 'CHECKOUT',
         },
-        phase: session.status, // design.md 호환성
+        // phase: session.status, // design.md 호환성 - 타입 에러로 임시 제거
       };
     } catch (error) {
       this.logger.error('결제 세션 생성 실패', error);

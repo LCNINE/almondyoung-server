@@ -25,6 +25,15 @@ export class PaymentMethodRequestDto {
   @IsNumber()
   @Min(1)
   amount!: number;
+
+  @ApiProperty({
+    example: 'CARD',
+    enum: ['CARD', 'EASY_PAY', 'BNPL', 'REWARD_POINT'],
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  type?: string;
 }
 
 export class ProcessPaymentDto {
@@ -57,6 +66,16 @@ export class ProcessPaymentDto {
   @IsNumber()
   @Min(0)
   usePoints?: number;
+
+  @ApiProperty({ required: false, example: 'user_123' })
+  @IsString()
+  @IsOptional()
+  userId?: string;
+
+  @ApiProperty({ required: false, example: 'idem_key_123' })
+  @IsString()
+  @IsOptional()
+  idemKey?: string;
 
   @ApiProperty({
     example: { orderName: '아몬드영 상품 결제', orderId: 'order_123' },
@@ -115,6 +134,10 @@ export class ProcessPaymentResponseDto {
     },
   })
   results!: {
+    status?: string;
+    authorizationIds?: string[];
+    capturedIds?: string[];
+    pointsTxId?: string;
     immediate?: PaymentResultDto[];
     deferred?: PaymentResultDto[];
     points?: { amount: number; newBalance: number };

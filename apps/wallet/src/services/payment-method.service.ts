@@ -14,11 +14,11 @@ import {
   PaymentMethodResponseDto,
   UserPaymentMethodsResponseDto,
 } from '../shared/dtos/payment-methods/payment-method-response.dto';
-import { RegisterMethodResult } from '../ports/payment-method-adapter.port';
+// 사용하지 않는 타입 제거
 import { WalletTx } from '../shared/database';
 
-import { BNPLService } from './bnpl.service';
-import { IdempotencyService } from './Idempotency.service';
+import { BnplMethodService } from './method-services/bnpl-method.service';
+import { IdempotencyService } from './idempotency.service';
 
 @Injectable()
 export class PaymentMethodService {
@@ -26,65 +26,13 @@ export class PaymentMethodService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplService: BNPLService,
+    private readonly bnplService: BnplMethodService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
-  /** 일반 결제수단 등록 (카드, 포인트 등) - BNPL 제외 */
-  async create(
-    dto: CreateGeneralPaymentMethodDto,
-  ): Promise<typeof schema.paymentMethod.$inferSelect> {
-    this.logger.log(`결제수단 등록: ${dto.methodType} - ${dto.userId}`);
+  // create 메서드는 createWithIdempotency로 통합되어 제거
 
-    return await this.db.db.transaction(async (tx) => {
-      // 1. 비즈니스 검증
-      await this.validatePaymentMethod(dto, tx);
-
-      // 2. 결제수단 저장 (Drizzle 타입 추론 활용)
-      const insertData: typeof schema.paymentMethod.$inferInsert = {
-        userId: dto.userId,
-        methodType: dto.methodType,
-        methodName: dto.methodName,
-        status: 'PENDING',
-      };
-
-      const [method] = await tx
-        .insert(schema.paymentMethod)
-        .values(insertData)
-        .returning();
-
-      // 3. 타입별 특화 처리 (추후 구현)
-      this.processTypeSpecificLogic(dto, method);
-
-      // 4. 활성화 (일반 결제수단은 즉시 활성화)
-      await this.activatePaymentMethod(method.id, tx);
-
-      this.logger.log(`결제수단 등록 완료: ${method.id}`);
-      return method;
-    });
-  }
-
-  /** 타입별 특화 로직 처리 */
-  private processTypeSpecificLogic(
-    dto: CreateGeneralPaymentMethodDto,
-    method: typeof schema.paymentMethod.$inferSelect,
-  ): void {
-    switch (dto.methodType) {
-      case 'CARD':
-        // TODO: 카드 서비스 구현 시 토큰화 로직 추가
-        this.logger.log(`카드 결제수단 생성: ${method.id}`);
-        break;
-      case 'REWARD_POINT':
-        // TODO: 포인트 서비스 구현 시 계정 초기화 로직 추가
-        this.logger.log(`포인트 결제수단 생성: ${method.id}`);
-        break;
-      // BANK_ACCOUNT는 현재 지원하지 않음 (CARD, REWARD_POINT만 지원)
-      default:
-        throw new BadRequestException(
-          `지원하지 않는 결제수단 타입: ${dto.methodType as string}`,
-        );
-    }
-  }
+  // 타입별 특화 로직은 각 MethodService에서 처리하므로 제거
 
   private async validatePaymentMethod(
     dto: CreateGeneralPaymentMethodDto,
@@ -107,15 +55,7 @@ export class PaymentMethodService {
     // BANK_ACCOUNT 검증 제거됨 (현재 지원하지 않음)
   }
 
-  private async activatePaymentMethod(id: string, tx: WalletTx): Promise<void> {
-    await tx
-      .update(schema.paymentMethod)
-      .set({
-        status: 'ACTIVE',
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentMethod.id, id));
-  }
+  // 활성화는 createWithIdempotency에서 직접 처리하므로 제거
 
   /** 결제수단 조회 */
   async get(id: string): Promise<typeof schema.paymentMethod.$inferSelect> {
@@ -141,87 +81,18 @@ export class PaymentMethodService {
       .where(eq(schema.paymentMethod.userId, userId));
   }
 
-  /** 결제수단 해지 */
-  async deactivate(id: string): Promise<{ success: boolean }> {
-    const method = await this.get(id);
-    this.logger.log(`결제수단 해지: ${method.methodType} - ${id}`);
+  // deactivate는 delete로 통합되어 제거
 
-    // BNPL은 별도 서비스에서 처리
-    if (method.methodType === 'BNPL') {
-      throw new BadRequestException('BNPL 해지는 별도 문의 바랍니다');
-    }
-
-    // TODO: 외부 서비스 해지 처리 (추후 각 결제사 서비스 구현 시)
-    this.processTypeSpecificDeactivation(method);
-
-    // 내부 상태 업데이트 (Drizzle 타입 추론 활용)
-    const updateData: Partial<typeof schema.paymentMethod.$inferInsert> = {
-      status: 'INACTIVE',
-      updatedAt: new Date(),
-    };
-
-    await this.db.db
-      .update(schema.paymentMethod)
-      .set(updateData)
-      .where(eq(schema.paymentMethod.id, id));
-
-    this.logger.log(`결제수단 해지 완료: ${id}`);
-    return { success: true };
-  }
-
-  /** 결제수단 검증 */
-  async verify(id: string): Promise<boolean> {
-    const method = await this.get(id);
-    this.logger.log(`결제수단 검증: ${method.methodType} - ${id}`);
-
-    // BNPL은 별도 서비스에서 처리
-    if (method.methodType === 'BNPL') {
-      throw new BadRequestException('BNPL 검증은 별도 API를 사용하세요');
-    }
-
-    // TODO: 각 결제사별 검증 로직 구현
-    switch (method.methodType) {
-      case 'CARD':
-        // TODO: 카드 서비스 연동
-        return true;
-      case 'REWARD_POINT':
-        // 포인트는 항상 유효
-        return true;
-      // BANK_ACCOUNT는 현재 지원하지 않음
-      default:
-        return false;
-    }
-  }
-
-  private processTypeSpecificDeactivation(
-    method: typeof schema.paymentMethod.$inferSelect,
-  ): void {
-    switch (method.methodType) {
-      case 'CARD':
-        // TODO: 카드 서비스에서 빌링키 해지
-        this.logger.log(`카드 빌링키 해지 필요: ${method.id}`);
-        break;
-      // BANK_ACCOUNT는 현재 지원하지 않음
-      case 'REWARD_POINT':
-        // 포인트는 별도 해지 처리 없음
-        break;
-      default:
-        break;
-    }
-  }
-
-  // ===== 어댑터 패턴 기반 새로운 메서드들 =====
+  // 검증은 각 MethodService에서 처리하므로 제거
 
   /**
-   * 어댑터 패턴으로 결제수단 등록
+   * 멱등성을 지원하는 결제수단 등록 (createWithAdapter를 기본 create로 통합)
    */
-  async createWithAdapter(
+  async createWithIdempotency(
     dto: CreateGeneralPaymentMethodDto,
     idemKey?: string,
   ): Promise<PaymentMethodResponseDto> {
-    this.logger.log(
-      `어댑터 패턴 결제수단 등록: ${dto.methodType} - ${dto.userId}`,
-    );
+    this.logger.log(`결제수단 등록: ${dto.methodType} - ${dto.userId}`);
 
     return await this.db.db.transaction(async (tx) => {
       // 1. 멱등성 처리
@@ -244,31 +115,7 @@ export class PaymentMethodService {
         await this.clearDefaultMethods(dto.userId, tx);
       }
 
-      // 4. 외부 시스템 연동 (어댑터 패턴) - TODO: 실제 어댑터 팩토리 구현 후 활성화
-      const adapterResult: RegisterMethodResult = { success: true };
-
-      // TODO: PaymentMethodAdapterFactory 구현 후 활성화
-      /*
-      if (dto.methodType === 'CARD' || dto.methodType === 'REWARD_POINT') {
-        const adapter = this.factory.getAdapter(dto.methodType);
-        if (adapter) {
-          adapterResult = await adapter.register({
-            userId: dto.userId,
-            methodType: dto.methodType,
-            methodName: dto.methodName,
-            cardInfo: dto.cardInfo,
-          });
-        }
-      }
-
-      if (!adapterResult.success) {
-        throw new BadRequestException(
-          adapterResult.error || '외부 시스템 등록 실패',
-        );
-      }
-      */
-
-      // 5. DB 저장
+      // 4. DB 저장
       const [method] = await tx
         .insert(schema.paymentMethod)
         .values({
@@ -280,13 +127,10 @@ export class PaymentMethodService {
         })
         .returning();
 
-      // 6. 타입별 세부 정보 저장
-      await this.saveMethodDetails(method, dto, adapterResult, tx);
+      // 5. 응답 구성
+      const response = this.toResponseDto(method);
 
-      // 7. 응답 구성
-      const response = this.toResponseDto(method, adapterResult);
-
-      // 8. 멱등성 완료
+      // 6. 멱등성 완료
       if (idemKey) {
         await this.idempotency.complete(tx, idemKey, response, 201);
       }
@@ -311,18 +155,25 @@ export class PaymentMethodService {
 
         if (method.methodType === 'BNPL' && method.status === 'PENDING') {
           try {
+            // BNPL 상태는 BnplMethodService에서 조회
             const bnplStatus = await this.bnplService.getMemberStatus(
               method.id,
             );
+            const statusData = bnplStatus as {
+              status?: string;
+              hmsStatus?: string;
+            };
             return {
               ...baseResponse,
               bnplDetails: {
-                approvalStatus: bnplStatus.status,
+                approvalStatus: statusData.status || 'PENDING',
                 estimatedApprovalDate: this.calculateEstimatedApprovalDate(
                   method.createdAt,
                 ),
                 remainingDays: this.calculateRemainingDays(method.createdAt),
-                nextSteps: this.getBnplNextSteps(bnplStatus.status),
+                nextSteps: this.getBnplNextSteps(
+                  statusData.hmsStatus || 'PENDING',
+                ),
               },
             };
           } catch {
@@ -388,9 +239,9 @@ export class PaymentMethodService {
   }
 
   /**
-   * 어댑터 패턴으로 결제수단 삭제
+   * 결제수단 삭제 (간단한 삭제만 처리)
    */
-  async deleteWithAdapter(
+  async delete(
     methodId: string,
   ): Promise<{ success: boolean; message: string }> {
     const method = await this.findById(methodId);
@@ -400,17 +251,7 @@ export class PaymentMethodService {
       throw new BadRequestException('BNPL 해지는 고객센터로 문의해주세요');
     }
 
-    // 외부 시스템 정리 - TODO: 실제 어댑터 팩토리 구현 후 활성화
-    /*
-    if (method.methodType === 'CARD' || method.methodType === 'REWARD_POINT') {
-      const adapter = this.factory.getAdapter(method.methodType);
-      if (adapter?.deactivate) {
-        await adapter.deactivate(methodId);
-      }
-    }
-    */
-
-    // DB 삭제
+    // DB 삭제 (복잡한 해지는 각 MethodService에서 처리)
     await this.db.db
       .delete(schema.paymentMethod)
       .where(eq(schema.paymentMethod.id, methodId));
@@ -420,42 +261,6 @@ export class PaymentMethodService {
     return {
       success: true,
       message: '결제수단이 삭제되었습니다',
-    };
-  }
-
-  /**
-   * 어댑터 패턴으로 결제수단 검증
-   */
-  async verifyWithAdapter(
-    methodId: string,
-  ): Promise<{ isValid: boolean; message: string }> {
-    const method = await this.findById(methodId);
-
-    if (method.methodType === 'BNPL') {
-      throw new BadRequestException(
-        'BNPL 상태는 /bnpl/status/:memberId로 확인하세요',
-      );
-    }
-
-    const result = { isValid: true, message: '검증 완료' };
-
-    // TODO: 실제 어댑터 팩토리 구현 후 활성화
-    /*
-    if (method.methodType === 'CARD' || method.methodType === 'REWARD_POINT') {
-      const adapter = this.factory.getAdapter(method.methodType);
-      if (adapter?.verify) {
-        const verifyResult = await adapter.verify();
-        result = {
-          isValid: verifyResult.isValid,
-          message: verifyResult.message || '검증 완료',
-        };
-      }
-    }
-    */
-
-    return {
-      isValid: result.isValid,
-      message: result.message || '검증 완료',
     };
   }
 
@@ -491,34 +296,10 @@ export class PaymentMethodService {
       );
   }
 
-  private async saveMethodDetails(
-    method: typeof schema.paymentMethod.$inferSelect,
-    dto: CreateGeneralPaymentMethodDto,
-    adapterResult: RegisterMethodResult,
-    tx: WalletTx,
-  ): Promise<void> {
-    switch (method.methodType) {
-      case 'CARD':
-        if (adapterResult.pgToken) {
-          await tx.insert(schema.cardMethod).values({
-            id: method.id,
-            methodType: 'CARD',
-            pgToken: adapterResult.pgToken,
-            billingKey: adapterResult.billingKey || '',
-            maskedCardNumber: adapterResult.maskedCardNumber || '',
-            cardBrand: adapterResult.metadata?.cardBrand as string,
-            cardType: adapterResult.metadata?.cardType as string,
-            issuerName: adapterResult.metadata?.issuerName as string,
-          });
-        }
-        break;
-      // 포인트, 계좌는 별도 세부 테이블 없음
-    }
-  }
+  // 세부 정보 저장은 각 MethodService에서 처리하므로 제거
 
   private toResponseDto(
     method: typeof schema.paymentMethod.$inferSelect,
-    adapterResult?: RegisterMethodResult,
   ): PaymentMethodResponseDto {
     return {
       id: method.id,
@@ -527,7 +308,7 @@ export class PaymentMethodService {
       methodName: method.methodName,
       status: method.status,
       isDefault: method.isDefault,
-      maskedInfo: adapterResult?.maskedCardNumber,
+      maskedInfo: undefined, // 세부 정보는 각 MethodService에서 관리
       createdAt: method.createdAt.toISOString(),
     };
   }
