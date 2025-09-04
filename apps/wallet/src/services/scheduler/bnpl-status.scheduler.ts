@@ -9,7 +9,7 @@ import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { eq, and } from 'drizzle-orm';
-import { BnplMethodService } from '../method-services/bnpl-method.service';
+import { PaymentService } from '../payment.service';
 
 @Injectable()
 export class BnplStatusScheduler {
@@ -17,7 +17,7 @@ export class BnplStatusScheduler {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplMethodService: BnplMethodService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   /**
@@ -96,7 +96,8 @@ export class BnplStatusScheduler {
 
     try {
       // HMS API로 회원 상태 확인
-      const memberStatus = await this.bnplMethodService.getMemberStatus(
+      const memberStatus = await this.paymentService.getMemberStatus(
+        'BNPL',
         method.id,
       );
 

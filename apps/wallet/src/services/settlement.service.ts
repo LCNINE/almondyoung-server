@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { and, eq, gte, inArray, lt } from 'drizzle-orm';
-import { BnplMethodService } from './method-services/bnpl-method.service';
+import { PaymentService } from './payment.service';
 import { BnplMethodGateway } from '../interfaces/payment-method-gateways.interface';
 import { HMS_BNPL_PAYMENT_ADAPTER } from '../shared/tokens/gateway.tokens';
 import { WalletTx } from '../shared/database';
@@ -34,7 +34,7 @@ export class SettlementService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplService: BnplMethodService,
+    private readonly paymentService: PaymentService,
     @Inject(HMS_BNPL_PAYMENT_ADAPTER)
     private readonly hmsBnplAdapter: BnplMethodGateway,
   ) {}

@@ -1,6 +1,7 @@
 // adapters/hms-bnpl-payment.adapter.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { HmsAPI, MockHmsAPI, ApiClientFactory } from 'hms-api-wrapper';
+import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 import { getTsid } from 'tsid-ts';
 import { ulid } from 'ulid';
 import {
@@ -33,16 +34,11 @@ export class HmsBnplPaymentAdapter
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   constructor(private readonly db: DbService<typeof schema>) {
-    // 환경변수 검증
-    if (process.env.USE_MOCK !== 'true') {
-      if (!process.env.SW_KEY || !process.env.CUST_KEY) {
-        throw new Error('실제 HMS API 사용 시 SW_KEY와 CUST_KEY가 필요합니다.');
-      }
-    }
-
-    this.hmsApi = ApiClientFactory.createFromEnv();
-    const apiType = process.env.USE_MOCK === 'true' ? 'Mock' : 'Real HMS Test';
-    this.logger.log(`HMS BNPL 어댑터 초기화 완료 - ${apiType} 서버 사용`);
+    // 🎯 BNPL은 항상 Mock 서버 사용 (Test 서버는 수동 승인 필요)
+    this.hmsApi = HmsApiFactory.createForBnpl();
+    this.logger.log(
+      `HMS BNPL 어댑터 초기화 완료 - Mock 서버 사용 (수동 승인 시뮬레이션)`,
+    );
   }
 
   /**

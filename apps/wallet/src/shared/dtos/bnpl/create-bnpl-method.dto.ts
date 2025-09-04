@@ -27,6 +27,22 @@ export class CreateBNPLMethodDto {
   methodName: string;
 
   @ApiProperty({
+    description: '회원 실명',
+    example: '홍길동',
+  })
+  @IsString()
+  @IsNotEmpty()
+  memberName: string;
+
+  @ApiProperty({
+    description: '휴대폰 번호',
+    example: '01012345678',
+  })
+  @IsString()
+  @IsNotEmpty()
+  phone: string;
+
+  @ApiProperty({
     description: '신용 한도 (원)',
     example: 1000000,
     minimum: 100000,

@@ -1,4 +1,3 @@
-// services/refunds-v2.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
@@ -7,11 +6,6 @@ import { IdempotencyService } from './idempotency.service';
 import { WalletTx } from '../shared/database';
 import { PaymentGatewayFactory } from './payment-gateway.factory';
 import { PaymentGateway } from '../interfaces/payment-gateway.interface';
-import {
-  RefundNotFoundError,
-  RefundAlreadyProcessedError,
-  RefundAmountExceedsLimitError,
-} from '../shared/errors/payment.errors';
 
 /**
  * MSA 환불 서비스 V2
@@ -154,6 +148,7 @@ export class RefundService {
    * - 상태: REQUESTED
    * - 실제 환급은 하지 않고 요청만 기록
    */
+
   async requestRefund(
     request: RefundRequest,
     idempotencyKey?: string,
@@ -163,7 +158,6 @@ export class RefundService {
     );
 
     return this.db.db.transaction(async (tx) => {
-      // 멱등성 체크
       const idempotencyResult =
         await this.idempotency.checkOrCreate<RefundResponse>(
           tx,
@@ -173,10 +167,9 @@ export class RefundService {
         );
       if (idempotencyResult.hit) return idempotencyResult.response!;
 
-      // 결제 세션 검증 및 환불 가능 여부 확인
+      // ✅ 세부 에러 클래스 대신 단순 Error 사용
       const refundValidation = await this.validateRefundRequest(tx, request);
 
-      // 환불 요청 기록 생성
       const refundEvent = await this.createRefundRequestRecord(
         tx,
         request,
@@ -194,7 +187,6 @@ export class RefundService {
       return response;
     });
   }
-
   /**
    * 2. 환불 승인 처리 (외부 승인 후 실제 환급 실행)
    * - 상태: REQUESTED → APPROVED → COMPLETED
@@ -330,7 +322,7 @@ export class RefundService {
       .limit(1);
 
     if (!refundData) {
-      throw new RefundNotFoundError(`환불을 찾을 수 없습니다: ${refundId}`);
+      throw new Error(`Refund not found: ${refundId}`);
     }
 
     return refundData as RefundWithSessionData;
@@ -375,7 +367,6 @@ export class RefundService {
     tx: WalletTx,
     request: RefundRequest,
   ): Promise<RefundValidationResult> {
-    // 결제 세션 조회 및 상태 검증
     const [session] = await tx
       .select()
       .from(schema.paymentSessions)
@@ -383,18 +374,13 @@ export class RefundService {
       .limit(1);
 
     if (!session) {
-      throw new RefundNotFoundError(
-        `결제 세션을 찾을 수 없습니다: ${request.paymentSessionId}`,
-      );
+      throw new Error(`Refund not found: ${request.paymentSessionId}`);
     }
 
     if (session.status !== 'CAPTURED') {
-      throw new RefundAlreadyProcessedError(
-        `환불 가능한 상태가 아닙니다: ${session.status}`,
-      );
+      throw new Error(`Refund already processed: ${session.status}`);
     }
 
-    // CAPTURED 결제 이벤트 조회
     const [paymentEvent] = await tx
       .select()
       .from(schema.paymentEvents)
@@ -407,12 +393,11 @@ export class RefundService {
       .limit(1);
 
     if (!paymentEvent) {
-      throw new RefundNotFoundError(
-        `결제 완료 이벤트를 찾을 수 없습니다: ${request.paymentSessionId}`,
+      throw new Error(
+        `Refund event not found for session: ${request.paymentSessionId}`,
       );
     }
 
-    // 환불 가능 금액 계산
     const totalRefunded = await this.getTotalRefundedAmount(
       tx,
       request.paymentSessionId,
@@ -421,8 +406,8 @@ export class RefundService {
     const remainingAmount = sessionAmount - totalRefunded;
 
     if (request.amount > remainingAmount) {
-      throw new RefundAmountExceedsLimitError(
-        `환불 요청 금액이 한도를 초과합니다. 요청: ${request.amount}, 가능: ${remainingAmount}`,
+      throw new Error(
+        `Refund amount exceeds limit. requested=${request.amount}, limit=${remainingAmount}`,
       );
     }
 
@@ -502,17 +487,12 @@ export class RefundService {
       .from(schema.refundEvents)
       .where(eq(schema.refundEvents.id, request.refundId))
       .limit(1);
-
     if (!refundEvent) {
-      throw new RefundNotFoundError(
-        `환불 요청을 찾을 수 없습니다: ${request.refundId}`,
-      );
+      throw new Error(`Refund not found: ${request.refundId}`);
     }
 
     if (refundEvent.status !== 'REQUESTED') {
-      throw new RefundAlreadyProcessedError(
-        `이미 처리된 환불입니다: ${refundEvent.status}`,
-      );
+      throw new Error(`Refund already processed: ${refundEvent.status}`);
     }
 
     // 결제 이벤트 및 세션 조회
@@ -535,9 +515,7 @@ export class RefundService {
       .limit(1);
 
     if (!paymentData) {
-      throw new RefundNotFoundError(
-        `결제 이벤트를 찾을 수 없습니다: ${refundEvent.paymentEventId}`,
-      );
+      throw new Error(`Refund not found: ${refundEvent.paymentEventId}`);
     }
 
     return {
@@ -732,15 +710,11 @@ export class RefundService {
       .limit(1);
 
     if (!refundEvent) {
-      throw new RefundNotFoundError(
-        `환불 요청을 찾을 수 없습니다: ${request.refundId}`,
-      );
+      throw new Error(`Refund not found: ${request.refundId}`);
     }
 
     if (refundEvent.status !== 'REQUESTED') {
-      throw new RefundAlreadyProcessedError(
-        `취소할 수 없는 환불 상태입니다: ${refundEvent.status}`,
-      );
+      throw new Error(`Refund already processed: ${refundEvent.status}`);
     }
 
     return { refundEvent: refundEvent as RefundEventData };
@@ -796,7 +770,9 @@ export class RefundService {
       .limit(1);
 
     if (!paymentSessionData) {
-      throw new RefundNotFoundError('결제 이벤트를 찾을 수 없습니다');
+      throw new Error(
+        `결제이벤트를 찾을수없습니다: ${refundEvent.paymentEventId}`,
+      );
     }
 
     const totalRefunded = await this.getTotalRefundedAmount(

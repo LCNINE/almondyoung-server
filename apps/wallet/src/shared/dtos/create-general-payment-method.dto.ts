@@ -4,9 +4,12 @@ import {
   IsNotEmpty,
   IsEnum,
   IsOptional,
+  IsNumber,
   ValidateNested,
   IsBoolean,
   ValidateIf,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -29,6 +32,26 @@ export class CardInfoDto {
   @IsString()
   @IsNotEmpty()
   expiryDate: string;
+
+  @ApiPropertyOptional({
+    description: '휴대폰 번호 (HMS CMS 등록용)',
+    example: '01012345678',
+  })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({
+    description: '결제일 (매월 몇일)',
+    example: 15,
+    minimum: 1,
+    maximum: 28,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(28)
+  billingCycleDay?: number;
 
   @ApiPropertyOptional({
     description: '빌링키 (외부 PG사 토큰)',

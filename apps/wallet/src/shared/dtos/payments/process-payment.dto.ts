@@ -87,62 +87,55 @@ export class ProcessPaymentDto {
 }
 
 export class PaymentResultDto {
-  @ApiProperty({ example: 'pm_card_abc123' })
-  methodId!: string;
+  @ApiProperty({
+    example: 'CARD',
+    description: '결제수단 타입 (CARD | BNPL | POINT)',
+  })
+  methodType: string;
 
-  @ApiProperty({ example: 'toss_charge_1234567890_abc123' })
-  transactionId?: string;
-
-  @ApiProperty({ example: 'auth_1234567890_def456' })
-  authorizationId?: string;
-
-  @ApiProperty({ example: 50000 })
-  amount!: number;
-}
-
-export class ProcessPaymentResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
-  @ApiProperty({ example: 'payment_xyz789' })
-  paymentId!: string;
-
-  @ApiProperty({ example: 'ps_session_xyz789' })
-  sessionId!: string;
-
-  @ApiProperty({ example: 100000 })
-  totalAmount!: number;
+  @ApiProperty({ example: 50000, description: '해당 결제수단으로 처리된 금액' })
+  amount: number;
 
   @ApiProperty({
-    description: '결제 결과 상세',
-    example: {
-      immediate: [
-        {
-          methodId: 'pm_card_abc123',
-          transactionId: 'toss_charge_1234567890_abc123',
-          amount: 50000,
-        },
-      ],
-      deferred: [
-        {
-          methodId: 'pm_bnpl_def456',
-          authorizationId: 'auth_1234567890_def456',
-          amount: 30000,
-        },
-      ],
-      points: { amount: 20000, newBalance: 15000 },
-    },
+    example: 'AUTHORIZED',
+    description: '결제 상태 (AUTHORIZED | CAPTURED | FAILED)',
   })
-  results!: {
-    status?: string;
-    authorizationIds?: string[];
-    capturedIds?: string[];
-    pointsTxId?: string;
-    immediate?: PaymentResultDto[];
-    deferred?: PaymentResultDto[];
-    points?: { amount: number; newBalance: number };
-  };
+  status: string;
 
-  @ApiProperty({ required: false })
-  error?: string;
+  @ApiProperty({
+    example: ['auth_123'],
+    description: '승인 ID 리스트 (BNPL 등)',
+    required: false,
+  })
+  authorizationIds?: string[];
+
+  @ApiProperty({
+    example: ['cap_456'],
+    description: '출금/캡쳐 ID 리스트',
+    required: false,
+  })
+  captureIds?: string[];
+
+  @ApiProperty({
+    example: 'txn_789',
+    description: '포인트 트랜잭션 ID',
+    required: false,
+  })
+  transactionId?: string;
+}
+export class ProcessPaymentResponseDto {
+  @ApiProperty({ example: true })
+  success: boolean;
+
+  @ApiProperty({ example: 'pay_abc123' })
+  paymentId: string;
+
+  @ApiProperty({ example: 'sess_abc123' })
+  sessionId: string;
+
+  @ApiProperty({ example: 120000 })
+  totalAmount: number;
+
+  @ApiProperty({ type: [PaymentResultDto] })
+  results: PaymentResultDto[];
 }

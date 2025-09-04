@@ -1,343 +1,289 @@
-// controllers/bnpl.controller.ts
 import {
   Controller,
   Post,
   Get,
   Body,
   Param,
+  Headers,
+  UploadedFile,
+  UseInterceptors,
+  HttpCode,
+  HttpStatus,
+  HttpException,
   BadRequestException,
-  NotFoundException,
-  InternalServerErrorException,
-  Req,
   Logger,
 } from '@nestjs/common';
-
-import { FastifyRequest } from 'fastify';
-
-// Fastify multipart 타입 확장
-interface FastifyRequestWithMultipart extends FastifyRequest {
-  parts(): AsyncIterableIterator<{
-    type: 'field' | 'file';
-    fieldname: string;
-    value?: string;
-    filename?: string;
-    mimetype?: string;
-    file?: NodeJS.ReadableStream;
-    toBuffer?(): Promise<Buffer>;
-  }>;
-}
-
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiConsumes,
-  ApiBody,
   ApiParam,
+  ApiHeader,
+  ApiConsumes,
+  ApiBadRequestResponse,
+  ApiNotFoundResponse,
+  ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
+import { PaymentService } from '../services/payment.service';
 import { CreateBNPLMethodDto } from '../shared/dtos/bnpl/create-bnpl-method.dto';
-import {
-  ConsentResponseDto,
-  MemberStatusResponseDto,
-  PaymentMethodResponseDto,
-} from '../shared/dtos/bnpl/submit-consent.dto';
-import { BnplMethodService } from '../services/method-services/bnpl-method.service';
+import { SubmitConsentDto } from '../shared/dtos/bnpl/submit-consent.dto';
 
-// 파일 업로드 타입 정의 (Fastify 호환)
-export interface UploadedFileInfo {
-  buffer: Buffer;
-  filename: string;
-  mimetype: string;
-  size: number;
-}
-import {
-  BnplMemberNotFoundError,
-  BnplMemberAlreadyExistsError,
-  BnplAccountNotFoundError,
-  HmsMemberCreationFailedError,
-} from '../shared/errors/payment.errors';
-
-@ApiTags('BNPL 후불결제')
-@Controller('bnpl')
+/**
+ * BNPL 전용 컨트롤러 v3.2
+ * - Hybrid Approach: /payment-methods/recurring/bnpl로 통합
+ * - BNPL 회원 등록, 출금동의서 제출, 상태 조회 등 BNPL만의 특수 프로세스 관리
+ * - PaymentService Facade Pattern으로 통합 처리
+ */
+@ApiTags('BNPL 관리')
+@Controller('payment-methods')
 export class BnplController {
   private readonly logger = new Logger(BnplController.name);
 
-  constructor(private readonly bnplMethodService: BnplMethodService) {}
+  constructor(private readonly paymentService: PaymentService) {}
 
-  @Post('register')
+  @Post('recurring/bnpl')
+  @HttpCode(201)
   @ApiOperation({
-    summary: 'BNPL 회원 등록',
-    description:
-      'BNPL 후불결제 서비스 회원으로 등록합니다. 이후 출금동의서 제출이 필요합니다.',
+    summary: '정기결제용 BNPL 등록',
+    description: 'HMS BNPL 시스템에 신규 회원을 등록합니다.',
+  })
+  @ApiHeader({
+    name: 'idempotency-key',
+    required: false,
+    description: '멱등성 키 (선택사항)',
   })
   @ApiResponse({
     status: 201,
-    description: '회원 등록 성공',
-    type: PaymentMethodResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 데이터',
-  })
-  async registerMember(@Body() dto: CreateBNPLMethodDto) {
-    try {
-      // BNPL 전용 서비스로 회원 등록
-      const result = await this.bnplMethodService.registerMember({
-        userId: dto.userId,
-        memberName: dto.methodName,
-        phone: '01012345678', // TODO: 실제 사용자 정보
-        creditLimit: dto.creditLimit,
-        billingCycleDay: dto.billingCycleDay,
-        termsUrl: dto.termsUrl,
-      });
-
-      // 응답 형식을 기존과 동일하게 변환
-      return {
-        paymentMethodId: result.paymentMethodId,
-        bnplAccountId: result.paymentMethodId, // HMS ID를 BNPL 계정 ID로 사용
-        hmsMemberId: result.hmsMemberId,
-        status: result.success ? 'PENDING' : 'FAILED',
-        userId: dto.userId,
-        methodName: dto.methodName,
-        methodType: 'BNPL',
-        message: result.success
-          ? '회원 등록이 완료되었습니다. 출금동의서를 제출해주세요.'
-          : result.error,
-      };
-    } catch (error) {
-      this.handleBnplError(error);
-    }
-  }
-
-  @Post('consent')
-  @ApiOperation({
-    summary: '출금동의서 제출',
-    description: 'BNPL 서비스 이용을 위한 출금동의서를 제출합니다.',
-  })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    description: '출금동의서 파일과 회원 정보',
+    description: 'BNPL 회원 등록 성공',
     schema: {
       type: 'object',
       properties: {
-        memberId: {
+        success: { type: 'boolean', example: true },
+        paymentMethodId: {
           type: 'string',
-          description: 'HMS 회원 ID',
-          example: 'HMS_MEMBER_123456789',
+          example: 'pm_01HQZX8QJKMNPQRST9VWXY012',
         },
-        consentFile: {
-          type: 'string',
-          format: 'binary',
-          description: '출금동의서 파일 (PDF, 이미지)',
+        hmsMemberId: { type: 'string', example: 'HMS_BNPL_123456789' },
+        status: { type: 'string', example: 'PENDING' },
+        message: { type: 'string', example: 'BNPL 회원 등록 완료' },
+        creditLimit: { type: 'number', example: 500000 },
+        nextSteps: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['출금동의서 제출 필요'],
         },
       },
-      required: ['memberId', 'consentFile'],
     },
   })
-  @ApiResponse({
-    status: 201,
-    description: '동의서 제출 성공',
-    type: ConsentResponseDto,
+  @ApiBadRequestResponse({
+    description: '잘못된 요청 데이터 또는 HMS API 에러',
   })
-  @ApiResponse({
-    status: 400,
-    description: '파일이 없거나 잘못된 회원 ID',
-  })
-  async submitConsent(
-    @Req() request: FastifyRequestWithMultipart,
-  ): Promise<ConsentResponseDto> {
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async registerBnplMember(
+    @Body() dto: CreateBNPLMethodDto,
+    @Headers('idempotency-key') idemKey?: string,
+  ) {
     try {
-      // Fastify multipart 파싱 - 효율적인 스트림 처리
-      const parts = request.parts();
-      let memberId: string | undefined;
-      let fileInfo: UploadedFileInfo | undefined;
+      const result = await this.paymentService.registerPaymentMethod(
+        'BNPL',
+        dto,
+        idemKey,
+      );
 
-      for await (const part of parts) {
-        if (
-          part.type === 'field' &&
-          part.fieldname === 'memberId' &&
-          part.value
-        ) {
-          memberId = part.value;
-        } else if (
-          part.type === 'file' &&
-          part.fieldname === 'consentFile' &&
-          part.toBuffer
-        ) {
-          // 파일 크기 제한 (5MB) - BNPL 서비스와 일치
-          const maxSize = 5 * 1024 * 1024;
-
-          // 스트림을 Buffer로 효율적 변환
-          const buffer = await part.toBuffer();
-
-          if (buffer.length > maxSize) {
-            throw new BadRequestException('파일 크기가 5MB를 초과했습니다');
-          }
-
-          fileInfo = {
-            buffer,
-            filename: part.filename || 'consent-file',
-            mimetype: part.mimetype || 'application/octet-stream',
-            size: buffer.length,
-          };
-        }
+      if (!result.success) {
+        throw new BadRequestException(result.error);
       }
 
-      if (!memberId) {
-        throw new BadRequestException('memberId가 필요합니다');
+      return {
+        success: true,
+        paymentMethodId: result.paymentMethodId,
+        hmsMemberId: result.hmsMemberId,
+        status: 'PENDING',
+        message: 'BNPL 회원 등록 완료',
+        creditLimit: dto.creditLimit || 500000,
+        nextSteps: ['출금동의서 제출 필요'],
+      };
+    } catch (error) {
+      this.logger.error('BNPL 회원 등록 실패', error);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (
+        error.message?.includes('required') ||
+        error.message?.includes('invalid') ||
+        error.message?.includes('already') ||
+        error.message?.includes('failed')
+      ) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
 
-      if (!fileInfo) {
-        throw new BadRequestException('consentFile이 필요합니다');
+      throw new HttpException(
+        'BNPL 회원 등록 중 알 수 없는 오류가 발생했습니다',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post(':memberId/consent')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({
+    summary: 'BNPL 출금동의서 제출',
+    description: 'BNPL 회원의 출금동의서 파일을 HMS에 제출합니다.',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiParam({
+    name: 'memberId',
+    description: 'HMS BNPL Member ID',
+    example: 'HMS_BNPL_123456789',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '출금동의서 제출 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        agreementId: { type: 'string', example: 'AGR_123456789' },
+        message: {
+          type: 'string',
+          example: '출금동의서가 성공적으로 제출되었습니다',
+        },
+        nextSteps: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['HMS 심사 진행 중', '2-3일 소요 예상'],
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: '파일 누락 또는 잘못된 파일 형식',
+  })
+  @ApiNotFoundResponse({ description: 'BNPL 회원 ID를 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async submitConsent(
+    @Param('memberId') memberId: string,
+    @UploadedFile() file: any,
+    @Body() dto: SubmitConsentDto,
+  ) {
+    try {
+      if (!file) {
+        throw new BadRequestException('출금동의서 파일이 필요합니다');
       }
 
-      // 파일 타입 검증 (Service에서 Controller로 이동)
+      // 파일 형식 검증
       const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-      if (!allowedTypes.includes(fileInfo.mimetype)) {
+      if (!allowedTypes.includes(file.mimetype)) {
         throw new BadRequestException(
-          'PDF 또는 이미지 파일만 업로드 가능합니다',
+          '지원하지 않는 파일 형식입니다. PDF, JPG, PNG만 가능합니다.',
         );
       }
 
-      const result = await this.bnplMethodService.submitConsent(
-        memberId,
-        fileInfo.buffer,
-        fileInfo.filename,
-      );
-
-      // ConsentResponseDto 형태로 변환
-      return {
-        success: (result as any).success || true,
-        message: (result as any).message || '출금동의서 제출 완료',
-        registrationComplete: (result as any).registrationComplete || true,
-        nextSteps: (result as any).nextSteps || ['HMS 심사 대기'],
-      };
-    } catch (error) {
-      // 안전한 에러 로깅
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      this.logger.error('출금동의서 제출 실패:', {
-        message: errorMessage,
-        stack: errorStack,
-      });
-
-      if (error instanceof BadRequestException) {
-        throw error;
+      // 파일 크기 검증 (10MB 제한)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new BadRequestException('파일 크기는 10MB 이하여야 합니다');
       }
 
-      // 커스텀 BNPL 에러 처리
-      this.handleBnplError(error);
+      this.logger.log(
+        `BNPL 출금동의서 제출: ${memberId}, 파일: ${file.originalname}`,
+      );
+
+      const result = await this.paymentService.submitConsent(
+        memberId,
+        file.buffer,
+        file.originalname,
+      );
+
+      if (!result.success) {
+        throw new BadRequestException(result.error);
+      }
+
+      return {
+        success: true,
+        agreementId: result.agreementId,
+        message: '출금동의서가 성공적으로 제출되었습니다',
+        nextSteps: ['HMS 심사 진행 중', '2-3일 소요 예상'],
+      };
+    } catch (error) {
+      this.logger.error('BNPL 출금동의서 제출 실패', error);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (
+        error.message?.includes('required') ||
+        error.message?.includes('invalid') ||
+        error.message?.includes('size') ||
+        error.message?.includes('format')
+      ) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+
+      throw new HttpException(
+        'BNPL 출금동의서 제출 중 알 수 없는 오류가 발생했습니다',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  @Get('status/:memberId')
+  @Get(':memberId/status')
   @ApiOperation({
-    summary: 'BNPL 회원 심사 상태 조회',
-    description: 'HMS에서 BNPL 회원 심사 상태를 조회합니다.',
+    summary: 'BNPL 회원 상태 조회',
+    description: 'HMS BNPL 회원의 현재 상태를 조회합니다.',
   })
   @ApiParam({
     name: 'memberId',
-    description: 'HMS 회원 ID',
-    example: 'HMS_MEMBER_123456789',
+    description: 'HMS BNPL Member ID',
+    example: 'HMS_BNPL_123456789',
   })
   @ApiResponse({
     status: 200,
-    description: '상태 조회 성공',
-    type: MemberStatusResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: '회원을 찾을 수 없음',
-  })
-  async getMemberStatus(
-    @Param('memberId') memberId: string,
-  ): Promise<MemberStatusResponseDto> {
-    try {
-      const result = await this.bnplMethodService.getMemberStatus(memberId);
-
-      // MemberStatusResponseDto 형태로 변환
-      return {
-        memberId,
-        status: (result as any).hmsStatus || 'PENDING',
-        approvedLimit: (result as any).approvedLimit || 0,
-        creditLimit: (result as any).creditLimit || 0,
-        registeredAt: (result as any).registeredAt || null,
-        rawResponse: result,
-      };
-    } catch (error) {
-      this.handleBnplError(error);
-    }
-  }
-
-  @Get('account/:userId')
-  @ApiOperation({
-    summary: 'BNPL 계정 정보 조회',
-    description: '사용자의 BNPL 계정 정보를 조회합니다.',
-  })
-  @ApiParam({
-    name: 'userId',
-    description: '사용자 ID',
-    example: 'user_123456789',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'BNPL 계정 정보',
+    description: 'BNPL 회원 상태 조회 성공',
     schema: {
       type: 'object',
       properties: {
-        id: { type: 'string' },
-        userId: { type: 'string' },
-        creditLimit: { type: 'number' },
-        approvedLimit: { type: 'number' },
-        status: { type: 'string', enum: ['ACTIVE', 'SUSPENDED', 'OVERDUE'] },
-        billingCycleDay: { type: 'number' },
-        createdAt: { type: 'string', format: 'date-time' },
+        success: { type: 'boolean', example: true },
+        status: { type: 'string', example: 'ACTIVE' },
+        hmsStatus: { type: 'string', example: 'REGISTERED' },
+        creditLimit: { type: 'number', example: 500000 },
+        approvedLimit: { type: 'number', example: 500000 },
+        registeredAt: { type: 'string', example: '2024-01-15T10:30:00Z' },
       },
     },
   })
-  @ApiResponse({
-    status: 404,
-    description: 'BNPL 계정을 찾을 수 없음',
-  })
-  async getBNPLAccount(@Param('userId') userId: string) {
+  @ApiNotFoundResponse({ description: 'BNPL 회원 ID를 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async getBnplMemberStatus(@Param('memberId') memberId: string) {
     try {
-      // TODO: BNPL 계정 조회 로직을 BnplMethodService에 구현 필요
-      throw new NotFoundException(
-        'BNPL 계정 조회 기능이 아직 구현되지 않았습니다',
+      const result = await this.paymentService.getMemberStatus(
+        'BNPL',
+        memberId,
       );
+
+      if (!result.success) {
+        throw new BadRequestException(result.error);
+      }
+
+      return {
+        success: true,
+        status: result.status,
+        hmsStatus: result.hmsStatus,
+        ...result.metadata,
+      };
     } catch (error) {
-      this.handleBnplError(error);
-    }
-  }
+      this.logger.error('BNPL 회원 상태 조회 실패', error);
 
-  /**
-   * BNPL Service에서 던진 커스텀 에러를 HTTP 상태 코드로 매핑
-   */
-  private handleBnplError(error: unknown): never {
-    this.logger.error('BNPL 에러 처리:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      name: error instanceof Error ? error.constructor.name : 'Unknown',
-    });
+      if (error.message?.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
 
-    // 커스텀 비즈니스 에러들을 HTTP 상태 코드로 매핑
-    if (error instanceof BnplMemberNotFoundError) {
-      throw new NotFoundException(error.message);
+      throw new HttpException(
+        'BNPL 회원 상태 조회 중 알 수 없는 오류가 발생했습니다',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
-    if (error instanceof BnplAccountNotFoundError) {
-      throw new NotFoundException(error.message);
-    }
-    if (error instanceof BnplMemberAlreadyExistsError) {
-      throw new BadRequestException(error.message);
-    }
-    if (error instanceof HmsMemberCreationFailedError) {
-      throw new InternalServerErrorException(error.message);
-    }
-
-    // 예상치 못한 에러
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    this.logger.error(`예상치 못한 BNPL 에러: ${errorMessage}`);
-    throw new InternalServerErrorException('내부 서버 오류가 발생했습니다');
   }
 }

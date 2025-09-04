@@ -17,7 +17,7 @@ import {
 // 사용하지 않는 타입 제거
 import { WalletTx } from '../shared/database';
 
-import { BnplMethodService } from './method-services/bnpl-method.service';
+import { PaymentService } from './payment.service';
 import { IdempotencyService } from './idempotency.service';
 
 @Injectable()
@@ -26,7 +26,7 @@ export class PaymentMethodService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly bnplService: BnplMethodService,
+    private readonly paymentService: PaymentService, // 통합 서비스 사용
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -110,25 +110,70 @@ export class PaymentMethodService {
       // 2. 비즈니스 검증
       await this.validatePaymentMethod(dto, tx);
 
-      // 3. 기본 결제수단 처리
+      // 3. methodType별 외부 시스템 등록 처리
+      let externalResult: any = null;
+      let initialStatus = 'ACTIVE'; // 기본값
+
+      if (dto.methodType === 'CARD' && dto.cardInfo) {
+        // HMS CMS 정기결제 회원 등록
+        const [year, month] = dto.cardInfo.expiryDate.split('/');
+        const registrationRequest = {
+          userId: dto.userId,
+          memberName: dto.methodName,
+          phone: dto.cardInfo.phone || '', // DTO에서 전화번호 가져오기
+          paymentNumber: dto.cardInfo.cardNumber,
+          payerName: dto.cardInfo.cardHolderName,
+          validYear: `20${year}`, // YY -> YYYY
+          validMonth: month,
+          billingCycleDay: dto.cardInfo.billingCycleDay || 1,
+        };
+
+        externalResult = await this.paymentService.registerPaymentMethod(
+          'CARD',
+          registrationRequest,
+        );
+
+        if (!externalResult.success) {
+          throw new Error(externalResult.error || 'HMS CMS 회원 등록 실패');
+        }
+
+        initialStatus = 'PENDING'; // HMS 승인 대기
+        this.logger.log(
+          `HMS CMS 회원 등록 성공: ${externalResult.hmsMemberId}`,
+        );
+      }
+
+      // 4. 기본 결제수단 처리
       if (dto.isDefault) {
         await this.clearDefaultMethods(dto.userId, tx);
       }
 
-      // 4. DB 저장
+      // 5. 내부 DB 저장 (외부 등록 결과 반영)
       const [method] = await tx
         .insert(schema.paymentMethod)
         .values({
           userId: dto.userId,
           methodType: dto.methodType,
           methodName: dto.methodName,
-          status: 'ACTIVE', // 일반 결제수단은 즉시 ACTIVE
+          status: initialStatus as 'PENDING' | 'ACTIVE' | 'INACTIVE',
           isDefault: dto.isDefault || false,
         })
         .returning();
 
-      // 5. 응답 구성
-      const response = this.toResponseDto(method);
+      // 6. HMS CMS 카드인 경우 추가 정보 저장
+      if (dto.methodType === 'CARD' && externalResult?.hmsMemberId) {
+        await tx.insert(schema.batchCmsMethod).values({
+          id: method.id, // paymentMethodId와 동일한 ID 사용
+          paymentMethodId: method.id,
+          hmsMemberId: externalResult.hmsMemberId,
+          creditLimit: 1000000, // 기본 100만원
+          approvedLimit: 0, // 승인 전에는 0
+          billingCycleDay: 1, // 기본값
+        });
+      }
+
+      // 7. 응답 구성
+      const response = this.toResponseDto(method, externalResult);
 
       // 6. 멱등성 완료
       if (idemKey) {
@@ -155,8 +200,9 @@ export class PaymentMethodService {
 
         if (method.methodType === 'BNPL' && method.status === 'PENDING') {
           try {
-            // BNPL 상태는 BnplMethodService에서 조회
-            const bnplStatus = await this.bnplService.getMemberStatus(
+            // BNPL 상태는 PaymentService에서 조회
+            const bnplStatus = await this.paymentService.getMemberStatus(
+              'BNPL',
               method.id,
             );
             const statusData = bnplStatus as {
@@ -300,6 +346,7 @@ export class PaymentMethodService {
 
   private toResponseDto(
     method: typeof schema.paymentMethod.$inferSelect,
+    externalResult?: any,
   ): PaymentMethodResponseDto {
     return {
       id: method.id,
@@ -308,7 +355,8 @@ export class PaymentMethodService {
       methodName: method.methodName,
       status: method.status,
       isDefault: method.isDefault,
-      maskedInfo: undefined, // 세부 정보는 각 MethodService에서 관리
+      maskedInfo: externalResult?.metadata?.maskedCardNumber || undefined,
+      hmsMemberId: externalResult?.hmsMemberId || undefined,
       createdAt: method.createdAt.toISOString(),
     };
   }

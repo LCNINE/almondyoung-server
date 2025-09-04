@@ -13,15 +13,12 @@ import { BnplController } from './controllers/bnpl.controller';
 import { SettlementController } from './controllers/settlement.controller';
 
 // === 표준 통합 서비스 (리팩토링 후) ===
-import { PaymentOrchestrationService } from './services/payment-orchestration.service';
 import { PaymentGatewayFactory } from './services/payment-gateway.factory';
 import { IdempotencyService } from './services/idempotency.service';
 import { SettlementService } from './services/settlement.service';
 
-// === 결제수단별 전용 서비스들 ===
-import { BnplMethodService } from './services/method-services/bnpl-method.service';
-import { CardMethodService } from './services/method-services/card-method.service';
-import { PointMethodService } from './services/method-services/point-method.service';
+// === 결제수단별 전용 서비스들 (Strategy Pattern으로 대체됨) ===
+// BnplMethodService, CardMethodService, PointMethodService 제거됨
 import { PaymentMethodService } from './services/payment-method.service';
 import { PaymentSessionService } from './services/payment-session.service';
 
@@ -46,6 +43,13 @@ import { SettlementScheduler } from './services/scheduler/settlement.scheduler';
 import * as schema from './shared/database/schema';
 import { RefundService } from './services/refund.service';
 
+// === 새로운 Strategy Pattern 구현 ===
+import { PaymentService } from './services/payment.service';
+import { PaymentStrategyFactory } from './factories/payment-strategy.factory';
+import { BnplStrategy } from './strategies/bnpl.strategy';
+import { CardStrategy } from './strategies/card.strategy';
+import { PointStrategy } from './strategies/point.strategy';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -67,24 +71,31 @@ import { RefundService } from './services/refund.service';
     PaymentSessionController,
     PaymentController,
     RefundController,
-    BnplController,
+    BnplController, // BNPL 전용 컨트롤러 추가
+
     SettlementController,
   ],
   providers: [
-    // === 표준 통합 서비스들 (리팩토링 후) ===
-    PaymentOrchestrationService,
+    // === 새로운 Strategy Pattern 기반 서비스들 ===
+    PaymentService, // 통합 Facade
+    PaymentStrategyFactory, // 전략 팩토리
+
+    // === Strategy 구현체들 ===
+    BnplStrategy,
+    CardStrategy,
+    PointStrategy,
+
+    // === 기존 서비스들 (호환성 유지) ===
+
     PaymentGatewayFactory,
     IdempotencyService,
     SettlementService,
     RefundService,
 
     // === 결제수단별 전용 서비스들 ===
-    BnplMethodService,
-    CardMethodService,
-    PointMethodService,
+    // BnplMethodService, CardMethodService, PointMethodService 제거됨
     PaymentMethodService,
     PaymentSessionService,
-    PaymentOrchestrationService,
     // === 스케줄러 ===
     BnplStatusScheduler,
     SettlementScheduler,
@@ -108,16 +119,17 @@ import { RefundService } from './services/refund.service';
     },
   ],
   exports: [
-    // === 표준 통합 서비스 Export (리팩토링 후) ===
-    PaymentOrchestrationService,
+    // === 새로운 Strategy Pattern 기반 서비스들 ===
+    PaymentService, // 통합 Facade
+    PaymentStrategyFactory,
+
+    // === 기존 서비스 Export (호환성 유지) ===
     PaymentGatewayFactory,
     IdempotencyService,
     SettlementService,
 
     // === 결제수단별 전용 서비스들 ===
-    BnplMethodService,
-    CardMethodService,
-    PointMethodService,
+    // BnplMethodService, CardMethodService, PointMethodService 제거됨
     PaymentMethodService,
     PaymentSessionService,
   ],

@@ -44,6 +44,12 @@ export class PaymentMethodResponseDto {
   createdAt: string;
 
   @ApiPropertyOptional({
+    description: 'HMS Member ID (HMS CMS 카드인 경우)',
+    example: 'HMS_123456789',
+  })
+  hmsMemberId?: string;
+
+  @ApiPropertyOptional({
     description: 'BNPL 승인 대기 정보 (BNPL PENDING인 경우만)',
     type: 'object',
     properties: {
