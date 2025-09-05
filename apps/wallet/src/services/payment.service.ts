@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
+import * as schema from '../shared/database/schema';
+import { eq } from 'drizzle-orm';
 import { PaymentStrategyFactory } from '../factories/payment-strategy.factory';
+import { IdempotencyService } from './idempotency.service';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import {
   PaymentResult,
   RegistrationResult,
@@ -22,10 +27,14 @@ import {
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
 
-  constructor(private readonly strategyFactory: PaymentStrategyFactory) {}
+  constructor(
+    private readonly db: DbService<typeof schema>,
+    private readonly strategyFactory: PaymentStrategyFactory,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   /**
-   * 결제 처리 - 모든 결제수단 통합
+   * 결제 처리 - 모든 결제수단 통합 (오케스트레이션)
    */
   async processPayment(
     methodType: string,
@@ -47,32 +56,97 @@ export class PaymentService {
       `통합 결제 처리: ${methodType}, 금액: ${amount}${currency}, 세션: ${metadata.sessionId}`,
     );
 
-    try {
-      const strategy = this.strategyFactory.getStrategy(methodType);
+    return await this.db.db.transaction(async (tx) => {
+      const idempotencyResult = await this.idempotency.checkOrCreate(
+        tx,
+        idempotencyKey,
+        { methodType, amount, currency, metadata },
+        `/payments/process`,
+      );
+      if (idempotencyResult.hit)
+        return idempotencyResult.response as PaymentResult;
 
-      if (!('processPayment' in strategy)) {
-        throw new Error(`${methodType}는 결제 처리를 지원하지 않습니다`);
+      try {
+        const strategy = this.strategyFactory.getStrategy(methodType);
+
+        if (!('processPayment' in strategy)) {
+          throw new Error(`${methodType}는 결제 처리를 지원하지 않습니다`);
+        }
+
+        // Strategy를 통한 순수 결제 처리
+        const result = await strategy.processPayment(
+          amount,
+          currency,
+          metadata,
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || '결제 처리에 실패했습니다');
+        }
+
+        // 결제 이벤트 기록
+        await tx.insert(schema.paymentEvents).values({
+          paymentSessionId: metadata.sessionId,
+          paymentMethodId: metadata.paymentMethodId || '',
+          status: 'CAPTURED',
+          amount: amount,
+          pgTransactionId: result.transactionId,
+          pgResponse: JSON.stringify({
+            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
+            originalRequest: metadata,
+            gatewayResponse: result.metadata,
+          }),
+          actor: 'USER',
+          metadata: JSON.stringify({
+            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
+            paymentType: methodType,
+            captureId: result.captureId,
+          }),
+        });
+
+        // 세션 상태 업데이트
+        await tx
+          .update(schema.paymentSessions)
+          .set({
+            status: 'CAPTURED',
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.paymentSessions.id, metadata.sessionId));
+
+        const response: PaymentResult = {
+          success: true,
+          transactionId: result.transactionId,
+          captureId: result.captureId,
+          amount,
+          currency,
+          status: 'CAPTURED',
+          metadata: result.metadata,
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, response);
+        return response;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(`통합 결제 실패: ${methodType} - ${errorMessage}`);
+
+        const failureResponse: PaymentResult = {
+          success: false,
+          transactionId: '',
+          amount,
+          currency,
+          status: 'FAILED',
+          error: errorMessage,
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
+        return failureResponse;
       }
-
-      return await strategy.processPayment(amount, currency, metadata);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`통합 결제 실패: ${methodType} - ${errorMessage}`);
-
-      return {
-        success: false,
-        transactionId: '',
-        amount,
-        currency,
-        status: 'FAILED',
-        error: errorMessage,
-      };
-    }
+    });
   }
 
   /**
-   * 결제수단 등록 - 모든 등록 가능한 결제수단 통합
+   * 결제수단 등록 - 모든 등록 가능한 결제수단 통합 (오케스트레이션)
    */
   async registerPaymentMethod(
     methodType: string,
@@ -84,34 +158,102 @@ export class PaymentService {
       `통합 결제수단 등록: ${methodType} (${usage || 'DEFAULT'}) - ${request.userId}`,
     );
 
-    try {
-      const strategy = this.strategyFactory.getStrategy(methodType);
-
-      if (!('registerMethod' in strategy)) {
-        throw new Error(`${methodType}는 등록을 지원하지 않습니다`);
-      }
-
-      // usage 정보를 Strategy에 전달
-      const requestWithUsage = { ...request, usage };
-      return await strategy.registerMethod(requestWithUsage);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(
-        `통합 결제수단 등록 실패: ${methodType} - ${errorMessage}`,
+    return await this.db.db.transaction(async (tx) => {
+      const idempotencyResult = await this.idempotency.checkOrCreate(
+        tx,
+        idempotencyKey,
+        { methodType, request, usage },
+        `/payment-methods/register`,
       );
+      if (idempotencyResult.hit)
+        return idempotencyResult.response as RegistrationResult;
 
-      return {
-        success: false,
-        paymentMethodId: '',
-        status: 'FAILED',
-        error: errorMessage,
-      };
-    }
+      try {
+        const strategy = this.strategyFactory.getStrategy(methodType);
+
+        if (!('registerMethod' in strategy)) {
+          throw new Error(`${methodType}는 등록을 지원하지 않습니다`);
+        }
+
+        // usage 정보를 Strategy에 전달
+        const requestWithUsage = { ...request, usage };
+        const result = await strategy.registerMethod(requestWithUsage);
+
+        if (!result.success) {
+          throw new Error(result.error || '결제수단 등록에 실패했습니다');
+        }
+
+        // 내부 결제수단 저장 (Strategy에서 외부 API 호출 성공 후)
+        const [paymentMethod] = await tx
+          .insert(schema.paymentMethod)
+          .values({
+            userId: request.userId,
+            methodType: methodType as
+              | 'CARD'
+              | 'BANK_ACCOUNT'
+              | 'BNPL'
+              | 'REWARD_POINT',
+            methodName:
+              request.methodName ||
+              `${methodType} (${request.memberName || request.userId})`,
+            status: usage === 'ONE_TIME' ? 'ACTIVE' : 'PENDING', // 일회성은 즉시 활성화
+          })
+          .returning();
+
+        // 카드 등록의 경우 추가 정보 저장
+        if (
+          methodType === 'CARD' &&
+          usage === 'RECURRING' &&
+          result.hmsMemberId
+        ) {
+          await tx.insert(schema.cardMethod).values({
+            id: paymentMethod.id,
+            methodType: 'CARD',
+            pgToken: result.hmsMemberId,
+            billingKey: result.hmsMemberId,
+            maskedCardNumber: request.maskedCardNumber || '****-****-****-****',
+            lastFourDigits: request.paymentNumber?.slice(-4) || '0000',
+            cardBrand: 'HMS_CARD',
+            cardType: 'CREDIT',
+            issuerName: 'HMS',
+          });
+        }
+
+        const response: RegistrationResult = {
+          success: true,
+          paymentMethodId: paymentMethod.id,
+          hmsMemberId: result.hmsMemberId,
+          status: paymentMethod.status as 'PENDING' | 'ACTIVE' | 'FAILED',
+          metadata: {
+            ...result.metadata,
+            internalPaymentMethodId: paymentMethod.id,
+          },
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, response);
+        return response;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(
+          `통합 결제수단 등록 실패: ${methodType} - ${errorMessage}`,
+        );
+
+        const failureResponse: RegistrationResult = {
+          success: false,
+          paymentMethodId: '',
+          status: 'FAILED',
+          error: errorMessage,
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
+        return failureResponse;
+      }
+    });
   }
 
   /**
-   * 환불 처리 - 모든 결제수단 통합
+   * 환불 처리 - 모든 결제수단 통합 (오케스트레이션)
    */
   async refundPayment(
     methodType: string,
@@ -124,27 +266,73 @@ export class PaymentService {
       `통합 환불 처리: ${methodType}, 거래ID: ${transactionId}, 금액: ${amount}`,
     );
 
-    try {
-      const strategy = this.strategyFactory.getStrategy(methodType);
+    return await this.db.db.transaction(async (tx) => {
+      const idempotencyResult = await this.idempotency.checkOrCreate(
+        tx,
+        idempotencyKey,
+        { methodType, transactionId, amount, reason },
+        `/refunds/process`,
+      );
+      if (idempotencyResult.hit)
+        return idempotencyResult.response as RefundResult;
 
-      if (!('refundPayment' in strategy)) {
-        throw new Error(`${methodType}는 환불 처리를 지원하지 않습니다`);
+      try {
+        const strategy = this.strategyFactory.getStrategy(methodType);
+
+        if (!('refundPayment' in strategy)) {
+          throw new Error(`${methodType}는 환불 처리를 지원하지 않습니다`);
+        }
+
+        // Strategy를 통한 순수 환불 처리
+        const result = await strategy.refundPayment(
+          transactionId,
+          amount,
+          reason,
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || '환불 처리에 실패했습니다');
+        }
+
+        // 환불 이벤트 기록
+        await tx.insert(schema.refundEvents).values({
+          paymentEventId: transactionId,
+          status: 'COMPLETED',
+          amount: amount,
+          reason: reason || '고객 요청',
+          completedBy: 'SYSTEM',
+          completedAt: new Date(),
+          metadata: JSON.stringify({
+            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
+            gatewayResponse: result.metadata,
+          }),
+        });
+
+        const response: RefundResult = {
+          success: true,
+          refundId: result.refundId,
+          refundedAmount: result.refundedAmount,
+          metadata: result.metadata,
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, response);
+        return response;
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        this.logger.error(`통합 환불 실패: ${methodType} - ${errorMessage}`);
+
+        const failureResponse: RefundResult = {
+          success: false,
+          refundId: '',
+          refundedAmount: 0,
+          error: errorMessage,
+        };
+
+        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
+        return failureResponse;
       }
-
-      return await strategy.refundPayment(transactionId, amount, reason);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`통합 환불 실패: ${methodType} - ${errorMessage}`);
-
-      return {
-        success: false,
-        refundId: '',
-        refundedAmount: 0,
-        status: 'FAILED',
-        error: errorMessage,
-      };
-    }
+    });
   }
 
   /**

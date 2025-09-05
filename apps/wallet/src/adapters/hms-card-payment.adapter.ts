@@ -1,6 +1,6 @@
 // adapters/hms-card-payment.adapter.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsAPI, MockHmsAPI, CreatePaymentProfileDto } from 'hms-api-wrapper';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 import { getTsid } from 'tsid-ts';
 import {
@@ -52,17 +52,18 @@ export class HmsCardPaymentAdapter
 
     try {
       // HMS API 타입 안전성 체크
-      if (!('paymentTryansactions' in this.hmsApi)) {
+      if (!('paymentTransactions' in this.hmsApi)) {
         throw new Error('HMS PaymentTransaction API가 지원되지 않습니다');
       }
 
-      const response =
-        await this.hmsApi.paymentTryansactions.requestTryansaction({
-          transactionId: getTsid().toString(),
-          memberId: metadata?.hmsMemberId || metadata?.paymentMethodId || '',
-          callAmount: amountKRW,
-          cardPointFlag: 'N',
-        });
+      const response = await (
+        this.hmsApi as any
+      ).paymentTransactions.requestTransaction({
+        transactionId: getTsid().toString(),
+        memberId: metadata?.hmsMemberId || metadata?.paymentMethodId || '',
+        callAmount: amountKRW,
+        cardPointFlag: 'N',
+      });
 
       if (response.payment.result.flag !== 'SUCCESS') {
         return {
@@ -113,17 +114,19 @@ export class HmsCardPaymentAdapter
 
     try {
       // HMS API 타입 안전성 체크
-      if (!('paymentTryansactions' in this.hmsApi)) {
+      if (!('paymentTransactions' in this.hmsApi)) {
         throw new Error('HMS PaymentTransaction API가 지원되지 않습니다');
       }
 
       const response =
         amountKRW > 0
-          ? await this.hmsApi.paymentTryansactions.cancelPartialTryansaction(
+          ? await (
+              this.hmsApi as any
+            ).paymentTransactions.cancelPartialTransaction(
               transactionId,
               amountKRW,
             )
-          : await this.hmsApi.paymentTryansactions.cancelTryansaction(
+          : await (this.hmsApi as any).paymentTransactions.cancelTransaction(
               transactionId,
             );
 
@@ -205,19 +208,25 @@ export class HmsCardPaymentAdapter
 
       // 🎯 실제 HMS Test Server API 호출 (실시간 지원)
       this.logger.log('HMS Test Server: 실제 PaymentProfiles API 호출');
-      const response = await this.hmsApi.paymentProfiles.create({
+
+      const hmsPayload: CreatePaymentProfileDto = {
         memberId: getTsid().toString(),
         memberName: request.memberName,
         phone: request.phone,
         paymentKind: 'CARD',
         paymentNumber: request.paymentNumber!,
         payerName: request.payerName!,
-        payerNumber: request.paymentNumber!, // HMS API 요구사항
+        payerNumber: request.paymentNumber!, // HMS API: 납부자 번호 (카드번호와 동일하게 설정)
         validYear: request.validYear!,
         validMonth: request.validMonth!,
         paymentDay: request.billingCycleDay?.toString() || '1',
-        paymentCompany: 'TOSS',
-      });
+      };
+
+      this.logger.log(
+        'HMS API 요청 데이터:',
+        JSON.stringify(hmsPayload, null, 2),
+      );
+      const response = await this.hmsApi.paymentProfiles.create(hmsPayload);
 
       if (response.member.result.flag !== 'SUCCESS') {
         return {

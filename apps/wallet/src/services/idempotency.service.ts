@@ -126,14 +126,14 @@ export class IdempotencyService {
     tx: WalletTx,
     idemKey: string | undefined,
     response: T,
-    statusCode = 200,
+    statusCode?: number,
   ): Promise<void> {
     if (!idemKey) return;
     await tx
       .update(schema.idempotencyKeys)
       .set({
         status: 'COMPLETED',
-        responseCode: statusCode,
+        responseCode: statusCode || 200,
         responseBody: JSON.stringify(response),
       })
       .where(eq(schema.idempotencyKeys.id, idemKey));

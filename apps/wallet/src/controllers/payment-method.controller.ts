@@ -137,10 +137,29 @@ export class PaymentMethodController {
       throw new BadRequestException('HMS CMS 등록은 카드 정보가 필요합니다');
     }
 
+    // HMS CMS API에 맞게 데이터 변환
+    const hmsRequest = {
+      ...dto,
+      memberName: dto.cardInfo.cardHolderName, // HMS API에서 기대하는 필드명
+      paymentNumber: dto.cardInfo.cardNumber, // 실제 카드번호 (마스킹되지 않은)
+      payerName: dto.cardInfo.cardHolderName,
+      payerNumber: dto.cardInfo.cardNumber, // HMS API 요구사항: paymentNumber와 동일
+      phone: dto.cardInfo.phone,
+      billingCycleDay: dto.cardInfo.billingCycleDay,
+      validYear: dto.cardInfo.expiryDate?.split('/')[1]?.padStart(2, '0'), // "12/25" -> "25"
+      validMonth: dto.cardInfo.expiryDate?.split('/')[0]?.padStart(2, '0'), // "12/25" -> "12"
+      maskedCardNumber: dto.cardInfo.cardNumber.replace(
+        /(\d{4})\d{4}\d{4}(\d{4})/,
+        '$1-****-****-$2',
+      ), // 마스킹 처리
+    };
+
+    console.log('변환된 HMS 요청 데이터:', JSON.stringify(hmsRequest, null, 2));
+
     // PaymentService를 통해 정기결제 카드 등록 처리 (HMS CMS)
     const result = await this.paymentService.registerPaymentMethod(
       'CARD',
-      dto,
+      hmsRequest,
       idemKey,
       'RECURRING', // usage 파라미터 추가
     );

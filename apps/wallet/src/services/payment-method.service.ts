@@ -160,15 +160,24 @@ export class PaymentMethodService {
         })
         .returning();
 
-      // 6. HMS CMS 카드인 경우 추가 정보 저장
+      // 6. 카드인 경우 cardMethod 테이블에 저장 (HMS CMS 정기결제 정보 포함)
       if (dto.methodType === 'CARD' && externalResult?.hmsMemberId) {
-        await tx.insert(schema.batchCmsMethod).values({
-          id: method.id, // paymentMethodId와 동일한 ID 사용
-          paymentMethodId: method.id,
-          hmsMemberId: externalResult.hmsMemberId,
-          creditLimit: 1000000, // 기본 100만원
-          approvedLimit: 0, // 승인 전에는 0
-          billingCycleDay: 1, // 기본값
+        await tx.insert(schema.cardMethod).values({
+          methodType: 'CARD',
+          pgToken: externalResult.hmsMemberId, // HMS Member ID를 pgToken으로 사용
+          billingKey: externalResult.hmsMemberId, // HMS Member ID를 billingKey로도 사용
+          maskedCardNumber:
+            externalResult.metadata?.maskedCardNumber || '****-****-****-****',
+          lastFourDigits:
+            externalResult.metadata?.maskedCardNumber?.slice(-4) || '****',
+          cardBrand: externalResult.metadata?.cardCompany || 'HMS_CARD',
+          cardType: externalResult.metadata?.cardType || 'CREDIT',
+          issuerName: 'HMS',
+          hmsMetadata: JSON.stringify({
+            hmsMemberId: externalResult.hmsMemberId,
+            memberName: dto.memberName,
+            ...externalResult.metadata,
+          }),
         });
       }
 

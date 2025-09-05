@@ -43,7 +43,7 @@ export class PaymentGatewayFactory {
     this.gatewayMap.set('internal_point', this.internalPointAdapter);
 
     // 결제수단 타입별 게이트웨이 매핑
-    this.methodTypeMap.set('CARD', 'toss');
+    this.methodTypeMap.set('CARD', 'hms_card'); // HMS 카드 정기결제 사용
     this.methodTypeMap.set('EASY_PAY', 'toss');
     this.methodTypeMap.set('REWARD_POINT', 'internal_point');
     this.methodTypeMap.set('BNPL', 'hms_bnpl');
