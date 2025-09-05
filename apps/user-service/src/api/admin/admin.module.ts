@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from './auth/auth.module';
+import { BlacklistsModule } from './blacklists/blacklists.module';
 import { AdminBusinessLicensesModule } from './business-licenses/business-licenses.module';
 import { AdminDormantModule } from './dormant/dormant.module';
 import { AdminRolesModule } from './roles/roles.module';
@@ -12,6 +13,7 @@ import { AdminUserModule } from './users/users.module';
     AdminRolesModule,
     AdminUserModule,
     AdminDormantModule,
+    BlacklistsModule,
   ],
 })
 export class AdminModule {}
