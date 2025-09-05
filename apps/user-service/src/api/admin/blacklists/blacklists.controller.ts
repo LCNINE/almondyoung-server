@@ -42,7 +42,7 @@ export class BlacklistsController {
   @ApiQuery({ name: 'userId', description: '사용자 ID', required: false })
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
   @Get()
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:read'])
   async getBlacklists(
     @Query() query: { page?: string; limit?: string; userId?: string },
   ): Promise<{
@@ -67,7 +67,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
   @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
   @Get(':userId')
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:read'])
   async getBlacklistByUserId(
     @Param('userId') userId: string,
   ): Promise<BlacklistsResponseDto> {
@@ -87,7 +87,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 생성 성공' })
   @ApiResponse({ status: 400, description: '블랙리스트 생성 실패' })
   @Post()
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:modify'])
   async createBlacklist(
     @Body() blacklistsCreateDto: BlacklistsCreateDto,
     @CurrentUser() user: User,
@@ -107,7 +107,7 @@ export class BlacklistsController {
   @ApiResponse({ status: 200, description: '블랙리스트 삭제 성공' })
   @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
   @Delete(':userId')
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:modify'])
   async deleteBlacklist(
     @Param('userId') userId: string,
     @CurrentUser() user: User,

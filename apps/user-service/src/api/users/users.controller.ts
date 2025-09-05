@@ -69,7 +69,7 @@ export class UsersController {
     required: false,
   })
   @Get('/details')
-  @RequireScopes(['user:read', 'master'])
+  @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
     @CurrentUser() user: User,
@@ -87,7 +87,7 @@ export class UsersController {
   @ApiParam({ name: 'userId', description: '사용자 ID' })
   @Get('/roles/:userId')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(['user:read', 'master'])
+  @RequireScopes(['user:read', 'master', 'admin:users:read'])
   async getUserRoles(@CurrentUser() user: User) {
     return this.usersService.getUserRoles(user.id);
   }
@@ -96,7 +96,7 @@ export class UsersController {
   @ApiResponse({ status: 200, description: '사용자 정보 수정 성공' })
   @ApiParam({ name: 'userId', description: '수정할 사용자 ID' })
   @Patch(':userId')
-  @RequireScopes(['user:update', 'master'])
+  @RequireScopes(['user:modify', 'master', 'admin:users:modify'])
   @HttpCode(HttpStatus.OK)
   async updateUser(
     @Param('userId') userId: string,

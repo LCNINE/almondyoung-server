@@ -34,7 +34,7 @@ export class FileController {
   @Post('upload')
   @FastifyFileInterceptor('file')
   @UsePipes(FileValidatorPipe)
-  @RequireScopes(['user:write'])
+  @RequireScopes(['user:modify'])
   @ApiOperation({
     summary: '파일 업로드',
     description: '파일을 AWS S3에 업로드합니다.',
