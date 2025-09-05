@@ -395,6 +395,46 @@ export const shopsRelations = relations(shops, ({ many }) => ({
 
 export type BusinessLicense = typeof businessLicenses.$inferSelect;
 
+// ==================== 블랙리스트 테이블 ====================
+
+/**
+ * 블랙리스트 관리 테이블
+ * 레코드가 존재하면서 deletedAt이 nulll이면  = 블랙리스트
+ * 레코드가 없거나 deletedAt이 null이 아니면 = 정상 고객
+ */
+export const blacklists = pgTable('blacklists', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' })
+    .unique(),
+  // 사유
+  reason: text('reason').notNull(),
+  // 내부 메모 (CS팀용)
+  internalNote: text('internal_note'),
+  // 등록 정보
+  createdBy: uuid('created_by').references(() => users.id), // 등록한 관리자 ID
+  createdAt: timestamp('created_at')
+    .default(sql`now()`)
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .default(sql`now()`)
+    .notNull(),
+  deletedAt: timestamp('deleted_at'),
+  deletedBy: uuid('deleted_by').references(() => users.id), // 블랙리스트 해제한 관리자 ID
+});
+
+export const blacklistsRelations = relations(blacklists, ({ one }) => ({
+  user: one(users, {
+    fields: [blacklists.userId],
+    references: [users.id],
+  }),
+  createdByUser: one(users, {
+    fields: [blacklists.createdBy],
+    references: [users.id],
+  }),
+}));
+
 export const userServiceSchema = {
   users,
   roles,
@@ -408,6 +448,7 @@ export const userServiceSchema = {
   tokens,
   tokenTypeEnum,
   profiles,
+  blacklists,
 };
 
 export type UserServiceSchema = typeof userServiceSchema;
