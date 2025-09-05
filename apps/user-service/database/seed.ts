@@ -8,11 +8,15 @@ export const PREDEFINED_IDS = {
   ROLE_MASTER: '3a2b1c0d-9e8f-7a6b-5c4d-3e2f1a0b9c8d',
   ROLE_ADMIN: '5c6d7e8f-9a0b-1c2d-3e4f-5a6b7c8d9e0f',
   ROLE_USER: '4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e',
+  ROLE_WHOLESALE: '7c8d9e0f-1a2b-3c4d-5e6f-7a8b9c0d1e2f',
   // 유저 스코프 ID
   SCOPE_MASTER: '9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d',
   SCOPE_USERS_READ: 'b1c2d3e4-f5a6-b7c8-d9e0-f1a2b3c4d5e6',
   SCOPE_USERS_MODIFY: 'c1d2e3f4-a5b6-c7d8-e9f0-a1b2c3d4e5f6',
   SCOPE_USERS_DELETE: 'd1e2f3a4-b5c6-d7e8-f9a0-b1c2d3e4f5a6',
+
+  // 도매회원 스코프 ID
+  SCOPE_WHOLESALE_READ: 'e2f3a4b5-c6d7-e8f9-a0b1-c2d3e4f5a6b7',
 
   // 관리자 스코프 ID
   SCOPE_ADMIN_ACCESS: '0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d',
@@ -42,6 +46,11 @@ const DEFAULT_ROLES = [
     name: 'user',
     description: '일반 사용자',
   },
+  {
+    id: PREDEFINED_IDS.ROLE_WHOLESALE,
+    name: 'wholesale',
+    description: '도매회원',
+  },
 ];
 
 const DEFAULT_SCOPES = [
@@ -64,6 +73,12 @@ const DEFAULT_SCOPES = [
     id: PREDEFINED_IDS.SCOPE_USERS_DELETE,
     name: 'user:delete',
     description: '사용자 - 사용자 정보 삭제',
+  },
+
+  {
+    id: PREDEFINED_IDS.SCOPE_WHOLESALE_READ,
+    name: 'wholesale:read',
+    description: '도매회원 - 도매 관련 정보 조회',
   },
 
   {
@@ -134,6 +149,14 @@ const DEFAULT_ROLE_SCOPE_MAPPINGS = [
       PREDEFINED_IDS.SCOPE_USERS_READ,
       PREDEFINED_IDS.SCOPE_USERS_MODIFY,
       PREDEFINED_IDS.SCOPE_USERS_DELETE,
+    ],
+  },
+  {
+    roleId: PREDEFINED_IDS.ROLE_WHOLESALE,
+    scopeIds: [
+      PREDEFINED_IDS.SCOPE_WHOLESALE_READ,
+      PREDEFINED_IDS.SCOPE_USERS_READ,
+      PREDEFINED_IDS.SCOPE_USERS_MODIFY,
     ],
   },
 ];
