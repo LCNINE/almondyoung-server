@@ -51,30 +51,48 @@ async function generateScopeTypes() {
         eq(schema.roleScopes.scopeId, schema.scopes.scopeId),
       );
 
-    // 스코프를 카테고리별로 그룹화
-    const scopesByCategory: Record<
-      string,
-      Array<{ key: string; desc: string }>
-    > = {};
+    // 스코프를 카테고리와 리소스별로 그룹화
+    const scopesByCategory: Record<string, any> = {};
 
     scopes.forEach((scope) => {
-      const [category, ...actionParts] = scope.scopeName.split(':');
-      const action = actionParts.join(':');
+      const parts = scope.scopeName.split(':');
 
-      if (!scopesByCategory[category.toUpperCase()]) {
-        scopesByCategory[category.toUpperCase()] = [];
-      }
-
-      if (action) {
-        scopesByCategory[category.toUpperCase()].push({
+      // master 같은 단일 스코프 처리
+      if (parts.length === 1) {
+        scopesByCategory[parts[0].toUpperCase()] = {
           key: scope.scopeName,
           desc: scope.description || '',
-        });
-      } else {
-        // master 같은 단일 스코프
-        scopesByCategory['MASTER'] = [
-          { key: scope.scopeName, desc: scope.description || '' },
-        ];
+        };
+        return;
+      }
+
+      const category = parts[0].toUpperCase(); // user, admin
+      const resource = parts[1]?.toUpperCase(); // users, settings, logs
+      const action = parts[2]?.toUpperCase(); // read, modify, delete, etc.
+
+      // 카테고리 초기화
+      if (!scopesByCategory[category]) {
+        scopesByCategory[category] = {};
+      }
+
+      // 리소스가 있는 경우 (admin:users:read 같은 3단계 구조)
+      if (resource && action) {
+        // 리소스 초기화
+        if (!scopesByCategory[category][resource]) {
+          scopesByCategory[category][resource] = {};
+        }
+
+        scopesByCategory[category][resource][action] = {
+          key: scope.scopeName,
+          desc: scope.description || '',
+        };
+      }
+      // 리소스가 없는 경우 (admin:access 같은 2단계 구조)
+      else if (resource && !action) {
+        scopesByCategory[category][resource] = {
+          key: scope.scopeName,
+          desc: scope.description || '',
+        };
       }
     });
 
@@ -83,19 +101,31 @@ async function generateScopeTypes() {
 `;
 
     // 카테고리별로 스코프 생성
-    Object.entries(scopesByCategory).forEach(([category, categoryScopes]) => {
-      if (category === 'MASTER') {
-        fileContent += `  ${category}: { key: '${categoryScopes[0].key}', desc: '${categoryScopes[0].desc}' },\n`;
-      } else {
-        fileContent += `  ${category}: {\n`;
-        categoryScopes.forEach((scope) => {
-          const actionName = scope.key.split(':').pop()?.toUpperCase() || '';
-          fileContent += `    ${actionName}: { key: '${scope.key}', desc: '${scope.desc}' },\n`;
-        });
-        fileContent += `  },\n`;
-      }
-    });
+    const generateScopeObject = (obj: any, indent: number = 2): string => {
+      let result = '';
+      const indentStr = ' '.repeat(indent);
 
+      Object.entries(obj).forEach(([key, value]) => {
+        if (value && typeof value === 'object') {
+          // 타입 체크를 위한 타입 어서션
+          const scopeValue = value as any;
+
+          if (scopeValue.key && scopeValue.desc) {
+            // 리프 노드 (실제 스코프 정보를 가진 객체)
+            result += `${indentStr}${key}: { key: '${scopeValue.key}', desc: '${scopeValue.desc}' },\n`;
+          } else {
+            // 중첩된 객체
+            result += `${indentStr}${key}: {\n`;
+            result += generateScopeObject(scopeValue, indent + 2);
+            result += `${indentStr}},\n`;
+          }
+        }
+      });
+
+      return result;
+    };
+
+    fileContent += generateScopeObject(scopesByCategory);
     fileContent += `} as const;\n\n`;
 
     // 타입 정의 추가

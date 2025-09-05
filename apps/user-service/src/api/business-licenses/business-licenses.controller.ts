@@ -49,7 +49,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @Get()
-  @RequireScopes(['user:read'])
+  @RequireScopes(['admin:access'])
   async findBusinessLicenseByUserId(
     @CurrentUser() user: User,
   ): Promise<BusinessLicense | null> {
@@ -95,7 +95,7 @@ export class BusinessLicensesController {
     description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
   })
   @Post()
-  @RequireScopes(['user:write'])
+  @RequireScopes(['user:modify'])
   async createBusinessLicenseWithInfo(
     @Body() data: CreateBusinessLicenseWithInfoDto,
     @CurrentUser() user: User,
@@ -122,7 +122,7 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @Put(':business-license-id')
-  @RequireScopes(['user:write', 'user:update'])
+  @RequireScopes(['user:modify'])
   async updateBusinessLicenseByBusinessLicenseId(
     @Param('business-license-id') businessLicenseId: string,
     @Body() data: UpdateBusinessLicenseDto,
