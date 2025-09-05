@@ -4,6 +4,7 @@ import * as schema from '../shared/database/schema';
 import { eq } from 'drizzle-orm';
 import { PaymentStrategyFactory } from '../factories/payment-strategy.factory';
 import { IdempotencyService } from './idempotency.service';
+import { BatchCaptureService } from './batch-capture.service';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
 import {
   PaymentResult,
@@ -12,6 +13,7 @@ import {
   CaptureResult,
   StatusResult,
 } from '../strategies/payment.strategy.interface';
+import { WalletTx } from '../shared/database';
 
 /**
  * @class PaymentService
@@ -31,7 +33,134 @@ export class PaymentService {
     private readonly db: DbService<typeof schema>,
     private readonly strategyFactory: PaymentStrategyFactory,
     private readonly idempotency: IdempotencyService,
+    private readonly batchCaptureService: BatchCaptureService,
   ) {}
+
+  /**
+   * 멱등성, 이벤트 기록, 세션 상태 업데이트를 포함한 공통 래퍼
+   */
+  private async withIdempotency<T>(
+    idempotencyKey: string | undefined,
+    payload: any,
+    path: string,
+    operation: () => Promise<T>,
+    eventType: 'payment' | 'refund' | 'capture' = 'payment',
+  ): Promise<T> {
+    if (!idempotencyKey) {
+      // 멱등성 키가 없으면 단순 실행
+      return await operation();
+    }
+
+    return await this.db.db.transaction(async (tx) => {
+      // 1. 멱등성 체크
+      const idempotencyResult = await this.idempotency.checkOrCreate(
+        tx,
+        idempotencyKey,
+        payload,
+        path,
+      );
+      if (idempotencyResult.hit) return idempotencyResult.response as T;
+
+      // 2. 실제 비즈니스 로직 실행
+      const result = await operation();
+
+      // 3. 공통 이벤트 기록
+      await this.recordEvent(tx, result, eventType, payload);
+
+      // 4. 세션 상태 업데이트 (해당되는 경우)
+      if (payload.sessionId && 'status' in (result as any)) {
+        await this.updateSessionStatus(
+          tx,
+          payload.sessionId,
+          (result as any).status,
+        );
+      }
+
+      // 5. 멱등성 완료
+      await this.idempotency.complete(tx, idempotencyKey, result, 201);
+      return result;
+    });
+  }
+
+  /**
+   * 이벤트 기록 공통 로직
+   */
+  private async recordEvent(
+    tx: WalletTx,
+    result: any,
+    eventType: string,
+    payload: any,
+  ) {
+    console.log('recordEvent', eventType, result, payload);
+    if (eventType === 'payment' && 'transactionId' in result) {
+      await tx.insert(schema.paymentEvents).values({
+        paymentSessionId: payload.metadata.sessionId,
+        paymentMethodId: payload.metadata.paymentMethodId || '',
+        status: result.status || 'COMPLETED',
+        amount: payload.amount || 0,
+        pgTransactionId: result.transactionId,
+        pgResponse: JSON.stringify({
+          gateway: this.getGatewayType(payload.methodType),
+          originalRequest: payload,
+          gatewayResponse: result.metadata,
+        }),
+        actor: 'USER',
+        metadata: JSON.stringify({
+          gateway: this.getGatewayType(payload.methodType),
+          eventType,
+          ...result.metadata,
+        }),
+      });
+    } else if (eventType === 'refund' && 'refundId' in result) {
+      await tx.insert(schema.refundEvents).values({
+        paymentEventId: payload.transactionId || '',
+        status: 'COMPLETED',
+        amount: payload.amount || 0,
+        reason: payload.reason || '고객 요청',
+        completedBy: 'SYSTEM',
+        completedAt: new Date(),
+        metadata: JSON.stringify({
+          gateway: this.getGatewayType(payload.methodType),
+          gatewayResponse: result.metadata,
+        }),
+      });
+    }
+  }
+
+  /**
+   * 세션 상태 업데이트 공통 로직
+   */
+  private async updateSessionStatus(
+    tx: any,
+    sessionId: string,
+    status: string,
+  ) {
+    await tx
+      .update(schema.paymentSessions)
+      .set({
+        status,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentSessions.id, sessionId));
+  }
+
+  /**
+   * 결제수단 타입에 따른 게이트웨이 타입 반환
+   */
+  private getGatewayType(methodType: string): string {
+    switch (methodType) {
+      case 'CARD':
+        return 'hms_card';
+      case 'BNPL':
+        return 'hms_bnpl';
+      case 'EASY_PAY':
+        return 'toss';
+      case 'REWARD_POINT':
+        return 'internal_point';
+      default:
+        return 'unknown';
+    }
+  }
 
   /**
    * 결제 처리 - 모든 결제수단 통합 (오케스트레이션)
@@ -46,8 +175,7 @@ export class PaymentService {
       paymentMethodId?: string;
       orderName?: string;
       bnplAccountId?: string;
-      hmsMemberId?: string;
-      isRecurring?: boolean;
+      hmsMemberId?: string; // hmsMemberId를 받을 수 있도록 타입은 유지
       [key: string]: any;
     },
     idempotencyKey?: string,
@@ -56,17 +184,45 @@ export class PaymentService {
       `통합 결제 처리: ${methodType}, 금액: ${amount}${currency}, 세션: ${metadata.sessionId}`,
     );
 
-    return await this.db.db.transaction(async (tx) => {
-      const idempotencyResult = await this.idempotency.checkOrCreate(
-        tx,
-        idempotencyKey,
-        { methodType, amount, currency, metadata },
-        `/payments/process`,
-      );
-      if (idempotencyResult.hit)
-        return idempotencyResult.response as PaymentResult;
-
+    // ✅ [수정] 카드 결제 시, card_method 테이블과 JOIN하여 hmsMemberId를 조회합니다.
+    if (methodType === 'CARD' && metadata.paymentMethodId) {
       try {
+        const results = await this.db.db
+          .select()
+          .from(schema.paymentMethod)
+          .leftJoin(
+            // ✅ [수정] JOIN 대상을 cardMethod로 변경
+            schema.cardMethod,
+            eq(schema.paymentMethod.id, schema.cardMethod.id), // cardMethod의 id가 paymentMethod의 id를 참조한다고 가정
+          )
+          .where(eq(schema.paymentMethod.id, metadata.paymentMethodId))
+          .limit(1);
+
+        const joinedResult = results[0];
+
+        // ✅ [수정] 조인된 card_method 테이블에서 hmsMemberId를 가져옵니다.
+        if (joinedResult && joinedResult.card_method?.hmsMemberId) {
+          metadata.hmsMemberId = joinedResult.card_method.hmsMemberId;
+          this.logger.log(`hmsMemberId 조회 성공: ${metadata.hmsMemberId}`);
+        } else {
+          // 이 에러가 발생하면 2단계(카드 등록 로직)가 제대로 구현되었는지 확인해야 합니다.
+          throw new Error(
+            `결제수단(ID: ${metadata.paymentMethodId})에 연결된 hmsMemberId를 찾을 수 없습니다.`,
+          );
+        }
+      } catch (dbError) {
+        this.logger.error(`DB에서 결제수단 조회 실패:`, dbError);
+        throw new Error(`결제수단 정보를 조회하는 중 오류가 발생했습니다.`);
+      }
+    }
+
+    const payload = { methodType, amount, currency, metadata };
+
+    return await this.withIdempotency(
+      idempotencyKey,
+      payload,
+      `/payments/process`,
+      async () => {
         const strategy = this.strategyFactory.getStrategy(methodType);
 
         if (!('processPayment' in strategy)) {
@@ -84,65 +240,18 @@ export class PaymentService {
           throw new Error(result.error || '결제 처리에 실패했습니다');
         }
 
-        // 결제 이벤트 기록
-        await tx.insert(schema.paymentEvents).values({
-          paymentSessionId: metadata.sessionId,
-          paymentMethodId: metadata.paymentMethodId || '',
-          status: 'CAPTURED',
-          amount: amount,
-          pgTransactionId: result.transactionId,
-          pgResponse: JSON.stringify({
-            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
-            originalRequest: metadata,
-            gatewayResponse: result.metadata,
-          }),
-          actor: 'USER',
-          metadata: JSON.stringify({
-            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
-            paymentType: methodType,
-            captureId: result.captureId,
-          }),
-        });
-
-        // 세션 상태 업데이트
-        await tx
-          .update(schema.paymentSessions)
-          .set({
-            status: 'CAPTURED',
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.paymentSessions.id, metadata.sessionId));
-
-        const response: PaymentResult = {
+        return {
           success: true,
           transactionId: result.transactionId,
           captureId: result.captureId,
           amount,
           currency,
-          status: 'CAPTURED',
+          status: result.status || 'CAPTURED',
           metadata: result.metadata,
         };
-
-        await this.idempotency.complete(tx, idempotencyKey, response);
-        return response;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(`통합 결제 실패: ${methodType} - ${errorMessage}`);
-
-        const failureResponse: PaymentResult = {
-          success: false,
-          transactionId: '',
-          amount,
-          currency,
-          status: 'FAILED',
-          error: errorMessage,
-        };
-
-        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
-        return failureResponse;
-      }
-    });
+      },
+      'payment',
+    );
   }
 
   /**
@@ -158,17 +267,13 @@ export class PaymentService {
       `통합 결제수단 등록: ${methodType} (${usage || 'DEFAULT'}) - ${request.userId}`,
     );
 
-    return await this.db.db.transaction(async (tx) => {
-      const idempotencyResult = await this.idempotency.checkOrCreate(
-        tx,
-        idempotencyKey,
-        { methodType, request, usage },
-        `/payment-methods/register`,
-      );
-      if (idempotencyResult.hit)
-        return idempotencyResult.response as RegistrationResult;
+    const payload = { methodType, request, usage };
 
-      try {
+    return await this.withIdempotency(
+      idempotencyKey,
+      payload,
+      `/payment-methods/register`,
+      async () => {
         const strategy = this.strategyFactory.getStrategy(methodType);
 
         if (!('registerMethod' in strategy)) {
@@ -183,73 +288,16 @@ export class PaymentService {
           throw new Error(result.error || '결제수단 등록에 실패했습니다');
         }
 
-        // 내부 결제수단 저장 (Strategy에서 외부 API 호출 성공 후)
-        const [paymentMethod] = await tx
-          .insert(schema.paymentMethod)
-          .values({
-            userId: request.userId,
-            methodType: methodType as
-              | 'CARD'
-              | 'BANK_ACCOUNT'
-              | 'BNPL'
-              | 'REWARD_POINT',
-            methodName:
-              request.methodName ||
-              `${methodType} (${request.memberName || request.userId})`,
-            status: usage === 'ONE_TIME' ? 'ACTIVE' : 'PENDING', // 일회성은 즉시 활성화
-          })
-          .returning();
-
-        // 카드 등록의 경우 추가 정보 저장
-        if (
-          methodType === 'CARD' &&
-          usage === 'RECURRING' &&
-          result.hmsMemberId
-        ) {
-          await tx.insert(schema.cardMethod).values({
-            id: paymentMethod.id,
-            methodType: 'CARD',
-            pgToken: result.hmsMemberId,
-            billingKey: result.hmsMemberId,
-            maskedCardNumber: request.maskedCardNumber || '****-****-****-****',
-            lastFourDigits: request.paymentNumber?.slice(-4) || '0000',
-            cardBrand: 'HMS_CARD',
-            cardType: 'CREDIT',
-            issuerName: 'HMS',
-          });
-        }
-
-        const response: RegistrationResult = {
+        return {
           success: true,
-          paymentMethodId: paymentMethod.id,
+          paymentMethodId: result.paymentMethodId || '',
           hmsMemberId: result.hmsMemberId,
-          status: paymentMethod.status as 'PENDING' | 'ACTIVE' | 'FAILED',
-          metadata: {
-            ...result.metadata,
-            internalPaymentMethodId: paymentMethod.id,
-          },
+          status: 'PENDING' as const,
+          metadata: result.metadata,
         };
-
-        await this.idempotency.complete(tx, idempotencyKey, response);
-        return response;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(
-          `통합 결제수단 등록 실패: ${methodType} - ${errorMessage}`,
-        );
-
-        const failureResponse: RegistrationResult = {
-          success: false,
-          paymentMethodId: '',
-          status: 'FAILED',
-          error: errorMessage,
-        };
-
-        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
-        return failureResponse;
-      }
-    });
+      },
+      'payment',
+    );
   }
 
   /**
@@ -266,17 +314,13 @@ export class PaymentService {
       `통합 환불 처리: ${methodType}, 거래ID: ${transactionId}, 금액: ${amount}`,
     );
 
-    return await this.db.db.transaction(async (tx) => {
-      const idempotencyResult = await this.idempotency.checkOrCreate(
-        tx,
-        idempotencyKey,
-        { methodType, transactionId, amount, reason },
-        `/refunds/process`,
-      );
-      if (idempotencyResult.hit)
-        return idempotencyResult.response as RefundResult;
+    const payload = { methodType, transactionId, amount, reason };
 
-      try {
+    return await this.withIdempotency(
+      idempotencyKey,
+      payload,
+      `/refunds/process`,
+      async () => {
         const strategy = this.strategyFactory.getStrategy(methodType);
 
         if (!('refundPayment' in strategy)) {
@@ -294,45 +338,15 @@ export class PaymentService {
           throw new Error(result.error || '환불 처리에 실패했습니다');
         }
 
-        // 환불 이벤트 기록
-        await tx.insert(schema.refundEvents).values({
-          paymentEventId: transactionId,
-          status: 'COMPLETED',
-          amount: amount,
-          reason: reason || '고객 요청',
-          completedBy: 'SYSTEM',
-          completedAt: new Date(),
-          metadata: JSON.stringify({
-            gateway: methodType === 'CARD' ? 'hms_card' : 'unknown',
-            gatewayResponse: result.metadata,
-          }),
-        });
-
-        const response: RefundResult = {
+        return {
           success: true,
           refundId: result.refundId,
           refundedAmount: result.refundedAmount,
           metadata: result.metadata,
         };
-
-        await this.idempotency.complete(tx, idempotencyKey, response);
-        return response;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
-        this.logger.error(`통합 환불 실패: ${methodType} - ${errorMessage}`);
-
-        const failureResponse: RefundResult = {
-          success: false,
-          refundId: '',
-          refundedAmount: 0,
-          error: errorMessage,
-        };
-
-        await this.idempotency.complete(tx, idempotencyKey, failureResponse);
-        return failureResponse;
-      }
-    });
+      },
+      'refund',
+    );
   }
 
   /**
@@ -497,6 +511,85 @@ export class PaymentService {
         error: errorMessage,
         rawResponse: {},
       };
+    }
+  }
+
+  /**
+   * BNPL 정산 배치 생성 및 실행 (스케줄러 전용)
+   */
+  async createBnplSettlementBatch(
+    bnplAccountId: string,
+    periodStart: Date,
+    periodEnd: Date,
+    idempotencyKey?: string,
+  ): Promise<{
+    success: boolean;
+    batchId?: string;
+    totalAmount?: number;
+    processedCount?: number;
+    failedCount?: number;
+    error?: string;
+  }> {
+    this.logger.log(
+      `BNPL 정산 배치 생성 요청: ${bnplAccountId} (${periodStart.toISOString()} ~ ${periodEnd.toISOString()})`,
+    );
+
+    try {
+      return await this.batchCaptureService.createAndExecuteBnplSettlementBatch(
+        bnplAccountId,
+        periodStart,
+        periodEnd,
+        idempotencyKey,
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`BNPL 정산 배치 생성 실패: ${errorMessage}`);
+
+      return {
+        success: false,
+        error: `BNPL 정산 배치 생성 중 오류: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 정산 배치 상태 조회
+   */
+  async getSettlementBatchStatus(batchId: string): Promise<{
+    success: boolean;
+    batch?: any;
+    items?: any[];
+    events?: any[];
+    error?: string;
+  }> {
+    this.logger.log(`정산 배치 상태 조회: ${batchId}`);
+
+    try {
+      return await this.batchCaptureService.getSettlementBatchStatus(batchId);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`정산 배치 상태 조회 실패: ${errorMessage}`);
+
+      return {
+        success: false,
+        error: `정산 배치 상태 조회 중 오류: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 대기 중인 정산 배치 목록 조회 (스케줄러 전용)
+   */
+  async getPendingSettlementBatches(): Promise<any[]> {
+    try {
+      return await this.batchCaptureService.getPendingSettlementBatches();
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`대기 중인 정산 배치 조회 실패: ${errorMessage}`);
+      return [];
     }
   }
 }

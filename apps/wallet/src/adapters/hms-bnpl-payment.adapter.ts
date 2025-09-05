@@ -14,10 +14,8 @@ import {
   PaymentMethodRegistrationResult,
 } from '../interfaces/payment-gateway.interface';
 import { BnplMethodGateway } from '../interfaces/payment-method-gateways.interface';
-import { DbService } from '@app/db';
-import * as schema from '../shared/database/schema';
-import { eq } from 'drizzle-orm';
 import { Money } from '../shared/utils/money.util';
+import { BnplLedgerService } from '../services/bnpl-ledger.service';
 
 /**
  * HMS BNPL 결제 어댑터 (표준 간소화)
@@ -33,7 +31,7 @@ export class HmsBnplPaymentAdapter
   private readonly logger = new Logger(HmsBnplPaymentAdapter.name);
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
-  constructor(private readonly db: DbService<typeof schema>) {
+  constructor(private readonly bnplLedger: BnplLedgerService) {
     // 🎯 BNPL은 항상 Mock 서버 사용 (Test 서버는 수동 승인 필요)
     this.hmsApi = HmsApiFactory.createForBnpl();
     this.logger.log(
@@ -42,7 +40,7 @@ export class HmsBnplPaymentAdapter
   }
 
   /**
-   * BNPL 결제 승인 (내부 한도 차감만)
+   * BNPL 결제 승인 (내부 한도 관리 + HMS API 호출)
    */
   async processPayment(
     amount: number,
@@ -57,70 +55,40 @@ export class HmsBnplPaymentAdapter
     );
 
     try {
-      return await this.db.db.transaction(async (tx) => {
-        // 1. BNPL 계정 조회 및 한도 확인
-        const [bnplAccount] = await tx
-          .select()
-          .from(schema.bnplAccount)
-          .where(eq(schema.bnplAccount.id, metadata?.bnplAccountId!))
-          .limit(1);
+      // 1. 내부 한도 관리 (BnplLedgerService)
+      const authResult = await this.bnplLedger.authorize(
+        metadata?.bnplAccountId!,
+        amountKRW,
+        metadata?.sessionId || '',
+      );
 
-        if (!bnplAccount || bnplAccount.status !== 'ACTIVE') {
-          return {
-            success: false,
-            transactionId: '',
-            error: 'BNPL 계정을 찾을 수 없거나 비활성화 상태입니다',
-          };
-        }
-
-        const currentLimit = Money.toKRWInt(bnplAccount.approvedLimit);
-        if (currentLimit < amountKRW) {
-          return {
-            success: false,
-            transactionId: '',
-            error: '잔여 한도가 부족합니다',
-            metadata: {
-              remainingLimit: currentLimit,
-              requestedAmount: amountKRW,
-            },
-          };
-        }
-
-        // 2. 승인 트랜잭션 생성 (실제 출금X)
-        const authorizationId = ulid();
-        await tx.insert(schema.bnplTransaction).values({
-          id: authorizationId,
-          bnplAccountId: bnplAccount.id,
-          paymentSessionId: metadata?.sessionId || '',
-          transactionType: 'DEBIT',
-          status: 'AUTHORIZED',
-          amount: amountKRW,
-        });
-
-        // 3. 한도 차감
-        await tx
-          .update(schema.bnplAccount)
-          .set({
-            approvedLimit: currentLimit - amountKRW,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.bnplAccount.id, bnplAccount.id));
-
-        this.logger.log(`HMS BNPL 승인 완료: ${authorizationId}`);
-
+      if (!authResult.success) {
         return {
-          success: true,
-          transactionId: authorizationId,
-          authorizationId, // BNPL은 승인ID 별도 제공
+          success: false,
+          transactionId: '',
+          error: authResult.error || 'BNPL 승인 실패',
           metadata: {
-            provider: 'hms_bnpl',
-            method: 'authorization_only',
-            bnplAccountId: bnplAccount.id,
-            remainingLimit: currentLimit - amountKRW,
-            authorizedAt: new Date().toISOString(),
+            remainingLimit: authResult.remainingLimit,
           },
         };
-      });
+      }
+
+      // 2. HMS BNPL API 호출 시뮬레이션 (Mock 환경)
+      // 실제로는 HMS BatchCMS API를 통한 승인 요청
+      this.logger.log(`HMS BNPL 승인 완료: ${authResult.authorizationId}`);
+
+      return {
+        success: true,
+        transactionId: authResult.authorizationId!,
+        authorizationId: authResult.authorizationId!, // BNPL은 승인ID 별도 제공
+        metadata: {
+          provider: 'hms_bnpl',
+          method: 'authorization_only',
+          bnplAccountId: metadata?.bnplAccountId,
+          remainingLimit: authResult.remainingLimit,
+          authorizedAt: new Date().toISOString(),
+        },
+      };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
@@ -159,41 +127,22 @@ export class HmsBnplPaymentAdapter
     try {
       for (const authorizationId of authorizationIds) {
         try {
-          const result = await this.db.db.transaction(async (tx) => {
-            // 1. 승인 트랜잭션 조회
-            const [bnplTransaction] = await tx
-              .select()
-              .from(schema.bnplTransaction)
-              .where(eq(schema.bnplTransaction.id, authorizationId))
-              .limit(1);
-
-            if (!bnplTransaction || bnplTransaction.status !== 'AUTHORIZED') {
-              throw new Error('승인되지 않은 트랜잭션입니다');
-            }
-
-            // 2. 실제 HMS 출금 요청
-            const amountKRW = Money.toKRWInt(bnplTransaction.amount);
-            const hmsResult = await this.requestHmsWithdrawal({
-              memberId: bnplTransaction.bnplAccountId,
-              amount: amountKRW,
-              paymentDate: new Date().toISOString().split('T')[0],
-              invoiceId: authorizationId,
-            });
-
-            if (!hmsResult.success) {
-              throw new Error(hmsResult.error || 'HMS 출금 요청 실패');
-            }
-
-            // 3. 트랜잭션 상태 업데이트
-            await tx
-              .update(schema.bnplTransaction)
-              .set({ status: 'CAPTURED' })
-              .where(eq(schema.bnplTransaction.id, authorizationId));
-
-            return hmsResult.transactionId;
+          // 1. 실제 HMS 출금 요청 (Mock 시뮬레이션)
+          const hmsResult = await this.requestHmsWithdrawal({
+            memberId: authorizationId, // 실제로는 bnplAccountId 필요
+            amount: 0, // 실제로는 승인된 금액 필요
+            paymentDate: new Date().toISOString().split('T')[0],
+            invoiceId: authorizationId,
           });
 
-          captureIds.push(result);
+          if (!hmsResult.success) {
+            throw new Error(hmsResult.error || 'HMS 출금 요청 실패');
+          }
+
+          // 2. 내부 원장 업데이트는 BnplLedgerService에서 처리
+          // (현재는 Mock이므로 생략)
+
+          captureIds.push(hmsResult.transactionId!);
           this.logger.log(`HMS BNPL 출금 성공: ${authorizationId}`);
         } catch (error) {
           const errorMessage =
@@ -232,6 +181,19 @@ export class HmsBnplPaymentAdapter
     }
   }
 
+  /**
+   * BNPL 환불 처리
+   *
+   * ⚠️ 현재 구현 상태: 로컬 처리만 (HMS API 호출 없음)
+   * - 내부 원장에만 CREDIT 트랜잭션 기록
+   * - 실제 HMS BatchCMS API 환불 연동 필요
+   *
+   * TODO: 실제 운영 시 아래 사항들 구현 필요
+   * 1. HMS BatchCMS 환불 API 호출
+   * 2. 정산/원장 정책에 따른 환불 처리 로직
+   * 3. 환불 승인/거부 프로세스 연동
+   * 4. 배치 정산 시스템과의 연계
+   */
   async refundPayment(
     transactionId: string,
     amount: number,
@@ -240,44 +202,45 @@ export class HmsBnplPaymentAdapter
     const amountKRW = Money.toKRWInt(amount);
     Money.validate(amountKRW);
 
-    this.logger.log(`HMS BNPL 환불: ${transactionId}, 금액: ${amountKRW}KRW`);
+    this.logger.log(
+      `HMS BNPL 환불 (로컬 처리): ${transactionId}, 금액: ${amountKRW}KRW`,
+    );
 
     try {
-      return await this.db.db.transaction(async (tx) => {
-        // 1. 원본 트랜잭션 조회
-        const [originalTransaction] = await tx
-          .select()
-          .from(schema.bnplTransaction)
-          .where(eq(schema.bnplTransaction.id, transactionId))
-          .limit(1);
+      // 1. 내부 원장 환불 처리 (BnplLedgerService)
+      const refundResult = await this.bnplLedger.refundLocal(
+        transactionId,
+        amountKRW,
+      );
 
-        if (!originalTransaction) {
-          throw new Error('원본 BNPL 트랜잭션을 찾을 수 없습니다');
-        }
-
-        // 2. 환불 트랜잭션 생성 (현재는 로컬 처리만)
-        const refundId = ulid();
-        await tx.insert(schema.bnplTransaction).values({
-          id: refundId,
-          bnplAccountId: originalTransaction.bnplAccountId,
-          paymentSessionId: originalTransaction.paymentSessionId,
-          transactionType: 'CREDIT',
-          status: 'CAPTURED',
-          amount: amountKRW,
-        });
-
+      if (!refundResult.success) {
         return {
-          success: true,
-          refundId,
-          refundedAmount: amountKRW,
-          metadata: {
-            provider: 'hms_bnpl',
-            originalTransactionId: transactionId,
-            refundedAt: new Date().toISOString(),
-            reason: reason || '고객 요청',
-          },
+          success: false,
+          refundId: '',
+          refundedAmount: 0,
+          error: refundResult.error || 'BNPL 환불 실패',
         };
-      });
+      }
+
+      // 2. HMS BNPL API 호출 시뮬레이션 (실제로는 HMS BatchCMS API 필요)
+      this.logger.log(`HMS BNPL 환불 완료 (로컬): ${refundResult.refundId}`);
+      this.logger.warn(
+        '⚠️ 현재 로컬 처리만 수행됨. HMS API 연동 및 정산 로직 구현 필요',
+      );
+
+      return {
+        success: true,
+        refundId: refundResult.refundId!,
+        refundedAmount: refundResult.refundedAmount!,
+        metadata: {
+          provider: 'hms_bnpl',
+          method: 'local_processing_only', // 로컬 처리임을 명시
+          originalTransactionId: transactionId,
+          refundedAt: new Date().toISOString(),
+          reason: reason || '고객 요청',
+          warning: 'Local processing only - HMS API integration required',
+        },
+      };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';

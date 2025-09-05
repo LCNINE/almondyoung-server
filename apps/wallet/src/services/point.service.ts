@@ -46,7 +46,7 @@ export class PointService {
       .where(eq(schema.points.id, point.id));
 
     const [trx] = await tx
-      .insert(schema.pointTransactions)
+      .insert(schema.pointEvents)
       .values({
         pointId: point.id,
         type: 'REDEEM',
@@ -72,7 +72,7 @@ export class PointService {
       .where(eq(schema.points.id, point.id));
 
     const [trx] = await tx
-      .insert(schema.pointTransactions)
+      .insert(schema.pointEvents)
       .values({
         pointId: point.id,
         type: 'EARN',

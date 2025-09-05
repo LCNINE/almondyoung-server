@@ -214,6 +214,7 @@ export const cardMethod = pgTable(
     id: varchar('id', { length: 26 })
       .primaryKey()
       .$defaultFn(() => ulid()),
+    hmsMemberId: varchar('hms_member_id', { length: 64 }).unique(),
     methodType: text('method_type').notNull().default('CARD'),
     pgToken: varchar('pg_token', { length: 128 }).notNull(),
     billingKey: varchar('billing_key', { length: 128 }).notNull(),
@@ -300,7 +301,7 @@ export const bnplActivationEvent = pgTable(
   ],
 );
 
-export const bnplTransaction = pgTable('bnpl_transaction', {
+export const bnplEvents = pgTable('bnpl_events', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
@@ -360,9 +361,9 @@ export const settlementBatchItem = pgTable('settlement_batch_item', {
   batchId: varchar('batch_id', { length: 26 })
     .notNull()
     .references(() => settlementBatch.id),
-  bnplTransactionId: varchar('bnpl_transaction_id', { length: 26 })
+  bnplEventId: varchar('bnpl_event_id', { length: 26 })
     .notNull()
-    .references(() => bnplTransaction.id),
+    .references(() => bnplEvents.id),
   amount: numeric('amount', { precision: 19, scale: 4 })
     .$type<number>()
     .notNull(),
@@ -638,7 +639,7 @@ export const points = pgTable('points', {
     .notNull(),
 });
 
-export const pointTransactions = pgTable('point_transactions', {
+export const pointEvents = pgTable('point_events', {
   id: varchar('id', { length: 26 })
     .primaryKey()
     .$defaultFn(() => ulid()),
@@ -701,7 +702,7 @@ export const batchCmsMethodRelations = relations(batchCmsMethod, ({ one }) => ({
 // BNPL relations
 export const bnplAccountRelations = relations(bnplAccount, ({ many }) => ({
   activationEvents: many(bnplActivationEvent),
-  transactions: many(bnplTransaction),
+  transactions: many(bnplEvents),
   settlementBatches: many(settlementBatch),
 }));
 
@@ -719,11 +720,11 @@ export const bnplActivationEventRelations = relations(
   }),
 );
 
-export const bnplTransactionRelations = relations(
-  bnplTransaction,
+export const bnplEventsRelations = relations(
+  bnplEvents,
   ({ one, many }) => ({
     bnplAccount: one(bnplAccount, {
-      fields: [bnplTransaction.bnplAccountId],
+      fields: [bnplEvents.bnplAccountId],
       references: [bnplAccount.id],
     }),
     // paymentSession 관계는 순환 참조 문제로 인해 제거
@@ -749,10 +750,10 @@ export const settlementBatchItemRelations = relations(
     settlementBatch: one(settlementBatch, {
       fields: [settlementBatchItem.batchId],
       references: [settlementBatch.id],
-    }),
-    bnplTransaction: one(bnplTransaction, {
-      fields: [settlementBatchItem.bnplTransactionId],
-      references: [bnplTransaction.id],
+    }), 
+    bnplEvent: one(bnplEvents, {
+      fields: [settlementBatchItem.bnplEventId],
+      references: [bnplEvents.id],
     }),
   }),
 );
@@ -838,15 +839,12 @@ export const refundEventsRelations = relations(refundEvents, ({ one }) => ({
 
 // Point Relations
 export const pointsRelations = relations(points, ({ many }) => ({
-  transactions: many(pointTransactions),
+  transactions: many(pointEvents),
 }));
 
-export const pointTransactionsRelations = relations(
-  pointTransactions,
-  ({ one }) => ({
-    pointAccount: one(points, {
-      fields: [pointTransactions.pointId],
-      references: [points.id],
-    }),
+export const pointEventsRelations = relations(pointEvents, ({ one }) => ({
+  pointAccount: one(points, {
+    fields: [pointEvents.pointId],
+    references: [points.id],
   }),
-);
+}));

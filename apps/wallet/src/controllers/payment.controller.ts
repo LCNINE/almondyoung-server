@@ -7,6 +7,7 @@ import {
   Logger,
   Patch,
   Param,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -16,6 +17,7 @@ import {
   ApiBadRequestResponse,
   ApiNotFoundResponse,
   ApiInternalServerErrorResponse,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { PaymentService } from '../services/payment.service';
 import {
@@ -43,7 +45,15 @@ export class PaymentController {
 - 카드: authorize + capture → CAPTURED  
 - BNPL: authorize만 → AUTHORIZED (추후 capture 필요)  
 - 포인트: 즉시 차감 → CAPTURED  
+
+**멱등성 지원**: 동일한 Idempotency-Key로 재요청 시 동일한 결과 반환
     `,
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 키 (선택사항) - 동일한 요청 중복 실행 방지',
+    required: false,
+    example: 'idem_key_' + Date.now(),
   })
   @ApiResponse({
     status: 200,
@@ -82,6 +92,7 @@ export class PaymentController {
   })
   async processPayment(
     @Body() dto: ProcessPaymentDto,
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ): Promise<ProcessPaymentResponseDto> {
     try {
       this.logger.log(
@@ -101,7 +112,7 @@ export class PaymentController {
           paymentMethodId: firstMethod.paymentMethodId,
           orderName: dto.metadata?.orderName,
         },
-        dto.idemKey,
+        idempotencyKey || dto.idemKey, // 헤더 우선, 없으면 body에서
       );
 
       const typedResult = result as any;

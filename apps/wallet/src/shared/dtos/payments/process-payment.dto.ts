@@ -12,14 +12,14 @@ import { Type } from 'class-transformer';
 
 export class PaymentMethodRequestDto {
   @ApiProperty({
-    example: 'pm_card_abc123',
+    example: '01K49P0YV3XCVD4BKD7SMXR4A0',
     description: '결제수단 ID',
   })
   @IsString()
   paymentMethodId!: string;
 
   @ApiProperty({
-    example: 50000,
+    example: 129000,
     description: '해당 결제수단으로 결제할 금액',
   })
   @IsNumber()
@@ -48,9 +48,9 @@ export class ProcessPaymentDto {
     type: [PaymentMethodRequestDto],
     description: '결제수단 목록',
     example: [
-      { paymentMethodId: 'pm_card_abc123', amount: 50000 },
-      { paymentMethodId: 'pm_bnpl_def456', amount: 30000 },
-    ],
+      { paymentMethodId: '01K49P0YV3XCVD4BKD7SMXR4A0', amount: 129000 },
+
+    ]
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -58,7 +58,7 @@ export class ProcessPaymentDto {
   paymentMethods!: PaymentMethodRequestDto[];
 
   @ApiProperty({
-    example: 20000,
+    example:0,
     description: '사용할 포인트 금액 (선택사항)',
     required: false,
   })

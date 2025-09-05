@@ -92,13 +92,13 @@ export class PaymentMethodController {
       createdAt: method.createdAt.toISOString(),
     };
   }
-
   @Post('recurring/card')
   @HttpCode(201)
   @ApiOperation({
-    summary: '정기결제용 카드 등록',
+    // ✅ [수정] Swagger Summary 개선
+    summary: '정기결제용 카드 등록 (HMS)',
     description:
-      'HMS CMS를 통한 카드 정기결제 회원을 등록합니다. 빌링키를 발급받아 저장합니다.',
+      'HMS CMS에 카드 정보를 등록하고, 내부 DB에 결제수단을 생성합니다. 등록 시에는 실제 카드번호와 소유주 생년월일(또는 사업자번호)이 필요합니다.',
   })
   @ApiHeader({
     name: 'idempotency-key',
@@ -106,21 +106,19 @@ export class PaymentMethodController {
     description: '멱등성 키 (선택사항)',
   })
   @ApiResponse({
+    // ✅ [수정] Swagger Response 스키마를 실제 응답값에 맞게 상세히 정의
     status: 201,
-    description: 'HMS CMS 회원 등록 성공',
+    description: '카드 결제수단 등록 성공',
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean', example: true },
-        paymentMethodId: {
-          type: 'string',
-          example: 'pm_01HQZX8QJKMNPQRST9VWXY012',
-        },
-        hmsMemberId: { type: 'string', example: 'HMS_123456789' },
+        id: { type: 'string', example: 'pm_01HQZX8QJKMNPAAABBBCCC' },
+        userId: { type: 'string', example: 'user_123493' },
+        methodType: { type: 'string', example: 'CARD' },
+        methodName: { type: 'string', example: '주 사용 카드' },
         status: { type: 'string', example: 'PENDING' },
-        message: { type: 'string', example: 'HMS CMS 정기결제 회원 등록 완료' },
-        maskedCardNumber: { type: 'string', example: '1234-****-****-5678' },
-        billingCycleDay: { type: 'number', example: 15 },
+        hmsMemberId: { type: 'string', example: '0MVMJHRZADWZB' },
+        createdAt: { type: 'string', format: 'date-time' },
       },
     },
   })
@@ -132,54 +130,30 @@ export class PaymentMethodController {
     @Body() dto: CreateGeneralPaymentMethodDto,
     @Headers('idempotency-key') idemKey?: string,
   ) {
-    // HMS CMS 전용 검증
+    // 1. 컨트롤러는 요청 데이터(DTO)의 유효성만 간단히 확인합니다.
     if (dto.methodType !== 'CARD' || !dto.cardInfo) {
-      throw new BadRequestException('HMS CMS 등록은 카드 정보가 필요합니다');
+      throw new BadRequestException('카드 정보(cardInfo)가 필요합니다.');
     }
 
-    // HMS CMS API에 맞게 데이터 변환
-    const hmsRequest = {
-      ...dto,
-      memberName: dto.cardInfo.cardHolderName, // HMS API에서 기대하는 필드명
-      paymentNumber: dto.cardInfo.cardNumber, // 실제 카드번호 (마스킹되지 않은)
-      payerName: dto.cardInfo.cardHolderName,
-      payerNumber: dto.cardInfo.cardNumber, // HMS API 요구사항: paymentNumber와 동일
-      phone: dto.cardInfo.phone,
-      billingCycleDay: dto.cardInfo.billingCycleDay,
-      validYear: dto.cardInfo.expiryDate?.split('/')[1]?.padStart(2, '0'), // "12/25" -> "25"
-      validMonth: dto.cardInfo.expiryDate?.split('/')[0]?.padStart(2, '0'), // "12/25" -> "12"
-      maskedCardNumber: dto.cardInfo.cardNumber.replace(
-        /(\d{4})\d{4}\d{4}(\d{4})/,
-        '$1-****-****-$2',
-      ), // 마스킹 처리
-    };
-
-    console.log('변환된 HMS 요청 데이터:', JSON.stringify(hmsRequest, null, 2));
-
-    // PaymentService를 통해 정기결제 카드 등록 처리 (HMS CMS)
-    const result = await this.paymentService.registerPaymentMethod(
-      'CARD',
-      hmsRequest,
-      idemKey,
-      'RECURRING', // usage 파라미터 추가
+    // 2. 데이터 가공 없이, DTO를 그대로 서비스 계층으로 전달합니다.
+    //    복잡한 비즈니스 로직은 모두 서비스에서 처리합니다.
+    const result = await this.paymentMethodService.createWithIdempotency(
+        dto,
+        idemKey,
     );
 
-    if (!result.success) {
-      throw new BadRequestException(result.error);
-    }
-
-    // PaymentMethodService를 통해 등록된 결제수단 정보 조회 후 반환
-    const method = await this.paymentMethodService.get(result.paymentMethodId!);
+    // 3. 서비스의 처리 결과를 클라이언트에 맞게 포맷하여 반환합니다.
     return {
-      id: method.id,
-      userId: method.userId,
-      methodType: method.methodType,
-      methodName: method.methodName,
-      status: method.status,
+      id: result.id,
+      userId: result.userId,
+      methodType: result.methodType,
+      methodName: result.methodName,
+      status: result.status,
       hmsMemberId: result.hmsMemberId,
-      createdAt: method.createdAt.toISOString(),
+      createdAt: result.createdAt,
     };
   }
+
 
   @Get('users/:userId')
   @ApiOperation({
@@ -303,6 +277,28 @@ export class PaymentMethodController {
       status: isValid ? 'ACTIVE' : 'INVALID',
       message: isValid ? 'HMS Member ID 유효' : 'HMS Member ID 무효 또는 만료',
     };
+  }
+
+  /**
+   * HMS API용 10자리 납부자 번호 생성
+   * - 전화번호에서 10자리 추출 (01012345678 -> 0101234567)
+   * - 전화번호가 부족하면 카드번호 뒷 10자리 사용
+   */
+  private extractPayerNumber(cardNumber: string, phone: string): string {
+    // 전화번호에서 10자리 추출 (하이픈 제거 후 앞 10자리)
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length >= 10) {
+      return cleanPhone.slice(0, 10);
+    }
+    
+    // 전화번호가 10자리 미만이면 카드번호 뒷 10자리 사용
+    const cleanCardNumber = cardNumber.replace(/[^0-9]/g, '');
+    if (cleanCardNumber.length >= 10) {
+      return cleanCardNumber.slice(-10);
+    }
+    
+    // 둘 다 부족하면 기본값
+    return '0000000000';
   }
 
   @Get('hms-cms/:hmsMemberId/info')

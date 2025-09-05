@@ -851,11 +851,11 @@ export class RefundService {
   private async getOriginalPointUsage(tx: WalletTx, paymentSessionId: string) {
     const [pointTransaction] = await tx
       .select()
-      .from(schema.pointTransactions)
+      .from(schema.pointEvents)
       .where(
         and(
-          eq(schema.pointTransactions.relatedEventId, paymentSessionId),
-          eq(schema.pointTransactions.type, 'REDEEM'),
+          eq(schema.pointEvents.relatedEventId, paymentSessionId),
+          eq(schema.pointEvents.type, 'REDEEM'),
         ),
       )
       .limit(1);
@@ -900,7 +900,7 @@ export class RefundService {
     pointsToRestore: number,
     refundId: string,
   ): Promise<void> {
-    await tx.insert(schema.pointTransactions).values({
+    await tx.insert(schema.pointEvents).values({
       pointId,
       type: 'EARN',
       amount: pointsToRestore,

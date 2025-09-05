@@ -1,3 +1,4 @@
+// 파일명: create-general-payment-method.dto.ts (수정 완료)
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
@@ -10,14 +11,15 @@ import {
   ValidateIf,
   Min,
   Max,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // 카드 정보 DTO
 export class CardInfoDto {
   @ApiProperty({
-    description: '카드 번호 (마스킹)',
-    example: '1234-****-****-5678',
+    description: '카드 번호 전체 (하이픈 없이)',
+    example: '1111222233334444',
   })
   @IsString()
   @IsNotEmpty()
@@ -33,8 +35,22 @@ export class CardInfoDto {
   @IsNotEmpty()
   expiryDate: string;
 
+  @ApiProperty({
+    description: '카드 소유주 생년월일(YYMMDD) 또는 사업자등록번호 10자리',
+    example: '900101',
+  })
+  @IsString()
+  @IsNotEmpty()
+  birthDate: string;
+
+  // ✅ [추가] 카드 비밀번호 앞 2자리를 입력받기 위한 필드
+  @ApiProperty({ description: '카드 비밀번호 앞 2자리', example: '12' })
+  @IsString()
+  @IsNotEmpty()
+  cardPassword: string;
+
   @ApiPropertyOptional({
-    description: '휴대폰 번호 (HMS CMS 등록용)',
+    description: '휴대폰 번호',
     example: '01012345678',
   })
   @IsOptional()
@@ -42,27 +58,15 @@ export class CardInfoDto {
   phone?: string;
 
   @ApiPropertyOptional({
-    description: '결제일 (매월 몇일)',
+    description: '결제일 (매월 1일~28일)',
     example: 15,
-    minimum: 1,
-    maximum: 28,
   })
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(28)
   billingCycleDay?: number;
-
-  @ApiPropertyOptional({
-    description: '빌링키 (외부 PG사 토큰)',
-    example: 'billing_key_123',
-  })
-  @IsOptional()
-  @IsString()
-  billingKey?: string;
 }
-
-// 🗑️ BankInfo 제거: 현재 지원하지 않음 (CARD, REWARD_POINT만 지원)
 
 // 메인 DTO
 export class CreateGeneralPaymentMethodDto {
@@ -72,7 +76,7 @@ export class CreateGeneralPaymentMethodDto {
   userId: string;
 
   @ApiProperty({
-    description: '결제수단 타입 (BNPL은 /bnpl/register 사용)',
+    description: '결제수단 타입',
     enum: ['CARD', 'REWARD_POINT'],
     example: 'CARD',
   })
@@ -87,6 +91,7 @@ export class CreateGeneralPaymentMethodDto {
   @ApiPropertyOptional({
     description: '기본 결제수단 설정 여부',
     example: false,
+    default: false,
   })
   @IsOptional()
   @IsBoolean()
@@ -101,31 +106,4 @@ export class CreateGeneralPaymentMethodDto {
   @ValidateNested()
   @Type(() => CardInfoDto)
   cardInfo?: CardInfoDto;
-}
-
-// Response DTO (class-validator 불필요)
-export class PaymentMethodResponseDto {
-  @ApiProperty({ description: '결제수단 ID' })
-  id: string;
-
-  @ApiProperty({ description: '사용자 ID' })
-  userId: string;
-
-  @ApiProperty({ description: '결제수단 타입' })
-  methodType: string;
-
-  @ApiProperty({ description: '결제수단 이름' })
-  methodName: string;
-
-  @ApiProperty({ description: '기본 결제수단 여부' })
-  isDefault: boolean;
-
-  @ApiProperty({ description: '결제수단 상태' })
-  status: string;
-
-  @ApiProperty({ description: '생성일시' })
-  createdAt: string;
-
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: string;
 }

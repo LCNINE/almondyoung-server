@@ -7,6 +7,7 @@ import {
   Logger,
   Get,
   Param,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -15,6 +16,7 @@ import {
   ApiParam,
   ApiBadRequestResponse,
   ApiNotFoundResponse,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { PaymentSessionService } from '../services/payment-session.service';
 import {
@@ -43,10 +45,18 @@ export class PaymentSessionController {
 - 만료 시간 설정
 - 메타데이터로 주문 정보 보관
 
+**멱등성 지원**: 동일한 Idempotency-Key로 재요청 시 동일한 결과 반환
+
 **다음 단계:**
 1. 이 API로 세션(청구서) 생성
 2. \`POST /v2/payments/process\`로 실제 결제 실행
     `,
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 키 (선택사항) - 동일한 요청 중복 실행 방지',
+    required: false,
+    example: 'session_key_' + Date.now(),
   })
   @ApiResponse({
     status: 201,
@@ -65,6 +75,7 @@ export class PaymentSessionController {
   })
   async createSession(
     @Body() dto: CreatePaymentSessionDto,
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ): Promise<CreateSessionResponseDto> {
     try {
       this.logger.log(
@@ -72,12 +83,15 @@ export class PaymentSessionController {
       );
 
       // 기존의 우수한 createSession 메서드 직접 사용 (멱등성, 이벤트, 트랜잭션 지원)
-      const result = await this.sessionService.createSession({
-        userId: dto.userId,
-        amount: dto.amount,
-        currency: dto.currency || 'KRW',
-        metadata: dto.metadata,
-      });
+      const result = await this.sessionService.createSession(
+        {
+          userId: dto.userId,
+          amount: dto.amount,
+          currency: dto.currency || 'KRW',
+          metadata: dto.metadata,
+        },
+        idempotencyKey,
+      );
 
       // 세션 정보를 직접 조회해서 완전한 정보 반환
       const session = await this.sessionService.getSession(result.sessionId);

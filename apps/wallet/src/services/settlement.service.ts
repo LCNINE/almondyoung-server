@@ -337,7 +337,7 @@ export class SettlementService {
         // 세션별 bnpl_transaction(AUTHORIZED) + settlement_batch_item 생성
         for (const row of bucket.sessionRows) {
           const [txn] = await tx
-            .insert(schema.bnplTransaction)
+            .insert(schema.bnplEvents)
             .values({
               bnplAccountId,
               paymentSessionId: row.sessionId, // NOT NULL 요구 충족
@@ -349,7 +349,7 @@ export class SettlementService {
 
           await tx.insert(schema.settlementBatchItem).values({
             batchId,
-            bnplTransactionId: txn.id, // NOT NULL 요구 충족
+            bnplEventId: txn.id, // NOT NULL 요구 충족
             amount: Number(row.amount),
             transactionDate: new Date(),
           });
@@ -538,7 +538,7 @@ export class SettlementService {
         });
 
         // (성공 경로 트랜잭션 내부)
-        await this.captureBnplTransactionsForSessions(
+        await this.captureBnplEventsForSessions(
           tx,
           bnplAccountId,
           sessionIds,
@@ -878,7 +878,7 @@ export class SettlementService {
    * @param bnplAccountId 대상 계정
    * @param sessionIds payment_sessions.id 배열 (중복 제거된 상태 권장)
    */
-  private async captureBnplTransactionsForSessions(
+  private async captureBnplEventsForSessions(
     tx: WalletTx,
     bnplAccountId: string,
     sessionIds: string[],
@@ -891,13 +891,13 @@ export class SettlementService {
       const chunk = sessionIds.slice(i, i + chunkSize);
 
       await tx
-        .update(schema.bnplTransaction)
+        .update(schema.bnplEvents)
         .set({ status: 'CAPTURED' }) // TRANSACTION_STATUS 집합 내 값
         .where(
           and(
-            eq(schema.bnplTransaction.bnplAccountId, bnplAccountId),
-            eq(schema.bnplTransaction.status, 'AUTHORIZED'),
-            inArray(schema.bnplTransaction.paymentSessionId, chunk),
+            eq(schema.bnplEvents.bnplAccountId, bnplAccountId),
+            eq(schema.bnplEvents.status, 'AUTHORIZED'),
+            inArray(schema.bnplEvents.paymentSessionId, chunk),
           ),
         );
     }

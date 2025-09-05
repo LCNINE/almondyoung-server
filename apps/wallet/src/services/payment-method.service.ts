@@ -95,7 +95,7 @@ export class PaymentMethodService {
     this.logger.log(`결제수단 등록: ${dto.methodType} - ${dto.userId}`);
 
     return await this.db.db.transaction(async (tx) => {
-      // 1. 멱등성 처리
+      // 1. 멱등성 처리: 동일한 키로 재요청 시 이전 결과를 반환하여 중복 생성을 방지합니다.
       if (idemKey) {
         const idem =
           await this.idempotency.checkOrCreate<PaymentMethodResponseDto>(
@@ -107,84 +107,98 @@ export class PaymentMethodService {
         if (idem.hit) return idem.response!;
       }
 
-      // 2. 비즈니스 검증
+      // 2. 비즈니스 검증: 결제수단 개수 제한 등 내부 규칙을 확인합니다.
       await this.validatePaymentMethod(dto, tx);
 
-      // 3. methodType별 외부 시스템 등록 처리
+      // 3. 외부 시스템(PG사) 등록 처리
       let externalResult: any = null;
-      let initialStatus = 'ACTIVE'; // 기본값
+      let initialStatus: 'PENDING' | 'ACTIVE' | 'INACTIVE' = 'ACTIVE'; // 기본 상태는 'ACTIVE'
 
+      // 카드 타입인 경우에만 PG사 연동 로직을 실행합니다.
       if (dto.methodType === 'CARD' && dto.cardInfo) {
-        // HMS CMS 정기결제 회원 등록
-        const [year, month] = dto.cardInfo.expiryDate.split('/');
+        
+        // ✅ [수정] DTO의 유효기간(MM/YY)을 월과 연으로 분리합니다.
+        const [month, year] = dto.cardInfo.expiryDate.split('/');
+
+        // ✅ [수정] HMS API 명세에 맞는 요청 데이터를 정확하게 구성합니다.
         const registrationRequest = {
           userId: dto.userId,
-          memberName: dto.methodName,
-          phone: dto.cardInfo.phone || '', // DTO에서 전화번호 가져오기
-          paymentNumber: dto.cardInfo.cardNumber,
+          memberName: dto.cardInfo.cardHolderName,
+          phone: (dto.cardInfo.phone || '').replace(/[^0-9]/g, ''),
+          paymentNumber: dto.cardInfo.cardNumber.replace(/[^0-9]/g, ''),
           payerName: dto.cardInfo.cardHolderName,
-          validYear: `20${year}`, // YY -> YYYY
+          payerNumber: dto.cardInfo.birthDate.padEnd(10, '0'),
+          validYear: year,
           validMonth: month,
+          password: dto.cardInfo.cardPassword,
           billingCycleDay: dto.cardInfo.billingCycleDay || 1,
+
+          // ✅ [최종 추가] 날짜 관련 필드를 추가하여 안정성 확보
+          paymentStartDate: new Date().toISOString().split('T')[0].replace(/-/g, ''), // 오늘 날짜 (YYYYMMDD)
+          paymentEndDate: '99991231', // 명세서 기본값인 영구 기간
         };
 
+        // PaymentService를 통해 PG사에 등록을 요청합니다.
         externalResult = await this.paymentService.registerPaymentMethod(
           'CARD',
           registrationRequest,
         );
 
+        // PG사 등록 실패 시 에러를 발생시킵니다.
         if (!externalResult.success) {
           throw new Error(externalResult.error || 'HMS CMS 회원 등록 실패');
         }
 
-        initialStatus = 'PENDING'; // HMS 승인 대기
+        // HMS는 등록 후 PG사의 승인이 필요하므로 상태를 'PENDING'으로 설정합니다.
+        initialStatus = 'PENDING';
         this.logger.log(
           `HMS CMS 회원 등록 성공: ${externalResult.hmsMemberId}`,
         );
       }
 
-      // 4. 기본 결제수단 처리
+      // 4. 이 카드를 기본 결제수단으로 설정하는 경우, 기존의 기본 설정을 해제합니다.
       if (dto.isDefault) {
         await this.clearDefaultMethods(dto.userId, tx);
       }
 
-      // 5. 내부 DB 저장 (외부 등록 결과 반영)
+      // 5. 내부 DB `paymentMethod` 테이블에 공통 정보를 저장합니다.
       const [method] = await tx
         .insert(schema.paymentMethod)
         .values({
           userId: dto.userId,
           methodType: dto.methodType,
           methodName: dto.methodName,
-          status: initialStatus as 'PENDING' | 'ACTIVE' | 'INACTIVE',
+          status: initialStatus,
           isDefault: dto.isDefault || false,
         })
         .returning();
 
-      // 6. 카드인 경우 cardMethod 테이블에 저장 (HMS CMS 정기결제 정보 포함)
+      // 6. 카드인 경우 `cardMethod` 테이블에 상세 정보를 저장합니다.
       if (dto.methodType === 'CARD' && externalResult?.hmsMemberId) {
         await tx.insert(schema.cardMethod).values({
+          id: method.id, // paymentMethod.id와 동일한 ID를 사용해 관계 설정
           methodType: 'CARD',
-          pgToken: externalResult.hmsMemberId, // HMS Member ID를 pgToken으로 사용
-          billingKey: externalResult.hmsMemberId, // HMS Member ID를 billingKey로도 사용
+
+          // ✅ [수정] 스키마에 추가한 hmsMemberId 컬럼에 정확히 저장합니다.
+          hmsMemberId: externalResult.hmsMemberId,
+          
+          // 기존 로직을 유지하거나 PG사 응답에 따라 채웁니다.
+          pgToken: externalResult.hmsMemberId,
+          billingKey: externalResult.hmsMemberId,
           maskedCardNumber:
             externalResult.metadata?.maskedCardNumber || '****-****-****-****',
           lastFourDigits:
-            externalResult.metadata?.maskedCardNumber?.slice(-4) || '****',
+            externalResult.metadata?.maskedCardNumber?.slice(-4) || '',
           cardBrand: externalResult.metadata?.cardCompany || 'HMS_CARD',
           cardType: externalResult.metadata?.cardType || 'CREDIT',
           issuerName: 'HMS',
-          hmsMetadata: JSON.stringify({
-            hmsMemberId: externalResult.hmsMemberId,
-            memberName: dto.memberName,
-            ...externalResult.metadata,
-          }),
         });
       }
 
-      // 7. 응답 구성
+      // 7. 최종 응답 데이터를 구성합니다.
       const response = this.toResponseDto(method, externalResult);
 
-      // 6. 멱등성 완료
+      // 8. 멱등성 키가 있었다면, 요청 처리가 완료되었음을 기록합니다.
       if (idemKey) {
         await this.idempotency.complete(tx, idemKey, response, 201);
       }
@@ -193,7 +207,6 @@ export class PaymentMethodService {
       return response;
     });
   }
-
   /**
    * BNPL 승인 상태 포함한 결제수단 목록
    */

@@ -68,7 +68,7 @@ export class InternalPointPaymentAdapter
 
         // 2. 포인트 트랜잭션 생성
         const transactionId = ulid();
-        await tx.insert(schema.pointTransactions).values({
+        await tx.insert(schema.pointEvents).values({
           pointId: pointAccount.id,
           type: 'REDEEM', // 포인트 사용
           amount: amountKRW,
@@ -129,8 +129,8 @@ export class InternalPointPaymentAdapter
         // 1. 원본 트랜잭션 조회
         const [originalTransaction] = await tx
           .select()
-          .from(schema.pointTransactions)
-          .where(eq(schema.pointTransactions.id, transactionId))
+          .from(schema.pointEvents)
+          .where(eq(schema.pointEvents.id, transactionId))
           .limit(1);
 
         if (!originalTransaction || originalTransaction.type !== 'REDEEM') {
@@ -138,7 +138,7 @@ export class InternalPointPaymentAdapter
         }
 
         // 2. 환불 트랜잭션 생성 (포인트 복원)
-        await tx.insert(schema.pointTransactions).values({
+        await tx.insert(schema.pointEvents).values({
           pointId: originalTransaction.pointId,
           type: 'EARN', // 포인트 복원
           amount: amountKRW,
@@ -222,7 +222,7 @@ export class InternalPointPaymentAdapter
         }
 
         // 2. 적립 트랜잭션 생성
-        await tx.insert(schema.pointTransactions).values({
+        await tx.insert(schema.pointEvents).values({
           pointId: pointAccount.id,
           type: 'EARN', // 포인트 적립
           amount: amountKRW,

@@ -71,7 +71,7 @@ export class PointStrategy implements PaymentProcessingStrategy {
         // 3. 포인트 사용 이력 기록
         const transactionId = `point_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        await tx.insert(schema.pointTransactions).values({
+        await tx.insert(schema.pointEvents).values({
           pointId: userPoint.id,
           type: 'REDEEM',
           amount: -amount,
@@ -217,7 +217,7 @@ export class PointStrategy implements PaymentProcessingStrategy {
         // 4. 포인트 환불 이력 기록
         const refundId = `refund_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        await tx.insert(schema.pointTransactions).values({
+        await tx.insert(schema.pointEvents).values({
           pointId: userPoint.id,
           type: 'EARN',
           amount: amount,

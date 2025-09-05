@@ -95,6 +95,7 @@ export interface PaymentMethodRegistrationRequest {
   phone: string;
   paymentNumber?: string; // 카드번호
   payerName?: string; // 카드 소유자명
+  payerNumber?: string; // 납부자 번호 (HMS 전용, 10자리)
   validYear?: string; // 유효연도
   validMonth?: string; // 유효월
   creditLimit?: number; // BNPL 한도

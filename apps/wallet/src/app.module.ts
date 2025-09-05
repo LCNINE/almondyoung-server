@@ -49,6 +49,8 @@ import { PaymentStrategyFactory } from './factories/payment-strategy.factory';
 import { BnplStrategy } from './strategies/bnpl.strategy';
 import { CardStrategy } from './strategies/card.strategy';
 import { PointStrategy } from './strategies/point.strategy';
+import { BnplLedgerService } from './services/bnpl-ledger.service';
+import { BatchCaptureService } from './services/batch-capture.service';
 
 @Module({
   imports: [
@@ -84,6 +86,10 @@ import { PointStrategy } from './strategies/point.strategy';
     BnplStrategy,
     CardStrategy,
     PointStrategy,
+
+    // === 도메인 서비스들 ===
+    BnplLedgerService,
+    BatchCaptureService,
 
     // === 기존 서비스들 (호환성 유지) ===
 
