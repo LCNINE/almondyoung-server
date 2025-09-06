@@ -137,7 +137,7 @@ export class InventoryController {
     @ApiResponse({ status: 404, description: '활성 재고 항목을 찾을 수 없음.' })
     async adjustStockQuantity(@Body() adjustDto: AdjustStockDto) {
         return this.inventoryService.adjustStockManually(
-            adjustDto.stockId,
+            `${adjustDto.skuId}:${adjustDto.warehouseId}:${adjustDto.locationId ?? ''}`,
             adjustDto.delta,
             adjustDto.reason
         );

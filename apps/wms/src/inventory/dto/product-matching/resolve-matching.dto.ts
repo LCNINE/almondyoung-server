@@ -1,7 +1,7 @@
 import { IsUUID, IsOptional, IsBoolean, IsArray, IsEnum, ValidateNested, IsNumber, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { matchingStrategyEnum } from 'apps/wms/database/schemas/wms-schema';
+import { matchingStrategyEnum } from '../../../../database/schemas/wms-schema';
 
 export class SkuMappingDto {
     @ApiProperty({ description: 'SKU ID' })

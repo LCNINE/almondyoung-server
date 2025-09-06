@@ -17,7 +17,8 @@ import {
     ExtendRackBinsDto
 } from '../dto/location-update.dto';
 import { LocationQueryDto } from '../dto/location-query.dto';
-import { LocationType } from '../types';
+import { LocationType, SystemLocationRole } from '../types';
+import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
 
 @Injectable()
 export class LocationService {
@@ -29,6 +30,53 @@ export class LocationService {
 
     private get db() {
         return this.dbService.db;
+    }
+
+    // 시스템 로케이션 존재 보장 (멱등)
+    async ensureSystemLocations(warehouseId: string) {
+        const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS) as SystemLocationRole[];
+
+        for (const role of roles) {
+            const [exists] = await this.db
+                .select()
+                .from(wmsTables.locations)
+                .where(
+                    and(
+                        eq(wmsTables.locations.warehouseId, warehouseId),
+                        eq(wmsTables.locations.systemRole as any, role as any)
+                    )
+                )
+                .limit(1);
+
+            if (!exists) {
+                const def = SYSTEM_LOCATION_DEFAULTS[role];
+                await this.db.insert(wmsTables.locations).values({
+                    warehouseId,
+                    code: def.code,
+                    displayName: def.displayName,
+                    locationType: 'zone',
+                    rackId: null,
+                    binIdentifier: null,
+                    isSystem: true,
+                    systemRole: role as any,
+                    isActive: true,
+                });
+                this.logger.log(`System location created for ${warehouseId}: ${role}`);
+            }
+        }
+    }
+
+    async getSystemLocationByRole(warehouseId: string, role: SystemLocationRole) {
+        const loc = await this.db.query.locations.findFirst({
+            where: and(
+                eq(wmsTables.locations.warehouseId, warehouseId),
+                eq(wmsTables.locations.systemRole as any, role as any)
+            ),
+        });
+        if (!loc) {
+            throw new NotFoundException(`System location not found for role ${role} in warehouse ${warehouseId}`);
+        }
+        return loc;
     }
 
 
@@ -374,12 +422,37 @@ export class LocationService {
 
 
     async updateLocation(locationId: string, dto: UpdateLocationDto) {
+        // 시스템 로케이션 보호: 허용 필드만 수정
+        const [existing] = await this.db
+            .select()
+            .from(wmsTables.locations)
+            .where(eq(wmsTables.locations.id, locationId))
+            .limit(1);
+
+        if (!existing) {
+            throw new NotFoundException(`Location with id ${locationId} not found`);
+        }
+
+        let payload: Partial<typeof wmsTables.locations.$inferInsert> = {
+            ...dto,
+            updatedAt: new Date(),
+        };
+
+        if ((existing as any).isSystem) {
+            payload = {
+                displayName: dto.displayName,
+                notes: dto.notes,
+                isActive: dto.isActive,
+                capacityLimit: dto.capacityLimit,
+                fifoRank: dto.fifoRank,
+                isExpirySeparated: dto.isExpirySeparated,
+                updatedAt: new Date(),
+            };
+        }
+
         const [updated] = await this.db
             .update(wmsTables.locations)
-            .set({
-                ...dto,
-                updatedAt: new Date(),
-            })
+            .set(payload)
             .where(eq(wmsTables.locations.id, locationId))
             .returning();
 
@@ -413,6 +486,7 @@ export class LocationService {
         this.logger.log(`Adding custom bin ${dto.customBinName} to rack ${dto.columnName}-${dto.rackNumber}`);
 
         return await this.db.transaction(async (tx) => {
+            // 시스템 로케이션 보호: 커스텀 빈 생성은 일반 랙/로케이션만 해당 (정책적으로 주석)
             // 랙 찾기
             const [rackResult] = await tx
                 .select({
@@ -496,6 +570,27 @@ export class LocationService {
                 asc(wmsTables.locationColumns.columnName),
                 asc(wmsTables.locationRacks.rackNumber)
             );
+    }
+
+    // 삭제 보호: 시스템 로케이션은 삭제 금지
+    async deleteLocation(locationId: string) {
+        const [existing] = await this.db
+            .select()
+            .from(wmsTables.locations)
+            .where(eq(wmsTables.locations.id, locationId))
+            .limit(1);
+
+        if (!existing) {
+            throw new NotFoundException(`Location with id ${locationId} not found`);
+        }
+
+        if ((existing as any).isSystem) {
+            throw new BadRequestException('System location cannot be deleted');
+        }
+
+        await this.db.delete(wmsTables.locations)
+            .where(eq(wmsTables.locations.id, locationId));
+        return { success: true };
     }
 
 }

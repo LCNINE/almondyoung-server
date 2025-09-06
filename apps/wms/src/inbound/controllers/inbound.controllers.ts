@@ -1,29 +1,40 @@
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InboundService } from '../services/inbound.service';
-import { CreateInboundDto } from '../dto/create-inbound.dto';
-import { CreateStockEntryDto } from '../dto/create-stock-entry.dto';
+import { SimpleInboundDto, IndividualInboundDto, PutawayRequestDto, ReturnInboundDto, CancelInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ListPlanItemsQueryDto, ReceiveFromPlanDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 
 @ApiTags('Inbound')
 @Controller('wms/inbound')
 export class InboundController {
-    constructor(private readonly inboundService: InboundService) { }
-
-    @Post()
-    @ApiOperation({ summary: '거래처로부터의 입고 처리 (국내/해외)' })
+    @Post('simple')
+    @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })
     @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.' })
-    async processInbound(@Body() inboundDto: CreateInboundDto) {
-        return this.inboundService.processInbound(inboundDto);
+    async simpleInbound(@Body() dto: SimpleInboundDto) {
+        return this.inboundService.simpleInbound(dto);
     }
 
-    @Post('entry')
-    @ApiOperation({ summary: '새로운 재고 묶음 생성 (판매등록 시 재고 0, 또는 수동 입고)' })
-    @ApiResponse({ status: 201, description: '새로운 재고 묶음이 성공적으로 생성되었습니다.' })
-    @ApiResponse({ status: 400, description: '잘못된 요청 또는 유효성 검사 실패.' })
-    @ApiResponse({ status: 404, description: '관련 Product Matching 항목을 찾을 수 없음.' })
-    async createStockEntry(@Body() createStockEntryDto: CreateStockEntryDto) {
-        return this.inboundService.createStockEntry(createStockEntryDto);
+    @Post('simple-fullscan')
+    @ApiOperation({ summary: '전수조사 간편입고 - (서버는 간편입고와 동일 처리, 기록만 구분)' })
+    @ApiResponse({ status: 201, description: '전수조사 간편입고가 성공적으로 처리되었습니다.' })
+    async simpleInboundFullscan(@Body() dto: SimpleInboundDto) {
+        return this.inboundService.simpleInboundFullscan(dto);
     }
+
+    @ApiOperation({ summary: '입고 라인 메모 수정' })
+    @ApiResponse({ status: 200, description: '메모가 수정되었습니다.' })
+    @Post('lines/:lineId/memo')
+    async updateInboundLineMemo(@Param('lineId') lineId: string, @Body() dto: UpdateInboundLineMemoDto) {
+        return this.inboundService.updateInboundLineMemo(lineId, dto);
+    }
+
+    @Post('individual')
+    @ApiOperation({ summary: '개별입고 - 단일 SKU를 지정(옵션) 로케로 입고' })
+    @ApiResponse({ status: 201, description: '개별입고가 성공적으로 처리되었습니다.' })
+    async individualInbound(@Body() dto: IndividualInboundDto) {
+        return this.inboundService.individualInbound(dto);
+    }
+
+    constructor(private readonly inboundService: InboundService) { }
 
     @Get('pending')
     @ApiOperation({ summary: '입고 예정 목록 조회' })
@@ -61,5 +72,135 @@ export class InboundController {
             dto.barcode,
             dto.expectedSkuId
         );
+    }
+
+    @Get('receipts')
+    @ApiOperation({ summary: '입고내역(현황) 조회 - (sku, quantity, occurredAt, method)' })
+    @ApiQuery({ name: 'skuId', required: false })
+    @ApiQuery({ name: 'warehouseId', required: false })
+    @ApiQuery({ name: 'method', required: false, enum: ['individual','simple','simple_fullscan','planned'] })
+    @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
+    @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
+    @ApiQuery({ name: 'limit', required: false })
+    @ApiQuery({ name: 'offset', required: false })
+    async listInboundReceipts(
+      @Query('skuId') skuId?: string,
+      @Query('warehouseId') warehouseId?: string,
+      @Query('method') method?: string,
+      @Query('startDate') startDate?: string,
+      @Query('endDate') endDate?: string,
+      @Query('limit') limit?: string,
+      @Query('offset') offset?: string,
+    ) {
+      return this.inboundService.listInboundReceipts({
+        skuId, warehouseId, method: method as any,
+        startDate, endDate,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
+      });
+    }
+
+    @Get('work-logs')
+    @ApiOperation({ summary: '입고 작업 타임라인 조회 (INBOUND/PUTAWAY/RETURN/CANCEL)' })
+    @ApiQuery({ name: 'warehouseId', required: false })
+    @ApiQuery({ name: 'skuId', required: false })
+    @ApiQuery({ name: 'type', required: false, enum: ['INBOUND','PUTAWAY','RETURN','CANCEL'] })
+    @ApiQuery({ name: 'method', required: false, enum: ['individual','simple','simple_fullscan','planned'] })
+    @ApiQuery({ name: 'startDate', required: false })
+    @ApiQuery({ name: 'endDate', required: false })
+    @ApiQuery({ name: 'limit', required: false })
+    @ApiQuery({ name: 'offset', required: false })
+    async listInboundWorkLogs(
+      @Query('warehouseId') warehouseId?: string,
+      @Query('skuId') skuId?: string,
+      @Query('type') type?: string,
+      @Query('method') method?: string,
+      @Query('startDate') startDate?: string,
+      @Query('endDate') endDate?: string,
+      @Query('limit') limit?: string,
+      @Query('offset') offset?: string,
+    ) {
+      return this.inboundService.listInboundWorkLogs({
+        warehouseId, skuId,
+        type: type as any, method: method as any,
+        startDate, endDate,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
+      });
+    }
+
+    @Get('status')
+    @ApiOperation({ summary: '집계 입고현황(확정수량) 조회' })
+    @ApiQuery({ name: 'skuId', required: false })
+    @ApiQuery({ name: 'warehouseId', required: false })
+    @ApiQuery({ name: 'startDate', required: false })
+    @ApiQuery({ name: 'endDate', required: false })
+    @ApiQuery({ name: 'limit', required: false })
+    @ApiQuery({ name: 'offset', required: false })
+    async listInboundStatus(
+      @Query('skuId') skuId?: string,
+      @Query('warehouseId') warehouseId?: string,
+      @Query('startDate') startDate?: string,
+      @Query('endDate') endDate?: string,
+      @Query('limit') limit?: string,
+      @Query('offset') offset?: string,
+    ) {
+      return this.inboundService.listInboundStatus({
+        skuId, warehouseId, startDate, endDate,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
+      });
+    }
+
+    @Post('putaway')
+    @ApiOperation({ summary: '입고 적치(즉시 이동): 원위치에서 목적지로 즉시 이동' })
+    @ApiResponse({ status: 201, description: '적치가 성공적으로 처리되었습니다.' })
+    async putaway(@Body() dto: PutawayRequestDto) {
+      return this.inboundService.putawayFromOrigin(dto);
+    }
+
+    @Post('return')
+    @ApiOperation({ summary: '입고 회송: 원위치 잔량에서 차감' })
+    @ApiResponse({ status: 201, description: '회송이 성공적으로 처리되었습니다.' })
+    async returnInbound(@Body() dto: ReturnInboundDto) {
+      return this.inboundService.returnInbound(dto);
+    }
+
+    @Post('cancel')
+    @ApiOperation({ summary: '입고 취소: 오입고 정정, 원위치 잔량에서 차감' })
+    @ApiResponse({ status: 201, description: '입고취소가 성공적으로 처리되었습니다.' })
+    async cancelInbound(@Body() dto: CancelInboundDto) {
+      return this.inboundService.cancelInbound(dto);
+    }
+
+    // 예정 CRUD 및 연계
+    @Post('plans')
+    @ApiOperation({ summary: '입고예정 생성' })
+    async createPlan(@Body() dto: CreateInboundPlanDto) {
+      return this.inboundService.createInboundPlan(dto);
+    }
+
+    @Post('plans/items')
+    @ApiOperation({ summary: '입고예정 아이템 추가' })
+    async addPlanItems(@Body() dto: AddInboundPlanItemsDto) {
+      return this.inboundService.addInboundPlanItems(dto);
+    }
+
+    @Get('plans/items')
+    @ApiOperation({ summary: '입고예정 아이템 조회(헤더 무시, 아이템 기준)' })
+    @ApiQuery({ name: 'startDate', required: false })
+    @ApiQuery({ name: 'endDate', required: false })
+    @ApiQuery({ name: 'warehouseId', required: false })
+    @ApiQuery({ name: 'skuId', required: false })
+    async listPlanItems(
+      @Query() query: ListPlanItemsQueryDto,
+    ) {
+      return this.inboundService.listInboundPlanItems(query);
+    }
+
+    @Post('plans/receive')
+    @ApiOperation({ summary: '입고예정 아이템 기반 실입고 처리' })
+    async receiveFromPlan(@Body() dto: ReceiveFromPlanDto) {
+      return this.inboundService.receiveFromPlan(dto);
     }
 }

@@ -20,7 +20,7 @@ import { CarrierService } from './services/carrier.service';
     }),
     SharedModule,
   ],
-  controllers: [ShipmentController],
+  controllers: [/* ShipmentController */],
   providers: [ShipmentService, CarrierService],
   exports: [ShipmentService, CarrierService],
 })

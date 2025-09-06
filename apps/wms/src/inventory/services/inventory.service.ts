@@ -13,7 +13,9 @@ import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
 import { WAREHOUSE_CONSTANTS, WarehouseType } from '../constants/warehouse.constants';
 import { StockEventStore } from '../repositories/stock-event.store';
-import { StockSummaryRepository } from '../repositories/ stock-summary.repository';
+import { InventoryQueryService } from './inventory-query.service';
+import { InventoryCommandService } from './inventory-command.service';
+import { LocationService } from './location.service';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 type DbOrTx = DbTx | TypedDatabase<typeof wmsTables>;
@@ -25,7 +27,9 @@ export class InventoryService implements OnModuleInit {
     constructor(
         @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
         private readonly eventStore: StockEventStore,
-        private readonly summaryRepo: StockSummaryRepository,
+        private readonly queryService: InventoryQueryService,
+        private readonly commandService: InventoryCommandService,
+        private readonly locationService: LocationService,
     ) { }
 
     private get db() {
@@ -34,6 +38,14 @@ export class InventoryService implements OnModuleInit {
 
     async onModuleInit() {
         await this._ensureDefaultWarehousesExist();
+        try {
+            const allWarehouses = await this.findAllWarehouses();
+            for (const wh of allWarehouses) {
+                await this.locationService.ensureSystemLocations(wh.id);
+            }
+        } catch (e) {
+            this.logger.error('시스템 로케이션 프로비저닝 중 오류', e);
+        }
     }
 
     // ****************************************************************
@@ -64,7 +76,7 @@ export class InventoryService implements OnModuleInit {
                 );
             }
 
-            return this.getSkuById(newSku.id);
+            return this.getSkuById(newSku.id, tx);
         });
     }
 
@@ -102,19 +114,17 @@ export class InventoryService implements OnModuleInit {
                 }
             }
 
-            return this.getSkuById(skuId);
+            return this.getSkuById(skuId, tx);
         });
     }
 
     async deleteSku(skuId: string): Promise<void> {
-        const activeStock = await this.db.query.stocks.findFirst({
-            where: and(
-                eq(wmsTables.stocks.skuId, skuId),
-                isNull(wmsTables.stocks.destroyerEventId)
-            ),
-        });
+        const [agg] = await this.db
+            .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
+            .from(wmsTables.stockLedgers)
+            .where(eq(wmsTables.stockLedgers.skuId, skuId));
 
-        if (activeStock && activeStock.realQuantity > 0) {
+        if ((agg?.qty ?? 0) > 0) {
             throw new ConflictException(`Cannot delete SKU ${skuId}: Active stock exists`);
         }
 
@@ -132,8 +142,9 @@ export class InventoryService implements OnModuleInit {
         this.logger.log(`SKU ${skuId} deleted successfully`);
     }
 
-    async getSkuById(skuId: string): Promise<SkuResponseDto> {
-        const sku = await this.db.query.skus.findFirst({
+    async getSkuById(skuId: string, tx?: DbOrTx): Promise<SkuResponseDto> {
+        const db = tx || this.db;
+        const sku = await db.query.skus.findFirst({
             where: eq(wmsTables.skus.id, skuId),
         });
 
@@ -141,11 +152,11 @@ export class InventoryService implements OnModuleInit {
             throw new NotFoundException(`SKU with ID ${skuId} not found`);
         }
 
-        const barcodes = await this.db.query.skuBarcodes.findMany({
+        const barcodes = await db.query.skuBarcodes.findMany({
             where: eq(wmsTables.skuBarcodes.skuId, skuId),
         });
 
-        const suppliers = await this.db
+        const suppliers = await db
             .select({
                 name: wmsTables.suppliers.name,
             })
@@ -153,7 +164,7 @@ export class InventoryService implements OnModuleInit {
             .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
             .where(eq(wmsTables.skuSuppliers.skuId, skuId));
 
-        const categories = await this.db
+        const categories = await db
             .select({
                 name: wmsTables.categories.name,
             })
@@ -328,54 +339,27 @@ export class InventoryService implements OnModuleInit {
     // ****************************************************************
 
     async getCurrentStock(query: GetStockQueryDto) {
-        if (this._canUseStockSummary(query)) {
-            return this.getQuickStockSummary(query.skuId, query.warehouseId);
+        const { skuId, warehouseId, locationId, asOfTimestamp } = query;
+        if (asOfTimestamp) {
+            throw new BadRequestException('asOfTimestamp 기반 조회는 아직 지원되지 않습니다.');
         }
 
-        const { skuId, warehouseId, locationId, stockType, asOfTimestamp } = query;
+        const rows = await this.db
+            .select({
+                skuId: wmsTables.stockLedgers.skuId,
+                warehouseId: wmsTables.stockLedgers.warehouseId,
+                locationId: wmsTables.stockLedgers.locationId,
+                stockState: wmsTables.stockLedgers.stockState,
+                quantity: wmsTables.stockLedgers.qty,
+            })
+            .from(wmsTables.stockLedgers)
+            .where(and(
+                skuId ? eq(wmsTables.stockLedgers.skuId, skuId) : undefined,
+                warehouseId ? eq(wmsTables.stockLedgers.warehouseId, warehouseId) : undefined,
+                locationId ? eq(wmsTables.stockLedgers.locationId, locationId) : undefined,
+            ));
 
-        const stocks = await this.db.query.stocks.findMany({
-            where: (s, { and, eq, isNull }) => and(
-                skuId ? eq(s.skuId, skuId) : undefined,
-                warehouseId ? eq(s.warehouseId, warehouseId) : undefined,
-                locationId ? eq(s.locationId, locationId) : undefined,
-                stockType ? eq(s.stockType, stockType) : undefined,
-                isNull(s.destroyerEventId)
-            ),
-            orderBy: (s, { asc }) => [asc(s.skuId), asc(s.warehouseId), asc(s.locationId), asc(s.creatorEventId)],
-        });
-
-        const aggregatedStock = stocks.reduce((acc, stock) => {
-            const key = `${stock.skuId}-${stock.warehouseId}-${stock.locationId || 'null'}-${stock.expiryDate?.toISOString() || 'null'}`;
-            if (!acc[key]) {
-                acc[key] = {
-                    skuId: stock.skuId,
-                    warehouseId: stock.warehouseId,
-                    locationId: stock.locationId,
-                    expiryDate: stock.expiryDate?.toISOString(),
-                    stockType: stock.stockType,
-                    realQuantity: 0,
-                    reservedQuantity: 0,
-                    availableQuantity: 0,
-                    stockRows: [],
-                };
-            }
-            acc[key].realQuantity += stock.realQuantity;
-            acc[key].reservedQuantity += stock.reservedQuantity;
-            acc[key].availableQuantity += stock.availableQuantity;
-            acc[key].stockRows.push({
-                id: stock.id,
-                realQuantity: stock.realQuantity,
-                reservedQuantity: stock.reservedQuantity,
-                availableQuantity: stock.availableQuantity,
-                creatorEventId: stock.creatorEventId,
-                subBarcode: stock.subBarcode,
-                packingUnit: stock.packingUnit,
-            });
-            return acc;
-        }, {} as Record<string, any>);
-
-        return Object.values(aggregatedStock);
+        return rows;
     }
 
     async getTotalStockBySku(skuId: string): Promise<{
@@ -413,20 +397,17 @@ export class InventoryService implements OnModuleInit {
             ),
         });
 
-        const stocks = await this.db.query.stocks.findMany({
-            where: and(
-                eq(wmsTables.stocks.skuId, skuId),
-                eq(wmsTables.stocks.warehouseId, warehouseId),
-                isNull(wmsTables.stocks.destroyerEventId)
-            ),
-            with: {
-                location: true,
-            },
-            orderBy: (stocks, { asc }) => [
-                asc(stocks.expiryDate),
-                asc(stocks.creatorEventId),
-            ],
-        });
+        const details = await this.db
+            .select({
+                locationId: wmsTables.stockLedgers.locationId,
+                stockState: wmsTables.stockLedgers.stockState,
+                quantity: wmsTables.stockLedgers.qty,
+            })
+            .from(wmsTables.stockLedgers)
+            .where(and(
+                eq(wmsTables.stockLedgers.skuId, skuId),
+                eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+            ));
 
         return {
             summary: summary ? {
@@ -440,7 +421,7 @@ export class InventoryService implements OnModuleInit {
                 returnPendingQuantity: summary.returnPendingQuantity,
                 lastUpdated: summary.lastUpdated,
             } : null,
-            details: stocks,
+            details,
         };
     }
 
@@ -465,83 +446,7 @@ export class InventoryService implements OnModuleInit {
     }
 
     async adjustStockManually(stockId: string, delta: number, reason: string) {
-        if (delta === 0) {
-            this.logger.log(`재고 조정 ${stockId}에 대한 델타가 0입니다. 변경사항이 적용되지 않았습니다.`);
-            return;
-        }
-
-        return this.db.transaction(async (tx) => {
-            const currentStock = await tx.query.stocks.findFirst({
-                where: and(
-                    eq(wmsTables.stocks.id, stockId),
-                    isNull(wmsTables.stocks.destroyerEventId)
-                ),
-            });
-
-            if (!currentStock) {
-                throw new NotFoundException(`ID ${stockId}의 활성 재고 항목을 찾을 수 없습니다.`);
-            }
-
-            const sku = await this.findSkuById(currentStock.skuId, tx);
-            if (!sku) {
-                throw new NotFoundException(`SKU with ID ${currentStock.skuId}를 찾을 수 없습니다.`);
-            }
-
-            const newRealQuantity = currentStock.realQuantity + delta;
-            if (newRealQuantity < 0) {
-                throw new BadRequestException(`조정으로 인해 재고 ID ${stockId}의 실제 수량이 음수가 됩니다.`);
-            }
-
-            const eventType = 'ADJUST_MANUAL';
-
-            // 이벤트 생성 (델타값 저장)
-            const event = await this.eventStore.createEvent({
-                type: eventType,
-                skuId: currentStock.skuId,
-                warehouseId: currentStock.warehouseId,
-                locationId: currentStock.locationId,
-                deltaQuantity: delta,
-                relatedStockId: stockId,
-                reason: `관리자 수동 조정 - ${reason}`,
-                expiresStockRowId: currentStock.id,
-            }, tx);
-
-            // 재고 현황 테이블 업데이트
-            await this.summaryRepo.applyDelta(
-                currentStock.skuId,
-                currentStock.warehouseId,
-                delta,
-                eventType,
-                event.id,
-                tx
-            );
-
-            // 기존 재고 만료
-            await tx.update(wmsTables.stocks)
-                .set({ destroyerEventId: event.id })
-                .where(eq(wmsTables.stocks.id, stockId));
-
-            // 새 재고 생성
-            const newAvailableQuantity = this._calculateAvailableQuantity(newRealQuantity, currentStock.reservedQuantity);
-            const [newStock] = await tx.insert(wmsTables.stocks).values({
-                ...currentStock,
-                id: undefined,
-                creatorEventId: event.id,
-                destroyerEventId: null,
-                realQuantity: newRealQuantity,
-                availableQuantity: newAvailableQuantity,
-            }).returning();
-
-            await tx.update(wmsTables.stockEvents)
-                .set({
-                    createsStockRowId: newStock.id,
-                    relatedStockId: newStock.id
-                })
-                .where(eq(wmsTables.stockEvents.id, event.id));
-
-            this.logger.log(`관리자 수동 조정 완료: 재고 ${stockId}, 델타 ${delta}, 새 수량 ${newRealQuantity}`);
-            return newStock;
-        });
+        throw new BadRequestException('stockId 기반 수동 조정은 더 이상 지원하지 않습니다.');
     }
 
     async getSkuStockSummary(skuId: string): Promise<SkuStockSummaryDto> {
@@ -591,11 +496,11 @@ export class InventoryService implements OnModuleInit {
 
     // 이벤트 관련 메서드들은 StockEventStore로 위임
     async cancelStockEvent(eventId: string, reason: string): Promise<void> {
-        return this.eventStore.cancelStockEvent(eventId, reason);
+        await this.eventStore.reverseEvent(eventId, reason);
     }
 
     async rebuildStockSummary(skuId: string, warehouseId: string): Promise<void> {
-        return this.summaryRepo.rebuild(skuId, warehouseId);
+        throw new BadRequestException('재고 요약 재구축은 추후 프로젝션 서비스로 제공됩니다.');
     }
 
     // ****************************************************************
@@ -610,6 +515,8 @@ export class InventoryService implements OnModuleInit {
         }).returning();
 
         this.logger.log(`새 창고 생성: ${newWarehouse.name} (ID: ${newWarehouse.id})`);
+        // 창고 생성 직후 시스템 로케이션 보장
+        await this.locationService.ensureSystemLocations(newWarehouse.id);
         return newWarehouse;
     }
 
@@ -671,29 +578,24 @@ export class InventoryService implements OnModuleInit {
     }
 
     async getWarehouseStockSummary(warehouseId: string) {
-        const stocks = await this.db.select({
-            skuId: wmsTables.stocks.skuId,
+        const rows = await this.db.select({
+            skuId: wmsTables.stockLedgers.skuId,
             skuName: wmsTables.skus.name,
             skuCode: wmsTables.skus.code,
-            totalQuantity: sql<number>`sum(${wmsTables.stocks.realQuantity})`,
-            totalReserved: sql<number>`sum(${wmsTables.stocks.reservedQuantity})`,
-            totalAvailable: sql<number>`sum(${wmsTables.stocks.availableQuantity})`,
-            locationCount: sql<number>`count(distinct ${wmsTables.stocks.locationId})`,
+            totalQuantity: sql<number>`sum(${wmsTables.stockLedgers.qty})`,
+            locationCount: sql<number>`count(distinct ${wmsTables.stockLedgers.locationId})`,
         })
-            .from(wmsTables.stocks)
-            .innerJoin(wmsTables.skus, eq(wmsTables.stocks.skuId, wmsTables.skus.id))
-            .where(and(
-                eq(wmsTables.stocks.warehouseId, warehouseId),
-                isNull(wmsTables.stocks.destroyerEventId)
-            ))
-            .groupBy(wmsTables.stocks.skuId, wmsTables.skus.name, wmsTables.skus.code);
+            .from(wmsTables.stockLedgers)
+            .innerJoin(wmsTables.skus, eq(wmsTables.stockLedgers.skuId, wmsTables.skus.id))
+            .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId))
+            .groupBy(wmsTables.stockLedgers.skuId, wmsTables.skus.name, wmsTables.skus.code);
 
         return {
             warehouseId,
-            summary: stocks,
-            totalSkus: stocks.length,
-            totalQuantity: stocks.reduce((sum, item) => sum + item.totalQuantity, 0),
-            totalAvailable: stocks.reduce((sum, item) => sum + item.totalAvailable, 0),
+            summary: rows,
+            totalSkus: rows.length,
+            totalQuantity: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
+            totalAvailable: rows.reduce((sum, item) => sum + item.totalQuantity, 0),
         };
     }
 
@@ -849,13 +751,10 @@ export class InventoryService implements OnModuleInit {
     }
 
     private async _isWarehouseInUse(warehouseId: string): Promise<boolean> {
-        const stockCount = await this.db.select({ count: sql<number>`count(*)` })
-            .from(wmsTables.stocks)
-            .where(and(
-                eq(wmsTables.stocks.warehouseId, warehouseId),
-                isNull(wmsTables.stocks.destroyerEventId)
-            ));
+        const [row] = await this.db.select({ count: sql<number>`count(*)` })
+            .from(wmsTables.stockLedgers)
+            .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId));
 
-        return stockCount[0].count > 0;
+        return (row?.count ?? 0) > 0;
     }
 }

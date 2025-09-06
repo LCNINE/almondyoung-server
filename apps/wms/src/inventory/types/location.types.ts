@@ -4,6 +4,11 @@
 export type LocationType = 'standard' | 'zone';
 
 /**
+ * 시스템 로케이션 역할 타입
+ */
+export type SystemLocationRole = 'inbound_default' | 'return_default';
+
+/**
  * 공통 로케이션 식별자 인터페이스
  */
 export interface LocationIdentifier {

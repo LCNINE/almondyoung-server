@@ -2,6 +2,19 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsInt, IsBoolean, IsOptional, IsArray, Min, Max, IsNotEmpty, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class BinRangeDto {
+    @ApiProperty({ description: '시작 빈 번호', example: 1 })
+    @IsInt()
+    @Min(1)
+    start: number;
+
+    @ApiProperty({ description: '끝 빈 번호', example: 15 })
+    @IsInt()
+    @Min(1)
+    @Max(999)
+    end: number;
+}
+
 export class BinSettingsDto {
     @ApiProperty({ description: '빈 자동 생성 여부' })
     @IsBoolean()
@@ -24,19 +37,6 @@ export class BinSettingsDto {
     @IsArray()
     @IsString({ each: true })
     customBins?: string[];
-}
-
-export class BinRangeDto {
-    @ApiProperty({ description: '시작 빈 번호', example: 1 })
-    @IsInt()
-    @Min(1)
-    start: number;
-
-    @ApiProperty({ description: '끝 빈 번호', example: 15 })
-    @IsInt()
-    @Min(1)
-    @Max(999)
-    end: number;
 }
 
 export class CreateColumnDto {

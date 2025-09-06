@@ -1,13 +1,23 @@
-import { IsUUID, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AdjustStockDto {
-    @ApiProperty({ description: '재고 엔트리 ID (stocks.id) - 어떤 특정 재고 묶음을 조정할 것인지' })
+    @ApiProperty({ description: 'SKU ID' })
     @IsUUID()
     @IsNotEmpty()
-    stockId: string;
+    skuId: string;
 
-    @ApiProperty({ description: '변경할 수량' })
+    @ApiProperty({ description: '창고 ID' })
+    @IsUUID()
+    @IsNotEmpty()
+    warehouseId: string;
+
+    @ApiProperty({ description: '위치 ID', required: false })
+    @IsUUID()
+    @IsOptional()
+    locationId?: string;
+
+    @ApiProperty({ description: '변경할 수량(양수=가산, 음수=감산)' })
     @IsNumber()
     @IsNotEmpty()
     delta: number;

@@ -13,7 +13,9 @@ import {
     primaryKey,
     unique,
     decimal,
+    date,
     index,
+    check,
 } from 'drizzle-orm/pg-core';
 
 /*───────────────────────────
@@ -21,6 +23,55 @@ import {
  *──────────────────────────*/
 export const barcodeTypeEnum = pgEnum('barcode_type', ['standard']);
 export const sourceTypeEnum = pgEnum('source_type', ['direct', 'in_house', 'overseas']);
+
+export const eventStatusEnum = pgEnum('event_status', ['PENDING','POSTED','VOIDED']);
+export const stockStateEnum = pgEnum("stock_state", [
+    "ON_HAND",         // 출고가능 or 가용재고
+    "RESERVED_SALES",  // 판매 예약
+    "RESERVED_MOVE",   // 이동 작업 예약
+    "DEFECTIVE",       // 불량
+    "IN_TRANSFER",     // 창고간 운송중
+]);
+/** 상태 전이 타입(enum) */
+export const transitionTypeEnum = pgEnum("transition_type", [
+    // 입고/정정
+    "RECEIVE",                 // null → ON_HAND
+    "RECEIPT_CORRECTION_UP",   // (정정 +Δ) null → ON_HAND
+    "RECEIPT_CORRECTION_DOWN", // (정정 −Δ) ON_HAND → null  (= RECEIPT_REV0ERSAL의 친절한 별칭)
+    "RECEIPT_REVERSAL",        // ON_HAND → null (원입고 상쇄)
+  
+    // 판매 예약/출고
+    "RESERVE_SALES",           // ON_HAND → RESERVED_SALES
+    "UNRESERVE_SALES",         // RESERVED_SALES → ON_HAND
+    "SHIP",                    // RESERVED_SALES (또는 정책상 ON_HAND) → null
+    "SHIP_REVERSAL",           // null → ON_HAND (출고 취소/반품 즉시 재가용)
+  
+    // 로케이션 이동(동일 창고 내)
+    "MOVE_RESERVE",            // ON_HAND(A) → RESERVED_MOVE(A)  (이동 시작: 가용 잠금)
+    "MOVE_CANCEL",             // RESERVED_MOVE(A) → ON_HAND(A)  (이동 취소)
+    "MOVE_COMMIT",             // RESERVED_MOVE(A) → ON_HAND(B)  (이동 확정: 목적지 반영)
+    "MOVE_INSTANT",            // ON_HAND(A) → ON_HAND(B)        (예약 없이 즉시 이동)
+  
+    // 창고 간 이동(인터-웨어하우스)
+    "TRANSFER_SHIP",           // ON_HAND(src) → IN_TRANSFER(src)    (출발 창고 선적)
+    "TRANSFER_RECEIVE",        // IN_TRANSFER(dst) → ON_HAND(dst)     (도착 창고 입고)
+    "TRANSFER_CANCEL_SHIP",    // IN_TRANSFER(src) → ON_HAND(src)     (선적 취소/반송)
+    "TRANSFER_LOSS",           // IN_TRANSFER(*) → SCRAPPED           (운송 중 분실)
+    "TRANSFER_DAMAGE",         // IN_TRANSFER(*) → DEFECTIVE          (운송 중 파손)
+  
+    // 품질/검수
+    "MARK_DEFECT",             // ON_HAND → DEFECTIVE
+    "REWORK_GOOD",             // DEFECTIVE → ON_HAND
+    "QUARANTINE_HOLD",         // ON_HAND → QUARANTINE
+    "QUARANTINE_RELEASE",      // QUARANTINE → ON_HAND
+  
+    // 조정/폐기
+    "ADJUST_UP",               // null → ON_HAND        (재고 발견/실사 가산)
+    "ADJUST_DOWN",             // ON_HAND → null        (감모/실사 차감)
+    "SCRAP",                   // (ON_HAND|DEFECTIVE 등) → SCRAPPED
+    "UNSCRAP"                  // SCRAPPED → ON_HAND    (잘못 폐기 처리 복원; 운영 정책에 따라 제외 가능)
+  ]);
+
 
 // 확장된 이벤트 타입
 export const eventTypeEnum = pgEnum('event_type', [
@@ -74,7 +125,22 @@ export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'receiv
 export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
+// Inbound domain enums
+export const inboundMethodEnum = pgEnum('inbound_method', [
+    'individual',           // 개별입고
+    'simple',               // 간편입고
+    'simple_fullscan',      // 전수검사 간편입고
+    'planned',              // 입고예정검수 기반 실입고
+]);
+export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['posted', 'voided']);
+export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
+
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
+// 시스템 로케이션 역할(enum)
+export const systemLocationRoleEnum = pgEnum('system_location_role', [
+    'inbound_default',
+    'return_default',
+]);
 
 // 주문 관련 enum 추가
 export const orderStatusEnum = pgEnum('order_status', [
@@ -122,6 +188,55 @@ export const suppliers = pgTable('suppliers', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
+/*───────────────────────────
+ * MOVEMENT JOBS (헤더/라인/타임라인)
+ *──────────────────────────*/
+export const movementJobs = pgTable('movement_jobs', {
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    totalQuantity: integer('total_quantity').notNull().default(0),
+    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id'),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxMovementJobsWhTime: index('idx_movement_jobs_wh_time').on(t.warehouseId, t.occurredAt),
+}));
+
+export const movementJobLines = pgTable('movement_job_lines', {
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+    jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    quantity: integer('quantity').notNull(),
+    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxMovementLinesJob: index('idx_movement_lines_job').on(t.jobId),
+    idxMovementLinesSku: index('idx_movement_lines_sku').on(t.skuId),
+}));
+
+export const movementWorkLogs = pgTable('movement_work_logs', {
+    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+    type: varchar('type', { length: 32 }).notNull().default('MOVE'),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+    jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'set null' }),
+    lineId: uuid('line_id').references(() => movementJobLines.id, { onDelete: 'set null' }),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    quantity: integer('quantity'),
+    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+    reason: varchar('reason', { length: 255 }),
+}, t => ({
+    idxMovementWorkTime: index('idx_movement_work_time').on(t.timestamp),
+}));
+
 export const holders = pgTable('holders', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
@@ -136,6 +251,7 @@ export const skus = pgTable('skus', {
     name: varchar('name', { length: 255 }).notNull(),
     code: varchar('code', { length: 64 }).notNull().unique(),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
+    stockType: stockTypeEnum('stock_type').notNull().default('physical'),
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
@@ -210,10 +326,10 @@ export const locationColumns = pgTable('location_columns', {
     isActive: boolean('is_active').default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, t => [
-    unique().on(t.warehouseId, t.columnName),
-    index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName)
-]);
+}, t => ({
+    uqWarehouseColumn: unique().on(t.warehouseId, t.columnName),
+    idxColumnsWarehouseName: index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName),
+}));
 
 export const locationRacks = pgTable('location_racks', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -228,10 +344,10 @@ export const locationRacks = pgTable('location_racks', {
     isActive: boolean('is_active').default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, t => [
-    unique().on(t.columnId, t.rackNumber),
-    index('idx_racks_column_number').on(t.columnId, t.rackNumber)
-]);
+}, t => ({
+    uqColumnRack: unique().on(t.columnId, t.rackNumber),
+    idxRacksColumnNumber: index('idx_racks_column_number').on(t.columnId, t.rackNumber),
+}));
 
 export const locations = pgTable('locations', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -246,74 +362,108 @@ export const locations = pgTable('locations', {
     isExpirySeparated: boolean('is_expiry_separated'),
     isActive: boolean('is_active').default(true),
     notes: text('notes'),
+    // 시스템 로케이션 보호 필드
+    isSystem: boolean('is_system').notNull().default(false),
+    systemRole: systemLocationRoleEnum('system_role'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-}, t => [
-    unique().on(t.warehouseId, t.code),
-    index('idx_locations_warehouse_type').on(t.warehouseId, t.locationType),
-    sql`CHECK (
+}, t => ({
+    uqWarehouseCode: unique().on(t.warehouseId, t.code),
+    uqWarehouseSystemRole: unique().on(t.warehouseId, t.systemRole),
+    ckLocationsType: check('ck_locations_type', sql`(
         (location_type = 'standard' AND rack_id IS NOT NULL AND bin_identifier IS NOT NULL)
         OR 
         (location_type = 'zone' AND rack_id IS NULL AND bin_identifier IS NULL)
-    )`
-]);
+    )`),
+    ckLocationsSystemRole: check('ck_locations_system_role', sql`( (is_system = true AND system_role IS NOT NULL) OR (is_system = false AND system_role IS NULL) )`),
+    ckLocationsSystemZone: check('ck_locations_system_zone', sql`( is_system = false OR location_type = 'zone' )`),
+    locationsWarehouseType: index('idx_locations_warehouse_type').on(t.warehouseId, t.locationType),
+    locationsRackBin: index('idx_locations_rack_bin').on(t.rackId, t.binIdentifier),
+}));
 
-
+// indexes moved into table definitions above
 
 /*───────────────────────────
  * STOCK LEDGER
  *──────────────────────────*/
-export const stockEvents = pgTable('stock_events', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    skuId: uuid('sku_id').references(() => skus.id).notNull(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-    eventType: eventTypeEnum('event_type').notNull(),
+export const stockJournals = pgTable("stock_journals", {
+    id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+    sourceType: varchar("source_type", { length: 64 }), 
+    sourceId: uuid("source_id"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+    actorId: uuid("actor_id"),
+  });
 
-    // 델타값
-    deltaQuantity: integer('delta_quantity').notNull(),
 
-    // 창고 간 이동 시 사용
-    fromWarehouseId: uuid('from_warehouse_id').references(() => warehouses.id),
-    toWarehouseId: uuid('to_warehouse_id').references(() => warehouses.id),
+  export const stockEvents = pgTable(
+    "stock_events",
+    {
+      id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+  
+      journalId: uuid("journal_id").references(() => stockJournals.id),
+  
+      skuId: uuid("sku_id").notNull().references(() => skus.id),
+  
+      fromWarehouseId: uuid("from_warehouse_id").references(() => warehouses.id),
+      fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
+      toWarehouseId: uuid("to_warehouse_id").references(() => warehouses.id),
+      toLocationId: uuid("to_location_id").references(() => locations.id, { onDelete: "set null" }),
+  
+      fromState: stockStateEnum("from_state"),
+      toState: stockStateEnum("to_state"),
+      transitionType: transitionTypeEnum("transition_type").notNull(),
+  
+      quantity: integer("quantity").notNull(), // 항상 양수
+  
+      occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+      recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  
+      idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+      eventStatus: eventStatusEnum("event_status").notNull().default("POSTED"),
+      reversalOfEventId: uuid("reversal_of_event_id"),
+      voidedByEventId: uuid("voided_by_event_id"),
+      reason: varchar("reason", { length: 255 }),
+    },
+    (t) => ({
+      ixGrainTime: index("ix_stock_events_grain_time").on(
+        t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
+      ),
+      ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
+      ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
+      ckSidePresent: check(
+        "ck_events_side_present",
+        sql`(${t.fromState} is not null) or (${t.toState} is not null)`
+      ),
+      ckFromLocNeedsWh: check(
+        "ck_events_fromloc_has_wh",
+        sql`(${t.fromLocationId} is null) or (${t.fromWarehouseId} is not null)`
+      ),
+      ckToLocNeedsWh: check(
+        "ck_events_toloc_has_wh",
+        sql`(${t.toLocationId} is null) or (${t.toWarehouseId} is not null)`
+      ),
+    })
+  );
 
-    expiryDate: timestamp('expiry_date', { withTimezone: true }),
-    manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
-    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
-    relatedStockId: uuid('related_stock_id').references(() => stocks.id, { onDelete: 'set null' }),
-    reason: varchar('reason', { length: 255 }),
-    eventTimestamp: timestamp('event_timestamp', { withTimezone: true }).notNull().defaultNow(),
-    sequenceNo: integer('sequence_no'),
-    createsStockRowId: uuid('creates_stock_row_id').references(() => stocks.id),
-    expiresStockRowId: uuid('expires_stock_row_id').references(() => stocks.id),
-});
 
-export const stocks = pgTable('stocks', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'restrict' })
-        .notNull(),
-    warehouseId: uuid('warehouse_id')
-        .references(() => warehouses.id)
-        .notNull(),
-    locationId: uuid('location_id')
-        .references(() => locations.id, { onDelete: 'set null' }),
-    stockType: stockTypeEnum('stock_type').notNull().default('physical'),
-    realQuantity: integer('real_quantity').notNull(),
-    reservedQuantity: integer('reserved_quantity').notNull().default(0),
-    availableQuantity: integer('available_quantity').notNull().default(0),
-    safetyStock: integer('safety_stock'),
-    creatorEventId: uuid('creator_event_id')
-        .references(() => stockEvents.id)
-        .notNull(),
-    destroyerEventId: uuid('destroyer_event_id')
-        .references(() => stockEvents.id),
-    expiryDate: timestamp('expiry_date', { withTimezone: true }),
-    manufacturedAt: timestamp('manufactured_at', { withTimezone: true }),
-    barcodeType: barcodeTypeEnum('barcode_type'),
-    subBarcode: varchar('sub_barcode', { length: 64 }),
-    packingUnit: varchar('packing_unit', { length: 64 }),
-});
+export const stockLedgers = pgTable(
+  "stock_ledgers",
+  {
+    skuId: uuid("sku_id").notNull().references(() => skus.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
+    locationId: uuid("location_id").notNull().references(() => locations.id),
+    stockState: stockStateEnum("stock_state").notNull(),
+    qty: integer("qty").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
+    ckNonNegative: check("ck_ledgers_non_negative", sql`${t.qty} >= 0`),
+    ixLookup: index("ix_ledgers_lookup").on(t.skuId, t.warehouseId, t.locationId, t.stockState),
+  })
+);
 
 // 재고 현황 테이블
 export const stockSummary = pgTable('stock_summary', {
@@ -503,7 +653,7 @@ export const stockReservations = pgTable('stock_reservations', {
     orderId: uuid('order_id')
         .references(() => orders.id, { onDelete: 'cascade' })
         .notNull(),
-    stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'restrict' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
     status: reservationStatusEnum('status').notNull().default('pending'),
     timeoutAt: timestamp('timeout_at', { withTimezone: true }),
@@ -567,7 +717,7 @@ export const outboundTaskItems = pgTable('outbound_task_items', {
 export const outboundTaskLines = pgTable('outbound_task_lines', {
     id: uuid('id').primaryKey().defaultRandom(),
     taskId: uuid('task_id').references(() => outboundTasks.id, { onDelete: 'cascade' }).notNull(),
-    stockId: uuid('stock_id').references(() => stocks.id, { onDelete: 'restrict' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
     scannedBarcode: varchar('scanned_barcode', { length: 64 }),
@@ -683,6 +833,92 @@ export const inboundLists = pgTable('inbound_lists', {
 });
 
 /*───────────────────────────
+ * INBOUND RECEIPTS (헤더/라인)
+ *──────────────────────────*/
+export const inboundReceipts = pgTable('inbound_receipts', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    method: inboundMethodEnum('method').notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    status: inboundReceiptStatusEnum('status').notNull().default('posted'),
+    totalQuantity: integer('total_quantity').notNull().default(0),
+    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxInboundReceiptsWhTime: index('idx_inbound_receipts_wh_time').on(t.warehouseId, t.occurredAt),
+}));
+
+export const inboundPlans = pgTable('inbound_plans', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    expectedDate: timestamp('expected_date', { mode: 'date' }).notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+    status: inboundStatusEnum('status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxInboundPlansWhDate: index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
+}));
+
+export const inboundPlanItems = pgTable('inbound_plan_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    planId: uuid('plan_id').references(() => inboundPlans.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    expectedQty: integer('expected_qty').notNull(),
+    receivedQty: integer('received_qty').notNull().default(0),
+    status: inboundStatusEnum('status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
+    idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
+}));
+
+export const inboundReceiptLines = pgTable('inbound_receipt_lines', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    quantity: integer('quantity').notNull(),
+    originLocationId: uuid('origin_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+    memo: varchar('memo', { length: 255 }),
+    // counters for domain invariants
+    returnedQty: integer('returned_qty').notNull().default(0),
+    canceledQty: integer('canceled_qty').notNull().default(0),
+    putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
+    // optional link to plan item
+    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxInboundLinesReceipt: index('idx_inbound_lines_receipt').on(t.receiptId),
+    idxInboundLinesSku: index('idx_inbound_lines_sku').on(t.skuId),
+}));
+
+/*───────────────────────────
+ * INBOUND WORK LOGS (타임라인)
+ *──────────────────────────*/
+export const inboundWorkLogs = pgTable('inbound_work_logs', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    type: inboundWorkTypeEnum('type').notNull(),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
+    lineId: uuid('line_id').references(() => inboundReceiptLines.id, { onDelete: 'set null' }),
+    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    quantity: integer('quantity'),
+    method: inboundMethodEnum('method'),
+    reason: varchar('reason', { length: 255 }),
+    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+}, t => ({
+    idxInboundWorkTime: index('idx_inbound_work_time').on(t.timestamp),
+}));
+
+/*───────────────────────────
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
@@ -698,8 +934,9 @@ export const wmsTables = {
     locationColumns,
     locationRacks,
     locations,
+    stockJournals,
     stockEvents,
-    stocks,
+    stockLedgers,
     stockSummary,
     productMatchings,
     productVariantSkuLinks,
@@ -722,4 +959,12 @@ export const wmsTables = {
     purchaseOrderLines,
     purchaseOrderCart,
     inboundLists,
+    inboundReceipts,
+    inboundReceiptLines,
+    inboundPlans,
+    inboundPlanItems,
+    inboundWorkLogs,
+    movementJobs,
+    movementJobLines,
+    movementWorkLogs,
 } as const;

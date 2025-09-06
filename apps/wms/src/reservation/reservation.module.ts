@@ -5,7 +5,6 @@ import { ConfigModule } from '@nestjs/config';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SharedModule } from '../shared/shared.module';
 import { OrderCollectController } from './controllers/order-collect.controller';
-import { ReservationController } from './controllers/reservation.controller';
 import { OrderCollectService } from './services/order-collect.service';
 import { ReservationService } from './services/reservation.service';
 import { BasketService } from './services/basket.service';
@@ -22,7 +21,7 @@ import { BasketService } from './services/basket.service';
         InventoryModule,
         SharedModule,
     ],
-    controllers: [OrderCollectController, ReservationController],
+    controllers: [OrderCollectController],
     providers: [OrderCollectService, ReservationService, BasketService],
     exports: [OrderCollectService, ReservationService, BasketService],
 })

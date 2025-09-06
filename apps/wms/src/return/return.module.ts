@@ -19,7 +19,7 @@ import { ReturnService } from './services/return.service';
         InventoryModule,
         SharedModule,
     ],
-    controllers: [ReturnController],
+    controllers: [/* ReturnController */],
     providers: [ReturnService],
     exports: [ReturnService],
 })

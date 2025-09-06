@@ -1,6 +1,6 @@
 import { IsUUID, IsOptional, IsDateString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { stockTypeEnum } from 'apps/wms/database/schemas/wms-schema';
+import { stockTypeEnum } from '../../../../database/schemas/wms-schema';
 
 export class GetStockQueryDto {
     @ApiProperty({ description: 'SKU ID 필터' })

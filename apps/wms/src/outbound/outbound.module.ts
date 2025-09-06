@@ -5,11 +5,12 @@ import { ConfigModule } from '@nestjs/config';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ReservationModule } from '../reservation/reservation.module';
 import { SharedModule } from '../shared/shared.module';
-import { OutboundController } from './controllers/outbound.controller';
-import { PickingController } from './controllers/picking.controller';
-import { OutboundService } from './services/outbound.service';
-import { PickingService } from './services/picking.service';
-import { PackingService } from './services/packing.service';
+// TEMP DISABLED during refactor
+// import { OutboundController } from './controllers/outbound.controller';
+// import { PickingController } from './controllers/picking.controller';
+// import { OutboundService } from './services/outbound.service';
+// import { PickingService } from './services/picking.service';
+// import { PackingService } from './services/packing.service';
 
 @Module({
   imports: [
@@ -24,8 +25,8 @@ import { PackingService } from './services/packing.service';
     ReservationModule,
     SharedModule,
   ],
-  controllers: [OutboundController, PickingController],
-  providers: [OutboundService, PickingService, PackingService],
-  exports: [OutboundService, PickingService, PackingService],
+  controllers: [],
+  providers: [],
+  exports: [],
 })
 export class OutboundModule { }

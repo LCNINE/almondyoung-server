@@ -50,7 +50,7 @@ export class LocationResponseDto {
 
 export class StandardLocationResponseDto extends LocationResponseDto {
     @ApiProperty({ description: '로케이션 타입', enum: ['standard'] })
-    type: 'standard';
+    override readonly type: 'standard' = 'standard';
 
     @ApiProperty({ description: '랙 ID' })
     rackId: string;
@@ -67,7 +67,7 @@ export class StandardLocationResponseDto extends LocationResponseDto {
 
 export class ZoneLocationResponseDto extends LocationResponseDto {
     @ApiProperty({ description: '로케이션 타입', enum: ['zone'] })
-    type: 'zone';
+    override readonly type: 'zone' = 'zone';
 
     @ApiProperty({ description: '랙 ID는 항상 null', nullable: true })
     rackId: null;

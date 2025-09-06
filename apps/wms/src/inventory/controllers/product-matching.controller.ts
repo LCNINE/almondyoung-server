@@ -6,7 +6,7 @@ import { SetMatchingPriorityDto } from '../dto/product-matching/set-matching-pri
 import { ResolveOptionMatchingDto } from '../dto/product-matching/option-matching.dto';
 import { ChangeStrategyDto } from '../dto/product-matching/change-strategy.dto';
 import { VariantSkuLookupDto } from '../dto/product-matching/variant-sku-lookup.dto';
-import { matchingStatusEnum } from 'apps/wms/database/schemas/wms-schema';
+import { matchingStatusEnum } from '../../../database/schemas/wms-schema';
 
 @ApiTags('Product Matching')
 @Controller('wms/matchings')

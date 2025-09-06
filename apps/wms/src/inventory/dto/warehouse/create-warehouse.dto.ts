@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { warehouseTypeEnum } from 'apps/wms/database/schemas/wms-schema';
+import { warehouseTypeEnum } from '../../../../database/schemas/wms-schema';
 
 export class CreateWarehouseDto {
     @ApiProperty({ description: '창고 이름' })

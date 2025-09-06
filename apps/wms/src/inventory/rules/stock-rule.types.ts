@@ -14,7 +14,11 @@ export type StockUpdateData = Pick<
     | 'returnPendingQuantity'
 >;
 
-export type EventType = (typeof wmsTables.stockEvents.eventType.enumValues)[number];
+// TransitionType derived strictly from DB enum
+export type TransitionType = (typeof wmsTables.stockEvents.transitionType.enumValues)[number];
+
+// EventType equals TransitionType (no legacy support)
+export type EventType = TransitionType;
 
 export type Op =
     | '+'        // base + delta

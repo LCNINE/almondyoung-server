@@ -11,7 +11,8 @@ import { ProductMatchingService } from './services/product-matching.service';
 import { StockEventService } from './services/stock-event.service';
 import { LocationService } from './services/location.service';
 import { StockEventStore } from './repositories/stock-event.store';
-import { StockSummaryRepository } from './repositories/ stock-summary.repository';
+import { InventoryCommandService } from './services/inventory-command.service';
+import { InventoryQueryService } from './services/inventory-query.service';
 import { PimEventHandler } from './handlers/pim-event.hadler';
 import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
 import { OptionMatchingStrategy } from './strategies/option-matching.strategy';
@@ -39,7 +40,8 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
     StockEventService,
     LocationService,
     StockEventStore,
-    StockSummaryRepository,
+    InventoryCommandService,
+    InventoryQueryService,
     PimEventHandler,
     VariantMatchingStrategy,
     OptionMatchingStrategy,
@@ -51,7 +53,8 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
     StockEventService,
     LocationService,
     StockEventStore,
-    StockSummaryRepository,
+    InventoryCommandService,
+    InventoryQueryService,
   ],
 })
 export class InventoryModule { }

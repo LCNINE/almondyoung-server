@@ -1,0 +1,24 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../../",
+  "testEnvironment": "node",
+  "setupFiles": [
+    "<rootDir>/apps/wms/test/env-setup.ts"
+  ],
+  "roots": [
+    "<rootDir>/apps/wms/src",
+    "<rootDir>/libs"
+  ],
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
+    "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
+    "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
+  },
+  "verbose": true
+}
+
+

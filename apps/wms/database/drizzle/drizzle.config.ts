@@ -2,7 +2,7 @@ import { defineConfig } from 'drizzle-kit';
 import { join } from 'path';
 import { config } from 'dotenv';
 
-config({ path: join(__dirname, '../../../../.env') });
+config({ path: join(__dirname, '../../.env') });
 
 export default defineConfig({
     schema: 'apps/wms/database/schemas/wms-schema.ts',

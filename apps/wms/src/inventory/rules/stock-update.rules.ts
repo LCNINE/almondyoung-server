@@ -1,10 +1,4 @@
-import {
-    Rule,
-    CalcArgs,
-    ApplyRuleOptions,
-    StockUpdateData,
-    EventType,
-} from './stock-rule.types';
+import { Rule, CalcArgs, ApplyRuleOptions, StockUpdateData, EventType } from './stock-rule.types';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 
 
@@ -16,113 +10,36 @@ import { wmsTables } from '../../../database/schemas/wms-schema';
 // RESERVE/CONFIRM/RELEASE: 별도 메서드에서 처리
 
 export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
-    // 입고 계열
-    IN: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '일반 입고'
-    },
-    IN_DOMESTIC: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '국내 거래처 입고'
-    },
-    IN_OVERSEAS: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '해외 거래처 입고'
-    },
-    IN_RETURN: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        custom: ({ existing, delta }) => ({
-            returnPendingQuantity: Math.max(0, existing.returnPendingQuantity - Math.abs(delta)),
-        }),
-        description: '반품 입고 - 반품 대기 수량 감소'
-    },
+    // 전이 타입 기반 규칙 (입고/출고/이동/예약/품질/조정/폐기)
+    RECEIVE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고' },
+    RECEIPT_CORRECTION_UP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 정정 증가' },
+    RECEIPT_CORRECTION_DOWN: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 정정 감소(역이벤트로 처리됨)' },
+    RECEIPT_REVERSAL: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 역분개' },
 
-    // 출고 계열
-    OUT: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '일반 출고'
-    },
-    OUT_ORDER: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '주문 출고'
-    },
-    OUT_DAMAGE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        custom: ({ existing, delta }) => ({
-            damageQuantity: existing.damageQuantity + Math.abs(delta),
-        }),
-        description: '파손 출고 - 손상 수량 증가'
-    },
-    OUT_LOSS: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        custom: ({ existing, delta }) => ({
-            damageQuantity: existing.damageQuantity + Math.abs(delta),
-        }),
-        description: '분실 출고 - 손상 수량 증가'
-    },
-    OUT_DISPOSAL: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        custom: ({ existing, delta }) => ({
-            damageQuantity: existing.damageQuantity + Math.abs(delta),
-        }),
-        description: '폐기 출고 - 손상 수량 증가'
-    },
+    RESERVE_SALES: { fields: {}, description: '판매 예약(요약에서 예약 수량 별도 처리)' },
+    UNRESERVE_SALES: { fields: {}, description: '판매 예약 해제(요약에서 예약 수량 별도 처리)' },
+    SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '출고' },
+    SHIP_REVERSAL: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '출고 역분개' },
 
-    // 이동 계열
-    MOVE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '일반 이동'
-    },
-    MOVE_INTER_WAREHOUSE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        custom: ({ existing, delta }) => {
-            if (delta < 0) {
-                // 출고 창고: 이동 중 수량 증가
-                return { movingQuantity: existing.movingQuantity + Math.abs(delta) };
-            }
-            // 입고 창고: 이동 중 수량 감소
-            return { movingQuantity: Math.max(0, existing.movingQuantity - delta) };
-        },
-        description: '창고 간 이동'
-    },
-    MOVE_INTRA_WAREHOUSE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '창고 내 이동'
-    },
+    MOVE_RESERVE: { fields: {}, description: '로케이션 이동 예약' },
+    MOVE_CANCEL: { fields: {}, description: '로케이션 이동 예약 취소' },
+    MOVE_COMMIT: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '로케이션 이동 확정' },
 
-    // 조정 계열
-    ADJUST: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '일반 조정'
-    },
-    ADJUST_MANUAL: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '관리자 수동 조정'
-    },
-    ADJUST_INVENTORY: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '재고 실사 조정'
-    },
+    TRANSFER_SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 선적(출발 창고 감소, 이동 중 처리 별도)' },
+    TRANSFER_RECEIVE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 도착(도착 창고 증가)' },
+    TRANSFER_CANCEL_SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '선적 취소' },
+    TRANSFER_LOSS: { fields: { currentQuantity: '+', availableQuantity: '+' }, custom: ({ existing, delta }) => ({ damageQuantity: existing.damageQuantity + Math.abs(delta) }), description: '운송 중 분실' },
+    TRANSFER_DAMAGE: { fields: { currentQuantity: '+', availableQuantity: '+' }, custom: ({ existing, delta }) => ({ damageQuantity: existing.damageQuantity + Math.abs(delta) }), description: '운송 중 파손' },
 
-    // 예약 계열
-    RESERVE: {
-        fields: {},
-        description: '재고 예약 - 별도 메서드에서 처리'
-    },
-    CONFIRM: {
-        fields: {},
-        description: '예약 확정 - 별도 메서드에서 처리'
-    },
-    RELEASE: {
-        fields: {},
-        description: '예약 해제 - 별도 메서드에서 처리'
-    },
+    MARK_DEFECT: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '불량 지정' },
+    REWORK_GOOD: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '수리 후 정상 전환' },
+    QUARANTINE_HOLD: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '격리 보류' },
+    QUARANTINE_RELEASE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '격리 해제' },
 
-    // 취소
-    CANCEL: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
-        description: '취소 - 반대 델타값 적용'
-    },
+    ADJUST_UP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '조정 증가' },
+    ADJUST_DOWN: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '조정 감소' },
+    SCRAP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '폐기' },
+    UNSCRAP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '폐기 복원' },
 } as const;
 
 // 규칙 적용 함수
@@ -190,7 +107,7 @@ function handleNegative(
 
 // 유틸리티: 규칙 검증 (테스트용)
 export function validateRules(): void {
-    const eventTypes = wmsTables.stockEvents.eventType.enumValues;
+    const eventTypes = wmsTables.stockEvents.transitionType.enumValues;
     const missingRules = eventTypes.filter(type => !STOCK_RULES[type as EventType]);
 
     if (missingRules.length > 0) {

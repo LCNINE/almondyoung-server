@@ -1,7 +1,7 @@
 import { IsEnum } from 'class-validator';
 
 import { ApiProperty } from '@nestjs/swagger';
-import { matchingStrategyEnum } from 'apps/wms/database/schemas/wms-schema';
+import { matchingStrategyEnum } from '../../../../database/schemas/wms-schema';
 
 export class ChangeStrategyDto {
     @ApiProperty({

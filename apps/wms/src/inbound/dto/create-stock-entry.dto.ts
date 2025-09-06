@@ -1,6 +1,6 @@
 import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsDateString, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { barcodeTypeEnum, stockTypeEnum } from 'apps/wms/database/schemas/wms-schema';
+import { barcodeTypeEnum, stockTypeEnum } from '../../../database/schemas/wms-schema';
 
 export class CreateStockEntryDto {
     @ApiProperty({ description: 'Product Matching의 Variant ID (참조용)', required: false })
@@ -66,9 +66,4 @@ export class CreateStockEntryDto {
     @IsString()
     @IsOptional()
     reason?: string;
-
-    @ApiProperty({ description: '관련 주문 ID (반품 시 등)', required: false })
-    @IsUUID()
-    @IsOptional()
-    orderId?: string;
 }

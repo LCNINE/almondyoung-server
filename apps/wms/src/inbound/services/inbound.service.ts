@@ -1,15 +1,15 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 import { DbService, TypedDatabase } from '@app/db';
-import { and, eq, sql } from 'drizzle-orm';
-import { CreateInboundDto } from '../dto/create-inbound.dto';
-import { CreateStockEntryDto } from '../dto/create-stock-entry.dto';
+import { and, eq, sql, gte, lte, desc } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
-import { StockEventService } from '../../inventory/services/stock-event.service';
+import { InventoryCommandService } from '../../inventory/services/inventory-command.service';
+import { LocationService } from '../../inventory/services/location.service';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
-import { StockSummaryRepository } from '../../inventory/repositories/ stock-summary.repository';
-import { ProductMatchingService } from '../../inventory/services/product-matching.service';
+import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
+import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto } from '../dto/simple-inbound.dto';
+import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 
@@ -20,127 +20,261 @@ export class InboundService {
     constructor(
         @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
         private readonly inventoryService: InventoryService,
-        private readonly stockEventService: StockEventService,
+        private readonly commandService: InventoryCommandService,
+        private readonly locationService: LocationService,
         private readonly eventStore: StockEventStore,
-        private readonly summaryRepo: StockSummaryRepository,
-        private readonly productMatchingService: ProductMatchingService,
     ) { }
 
     private get db() {
         return this.dbService.db;
     }
 
-    async processInbound(dto: CreateInboundDto) {
-        const { skuId, quantity, supplierType, warehouseId, locationId, expiryDate, manufacturedAt, reason, purchaseOrderId } = dto;
+    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+        return tx ? fn(tx) : this.db.transaction(fn);
+    }
 
-        const sku = await this.inventoryService.findSkuById(skuId);
-        if (!sku) {
-            throw new NotFoundException(`SKU ${skuId}를 찾을 수 없습니다.`);
-        }
+    // 입고 라인 메모 수정
+    async updateInboundLineMemo(lineId: string, dto: UpdateInboundLineMemoDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const line = await tx.query.inboundReceiptLines.findFirst({
+                where: eq(wmsTables.inboundReceiptLines.id, lineId),
+            });
+            if (!line) throw new NotFoundException('inbound line not found');
+            await tx.update(wmsTables.inboundReceiptLines)
+                .set({ memo: dto.memo })
+                .where(eq(wmsTables.inboundReceiptLines.id, lineId));
+            return { success: true };
+        }, tx);
+    }
 
+    private async getOnHandQuantity(
+        tx: DbTx,
+        params: { skuId: string; warehouseId: string; locationId: string }
+    ): Promise<number> {
+        const row = await tx.query.stockLedgers.findFirst({
+            where: and(
+                eq(wmsTables.stockLedgers.skuId, params.skuId),
+                eq(wmsTables.stockLedgers.warehouseId, params.warehouseId),
+                eq(wmsTables.stockLedgers.locationId, params.locationId),
+                eq(wmsTables.stockLedgers.stockState as any, 'ON_HAND' as any),
+            ),
+        });
+        return (row?.qty as number) ?? 0;
+    }
 
-        // SKU와 연결된 모든 variant의 재고 관리 정책 확인
-        const links = await this.db
-            .select({
-                productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
-                skuId: wmsTables.productVariantSkuLinks.skuId,
-                quantity: wmsTables.productVariantSkuLinks.quantity,
-                productMatching: wmsTables.productMatchings
-            })
-            .from(wmsTables.productVariantSkuLinks)
-            .innerJoin(
-                wmsTables.productMatchings,
-                eq(wmsTables.productVariantSkuLinks.productMatchingId, wmsTables.productMatchings.id)
-            )
-            .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId));
+    // 간편입고: 지정 창고/로케이션에 여러 SKU를 즉시 입고
+    async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
+        const { warehouseId, items } = dto;
+        return this.inTx(async (tx) => {
+            // 간편입고는 항상 시스템 입고기본존으로
+            let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            if (!inboundZone) {
+                await this.locationService.ensureSystemLocations(warehouseId);
+                inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            }
+            if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
+            const effectiveLocationId = inboundZone.id;
+            // 회차(journal + receipt) 생성
+            const [journal] = await tx.insert(wmsTables.stockJournals).values({
+                sourceType: 'inbound',
+                occurredAt: new Date(),
+            } as any).returning();
 
-        if (links.length === 0) {
-            throw new BadRequestException(`SKU ${skuId}는 어떤 상품과도 매칭되지 않았습니다.`);
-        }
+            const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
+                method: 'simple',
+                warehouseId,
+                locationId: effectiveLocationId,
+                occurredAt: new Date(),
+                status: 'posted',
+                totalQuantity: 0,
+                journalId: journal.id,
+            } as any).returning();
 
-        // 하나라도 재고 관리가 필요한 매칭이 있는지 확인
-        const needsInventoryManagement = links.some(link => link.productMatching.inventoryManagement);
+            let totalQty = 0;
+            for (const item of items) {
+                const sku = await this.inventoryService.findSkuById(item.skuId, tx);
+                if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
 
-        if (!needsInventoryManagement) {
-            throw new BadRequestException(`SKU ${skuId}와 연결된 모든 상품이 재고 관리 대상이 아닙니다.`);
-        }
+                const { eventId } = await this.commandService.receive({
+                    skuId: item.skuId,
+                    toWarehouseId: warehouseId,
+                    toLocationId: effectiveLocationId,
+                    quantity: item.quantity,
+                    occurredAt: new Date(),
+                    reason: 'simple_inbound',
+                    journalId: journal.id,
+                }, tx);
 
-        return this.db.transaction(async (tx) => {
-            // 창고 결정 (지정되지 않으면 거래처 타입별 기본 창고)
-            const targetWarehouseId = warehouseId || this.inventoryService.getDefaultWarehouseIdByType(supplierType);
-            const eventType = supplierType === 'overseas' ? 'IN_OVERSEAS' : 'IN_DOMESTIC';
+                await tx.insert(wmsTables.inboundReceiptLines).values({
+                    receiptId: receipt.id,
+                    skuId: item.skuId,
+                    quantity: item.quantity,
+                    originLocationId: effectiveLocationId,
+                    eventId: eventId ?? null,
+                    memo: item.memo,
+                } as any);
 
-            // 입고 이벤트 생성 - 이벤트 스토어 사용
-            const inboundEvent = await this.eventStore.createEvent({
-                type: eventType,
-                skuId,
-                warehouseId: targetWarehouseId,
-                locationId,
-                deltaQuantity: quantity,
-                orderId: purchaseOrderId,
-                reason: `${supplierType} 거래처 입고 - ${reason}`,
-                expiryDate: expiryDate ? new Date(expiryDate) : undefined,
-                manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : undefined,
-            }, tx);
-
-            // 재고 현황 업데이트 - Repository 사용
-            await this.summaryRepo.applyDelta(
-                skuId,
-                targetWarehouseId,
-                quantity,
-                eventType,
-                inboundEvent.id,
-                tx
-            );
-
-            const [newStock] = await tx.insert(wmsTables.stocks).values({
-                skuId,
-                warehouseId: targetWarehouseId,
-                locationId,
-                stockType: 'physical',
-                realQuantity: quantity,
-                reservedQuantity: 0,
-                availableQuantity: quantity,
-                creatorEventId: inboundEvent.id,
-                expiryDate: expiryDate ? new Date(expiryDate) : null,
-                manufacturedAt: manufacturedAt ? new Date(manufacturedAt) : null,
-            }).returning();
-
-            await tx.update(wmsTables.stockEvents)
-                .set({
-                    createsStockRowId: newStock.id,
-                    relatedStockId: newStock.id
-                })
-                .where(eq(wmsTables.stockEvents.id, inboundEvent.id));
-
-
-            // 연결된 모든 product_matching의 preStockSellable 업데이트
-            for (const link of links) {
-                if (link.productMatching.preStockSellable && quantity > 0) {
-                    await tx.update(wmsTables.productMatchings)
-                        .set({
-                            preStockSellable: false,
-                            updatedAt: new Date()
-                        })
-                        .where(eq(wmsTables.productMatchings.id, link.productMatchingId));
-                }
+                totalQty += item.quantity;
             }
 
-            this.logger.log(
-                `입고 처리 완료: SKU ${sku.name}, 수량 ${quantity}, ` +
-                `창고 ${targetWarehouseId}, 거래처 유형 ${supplierType}`
-            );
+            await tx.update(wmsTables.inboundReceipts)
+                .set({ totalQuantity: totalQty })
+                .where(eq(wmsTables.inboundReceipts.id, receipt.id));
 
-            return newStock;
-        });
+            // 작업 로그 기록 (회차 레벨)
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'INBOUND',
+                receiptId: receipt.id,
+                warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity: totalQty,
+                method: 'simple',
+                reason: 'simple_inbound',
+            } as any);
+
+            return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
+        }, tx);
     }
 
-    async createStockEntry(dto: CreateStockEntryDto) {
-        return this.stockEventService.createStockEntry(dto);
+    // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
+    async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
+        const { warehouseId, items } = dto;
+        return this.inTx(async (tx) => {
+            let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            if (!inboundZone) {
+                await this.locationService.ensureSystemLocations(warehouseId);
+                inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            }
+            if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
+            const effectiveLocationId = inboundZone.id;
+
+            const [journal] = await tx.insert(wmsTables.stockJournals).values({
+                sourceType: 'inbound',
+                occurredAt: new Date(),
+            } as any).returning();
+
+            const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
+                method: 'simple_fullscan',
+                warehouseId,
+                locationId: effectiveLocationId,
+                occurredAt: new Date(),
+                status: 'posted',
+                totalQuantity: 0,
+                journalId: journal.id,
+            } as any).returning();
+
+            let totalQty = 0;
+            for (const item of items) {
+                const sku = await this.inventoryService.findSkuById(item.skuId, tx);
+                if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
+                const { eventId } = await this.commandService.receive({
+                    skuId: item.skuId,
+                    toWarehouseId: warehouseId,
+                    toLocationId: effectiveLocationId,
+                    quantity: item.quantity,
+                    occurredAt: new Date(),
+                    reason: 'simple_inbound_fullscan',
+                    journalId: journal.id,
+                }, tx);
+                await tx.insert(wmsTables.inboundReceiptLines).values({
+                    receiptId: receipt.id,
+                    skuId: item.skuId,
+                    quantity: item.quantity,
+                    originLocationId: effectiveLocationId,
+                    eventId: eventId ?? null,
+                    memo: item.memo,
+                } as any);
+                totalQty += item.quantity;
+            }
+            await tx.update(wmsTables.inboundReceipts)
+                .set({ totalQuantity: totalQty })
+                .where(eq(wmsTables.inboundReceipts.id, receipt.id));
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'INBOUND',
+                receiptId: receipt.id,
+                warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity: totalQty,
+                method: 'simple_fullscan',
+                reason: 'simple_inbound_fullscan',
+            } as any);
+            return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
+        }, tx);
     }
+
+    // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
+    async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
+        const { warehouseId, skuId, quantity } = dto;
+        return this.inTx(async (tx) => {
+            let effectiveLocationId = dto.locationId ?? null;
+            if (!effectiveLocationId) {
+                let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+                if (!inboundZone) {
+                    await this.locationService.ensureSystemLocations(warehouseId);
+                    inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+                }
+                if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
+                effectiveLocationId = inboundZone.id;
+            }
+
+            const [journal] = await tx.insert(wmsTables.stockJournals).values({
+                sourceType: 'inbound',
+                occurredAt: new Date(),
+            } as any).returning();
+
+            const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
+                method: 'individual',
+                warehouseId,
+                locationId: effectiveLocationId,
+                occurredAt: new Date(),
+                status: 'posted',
+                totalQuantity: 0,
+                journalId: journal.id,
+            } as any).returning();
+
+            const sku = await this.inventoryService.findSkuById(skuId, tx);
+            if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
+
+            const { eventId } = await this.commandService.receive({
+                skuId,
+                toWarehouseId: warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity,
+                occurredAt: new Date(),
+                reason: 'individual_inbound',
+                journalId: journal.id,
+            }, tx);
+
+            await tx.insert(wmsTables.inboundReceiptLines).values({
+                receiptId: receipt.id,
+                skuId,
+                quantity,
+                originLocationId: effectiveLocationId,
+                eventId: eventId ?? null,
+                memo: dto.memo,
+            } as any);
+
+            await tx.update(wmsTables.inboundReceipts)
+                .set({ totalQuantity: quantity })
+                .where(eq(wmsTables.inboundReceipts.id, receipt.id));
+
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'INBOUND',
+                receiptId: receipt.id,
+                warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity,
+                method: 'individual',
+                reason: 'individual_inbound',
+            } as any);
+
+            return { success: true, receiptId: receipt.id };
+        }, tx);
+    }
+    // 레거시 제거: processInbound/createStockEntry 삭제
 
     // 입고 예정 목록 조회
-    async getInboundPending(warehouseId?: string) {
+    async getInboundPending(warehouseId?: string, tx?: DbTx) {
         // 구매 주문 중 아직 입고되지 않은 항목 조회
         const pendingPOs = await this.db.query.purchaseOrders.findMany({
             where: eq(wmsTables.purchaseOrders.status, 'confirmed'),
@@ -208,6 +342,485 @@ export class InboundService {
         };
     }
 
+    // 입고내역(현황) 조회 - (sku, quantity, occurredAt, method)
+    async listInboundReceipts(params: {
+        skuId?: string; warehouseId?: string; method?: 'individual'|'simple'|'simple_fullscan'|'planned';
+        startDate?: string; endDate?: string; limit?: number; offset?: number;
+    }, tx?: DbTx) {
+        const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
+
+        const rows = await this.db
+            .select({
+                receiptId: wmsTables.inboundReceipts.id,
+                method: wmsTables.inboundReceipts.method,
+                occurredAt: wmsTables.inboundReceipts.occurredAt,
+                warehouseId: wmsTables.inboundReceipts.warehouseId,
+                locationId: wmsTables.inboundReceipts.locationId,
+                skuId: wmsTables.inboundReceiptLines.skuId,
+                quantity: wmsTables.inboundReceiptLines.quantity,
+            })
+            .from(wmsTables.inboundReceipts)
+            .leftJoin(
+                wmsTables.inboundReceiptLines,
+                eq(wmsTables.inboundReceiptLines.receiptId, wmsTables.inboundReceipts.id),
+            )
+            .where(and(
+                eq(wmsTables.inboundReceipts.status as any, 'posted' as any),
+                warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+                method ? eq(wmsTables.inboundReceipts.method as any, method as any) : undefined,
+                skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
+                startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+            ))
+            .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
+            .limit(limit)
+            .offset(offset);
+
+        return { total: rows.length, items: rows };
+    }
+
+    // 입고 작업 타임라인 조회
+    async listInboundWorkLogs(params: {
+        warehouseId?: string; skuId?: string; type?: 'INBOUND'|'PUTAWAY'|'RETURN'|'CANCEL'; method?: 'individual'|'simple'|'simple_fullscan'|'planned';
+        startDate?: string; endDate?: string; limit?: number; offset?: number;
+    }, tx?: DbTx) {
+        const { warehouseId, skuId, type, method, startDate, endDate, limit = 100, offset = 0 } = params;
+
+        const logs = await this.db
+            .select({
+                id: wmsTables.inboundWorkLogs.id,
+                type: wmsTables.inboundWorkLogs.type,
+                timestamp: wmsTables.inboundWorkLogs.timestamp,
+                receiptId: wmsTables.inboundWorkLogs.receiptId,
+                lineId: wmsTables.inboundWorkLogs.lineId,
+                planItemId: wmsTables.inboundWorkLogs.planItemId,
+                skuId: wmsTables.inboundWorkLogs.skuId,
+                warehouseId: wmsTables.inboundWorkLogs.warehouseId,
+                fromLocationId: wmsTables.inboundWorkLogs.fromLocationId,
+                toLocationId: wmsTables.inboundWorkLogs.toLocationId,
+                quantity: wmsTables.inboundWorkLogs.quantity,
+                method: wmsTables.inboundWorkLogs.method,
+                reason: wmsTables.inboundWorkLogs.reason,
+                eventId: wmsTables.inboundWorkLogs.eventId,
+            })
+            .from(wmsTables.inboundWorkLogs)
+            .where(and(
+                warehouseId ? eq(wmsTables.inboundWorkLogs.warehouseId, warehouseId) : undefined,
+                skuId ? eq(wmsTables.inboundWorkLogs.skuId, skuId) : undefined,
+                type ? eq(wmsTables.inboundWorkLogs.type as any, type as any) : undefined,
+                method ? eq(wmsTables.inboundWorkLogs.method as any, method as any) : undefined,
+                startDate ? gte(wmsTables.inboundWorkLogs.timestamp, new Date(startDate)) : undefined,
+                endDate ? lte(wmsTables.inboundWorkLogs.timestamp, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+            ))
+            .orderBy(desc(wmsTables.inboundWorkLogs.timestamp))
+            .limit(limit)
+            .offset(offset);
+
+        return { total: logs.length, items: logs };
+    }
+
+    // 집계 입고현황: 라인 단위 결과 + 확정수량(취소/회송 반영)
+    async listInboundStatus(params: {
+        skuId?: string; warehouseId?: string; startDate?: string; endDate?: string; limit?: number; offset?: number;
+    }, tx?: DbTx) {
+        const { skuId, warehouseId, startDate, endDate, limit = 50, offset = 0 } = params;
+
+        const rows = await this.db
+            .select({
+                receiptId: wmsTables.inboundReceipts.id,
+                lineId: wmsTables.inboundReceiptLines.id,
+                occurredAt: wmsTables.inboundReceipts.occurredAt,
+                method: wmsTables.inboundReceipts.method,
+                warehouseId: wmsTables.inboundReceipts.warehouseId,
+                locationId: wmsTables.inboundReceipts.locationId,
+                skuId: wmsTables.inboundReceiptLines.skuId,
+                qtyReceived: wmsTables.inboundReceiptLines.quantity,
+                qtyReturned: wmsTables.inboundReceiptLines.returnedQty,
+            })
+            .from(wmsTables.inboundReceipts)
+            .leftJoin(
+                wmsTables.inboundReceiptLines,
+                eq(wmsTables.inboundReceiptLines.receiptId, wmsTables.inboundReceipts.id),
+            )
+            .where(and(
+                eq(wmsTables.inboundReceipts.status as any, 'posted' as any),
+                warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
+                skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
+                startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
+                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+            ))
+            .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
+            .limit(limit)
+            .offset(offset);
+
+        const items = rows
+            .map(r => {
+                const confirmed = Math.max(0, (r.qtyReceived ?? 0) - (r.qtyReturned ?? 0));
+                return { ...r, confirmedQty: confirmed };
+            })
+            .filter(r => r.confirmedQty > 0);
+
+        return { total: items.length, items };
+    }
+
+    // 입고예정 생성
+    async createInboundPlan(dto: CreateInboundPlanDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const [plan] = await tx.insert(wmsTables.inboundPlans).values({
+                expectedDate: new Date(dto.expectedDate),
+                warehouseId: dto.warehouseId,
+                status: 'pending',
+            } as any).returning();
+            return plan;
+        }, tx);
+    }
+
+    // 입고예정 아이템 추가
+    async addInboundPlanItems(dto: AddInboundPlanItemsDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const plan = await tx.query.inboundPlans.findFirst({ where: eq(wmsTables.inboundPlans.id, dto.planId) });
+            if (!plan) throw new NotFoundException('inbound plan not found');
+            for (const item of dto.items) {
+                await tx.insert(wmsTables.inboundPlanItems).values({
+                    planId: dto.planId,
+                    skuId: item.skuId,
+                    expectedQty: item.expectedQty,
+                    receivedQty: 0,
+                    status: 'pending',
+                } as any);
+            }
+            return { success: true };
+        }, tx);
+    }
+
+    // 입고예정 아이템 조회(헤더 무시, 아이템 테이블 직접 조회)
+    async listInboundPlanItems(query: ListPlanItemsQueryDto, tx?: DbTx) {
+        const { startDate, endDate, warehouseId, skuId } = query;
+        const rows = await this.db
+            .select({
+                planItemId: wmsTables.inboundPlanItems.id,
+                planId: wmsTables.inboundPlanItems.planId,
+                expectedDate: wmsTables.inboundPlans.expectedDate,
+                warehouseId: wmsTables.inboundPlans.warehouseId,
+                skuId: wmsTables.inboundPlanItems.skuId,
+                expectedQty: wmsTables.inboundPlanItems.expectedQty,
+                receivedQty: wmsTables.inboundPlanItems.receivedQty,
+                status: wmsTables.inboundPlanItems.status,
+            })
+            .from(wmsTables.inboundPlanItems)
+            .leftJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlans.id, wmsTables.inboundPlanItems.planId))
+            .where(and(
+                warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined,
+                skuId ? eq(wmsTables.inboundPlanItems.skuId, skuId) : undefined,
+                startDate ? gte(wmsTables.inboundPlans.expectedDate, new Date(startDate)) : undefined,
+                endDate ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+            ))
+            .orderBy(desc(wmsTables.inboundPlans.expectedDate));
+        return { total: rows.length, items: rows };
+    }
+
+    // 입고예정 아이템 기반 실입고 처리
+    async receiveFromPlan(dto: ReceiveFromPlanDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const item = await tx.query.inboundPlanItems.findFirst({ where: eq(wmsTables.inboundPlanItems.id, dto.planItemId) });
+            if (!item) throw new NotFoundException('inbound plan item not found');
+            const plan = await tx.query.inboundPlans.findFirst({ where: eq(wmsTables.inboundPlans.id, item.planId) });
+            if (!plan) throw new NotFoundException('inbound plan not found');
+
+            // 위치 결정 (옵션, 없으면 기본입고존)
+            let effectiveLocationId = dto.locationId ?? null;
+            if (!effectiveLocationId) {
+                let inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
+                if (!inboundZone) {
+                    await this.locationService.ensureSystemLocations(plan.warehouseId);
+                    inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
+                }
+                if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
+                effectiveLocationId = inboundZone.id;
+            }
+
+            // 회차(journal + receipt) 생성
+            const [journal] = await tx.insert(wmsTables.stockJournals).values({
+                sourceType: 'inbound',
+                occurredAt: new Date(),
+            } as any).returning();
+            const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
+                method: 'planned',
+                warehouseId: plan.warehouseId,
+                locationId: effectiveLocationId,
+                occurredAt: new Date(),
+                status: 'posted',
+                totalQuantity: 0,
+                journalId: journal.id,
+            } as any).returning();
+
+            // 이벤트 생성 + 라인 생성
+            const { eventId } = await this.commandService.receive({
+                skuId: item.skuId,
+                toWarehouseId: plan.warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity: dto.quantity,
+                occurredAt: new Date(),
+                reason: 'planned_inbound',
+                journalId: journal.id,
+            }, tx);
+            await tx.insert(wmsTables.inboundReceiptLines).values({
+                receiptId: receipt.id,
+                skuId: item.skuId,
+                quantity: dto.quantity,
+                originLocationId: effectiveLocationId,
+                eventId: eventId ?? null,
+                planItemId: item.id,
+            } as any);
+
+            // 예정 누계/상태 갱신
+            const newReceived = (item.receivedQty ?? 0) + dto.quantity;
+            const newStatus = newReceived >= item.expectedQty ? 'confirmed' : 'pending';
+            await tx.update(wmsTables.inboundPlanItems)
+                .set({ receivedQty: newReceived, status: newStatus as any })
+                .where(eq(wmsTables.inboundPlanItems.id, item.id));
+
+            await tx.update(wmsTables.inboundReceipts)
+                .set({ totalQuantity: dto.quantity })
+                .where(eq(wmsTables.inboundReceipts.id, receipt.id));
+
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'INBOUND',
+                receiptId: receipt.id,
+                lineId: null as any,
+                skuId: item.skuId,
+                warehouseId: plan.warehouseId,
+                toLocationId: effectiveLocationId,
+                quantity: dto.quantity,
+                method: 'planned',
+                reason: 'planned_inbound',
+            } as any);
+
+            return { success: true, receiptId: receipt.id };
+        }, tx);
+    }
+
+    // 즉시 적치(원위치 → 목적지)
+    async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const line = await tx.query.inboundReceiptLines.findFirst({
+                where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
+            });
+            if (!line) throw new NotFoundException('inbound line not found');
+
+            const receipt = await tx.query.inboundReceipts.findFirst({
+                where: eq(wmsTables.inboundReceipts.id, line.receiptId),
+            });
+            if (!receipt) throw new NotFoundException('inbound receipt not found');
+
+            const originLocationId = line.originLocationId!;
+            if (!originLocationId) throw new BadRequestException('origin location missing');
+
+            // 목적지 로케이션 검증: 존재/활성/동일 창고
+            const dest = await tx.query.locations.findFirst({
+                where: eq(wmsTables.locations.id, dto.toLocationId),
+            });
+            if (!dest) throw new NotFoundException('destination location not found');
+            if (!dest.isActive) throw new BadRequestException('destination location is inactive');
+            if (dest.warehouseId !== receipt.warehouseId) throw new BadRequestException('destination location must be in the same warehouse');
+
+            const originAvailable = (line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty);
+            if (dto.quantity <= 0 || dto.quantity > originAvailable) {
+                throw new BadRequestException('quantity exceeds origin available');
+            }
+
+            // 실원장 검증: 원위치 ON_HAND 수량 확인
+            const onHand = await this.getOnHandQuantity(tx, {
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                locationId: originLocationId,
+            });
+            if (onHand < dto.quantity) {
+                throw new BadRequestException('insufficient on-hand at origin');
+            }
+
+            // 이동: 예약 → 커밋 (즉시)
+            await this.commandService.moveReserve({
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                quantity: dto.quantity,
+                reason: 'putaway_reserve',
+            }, tx);
+            const commit = await this.commandService.moveCommit({
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                toLocationId: dto.toLocationId,
+                quantity: dto.quantity,
+                reason: 'putaway_commit',
+            }, tx);
+
+            await tx.update(wmsTables.inboundReceiptLines)
+                .set({ putawayFromOriginQty: line.putawayFromOriginQty + dto.quantity })
+                .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'PUTAWAY',
+                receiptId: receipt.id,
+                lineId: line.id,
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                toLocationId: dto.toLocationId,
+                quantity: dto.quantity,
+                eventId: commit.eventId ?? null,
+            } as any);
+
+            return { success: true };
+        }, tx);
+    }
+
+    // 회송
+    async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const line = await tx.query.inboundReceiptLines.findFirst({
+                where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
+            });
+            if (!line) throw new NotFoundException('inbound line not found');
+            const receipt = await tx.query.inboundReceipts.findFirst({
+                where: eq(wmsTables.inboundReceipts.id, line.receiptId),
+            });
+            if (!receipt) throw new NotFoundException('inbound receipt not found');
+            const originLocationId = line.originLocationId!;
+            const originAvailable = (line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty);
+            if (dto.quantity <= 0 || dto.quantity > originAvailable) {
+                throw new BadRequestException('quantity exceeds origin available');
+            }
+
+            // 실원장 검증: 원위치 ON_HAND 수량 확인
+            const onHand = await this.getOnHandQuantity(tx, {
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                locationId: originLocationId,
+            });
+            if (onHand < dto.quantity) {
+                throw new BadRequestException('insufficient on-hand at origin');
+            }
+
+            const event = await this.eventStore.createEvent({
+                skuId: line.skuId,
+                fromWarehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                fromState: 'ON_HAND',
+                transitionType: 'RECEIPT_CORRECTION_DOWN',
+                quantity: dto.quantity,
+                occurredAt: new Date(),
+                reason: 'RETURN',
+            }, tx);
+
+            await tx.update(wmsTables.inboundReceiptLines)
+                .set({ returnedQty: line.returnedQty + dto.quantity })
+                .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'RETURN',
+                receiptId: receipt.id,
+                lineId: line.id,
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                quantity: dto.quantity,
+                reason: 'RETURN',
+                eventId: event?.id ?? null,
+            } as any);
+
+            return { success: true };
+        }, tx);
+    }
+
+    // 입고취소
+    async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
+        return this.inTx(async (tx) => {
+            const line = await tx.query.inboundReceiptLines.findFirst({
+                where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
+            });
+            if (!line) throw new NotFoundException('inbound line not found');
+            const receipt = await tx.query.inboundReceipts.findFirst({
+                where: eq(wmsTables.inboundReceipts.id, line.receiptId),
+            });
+            if (!receipt) throw new NotFoundException('inbound receipt not found');
+            const originLocationId = line.originLocationId!;
+
+            // 전량 취소만 허용
+            if (dto.quantity !== line.quantity) {
+                throw new BadRequestException('must cancel the full received quantity of the line');
+            }
+
+            // 선행 제약: 적치/회송 존재 시 취소 불가
+            if ((line.putawayFromOriginQty ?? 0) > 0) {
+                throw new BadRequestException('cannot cancel: putaway exists; move all back to origin first');
+            }
+            if ((line.returnedQty ?? 0) > 0) {
+                throw new BadRequestException('cannot cancel: returns exist; cancel returns first');
+            }
+            if ((line.canceledQty ?? 0) > 0) {
+                throw new BadRequestException('already canceled');
+            }
+
+            // 당일 제한(Asia/Seoul 기준)
+            const receiptRow = await tx.query.inboundReceipts.findFirst({
+                where: eq(wmsTables.inboundReceipts.id, line.receiptId),
+            });
+            if (!receiptRow) throw new NotFoundException('inbound receipt not found');
+            if (!isSameSeoulDay(nowSeoul(), receiptRow.occurredAt as any)) {
+                throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
+            }
+
+            // 실원장 검증: 원위치 ON_HAND가 전량 있어야 함
+            const onHand = await this.getOnHandQuantity(tx, {
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                locationId: originLocationId,
+            });
+            if (onHand < line.quantity) {
+                throw new BadRequestException('insufficient on-hand at origin to cancel');
+            }
+
+            // 이벤트 레벨: 원 입고 이벤트 역분개(reversal)
+            if (!line.eventId) {
+                throw new BadRequestException('original receive eventId missing; cannot perform reversal');
+            }
+            const rev = await this.eventStore.reverseEvent(line.eventId, 'CANCEL', tx);
+
+            // 라인 전량 취소 기록(감사 용도)
+            await tx.update(wmsTables.inboundReceiptLines)
+                .set({ canceledQty: line.quantity })
+                .where(eq(wmsTables.inboundReceiptLines.id, line.id));
+
+            // 작업 로그 기록
+            await tx.insert(wmsTables.inboundWorkLogs).values({
+                type: 'CANCEL',
+                receiptId: receipt.id,
+                lineId: line.id,
+                skuId: line.skuId,
+                warehouseId: receipt.warehouseId,
+                fromLocationId: originLocationId,
+                quantity: line.quantity,
+                reason: 'CANCEL',
+                eventId: rev?.id ?? null,
+            } as any);
+
+            // 모든 라인이 취소되면 헤더를 voided 처리하여 receipts 기반 조회에서 제외
+            const lines = await tx.query.inboundReceiptLines.findMany({
+                where: eq(wmsTables.inboundReceiptLines.receiptId, line.receiptId),
+            });
+            const allCanceled = lines.every(l => (l.canceledQty ?? 0) >= (l.quantity ?? 0));
+            if (allCanceled) {
+                await tx.update(wmsTables.inboundReceipts)
+                    .set({ status: 'voided' as any, totalQuantity: 0 })
+                    .where(eq(wmsTables.inboundReceipts.id, line.receiptId));
+            }
+
+            return { success: true };
+        }, tx);
+    }
+
     // 입고 실적 조회
     async getInboundHistory(skuId?: string, warehouseId?: string, days: number = 30) {
         const startDate = new Date();
@@ -215,39 +828,34 @@ export class InboundService {
 
         // 이벤트 스토어에서 입고 이벤트 조회
         const events = await this.eventStore.getEventHistory(
-            skuId || '', // skuId가 없으면 전체 조회
+            skuId, // skuId 없으면 전체 조회
             warehouseId,
             startDate.toISOString().split('T')[0],
             new Date().toISOString().split('T')[0]
         );
 
-        // 입고 관련 이벤트만 필터링
-        const inboundEvents = events.filter(e =>
-            e.eventType === 'IN' ||
-            e.eventType === 'IN_DOMESTIC' ||
-            e.eventType === 'IN_OVERSEAS' ||
-            e.eventType === 'IN_RETURN'
-        );
+        // 입고 관련 이벤트만 필터링 (transitionType=RECEIVE)
+        const inboundEvents = events.filter(e => e.transitionType === 'RECEIVE');
 
         // 일별 집계
         const dailyStats: Record<string, { quantity: number; events: number }> = {};
 
         inboundEvents.forEach(event => {
-            const date = new Date(event.eventTimestamp).toISOString().split('T')[0];
+            const date = new Date(event.occurredAt).toISOString().split('T')[0];
             if (!dailyStats[date]) {
                 dailyStats[date] = { quantity: 0, events: 0 };
             }
-            dailyStats[date].quantity += event.deltaQuantity;
+            dailyStats[date].quantity += event.quantity;
             dailyStats[date].events += 1;
         });
 
         return {
             period: `Last ${days} days`,
-            totalInboundQuantity: inboundEvents.reduce((sum, e) => sum + e.deltaQuantity, 0),
+            totalInboundQuantity: inboundEvents.reduce((sum, e) => sum + e.quantity, 0),
             totalInboundEvents: inboundEvents.length,
-            domesticInbounds: inboundEvents.filter(e => e.eventType === 'IN_DOMESTIC').length,
-            overseasInbounds: inboundEvents.filter(e => e.eventType === 'IN_OVERSEAS').length,
-            returnInbounds: inboundEvents.filter(e => e.eventType === 'IN_RETURN').length,
+            domesticInbounds: 0,
+            overseasInbounds: 0,
+            returnInbounds: 0,
             dailyStats,
             recentEvents: inboundEvents.slice(0, 10), // 최근 10건
         };
