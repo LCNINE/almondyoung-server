@@ -9,10 +9,16 @@
   "setupFiles": [
     "<rootDir>/env-setup.ts"
   ],
+  "setupFilesAfterEnv": [
+    "<rootDir>/setup-after-env.ts"
+  ],
+  "globalSetup": "<rootDir>/global-setup.ts",
+  "globalTeardown": "<rootDir>/global-teardown.ts",
   "testRegex": ".*\\.e2e(\\.|-)spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
+  "maxWorkers": 1,
   "moduleNameMapper": {
     "^@app/db(|/.*)$": "<rootDir>/../../../libs/db/src/$1"
   },

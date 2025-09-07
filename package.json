@@ -23,6 +23,7 @@
     "wms:test:unit": "jest --runInBand --config apps/wms/jest.unit.json",
     "wms:test:e2e": "jest --runInBand --config apps/wms/test/jest-e2e.json",
     "db:push.wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
+    "db:push.wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
     "db:generate.wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
     "build:wms": "nest build wms",
     "start:wms": "nest start wms",

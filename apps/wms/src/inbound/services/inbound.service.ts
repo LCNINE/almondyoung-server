@@ -66,12 +66,9 @@ export class InboundService {
     async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
         const { warehouseId, items } = dto;
         return this.inTx(async (tx) => {
-            // 간편입고는 항상 시스템 입고기본존으로
-            let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-            if (!inboundZone) {
-                await this.locationService.ensureSystemLocations(warehouseId);
-                inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-            }
+            // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
+            await this.locationService.ensureSystemLocations(warehouseId);
+            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
             if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
             const effectiveLocationId = inboundZone.id;
             // 회차(journal + receipt) 생성
@@ -140,11 +137,8 @@ export class InboundService {
     async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
         const { warehouseId, items } = dto;
         return this.inTx(async (tx) => {
-            let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-            if (!inboundZone) {
-                await this.locationService.ensureSystemLocations(warehouseId);
-                inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-            }
+            await this.locationService.ensureSystemLocations(warehouseId);
+            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
             if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
             const effectiveLocationId = inboundZone.id;
 
@@ -208,11 +202,8 @@ export class InboundService {
         return this.inTx(async (tx) => {
             let effectiveLocationId = dto.locationId ?? null;
             if (!effectiveLocationId) {
-                let inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-                if (!inboundZone) {
-                    await this.locationService.ensureSystemLocations(warehouseId);
-                    inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
-                }
+                await this.locationService.ensureSystemLocations(warehouseId);
+                const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
                 if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
                 effectiveLocationId = inboundZone.id;
             }
@@ -530,11 +521,8 @@ export class InboundService {
             // 위치 결정 (옵션, 없으면 기본입고존)
             let effectiveLocationId = dto.locationId ?? null;
             if (!effectiveLocationId) {
-                let inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
-                if (!inboundZone) {
-                    await this.locationService.ensureSystemLocations(plan.warehouseId);
-                    inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
-                }
+                await this.locationService.ensureSystemLocations(plan.warehouseId);
+                const inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
                 if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
                 effectiveLocationId = inboundZone.id;
             }
@@ -688,6 +676,10 @@ export class InboundService {
             });
             if (!receipt) throw new NotFoundException('inbound receipt not found');
             const originLocationId = line.originLocationId!;
+            // 선행 제약: 적치가 존재하면 회송 불가 (원위치로 모두 되돌린 후 처리)
+            if ((line.putawayFromOriginQty ?? 0) > 0) {
+                throw new BadRequestException('cannot return: putaway exists; move all back to origin first');
+            }
             const originAvailable = (line.quantity - line.putawayFromOriginQty - line.returnedQty - line.canceledQty);
             if (dto.quantity <= 0 || dto.quantity > originAvailable) {
                 throw new BadRequestException('quantity exceeds origin available');

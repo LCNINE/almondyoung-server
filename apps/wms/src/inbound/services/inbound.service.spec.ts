@@ -29,34 +29,7 @@ describe('InboundService (unit-like)', () => {
     service = module.get(InboundService);
     dbService = module.get(DbService);
 
-    // Clean DB state before tests
-    await dbService.db.transaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL client_min_messages TO warning`);
-      await tx.execute(sql`TRUNCATE TABLE
-        inbound_work_logs,
-        inbound_receipt_lines,
-        inbound_receipts,
-        inbound_plan_items,
-        inbound_plans,
-        stock_events,
-        stock_ledgers,
-        stock_summary,
-        locations,
-        location_racks,
-        location_columns,
-        warehouses,
-        sku_barcodes,
-        sku_suppliers,
-        skus
-        RESTART IDENTITY CASCADE`);
-    });
-
-    // ensure minimal fixtures
-    await dbService.db
-      .insert(wmsTables.holders)
-      .values({ id: '00000000-0000-0000-0000-000000000000', name: 'Default Holder', isOurAsset: true } as any)
-      // @ts-ignore onConflict typing
-      .onConflictDoNothing({ target: wmsTables.holders.id });
+    // DB는 테스트 훅에서 템플릿으로 초기화됩니다. 별도 TRUNCATE/홀더 보장은 필요 없습니다.
 
     // create warehouse
     const [wh] = await dbService.db
@@ -95,6 +68,34 @@ describe('InboundService (unit-like)', () => {
     // keep DB state for inspection; just close module
     await module.close();
   });
+
+  // 디버그 유틸: 원장 ON_HAND와 라인/리시트 상태 로깅
+  const logOnHand = async (skuId: string, warehouseId: string, locationId: string, note: string) => {
+    const row = await dbService.db.query.stockLedgers.findFirst({
+      where: and(
+        eq(wmsTables.stockLedgers.skuId, skuId),
+        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+        eq(wmsTables.stockLedgers.locationId, locationId),
+        eq(wmsTables.stockLedgers.stockState as any, 'ON_HAND' as any),
+      ),
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[ledger ${note}] sku=${skuId} wh=${warehouseId} loc=${locationId} onHand=${(row as any)?.qty ?? 0}`);
+  };
+
+  const logLineAndReceipt = async (lineId: string, note: string) => {
+    const line = await dbService.db.query.inboundReceiptLines.findFirst({ where: eq(wmsTables.inboundReceiptLines.id, lineId) });
+    if (!line) {
+      // eslint-disable-next-line no-console
+      console.log(`[line ${note}] lineId=${lineId} not found`);
+      return;
+    }
+    const receipt = await dbService.db.query.inboundReceipts.findFirst({ where: eq(wmsTables.inboundReceipts.id, (line as any).receiptId) });
+    // eslint-disable-next-line no-console
+    console.log(`[line ${note}] lineId=${(line as any).id} qty=${(line as any).quantity} putaway=${(line as any).putawayFromOriginQty} returned=${(line as any).returnedQty} canceled=${(line as any).canceledQty} originLoc=${(line as any).originLocationId}`);
+    // eslint-disable-next-line no-console
+    console.log(`[receipt ${note}] receiptId=${(receipt as any)?.id} wh=${(receipt as any)?.warehouseId} loc=${(receipt as any)?.locationId}`);
+  };
 
   it('should simple inbound and create receipt/line/work log', async () => {
     const res = await service.simpleInbound({
@@ -136,8 +137,13 @@ describe('InboundService (unit-like)', () => {
 
     const lineIdPutaway = created.lineIds[0];
     const before = await dbService.db.query.inboundReceiptLines.findFirst({ where: eq(wmsTables.inboundReceiptLines.id, lineIdPutaway) });
+    await logLineAndReceipt(lineIdPutaway, 'before putaway');
+    const receipt = await dbService.db.query.inboundReceipts.findFirst({ where: eq(wmsTables.inboundReceipts.id, (before as any)!.receiptId) });
+    await logOnHand((before as any)!.skuId, (receipt as any)!.warehouseId, (before as any)!.originLocationId, 'before putaway');
     await service.putawayFromOrigin({ lineId: lineIdPutaway, toLocationId: zone.id, quantity: 2 });
     const after = await dbService.db.query.inboundReceiptLines.findFirst({ where: eq(wmsTables.inboundReceiptLines.id, lineIdPutaway) });
+    await logOnHand((before as any)!.skuId, (receipt as any)!.warehouseId, (before as any)!.originLocationId, 'after putaway');
+    await logLineAndReceipt(lineIdPutaway, 'after putaway');
     expect((after!.putawayFromOriginQty as any) - (before!.putawayFromOriginQty as any)).toBe(2);
   });
 
@@ -146,15 +152,19 @@ describe('InboundService (unit-like)', () => {
     const lineIdUntouched = created.lineIds[1];
 
     // putaway 라인: 회송/취소 실패(400)
+    await logLineAndReceipt(lineIdPutaway, 'before return (putaway line)');
     await expect(service.returnInbound({ lineId: lineIdPutaway, quantity: 1 })).rejects.toThrow();
     await expect(service.cancelInbound({ lineId: lineIdPutaway, quantity: 1 })).rejects.toThrow();
 
     // untouched 라인: 부분 취소는 거부, 전량 취소는 허용
     const untouchedBefore = await dbService.db.query.inboundReceiptLines.findFirst({ where: eq(wmsTables.inboundReceiptLines.id, lineIdUntouched) });
     const fullQty = (untouchedBefore!.quantity as any) as number;
+    const untouchedReceipt = await dbService.db.query.inboundReceipts.findFirst({ where: eq(wmsTables.inboundReceipts.id, (untouchedBefore as any)!.receiptId) });
+    await logOnHand((untouchedBefore as any)!.skuId, (untouchedReceipt as any)!.warehouseId, (untouchedBefore as any)!.originLocationId, 'before cancel (untouched)');
     await expect(service.cancelInbound({ lineId: lineIdUntouched, quantity: 1 })).rejects.toThrow();
     await service.cancelInbound({ lineId: lineIdUntouched, quantity: fullQty });
     const untouchedAfter = await dbService.db.query.inboundReceiptLines.findFirst({ where: eq(wmsTables.inboundReceiptLines.id, lineIdUntouched) });
+    await logOnHand((untouchedBefore as any)!.skuId, (untouchedReceipt as any)!.warehouseId, (untouchedBefore as any)!.originLocationId, 'after cancel (untouched)');
     expect((untouchedAfter!.canceledQty as any)).toBe(fullQty);
   });
 
@@ -165,8 +175,12 @@ describe('InboundService (unit-like)', () => {
       items: [ { skuId: created.skuIds[0], quantity: 2 } ],
     });
     const [line] = await dbService.db.query.inboundReceiptLines.findMany({ where: eq(wmsTables.inboundReceiptLines.receiptId, res.receiptId as any) });
+    await logLineAndReceipt(line.id, 'before return (fresh line)');
+    const receipt = await dbService.db.query.inboundReceipts.findFirst({ where: eq(wmsTables.inboundReceipts.id, (line as any).receiptId) });
+    await logOnHand((line as any).skuId, (receipt as any)!.warehouseId, (line as any).originLocationId, 'before return (fresh line)');
     // return 성공
     await service.returnInbound({ lineId: line.id, quantity: 1 });
+    await logOnHand((line as any).skuId, (receipt as any)!.warehouseId, (line as any).originLocationId, 'after return (fresh line)');
     // return 이후 cancel 금지
     await expect(service.cancelInbound({ lineId: line.id, quantity: 2 })).rejects.toThrow();
   });

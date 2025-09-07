@@ -177,6 +177,10 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'express']);
 
+// Inventory master enums
+export const inventoryMasterPurposeEnum = pgEnum('inventory_master_purpose', ['standard', 'set', 'material']);
+export const inventoryMasterStatusEnum = pgEnum('inventory_master_status', ['active', 'archived']);
+
 /*───────────────────────────
  * MASTER DATA
  *──────────────────────────*/
@@ -295,6 +299,33 @@ export const skuCategories = pgTable('sku_categories', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+// Inventory Product Masters: 상위 재고상품 설계 단위(옵션 스키마/정책 보유)
+export const inventoryProductMasters = pgTable('inventory_product_masters', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 255 }).notNull(),
+    masterCode: varchar('master_code', { length: 64 }).notNull(),
+    purpose: inventoryMasterPurposeEnum('purpose').notNull().default('standard'),
+    optionSchema: json('option_schema'),
+    defaultPolicy: json('default_policy'),
+    status: inventoryMasterStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    uqMasterCode: unique().on(t.masterCode),
+}));
+
+// Inventory Master ↔ SKU 링크: 옵션키 기반 연결 및 대표 여부
+export const inventoryMasterSkuLinks = pgTable('inventory_master_sku_links', {
+    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
+    optionKey: json('option_key'),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    pk: primaryKey(t.masterId, t.skuId),
+    uqMasterOption: unique().on(t.masterId, t.optionKey),
+}));
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -502,6 +533,7 @@ export const stockSummary = pgTable('stock_summary', {
 export const productMatchings = pgTable('product_matchings', {
     id: uuid('id').primaryKey().defaultRandom(),
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'set null' }),
     status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
     priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
     strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
@@ -518,6 +550,7 @@ export const productMatchings = pgTable('product_matchings', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => ({
     uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
+    idxMasterId: index('idx_product_matchings_master_id').on(t.masterId),
 }));
 
 // product_variant_sku_links: variant와 sku의 N:M 관계를 위한 연결 테이블
@@ -929,6 +962,8 @@ export const wmsTables = {
     skuBarcodes,
     categories,
     skuCategories,
+    inventoryProductMasters,
+    inventoryMasterSkuLinks,
     deliveryProfiles,
     warehouses,
     locationColumns,

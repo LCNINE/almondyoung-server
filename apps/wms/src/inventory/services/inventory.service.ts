@@ -36,6 +36,10 @@ export class InventoryService implements OnModuleInit {
         return this.dbService.db;
     }
 
+    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+        return tx ? fn(tx) : this.db.transaction(fn);
+    }
+
     async onModuleInit() {
         await this._ensureDefaultWarehousesExist();
         try {
@@ -52,8 +56,8 @@ export class InventoryService implements OnModuleInit {
     // SKU 관리 도메인
     // ****************************************************************
 
-    async createSku(createSkuDto: CreateSkuDto): Promise<SkuResponseDto> {
-        return this.db.transaction(async (tx) => {
+    async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
+        return this.inTx(async (tx) => {
             const { supplierIds, categoryIds, ...skuData } = createSkuDto;
 
             const newSku = await this._createSkuInternal(skuData, tx);
@@ -77,7 +81,7 @@ export class InventoryService implements OnModuleInit {
             }
 
             return this.getSkuById(newSku.id, tx);
-        });
+        }, tx);
     }
 
     async updateSku(skuId: string, updateSkuDto: UpdateSkuDto): Promise<SkuResponseDto> {

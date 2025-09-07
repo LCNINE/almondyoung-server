@@ -128,41 +128,25 @@ export class StockEventStore {
       if (!params.fromWarehouseId || !params.fromLocationId) {
         throw new BadRequestException('fromState가 있으면 fromWarehouse/Location이 필요합니다.');
       }
-      await tx
-        .insert(wmsTables.stockLedgers)
-        .values({
-          skuId: params.skuId,
-          warehouseId: params.fromWarehouseId,
-          locationId: params.fromLocationId,
-          stockState: params.fromState,
-          qty: -params.quantity, // upsert에서 누적
+
+      // 음수 INSERT를 금지하고, 충분 수량이 있는 기존 행에 대해서만 조건부 UPDATE 수행
+      const decreased = await tx
+        .update(wmsTables.stockLedgers)
+        .set({
+          qty: sql`${wmsTables.stockLedgers.qty} - ${params.quantity}`,
           updatedAt: now,
         })
-        .onConflictDoUpdate({
-          target: [
-            wmsTables.stockLedgers.skuId,
-            wmsTables.stockLedgers.warehouseId,
-            wmsTables.stockLedgers.locationId,
-            wmsTables.stockLedgers.stockState,
-          ],
-          set: {
-            qty: sql`${wmsTables.stockLedgers.qty} - ${params.quantity}`,
-            updatedAt: now,
-          },
-        });
+        .where(and(
+          eq(wmsTables.stockLedgers.skuId, params.skuId),
+          eq(wmsTables.stockLedgers.warehouseId, params.fromWarehouseId),
+          eq(wmsTables.stockLedgers.locationId, params.fromLocationId),
+          eq(wmsTables.stockLedgers.stockState, params.fromState),
+          gte(wmsTables.stockLedgers.qty, params.quantity),
+        ))
+        .returning();
 
-      if (options?.forbidNegative) {
-        const row = await tx.query.stockLedgers.findFirst({
-          where: and(
-            eq(wmsTables.stockLedgers.skuId, params.skuId),
-            eq(wmsTables.stockLedgers.warehouseId, params.fromWarehouseId),
-            eq(wmsTables.stockLedgers.locationId, params.fromLocationId),
-            eq(wmsTables.stockLedgers.stockState, params.fromState),
-          ),
-        });
-        if (row && row.qty < 0) {
-          throw new BadRequestException('음수 재고가 허용되지 않습니다.');
-        }
+      if (!decreased || decreased.length === 0) {
+        throw new BadRequestException('insufficient on-hand at source');
       }
     }
 

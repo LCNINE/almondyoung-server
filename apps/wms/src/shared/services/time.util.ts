@@ -1,11 +1,11 @@
-import { utcToZonedTime } from 'date-fns-tz';
+import { toZonedTime } from 'date-fns-tz';
 import { isSameDay } from 'date-fns';
 
 const SEOUL_TZ = 'Asia/Seoul';
 
 export function toSeoulTime(date: Date | string | number): Date {
   const d = date instanceof Date ? date : new Date(date);
-  return utcToZonedTime(d, SEOUL_TZ);
+  return toZonedTime(d, SEOUL_TZ);
 }
 
 export function isSameSeoulDay(a: Date | string | number, b: Date | string | number): boolean {

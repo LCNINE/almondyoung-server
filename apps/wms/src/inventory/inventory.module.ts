@@ -17,6 +17,9 @@ import { PimEventHandler } from './handlers/pim-event.hadler';
 import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
 import { OptionMatchingStrategy } from './strategies/option-matching.strategy';
 import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
+import { OptionEngineModule } from '@app/shared';
+import { MasterService } from './services/master.service';
+import { MastersController } from './controllers/masters.controller';
 
 @Module({
   imports: [
@@ -28,11 +31,13 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
       schema: wmsTables,
     }),
     SharedModule,
+    OptionEngineModule,
   ],
   controllers: [
     InventoryController,
     ProductMatchingController,
-    LocationController
+    LocationController,
+    MastersController
   ],
   providers: [
     InventoryService,
@@ -46,6 +51,7 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
     VariantMatchingStrategy,
     OptionMatchingStrategy,
     VoidMatchingStrategy,
+    MasterService,
   ],
   exports: [
     InventoryService,
@@ -55,6 +61,7 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
     StockEventStore,
     InventoryCommandService,
     InventoryQueryService,
+    MasterService,
   ],
 })
 export class InventoryModule { }

@@ -21,50 +21,10 @@ describe('Inbound Simple Flow (e2e)', () => {
     httpServer = app.getHttpServer();
     dbService = app.get(DbService);
 
-    await dbService.db.transaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL client_min_messages TO warning`);
-      await tx.execute(sql`TRUNCATE TABLE
-        stock_events,
-        stock_ledgers,
-        stock_summary,
-        locations,
-        location_racks,
-        location_columns,
-        warehouses,
-        sku_barcodes,
-        sku_suppliers,
-        skus
-        RESTART IDENTITY CASCADE`);
-    });
-
-    // Ensure default holder row exists for FK (skus.holder_id references holders.id)
-    await dbService.db
-      .insert(wmsTables.holders)
-      .values({
-        id: '00000000-0000-0000-0000-000000000000',
-        name: 'Default Holder',
-        isOurAsset: true,
-      } as any)
-      // @ts-ignore drizzle onConflictDoNothing typing may vary
-      .onConflictDoNothing({ target: wmsTables.holders.id });
+    // DB는 테스트 훅에서 템플릿으로 초기화됩니다. 별도 TRUNCATE/홀더 보장은 필요 없습니다.
   }, 30000);
 
   afterAll(async () => {
-    await dbService.db.transaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL client_min_messages TO warning`);
-      await tx.execute(sql`TRUNCATE TABLE
-        stock_events,
-        stock_ledgers,
-        stock_summary,
-        locations,
-        location_racks,
-        location_columns,
-        warehouses,
-        sku_barcodes,
-        sku_suppliers,
-        skus
-        RESTART IDENTITY CASCADE`);
-    });
     await app.close();
   });
 
