@@ -1,4 +1,4 @@
 export * from './shared.module';
 export * from './shared.service';
-export * from './option-engine/option-engine.module';
-export * from './option-engine/option-engine.service';
+export * from './option-engine';
+export * from './pipes/zod-validation.pipe';

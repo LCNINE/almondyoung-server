@@ -29,6 +29,15 @@
         "tsConfigPath": "libs/db/tsconfig.lib.json"
       }
     },
+    "pim": {
+      "type": "application",
+      "root": "apps/pim",
+      "entryFile": "main",
+      "sourceRoot": "apps/pim/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/pim/tsconfig.app.json"
+      }
+    },
     "shared": {
       "type": "library",
       "root": "libs/shared",
