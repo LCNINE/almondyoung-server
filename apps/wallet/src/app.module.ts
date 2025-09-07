@@ -3,54 +3,23 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 
-// === 표준 컨트롤러들 ===
-import { PaymentMethodController } from './controllers/payment-method.controller';
-import { PaymentSessionController } from './controllers/payment-session.controller';
+// === 가이드 문서 준수: 단순화된 구조 ===
 import { PaymentController } from './controllers/payment.controller';
-import { RefundController } from './controllers/refund.controller';
-import { BnplController } from './controllers/bnpl.controller';
+import { PaymentMethodController } from './controllers/payment-method.controller';
 
-import { SettlementController } from './controllers/settlement.controller';
-
-// === 표준 통합 서비스 (리팩토링 후) ===
-import { PaymentGatewayFactory } from './services/payment-gateway.factory';
-import { IdempotencyService } from './services/idempotency.service';
-import { SettlementService } from './services/settlement.service';
-
-// === 결제수단별 전용 서비스들 (Strategy Pattern으로 대체됨) ===
-// BnplMethodService, CardMethodService, PointMethodService 제거됨
+// === 가이드 문서 준수: 4개 서비스만 유지 ===
+import { PaymentService } from './services/payment.service';
 import { PaymentMethodService } from './services/payment-method.service';
-import { PaymentSessionService } from './services/payment-session.service';
+import { RefundService } from './services/refund.service';
+import { IdempotencyService } from './services/idempotency.service';
 
-// === 표준 PaymentGateway 어댑터들 (test3.md 기준) ===
+// === 어댑터들 (가이드 문서 준수) ===
 import { TossPaymentAdapter } from './adapters/toss-payment.adapter';
 import { HmsCardPaymentAdapter } from './adapters/hms-card-payment.adapter';
 import { HmsBnplPaymentAdapter } from './adapters/hms-bnpl-payment.adapter';
 import { InternalPointPaymentAdapter } from './adapters/internal-point-payment.adapter';
 
-// === 표준 게이트웨이 토큰들 ===
-import {
-  TOSS_PAYMENT_ADAPTER,
-  HMS_CARD_PAYMENT_ADAPTER,
-  HMS_BNPL_PAYMENT_ADAPTER,
-  INTERNAL_POINT_PAYMENT_ADAPTER,
-} from './shared/tokens/gateway.tokens';
-
-// === 스케줄러 ===
-import { BnplStatusScheduler } from './services/scheduler/bnpl-status.scheduler';
-import { SettlementScheduler } from './services/scheduler/settlement.scheduler';
-
 import * as schema from './shared/database/schema';
-import { RefundService } from './services/refund.service';
-
-// === 새로운 Strategy Pattern 구현 ===
-import { PaymentService } from './services/payment.service';
-import { PaymentStrategyFactory } from './factories/payment-strategy.factory';
-import { BnplStrategy } from './strategies/bnpl.strategy';
-import { CardStrategy } from './strategies/card.strategy';
-import { PointStrategy } from './strategies/point.strategy';
-import { BnplLedgerService } from './services/bnpl-ledger.service';
-import { BatchCaptureService } from './services/batch-capture.service';
 
 @Module({
   imports: [
@@ -68,76 +37,29 @@ import { BatchCaptureService } from './services/batch-capture.service';
     EventsModule,
   ],
   controllers: [
-    // === 표준 컨트롤러들 ===
-    PaymentMethodController,
-    PaymentSessionController,
+    // === 가이드 문서 준수: 통합 컨트롤러만 ===
     PaymentController,
-    RefundController,
-    BnplController, // BNPL 전용 컨트롤러 추가
-
-    SettlementController,
+    PaymentMethodController,
   ],
   providers: [
-    // === 새로운 Strategy Pattern 기반 서비스들 ===
-    PaymentService, // 통합 Facade
-    PaymentStrategyFactory, // 전략 팩토리
-
-    // === Strategy 구현체들 ===
-    BnplStrategy,
-    CardStrategy,
-    PointStrategy,
-
-    // === 도메인 서비스들 ===
-    BnplLedgerService,
-    BatchCaptureService,
-
-    // === 기존 서비스들 (호환성 유지) ===
-
-    PaymentGatewayFactory,
-    IdempotencyService,
-    SettlementService,
-    RefundService,
-
-    // === 결제수단별 전용 서비스들 ===
-    // BnplMethodService, CardMethodService, PointMethodService 제거됨
+    // === 가이드 문서 준수: 4개 서비스만 ===
+    PaymentService,
     PaymentMethodService,
-    PaymentSessionService,
-    // === 스케줄러 ===
-    BnplStatusScheduler,
-    SettlementScheduler,
+    RefundService,
+    IdempotencyService,
 
-    // === 표준 PaymentGateway 어댑터들 (Provider Token 방식) ===
-    {
-      provide: TOSS_PAYMENT_ADAPTER,
-      useClass: TossPaymentAdapter,
-    },
-    {
-      provide: HMS_CARD_PAYMENT_ADAPTER,
-      useClass: HmsCardPaymentAdapter,
-    },
-    {
-      provide: HMS_BNPL_PAYMENT_ADAPTER,
-      useClass: HmsBnplPaymentAdapter,
-    },
-    {
-      provide: INTERNAL_POINT_PAYMENT_ADAPTER,
-      useClass: InternalPointPaymentAdapter,
-    },
+    // === 어댑터들 ===
+    TossPaymentAdapter,
+    HmsCardPaymentAdapter,
+    HmsBnplPaymentAdapter,
+    InternalPointPaymentAdapter,
   ],
   exports: [
-    // === 새로운 Strategy Pattern 기반 서비스들 ===
-    PaymentService, // 통합 Facade
-    PaymentStrategyFactory,
-
-    // === 기존 서비스 Export (호환성 유지) ===
-    PaymentGatewayFactory,
-    IdempotencyService,
-    SettlementService,
-
-    // === 결제수단별 전용 서비스들 ===
-    // BnplMethodService, CardMethodService, PointMethodService 제거됨
+    // === 가이드 문서 준수: 필요한 서비스만 export ===
+    PaymentService,
     PaymentMethodService,
-    PaymentSessionService,
+    RefundService,
+    IdempotencyService,
   ],
 })
 export class AppModule {}

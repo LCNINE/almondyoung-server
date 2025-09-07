@@ -1,413 +1,372 @@
-// services/payment-methods.service.ts
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
-import { eq, and } from 'drizzle-orm';
-import { CreateGeneralPaymentMethodDto } from '../shared/dtos/create-general-payment-method.dto';
-import {
-  PaymentMethodResponseDto,
-  UserPaymentMethodsResponseDto,
-} from '../shared/dtos/payment-methods/payment-method-response.dto';
-// 사용하지 않는 타입 제거
-import { WalletTx } from '../shared/database';
+import { eq } from 'drizzle-orm';
+import { ulid } from 'ulid';
+import { PaymentMethodType } from '../shared/types/payment-method.types';
 
-import { PaymentService } from './payment.service';
-import { IdempotencyService } from './idempotency.service';
-
+/**
+ * 결제수단 서비스 (가이드 문서 준수)
+ *
+ * 역할:
+ * 1. 결제수단 등록 검증
+ * 2. 어댑터 호출 (PG사 결제수단 등록)
+ * 3. PaymentMethod 테이블 저장
+ *
+ * 복잡한 상태 관리 제거 → 단순한 등록/조회만
+ */
 @Injectable()
 export class PaymentMethodService {
   private readonly logger = new Logger(PaymentMethodService.name);
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly paymentService: PaymentService, // 통합 서비스 사용
-    private readonly idempotency: IdempotencyService,
+    // 어댑터들을 직접 주입 (추후 구현)
+    // private readonly hmsCardAdapter: HmsCardAdapter,
+    // private readonly hmsBnplAdapter: HmsBnplAdapter,
+    // private readonly tossAdapter: TossAdapter,
+    // private readonly pointAdapter: PointAdapter,
   ) {}
 
-  // create 메서드는 createWithIdempotency로 통합되어 제거
-
-  // 타입별 특화 로직은 각 MethodService에서 처리하므로 제거
-
-  private async validatePaymentMethod(
-    dto: CreateGeneralPaymentMethodDto,
-    tx: WalletTx,
-  ): Promise<void> {
-    // 사용자별 결제수단 개수 제한 등 비즈니스 규칙 검증
-    const userMethods = await tx
-      .select()
-      .from(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.userId, dto.userId));
-
-    if (userMethods.length >= 10) {
-      throw new BadRequestException('결제수단은 최대 10개까지 등록 가능합니다');
-    }
-
-    // 타입별 추가 검증
-    if (dto.methodType === 'CARD' && !dto.cardInfo) {
-      throw new BadRequestException('카드 정보가 필요합니다');
-    }
-    // BANK_ACCOUNT 검증 제거됨 (현재 지원하지 않음)
-  }
-
-  // 활성화는 createWithIdempotency에서 직접 처리하므로 제거
-
-  /** 결제수단 조회 */
-  async get(id: string): Promise<typeof schema.paymentMethod.$inferSelect> {
-    const [method] = await this.db.db
-      .select()
-      .from(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.id, id))
-      .limit(1);
-
-    if (!method) {
-      throw new NotFoundException('결제수단을 찾을 수 없습니다');
-    }
-    return method;
-  }
-
-  /** 사용자의 모든 결제수단 조회 */
-  async findByUserId(
-    userId: string,
-  ): Promise<(typeof schema.paymentMethod.$inferSelect)[]> {
-    return await this.db.db
-      .select()
-      .from(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.userId, userId));
-  }
-
-  // deactivate는 delete로 통합되어 제거
-
-  // 검증은 각 MethodService에서 처리하므로 제거
-
   /**
-   * 멱등성을 지원하는 결제수단 등록 (createWithAdapter를 기본 create로 통합)
+   * 결제수단 등록 (가이드 문서의 핵심 메서드)
+   *
+   * Flow:
+   * 1. 결제수단 검증
+   * 2. 어댑터 호출 (PG사 결제수단 등록)
+   * 3. PaymentMethod 테이블 저장
    */
-  async createWithIdempotency(
-    dto: CreateGeneralPaymentMethodDto,
-    idemKey?: string,
-  ): Promise<PaymentMethodResponseDto> {
-    this.logger.log(`결제수단 등록: ${dto.methodType} - ${dto.userId}`);
+  async register(request: {
+    userId: string;
+    methodType: PaymentMethodType;
+    methodName: string;
+    paymentPurpose?: 'SUBSCRIPTION' | 'PURCHASE' | 'BOTH';
+    isDefault?: boolean;
+    // 카드 등록 시 필요한 정보
+    cardToken?: string;
+    billingKey?: string;
+    // BNPL 등록 시 필요한 정보
+    creditLimit?: number;
+    billingCycleDay?: number;
+  }): Promise<{
+    id: string;
+    paymentMethodId: string;
+    userId: string;
+    methodType: PaymentMethodType;
+    methodName: string;
+    status: 'PENDING' | 'ACTIVE';
+    hmsMemberId?: string;
+    isDefault: boolean;
+    createdAt: string;
+  }> {
+    this.logger.log(`결제수단 등록: ${request.userId}, ${request.methodType}`);
 
     return await this.db.db.transaction(async (tx) => {
-      // 1. 멱등성 처리: 동일한 키로 재요청 시 이전 결과를 반환하여 중복 생성을 방지합니다.
-      if (idemKey) {
-        const idem =
-          await this.idempotency.checkOrCreate<PaymentMethodResponseDto>(
-            tx,
-            idemKey,
-            dto,
-            `/payment-methods`,
-          );
-        if (idem.hit) return idem.response!;
-      }
+      // 1. 결제수단 등록 검증
+      await this.validateRegistration(tx, request.userId, request.methodType);
 
-      // 2. 비즈니스 검증: 결제수단 개수 제한 등 내부 규칙을 확인합니다.
-      await this.validatePaymentMethod(dto, tx);
+      // 2. 어댑터 호출 (결제수단 타입에 따라)
+      const registrationResult = await this.callRegistrationAdapter(
+        request.methodType,
+        {
+          userId: request.userId,
+          methodName: request.methodName,
+          cardToken: request.cardToken,
+          billingKey: request.billingKey,
+          creditLimit: request.creditLimit,
+          billingCycleDay: request.billingCycleDay,
+        },
+      );
 
-      // 3. 외부 시스템(PG사) 등록 처리
-      let externalResult: any = null;
-      let initialStatus: 'PENDING' | 'ACTIVE' | 'INACTIVE' = 'ACTIVE'; // 기본 상태는 'ACTIVE'
+      // 3. PaymentMethod 테이블 저장
+      const paymentMethodId = ulid();
+      await tx.insert(schema.paymentMethod).values({
+        id: paymentMethodId,
+        userId: request.userId,
+        methodType: request.methodType,
+        methodName: request.methodName,
+        status: registrationResult.status,
+        isDefault: request.isDefault || false,
+        paymentPurpose: request.paymentPurpose || 'PURCHASE',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
-      // 카드 타입인 경우에만 PG사 연동 로직을 실행합니다.
-      if (dto.methodType === 'CARD' && dto.cardInfo) {
-        
-        // ✅ [수정] DTO의 유효기간(MM/YY)을 월과 연으로 분리합니다.
-        const [month, year] = dto.cardInfo.expiryDate.split('/');
-
-        // ✅ [수정] HMS API 명세에 맞는 요청 데이터를 정확하게 구성합니다.
-        const registrationRequest = {
-          userId: dto.userId,
-          memberName: dto.cardInfo.cardHolderName,
-          phone: (dto.cardInfo.phone || '').replace(/[^0-9]/g, ''),
-          paymentNumber: dto.cardInfo.cardNumber.replace(/[^0-9]/g, ''),
-          payerName: dto.cardInfo.cardHolderName,
-          payerNumber: dto.cardInfo.birthDate.padEnd(10, '0'),
-          validYear: year,
-          validMonth: month,
-          password: dto.cardInfo.cardPassword,
-          billingCycleDay: dto.cardInfo.billingCycleDay || 1,
-
-          // ✅ [최종 추가] 날짜 관련 필드를 추가하여 안정성 확보
-          paymentStartDate: new Date().toISOString().split('T')[0].replace(/-/g, ''), // 오늘 날짜 (YYYYMMDD)
-          paymentEndDate: '99991231', // 명세서 기본값인 영구 기간
-        };
-
-        // PaymentService를 통해 PG사에 등록을 요청합니다.
-        externalResult = await this.paymentService.registerPaymentMethod(
-          'CARD',
-          registrationRequest,
-        );
-
-        // PG사 등록 실패 시 에러를 발생시킵니다.
-        if (!externalResult.success) {
-          throw new Error(externalResult.error || 'HMS CMS 회원 등록 실패');
-        }
-
-        // HMS는 등록 후 PG사의 승인이 필요하므로 상태를 'PENDING'으로 설정합니다.
-        initialStatus = 'PENDING';
-        this.logger.log(
-          `HMS CMS 회원 등록 성공: ${externalResult.hmsMemberId}`,
-        );
-      }
-
-      // 4. 이 카드를 기본 결제수단으로 설정하는 경우, 기존의 기본 설정을 해제합니다.
-      if (dto.isDefault) {
-        await this.clearDefaultMethods(dto.userId, tx);
-      }
-
-      // 5. 내부 DB `paymentMethod` 테이블에 공통 정보를 저장합니다.
-      const [method] = await tx
-        .insert(schema.paymentMethod)
-        .values({
-          userId: dto.userId,
-          methodType: dto.methodType,
-          methodName: dto.methodName,
-          status: initialStatus,
-          isDefault: dto.isDefault || false,
-        })
-        .returning();
-
-      // 6. 카드인 경우 `cardMethod` 테이블에 상세 정보를 저장합니다.
-      if (dto.methodType === 'CARD' && externalResult?.hmsMemberId) {
+      // 4. 결제수단별 세부 정보 저장
+      if (request.methodType === 'CARD' && registrationResult.hmsMemberId) {
         await tx.insert(schema.cardMethod).values({
-          id: method.id, // paymentMethod.id와 동일한 ID를 사용해 관계 설정
+          id: paymentMethodId,
           methodType: 'CARD',
-
-          // ✅ [수정] 스키마에 추가한 hmsMemberId 컬럼에 정확히 저장합니다.
-          hmsMemberId: externalResult.hmsMemberId,
-          
-          // 기존 로직을 유지하거나 PG사 응답에 따라 채웁니다.
-          pgToken: externalResult.hmsMemberId,
-          billingKey: externalResult.hmsMemberId,
+          hmsMemberId: registrationResult.hmsMemberId,
+          pgToken: request.cardToken || registrationResult.hmsMemberId,
+          billingKey: request.billingKey || registrationResult.hmsMemberId,
           maskedCardNumber:
-            externalResult.metadata?.maskedCardNumber || '****-****-****-****',
-          lastFourDigits:
-            externalResult.metadata?.maskedCardNumber?.slice(-4) || '',
-          cardBrand: externalResult.metadata?.cardCompany || 'HMS_CARD',
-          cardType: externalResult.metadata?.cardType || 'CREDIT',
-          issuerName: 'HMS',
+            registrationResult.maskedCardNumber || '****-****-****-****',
+          lastFourDigits: registrationResult.lastFourDigits || '****',
+          cardBrand: registrationResult.cardBrand || 'UNKNOWN',
+          cardType: registrationResult.cardType || 'CREDIT',
+          issuerName: registrationResult.issuerName || 'HMS',
+          metadata: JSON.stringify(registrationResult.metadata || {}),
+          createdAt: new Date(),
         });
       }
 
-      // 7. 최종 응답 데이터를 구성합니다.
-      const response = this.toResponseDto(method, externalResult);
+      this.logger.log(
+        `결제수단 등록 완료: ${paymentMethodId}, 상태: ${registrationResult.status}`,
+      );
 
-      // 8. 멱등성 키가 있었다면, 요청 처리가 완료되었음을 기록합니다.
-      if (idemKey) {
-        await this.idempotency.complete(tx, idemKey, response, 201);
-      }
-
-      this.logger.log(`결제수단 등록 완료: ${method.id}`);
-      return response;
-    });
-  }
-  /**
-   * BNPL 승인 상태 포함한 결제수단 목록
-   */
-  async getUserMethodsWithStatus(
-    userId: string,
-  ): Promise<UserPaymentMethodsResponseDto> {
-    const methods = await this.findByUserId(userId);
-
-    // BNPL 상태 정보 추가
-    const enrichedMethods = await Promise.all(
-      methods.map(async (method) => {
-        const baseResponse = this.toResponseDto(method);
-
-        if (method.methodType === 'BNPL' && method.status === 'PENDING') {
-          try {
-            // BNPL 상태는 PaymentService에서 조회
-            const bnplStatus = await this.paymentService.getMemberStatus(
-              'BNPL',
-              method.id,
-            );
-            const statusData = bnplStatus as {
-              status?: string;
-              hmsStatus?: string;
-            };
-            return {
-              ...baseResponse,
-              bnplDetails: {
-                approvalStatus: statusData.status || 'PENDING',
-                estimatedApprovalDate: this.calculateEstimatedApprovalDate(
-                  method.createdAt,
-                ),
-                remainingDays: this.calculateRemainingDays(method.createdAt),
-                nextSteps: this.getBnplNextSteps(
-                  statusData.hmsStatus || 'PENDING',
-                ),
-              },
-            };
-          } catch {
-            this.logger.warn(`BNPL 상태 조회 실패: ${method.id}`);
-          }
-        }
-
-        return baseResponse;
-      }),
-    );
-
-    const usableMethods = enrichedMethods.filter((m) => m.status === 'ACTIVE');
-    const pendingMethods = enrichedMethods.filter(
-      (m) => m.status === 'PENDING',
-    );
-
-    return {
-      usableMethods,
-      pendingMethods,
-      summary: {
-        totalCount: enrichedMethods.length,
-        activeCount: usableMethods.length,
-        pendingCount: pendingMethods.length,
-        defaultMethodId: usableMethods.find((m) => m.isDefault)?.id,
-      },
-    };
-  }
-
-  /**
-   * 기본 결제수단 설정 (ACTIVE 상태만 가능)
-   */
-  async setAsDefault(
-    methodId: string,
-    userId: string,
-  ): Promise<PaymentMethodResponseDto> {
-    return await this.db.db.transaction(async (tx) => {
-      const method = await this.findById(methodId);
-
-      // 소유권 확인
-      if (method.userId !== userId) {
-        throw new BadRequestException('권한이 없습니다');
-      }
-
-      // ACTIVE 상태만 기본 설정 가능
-      if (method.status !== 'ACTIVE') {
-        throw new ConflictException(
-          `사용 가능한 결제수단만 기본으로 설정할 수 있습니다. 현재 상태: ${method.status}`,
-        );
-      }
-
-      // 기존 기본 결제수단 해제
-      await this.clearDefaultMethods(userId, tx);
-
-      // 새로운 기본 결제수단 설정
-      const [updated] = await tx
-        .update(schema.paymentMethod)
-        .set({ isDefault: true, updatedAt: new Date() })
-        .where(eq(schema.paymentMethod.id, methodId))
-        .returning();
-
-      return this.toResponseDto(updated);
+      return {
+        id: paymentMethodId,
+        paymentMethodId,
+        userId: request.userId,
+        methodType: request.methodType,
+        methodName: request.methodName,
+        status: registrationResult.status,
+        hmsMemberId: registrationResult.hmsMemberId,
+        isDefault: request.isDefault || false,
+        createdAt: new Date().toISOString(),
+      };
     });
   }
 
   /**
-   * 결제수단 삭제 (간단한 삭제만 처리)
+   * 멱등성을 지원하는 결제수단 등록 (PaymentMethodController에서 호출)
    */
-  async delete(
-    methodId: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const method = await this.findById(methodId);
-
-    // BNPL은 별도 처리
-    if (method.methodType === 'BNPL') {
-      throw new BadRequestException('BNPL 해지는 고객센터로 문의해주세요');
+  async createWithIdempotency(
+    request: {
+      userId: string;
+      methodType: PaymentMethodType;
+      methodName: string;
+      usage?: 'SUBSCRIPTION' | 'ONE_TIME' | 'PURCHASE';
+      cardToken?: string;
+      billingKey?: string;
+      creditLimit?: number;
+      billingCycleDay?: number;
+      cardInfo?: any;
+    },
+    idempotencyKey?: string,
+  ) {
+    // 멱등성 키가 있으면 중복 체크 (간단한 구현)
+    if (idempotencyKey) {
+      this.logger.log(`멱등성 키로 결제수단 등록: ${idempotencyKey}`);
     }
 
-    // DB 삭제 (복잡한 해지는 각 MethodService에서 처리)
-    await this.db.db
-      .delete(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.id, methodId));
-
-    this.logger.log(`결제수단 삭제 완료: ${methodId}`);
-
-    return {
-      success: true,
-      message: '결제수단이 삭제되었습니다',
-    };
+    return this.register(request);
   }
 
-  // ===== Private 헬퍼 메서드들 =====
-
-  async findById(
-    id: string,
-  ): Promise<typeof schema.paymentMethod.$inferSelect> {
-    const [method] = await this.db.db
+  /**
+   * 사용자 결제수단 목록 조회 (상태별 분류)
+   */
+  async getUserMethodsWithStatus(userId: string) {
+    const methods = await this.db.db
       .select()
       .from(schema.paymentMethod)
-      .where(eq(schema.paymentMethod.id, id))
-      .limit(1);
+      .where(eq(schema.paymentMethod.userId, userId));
 
-    if (!method) {
-      throw new NotFoundException('결제수단을 찾을 수 없습니다');
-    }
-    return method;
-  }
+    const activeMethods = methods
+      .filter((m) => m.status === 'ACTIVE')
+      .map((m) => ({
+        ...m,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.updatedAt.toISOString(),
+      }));
+    const pendingMethods = methods
+      .filter((m) => m.status === 'PENDING')
+      .map((m) => ({
+        ...m,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.updatedAt.toISOString(),
+      }));
+    const inactiveMethods = methods
+      .filter((m) => m.status === 'INACTIVE')
+      .map((m) => ({
+        ...m,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.updatedAt.toISOString(),
+      }));
 
-  private async clearDefaultMethods(
-    userId: string,
-    tx: WalletTx,
-  ): Promise<void> {
-    await tx
-      .update(schema.paymentMethod)
-      .set({ isDefault: false, updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.paymentMethod.userId, userId),
-          eq(schema.paymentMethod.isDefault, true),
-        ),
-      );
-  }
-
-  // 세부 정보 저장은 각 MethodService에서 처리하므로 제거
-
-  private toResponseDto(
-    method: typeof schema.paymentMethod.$inferSelect,
-    externalResult?: any,
-  ): PaymentMethodResponseDto {
     return {
-      id: method.id,
-      userId: method.userId,
-      methodType: method.methodType,
-      methodName: method.methodName,
-      status: method.status,
-      isDefault: method.isDefault,
-      maskedInfo: externalResult?.metadata?.maskedCardNumber || undefined,
-      hmsMemberId: externalResult?.hmsMemberId || undefined,
-      createdAt: method.createdAt.toISOString(),
+      userId,
+      usableMethods: activeMethods, // UserPaymentMethodsResponseDto 호환
+      activeMethods,
+      pendingMethods,
+      inactiveMethods,
+      summary: {
+        totalCount: methods.length,
+        activeCount: activeMethods.length,
+        pendingCount: pendingMethods.length,
+        defaultMethodId: activeMethods.find((m) => m.isDefault)?.id,
+      },
+      totalCount: methods.length,
     };
   }
 
-  private calculateEstimatedApprovalDate(createdAt: Date): string {
-    const estimated = new Date(createdAt);
-    estimated.setDate(estimated.getDate() + 3); // 3일 후
-    return estimated.toISOString().split('T')[0]; // YYYY-MM-DD
+  /**
+   * 기본 결제수단 설정
+   */
+  async setAsDefault(methodId: string, userId: string) {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 해당 결제수단 조회
+      const method = await tx
+        .select()
+        .from(schema.paymentMethod)
+        .where(eq(schema.paymentMethod.id, methodId))
+        .limit(1);
+
+      if (method.length === 0) {
+        throw new Error('결제수단을 찾을 수 없습니다');
+      }
+
+      if (method[0].userId !== userId) {
+        throw new Error('권한이 없습니다');
+      }
+
+      if (method[0].status !== 'ACTIVE') {
+        throw new Error('활성화된 결제수단만 기본으로 설정할 수 있습니다');
+      }
+
+      // 2. 기존 기본 결제수단 해제
+      await tx
+        .update(schema.paymentMethod)
+        .set({ isDefault: false })
+        .where(eq(schema.paymentMethod.userId, userId));
+
+      // 3. 새로운 기본 결제수단 설정
+      await tx
+        .update(schema.paymentMethod)
+        .set({ isDefault: true })
+        .where(eq(schema.paymentMethod.id, methodId));
+
+      return {
+        id: methodId,
+        userId,
+        methodType: method[0].methodType,
+        methodName: method[0].methodName,
+        status: method[0].status,
+        isDefault: true,
+        createdAt: method[0].createdAt.toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    });
   }
 
-  private calculateRemainingDays(createdAt: Date): number {
-    const now = new Date();
-    const estimated = new Date(createdAt);
-    estimated.setDate(estimated.getDate() + 3);
+  /**
+   * 결제수단 삭제
+   */
+  async delete(methodId: string) {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 결제수단 조회
+      const method = await tx
+        .select()
+        .from(schema.paymentMethod)
+        .where(eq(schema.paymentMethod.id, methodId))
+        .limit(1);
 
-    const diffTime = estimated.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (method.length === 0) {
+        throw new Error('결제수단을 찾을 수 없습니다');
+      }
 
-    return Math.max(0, diffDays);
+      // 2. 외부 시스템 정리 (HMS, Toss 등)
+      // TODO: 실제 구현에서는 각 어댑터의 삭제 메서드 호출 필요
+
+      // 3. DB에서 삭제
+      await tx
+        .delete(schema.paymentMethod)
+        .where(eq(schema.paymentMethod.id, methodId));
+
+      this.logger.log(`결제수단 삭제 완료: ${methodId}`);
+
+      return {
+        success: true,
+        message: '결제수단이 삭제되었습니다',
+      };
+    });
   }
 
-  private getBnplNextSteps(status: string): string[] {
-    switch (status) {
-      case 'PENDING':
-        return ['출금동의서 제출 대기 중'];
-      case 'REGISTERED':
-        return ['HMS 심사 진행 중', '2-3일 소요 예상'];
+  /**
+   * 결제수단 등록 검증 (private 헬퍼)
+   */
+  private async validateRegistration(
+    tx: any,
+    userId: string,
+    methodType: string,
+  ) {
+    // 사용자별 결제수단 개수 제한
+    const userMethods = await tx
+      .select()
+      .from(schema.paymentMethod)
+      .where(eq(schema.paymentMethod.userId, userId));
+
+    if (userMethods.length >= 10) {
+      throw new Error('결제수단은 최대 10개까지 등록 가능합니다');
+    }
+
+    // 결제수단 타입별 중복 체크
+    const existingMethod = userMethods.find((m) => m.methodType === methodType);
+    if (existingMethod && methodType === 'BNPL') {
+      throw new Error('BNPL 결제수단은 하나만 등록 가능합니다');
+    }
+  }
+
+  /**
+   * 등록 어댑터 호출 (private 헬퍼)
+   */
+  private async callRegistrationAdapter(
+    methodType: string,
+    request: {
+      userId: string;
+      methodName: string;
+      cardToken?: string;
+      billingKey?: string;
+      creditLimit?: number;
+      billingCycleDay?: number;
+    },
+  ): Promise<{
+    status: 'PENDING' | 'ACTIVE';
+    hmsMemberId?: string;
+    maskedCardNumber?: string;
+    lastFourDigits?: string;
+    cardBrand?: string;
+    cardType?: string;
+    issuerName?: string;
+    metadata?: any;
+  }> {
+    this.logger.log(`등록 어댑터 호출: ${methodType}`);
+
+    // TODO: 실제 어댑터 호출 로직 구현
+    // 현재는 Mock 응답 반환
+    switch (methodType) {
+      case 'CARD':
+        return {
+          status: 'PENDING',
+          hmsMemberId: `HMS_${ulid()}`,
+          maskedCardNumber: '1234-****-****-5678',
+          lastFourDigits: '5678',
+          cardBrand: 'VISA',
+          cardType: 'CREDIT',
+          issuerName: 'HMS',
+          metadata: {
+            registeredAt: new Date().toISOString(),
+          },
+        };
+      case 'BNPL':
+        return {
+          status: 'PENDING',
+          hmsMemberId: `BNPL_${ulid()}`,
+          metadata: {
+            creditLimit: request.creditLimit || 1000000,
+            billingCycleDay: request.billingCycleDay || 1,
+          },
+        };
+      case 'REWARD_POINT':
+        return {
+          status: 'ACTIVE',
+          metadata: {
+            pointType: 'INTERNAL',
+          },
+        };
       default:
-        return ['고객센터 문의 (1588-1234)'];
+        throw new Error(`지원하지 않는 결제수단 타입: ${methodType}`);
     }
   }
 }

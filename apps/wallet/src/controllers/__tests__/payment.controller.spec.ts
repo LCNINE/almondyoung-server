@@ -155,7 +155,7 @@ describe('PaymentController', () => {
           amount: 150000,
           currency: 'KRW',
           status: 'CAPTURED' as const,
-          metadata: { 
+          metadata: {
             gateway: 'hms_card',
             hmsMemberId: 'HMS_MEMBER_123',
             approvalNumber: 'HMS_APPROVAL_123',

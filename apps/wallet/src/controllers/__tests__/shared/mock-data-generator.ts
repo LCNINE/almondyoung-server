@@ -7,11 +7,12 @@ import {
   PaymentResultDto,
 } from '../../../shared/dtos/payments/process-payment.dto';
 import { CreateGeneralPaymentMethodDto } from '../../../shared/dtos/create-general-payment-method.dto';
+import { PaymentMethodType } from '../../../shared/types/payment-method.types';
 import { CreatePaymentSessionDto } from '../../../shared/dtos/create-payment-session.dto';
 import { PaymentMethodResponseDto } from '../../../shared/dtos/payment-methods/payment-method-response.dto';
 import { CreateBNPLMethodDto } from '../../../shared/dtos/bnpl/create-bnpl-method.dto';
 import { SubmitConsentDto } from '../../../shared/dtos/bnpl/submit-consent.dto';
-import { PaymentMethodType, PaymentStatus } from '../../../shared/types/payment-method.types';
+import { PaymentStatus } from '../../../shared/types/payment-method.types';
 
 /**
  * 테스트 데이터 생성기
@@ -56,7 +57,9 @@ export class MockDataGenerator {
   /**
    * 결제 세션 생성 DTO
    */
-  static generateCreatePaymentSessionDto(overrides: Partial<CreatePaymentSessionDto> = {}): CreatePaymentSessionDto {
+  static generateCreatePaymentSessionDto(
+    overrides: Partial<CreatePaymentSessionDto> = {},
+  ): CreatePaymentSessionDto {
     return {
       userId: this.generateUserId(),
       amount: 100000,
@@ -74,7 +77,9 @@ export class MockDataGenerator {
   /**
    * 결제수단 요청 DTO
    */
-  static generatePaymentMethodRequestDto(overrides: Partial<PaymentMethodRequestDto> = {}): PaymentMethodRequestDto {
+  static generatePaymentMethodRequestDto(
+    overrides: Partial<PaymentMethodRequestDto> = {},
+  ): PaymentMethodRequestDto {
     return {
       paymentMethodId: this.generatePaymentMethodId('card'),
       amount: 50000,
@@ -86,7 +91,9 @@ export class MockDataGenerator {
   /**
    * 결제 처리 DTO
    */
-  static generateProcessPaymentDto(overrides: Partial<ProcessPaymentDto> = {}): ProcessPaymentDto {
+  static generateProcessPaymentDto(
+    overrides: Partial<ProcessPaymentDto> = {},
+  ): ProcessPaymentDto {
     return {
       sessionId: this.generateSessionId(),
       paymentMethods: [this.generatePaymentMethodRequestDto()],
@@ -104,7 +111,9 @@ export class MockDataGenerator {
   /**
    * 결제 결과 DTO
    */
-  static generatePaymentResultDto(overrides: Partial<PaymentResultDto> = {}): PaymentResultDto {
+  static generatePaymentResultDto(
+    overrides: Partial<PaymentResultDto> = {},
+  ): PaymentResultDto {
     return {
       methodType: 'CARD',
       amount: 50000,
@@ -119,7 +128,9 @@ export class MockDataGenerator {
   /**
    * 결제 처리 응답 DTO
    */
-  static generateProcessPaymentResponseDto(overrides: Partial<ProcessPaymentResponseDto> = {}): ProcessPaymentResponseDto {
+  static generateProcessPaymentResponseDto(
+    overrides: Partial<ProcessPaymentResponseDto> = {},
+  ): ProcessPaymentResponseDto {
     return {
       success: true,
       paymentId: `pay_${generateUUIDv7()}`,
@@ -134,7 +145,7 @@ export class MockDataGenerator {
    * 일반 결제수단 생성 DTO
    */
   static generateCreateGeneralPaymentMethodDto(
-    type: 'CARD' | 'REWARD_POINT' = 'CARD',
+    type: PaymentMethodType = PaymentMethodType.CARD,
     overrides: Partial<CreateGeneralPaymentMethodDto> = {},
   ): CreateGeneralPaymentMethodDto {
     const baseDto: CreateGeneralPaymentMethodDto = {
@@ -145,11 +156,15 @@ export class MockDataGenerator {
 
     // 타입별 특화 데이터 추가
     switch (type) {
-      case 'CARD':
+      case PaymentMethodType.CARD:
         baseDto.cardInfo = this.generateCardInfo();
         break;
-      case 'REWARD_POINT':
+      case PaymentMethodType.REWARD_POINT:
         // REWARD_POINT는 별도 정보가 필요하지 않음
+        break;
+      case PaymentMethodType.BNPL:
+      case PaymentMethodType.BANK_ACCOUNT:
+        // 추가 정보 불필요
         break;
     }
 
@@ -184,7 +199,9 @@ export class MockDataGenerator {
   /**
    * 결제수단 응답 DTO
    */
-  static generatePaymentMethodResponseDto(overrides: Partial<PaymentMethodResponseDto> = {}): PaymentMethodResponseDto {
+  static generatePaymentMethodResponseDto(
+    overrides: Partial<PaymentMethodResponseDto> = {},
+  ): PaymentMethodResponseDto {
     return {
       id: this.generatePaymentMethodId('card'),
       userId: this.generateUserId(),
@@ -200,7 +217,9 @@ export class MockDataGenerator {
   /**
    * BNPL 회원 등록 DTO
    */
-  static generateCreateBnplMethodDto(overrides: Partial<CreateBNPLMethodDto> = {}): CreateBNPLMethodDto {
+  static generateCreateBnplMethodDto(
+    overrides: Partial<CreateBNPLMethodDto> = {},
+  ): CreateBNPLMethodDto {
     return {
       userId: this.generateUserId(),
       methodName: '아몬드영 후불결제',
@@ -216,7 +235,9 @@ export class MockDataGenerator {
   /**
    * 출금동의서 제출 DTO
    */
-  static generateSubmitConsentDto(overrides: Partial<SubmitConsentDto> = {}): SubmitConsentDto {
+  static generateSubmitConsentDto(
+    overrides: Partial<SubmitConsentDto> = {},
+  ): SubmitConsentDto {
     return {
       memberId: this.generateHmsMemberId('BNPL'),
       ...overrides,
@@ -265,7 +286,11 @@ export class MockDataGenerator {
   /**
    * 에러 응답 생성
    */
-  static generateErrorResponse(statusCode: number, message: string, error = 'Bad Request'): any {
+  static generateErrorResponse(
+    statusCode: number,
+    message: string,
+    error = 'Bad Request',
+  ): any {
     return {
       statusCode,
       message,
@@ -287,7 +312,10 @@ export class MockDataGenerator {
   /**
    * 실패 응답 생성
    */
-  static generateFailureResponse(error: string): { success: boolean; error: string } {
+  static generateFailureResponse(error: string): {
+    success: boolean;
+    error: string;
+  } {
     return {
       success: false,
       error,
@@ -342,7 +370,9 @@ export class MockDataGenerator {
   /**
    * 테스트 시나리오별 데이터 생성
    */
-  static generateScenarioData(scenario: 'success' | 'error' | 'validation_error' | 'not_found'): any {
+  static generateScenarioData(
+    scenario: 'success' | 'error' | 'validation_error' | 'not_found',
+  ): any {
     switch (scenario) {
       case 'success':
         return {
@@ -356,15 +386,25 @@ export class MockDataGenerator {
         };
       case 'validation_error':
         return {
-          payment: this.generateProcessPaymentDto({ 
-            paymentMethods: [{ ...this.generatePaymentMethodRequestDto(), amount: -1000 }] 
+          payment: this.generateProcessPaymentDto({
+            paymentMethods: [
+              { ...this.generatePaymentMethodRequestDto(), amount: -1000 },
+            ],
           }),
-          error: this.generateErrorResponse(400, '결제 금액은 0보다 커야 합니다'),
+          error: this.generateErrorResponse(
+            400,
+            '결제 금액은 0보다 커야 합니다',
+          ),
         };
       case 'not_found':
         return {
-          payment: this.generateProcessPaymentDto({ sessionId: 'non_existent_session' }),
-          error: this.generateErrorResponse(404, '결제 세션을 찾을 수 없습니다'),
+          payment: this.generateProcessPaymentDto({
+            sessionId: 'non_existent_session',
+          }),
+          error: this.generateErrorResponse(
+            404,
+            '결제 세션을 찾을 수 없습니다',
+          ),
         };
       default:
         return this.generateScenarioData('success');

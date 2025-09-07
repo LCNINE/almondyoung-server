@@ -1,0 +1,413 @@
+/**
+ * 구독 결제 에러 응답 표준화 DTO
+ *
+ * 요구사항:
+ * - 5.5: 외부 서비스가 활용할 수 있는 상세한 에러 정보 제공
+ * - 6.3: 구조화된 에러 로깅 (correlation ID 포함)
+ */
+
+import { ApiProperty } from '@nestjs/swagger';
+import {
+  RecurringPaymentErrorType,
+  RecurringPaymentErrorDetails,
+} from '../errors/recurring-payment.errors';
+
+/**
+ * 구독 결제 에러 응답 클래스
+ * 외부 서비스가 에러를 적절히 처리할 수 있도록 표준화된 형식을 제공합니다.
+ */
+export class RecurringPaymentErrorResponseDto {
+  @ApiProperty({
+    description: '요청 성공 여부 (항상 false)',
+    example: false,
+  })
+  success: false = false;
+
+  @ApiProperty({
+    description: '에러 타입 코드',
+    enum: RecurringPaymentErrorType,
+    example: RecurringPaymentErrorType.HMS_MEMBER_PENDING,
+  })
+  errorType: RecurringPaymentErrorType;
+
+  @ApiProperty({
+    description: '사용자에게 표시할 에러 메시지',
+    example: '회원 등록이 진행중입니다. 잠시 후에 시도해주세요.',
+  })
+  message: string;
+
+  @ApiProperty({
+    description: '재시도 가능 여부',
+    example: true,
+  })
+  retryable: boolean;
+
+  @ApiProperty({
+    description: '재시도 권장 시간 (초 단위)',
+    example: 300,
+  })
+  retryAfterSeconds?: number;
+
+  @ApiProperty({
+    description: '에러 발생 시각 (ISO 8601 형식)',
+    example: '2024-01-15T10:30:00.000Z',
+  })
+  timestamp: string;
+
+  @ApiProperty({
+    description: '요청 추적을 위한 상관관계 ID',
+    example: 'req_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  correlationId: string;
+
+  @ApiProperty({
+    description: '에러 상세 정보',
+    type: 'object',
+    example: {
+      reason: 'INVALID_HMS_STATUS',
+      hmsStatus: '신청중',
+      hmsMemberId: 'HMS123456',
+      paymentMethodId: 'pm_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+    },
+  })
+  details?: RecurringPaymentErrorDetails;
+
+  @ApiProperty({
+    description: 'HTTP 상태 코드',
+    example: 409,
+  })
+  httpStatusCode: number;
+
+  @ApiProperty({
+    description: '에러 발생 컨텍스트 정보',
+    type: 'object',
+    example: {
+      userId: 'user_123',
+      paymentMethodId: 'pm_456',
+      requestedAmount: 10000,
+      subscriptionType: 'monthly',
+    },
+  })
+  context?: Record<string, any>;
+
+  constructor(
+    errorType: RecurringPaymentErrorType,
+    message: string,
+    retryable: boolean,
+    correlationId: string,
+    httpStatusCode: number = 400,
+    retryAfterSeconds?: number,
+    details?: RecurringPaymentErrorDetails,
+    context?: Record<string, any>,
+  ) {
+    this.errorType = errorType;
+    this.message = message;
+    this.retryable = retryable;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.timestamp = new Date().toISOString();
+    this.correlationId = correlationId;
+    this.details = details;
+    this.httpStatusCode = httpStatusCode;
+    this.context = context;
+  }
+
+  /**
+   * RecurringPaymentError 객체로부터 응답 DTO 생성
+   */
+  static fromError(
+    error: any,
+    correlationId: string,
+    context?: Record<string, any>,
+  ): RecurringPaymentErrorResponseDto {
+    // RecurringPaymentError인 경우
+    if (
+      error.type &&
+      Object.values(RecurringPaymentErrorType).includes(error.type)
+    ) {
+      return new RecurringPaymentErrorResponseDto(
+        error.type,
+        error.message,
+        error.retryable || false,
+        correlationId,
+        error.httpStatusCode || 500,
+        error.retryAfterSeconds,
+        error.details,
+        context,
+      );
+    }
+
+    // 일반 에러인 경우 기본 내부 에러로 처리
+    return new RecurringPaymentErrorResponseDto(
+      RecurringPaymentErrorType.INTERNAL_ERROR,
+      '내부 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      true,
+      correlationId,
+      500,
+      600, // 10분 후 재시도 권장
+      {
+        reason: 'UNEXPECTED_ERROR',
+        errorMessage: error.message,
+        occurredAt: new Date().toISOString(),
+      },
+      context,
+    );
+  }
+
+  /**
+   * 로깅용 객체로 변환
+   * 민감한 정보는 제외하고 로깅에 필요한 정보만 포함
+   */
+  toLogObject(): Record<string, any> {
+    return {
+      errorType: this.errorType,
+      message: this.message,
+      retryable: this.retryable,
+      retryAfterSeconds: this.retryAfterSeconds,
+      timestamp: this.timestamp,
+      correlationId: this.correlationId,
+      httpStatusCode: this.httpStatusCode,
+      details: this.sanitizeDetailsForLogging(this.details),
+      context: this.sanitizeContextForLogging(this.context),
+    };
+  }
+
+  /**
+   * 로깅용 상세 정보 정제 (민감한 정보 제거)
+   */
+  private sanitizeDetailsForLogging(
+    details?: RecurringPaymentErrorDetails,
+  ): Record<string, any> | undefined {
+    if (!details) return undefined;
+
+    const sanitized: Record<string, any> = {};
+
+    // 안전한 필드들만 포함
+    const safeFields = [
+      'reason',
+      'hmsStatus',
+      'methodType',
+      'currentPurpose',
+      'allowedPurposes',
+      'availableCredit',
+      'requiredAmount',
+      'gatewayCode',
+      'occurredAt',
+    ];
+
+    safeFields.forEach((field) => {
+      if (details[field as keyof RecurringPaymentErrorDetails] !== undefined) {
+        sanitized[field] = details[field as keyof RecurringPaymentErrorDetails];
+      }
+    });
+
+    // ID 필드들은 마스킹 처리
+    if (details.hmsMemberId) {
+      sanitized.hmsMemberId = this.maskId(details.hmsMemberId);
+    }
+    if (details.paymentMethodId) {
+      sanitized.paymentMethodId = this.maskId(details.paymentMethodId);
+    }
+
+    // 게이트웨이 메시지는 길이 제한
+    if (details.gatewayMessage) {
+      sanitized.gatewayMessage = details.gatewayMessage.substring(0, 200);
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * 로깅용 컨텍스트 정보 정제 (민감한 정보 제거)
+   */
+  private sanitizeContextForLogging(
+    context?: Record<string, any>,
+  ): Record<string, any> | undefined {
+    if (!context) return undefined;
+
+    const sanitized: Record<string, any> = {};
+
+    // 안전한 필드들만 포함
+    const safeFields = [
+      'requestedAmount',
+      'subscriptionType',
+      'billingCycle',
+      'methodType',
+      'paymentPurpose',
+    ];
+
+    safeFields.forEach((field) => {
+      if (context[field] !== undefined) {
+        sanitized[field] = context[field];
+      }
+    });
+
+    // ID 필드들은 마스킹 처리
+    if (context.userId) {
+      sanitized.userId = this.maskId(context.userId);
+    }
+    if (context.paymentMethodId) {
+      sanitized.paymentMethodId = this.maskId(context.paymentMethodId);
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * ID 마스킹 처리
+   */
+  private maskId(id: string): string {
+    if (id.length <= 8) {
+      return id.substring(0, 3) + '***';
+    }
+    return id.substring(0, 4) + '***' + id.substring(id.length - 4);
+  }
+}
+
+/**
+ * 구독 결제 성공 응답 DTO (에러 응답과 구분하기 위해 포함)
+ */
+export class RecurringPaymentSuccessResponseDto {
+  @ApiProperty({
+    description: '요청 성공 여부 (항상 true)',
+    example: true,
+  })
+  success: true = true;
+
+  @ApiProperty({
+    description: '결제 트랜잭션 ID',
+    example: 'txn_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  transactionId: string;
+
+  @ApiProperty({
+    description: 'PaymentEvent ID',
+    example: 'pe_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  paymentEventId: string;
+
+  @ApiProperty({
+    description: '결제 상태',
+    enum: ['AUTHORIZED', 'CAPTURED', 'FAILED'],
+    example: 'CAPTURED',
+  })
+  status: 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
+
+  @ApiProperty({
+    description: '결제 금액',
+    example: 10000,
+  })
+  amount: number;
+
+  @ApiProperty({
+    description: '결제 처리 완료 시각',
+    example: '2024-01-15T10:30:00.000Z',
+  })
+  processedAt: Date;
+
+  @ApiProperty({
+    description: '요청 추적을 위한 상관관계 ID',
+    example: 'req_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  correlationId: string;
+
+  @ApiProperty({
+    description: '게이트웨이 응답 정보',
+    type: 'object',
+  })
+  gatewayResponse?: Record<string, any>;
+}
+
+/**
+ * 결제수단 검증 에러 응답 DTO
+ */
+export class PaymentMethodValidationErrorResponseDto {
+  @ApiProperty({
+    description: '검증 성공 여부 (항상 false)',
+    example: false,
+  })
+  isValid: false = false;
+
+  @ApiProperty({
+    description: '결제수단 ID',
+    example: 'pm_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  paymentMethodId: string;
+
+  @ApiProperty({
+    description: '결제수단 타입',
+    example: 'CARD',
+  })
+  methodType: string;
+
+  @ApiProperty({
+    description: '결제수단 상태',
+    example: 'ACTIVE',
+  })
+  status: string;
+
+  @ApiProperty({
+    description: '결제수단 용도',
+    example: 'PURCHASE',
+  })
+  paymentPurpose: string;
+
+  @ApiProperty({
+    description: '에러 메시지',
+    example: '구독 결제가 허용되지 않은 결제수단입니다.',
+  })
+  error: string;
+
+  @ApiProperty({
+    description: '에러 타입',
+    enum: RecurringPaymentErrorType,
+    example: RecurringPaymentErrorType.PAYMENT_METHOD_INVALID_PURPOSE,
+  })
+  errorType: RecurringPaymentErrorType;
+
+  @ApiProperty({
+    description: '재시도 가능 여부',
+    example: false,
+  })
+  retryable: boolean;
+
+  @ApiProperty({
+    description: '검증 상세 정보',
+    type: 'object',
+  })
+  validationDetails?: Record<string, any>;
+
+  @ApiProperty({
+    description: '요청 추적을 위한 상관관계 ID',
+    example: 'req_01HN2K3M4P5Q6R7S8T9U0V1W2X',
+  })
+  correlationId: string;
+
+  @ApiProperty({
+    description: '에러 발생 시각',
+    example: '2024-01-15T10:30:00.000Z',
+  })
+  timestamp: string;
+
+  constructor(
+    paymentMethodId: string,
+    methodType: string,
+    status: string,
+    paymentPurpose: string,
+    error: string,
+    errorType: RecurringPaymentErrorType,
+    retryable: boolean,
+    correlationId: string,
+    validationDetails?: Record<string, any>,
+  ) {
+    this.paymentMethodId = paymentMethodId;
+    this.methodType = methodType;
+    this.status = status;
+    this.paymentPurpose = paymentPurpose;
+    this.error = error;
+    this.errorType = errorType;
+    this.retryable = retryable;
+    this.correlationId = correlationId;
+    this.validationDetails = validationDetails;
+    this.timestamp = new Date().toISOString();
+  }
+}

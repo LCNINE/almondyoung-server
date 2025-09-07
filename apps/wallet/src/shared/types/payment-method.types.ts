@@ -5,9 +5,9 @@
  */
 export enum PaymentMethodType {
   CARD = 'CARD',
-  EASY_PAY = 'EASY_PAY',
-  REWARD_POINT = 'REWARD_POINT',
+  BANK_ACCOUNT = 'BANK_ACCOUNT',
   BNPL = 'BNPL',
+  REWARD_POINT = 'REWARD_POINT',
 }
 
 /**
@@ -51,7 +51,7 @@ export enum RefundStatus {
 export const isImmediatePaymentType = (type: PaymentMethodType): boolean => {
   return [
     PaymentMethodType.CARD,
-    PaymentMethodType.EASY_PAY,
+    PaymentMethodType.BANK_ACCOUNT,
     PaymentMethodType.REWARD_POINT,
   ].includes(type);
 };
@@ -65,7 +65,7 @@ export const getProviderForPaymentType = (
 ): PaymentProvider => {
   switch (type) {
     case PaymentMethodType.CARD:
-    case PaymentMethodType.EASY_PAY:
+    case PaymentMethodType.BANK_ACCOUNT:
       return PaymentProvider.TOSS;
     case PaymentMethodType.REWARD_POINT:
       return PaymentProvider.INTERNAL_POINT;

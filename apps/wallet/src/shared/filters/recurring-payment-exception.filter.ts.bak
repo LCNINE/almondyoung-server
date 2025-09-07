@@ -1,0 +1,337 @@
+/**
+ * 구독 결제 예외 필터
+ *
+ * 요구사항:
+ * - 5.5: 외부 서비스가 활용할 수 있는 상세한 에러 정보 제공
+ * - 6.3: 구조화된 에러 로깅 (correlation ID 포함)
+ */
+
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+import {
+  RecurringPaymentError,
+  RecurringPaymentErrorType,
+} from '../errors/recurring-payment.errors';
+// import { RecurringPaymentErrorResponseDto } from '../dtos/recurring-payment-error.dto';
+import { RecurringPaymentLoggerService } from '../../services/recurring-payment-logger.service';
+
+/**
+ * 구독 결제 전용 예외 필터
+ * RecurringPaymentError와 일반 예외를 적절히 처리하여 표준화된 응답을 제공합니다.
+ */
+@Injectable()
+@Catch()
+export class RecurringPaymentExceptionFilter implements ExceptionFilter {
+  constructor(
+    private readonly recurringPaymentLogger: RecurringPaymentLoggerService,
+  ) {}
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+
+    // 상관관계 ID 추출 또는 생성
+    const correlationId = this.extractCorrelationId(request);
+
+    // 요청 컨텍스트 정보 추출
+    const requestContext = this.extractRequestContext(request);
+
+    let errorResponse: RecurringPaymentErrorResponseDto;
+    let httpStatus: number;
+
+    if (exception instanceof RecurringPaymentError) {
+      // RecurringPaymentError 처리
+      errorResponse = new RecurringPaymentErrorResponseDto(
+        exception.type,
+        exception.message,
+        exception.retryable,
+        correlationId,
+        exception.httpStatusCode,
+        exception.retryAfterSeconds,
+        exception.details,
+        requestContext,
+      );
+      httpStatus = exception.httpStatusCode;
+
+      // 구조화된 에러 로깅
+      this.recurringPaymentLogger.logPaymentError(
+        correlationId,
+        exception,
+        requestContext.userId,
+        requestContext.paymentMethodId,
+        undefined,
+        requestContext,
+      );
+    } else if (exception instanceof HttpException) {
+      // NestJS HttpException 처리
+      const status = exception.getStatus();
+      const exceptionResponse = exception.getResponse();
+
+      errorResponse = this.createErrorResponseFromHttpException(
+        exception,
+        correlationId,
+        requestContext,
+      );
+      httpStatus = status;
+
+      // 구조화된 에러 로깅
+      this.recurringPaymentLogger.logPaymentError(
+        correlationId,
+        exception,
+        requestContext.userId,
+        requestContext.paymentMethodId,
+        undefined,
+        {
+          ...requestContext,
+          httpStatus: status,
+          exceptionResponse,
+        },
+      );
+    } else {
+      // 예상치 못한 에러 처리
+      errorResponse = RecurringPaymentErrorResponseDto.fromError(
+        exception,
+        correlationId,
+        requestContext,
+      );
+      httpStatus = HttpStatus.INTERNAL_SERVER_ERROR;
+
+      // 구조화된 에러 로깅
+      this.recurringPaymentLogger.logPaymentError(
+        correlationId,
+        exception as Error,
+        requestContext.userId,
+        requestContext.paymentMethodId,
+        undefined,
+        requestContext,
+      );
+    }
+
+    // 응답 헤더 설정
+    this.setResponseHeaders(response, errorResponse);
+
+    // 에러 응답 전송
+    response.status(httpStatus).json(errorResponse);
+  }
+
+  /**
+   * 요청에서 상관관계 ID 추출 또는 생성
+   */
+  private extractCorrelationId(request: Request): string {
+    // 헤더에서 상관관계 ID 확인
+    const headerCorrelationId = request.headers['x-correlation-id'] as string;
+    if (headerCorrelationId) {
+      return headerCorrelationId;
+    }
+
+    // 요청 ID 확인
+    const requestId = request.headers['x-request-id'] as string;
+    if (requestId) {
+      return requestId;
+    }
+
+    // 새로운 상관관계 ID 생성
+    return RecurringPaymentLoggerService.generateCorrelationId();
+  }
+
+  /**
+   * 요청에서 컨텍스트 정보 추출
+   */
+  private extractRequestContext(request: Request): Record<string, any> {
+    const context: Record<string, any> = {
+      method: request.method,
+      url: request.url,
+      userAgent: request.headers['user-agent'],
+      ip: request.ip,
+    };
+
+    // 요청 본문에서 안전한 정보 추출
+    if (request.body) {
+      const { userId, paymentMethodId, amount, subscriptionType, currency } =
+        request.body;
+
+      if (userId) context.userId = userId;
+      if (paymentMethodId) context.paymentMethodId = paymentMethodId;
+      if (amount) context.amount = amount;
+      if (subscriptionType) context.subscriptionType = subscriptionType;
+      if (currency) context.currency = currency;
+    }
+
+    // URL 파라미터에서 정보 추출
+    if (request.params) {
+      const { transactionId, paymentMethodId } = request.params;
+
+      if (transactionId) context.transactionId = transactionId;
+      if (paymentMethodId && !context.paymentMethodId) {
+        context.paymentMethodId = paymentMethodId;
+      }
+    }
+
+    // 쿼리 파라미터에서 정보 추출
+    if (request.query) {
+      const { userId } = request.query;
+
+      if (userId && !context.userId) {
+        context.userId = userId as string;
+      }
+    }
+
+    return context;
+  }
+
+  /**
+   * HttpException으로부터 에러 응답 생성
+   */
+  private createErrorResponseFromHttpException(
+    exception: HttpException,
+    correlationId: string,
+    requestContext: Record<string, any>,
+  ): RecurringPaymentErrorResponseDto {
+    const status = exception.getStatus();
+    const exceptionResponse = exception.getResponse();
+
+    let errorType: RecurringPaymentErrorType;
+    let retryable = false;
+    let retryAfterSeconds: number | undefined;
+
+    // HTTP 상태 코드에 따른 에러 타입 매핑
+    switch (status) {
+      case HttpStatus.BAD_REQUEST:
+        errorType = RecurringPaymentErrorType.VALIDATION_ERROR;
+        break;
+      case HttpStatus.UNAUTHORIZED:
+      case HttpStatus.FORBIDDEN:
+        errorType = RecurringPaymentErrorType.PAYMENT_METHOD_UNAUTHORIZED;
+        break;
+      case HttpStatus.NOT_FOUND:
+        errorType = RecurringPaymentErrorType.PAYMENT_METHOD_NOT_FOUND;
+        break;
+      case HttpStatus.CONFLICT:
+        errorType = RecurringPaymentErrorType.CONCURRENCY_CONFLICT;
+        retryable = true;
+        retryAfterSeconds = 60;
+        break;
+      case HttpStatus.UNPROCESSABLE_ENTITY:
+        errorType = RecurringPaymentErrorType.VALIDATION_ERROR;
+        break;
+      case HttpStatus.TOO_MANY_REQUESTS:
+        errorType = RecurringPaymentErrorType.CONCURRENCY_CONFLICT;
+        retryable = true;
+        retryAfterSeconds = 300;
+        break;
+      case HttpStatus.INTERNAL_SERVER_ERROR:
+      case HttpStatus.BAD_GATEWAY:
+      case HttpStatus.SERVICE_UNAVAILABLE:
+      case HttpStatus.GATEWAY_TIMEOUT:
+        errorType = RecurringPaymentErrorType.INTERNAL_ERROR;
+        retryable = true;
+        retryAfterSeconds = 600;
+        break;
+      default:
+        errorType = RecurringPaymentErrorType.INTERNAL_ERROR;
+        retryable = true;
+        retryAfterSeconds = 300;
+    }
+
+    // 에러 메시지 추출
+    let message = exception.message;
+    if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+      const responseObj = exceptionResponse as any;
+      if (responseObj.message) {
+        message = Array.isArray(responseObj.message)
+          ? responseObj.message.join(', ')
+          : responseObj.message;
+      }
+    }
+
+    return new RecurringPaymentErrorResponseDto(
+      errorType,
+      message,
+      retryable,
+      correlationId,
+      status,
+      retryAfterSeconds,
+      {
+        reason: 'HTTP_EXCEPTION',
+        gatewayCode: status.toString(),
+        gatewayMessage:
+          typeof exceptionResponse === 'string'
+            ? exceptionResponse
+            : JSON.stringify(exceptionResponse),
+        occurredAt: new Date().toISOString(),
+      },
+      requestContext,
+    );
+  }
+
+  /**
+   * 응답 헤더 설정
+   */
+  private setResponseHeaders(
+    response: Response,
+    errorResponse: RecurringPaymentErrorResponseDto,
+  ): void {
+    // 상관관계 ID 헤더 설정
+    response.setHeader('X-Correlation-ID', errorResponse.correlationId);
+
+    // 재시도 관련 헤더 설정
+    if (errorResponse.retryable && errorResponse.retryAfterSeconds) {
+      response.setHeader(
+        'Retry-After',
+        errorResponse.retryAfterSeconds.toString(),
+      );
+    }
+
+    // 에러 타입 헤더 설정 (디버깅용)
+    response.setHeader('X-Error-Type', errorResponse.errorType);
+
+    // 콘텐츠 타입 설정
+    response.setHeader('Content-Type', 'application/json');
+
+    // 캐시 방지
+    response.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+  }
+}
+
+/**
+ * 구독 결제 컨트롤러에서 사용할 데코레이터
+ */
+export function UseRecurringPaymentExceptionFilter() {
+  return function (
+    target: any,
+    propertyName?: string,
+    descriptor?: PropertyDescriptor,
+  ) {
+    // 클래스 레벨에서 적용하는 경우
+    if (!propertyName && !descriptor) {
+      Reflect.defineMetadata(
+        '__exception_filters__',
+        [RecurringPaymentExceptionFilter],
+        target,
+      );
+      return target;
+    }
+
+    // 메서드 레벨에서 적용하는 경우
+    if (descriptor) {
+      const existingFilters =
+        Reflect.getMetadata('__exception_filters__', descriptor.value) || [];
+      Reflect.defineMetadata(
+        '__exception_filters__',
+        [...existingFilters, RecurringPaymentExceptionFilter],
+        descriptor.value,
+      );
+      return descriptor;
+    }
+  };
+}

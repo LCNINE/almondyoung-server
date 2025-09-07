@@ -23,6 +23,14 @@ import { getTsid } from 'tsid-ts';
 
 export const newMemberId = (): string => getTsid().toString();
 
+// ✅ 타입 안전한 가격 스냅샷 표현
+export type PricingSnapshot = {
+  originalAmount?: number;
+  discountAmount?: number;
+  couponId?: string;
+  discountRate?: number;
+};
+
 // ───────────────────────────────────────────
 // Status Constants - Centralized Status Management (MVP Simplified)
 // ────────────────────────────────────────────
@@ -74,6 +82,16 @@ export const PAYMENT_METHOD_STATUS = {
   INACTIVE: 'INACTIVE',
 } as const;
 export type PaymentMethodStatus = keyof typeof PAYMENT_METHOD_STATUS;
+
+/**
+ * ✅ 결제수단 용도 (구독/구매 구분)
+ */
+export const PAYMENT_PURPOSE = {
+  SUBSCRIPTION: 'SUBSCRIPTION', // 멤버십 구독 결제 전용
+  PURCHASE: 'PURCHASE', // 상품 구매 결제 전용
+  BOTH: 'BOTH', // 구독/구매 모두 가능
+} as const;
+export type PaymentPurpose = keyof typeof PAYMENT_PURPOSE;
 
 /**
  * ✅ BNPL 계정 상태 (단순화)
@@ -163,6 +181,10 @@ export const paymentMethod = pgTable(
       .$type<PaymentMethodStatus>()
       .notNull()
       .default('PENDING'),
+    paymentPurpose: text('payment_purpose')
+      .$type<PaymentPurpose>()
+      .notNull()
+      .default('PURCHASE'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -223,6 +245,7 @@ export const cardMethod = pgTable(
     cardBrand: varchar('card_brand', { length: 32 }),
     cardType: varchar('card_type', { length: 32 }),
     issuerName: varchar('issuer_name', { length: 64 }),
+    metadata: text('metadata'), // HMS 메타데이터 저장용 JSON 필드
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -507,32 +530,43 @@ export const paymentSessionEvents = pgTable(
 /** Payment Event Schemas */
 // ────────────────────────────────────────────
 
-export const paymentEvents = pgTable('payment_events', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-  paymentSessionId: varchar('payment_session_id', { length: 26 })
-    .notNull()
-    .references(() => paymentSessions.id),
-  paymentMethodId: varchar('payment_method_id', { length: 26 })
-    .notNull()
-    .references(() => paymentMethod.id),
-  amount: numeric('amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull(),
-  status: varchar('status', { length: 255 })
-    .$type<TransactionStatus>()
-    .notNull(),
-  pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
-  pgResponse: text('pg_response'),
-  actor: varchar('actor', { length: 255 })
-    .$type<'USER' | 'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
-    .notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
-  errorMessage: varchar('error_message', { length: 255 }),
-  metadata: text('metadata'),
-});
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+    paymentSessionId: varchar('payment_session_id', { length: 26 }).references(
+      () => paymentSessions.id,
+    ), // nullable로 변경 - 정기결제에서는 세션이 필요하지 않음
+    paymentMethodId: varchar('payment_method_id', { length: 26 })
+      .notNull()
+      .references(() => paymentMethod.id),
+    amount: numeric('amount', { precision: 19, scale: 4 })
+      .$type<number>()
+      .notNull(),
+    status: varchar('status', { length: 255 })
+      .$type<TransactionStatus>()
+      .notNull(),
+    pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
+    pgResponse: text('pg_response'),
+    actor: varchar('actor', { length: 255 })
+      .$type<'USER' | 'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }),
+    errorMessage: varchar('error_message', { length: 255 }),
+    metadata: text('metadata'),
+    // ✅ 결제는 최종 금액만 처리하고, 가격 스냅샷은 그대로 저장
+    pricingSnapshot: text('pricing_snapshot').$type<PricingSnapshot | null>(),
+  },
+  (table) => [
+    index('idx_payment_events_pg_transaction_id').on(table.pgTransactionId),
+    index('idx_payment_events_payment_method_id').on(table.paymentMethodId),
+    index('idx_payment_events_status').on(table.status),
+    index('idx_payment_events_created_at').on(table.createdAt),
+  ],
+);
 
 // ────────────────────────────────────────────
 /** User Refund Account Schemas */
@@ -720,18 +754,15 @@ export const bnplActivationEventRelations = relations(
   }),
 );
 
-export const bnplEventsRelations = relations(
-  bnplEvents,
-  ({ one, many }) => ({
-    bnplAccount: one(bnplAccount, {
-      fields: [bnplEvents.bnplAccountId],
-      references: [bnplAccount.id],
-    }),
-    // paymentSession 관계는 순환 참조 문제로 인해 제거
-    // 필요시 서비스 레이어에서 별도 조회
-    settlementBatchItems: many(settlementBatchItem),
+export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
+  bnplAccount: one(bnplAccount, {
+    fields: [bnplEvents.bnplAccountId],
+    references: [bnplAccount.id],
   }),
-);
+  // paymentSession 관계는 순환 참조 문제로 인해 제거
+  // 필요시 서비스 레이어에서 별도 조회
+  settlementBatchItems: many(settlementBatchItem),
+}));
 
 export const settlementBatchRelations = relations(
   settlementBatch,
@@ -750,7 +781,7 @@ export const settlementBatchItemRelations = relations(
     settlementBatch: one(settlementBatch, {
       fields: [settlementBatchItem.batchId],
       references: [settlementBatch.id],
-    }), 
+    }),
     bnplEvent: one(bnplEvents, {
       fields: [settlementBatchItem.bnplEventId],
       references: [bnplEvents.id],

@@ -331,16 +331,27 @@ export class HmsCardPaymentAdapter
     this.logger.log(`HMS Member ID 검증: ${hmsMemberId}`);
 
     try {
-      // HMS API로 Member 정보 조회 (Mock 구현)
-      // 실제로는 HMS PaymentProfiles API의 조회 기능 사용
+      // 🎯 실제 HMS API 호출 - BNPL과 동일한 방식
+      const hmsResponse = await this.hmsApi.members.get(hmsMemberId);
+
+      this.logger.log(`HMS API 응답: ${JSON.stringify(hmsResponse)}`);
+
+      // HMS 공식 문서 기준: member.status === "신청완료"이면 유효
+      const isValid = hmsResponse.member?.status === '신청완료';
 
       return {
-        isValid: true,
-        cardInfo: {
-          maskedNumber: '1234-****-****-5678',
-          cardCompany: 'HMS_CARD',
-          cardType: 'CREDIT',
-        },
+        isValid,
+        cardInfo: isValid
+          ? {
+              maskedNumber:
+                hmsResponse.member?.paymentNumber || '****-****-****-****',
+              cardCompany: 'HMS_CARD', // HMS 응답에서 카드사 정보를 가져올 수 없어 기본값 사용
+              cardType: 'CREDIT',
+            }
+          : undefined,
+        error: !isValid
+          ? `HMS 상태: ${hmsResponse.member?.status || 'UNKNOWN'}`
+          : undefined,
       };
     } catch (error) {
       const errorMessage =
@@ -381,5 +392,150 @@ export class HmsCardPaymentAdapter
 
     // 둘 다 부족하면 기본값
     return '0000000000';
+  }
+
+  /**
+   * 멤버십 정기결제 처리 (CTO 방식)
+   *
+   * HMS memberId로 직접 결제 처리
+   * 복잡한 세션이나 등록 과정 없이 바로 결제
+   */
+  async processRecurringPayment(request: {
+    hmsMemberId: string;
+    amount: number;
+    currency?: string;
+    orderName?: string;
+    metadata?: any;
+  }): Promise<PaymentResult> {
+    const {
+      hmsMemberId,
+      amount,
+      currency = 'KRW',
+      orderName,
+      metadata = {},
+    } = request;
+
+    this.logger.log(
+      `HMS 정기결제 처리: memberId=${hmsMemberId}, amount=${amount}, orderName=${orderName}`,
+    );
+
+    try {
+      // CTO 방식: HMS API 직접 호출
+      const transactionRequest: PaymentTransactionRequest = {
+        transactionId: getTsid().toString(),
+        memberId: hmsMemberId,
+        callAmount: amount,
+        // orderName이나 기타 메타데이터는 HMS API 스펙에 따라 추가
+      };
+
+      // HMS API 호출 (실제 구현에 맞게 수정 필요)
+      // 임시로 Mock 결과 반환 (실제 HMS API 연동 시 수정)
+      const hmsResult = {
+        success: true,
+        data: {
+          transactionId: transactionRequest.transactionId,
+          status: '승인성공',
+          actualAmount: amount,
+          approvalNumber: 'MOCK_' + Date.now(),
+          paymentDate: new Date().toISOString().slice(0, 10),
+          fee: 0,
+          result: { message: '승인성공(테스트)' },
+        },
+        error: null,
+      };
+
+      if (!hmsResult.success) {
+        this.logger.error(
+          `HMS 정기결제 실패: memberId=${hmsMemberId}, error=${hmsResult.error}`,
+        );
+        return {
+          success: false,
+          transactionId: '',
+          error: hmsResult.error || 'HMS 결제 처리 실패',
+          metadata: { hmsMemberId, originalRequest: request },
+        };
+      }
+
+      const payment = hmsResult.data;
+      const isSuccess = payment.status === '승인성공';
+
+      this.logger.log(
+        `HMS 정기결제 ${isSuccess ? '성공' : '실패'}: txnId=${payment.transactionId}, status=${payment.status}`,
+      );
+
+      return {
+        success: isSuccess,
+        transactionId: payment.transactionId,
+        captureId: payment.transactionId,
+        error: isSuccess ? undefined : payment.result?.message,
+        metadata: {
+          provider: 'hms_card',
+          method: 'recurring',
+          hmsMemberId,
+          approvalNumber: payment.approvalNumber,
+          paymentDate: payment.paymentDate,
+          actualAmount: payment.actualAmount,
+          fee: payment.fee || 0,
+          rawResponse: { payment },
+          ...metadata,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `HMS 정기결제 예외: memberId=${hmsMemberId}, error=${error.message}`,
+      );
+
+      return {
+        success: false,
+        transactionId: '',
+        error: `HMS 정기결제 처리 중 오류: ${error.message}`,
+        metadata: { hmsMemberId, originalRequest: request },
+      };
+    }
+  }
+
+  /**
+   * HMS 회원 상태 조회
+   */
+  async getMemberStatus(hmsMemberId: string): Promise<{
+    success: boolean;
+    status: string;
+    error?: string;
+  }> {
+    this.logger.log(`HMS 회원 상태 조회: ${hmsMemberId}`);
+
+    try {
+      // HMS API 호출 (실제 구현에 맞게 수정 필요)
+      // 임시로 Mock 결과 반환
+      const result = {
+        success: true,
+        data: {
+          status: '신청완료',
+        },
+      };
+
+      if (!result.success) {
+        return {
+          success: false,
+          status: 'UNKNOWN',
+          error: '회원 정보 조회 실패',
+        };
+      }
+
+      return {
+        success: true,
+        status: result.data.status || 'UNKNOWN',
+      };
+    } catch (error) {
+      this.logger.error(
+        `HMS 회원 상태 조회 실패: ${hmsMemberId}, error=${error.message}`,
+      );
+
+      return {
+        success: false,
+        status: 'ERROR',
+        error: error.message,
+      };
+    }
   }
 }

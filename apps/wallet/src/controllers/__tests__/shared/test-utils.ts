@@ -5,10 +5,7 @@ import { PaymentService } from '../../../services/payment.service';
 import { PaymentMethodService } from '../../../services/payment-method.service';
 import { PaymentSessionService } from '../../../services/payment-session.service';
 import { RefundService } from '../../../services/refund.service';
-import { SettlementService } from '../../../services/settlement.service';
-import { PaymentStrategyFactory } from '../../../factories/payment-strategy.factory';
 import { IdempotencyService } from '../../../services/idempotency.service';
-import { BatchCaptureService } from '../../../services/batch-capture.service';
 
 /**
  * 테스트 환경 설정 유틸리티
@@ -40,11 +37,13 @@ export class TestEnvironmentUtils {
   /**
    * 테스트용 환경변수 설정
    */
-  static setupTestEnvironment(config: {
-    useMock?: boolean;
-    hasCredentials?: boolean;
-    mockServerUrl?: string;
-  } = {}): void {
+  static setupTestEnvironment(
+    config: {
+      useMock?: boolean;
+      hasCredentials?: boolean;
+      mockServerUrl?: string;
+    } = {},
+  ): void {
     const {
       useMock = true,
       hasCredentials = false,
@@ -160,28 +159,6 @@ export class MockingUtils {
   }
 
   /**
-   * SettlementService 모킹
-   */
-  static createMockSettlementService(): jest.Mocked<SettlementService> {
-    return {
-      runMonthlySettlement: jest.fn(),
-      getBatchStatus: jest.fn(),
-      retryFailedBatch: jest.fn(),
-      listSettlementBatches: jest.fn(),
-    } as any;
-  }
-
-  /**
-   * PaymentStrategyFactory 모킹
-   */
-  static createMockPaymentStrategyFactory(): jest.Mocked<PaymentStrategyFactory> {
-    return {
-      getStrategy: jest.fn(),
-      getBatchProcessingStrategy: jest.fn(),
-    } as any;
-  }
-
-  /**
    * IdempotencyService 모킹
    */
   static createMockIdempotencyService(): jest.Mocked<IdempotencyService> {
@@ -190,18 +167,6 @@ export class MockingUtils {
       complete: jest.fn(),
       get: jest.fn(),
       cleanup: jest.fn(),
-    } as any;
-  }
-
-  /**
-   * BatchCaptureService 모킹
-   */
-  static createMockBatchCaptureService(): jest.Mocked<BatchCaptureService> {
-    return {
-      createAndExecuteBnplSettlementBatch: jest.fn(),
-      getSettlementBatchStatus: jest.fn(),
-      getPendingSettlementBatches: jest.fn(),
-      retryFailedBatch: jest.fn(),
     } as any;
   }
 }
@@ -219,20 +184,34 @@ export class TestModuleBuilder {
   ): Promise<TestingModule> {
     const defaultProviders = [
       { provide: DbService, useValue: MockingUtils.createMockDbService() },
-      { provide: PaymentService, useValue: MockingUtils.createMockPaymentService() },
-      { provide: PaymentMethodService, useValue: MockingUtils.createMockPaymentMethodService() },
-      { provide: PaymentSessionService, useValue: MockingUtils.createMockPaymentSessionService() },
-      { provide: RefundService, useValue: MockingUtils.createMockRefundService() },
-      { provide: SettlementService, useValue: MockingUtils.createMockSettlementService() },
-      { provide: PaymentStrategyFactory, useValue: MockingUtils.createMockPaymentStrategyFactory() },
-      { provide: IdempotencyService, useValue: MockingUtils.createMockIdempotencyService() },
-      { provide: BatchCaptureService, useValue: MockingUtils.createMockBatchCaptureService() },
+      {
+        provide: PaymentService,
+        useValue: MockingUtils.createMockPaymentService(),
+      },
+      {
+        provide: PaymentMethodService,
+        useValue: MockingUtils.createMockPaymentMethodService(),
+      },
+      {
+        provide: PaymentSessionService,
+        useValue: MockingUtils.createMockPaymentSessionService(),
+      },
+      {
+        provide: RefundService,
+        useValue: MockingUtils.createMockRefundService(),
+      },
+      {
+        provide: IdempotencyService,
+        useValue: MockingUtils.createMockIdempotencyService(),
+      },
     ];
 
     // 커스텀 프로바이더가 있으면 기본값을 덮어씀
     const providers = [...defaultProviders];
-    customProviders.forEach(customProvider => {
-      const existingIndex = providers.findIndex(p => p.provide === customProvider.provide);
+    customProviders.forEach((customProvider) => {
+      const existingIndex = providers.findIndex(
+        (p) => p.provide === customProvider.provide,
+      );
       if (existingIndex >= 0) {
         providers[existingIndex] = customProvider;
       } else {

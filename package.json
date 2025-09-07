@@ -35,7 +35,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "drizzle-kit": "^0.31.4",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.44.5",
     "hms-api-wrapper": "file:../hms-api-wrapper/hms-api-wrapper-1.0.0.tgz",
     "kafkajs": "^2.2.4",
     "pg": "^8.16.2",
