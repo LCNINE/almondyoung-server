@@ -18,12 +18,10 @@ import {
   ApiParam,
   ApiHeader,
 } from '@nestjs/swagger';
-import { CreateGeneralPaymentMethodDto } from '../shared/dtos/create-general-payment-method.dto';
 import {
+  PaymentMethodRequestDto,
   PaymentMethodResponseDto,
-  UserPaymentMethodsResponseDto,
-  SetDefaultPaymentMethodDto,
-} from '../shared/dtos/payment-methods/payment-method-response.dto';
+} from '../shared/dtos';
 import { PaymentMethodService } from '../services/payment-method.service';
 
 /**
@@ -59,13 +57,16 @@ export class PaymentMethodController {
     description: 'BNPL 또는 잘못된 요청 데이터',
   })
   async registerPointMethod(
-    @Body() dto: CreateGeneralPaymentMethodDto,
+    @Body() dto: PaymentMethodRequestDto,
     @Headers('idempotency-key') idemKey?: string,
   ): Promise<PaymentMethodResponseDto> {
     // 📝 지원하는 타입: REWARD_POINT만 (BNPL은 /bnpl/register 사용)
 
     // PaymentMethodService를 통해 포인트 등록 처리
-    return await this.paymentMethodService.createWithIdempotency(dto, idemKey);
+    return await this.paymentMethodService.createWithIdempotency(
+      dto as any,
+      idemKey,
+    );
   }
   @Post('recurring/card')
   @HttpCode(201)
@@ -102,7 +103,7 @@ export class PaymentMethodController {
     description: '카드 정보 누락 또는 HMS API 에러',
   })
   async registerRecurringCard(
-    @Body() dto: CreateGeneralPaymentMethodDto,
+    @Body() dto: PaymentMethodRequestDto,
     @Headers('idempotency-key') idemKey?: string,
   ) {
     // 1. 컨트롤러는 요청 데이터(DTO)의 유효성만 간단히 확인합니다.
@@ -119,7 +120,7 @@ export class PaymentMethodController {
     // 3. 데이터 가공 없이, DTO를 그대로 서비스 계층으로 전달합니다.
     //    복잡한 비즈니스 로직은 모두 서비스에서 처리합니다.
     const result = await this.paymentMethodService.createWithIdempotency(
-      subscriptionDto,
+      subscriptionDto as any,
       idemKey,
     );
 
@@ -149,12 +150,14 @@ export class PaymentMethodController {
   @ApiResponse({
     status: 200,
     description: '결제수단 목록 조회 성공',
-    type: UserPaymentMethodsResponseDto,
+    type: [PaymentMethodResponseDto],
   })
   async getUserPaymentMethods(
     @Param('userId') userId: string,
-  ): Promise<UserPaymentMethodsResponseDto> {
-    return await this.paymentMethodService.getUserMethodsWithStatus(userId);
+  ): Promise<PaymentMethodResponseDto[]> {
+    const result =
+      await this.paymentMethodService.getUserMethodsWithStatus(userId);
+    return result.usableMethods as any;
   }
 
   @Put(':id/set-default')
@@ -178,7 +181,7 @@ export class PaymentMethodController {
   })
   async setDefaultPaymentMethod(
     @Param('id') methodId: string,
-    @Body() dto: SetDefaultPaymentMethodDto,
+    @Body() dto: { userId: string },
   ): Promise<PaymentMethodResponseDto> {
     return await this.paymentMethodService.setAsDefault(methodId, dto.userId);
   }
@@ -285,6 +288,24 @@ export class PaymentMethodController {
     name: 'hmsMemberId',
     description: 'HMS Member ID',
     example: 'HMS_123456789',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'HMS CMS 회원 정보 조회 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        memberId: { type: 'string', example: 'HMS_123456789' },
+        status: { type: 'string', example: 'ACTIVE' },
+        hmsStatus: { type: 'string', example: 'ACTIVE' },
+        metadata: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', example: '임시 구현' },
+          },
+        },
+      },
+    },
   })
   async getHmsCmsMemberInfo(@Param('hmsMemberId') hmsMemberId: string) {
     // TODO: PaymentMethodService로 이동 필요

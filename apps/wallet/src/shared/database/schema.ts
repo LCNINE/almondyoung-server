@@ -45,7 +45,8 @@ export const PAYMENT_SESSION_STATUS = {
   CAPTURED: 'CAPTURED',
   FAILED: 'FAILED',
   CANCELLED: 'CANCELLED', // NOTE: 기존 철자 유지 (마이그레이션 회피)
-  REFUNDED: 'REFUNDED',
+  PARTIALLY_REFUNDED: 'PARTIALLY_REFUNDED', // 부분 환불 상태 추가
+  REFUNDED: 'REFUNDED', // 전액 환불
 } as const;
 export type PaymentSessionStatus = keyof typeof PAYMENT_SESSION_STATUS;
 
@@ -135,8 +136,9 @@ export const PAYMENT_SESSION_EVENT_TYPE = {
   PAYMENT_CAPTURED: 'PAYMENT_CAPTURED',
   PAYMENT_FAILED: 'PAYMENT_FAILED',
   PAYMENT_CANCELLED: 'PAYMENT_CANCELLED',
-  REFUND_REQUESTED: 'REFUND_REQUESTED',
-  REFUND_COMPLETED: 'REFUND_COMPLETED',
+  REFUND_REQUESTED: 'REFUND_REQUESTED', // 환불 요청 시작
+  REFUND_COMPLETED: 'REFUND_COMPLETED', // 환불 완료
+  REFUND_FAILED: 'REFUND_FAILED', // 환불 실패 추가
   SESSION_EXPIRED: 'SESSION_EXPIRED',
 } as const;
 export type PaymentSessionEventType = keyof typeof PAYMENT_SESSION_EVENT_TYPE;
@@ -471,6 +473,16 @@ export const paymentSessions = pgTable(
     index('idx_payment_sessions_status').on(table.status),
     index('idx_payment_sessions_user_id').on(table.userId),
     index('idx_payment_sessions_expires_at').on(table.expiresAt),
+    // 성능 최적화: 사용자별 세션 조회용 복합 인덱스
+    index('idx_payment_sessions_user_created').on(
+      table.userId,
+      table.createdAt,
+    ),
+    // 환불 처리 시 세션 조회용 복합 인덱스
+    index('idx_payment_sessions_status_updated').on(
+      table.status,
+      table.updatedAt,
+    ),
   ],
 );
 
@@ -534,10 +546,10 @@ export const paymentEvents = pgTable(
   'payment_events',
   {
     id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
-    paymentSessionId: varchar('payment_session_id', { length: 26 }).references(
-      () => paymentSessions.id,
-    ), // nullable로 변경 - 정기결제에서는 세션이 필요하지 않음
-    paymentMethodId: varchar('payment_method_id', { length: 26 })
+    sessionId: varchar('session_id', { length: 26 })
+      .notNull()
+      .references(() => paymentSessions.id), // 모든 결제는 세션 필수
+    methodId: varchar('method_id', { length: 26 })
       .notNull()
       .references(() => paymentMethod.id),
     amount: numeric('amount', { precision: 19, scale: 4 })
@@ -546,25 +558,57 @@ export const paymentEvents = pgTable(
     status: varchar('status', { length: 255 })
       .$type<TransactionStatus>()
       .notNull(),
-    pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
-    pgResponse: text('pg_response'),
     actor: varchar('actor', { length: 255 })
       .$type<'USER' | 'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
       .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }),
-    errorMessage: varchar('error_message', { length: 255 }),
-    metadata: text('metadata'),
-    // ✅ 결제는 최종 금액만 처리하고, 가격 스냅샷은 그대로 저장
-    pricingSnapshot: text('pricing_snapshot').$type<PricingSnapshot | null>(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    errorMessage: text('error_message'),
+    // 🎯 문서 가이드라인: event_context로 통합 (pgResponse, metadata, pricingSnapshot 대체)
+    eventContext: text('event_context')
+      .$type<{
+        pg?: {
+          gateway: string;
+          approvalNumber?: string;
+          paymentDate?: string;
+          actualAmount?: number;
+          fee?: number;
+          transactionId?: string;
+        };
+        business?: {
+          paymentPurpose?: string;
+          isSubscriptionPayment?: boolean;
+          source?: string;
+          hmsMemberId?: string;
+          billingCycle?: string;
+          scheduledAt?: string;
+        };
+        pricing?: {
+          originalAmount?: number;
+          discountAmount?: number;
+          finalAmount?: number;
+          couponId?: string;
+          discountRate?: number;
+        };
+      }>()
+      .notNull(),
   },
   (table) => [
-    index('idx_payment_events_pg_transaction_id').on(table.pgTransactionId),
-    index('idx_payment_events_payment_method_id').on(table.paymentMethodId),
+    index('idx_payment_events_method_id').on(table.methodId),
     index('idx_payment_events_status').on(table.status),
     index('idx_payment_events_created_at').on(table.createdAt),
+    index('idx_payment_events_session_id').on(table.sessionId),
+    // 성능 최적화: 세션별 결제 이벤트 조회용 복합 인덱스
+    index('idx_payment_events_session_created').on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    // 사용자별 최근 결제 조회용 복합 인덱스 (userId 추가 필요시)
+    // index('idx_payment_events_user_created').on(table.userId, table.createdAt),
   ],
 );
 
@@ -837,11 +881,11 @@ export const paymentEventsRelations = relations(
   paymentEvents,
   ({ one, many }) => ({
     paymentSession: one(paymentSessions, {
-      fields: [paymentEvents.paymentSessionId],
+      fields: [paymentEvents.sessionId],
       references: [paymentSessions.id],
     }),
     paymentMethod: one(paymentMethod, {
-      fields: [paymentEvents.paymentMethodId],
+      fields: [paymentEvents.methodId],
       references: [paymentMethod.id],
     }),
     refunds: many(refundEvents),

@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as crypto from 'node:crypto';
-import { CreatePaymentSessionDto } from '../shared/dtos/create-payment-session.dto';
+// import { CreatePaymentSessionDto } from '../shared/dtos/create-payment-session.dto'; // 임시 주석 처리
 import * as schema from '../shared/database/schema';
 import { DbService } from '@app/db';
 export interface CreatePaymentSessionResponse {
@@ -26,6 +26,7 @@ export interface CreatePaymentSessionResponse {
     | 'CAPTURED'
     | 'FAILED'
     | 'CANCELLED'
+    | 'PARTIALLY_REFUNDED'
     | 'REFUNDED';
   checkout: { url: string };
   metadata: Record<string, any>;
@@ -62,7 +63,7 @@ export class PaymentSessionService {
    * @returns { sessionId, status, checkout, metadata }
    */
   async createSession(
-    dto: CreatePaymentSessionDto,
+    dto: any, // 임시로 any 타입 사용
     idemKey?: string,
   ): Promise<CreatePaymentSessionResponse> {
     if (dto.amount <= 0) {

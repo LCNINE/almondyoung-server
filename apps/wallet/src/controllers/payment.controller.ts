@@ -22,8 +22,16 @@ import {
 } from '@nestjs/swagger';
 import { PaymentService } from '../services/payment.service';
 import { PaymentMethodService } from '../services/payment-method.service';
+import { PaymentSessionService } from '../services/payment-session.service';
 import { RefundService } from '../services/refund.service';
-import { PaymentMethodType } from '../shared/types/payment-method.types';
+import {
+  PaymentRequestDto,
+  RefundRequestDto,
+  PaymentMethodRequestDto,
+  PaymentResponseDto,
+  RefundResponseDto,
+  PaymentMethodResponseDto,
+} from '../shared/dtos';
 
 /**
  * 통합 결제 컨트롤러 (가이드 문서 준수)
@@ -44,6 +52,7 @@ export class PaymentController {
   constructor(
     private readonly paymentService: PaymentService,
     private readonly paymentMethodService: PaymentMethodService,
+    private readonly paymentSessionService: PaymentSessionService,
     private readonly refundService: RefundService,
   ) {}
 
@@ -60,6 +69,7 @@ export class PaymentController {
     if (
       message.includes('already processed') ||
       message.includes('exceeds') ||
+      message.includes('초과합니다') ||
       message.includes('required') ||
       message.includes('invalid') ||
       message.includes('failed') ||
@@ -100,18 +110,9 @@ export class PaymentController {
   @ApiNotFoundResponse({ description: '결제수단을 찾을 수 없음' })
   @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
   async process(
-    @Body()
-    dto: {
-      userId: string;
-      paymentMethodId: string;
-      amount: number;
-      currency?: string;
-      sessionId?: string;
-      metadata?: any;
-      pricingSnapshot?: any;
-    },
+    @Body() dto: PaymentRequestDto,
     @Headers('Idempotency-Key') idempotencyKey?: string,
-  ) {
+  ): Promise<PaymentResponseDto> {
     try {
       this.logger.log(
         `일반 결제 실행: ${dto.paymentMethodId}, ${dto.amount}원`,
@@ -132,12 +133,13 @@ export class PaymentController {
       );
 
       return {
-        success: true,
         paymentEventId: result.paymentEventId,
-        transactionId: result.pgTransactionId,
+        sessionId: result.sessionId, // 세션 ID 필수 반환
+        pgTransactionId: 'N/A', // 새 스키마에서는 event_context에 포함
         status: result.status,
         amount: result.amount,
-        processedAt: result.createdAt,
+        currency: dto.currency || 'KRW',
+        createdAt: result.createdAt.toISOString(),
       };
     } catch (error) {
       this.logger.error('일반 결제 실패', error);
@@ -151,9 +153,38 @@ export class PaymentController {
   @Post('recurring')
   @ApiOperation({
     summary: '정기 결제 실행 (스케줄러 전용)',
-    description: '스케줄러에서 호출하는 정기 결제 처리',
+    description: `
+스케줄러에서 호출하는 정기 결제 처리:
+- actor: SCHEDULER로 자동 설정
+- metadata에 isSubscriptionPayment: true 자동 추가
+- 실패 시 재시도 로직은 스케줄러에서 처리
+    `,
   })
-  @ApiResponse({ status: 200, description: '정기 결제 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '정기 결제 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        paymentEventId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y027',
+        },
+        sessionId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y028',
+        },
+        pgTransactionId: { type: 'string', example: 'N/A' },
+        status: { type: 'string', example: 'CAPTURED' },
+        amount: { type: 'number', example: 50000 },
+        processedAt: { type: 'string', example: '2025-09-07T09:00:00.000Z' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: '잘못된 요청' })
+  @ApiNotFoundResponse({ description: '결제수단을 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
   async processRecurring(
     @Body()
     dto: {
@@ -188,7 +219,8 @@ export class PaymentController {
       return {
         success: true,
         paymentEventId: result.paymentEventId,
-        transactionId: result.pgTransactionId,
+        sessionId: result.sessionId, // 세션 ID 필수 반환
+        pgTransactionId: 'N/A', // 새 스키마에서는 event_context에 포함
         status: result.status,
         amount: result.amount,
         processedAt: result.createdAt,
@@ -205,9 +237,38 @@ export class PaymentController {
   @Post('membership')
   @ApiOperation({
     summary: '멤버십 결제 실행',
-    description: '멤버십 관련 결제 처리',
+    description: `
+멤버십 관련 결제 처리:
+- actor: USER로 설정
+- metadata에 paymentPurpose: SUBSCRIPTION 자동 추가
+- 멤버십 구독 결제 전용 엔드포인트
+    `,
   })
-  @ApiResponse({ status: 200, description: '멤버십 결제 성공' })
+  @ApiResponse({
+    status: 200,
+    description: '멤버십 결제 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        paymentEventId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y027',
+        },
+        sessionId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y028',
+        },
+        pgTransactionId: { type: 'string', example: 'N/A' },
+        status: { type: 'string', example: 'CAPTURED' },
+        amount: { type: 'number', example: 50000 },
+        processedAt: { type: 'string', example: '2025-09-07T09:00:00.000Z' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: '잘못된 요청' })
+  @ApiNotFoundResponse({ description: '결제수단을 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
   async processMembership(
     @Body()
     dto: {
@@ -241,7 +302,8 @@ export class PaymentController {
       return {
         success: true,
         paymentEventId: result.paymentEventId,
-        transactionId: result.pgTransactionId,
+        sessionId: result.sessionId, // 세션 ID 필수 반환
+        pgTransactionId: 'N/A', // 새 스키마에서는 event_context에 포함
         status: result.status,
         amount: result.amount,
         processedAt: result.createdAt,
@@ -290,18 +352,42 @@ export class PaymentController {
   @Post('refund')
   @ApiOperation({
     summary: '결제 환불 실행',
-    description: '결제 건에 대해 환불을 실행합니다',
+    description: `
+결제 이벤트를 대상으로 환불을 실행합니다.
+
+- **전액 환불**: amount를 지정하지 않으면 전액 환불
+- **부분 환불**: amount 지정 시 해당 금액만 환불
+- **환불 계좌 지정**: refundAccountId 제공 시 계좌로 환불
+- actor는 항상 USER로 설정됩니다.
+  `,
   })
-  @ApiResponse({ status: 200, description: '환불 성공' })
-  async refund(
-    @Body()
-    dto: {
-      paymentEventId: string;
-      amount?: number;
-      reason?: string;
-      refundAccountId?: string;
+  @ApiResponse({
+    status: 200,
+    description: '환불 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        refundEventId: {
+          type: 'string',
+          example: 're_01K4HPR8YXYG7N2XBHQV4T7W1Z',
+        },
+        sessionId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y028',
+        },
+        refundedAmount: { type: 'number', example: 50000 },
+        status: { type: 'string', example: 'REFUNDED' },
+        processedAt: { type: 'string', example: '2025-09-07T10:15:30.000Z' },
+      },
     },
-  ) {
+  })
+  @ApiBadRequestResponse({
+    description: '잘못된 요청 (금액 초과, 이미 환불됨 등)',
+  })
+  @ApiNotFoundResponse({ description: '결제 이벤트를 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async refund(@Body() dto: RefundRequestDto) {
     try {
       this.logger.log(
         `환불 실행: ${dto.paymentEventId}, ${dto.amount || '전액'}원`,
@@ -318,6 +404,7 @@ export class PaymentController {
       return {
         success: true,
         refundEventId: result.refundEventId,
+        sessionId: result.sessionId, // 세션 ID 필수 반환
         refundedAmount: result.amount,
         status: result.status,
         processedAt: result.createdAt,
@@ -327,7 +414,6 @@ export class PaymentController {
       throw this.mapErrorToHttpException(error);
     }
   }
-
   // -------------------------------
   // Flow 6: 결제수단 등록
   // -------------------------------
@@ -358,7 +444,7 @@ export class PaymentController {
 
       const result = await this.paymentMethodService.register({
         userId: dto.userId,
-        methodType: dto.methodType as PaymentMethodType,
+        methodType: dto.methodType as any,
         methodName: dto.methodName,
         paymentPurpose: dto.paymentPurpose || 'PURCHASE',
         isDefault: dto.isDefault || false,
@@ -408,6 +494,94 @@ export class PaymentController {
       };
     } catch (error) {
       this.logger.error('결제 상태 조회 실패', error);
+      throw this.mapErrorToHttpException(error);
+    }
+  }
+
+  // -------------------------------
+  // 6. 결제 세션 생성
+  // -------------------------------
+  @Post('session')
+  @ApiOperation({
+    summary: '결제 세션 생성',
+    description: `
+결제 세션을 미리 생성합니다.
+생성된 세션 ID는 이후 결제 실행 시 사용할 수 있습니다.
+    `,
+  })
+  @ApiResponse({
+    status: 201,
+    description: '세션 생성 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        sessionId: {
+          type: 'string',
+          example: '01K4HPR5HAKFQ576BP06H4Y027',
+        },
+        status: {
+          type: 'string',
+          example: 'PENDING',
+        },
+        checkout: {
+          type: 'object',
+          properties: {
+            url: {
+              type: 'string',
+              example:
+                'https://checkout.example.com/session/01K4HPR5HAKFQ576BP06H4Y027',
+            },
+          },
+        },
+        metadata: {
+          type: 'object',
+          example: {
+            paymentPurpose: 'PURCHASE',
+            productName: '테스트 상품',
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: '잘못된 요청',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: false },
+        error: { type: 'string', example: '필수 필드가 누락되었습니다' },
+      },
+    },
+  })
+  async createSession(
+    @Body()
+    dto: {
+      userId: string;
+      amount: number;
+      currency?: string;
+      metadata?: Record<string, any>;
+    },
+  ) {
+    try {
+      this.logger.log(
+        `세션 생성 요청: 사용자=${dto.userId}, 금액=${dto.amount}`,
+      );
+
+      const result = await this.paymentSessionService.createSession({
+        userId: dto.userId,
+        amount: dto.amount,
+        currency: dto.currency || 'KRW',
+        metadata: dto.metadata || {},
+      });
+
+      return {
+        sessionId: result.sessionId,
+        status: result.status,
+        checkout: result.checkout,
+        metadata: result.metadata,
+      };
+    } catch (error) {
+      this.logger.error('세션 생성 실패', error);
       throw this.mapErrorToHttpException(error);
     }
   }

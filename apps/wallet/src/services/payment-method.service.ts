@@ -337,8 +337,9 @@ export class PaymentMethodService {
     // 현재는 Mock 응답 반환
     switch (methodType) {
       case 'CARD':
+        // 신용카드는 HMS CMS 등록 시 바로 ACTIVE 상태
         return {
-          status: 'PENDING',
+          status: 'ACTIVE',
           hmsMemberId: `HMS_${ulid()}`,
           maskedCardNumber: '1234-****-****-5678',
           lastFourDigits: '5678',

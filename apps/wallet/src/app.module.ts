@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 
@@ -7,11 +8,13 @@ import { EventsModule } from '@app/events';
 import { PaymentController } from './controllers/payment.controller';
 import { PaymentMethodController } from './controllers/payment-method.controller';
 
-// === 가이드 문서 준수: 4개 서비스만 유지 ===
+// === 가이드 문서 준수: 세션 기반 서비스 추가 ===
 import { PaymentService } from './services/payment.service';
+import { PaymentSessionService } from './services/payment-session.service';
 import { PaymentMethodService } from './services/payment-method.service';
 import { RefundService } from './services/refund.service';
 import { IdempotencyService } from './services/idempotency.service';
+import { RecurringPaymentScheduler } from './services/recurring-payment.scheduler';
 
 // === 어댑터들 (가이드 문서 준수) ===
 import { TossPaymentAdapter } from './adapters/toss-payment.adapter';
@@ -26,6 +29,7 @@ import * as schema from './shared/database/schema';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString:
@@ -42,11 +46,13 @@ import * as schema from './shared/database/schema';
     PaymentMethodController,
   ],
   providers: [
-    // === 가이드 문서 준수: 4개 서비스만 ===
+    // === 가이드 문서 준수: 세션 기반 서비스 ===
     PaymentService,
+    PaymentSessionService,
     PaymentMethodService,
     RefundService,
     IdempotencyService,
+    RecurringPaymentScheduler,
 
     // === 어댑터들 ===
     TossPaymentAdapter,
@@ -57,6 +63,7 @@ import * as schema from './shared/database/schema';
   exports: [
     // === 가이드 문서 준수: 필요한 서비스만 export ===
     PaymentService,
+    PaymentSessionService,
     PaymentMethodService,
     RefundService,
     IdempotencyService,

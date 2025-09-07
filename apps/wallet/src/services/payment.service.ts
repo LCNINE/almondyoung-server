@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { eq } from 'drizzle-orm';
 import { ulid } from 'ulid';
+import { PaymentSessionService } from './payment-session.service';
 
 /**
  * 중앙화된 결제 서비스 (가이드 문서 준수)
@@ -20,6 +21,7 @@ export class PaymentService {
 
   constructor(
     private readonly db: DbService<typeof schema>,
+    private readonly paymentSessionService: PaymentSessionService,
     // 어댑터들을 직접 주입
     // private readonly hmsCardAdapter: HmsCardAdapter,
     // private readonly hmsBnplAdapter: HmsBnplAdapter,
@@ -28,12 +30,15 @@ export class PaymentService {
   ) {}
 
   /**
-   * 결제 처리 (가이드 문서의 핵심 메서드)
+   * 결제 처리 (문서 가이드라인 준수 - 세션 기반)
    *
    * Flow:
-   * 1. 결제수단 검증
-   * 2. 어댑터 호출 (PG사 승인/매입)
-   * 3. PaymentEvents 저장
+   * 1. 세션 없으면 자동 생성
+   * 2. 결제수단 검증
+   * 3. 어댑터 호출 (PG사 승인/매입)
+   * 4. PaymentEvents 저장 (sessionId 필수)
+   * 5. PaymentSessionEvents 저장 (상태 변경 로그)
+   * 6. PaymentSessions 상태 업데이트
    */
   async processPayment(
     request: {
@@ -49,7 +54,7 @@ export class PaymentService {
     idempotencyKey?: string,
   ): Promise<{
     paymentEventId: string;
-    pgTransactionId: string;
+    sessionId: string;
     status: 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
     amount: number;
     createdAt: Date;
@@ -59,14 +64,27 @@ export class PaymentService {
     );
 
     return await this.db.db.transaction(async (tx) => {
-      // 1. 결제수단 검증
+      // 1. 세션 없으면 자동 생성
+      let sessionId = request.sessionId;
+      if (!sessionId) {
+        this.logger.log('세션이 없어 자동 생성합니다');
+        const sessionResponse = await this.paymentSessionService.createSession({
+          userId: request.userId,
+          amount: request.amount,
+          currency: request.currency || 'KRW',
+          metadata: request.metadata,
+        });
+        sessionId = sessionResponse.sessionId;
+      }
+
+      // 2. 결제수단 검증
       const paymentMethod = await this.validatePaymentMethod(
         tx,
         request.paymentMethodId,
         request.userId,
       );
 
-      // 2. 어댑터 호출 (결제수단 타입에 따라)
+      // 3. 어댑터 호출 (결제수단 타입에 따라)
       const pgResult = await this.callPaymentAdapter(paymentMethod.methodType, {
         paymentMethodId: request.paymentMethodId,
         amount: request.amount,
@@ -74,62 +92,81 @@ export class PaymentService {
         metadata: request.metadata,
       });
 
-      // 3. PaymentEvents 저장 (가이드 스키마 준수)
+      // 4. PaymentEvents 저장 (sessionId 필수)
+      const eventId = ulid();
       await tx.insert(schema.paymentEvents).values({
-        paymentSessionId: request.sessionId || null,
-        paymentMethodId: request.paymentMethodId,
+        id: eventId,
+        sessionId: sessionId, // 이제 필수
+        methodId: request.paymentMethodId,
         amount: request.amount,
         status: pgResult.status as any,
-        pgTransactionId: pgResult.transactionId,
-        pgResponse: JSON.stringify({
-          gateway: this.getGatewayName(paymentMethod.methodType),
-          approvalNumber: pgResult.approvalNumber,
-          paymentDate: pgResult.paymentDate,
-          actualAmount: pgResult.actualAmount,
-          fee: pgResult.fee,
-          statusCode: pgResult.statusCode,
-          message: pgResult.message,
-        }),
         actor: request.actor as any,
-        createdAt: new Date(),
         errorMessage: pgResult.error || null,
-        metadata: JSON.stringify({
-          paymentPurpose: request.metadata?.paymentPurpose || 'PURCHASE',
-          isSubscriptionPayment:
-            request.metadata?.isSubscriptionPayment || false,
-          requestedAt: new Date().toISOString(),
-          transactionProcessedAt: pgResult.processedAt,
-          correlationId: request.metadata?.correlationId,
-          source: request.metadata?.source || 'api',
-          hmsMemberId: request.metadata?.hmsMemberId,
+        eventContext: JSON.stringify({
+          pg: {
+            gateway: this.getGatewayName(paymentMethod.methodType),
+            approvalNumber: pgResult.approvalNumber,
+            paymentDate: pgResult.paymentDate,
+            actualAmount: pgResult.actualAmount,
+            fee: pgResult.fee,
+            transactionId: pgResult.transactionId,
+          },
+          business: {
+            paymentPurpose: request.metadata?.paymentPurpose || 'PURCHASE',
+            isSubscriptionPayment:
+              request.metadata?.isSubscriptionPayment || false,
+            source: request.metadata?.source || 'api',
+            hmsMemberId: request.metadata?.hmsMemberId,
+            billingCycle: request.metadata?.billingCycle,
+            scheduledAt: request.metadata?.scheduledAt,
+          },
+          pricing: {
+            originalAmount: request.pricingSnapshot?.originalAmount,
+            discountAmount: request.pricingSnapshot?.discountAmount,
+            finalAmount: request.pricingSnapshot?.finalAmount || request.amount,
+            couponId: request.pricingSnapshot?.couponId,
+            discountRate: request.pricingSnapshot?.discountRate,
+          },
+        }) as any,
+      });
+
+      // 5. PaymentSessionEvents 저장 (상태 변경 로그)
+      const eventType =
+        pgResult.status === 'CAPTURED'
+          ? 'PAYMENT_CAPTURED'
+          : pgResult.status === 'AUTHORIZED'
+            ? 'PAYMENT_AUTHORIZED'
+            : pgResult.status === 'FAILED'
+              ? 'PAYMENT_FAILED'
+              : 'PAYMENT_FAILED';
+
+      await tx.insert(schema.paymentSessionEvents).values({
+        paymentSessionId: sessionId,
+        eventType: eventType as any,
+        eventData: JSON.stringify({
+          paymentEventId: eventId,
+          pgResult: pgResult,
         }),
-        pricingSnapshot: request.pricingSnapshot
-          ? JSON.stringify({
-              originalAmount: request.pricingSnapshot.originalAmount,
-              discountAmount: request.pricingSnapshot.discountAmount,
-              finalAmount: request.amount,
-              couponId: request.pricingSnapshot.couponId,
-              discountRate: request.pricingSnapshot.discountRate,
-            })
-          : null,
-      } as any);
+      });
 
-      // PaymentEvents 저장 후 ID 조회
-      const insertedEvents = await tx
-        .select({ id: schema.paymentEvents.id })
-        .from(schema.paymentEvents)
-        .where(eq(schema.paymentEvents.pgTransactionId, pgResult.transactionId))
-        .limit(1);
-
-      const paymentEventId = insertedEvents[0]?.id || ulid();
+      // 6. PaymentSessions 상태 업데이트
+      await tx
+        .update(schema.paymentSessions)
+        .set({
+          status: pgResult.status as any,
+          updatedAt: new Date(),
+          ...(pgResult.status === 'AUTHORIZED' && { authorizedAt: new Date() }),
+          ...(pgResult.status === 'CAPTURED' && { capturedAt: new Date() }),
+        })
+        .where(eq(schema.paymentSessions.id, sessionId));
 
       this.logger.log(
-        `결제 처리 완료: ${paymentEventId}, 상태: ${pgResult.status}`,
+        `결제 처리 완료: ${eventId}, 세션: ${sessionId}, 상태: ${pgResult.status}`,
       );
 
       return {
-        paymentEventId,
-        pgTransactionId: pgResult.transactionId,
+        paymentEventId: eventId,
+        sessionId: sessionId,
         status: pgResult.status,
         amount: request.amount,
         createdAt: new Date(),
@@ -183,15 +220,13 @@ export class PaymentService {
       id: event.id,
       status: event.status,
       amount: Number(event.amount),
-      pgTransactionId: event.pgTransactionId || '',
       createdAt: event.createdAt,
-      metadata: event.metadata ? JSON.parse(event.metadata) : {},
-      pricingSnapshot: event.pricingSnapshot
-        ? typeof event.pricingSnapshot === 'string'
-          ? JSON.parse(event.pricingSnapshot)
-          : event.pricingSnapshot
+      eventContext: event.eventContext
+        ? typeof event.eventContext === 'string'
+          ? JSON.parse(event.eventContext)
+          : event.eventContext
         : null,
-    };
+    } as any;
   }
 
   /**
