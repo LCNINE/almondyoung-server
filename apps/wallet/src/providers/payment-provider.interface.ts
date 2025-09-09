@@ -92,18 +92,37 @@ export interface ProfileRegistrationRequest {
   profileType: 'CARD' | 'BANK_ACCOUNT' | 'BNPL';
   profileName: string;
 
-  // HMS 카드용
-  cardToken?: string;
-  billingKey?: string;
+  // HMS 신용카드 API 필드 (callableSchema.ts 기준)
+  paymentNumber?: string; // 카드번호 - 16자 이내 숫자만
+  payerName?: string; // 카드 소유자명 - 10자 이내
+  payerNumber?: string; // 생년월일 - 6-10자리 숫자만
+  validUntil?: string; // 카드 유효기간 MMYY - 4자리 숫자
+  password?: string; // 비밀번호 앞 2자리 - 2자리 숫자
 
-  // HMS CMS용
-  bankCode?: string;
-  accountNumber?: string;
-  accountHolder?: string;
+  // HMS API 내부 변환용 (validUntil → validYear/validMonth)
+  validYear?: string; // 유효기간 년도 YY (내부 변환)
+  validMonth?: string; // 유효기간 월 MM (내부 변환)
 
-  // HMS BNPL용
+  // HMS 배치 CMS API 필드
+  paymentCompany?: string; // 은행 코드
+  accountNumber?: string; // 계좌번호
+
+  // BNPL 필드
   creditLimit?: number;
   billingCycleDay?: number;
+
+  // 공통 연락처 정보 (HMS API 필수/선택 필드)
+  phone?: string;
+  email?: string;
+  zipcode?: string;
+  address1?: string;
+  address2?: string;
+
+  // 레거시 필드 (호환성 유지)
+  cardToken?: string;
+  billingKey?: string;
+  bankCode?: string;
+  accountHolder?: string;
 
   metadata?: Record<string, any>;
 }

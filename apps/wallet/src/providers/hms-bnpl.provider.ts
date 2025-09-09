@@ -89,8 +89,8 @@ export class HmsBnplProvider
       // 1. BNPL Account 조회 (profileId로부터)
       const batchProfile = await this.dbService.db
         .select()
-        .from(schema.batchCmsProfile)
-        .where(eq(schema.batchCmsProfile.id, request.profileId))
+        .from(schema.cmsBatchProfiles)
+        .where(eq(schema.cmsBatchProfiles.id, request.profileId))
         .limit(1);
 
       if (batchProfile.length === 0) {
@@ -100,7 +100,7 @@ export class HmsBnplProvider
       }
 
       // 효성 비즈니스 규칙: BNPL Account ID는 21자로 제한
-      const bnplAccountId = batchProfile[0].hmsMemberId.substring(0, 21);
+      const bnplAccountId = batchProfile[0].memberId.substring(0, 21);
 
       // 2. Mock BNPL 승인 처리 (실제 HMS API 구현 예정)
       const mockTransactionId = `BNPL_${getTsid().toString()}`;
@@ -521,25 +521,21 @@ export class HmsBnplProvider
       await this.dbService.db.insert(schema.paymentProfiles).values({
         id: profileId,
         userId: profileOptions.userId || 'unknown_user',
-        profileType: 'BNPL',
-        profileName: profileOptions.profileName,
-        paymentPurpose: paymentPurposeMapping[profileOptions.paymentPurpose],
+        kind: 'BATCH', // BNPL은 배치 CMS로 처리
+        name: profileOptions.profileName,
+        // paymentPurpose: paymentPurposeMapping[profileOptions.paymentPurpose], // paymentPurpose 필드 제거됨
         status: 'ACTIVE',
-        isDefault: profileOptions.isDefault || false,
+        // isDefault: profileOptions.isDefault || false, // isDefault 필드 제거됨
       });
 
       // 🔥 2. batchCmsProfile에 BNPL 전용 정보 저장
-      await this.dbService.db.insert(schema.batchCmsProfile).values({
+      await this.dbService.db.insert(schema.cmsBatchProfiles).values({
         id: profileId,
-        paymentProfileId: profileId,
-        hmsMemberId: consentStatus.hmsMemberId,
-        creditLimit: 1000000, // 기본 100만원
-        approvedLimit: 1000000,
-        billingCycleDay: 28, // 매월 28일
-        hmsMetadata: JSON.stringify({
-          consentId,
-          approvedAt: new Date().toISOString(),
-        }),
+        // paymentProfileId: profileId, // 정규화된 스키마에서는 id가 곧 paymentProfileId
+        memberId: consentStatus.hmsMemberId,
+        cmsStatus: 'REGISTERED',
+        billingDay: 28, // 매월 28일
+        // hmsMetadata는 선택사항이므로 제거하거나 필요시 추가
       });
 
       this.logger.log(

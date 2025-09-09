@@ -9,6 +9,8 @@ import { PaymentIntentController } from './controllers/v2/payment-intent.control
 import { RefundController } from './controllers/v2/refund.controller';
 import { CheckoutSessionController } from './controllers/v2/checkout-session.controller';
 import { BnplProfileController } from './controllers/v2/bnpl-profile.controller';
+import { PaymentProfileController } from './controllers/v2/payment-profile.controller';
+import { PaymentProfileV2Controller } from './controllers/v2/payment-profile-v2.controller';
 
 // === 유지되는 서비스들 ===
 import { IdempotencyService } from './services/idempotency.service';
@@ -19,6 +21,8 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 import { PaymentIntentService } from './services/v2/payment-intent.service';
 import { RefundService as V2RefundService } from './services/v2/refund.service';
 import { CheckoutSessionService } from './services/v2/checkout-session.service';
+import { PaymentProfileService } from './services/v2/payment-profile.service';
+import { PaymentProfileV2Service } from './services/v2/payment-profile-v2.service';
 import {
   PaymentPolicyValidator,
   loadPaymentPolicy,
@@ -62,6 +66,7 @@ import * as schema from './shared/database/schema';
     RefundController,
     CheckoutSessionController,
     BnplProfileController,
+    PaymentProfileV2Controller, // 정규화된 스키마용
   ],
   providers: [
     // === 유지되는 서비스들 ===
@@ -70,9 +75,13 @@ import * as schema from './shared/database/schema';
     BnplBillingScheduler,
 
     // === v2 아키텍처 서비스들 ===
+    PaymentProfileService,
+    PaymentProfileV2Service,
     PaymentIntentService,
     V2RefundService,
     CheckoutSessionService,
+    // PaymentProfileService, // 임시 비활성화 (스키마 변경으로 인한 에러)
+    PaymentProfileV2Service, // 정규화된 스키마용
     {
       provide: PaymentPolicyValidator,
       useFactory: () => new PaymentPolicyValidator(loadPaymentPolicy()),

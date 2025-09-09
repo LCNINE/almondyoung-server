@@ -42,7 +42,7 @@ export enum PaymentProfilePurposeDto {
 }
 
 /**
- * 결제프로필 등록 요청 DTO
+ * 결제프로필 등록 요청 DTO (공통 필드)
  */
 export class PaymentProfileCreateRequestDto {
   @ApiProperty({
@@ -82,22 +82,74 @@ export class PaymentProfileCreateRequestDto {
   @IsBoolean()
   isDefault!: boolean;
 
+  @ApiProperty({
+    description: '전화번호 (필수)',
+    example: '01012345678', // 전화번호 형식 맞추기
+  })
+  @IsString()
+  phone!: string;
+
+  // === 신용카드 전용 필드 (callableSchema.ts 기준) ===
   @ApiPropertyOptional({
-    description: '카드 토큰 (카드 프로필 등록 시 필수)',
-    example: 'card_token_12345',
+    description: '카드번호 (신용카드 프로필 등록 시 필수) - 16자 이내 숫자만',
+    example: '1111222233334444', // 카드번호 형식 맞추기
   })
   @IsOptional()
   @IsString()
-  cardToken?: string;
+  paymentNumber?: string;
 
   @ApiPropertyOptional({
-    description: '빌링키 (카드 프로필 등록 시 필수)',
-    example: 'billing_key_67890',
+    description: '카드 소유자명 (신용카드 프로필 등록 시 필수) - 10자 이내',
+    example: '홍길동', // 카드 소유자명 형식 맞추기
   })
   @IsOptional()
   @IsString()
-  billingKey?: string;
+  payerName?: string;
 
+  @ApiPropertyOptional({
+    description: '생년월일 6-10자리 (신용카드 프로필 등록 시 필수) - 숫자만',
+    example: '900101', // 생년월일 형식 맞추기
+  })
+  @IsOptional()
+  @IsString()
+  payerNumber?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '카드 유효기간 MMYY (신용카드 프로필 등록 시 필수) - 4자리 숫자',
+    example: '1225', // 카드 유효기간 형식 맞추기
+  })
+  @IsOptional()
+  @IsString()
+  validUntil?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '카드 비밀번호 앞 2자리 (신용카드 프로필 등록 시 필수) - 2자리 숫자',
+    example: '11', // 카드 비밀번호 형식 맞추기
+  })
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  // === 배치 CMS 전용 필드 ===
+  @ApiPropertyOptional({
+    description: '은행 코드 (배치 CMS 프로필 등록 시 필수)',
+    example: '088',
+  })
+  @IsOptional()
+  @IsString()
+  paymentCompany?: string;
+
+  @ApiPropertyOptional({
+    description: '계좌번호 (배치 CMS 프로필 등록 시 필수)',
+    example: '1234567890123456',
+  })
+  @IsOptional()
+  @IsString()
+  accountNumber?: string;
+
+  // === BNPL 전용 필드 ===
   @ApiPropertyOptional({
     description: 'BNPL 신용한도 (BNPL 프로필 등록 시 필수)',
     example: 1000000,
@@ -113,6 +165,8 @@ export class PaymentProfileCreateRequestDto {
   @IsOptional()
   @IsNumber()
   billingCycleDay?: number;
+
+  // === 공통 선택 필드 (효성 API에서 요구하지 않으므로 제거) ===
 }
 
 /**

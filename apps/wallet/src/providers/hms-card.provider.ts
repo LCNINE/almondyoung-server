@@ -260,8 +260,16 @@ export class HmsCardProvider implements PaymentProvider {
       throw new Error('HMS 카드 Provider는 CARD 타입만 지원합니다');
     }
 
-    if (!request.cardToken || !request.billingKey) {
-      throw new Error('카드 등록에는 cardToken과 billingKey가 필요합니다');
+    if (!request.paymentNumber || !request.payerName || !request.payerNumber) {
+      throw new Error(
+        '카드 등록에는 카드번호, 카드소유자명, 생년월일이 필요합니다',
+      );
+    }
+
+    if (!request.validUntil || !request.password) {
+      throw new Error(
+        '카드 등록에는 유효기간(MMYY)과 비밀번호 앞 2자리가 필요합니다',
+      );
     }
 
     try {
@@ -281,8 +289,8 @@ export class HmsCardProvider implements PaymentProvider {
           hmsMemberId: mockHmsMemberId,
           metadata: {
             providerId: this.providerId,
-            cardToken: request.cardToken,
-            billingKey: request.billingKey,
+            paymentNumber: request.paymentNumber,
+            payerName: request.payerName,
             method: 'register_mock',
             registrationDate: new Date().toISOString(),
             rawResponse: {
@@ -297,18 +305,26 @@ export class HmsCardProvider implements PaymentProvider {
         };
       }
 
-      // HMS API 프로필 등록 요청
+      // HMS API 프로필 등록 요청 (callableSchema.ts 기준 - 정확한 필드만)
+      const hmsMemberId = getTsid().toString().substring(0, 21); // 21자 이하 TSID
+
+      // validUntil(MMYY)을 validMonth(MM), validYear(YY)로 분리
+      const validUntil =
+        request.validUntil || request.metadata?.validUntil || '1225';
+      const validMonth = validUntil.substring(0, 2); // MM
+      const validYear = validUntil.substring(2, 4); // YY
+
       const profileRequest: CreatePaymentProfileDto = {
-        memberId: request.billingKey, // billingKey를 memberId로 사용
-        memberName: request.profileName,
-        phone: request.metadata?.phone || '01000000000',
-        paymentKind: 'CARD',
-        paymentNumber: request.cardToken,
-        payerName: request.profileName,
-        payerNumber: request.metadata?.payerNumber || '0000000000',
-        validYear: request.metadata?.validYear || '99',
-        validMonth: request.metadata?.validMonth || '12',
-        password: request.metadata?.password || '00',
+        memberId: hmsMemberId, // TSID 기반 21자 이하
+        memberName: request.payerName!, // 카드 소유자명
+        phone: request.phone!, // 전화번호 (필수)
+        paymentKind: 'CARD', // 고정값
+        paymentNumber: request.paymentNumber!, // 카드번호
+        payerName: request.payerName!, // 납부자명 (카드 소유자명과 동일)
+        payerNumber: request.payerNumber!, // 생년월일 6자리
+        validYear: validYear, // 유효기간 년도 YY (MMYY에서 분리)
+        validMonth: validMonth, // 유효기간 월 MM (MMYY에서 분리)
+        password: request.password!, // 비밀번호 앞 2자리
       };
 
       this.logger.log(
@@ -324,21 +340,25 @@ export class HmsCardProvider implements PaymentProvider {
       );
 
       // 프로필 등록 응답 처리 (response.member 속성 사용)
-      if (response.member?.result?.flag === 'SUCCESS') {
+      if (response.member?.result?.flag === 'Y') {
+        this.logger.log(
+          `✅ HMS 카드 프로필 등록 성공: ${response.member.result.message}`,
+        );
         return {
           success: true,
           profileId: response.member.memberId,
           hmsMemberId: response.member.memberId,
           metadata: {
             providerId: this.providerId,
-            cardToken: request.cardToken,
-            billingKey: request.billingKey,
             method: 'register',
             registrationDate: response.member.joinDate,
             rawResponse: response,
           },
         };
       } else {
+        this.logger.error(
+          `❌ HMS 카드 프로필 등록 실패: ${response.member?.result?.message || '알 수 없는 오류'}`,
+        );
         return {
           success: false,
           profileId: '',

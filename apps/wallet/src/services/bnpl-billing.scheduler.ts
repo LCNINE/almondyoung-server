@@ -86,8 +86,8 @@ export class BnplBillingScheduler {
       // 1. PROCESSING 상태인 Invoice들 조회 (실제로는 vBnplInvoice VIEW 사용)
       const processingInvoices = await this.dbService.db
         .select()
-        .from(schema.settlementBatch)
-        .where(eq(schema.settlementBatch.status, 'PROCESSING'));
+        .from(schema.bnplInvoices)
+        .where(eq(schema.bnplInvoices.status, 'PROCESSING'));
 
       if (processingInvoices.length === 0) {
         this.logger.log('📋 처리할 PROCESSING Invoice가 없습니다.');
@@ -144,22 +144,22 @@ export class BnplBillingScheduler {
 
     try {
       // 1. Settlement Batch (Invoice) 생성
-      await this.dbService.db.insert(schema.settlementBatch).values({
+      await this.dbService.db.insert(schema.bnplInvoices).values({
         id: invoiceId,
         bnplAccountId: bnplAccountId,
-        batchNumber: `BNPL_${Date.now()}`,
+        invoiceNumber: `BNPL_${Date.now()}`,
         totalAmount: totalAmount,
         status: 'PROCESSING', // 출금 신청 중
         dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // 내일까지
-        batchPeriodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30일 전
-        batchPeriodEnd: new Date(),
+        periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30일 전
+        periodEnd: new Date(),
       });
 
       // 2. Settlement Batch Items 생성
       for (const event of events) {
-        await this.dbService.db.insert(schema.settlementBatchItem).values({
+        await this.dbService.db.insert(schema.bnplInvoiceItems).values({
           id: ulid(),
-          batchId: invoiceId,
+          invoiceId: invoiceId,
           bnplEventId: event.id,
           amount: parseFloat(event.amount),
           transactionDate: event.createdAt,
@@ -168,10 +168,10 @@ export class BnplBillingScheduler {
 
       // 3. Mock CMS 출금 신청 (실제로는 HMS API 호출)
       const collectionEventId = ulid();
-      await this.dbService.db.insert(schema.settlementProcessEvent).values({
+      await this.dbService.db.insert(schema.bnplCollectionEvents).values({
         id: collectionEventId,
-        batchId: invoiceId,
-        eventType: 'BATCH_STARTED',
+        invoiceId: invoiceId,
+        eventType: 'COLLECTION_STARTED',
         status: 'PROCESSING',
         actor: 'SCHEDULER',
         metadata: JSON.stringify({
@@ -206,17 +206,17 @@ export class BnplBillingScheduler {
       if (isSuccess) {
         // 성공: 출금 승인 → COMPLETED로 변경
         await this.dbService.db
-          .update(schema.settlementBatch)
+          .update(schema.bnplInvoices)
           .set({
             status: 'COMPLETED',
             pgTransactionId: `CMS_${Date.now()}`,
           })
-          .where(eq(schema.settlementBatch.id, invoice.id));
+          .where(eq(schema.bnplInvoices.id, invoice.id));
 
-        await this.dbService.db.insert(schema.settlementProcessEvent).values({
+        await this.dbService.db.insert(schema.bnplCollectionEvents).values({
           id: ulid(),
-          batchId: invoice.id,
-          eventType: 'BATCH_COMPLETED',
+          invoiceId: invoice.id,
+          eventType: 'COLLECTION_COMPLETED',
           status: 'CAPTURED',
           actor: 'SCHEDULER',
           metadata: JSON.stringify({
@@ -233,14 +233,15 @@ export class BnplBillingScheduler {
       } else {
         // 실패: 출금 거절 → FAILED로 변경
         await this.dbService.db
-          .update(schema.settlementBatch)
+          .update(schema.bnplInvoices)
           .set({ status: 'FAILED' })
-          .where(eq(schema.settlementBatch.id, invoice.id));
+          .where(eq(schema.bnplInvoices.id, invoice.id));
 
-        await this.dbService.db.insert(schema.settlementProcessEvent).values({
+        await this.dbService.db.insert(schema.bnplCollectionEvents).values({
           id: ulid(),
-          batchId: invoice.id,
-          eventType: 'BATCH_FAILED',
+          invoiceId: invoice.id,
+          invoiceItemId: invoice.id,
+          eventType: 'COLLECTION_FAILED',
           status: 'FAILED',
           actor: 'SCHEDULER',
           errorMessage: 'Mock: 잔액 부족 또는 계좌 오류',
@@ -268,8 +269,8 @@ export class BnplBillingScheduler {
     // 1. Invoice Items 조회
     const invoiceItems = await this.dbService.db
       .select()
-      .from(schema.settlementBatchItem)
-      .where(eq(schema.settlementBatchItem.batchId, invoiceId));
+      .from(schema.bnplInvoiceItems)
+      .where(eq(schema.bnplInvoiceItems.invoiceId, invoiceId));
 
     const eventIds = invoiceItems.map((item) => item.bnplEventId);
 
@@ -316,8 +317,8 @@ export class BnplBillingScheduler {
     // captureAllRelatedEvents와 동일한 로직이지만 FAILED로 변환
     const invoiceItems = await this.dbService.db
       .select()
-      .from(schema.settlementBatchItem)
-      .where(eq(schema.settlementBatchItem.batchId, invoiceId));
+      .from(schema.bnplInvoiceItems)
+      .where(eq(schema.bnplInvoiceItems.invoiceId, invoiceId));
 
     const eventIds = invoiceItems.map((item) => item.bnplEventId);
 

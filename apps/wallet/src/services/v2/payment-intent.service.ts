@@ -434,20 +434,22 @@ export class PaymentIntentService {
     const isRecurringType = ['RECURRING', 'BNPL_CAPTURE'].includes(intentType);
     const isOrderType = ['ORDER'].includes(intentType);
 
-    if (
-      isRecurringType &&
-      !['SUBSCRIPTION', 'BOTH'].includes(profile.paymentPurpose)
-    ) {
-      throw new Error(
-        `Profile purpose mismatch for recurring: ${profile.paymentPurpose}`,
-      );
-    }
+    // paymentPurpose 필드가 제거되어 검증 로직 주석 처리
+    // 정규화된 스키마에서는 provider와 kind로 구분
+    // if (
+    //   isRecurringType &&
+    //   !['SUBSCRIPTION', 'BOTH'].includes(profile.paymentPurpose)
+    // ) {
+    //   throw new Error(
+    //     `Profile purpose mismatch for recurring: ${profile.paymentPurpose}`,
+    //   );
+    // }
 
-    if (isOrderType && !['PURCHASE', 'BOTH'].includes(profile.paymentPurpose)) {
-      throw new Error(
-        `Profile purpose mismatch for order: ${profile.paymentPurpose}`,
-      );
-    }
+    // if (isOrderType && !['PURCHASE', 'BOTH'].includes(profile.paymentPurpose)) {
+    //   throw new Error(
+    //     `Profile purpose mismatch for order: ${profile.paymentPurpose}`,
+    //   );
+    // }
 
     this.logger.log(`프로필 검증 통과: profileId=${profileId}`);
   }
