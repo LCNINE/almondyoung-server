@@ -1,6 +1,5 @@
 // apps/notification/src/provider/services/provider-manager.service.ts
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
@@ -14,15 +13,8 @@ import { Channel } from '../../shared/enums';
 import { AlertService } from '../../shared/services/alert.service';
 import { NOTIFICATION_CONSTANTS } from '../../shared/constants';
 import { ProviderStatus } from '../enums/provider-status.enum';
-import { ResendProvider } from '../providers/email/resend.provider';
-import { TwilioProvider } from '../providers/sms/twilio.provider';
-import { NHNProvider } from '../providers/kakao/nhn.provider';
-import { FCMProvider } from '../providers/push/fcm.provider';
+import { ProviderFactory } from '../factories/provider.factory';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
-
-interface ProviderClass {
-    new(...args: any[]): NotificationProvider;
-}
 
 @Injectable()
 export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
@@ -31,16 +23,9 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     private providersByChannel: Map<Channel, NotificationProvider[]> = new Map();
     private healthCheckInterval?: NodeJS.Timeout;
 
-    private readonly providerClassMap: Record<string, ProviderClass> = {
-        'resend': ResendProvider,
-        'twilio': TwilioProvider,
-        'kakao': NHNProvider,
-        'fcm': FCMProvider,
-    };
-
     constructor(
         @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
-        private readonly moduleRef: ModuleRef,
+        private readonly providerFactory: ProviderFactory,
         private readonly alertService: AlertService,
     ) {
         this.logger = new StructuredLogger(new Logger(ProviderManagerService.name));
@@ -59,6 +44,8 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
         if (this.healthCheckInterval) {
             clearInterval(this.healthCheckInterval);
         }
+        this.providers.clear();
+        this.providersByChannel.clear();
     }
 
     async reloadProviders() {
@@ -83,32 +70,45 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
         });
 
         for (const dbProvider of dbProviders) {
-            const ProviderClass = this.providerClassMap[dbProvider.providerName];
-            if (!ProviderClass) {
-                this.logger.warn('Unknown provider type', {
-                    providerName: dbProvider.providerName,
-                });
-                continue;
-            }
-
             try {
-                // Provider 초기화 시 실패해도 앱이 크래시하지 않도록
-                const provider = await this.createProvider(ProviderClass, dbProvider);
-                if (provider) {
-                    this.providers.set(dbProvider.providerId, provider);
+                const provider = this.providerFactory.create(
+                    dbProvider.providerName,
+                    dbProvider.providerId,
+                    dbProvider.config as Record<string, any>
+                );
 
-                    const channel = dbProvider.channel as Channel;
-                    if (!this.providersByChannel.has(channel)) {
-                        this.providersByChannel.set(channel, []);
-                    }
-                    this.providersByChannel.get(channel)!.push(provider);
+                if (!provider) {
+                    this.logger.warn('Unknown provider type', {
+                        providerName: dbProvider.providerName,
+                        providerId: dbProvider.providerId,
+                    });
+                    continue;
+                }
 
-                    this.logger.log('Provider loaded successfully', {
+                // 초기 헬스체크
+                const isAvailable = await provider.isAvailable();
+                if (!isAvailable) {
+                    this.logger.warn('Provider not available during initialization', {
                         providerId: dbProvider.providerId,
                         providerName: dbProvider.providerName,
-                        channel,
                     });
                 }
+
+                this.providers.set(dbProvider.providerId, provider);
+
+                const channel = dbProvider.channel as Channel;
+                if (!this.providersByChannel.has(channel)) {
+                    this.providersByChannel.set(channel, []);
+                }
+                this.providersByChannel.get(channel)!.push(provider);
+
+                this.logger.log('Provider loaded successfully', {
+                    providerId: dbProvider.providerId,
+                    providerName: dbProvider.providerName,
+                    channel,
+                    isAvailable,
+                });
+
             } catch (error: any) {
                 this.logger.error('Failed to load provider', {
                     providerId: dbProvider.providerId,
@@ -121,26 +121,20 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
                     .update(notificationProviders)
                     .set({
                         status: ProviderStatus.ERROR,
+                        metadata: {
+                            lastError: error.message,
+                            lastErrorAt: new Date().toISOString(),
+                        },
                         updatedAt: new Date(),
                     })
                     .where(eq(notificationProviders.providerId, dbProvider.providerId));
             }
         }
-    }
 
-    private async createProvider(
-        ProviderClass: ProviderClass,
-        dbProvider: NotificationProviderEntity
-    ): Promise<NotificationProvider | null> {
-        try {
-            return await this.moduleRef.create(ProviderClass);
-        } catch (error: any) {
-            this.logger.error('Provider creation failed', {
-                providerId: dbProvider.providerId,
-                error: error.message,
-            });
-            return null;
-        }
+        this.logger.log('Providers loaded', {
+            totalProviders: this.providers.size,
+            channels: Array.from(this.providersByChannel.keys()),
+        });
     }
 
     getPrimaryProviderForChannel(channel: Channel): NotificationProvider | null {
@@ -164,18 +158,26 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
             }
         }
 
+        // 모든 provider가 unavailable한 경우
         await this.alertService.createAlert({
             type: 'provider_unavailable',
             severity: 'critical',
             title: `No available providers for ${channel}`,
             message: `All providers for channel ${channel} are unavailable`,
-            context: { channel },
+            context: {
+                channel,
+                attemptedProviders: providers.map(p => p.getProviderId()),
+            },
         });
 
         return null;
     }
 
     private async startHealthChecks() {
+        // 즉시 한 번 실행
+        await this.performHealthChecks();
+
+        // 주기적으로 실행
         this.healthCheckInterval = setInterval(
             async () => {
                 await this.performHealthChecks();
@@ -185,14 +187,31 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     }
 
     private async performHealthChecks() {
+        const healthCheckResults: Array<{
+            providerId: string;
+            providerName: string;
+            isAvailable: boolean;
+            error?: string;
+        }> = [];
+
         for (const [providerId, provider] of this.providers.entries()) {
             try {
                 const isAvailable = await provider.isAvailable();
+
+                healthCheckResults.push({
+                    providerId,
+                    providerName: provider.getName(),
+                    isAvailable,
+                });
 
                 await this.db
                     .update(notificationProviders)
                     .set({
                         status: isAvailable ? ProviderStatus.ACTIVE : ProviderStatus.ERROR,
+                        metadata: {
+                            lastHealthCheck: new Date().toISOString(),
+                            isHealthy: isAvailable,
+                        },
                         updatedAt: new Date(),
                     })
                     .where(eq(notificationProviders.providerId, providerId));
@@ -205,7 +224,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
                         message: `Health check failed for provider ${provider.getName()}`,
                         context: {
                             providerId,
-                            providerName: provider.getName()
+                            providerName: provider.getName(),
                         },
                     });
                 }
@@ -215,7 +234,18 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
                     providerName: provider.getName(),
                     error: error.message,
                 }, error.stack);
+
+                healthCheckResults.push({
+                    providerId,
+                    providerName: provider.getName(),
+                    isAvailable: false,
+                    error: error.message,
+                });
             }
         }
+
+        this.logger.log('Health check completed', {
+            results: healthCheckResults,
+        });
     }
 }

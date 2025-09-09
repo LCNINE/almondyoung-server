@@ -11,7 +11,10 @@ import { UserSearchService } from './services/user-search.service';
 import { CampaignProcessor } from './processors/campaign.processor';
 import { ProviderModule } from '../provider/provider.module';
 import { TemplateModule } from '../template/template.module';
-import { SharedModule } from '../shared/shared.module';
+
+import { TemplateRendererService } from '../shared/services/template-renderer.service';
+import { UserSyncService } from '../shared/services/user-sync.service';
+import { UserNotificationService } from '../shared/services/user-notification.service';
 
 @Module({
   imports: [
@@ -24,7 +27,6 @@ import { SharedModule } from '../shared/shared.module';
     }),
     ProviderModule,
     TemplateModule,
-    SharedModule,
   ],
   controllers: [CampaignController, CampaignTargetingController],
   providers: [
@@ -32,6 +34,9 @@ import { SharedModule } from '../shared/shared.module';
     CampaignTargetingService,
     UserSearchService,
     CampaignProcessor,
+    TemplateRendererService,
+    UserSyncService,
+    UserNotificationService,
   ],
   exports: [CampaignService],
 })

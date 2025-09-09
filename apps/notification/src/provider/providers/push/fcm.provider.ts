@@ -1,132 +1,91 @@
-// apps/notification/src/provider/providers/push/fcm.provider.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import { google } from 'googleapis';
 import {
     NotificationProvider,
     NotificationMessage,
     NotificationResult,
-    BulkNotificationResult
+    BulkNotificationResult,
 } from '../../interfaces/notification-provider.interface';
+import { StructuredLogger } from '../../../shared/utils/logger.utils';
 
-// FCM v1 API 메시지 타입 정의
-interface FcmV1Message {
-    name?: string;
-    data?: { [key: string]: string };
+interface FCMConfig {
+    projectId: string;
+    privateKeyId: string;
+    privateKey: string;
+    clientEmail: string;
+    clientId: string;
+}
+
+interface FCMMessage {
+    token: string;
     notification?: {
         title?: string;
         body?: string;
-        image?: string;
+        imageUrl?: string;
     };
-    android?: {
-        collapse_key?: string;
-        priority?: 'normal' | 'high';
-        ttl?: string;
-        restricted_package_name?: string;
-        data?: { [key: string]: string };
-        notification?: {
-            title?: string;
-            body?: string;
-            icon?: string;
-            color?: string;
-            sound?: string;
-            tag?: string;
-            click_action?: string;
-            channel_id?: string;
-            notification_priority?: 'PRIORITY_MIN' | 'PRIORITY_LOW' | 'PRIORITY_DEFAULT' | 'PRIORITY_HIGH' | 'PRIORITY_MAX';
-            default_sound?: boolean;
-            default_vibrate_timings?: boolean;
-            default_light_settings?: boolean;
-            image?: string;
-        };
-        fcm_options?: {
-            analytics_label?: string;
-        };
-        direct_boot_ok?: boolean;
-    };
-    apns?: {
-        headers?: { [key: string]: string };
-        payload?: {
-            aps?: {
-                alert?: {
-                    title?: string;
-                    body?: string;
-                };
-                badge?: number;
-                sound?: string;
-                'content-available'?: number;
-                category?: string;
-                'thread-id'?: string;
-            };
-            [key: string]: any;
-        };
-        fcm_options?: {
-            analytics_label?: string;
-            image?: string;
-        };
-    };
-    webpush?: {
-        headers?: { [key: string]: string };
-        data?: { [key: string]: string };
-        notification?: any;
-        fcm_options?: {
-            link?: string;
-            analytics_label?: string;
-        };
-    };
-    fcm_options?: {
-        analytics_label?: string;
-    };
-    token?: string;
-    topic?: string;
-    condition?: string;
+    data?: { [key: string]: string };
+    android?: admin.messaging.AndroidConfig;
+    apns?: admin.messaging.ApnsConfig;
+    webpush?: admin.messaging.WebpushConfig;
 }
 
-@Injectable()
 export class FCMProvider implements NotificationProvider {
-    private readonly logger = new Logger(FCMProvider.name);
-    private readonly app?: admin.app.App;
-    private readonly auth?: any;
-    private readonly projectId?: string;
-    private readonly providerId = 'fcm-push';
-    private readonly isConfigured: boolean;
-    private readonly fcmApiUrl = 'https://fcm.googleapis.com/v1';
+    private readonly logger: StructuredLogger;
+    private readonly providerId: string;
+    private readonly config: FCMConfig;
+    private messaging: admin.messaging.Messaging;
+    private isInitialized: boolean = false;
 
-    constructor(private readonly configService: ConfigService) {
-        const serviceAccountString = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
+    constructor(
+        providerId: string,
+        config: Record<string, any>,
+        private readonly configService: ConfigService,
+    ) {
+        this.logger = new StructuredLogger(new Logger(FCMProvider.name));
+        this.providerId = providerId;
 
-        if (serviceAccountString) {
-            try {
-                const serviceAccount = JSON.parse(serviceAccountString);
-                this.projectId = serviceAccount.project_id;
+        // DB config 우선, 없으면 환경변수
+        this.config = {
+            projectId: config.projectId || this.configService.get<string>('FIREBASE_PROJECT_ID')!,
+            privateKeyId: config.privateKeyId || this.configService.get<string>('FIREBASE_PRIVATE_KEY_ID')!,
+            privateKey: config.privateKey || this.configService.get<string>('FIREBASE_PRIVATE_KEY')!,
+            clientEmail: config.clientEmail || this.configService.get<string>('FIREBASE_CLIENT_EMAIL')!,
+            clientId: config.clientId || this.configService.get<string>('FIREBASE_CLIENT_ID')!,
+        };
 
-                // Firebase Admin SDK 초기화 (레거시 API 및 토큰 관리용)
-                this.app = admin.initializeApp({
-                    credential: admin.credential.cert(serviceAccount),
-                    projectId: this.projectId,
-                });
+        this.initializeFirebase();
+    }
 
-                // Google Auth 라이브러리 초기화 (FCM v1 API용)
-                this.auth = new google.auth.GoogleAuth({
-                    credentials: serviceAccount,
-                    scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
-                });
+    private initializeFirebase() {
+        try {
+            // Firebase Admin 초기화
+            const app = admin.initializeApp({
+                credential: admin.credential.cert({
+                    projectId: this.config.projectId,
+                    privateKey: this.config.privateKey.replace(/\\n/g, '\n'),
+                    clientEmail: this.config.clientEmail,
+                }),
+                projectId: this.config.projectId,
+            }, `fcm-provider-${this.providerId}`);
 
-                this.isConfigured = true;
-                this.logger.log('FCM provider configured successfully');
-            } catch (error: any) {
-                this.logger.error('Failed to initialize FCM', error);
-                this.isConfigured = false;
-            }
-        } else {
-            this.logger.warn('FCM provider is not configured. FIREBASE_SERVICE_ACCOUNT is missing');
-            this.isConfigured = false;
+            this.messaging = app.messaging();
+            this.isInitialized = true;
+
+            this.logger.log('FCM Provider initialized', {
+                providerId: this.providerId,
+                projectId: this.config.projectId,
+            });
+        } catch (error: any) {
+            this.logger.error('Failed to initialize FCM', {
+                error: error.message,
+            }, error.stack);
+            throw error;
         }
     }
 
     getName(): string {
-        return 'Firebase Cloud Messaging';
+        return 'FCM Push';
     }
 
     getProviderId(): string {
@@ -134,256 +93,472 @@ export class FCMProvider implements NotificationProvider {
     }
 
     async isAvailable(): Promise<boolean> {
-        if (!this.isConfigured || !this.app) {
-            return false;
-        }
-
-        try {
-            // 간단한 토큰 검증으로 서비스 확인
-            const testToken = await this.auth.getAccessToken();
-            return !!testToken;
-        } catch (error) {
-            this.logger.error('FCM availability check failed', error);
-            return false;
-        }
+        return this.isInitialized;
     }
 
     async send(message: NotificationMessage): Promise<NotificationResult> {
-        if (!this.isConfigured || !this.auth || !this.projectId) {
+        if (!this.isInitialized) {
             return {
                 success: false,
-                error: 'FCM provider is not configured',
+                error: 'FCM provider not initialized',
             };
         }
 
         try {
-            // FCM v1 메시지 구성
-            const fcmMessage: FcmV1Message = this.buildFcmMessage(message);
+            const metadata = message.metadata || {};
 
-            // Access token 획득
-            const accessToken = await this.auth.getAccessToken();
-
-            // FCM v1 API로 전송
-            const response = await fetch(
-                `${this.fcmApiUrl}/projects/${this.projectId}/messages:send`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        validate_only: false,
-                        message: fcmMessage,
-                    }),
-                }
-            );
-
-            const responseData = await response.json();
-
-            if (response.ok && responseData.name) {
-                return {
-                    success: true,
-                    messageId: responseData.name,
-                    providerResponse: responseData,
-                };
-            } else {
-                const errorCode = responseData.error?.details?.[0]?.['@type'] === 'type.googleapis.com/google.firebase.fcm.v1.FcmError'
-                    ? responseData.error.details[0].error_code
-                    : responseData.error?.code;
-
-                return {
-                    success: false,
-                    error: this.mapFcmErrorCode(errorCode) || responseData.error?.message || 'Unknown error',
-                    providerResponse: responseData,
-                };
-            }
-        } catch (error: any) {
-            this.logger.error(`FCM send failed: ${error.message}`);
-            return {
-                success: false,
-                error: error.message,
+            // FCM 메시지 구성
+            const fcmMessage: FCMMessage = {
+                token: message.to,
+                notification: {
+                    title: message.subject || metadata.title,
+                    body: message.content,
+                    imageUrl: metadata.imageUrl,
+                },
+                data: this.buildDataPayload(metadata),
             };
+
+            // 플랫폼별 설정
+            if (metadata.android) {
+                fcmMessage.android = this.buildAndroidConfig(metadata.android);
+            }
+
+            if (metadata.apns) {
+                fcmMessage.apns = this.buildApnsConfig(metadata.apns);
+            }
+
+            if (metadata.webpush) {
+                fcmMessage.webpush = this.buildWebpushConfig(metadata.webpush);
+            }
+
+            // 메시지 전송
+            const messageId = await this.messaging.send(fcmMessage as any);
+
+            this.logger.log('FCM message sent successfully', {
+                messageId,
+                to: message.to,
+            });
+
+            return {
+                success: true,
+                messageId,
+            };
+        } catch (error: any) {
+            return this.handleError(error, message.to);
         }
     }
 
     async sendBulk(messages: NotificationMessage[]): Promise<BulkNotificationResult> {
-        if (!this.isConfigured || !this.auth) {
+        if (!this.isInitialized) {
             return {
                 successCount: 0,
                 failureCount: messages.length,
-                failures: messages.map(msg => ({
-                    to: msg.to,
-                    error: 'FCM provider is not configured',
+                failures: messages.map(m => ({
+                    to: m.to,
+                    error: 'FCM provider not initialized',
                 })),
             };
         }
 
-        // FCM v1 API는 배치 전송을 직접 지원하지 않으므로 병렬 처리
-        const results = await Promise.allSettled(
-            messages.map(msg => this.send(msg))
-        );
-
+        const results: NotificationResult[] = [];
+        const failures: Array<{ to: string; error: string }> = [];
         let successCount = 0;
         let failureCount = 0;
-        const failures: Array<{ to: string; error: string }> = [];
 
-        results.forEach((result, index) => {
-            if (result.status === 'fulfilled' && result.value.success) {
-                successCount++;
-            } else {
-                failureCount++;
-                failures.push({
-                    to: messages[index].to,
-                    error: result.status === 'rejected'
-                        ? result.reason.message
-                        : (result.value as NotificationResult).error || 'Unknown error',
+        // FCM은 한 번에 최대 500개까지 전송 가능
+        const BATCH_SIZE = 500;
+
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+            const batch = messages.slice(i, i + BATCH_SIZE);
+
+            try {
+                // 멀티캐스트 메시지 구성
+                const fcmMessages: admin.messaging.Message[] = batch.map(message => {
+                    const metadata = message.metadata || {};
+
+                    return {
+                        token: message.to,
+                        notification: {
+                            title: message.subject || metadata.title,
+                            body: message.content,
+                            imageUrl: metadata.imageUrl,
+                        },
+                        data: this.buildDataPayload(metadata),
+                        android: metadata.android ? this.buildAndroidConfig(metadata.android) : undefined,
+                        apns: metadata.apns ? this.buildApnsConfig(metadata.apns) : undefined,
+                        webpush: metadata.webpush ? this.buildWebpushConfig(metadata.webpush) : undefined,
+                    };
+                });
+
+                // 배치 전송
+                const response = await this.messaging.sendEach(fcmMessages);
+
+                // 결과 처리
+                response.responses.forEach((resp, index) => {
+                    if (resp.success) {
+                        successCount++;
+                        results.push({
+                            success: true,
+                            messageId: resp.messageId,
+                        });
+                    } else {
+                        failureCount++;
+                        const error = resp.error;
+                        failures.push({
+                            to: batch[index].to,
+                            error: error?.message || 'Unknown error',
+                        });
+
+                        this.logger.warn('Failed to send FCM message', {
+                            to: batch[index].to,
+                            error: error?.message,
+                            code: error?.code,
+                        });
+                    }
+                });
+
+            } catch (error: any) {
+                this.logger.error('Batch send failed', {
+                    batchIndex: i / BATCH_SIZE,
+                    error: error.message,
+                });
+
+                // 배치 전체 실패 처리
+                batch.forEach(message => {
+                    failureCount++;
+                    failures.push({
+                        to: message.to,
+                        error: error.message,
+                    });
                 });
             }
-        });
+        }
 
         return {
             successCount,
             failureCount,
-            failures,
+            results: results.length > 0 ? results : undefined,
+            failures: failures.length > 0 ? failures : undefined,
         };
     }
 
-    private buildFcmMessage(message: NotificationMessage): FcmV1Message {
-        const fcmMessage: FcmV1Message = {
-            token: message.to, // FCM 등록 토큰
-            notification: {
-                title: message.subject || 'Notification',
-                body: message.content,
-            },
-            data: this.sanitizeData({
-                ...message.metadata,
-                // 클릭 액션 등 추가 데이터
-                click_action: message.metadata?.clickAction || 'FLUTTER_NOTIFICATION_CLICK',
-            }),
-        };
+    private buildDataPayload(metadata: any): { [key: string]: string } {
+        const data: { [key: string]: string } = {};
 
-        // 이미지가 있는 경우
-        if (message.metadata?.image) {
-            fcmMessage.notification!.image = message.metadata.image;
+        // 모든 메타데이터를 문자열로 변환하여 data payload에 포함
+        if (metadata.notificationId) {
+            data.notificationId = metadata.notificationId;
+        }
+        if (metadata.campaignId) {
+            data.campaignId = metadata.campaignId;
+        }
+        if (metadata.category) {
+            data.category = metadata.category;
+        }
+        if (metadata.priority) {
+            data.priority = metadata.priority;
+        }
+        if (metadata.clickAction) {
+            data.clickAction = metadata.clickAction;
+        }
+        if (metadata.sound) {
+            data.sound = metadata.sound;
         }
 
-        // Android 특정 설정
-        fcmMessage.android = {
-            priority: message.metadata?.priority === 'urgent' ? 'high' : 'normal',
-            ttl: message.metadata?.ttl || '3600s', // 기본 1시간
-            notification: {
-                channel_id: message.metadata?.channelId || 'default',
-                click_action: message.metadata?.clickAction,
-                tag: message.metadata?.tag,
-                notification_priority: this.mapNotificationPriority(message.metadata?.priority),
-            },
-            fcm_options: {
-                analytics_label: message.metadata?.analyticsLabel || message.metadata?.category,
-            },
-        };
+        // 커스텀 데이터 추가
+        if (metadata.customData) {
+            Object.entries(metadata.customData).forEach(([key, value]) => {
+                if (typeof value === 'string') {
+                    data[key] = value;
+                } else {
+                    data[key] = JSON.stringify(value);
+                }
+            });
+        }
 
-        // iOS(APNs) 특정 설정
-        fcmMessage.apns = {
-            headers: {
-                'apns-priority': message.metadata?.priority === 'urgent' ? '10' : '5',
-                'apns-expiration': String(Math.floor(Date.now() / 1000) + 3600), // 1시간 후
-            },
+        return data;
+    }
+
+    private buildAndroidConfig(androidConfig: any): admin.messaging.AndroidConfig {
+        return {
+            priority: androidConfig.priority || 'high',
+            ttl: androidConfig.ttl ? parseInt(androidConfig.ttl) * 1000 : undefined, // 초를 밀리초로 변환
+            notification: androidConfig.notification ? {
+                title: androidConfig.notification.title,
+                body: androidConfig.notification.body,
+                icon: androidConfig.notification.icon,
+                color: androidConfig.notification.color,
+                sound: androidConfig.notification.sound,
+                tag: androidConfig.notification.tag,
+                clickAction: androidConfig.notification.clickAction,
+                bodyLocKey: androidConfig.notification.bodyLocKey,
+                bodyLocArgs: androidConfig.notification.bodyLocArgs,
+                titleLocKey: androidConfig.notification.titleLocKey,
+                titleLocArgs: androidConfig.notification.titleLocArgs,
+                channelId: androidConfig.notification.channelId,
+                ticker: androidConfig.notification.ticker,
+                sticky: androidConfig.notification.sticky,
+                eventTime: androidConfig.notification.eventTime,
+                localOnly: androidConfig.notification.localOnly,
+                notificationPriority: androidConfig.notification.notificationPriority,
+                defaultSound: androidConfig.notification.defaultSound,
+                defaultVibrateTimings: androidConfig.notification.defaultVibrateTimings,
+                defaultLightSettings: androidConfig.notification.defaultLightSettings,
+                vibrateTimings: androidConfig.notification.vibrateTimings,
+                visibility: androidConfig.notification.visibility,
+                notificationCount: androidConfig.notification.notificationCount,
+                lightSettings: androidConfig.notification.lightSettings,
+                image: androidConfig.notification.image,
+            } : undefined,
+            data: androidConfig.data,
+            restrictedPackageName: androidConfig.restrictedPackageName,
+            collapseKey: androidConfig.collapseKey,
+        };
+    }
+
+    private buildApnsConfig(apnsConfig: any): admin.messaging.ApnsConfig {
+        return {
+            headers: apnsConfig.headers,
             payload: {
                 aps: {
-                    alert: {
-                        title: message.subject || 'Notification',
-                        body: message.content,
-                    },
-                    badge: message.metadata?.badge,
-                    sound: message.metadata?.sound || 'default',
-                    'content-available': message.metadata?.contentAvailable ? 1 : undefined,
-                    category: message.metadata?.category,
+                    alert: apnsConfig.alert ? {
+                        title: apnsConfig.alert.title,
+                        subtitle: apnsConfig.alert.subtitle,
+                        body: apnsConfig.alert.body,
+                        locKey: apnsConfig.alert.locKey,
+                        locArgs: apnsConfig.alert.locArgs,
+                        titleLocKey: apnsConfig.alert.titleLocKey,
+                        titleLocArgs: apnsConfig.alert.titleLocArgs,
+                        subtitleLocKey: apnsConfig.alert.subtitleLocKey,
+                        subtitleLocArgs: apnsConfig.alert.subtitleLocArgs,
+                        actionLocKey: apnsConfig.alert.actionLocKey,
+                        launchImage: apnsConfig.alert.launchImage,
+                    } : apnsConfig.alert,
+                    badge: apnsConfig.badge,
+                    sound: apnsConfig.sound,
+                    contentAvailable: apnsConfig.contentAvailable,
+                    category: apnsConfig.category,
+                    threadId: apnsConfig.threadId,
+                    mutableContent: apnsConfig.mutableContent,
                 },
+                ...apnsConfig.customData,
             },
-            fcm_options: {
-                analytics_label: message.metadata?.analyticsLabel || message.metadata?.category,
-                image: message.metadata?.image,
-            },
+            fcmOptions: apnsConfig.fcmOptions,
         };
-
-        // Web Push 특정 설정
-        if (message.metadata?.webpush) {
-            fcmMessage.webpush = {
-                headers: {
-                    TTL: message.metadata?.ttl || '3600',
-                },
-                notification: {
-                    title: message.subject || 'Notification',
-                    body: message.content,
-                    icon: message.metadata?.icon,
-                    badge: message.metadata?.badge,
-                    image: message.metadata?.image,
-                },
-                fcm_options: {
-                    link: message.metadata?.link,
-                    analytics_label: message.metadata?.analyticsLabel || message.metadata?.category,
-                },
-            };
-        }
-
-        // FCM 옵션
-        fcmMessage.fcm_options = {
-            analytics_label: message.metadata?.analyticsLabel || message.metadata?.category,
-        };
-
-        return fcmMessage;
     }
 
-    private sanitizeData(data: Record<string, any>): Record<string, string> {
-        const sanitized: Record<string, string> = {};
+    private buildWebpushConfig(webpushConfig: any): admin.messaging.WebpushConfig {
+        return {
+            headers: webpushConfig.headers,
+            data: webpushConfig.data,
+            notification: webpushConfig.notification ? {
+                title: webpushConfig.notification.title,
+                body: webpushConfig.notification.body,
+                icon: webpushConfig.notification.icon,
+                badge: webpushConfig.notification.badge,
+                image: webpushConfig.notification.image,
+                data: webpushConfig.notification.data,
+                dir: webpushConfig.notification.dir,
+                lang: webpushConfig.notification.lang,
+                tag: webpushConfig.notification.tag,
+                renotify: webpushConfig.notification.renotify,
+                requireInteraction: webpushConfig.notification.requireInteraction,
+                silent: webpushConfig.notification.silent,
+                timestamp: webpushConfig.notification.timestamp,
+                vibrate: webpushConfig.notification.vibrate,
+                actions: webpushConfig.notification.actions,
+            } : undefined,
+            fcmOptions: webpushConfig.fcmOptions,
+        };
+    }
 
-        for (const [key, value] of Object.entries(data)) {
-            // FCM 예약어 필터링
-            if (!this.isReservedKey(key) && value !== null && value !== undefined) {
-                sanitized[key] = String(value);
+    private handleError(error: any, to: string): NotificationResult {
+        this.logger.error('Failed to send FCM message', {
+            to,
+            error: error.message,
+            code: error.code,
+        });
+
+        let errorMessage = error.message || 'Unknown error';
+
+        // FCM 에러 코드 매핑
+        if (error.code) {
+            switch (error.code) {
+                case 'messaging/invalid-registration-token':
+                case 'messaging/registration-token-not-registered':
+                    errorMessage = 'Invalid or unregistered token';
+                    break;
+                case 'messaging/invalid-argument':
+                    errorMessage = 'Invalid message format';
+                    break;
+                case 'messaging/message-rate-exceeded':
+                    errorMessage = 'Message rate exceeded';
+                    break;
+                case 'messaging/device-message-rate-exceeded':
+                    errorMessage = 'Device message rate exceeded';
+                    break;
+                case 'messaging/topics-message-rate-exceeded':
+                    errorMessage = 'Topics message rate exceeded';
+                    break;
+                case 'messaging/too-many-topics':
+                    errorMessage = 'Too many topics';
+                    break;
+                case 'messaging/invalid-apns-credentials':
+                    errorMessage = 'Invalid APNS credentials';
+                    break;
+                case 'messaging/mismatched-credential':
+                    errorMessage = 'Mismatched credential';
+                    break;
+                case 'messaging/authentication-error':
+                    errorMessage = 'Authentication error';
+                    break;
+                case 'messaging/server-unavailable':
+                    errorMessage = 'FCM server unavailable';
+                    break;
+                case 'messaging/internal-error':
+                    errorMessage = 'Internal server error';
+                    break;
             }
         }
 
-        return sanitized;
+        return {
+            success: false,
+            error: errorMessage,
+            providerResponse: {
+                code: error.code,
+                message: error.message,
+            },
+        };
     }
 
-    private isReservedKey(key: string): boolean {
-        const reservedPrefixes = ['google.', 'gcm.'];
-        const reservedKeys = ['from', 'message_type'];
+    // 주제 구독 관리 메서드
+    async subscribeToTopic(tokens: string[], topic: string): Promise<admin.messaging.MessagingTopicManagementResponse> {
+        if (!this.isInitialized) {
+            throw new Error('FCM provider not initialized');
+        }
 
-        return reservedKeys.includes(key) ||
-            reservedPrefixes.some(prefix => key.startsWith(prefix));
-    }
+        try {
+            const response = await this.messaging.subscribeToTopic(tokens, topic);
 
-    private mapNotificationPriority(priority?: string): 'PRIORITY_MIN' | 'PRIORITY_LOW' | 'PRIORITY_DEFAULT' | 'PRIORITY_HIGH' | 'PRIORITY_MAX' {
-        switch (priority) {
-            case 'urgent':
-                return 'PRIORITY_MAX';
-            case 'high':
-                return 'PRIORITY_HIGH';
-            case 'low':
-                return 'PRIORITY_LOW';
-            case 'min':
-                return 'PRIORITY_MIN';
-            default:
-                return 'PRIORITY_DEFAULT';
+            this.logger.log('Subscribed to topic', {
+                topic,
+                successCount: response.successCount,
+                failureCount: response.failureCount,
+            });
+
+            return response;
+        } catch (error: any) {
+            this.logger.error('Failed to subscribe to topic', {
+                topic,
+                error: error.message,
+            });
+            throw error;
         }
     }
 
-    private mapFcmErrorCode(errorCode?: string): string | null {
-        if (!errorCode) return null;
+    async unsubscribeFromTopic(tokens: string[], topic: string): Promise<admin.messaging.MessagingTopicManagementResponse> {
+        if (!this.isInitialized) {
+            throw new Error('FCM provider not initialized');
+        }
 
-        const errorMap: Record<string, string> = {
-            'INVALID_ARGUMENT': 'Invalid registration token or request parameters',
-            'UNREGISTERED': 'App instance was unregistered from FCM',
-            'SENDER_ID_MISMATCH': 'The authenticated sender ID is different from the sender ID for the registration token',
-            'QUOTA_EXCEEDED': 'Sending limit exceeded',
-            'UNAVAILABLE': 'FCM server is temporarily unavailable',
-            'INTERNAL': 'Internal server error',
-            'THIRD_PARTY_AUTH_ERROR': 'APNs certificate or web push auth key was invalid or missing',
-        };
+        try {
+            const response = await this.messaging.unsubscribeFromTopic(tokens, topic);
 
-        return errorMap[errorCode] || `FCM Error: ${errorCode}`;
+            this.logger.log('Unsubscribed from topic', {
+                topic,
+                successCount: response.successCount,
+                failureCount: response.failureCount,
+            });
+
+            return response;
+        } catch (error: any) {
+            this.logger.error('Failed to unsubscribe from topic', {
+                topic,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 주제로 메시지 전송
+    async sendToTopic(topic: string, message: NotificationMessage): Promise<NotificationResult> {
+        if (!this.isInitialized) {
+            return {
+                success: false,
+                error: 'FCM provider not initialized',
+            };
+        }
+
+        try {
+            const metadata = message.metadata || {};
+
+            const fcmMessage: admin.messaging.Message = {
+                topic,
+                notification: {
+                    title: message.subject || metadata.title,
+                    body: message.content,
+                    imageUrl: metadata.imageUrl,
+                },
+                data: this.buildDataPayload(metadata),
+                android: metadata.android ? this.buildAndroidConfig(metadata.android) : undefined,
+                apns: metadata.apns ? this.buildApnsConfig(metadata.apns) : undefined,
+                webpush: metadata.webpush ? this.buildWebpushConfig(metadata.webpush) : undefined,
+            };
+
+            const messageId = await this.messaging.send(fcmMessage);
+
+            this.logger.log('FCM topic message sent successfully', {
+                messageId,
+                topic,
+            });
+
+            return {
+                success: true,
+                messageId,
+            };
+        } catch (error: any) {
+            return this.handleError(error, `topic:${topic}`);
+        }
+    }
+
+    // 조건으로 메시지 전송
+    async sendToCondition(condition: string, message: NotificationMessage): Promise<NotificationResult> {
+        if (!this.isInitialized) {
+            return {
+                success: false,
+                error: 'FCM provider not initialized',
+            };
+        }
+
+        try {
+            const metadata = message.metadata || {};
+
+            const fcmMessage: admin.messaging.Message = {
+                condition,
+                notification: {
+                    title: message.subject || metadata.title,
+                    body: message.content,
+                    imageUrl: metadata.imageUrl,
+                },
+                data: this.buildDataPayload(metadata),
+                android: metadata.android ? this.buildAndroidConfig(metadata.android) : undefined,
+                apns: metadata.apns ? this.buildApnsConfig(metadata.apns) : undefined,
+                webpush: metadata.webpush ? this.buildWebpushConfig(metadata.webpush) : undefined,
+            };
+
+            const messageId = await this.messaging.send(fcmMessage);
+
+            this.logger.log('FCM condition message sent successfully', {
+                messageId,
+                condition,
+            });
+
+            return {
+                success: true,
+                messageId,
+            };
+        } catch (error: any) {
+            return this.handleError(error, `condition:${condition}`);
+        }
     }
 }

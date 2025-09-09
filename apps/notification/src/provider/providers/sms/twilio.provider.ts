@@ -1,52 +1,86 @@
 // apps/notification/src/provider/providers/sms/twilio.provider.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as twilio from 'twilio';
+import { MessageInstance } from 'twilio/lib/rest/api/v2010/account/message';
 import {
     NotificationProvider,
     NotificationMessage,
     NotificationResult,
-    BulkNotificationResult
+    BulkNotificationResult,
 } from '../../interfaces/notification-provider.interface';
-import * as twilio from 'twilio';
+import { StructuredLogger } from '../../../shared/utils/logger.utils';
 
-@Injectable()
+interface TwilioConfig {
+    accountSid: string;
+    authToken: string;
+    messagingServiceSid?: string;
+    fromNumber?: string;
+    statusCallbackUrl?: string;
+    useTestCredentials?: boolean;
+}
+
+interface TwilioMessageOptions {
+    body: string;
+    to: string;
+    from?: string;
+    messagingServiceSid?: string;
+    statusCallback?: string;
+    validityPeriod?: number;
+    maxPrice?: string;
+    attemptCount?: number;
+    smartEncoded?: boolean;
+    shortenUrls?: boolean;
+    sendAsMms?: boolean;
+}
+
 export class TwilioProvider implements NotificationProvider {
-    private readonly logger = new Logger(TwilioProvider.name);
-    private readonly client?: twilio.Twilio;
-    private readonly fromNumber?: string;
-    private readonly messagingServiceSid?: string;
-    private readonly providerId = 'twilio-sms';
-    private readonly isConfigured: boolean;
-    private readonly useTestCredentials: boolean;
+    private readonly logger: StructuredLogger;
+    private readonly providerId: string;
+    private readonly config: TwilioConfig;
+    private readonly client: twilio.Twilio;
+    private isHealthy: boolean = true;
+    private lastHealthCheckTime: number = 0;
+    private readonly healthCheckInterval = 60000; // 1분
 
     constructor(
+        providerId: string,
+        config: Record<string, any>,
         private readonly configService: ConfigService,
     ) {
-        const accountSid = this.configService.get<string>('TWILIO_ACCOUNT_SID');
-        const authToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+        this.logger = new StructuredLogger(new Logger(TwilioProvider.name));
+        this.providerId = providerId;
 
-        // 테스트 자격 증명 사용 여부
-        this.useTestCredentials = this.configService.get<boolean>('TWILIO_USE_TEST_CREDENTIALS', false);
+        // 설정 초기화 - DB config 우선, 없으면 환경변수
+        this.config = {
+            accountSid: config.accountSid || 'ACe059ce3d5e1eb2d741c51bcea1cac1db',
+            authToken: config.authToken || 'f6f5f83e0ceb21921a96afaf464894ad',
+            messagingServiceSid: config.messagingServiceSid || this.configService.get<string>('TWILIO_MESSAGING_SERVICE_SID'),
+            fromNumber: config.fromNumber || '+15856342856',
+            statusCallbackUrl: config.statusCallbackUrl || this.configService.get<string>('TWILIO_STATUS_CALLBACK_URL'),
+            useTestCredentials: config.useTestCredentials || false,
+        };
 
-        // Messaging Service 또는 From Number
-        this.messagingServiceSid = this.configService.get<string>('TWILIO_MESSAGING_SERVICE_SID');
-        this.fromNumber = this.configService.get<string>('TWILIO_FROM_NUMBER');
-
-        if (accountSid && authToken && (this.fromNumber || this.messagingServiceSid)) {
-            this.client = twilio(accountSid, authToken);
-            this.isConfigured = true;
-
-            if (this.useTestCredentials) {
-                this.logger.warn('Using Twilio test credentials - messages will not be sent');
+        // Twilio 클라이언트 초기화
+        this.client = twilio(
+            this.config.accountSid,
+            this.config.authToken,
+            {
+                lazyLoading: true,
+                autoRetry: true,
+                maxRetries: 3,
             }
-        } else {
-            this.logger.warn('Twilio provider is not configured properly. Check TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and either TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID');
-            this.isConfigured = false;
-        }
+        );
+
+        this.logger.log('Twilio provider initialized', {
+            accountSid: this.config.accountSid,
+            fromNumber: this.config.fromNumber,
+            messagingServiceSid: this.config.messagingServiceSid,
+        });
     }
 
     getName(): string {
-        return 'Twilio';
+        return 'Twilio SMS';
     }
 
     getProviderId(): string {
@@ -54,60 +88,91 @@ export class TwilioProvider implements NotificationProvider {
     }
 
     async isAvailable(): Promise<boolean> {
-        if (!this.isConfigured || !this.client) {
-            return false;
+        // 캐싱된 헬스 체크 결과 사용
+        const now = Date.now();
+        if (now - this.lastHealthCheckTime < this.healthCheckInterval) {
+            return this.isHealthy;
         }
 
         try {
-            // Account 정보 조회로 연결 테스트
-            const account = await this.client.api.accounts(this.client.accountSid).fetch();
-            return account.status === 'active';
-        } catch (error) {
-            this.logger.error('Twilio availability check failed', error);
+            // 계정 정보 조회로 헬스체크
+            const account = await this.client.api.accounts(this.config.accountSid).fetch();
+
+            this.isHealthy = account.status === 'active';
+            this.lastHealthCheckTime = now;
+
+            if (!this.isHealthy) {
+                this.logger.warn('Twilio account is not active', {
+                    status: account.status,
+                    friendlyName: account.friendlyName,
+                });
+            }
+
+            return this.isHealthy;
+        } catch (error: any) {
+            this.logger.error('Health check failed', {
+                error: error.message,
+                code: error.code,
+            });
+
+            this.isHealthy = false;
+            this.lastHealthCheckTime = now;
             return false;
         }
     }
 
     async send(message: NotificationMessage): Promise<NotificationResult> {
-        if (!this.isConfigured || !this.client) {
-            return {
-                success: false,
-                error: 'Twilio provider is not configured',
-            };
-        }
-
         try {
-            const messageOptions: any = {
-                to: this.formatPhoneNumber(message.to),
+            const metadata = message.metadata || {};
+
+            // 전화번호 포맷팅
+            const toNumber = this.formatPhoneNumber(message.to);
+
+            // Twilio 메시지 옵션 구성
+            const messageOptions: TwilioMessageOptions = {
                 body: message.content,
+                to: toNumber,
             };
 
-            // MessagingServiceSid가 있으면 우선 사용, 없으면 From number 사용
-            if (this.messagingServiceSid) {
-                messageOptions.messagingServiceSid = this.messagingServiceSid;
+            // From 설정 (Messaging Service 또는 전화번호)
+            if (this.config.messagingServiceSid) {
+                messageOptions.messagingServiceSid = this.config.messagingServiceSid;
             } else {
-                messageOptions.from = this.fromNumber;
+                messageOptions.from = metadata.fromNumber || this.config.fromNumber;
             }
 
-            // 테스트 모드에서는 특별한 번호 사용
-            if (this.useTestCredentials) {
-                messageOptions.from = '+15005550006'; // Twilio 테스트용 magic number
-                this.logger.debug('Using test credentials', messageOptions);
+            // 콜백 URL 설정
+            if (this.config.statusCallbackUrl) {
+                messageOptions.statusCallback = this.config.statusCallbackUrl;
             }
 
-            // StatusCallback URL 설정 (옵션)
-            const statusCallbackUrl = this.configService.get<string>('TWILIO_STATUS_CALLBACK_URL');
-            if (statusCallbackUrl) {
-                messageOptions.statusCallback = statusCallbackUrl;
+            // 추가 옵션 설정
+            if (metadata.validityPeriod) {
+                messageOptions.validityPeriod = metadata.validityPeriod;
+            }
+            if (metadata.maxPrice) {
+                messageOptions.maxPrice = metadata.maxPrice;
+            }
+            if (metadata.smartEncoded !== undefined) {
+                messageOptions.smartEncoded = metadata.smartEncoded;
+            }
+            if (metadata.shortenUrls !== undefined && this.config.messagingServiceSid) {
+                messageOptions.shortenUrls = metadata.shortenUrls;
+            }
+            if (metadata.sendAsMms !== undefined) {
+                messageOptions.sendAsMms = metadata.sendAsMms;
             }
 
-            // 메타데이터를 Twilio 메시지에 포함 (최대 10개의 custom parameters)
-            if (message.metadata) {
-                const customParams = this.buildCustomParameters(message.metadata);
-                Object.assign(messageOptions, customParams);
-            }
-
+            // 메시지 발송
             const twilioMessage = await this.client.messages.create(messageOptions);
+
+            this.logger.log('SMS sent successfully', {
+                sid: twilioMessage.sid,
+                to: twilioMessage.to,
+                status: twilioMessage.status,
+                segments: twilioMessage.numSegments,
+                price: twilioMessage.price,
+            });
 
             return {
                 success: true,
@@ -115,125 +180,248 @@ export class TwilioProvider implements NotificationProvider {
                 providerResponse: {
                     sid: twilioMessage.sid,
                     status: twilioMessage.status,
-                    dateCreated: twilioMessage.dateCreated,
+                    dateSent: twilioMessage.dateSent,
+                    segments: twilioMessage.numSegments,
                     price: twilioMessage.price,
                     priceUnit: twilioMessage.priceUnit,
                 },
             };
         } catch (error: any) {
-            this.logger.error(`Twilio send failed: ${error.message}`);
-
-            // Twilio 에러 코드 처리
-            const errorCode = error.code;
-            const errorMessage = this.mapTwilioErrorCode(errorCode) || error.message;
-
-            return {
-                success: false,
-                error: errorMessage,
-                providerResponse: {
-                    errorCode,
-                    moreInfo: error.moreInfo,
-                },
-            };
+            return this.handleError(error, message.to);
         }
     }
 
     async sendBulk(messages: NotificationMessage[]): Promise<BulkNotificationResult> {
-        if (!this.isConfigured || !this.client) {
-            return {
-                successCount: 0,
-                failureCount: messages.length,
-                failures: messages.map(msg => ({
-                    to: msg.to,
-                    error: 'Twilio provider is not configured',
-                })),
-            };
-        }
-
-        // Twilio는 native bulk API가 없으므로 병렬 처리
-        const results = await Promise.allSettled(
-            messages.map(msg => this.send(msg))
-        );
-
+        const results: NotificationResult[] = [];
+        const failures: Array<{ to: string; error: string }> = [];
         let successCount = 0;
         let failureCount = 0;
-        const failures: Array<{ to: string; error: string }> = [];
 
-        results.forEach((result, index) => {
-            if (result.status === 'fulfilled' && result.value.success) {
-                successCount++;
-            } else {
-                failureCount++;
-                failures.push({
-                    to: messages[index].to,
-                    error: result.status === 'rejected'
-                        ? result.reason.message
-                        : (result.value as NotificationResult).error || 'Unknown error',
-                });
+        // Twilio는 개별 발송이 기본, Messaging Service 사용 시 자동 배치 처리
+        // Rate limiting을 피하기 위해 병렬 처리 제한
+        const BATCH_SIZE = 10; // 동시 발송 수 제한
+
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+            const batch = messages.slice(i, i + BATCH_SIZE);
+
+            const batchResults = await Promise.allSettled(
+                batch.map(message => this.send(message))
+            );
+
+            batchResults.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    const sendResult = result.value;
+                    results.push(sendResult);
+
+                    if (sendResult.success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                        failures.push({
+                            to: batch[index].to,
+                            error: sendResult.error || 'Unknown error',
+                        });
+                    }
+                } else {
+                    failureCount++;
+                    failures.push({
+                        to: batch[index].to,
+                        error: result.reason?.message || 'Send failed',
+                    });
+                }
+            });
+
+            // Rate limiting 회피를 위한 지연
+            if (i + BATCH_SIZE < messages.length) {
+                await this.delay(100); // 0.1초 대기
             }
-        });
+        }
 
         return {
             successCount,
             failureCount,
-            failures,
+            results: results.length > 0 ? results : undefined,
+            failures: failures.length > 0 ? failures : undefined,
         };
     }
 
-    private formatPhoneNumber(phone: string): string {
-        // E.164 형식으로 변환
-        let formatted = phone.replace(/\D/g, '');
+    private formatPhoneNumber(phoneNumber: string): string {
+        // 이미 E.164 형식인지 확인
+        if (phoneNumber.startsWith('+')) {
+            return phoneNumber;
+        }
 
         // 한국 번호 처리
-        if (formatted.startsWith('82')) {
-            return `+${formatted}`;
-        } else if (formatted.startsWith('010') || formatted.startsWith('011')) {
-            return `+82${formatted.substring(1)}`;
+        let cleaned = phoneNumber.replace(/[^\d]/g, '');
+
+        // 한국 번호를 국제 형식으로 변환
+        if (cleaned.startsWith('010') || cleaned.startsWith('011')) {
+            return '+82' + cleaned.substring(1);
+        } else if (cleaned.startsWith('82')) {
+            return '+' + cleaned;
+        } else if (cleaned.length === 10 && cleaned.startsWith('10')) {
+            // 010 없이 10으로 시작하는 경우
+            return '+82' + cleaned;
         }
 
-        // 이미 +로 시작하면 그대로 반환
-        if (phone.startsWith('+')) {
-            return phone;
+        // 미국 번호 (기본)
+        if (cleaned.length === 10) {
+            return '+1' + cleaned;
+        } else if (cleaned.length === 11 && cleaned.startsWith('1')) {
+            return '+' + cleaned;
         }
 
-        // 기본적으로 + 추가
-        return `+${formatted}`;
+        // 그 외의 경우 그대로 반환 (Twilio가 처리)
+        return phoneNumber;
     }
 
-    private buildCustomParameters(metadata: Record<string, any>): Record<string, string> {
-        const customParams: Record<string, string> = {};
-        const allowedKeys = ['notificationId', 'campaignId', 'category', 'userId'];
-
-        // Twilio는 custom parameter를 제한적으로 지원
-        allowedKeys.forEach(key => {
-            if (metadata[key]) {
-                // Twilio webhook에서 이 값들을 받을 수 있음
-                customParams[`custom_${key}`] = String(metadata[key]);
-            }
+    private handleError(error: any, to: string): NotificationResult {
+        this.logger.error('Failed to send SMS', {
+            to,
+            error: error.message,
+            code: error.code,
+            moreInfo: error.moreInfo,
         });
 
-        return customParams;
+        return {
+            success: false,
+            error: this.extractErrorMessage(error),
+            providerResponse: {
+                code: error.code,
+                message: error.message,
+                moreInfo: error.moreInfo,
+                status: error.status,
+            },
+        };
     }
 
-    private mapTwilioErrorCode(code?: number): string | null {
-        if (!code) return null;
-
-        const errorMap: Record<number, string> = {
-            21211: 'Invalid To phone number',
-            21212: 'Invalid From phone number',
-            21408: 'Permission to send to this country denied',
-            21610: 'Message blocked - number is on stop list',
-            21611: 'SMS queue is full',
-            21612: 'Cannot route to this number',
-            21614: 'Number is incapable of receiving SMS',
-            30003: 'Messaging Service not configured properly',
+    private extractErrorMessage(error: any): string {
+        // Twilio 에러 코드 매핑
+        const errorMessages: Record<number, string> = {
+            10002: 'Trial account restrictions - verify phone number',
+            21211: 'Invalid phone number',
+            21214: 'Phone number not verified for trial account',
+            21408: 'Permission denied - number not owned by account',
+            21610: 'Recipient opted out of messages',
+            21614: 'Invalid mobile number',
+            30003: 'Messaging Service not found',
             30004: 'Message blocked',
             30005: 'Unknown destination',
             30006: 'Landline or unreachable carrier',
             30007: 'Carrier violation',
             30008: 'Unknown error',
+            30009: 'Missing required parameter',
+            30034: 'Message price exceeds max price',
         };
 
-        return errorMap[code] || null;
+        if (error.code && errorMessages[error.code]) {
+            return errorMessages[error.code];
+        }
+
+        return error.message || 'Unknown error';
+    }
+
+    private delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 추가 기능: 메시지 상태 조회
+    async getMessageStatus(messageSid: string): Promise<any> {
+        try {
+            const message = await this.client.messages(messageSid).fetch();
+
+            return {
+                sid: message.sid,
+                status: message.status,
+                to: message.to,
+                from: message.from,
+                dateSent: message.dateSent,
+                dateUpdated: message.dateUpdated,
+                errorCode: message.errorCode,
+                errorMessage: message.errorMessage,
+                price: message.price,
+                priceUnit: message.priceUnit,
+                numSegments: message.numSegments,
+            };
+        } catch (error: any) {
+            this.logger.error('Failed to get message status', {
+                messageSid,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 추가 기능: 메시지 리스트 조회
+    async listMessages(options?: {
+        to?: string;
+        from?: string;
+        dateSent?: Date;
+        limit?: number;
+    }): Promise<MessageInstance[]> {
+        try {
+            const messages = await this.client.messages.list({
+                to: options?.to,
+                from: options?.from,
+                dateSent: options?.dateSent,
+                limit: options?.limit || 20,
+            });
+
+            return messages;
+        } catch (error: any) {
+            this.logger.error('Failed to list messages', {
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 추가 기능: 메시지 취소 (예약 메시지만 가능)
+    async cancelMessage(messageSid: string): Promise<void> {
+        try {
+            await this.client.messages(messageSid).update({
+                status: 'canceled',
+            });
+
+            this.logger.log('Message cancelled', { messageSid });
+        } catch (error: any) {
+            this.logger.error('Failed to cancel message', {
+                messageSid,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 추가 기능: 전화번호 검증
+    async validatePhoneNumber(phoneNumber: string): Promise<{
+        valid: boolean;
+        phoneNumber?: string;
+        countryCode?: string;
+        nationalFormat?: string;
+        carrier?: any;
+    }> {
+        try {
+            const lookup = await this.client.lookups.v1
+                .phoneNumbers(phoneNumber)
+                .fetch({ type: ['carrier'] });
+
+            return {
+                valid: true,
+                phoneNumber: lookup.phoneNumber,
+                countryCode: lookup.countryCode,
+                nationalFormat: lookup.nationalFormat,
+                carrier: lookup.carrier,
+            };
+        } catch (error: any) {
+            this.logger.warn('Phone number validation failed', {
+                phoneNumber,
+                error: error.message,
+            });
+
+            return {
+                valid: false,
+            };
+        }
     }
 }

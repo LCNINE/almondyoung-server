@@ -19,7 +19,7 @@ import { TemplateRendererService } from '../../shared/services/template-renderer
 import { TemplateService } from '../../template/services/template.service';
 import { UserSyncService } from '../../shared/services/user-sync.service';
 import { UserNotificationService } from '../../shared/services/user-notification.service';
-import { Channel, CampaignStatus, Language } from '../../shared/enums';
+import { Channel, CampaignStatus, Language, NotificationCategory } from '../../shared/enums';
 import { NOTIFICATION_CONSTANTS } from '../../shared/constants';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
 import { batchProcess } from '../../shared/utils/batch.utils';
@@ -92,7 +92,7 @@ export class CampaignProcessor {
                 );
 
                 processedCount += batchUserIds.length;
-                await job.progress((processedCount / 10000) * 100); // Estimate progress
+                await job.progress((processedCount / targetUserIds.length) * 100);
             }
 
             // Complete campaign
@@ -149,13 +149,27 @@ export class CampaignProcessor {
         contents: Record<string, any>,
         totalStats: Record<string, { sent: number; failed: number }>
     ) {
-        // Get eligible users with batch query
-        const [eligibleUserIds, userProfilesMap] = await Promise.all([
-            this.getEligibleUserIds(batchUserIds),
-            this.userSync.getUserProfiles(batchUserIds),
-        ]);
+        // 마케팅 캠페인인 경우에만 수신 동의 확인
+        let eligibleUserIds: string[] = batchUserIds;
 
-        // Get user settings individually (can be optimized later)
+        if (campaign.category === NotificationCategory.MARKETING) {
+            // 마케팅 수신 동의한 사용자만 필터링
+            eligibleUserIds = await this.getMarketingConsentUsers(batchUserIds);
+
+            this.logger.log('Marketing consent filter applied', {
+                originalCount: batchUserIds.length,
+                consentedCount: eligibleUserIds.length,
+            });
+        }
+
+        if (eligibleUserIds.length === 0) {
+            return;
+        }
+
+        // Get user profiles
+        const userProfilesMap = await this.userSync.getUserProfiles(eligibleUserIds);
+
+        // Get user settings for language preference
         const userSettingsMap = new Map();
         for (const userId of eligibleUserIds) {
             const settings = await this.userNotificationService.getUserNotificationSettings(userId);
@@ -172,7 +186,7 @@ export class CampaignProcessor {
                 continue;
             }
 
-            // Filter users with valid contacts
+            // Filter users with valid contacts for this channel
             const usersWithContact = eligibleUserIds
                 .map(userId => ({
                     userId,
@@ -238,19 +252,17 @@ export class CampaignProcessor {
         await this.campaignService.updateStats(campaignId, totalStats);
     }
 
-    private async getEligibleUserIds(userIds: string[]): Promise<string[]> {
+    private async getMarketingConsentUsers(userIds: string[]): Promise<string[]> {
+        // 마케팅 수신 동의한 사용자만 조회
         const settings = await this.db.query.userNotificationSettings.findMany({
             where: and(
                 inArray(userNotificationSettings.userId, userIds),
-                eq(userNotificationSettings.isNotificationEnabled, true)
+                eq(userNotificationSettings.isMarketingEnabled, true)
             ),
             columns: { userId: true },
         });
 
-        const enabledUserIds = new Set(settings.map(s => s.userId));
-
-        // Include users without settings (default enabled)
-        return userIds.filter(id => enabledUserIds.has(id) || !settings.some(s => s.userId === id));
+        return settings.map(s => s.userId);
     }
 
     private hasContactForChannel(profile: any, channel: Channel): boolean {
@@ -279,13 +291,5 @@ export class CampaignProcessor {
             default:
                 return null;
         }
-    }
-
-    private async collectStream<T>(stream: AsyncGenerator<T[]>): Promise<T[]> {
-        const result: T[] = [];
-        for await (const batch of stream) {
-            result.push(...batch);
-        }
-        return result;
     }
 }

@@ -1,14 +1,25 @@
 // apps/notification/src/provider/providers/email/resend.provider.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 import {
     NotificationProvider,
     NotificationMessage,
     NotificationResult,
-    BulkNotificationResult
+    BulkNotificationResult,
 } from '../../interfaces/notification-provider.interface';
+import { StructuredLogger } from '../../../shared/utils/logger.utils';
 
-interface ResendEmailPayload {
+interface ResendConfig {
+    apiKey: string;
+    fromEmail: string;
+    fromName?: string;
+    baseUrl?: string;
+    maxRetries?: number;
+    retryDelay?: number;
+}
+
+interface ResendEmailRequest {
     from: string;
     to: string | string[];
     subject: string;
@@ -19,9 +30,11 @@ interface ResendEmailPayload {
     reply_to?: string | string[];
     headers?: Record<string, string>;
     attachments?: Array<{
-        content: string;
+        content?: string;
         filename: string;
+        path?: string;
         content_type?: string;
+        content_id?: string;
     }>;
     tags?: Array<{
         name: string;
@@ -30,7 +43,7 @@ interface ResendEmailPayload {
     scheduled_at?: string;
 }
 
-interface ResendBatchPayload {
+interface ResendBatchEmailRequest {
     from: string;
     to: string | string[];
     subject: string;
@@ -42,32 +55,144 @@ interface ResendBatchPayload {
     headers?: Record<string, string>;
 }
 
-@Injectable()
+interface ResendEmailResponse {
+    id: string;
+    from: string;
+    to: string | string[];
+    created_at: string;
+}
+
+interface ResendBatchResponse {
+    data: Array<{
+        id: string;
+    }>;
+}
+
+interface ResendErrorResponse {
+    name: string;
+    message: string;
+    statusCode: number;
+}
+
 export class ResendProvider implements NotificationProvider {
-    private readonly logger = new Logger(ResendProvider.name);
-    private readonly apiKey?: string;
-    private readonly fromEmail: string;
-    private readonly fromName?: string;
-    private readonly providerId = 'resend-email';
-    private readonly isConfigured: boolean;
-    private readonly baseUrl = 'https://api.resend.com';
+    private readonly logger: StructuredLogger;
+    private readonly providerId: string;
+    private readonly config: ResendConfig;
+    private readonly client: AxiosInstance;
+    private isHealthy: boolean = true;
+    private lastHealthCheckTime: number = 0;
+    private readonly healthCheckInterval = 60000; // 1분
 
     constructor(
+        providerId: string,
+        config: Record<string, any>,
         private readonly configService: ConfigService,
     ) {
-        this.apiKey = this.configService.get<string>('RESEND_API_KEY');
-        this.fromEmail = this.configService.get<string>('RESEND_FROM_EMAIL', 'noreply@example.com');
-        this.fromName = this.configService.get<string>('RESEND_FROM_NAME');
+        this.logger = new StructuredLogger(new Logger(ResendProvider.name));
+        this.providerId = providerId;
 
-        this.isConfigured = !!this.apiKey;
+        // 설정 초기화 - DB config 우선, 없으면 환경변수
+        this.config = {
+            apiKey: config.apiKey ?? this.configService.get<string>('RESEND_API_KEY')!, // ← 필수
+            fromEmail: config.fromEmail ?? this.configService.get<string>('RESEND_FROM') ?? 'noreply@almondyoung.com',
+            fromName: config.fromName ?? this.configService.get<string>('RESEND_FROM_NAME') ?? 'Almond Young',
+            baseUrl: config.baseUrl ?? 'https://api.resend.com',
+            maxRetries: config.maxRetries ?? 3,
+            retryDelay: config.retryDelay ?? 1000,
+        };
+        if (!this.config.apiKey) throw new Error('RESEND_API_KEY missing');
 
-        if (!this.isConfigured) {
-            this.logger.warn('Resend provider is not configured. RESEND_API_KEY is missing');
-        }
+
+        // Axios 클라이언트 초기화
+        this.client = axios.create({
+            baseURL: this.config.baseUrl,
+            timeout: config.timeout || 30000,
+            headers: {
+                'Authorization': `Bearer ${this.config.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        // Rate limiting을 위한 인터셉터
+        this.setupInterceptors();
+    }
+
+    private setupInterceptors() {
+        // Request 인터셉터 - 요청 로깅
+        this.client.interceptors.request.use(
+            (config) => {
+                this.logger.log('Resend API Request', {
+                    method: config.method,
+                    url: config.url,
+                    headers: {
+                        ...config.headers,
+                        Authorization: 'Bearer [REDACTED]',
+                    },
+                });
+                return config;
+            },
+            (error) => {
+                this.logger.error('Request setup failed', { error: error.message });
+                return Promise.reject(error);
+            }
+        );
+
+        // Response 인터셉터 - 에러 처리 및 재시도
+        this.client.interceptors.response.use(
+            (response) => {
+                this.logger.log('Resend API Response', {
+                    status: response.status,
+                    headers: response.headers,
+                });
+                return response;
+            },
+            async (error: AxiosError) => {
+                const originalRequest = error.config as any;
+
+                // Rate limit 처리
+                if (error.response?.status === 429) {
+                    const retryAfter = error.response.headers['retry-after'];
+                    const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000;
+
+                    this.logger.warn('Rate limit hit, retrying', {
+                        waitTime,
+                        retryAfter: error.response.headers['retry-after'],
+                        rateLimitRemaining: error.response.headers['ratelimit-remaining'],
+                        rateLimitReset: error.response.headers['ratelimit-reset'],
+                    });
+
+                    // 재시도 횟수 체크
+                    originalRequest._retryCount = originalRequest._retryCount || 0;
+                    if (originalRequest._retryCount < this.config.maxRetries!) {
+                        originalRequest._retryCount++;
+                        await this.delay(waitTime);
+                        return this.client(originalRequest);
+                    }
+                }
+
+                // 500번대 에러 재시도
+                if (error.response?.status && error.response.status >= 500) {
+                    originalRequest._retryCount = originalRequest._retryCount || 0;
+                    if (originalRequest._retryCount < this.config.maxRetries!) {
+                        originalRequest._retryCount++;
+                        await this.delay(this.config.retryDelay! * (originalRequest._retryCount + 1));
+                        return this.client(originalRequest);
+                    }
+                }
+
+                this.logger.error('Resend API Error', {
+                    status: error.response?.status,
+                    data: error.response?.data,
+                    message: error.message,
+                });
+
+                throw error;
+            }
+        );
     }
 
     getName(): string {
-        return 'Resend';
+        return 'Resend Email';
     }
 
     getProviderId(): string {
@@ -75,206 +200,295 @@ export class ResendProvider implements NotificationProvider {
     }
 
     async isAvailable(): Promise<boolean> {
-        if (!this.isConfigured) {
-            return false;
+        // 캐싱된 헬스 체크 결과 사용 (1분 간격)
+        const now = Date.now();
+        if (now - this.lastHealthCheckTime < this.healthCheckInterval) {
+            return this.isHealthy;
         }
 
         try {
-            // API Keys 엔드포인트로 연결 테스트
-            const response = await fetch(`${this.baseUrl}/api-keys`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                },
+            // API Key 검증을 위해 도메인 목록 조회
+            const response = await this.client.get('/domains', {
+                timeout: 5000,
             });
 
-            return response.ok;
-        } catch (error) {
-            this.logger.error('Resend availability check failed', error);
+            this.isHealthy = response.status === 200;
+            this.lastHealthCheckTime = now;
+
+            return this.isHealthy;
+        } catch (error: any) {
+            // 403은 API 키는 유효하지만 권한이 없는 경우 (Sending access only)
+            // 이 경우에도 이메일 발송은 가능하므로 healthy로 처리
+            if (error.response?.status === 403) {
+                this.isHealthy = true;
+                this.lastHealthCheckTime = now;
+                return true;
+            }
+
+            this.isHealthy = false;
+            this.lastHealthCheckTime = now;
             return false;
         }
     }
 
     async send(message: NotificationMessage): Promise<NotificationResult> {
-        if (!this.isConfigured) {
-            return {
-                success: false,
-                error: 'Resend provider is not configured',
-            };
-        }
-
         try {
-            const from = this.fromName
-                ? `${this.fromName} <${this.fromEmail}>`
-                : this.fromEmail;
+            const metadata = message.metadata || {};
 
-            const payload: ResendEmailPayload = {
+            // From 주소 구성
+            const from = this.formatFromAddress(
+                metadata.fromEmail || this.config.fromEmail,
+                metadata.fromName || this.config.fromName
+            );
+
+            // 이메일 요청 구성
+            const emailRequest: ResendEmailRequest = {
                 from,
                 to: message.to,
                 subject: message.subject || 'Notification',
                 html: message.content,
-                tags: this.buildTags(message.metadata),
+                text: metadata.text,
+                cc: metadata.cc,
+                bcc: metadata.bcc,
+                reply_to: metadata.replyTo || metadata.fromEmail || this.config.fromEmail,
+                headers: metadata.headers,
+                attachments: metadata.attachments,
+                tags: this.buildTags(metadata),
+                scheduled_at: metadata.scheduledAt,
             };
 
-            // 예약 발송
-            if (message.metadata?.scheduledAt) {
-                payload.scheduled_at = message.metadata.scheduledAt;
-            }
-
-            const response = await fetch(`${this.baseUrl}/emails`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
+            // 빈 필드 제거
+            Object.keys(emailRequest).forEach(key => {
+                if (emailRequest[key as keyof ResendEmailRequest] === undefined) {
+                    delete emailRequest[key as keyof ResendEmailRequest];
+                }
             });
 
-            const data = await response.json();
+            const response = await this.client.post<ResendEmailResponse>(
+                '/emails',
+                emailRequest,
+                {
+                    headers: metadata.idempotencyKey ? {
+                        'Idempotency-Key': metadata.idempotencyKey,
+                    } : undefined,
+                }
+            );
 
-            if (response.ok) {
-                return {
-                    success: true,
-                    messageId: data.id,
-                    providerResponse: data,
-                };
-            } else {
-                return {
-                    success: false,
-                    error: data.message || data.error || 'Unknown error',
-                    providerResponse: data,
-                };
-            }
-        } catch (error: any) {
-            this.logger.error(`Resend send failed: ${error.message}`);
             return {
-                success: false,
-                error: error.message,
+                success: true,
+                messageId: response.data.id,
+                providerResponse: response.data,
             };
+        } catch (error: any) {
+            return this.handleError(error, message.to);
         }
     }
 
     async sendBulk(messages: NotificationMessage[]): Promise<BulkNotificationResult> {
-        if (!this.isConfigured) {
-            return {
-                successCount: 0,
-                failureCount: messages.length,
-                failures: messages.map(msg => ({
-                    to: msg.to,
-                    error: 'Resend provider is not configured',
-                })),
-            };
-        }
+        // Resend는 한 번에 최대 100개까지 배치 전송 지원
+        const BATCH_SIZE = 100;
+        const results: NotificationResult[] = [];
+        const failures: Array<{ to: string; error: string }> = [];
+        let successCount = 0;
+        let failureCount = 0;
 
-        try {
-            // Resend는 batch 엔드포인트로 최대 100개까지 전송 가능
-            const chunks = this.chunkArray(messages, 100);
-            let totalSuccess = 0;
-            let totalFailure = 0;
-            const failures: Array<{ to: string; error: string }> = [];
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+            const batch = messages.slice(i, i + BATCH_SIZE);
 
-            for (const chunk of chunks) {
-                const from = this.fromName
-                    ? `${this.fromName} <${this.fromEmail}>`
-                    : this.fromEmail;
+            try {
+                // 배치 이메일 요청 구성
+                const batchRequests: ResendBatchEmailRequest[] = batch.map(message => {
+                    const metadata = message.metadata || {};
+                    const from = this.formatFromAddress(
+                        metadata.fromEmail || this.config.fromEmail,
+                        metadata.fromName || this.config.fromName
+                    );
 
-                const batchPayload = chunk.map(msg => ({
-                    from,
-                    to: msg.to,
-                    subject: msg.subject || 'Notification',
-                    html: msg.content,
-                    headers: {
-                        'X-Notification-Id': msg.metadata?.notificationId || '',
-                        'X-Campaign-Id': msg.metadata?.campaignId || '',
-                        'X-Category': msg.metadata?.category || '',
-                    },
-                }));
-
-                const response = await fetch(`${this.baseUrl}/emails/batch`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(batchPayload),
+                    return {
+                        from,
+                        to: message.to,
+                        subject: message.subject || 'Notification',
+                        html: message.content,
+                        text: metadata.text,
+                        cc: metadata.cc,
+                        bcc: metadata.bcc,
+                        reply_to: metadata.replyTo || metadata.fromEmail || this.config.fromEmail,
+                        headers: metadata.headers,
+                    };
                 });
 
-                const data = await response.json();
+                const response = await this.client.post<ResendBatchResponse>(
+                    '/emails/batch',
+                    batchRequests
+                );
 
-                if (response.ok && data.data) {
-                    // Resend batch response 구조에 따라 처리
-                    data.data.forEach((result: any, index: number) => {
-                        if (result.id) {
-                            totalSuccess++;
-                        } else {
-                            totalFailure++;
-                            failures.push({
-                                to: chunk[index].to,
-                                error: result.error || 'Failed to send',
-                            });
-                        }
-                    });
-                } else {
-                    // 전체 실패
-                    totalFailure += chunk.length;
-                    chunk.forEach(msg => {
-                        failures.push({
-                            to: msg.to,
-                            error: data.message || data.error || 'Batch send failed',
+                // 성공 처리
+                if (response.data?.data) {
+                    successCount += response.data.data.length;
+                    response.data.data.forEach((item, index) => {
+                        results.push({
+                            success: true,
+                            messageId: item.id,
+                            providerResponse: item,
                         });
                     });
                 }
-            }
-
-            return {
-                successCount: totalSuccess,
-                failureCount: totalFailure,
-                failures,
-            };
-        } catch (error: any) {
-            this.logger.error(`Resend bulk send failed: ${error.message}`);
-            return {
-                successCount: 0,
-                failureCount: messages.length,
-                failures: messages.map(msg => ({
-                    to: msg.to,
+            } catch (error: any) {
+                this.logger.error('Batch send failed', {
+                    batchIndex: i / BATCH_SIZE,
                     error: error.message,
-                })),
-            };
-        }
-    }
+                    response: error.response?.data,
+                });
 
-    private buildTags(metadata?: Record<string, any>): Array<{ name: string; value: string }> | undefined {
-        if (!metadata) return undefined;
-
-        const tags: Array<{ name: string; value: string }> = [];
-
-        // 주요 메타데이터를 태그로 변환
-        const allowedKeys = ['notificationId', 'campaignId', 'category', 'userId', 'priority'];
-
-        for (const key of allowedKeys) {
-            if (metadata[key]) {
-                // Resend 태그 제한사항: ASCII 문자, 숫자, _, - 만 허용, 최대 256자
-                const sanitizedKey = key.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 256);
-                const sanitizedValue = String(metadata[key])
-                    .replace(/[^a-zA-Z0-9_-]/g, '_')
-                    .substring(0, 256);
-
-                tags.push({
-                    name: sanitizedKey,
-                    value: sanitizedValue,
+                // 배치 전체 실패 처리
+                batch.forEach(message => {
+                    failureCount++;
+                    failures.push({
+                        to: Array.isArray(message.to) ? message.to.join(',') : message.to,
+                        error: this.extractErrorMessage(error),
+                    });
                 });
             }
+
+            // Rate limit 회피를 위한 지연
+            if (i + BATCH_SIZE < messages.length) {
+                await this.delay(500); // 0.5초 대기
+            }
+        }
+
+        return {
+            successCount,
+            failureCount,
+            results: results.length > 0 ? results : undefined,
+            failures: failures.length > 0 ? failures : undefined,
+        };
+    }
+
+    private formatFromAddress(email: string, name?: string): string {
+        if (!name) {
+            return email;
+        }
+        return `${name} <${email}>`;
+    }
+
+    private buildTags(metadata: any): Array<{ name: string; value: string }> | undefined {
+        const tags: Array<{ name: string; value: string }> = [];
+
+        // 기본 태그 추가
+        if (metadata.userId) {
+            tags.push({ name: 'user_id', value: metadata.userId });
+        }
+        if (metadata.notificationId) {
+            tags.push({ name: 'notification_id', value: metadata.notificationId });
+        }
+        if (metadata.campaignId) {
+            tags.push({ name: 'campaign_id', value: metadata.campaignId });
+        }
+        if (metadata.category) {
+            tags.push({ name: 'category', value: metadata.category });
+        }
+
+        // 커스텀 태그 추가
+        if (metadata.tags) {
+            Object.entries(metadata.tags).forEach(([name, value]) => {
+                if (typeof value === 'string') {
+                    tags.push({ name, value });
+                }
+            });
         }
 
         return tags.length > 0 ? tags : undefined;
     }
 
-    private chunkArray<T>(array: T[], size: number): T[][] {
-        const chunks: T[][] = [];
-        for (let i = 0; i < array.length; i += size) {
-            chunks.push(array.slice(i, i + size));
+    private handleError(error: any, to: string | string[]): NotificationResult {
+        const errorResponse = error.response?.data as ResendErrorResponse;
+        const recipient = Array.isArray(to) ? to.join(',') : to;
+
+        this.logger.error('Failed to send email', {
+            to: recipient,
+            error: errorResponse?.message || error.message,
+            statusCode: error.response?.status,
+        });
+
+        return {
+            success: false,
+            error: this.extractErrorMessage(error),
+            providerResponse: errorResponse || error.response?.data,
+        };
+    }
+
+    private extractErrorMessage(error: any): string {
+        const errorResponse = error.response?.data as ResendErrorResponse;
+
+        if (errorResponse?.message) {
+            return errorResponse.message;
         }
-        return chunks;
+
+        switch (error.response?.status) {
+            case 400:
+                return 'Invalid request parameters';
+            case 401:
+                return 'Invalid API key';
+            case 403:
+                return 'Access denied - check API key permissions';
+            case 404:
+                return 'Resource not found';
+            case 422:
+                return 'Invalid email format or content';
+            case 429:
+                return 'Rate limit exceeded';
+            case 500:
+                return 'Resend server error';
+            default:
+                return error.message || 'Unknown error';
+        }
+    }
+
+    private delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 추가 기능: 이메일 상태 조회
+    async getEmailStatus(emailId: string): Promise<any> {
+        try {
+            const response = await this.client.get(`/emails/${emailId}`);
+            return response.data;
+        } catch (error: any) {
+            this.logger.error('Failed to get email status', {
+                emailId,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 추가 기능: 예약된 이메일 업데이트
+    async updateScheduledEmail(emailId: string, scheduledAt: string): Promise<any> {
+        try {
+            const response = await this.client.patch(`/emails/${emailId}`, {
+                scheduled_at: scheduledAt,
+            });
+            return response.data;
+        } catch (error: any) {
+            this.logger.error('Failed to update scheduled email', {
+                emailId,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    // 추가 기능: 예약된 이메일 취소
+    async cancelScheduledEmail(emailId: string): Promise<any> {
+        try {
+            const response = await this.client.post(`/emails/${emailId}/cancel`);
+            return response.data;
+        } catch (error: any) {
+            this.logger.error('Failed to cancel scheduled email', {
+                emailId,
+                error: error.message,
+            });
+            throw error;
+        }
     }
 }

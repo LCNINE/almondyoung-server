@@ -1,23 +1,26 @@
 // apps/notification/src/shared/shared.module.ts
-import { Module, Global } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
 
-import { UserNotificationService } from './services/user-notification.service';
-import { TemplateRendererService } from './services/template-renderer.service';
-import { WebhookService } from './services/webhook.service';
-import { EventMappingService } from './services/event-mapping.service';
-import { NotificationLoggerService } from './services/notification-logger.service';
-import { AlertService } from './services/alert.service';
-import { UserSyncService } from './services/user-sync.service';
-import { UserNotificationController } from './controllers/user-notification.controller';
-import { WebhookController } from './controllers/webhook.controller';
+// Controllers
 import { EventController } from './controllers/event.controller';
 import { LogController } from './controllers/log.controller';
+import { MetricsController } from './controllers/metrics.controller';
+import { UserNotificationController } from './controllers/user-notification.controller';
+import { WebhookController } from './controllers/webhook.controller';
 
+// Services
+import { AlertService } from './services/alert.service';
+import { EventMappingService } from './services/event-mapping.service';
+import { MetricsService } from './services/metrics.service';
+import { NotificationLoggerService } from './services/notification-logger.service';
+import { TemplateRendererService } from './services/template-renderer.service';
+import { UserNotificationService } from './services/user-notification.service';
+import { UserSyncService } from './services/user-sync.service';
+import { WebhookService } from './services/webhook.service';
 
-@Global()
 @Module({
     imports: [
         ConfigModule,
@@ -29,28 +32,31 @@ import { LogController } from './controllers/log.controller';
         }),
     ],
     controllers: [
-        UserNotificationController,
         EventController,
-        WebhookController,
         LogController,
+        MetricsController,
+        UserNotificationController,
+        WebhookController,
     ],
     providers: [
-        UserNotificationService,
-        TemplateRendererService,
-        EventMappingService,
-        WebhookService,
-        NotificationLoggerService,
         AlertService,
+        EventMappingService,
+        MetricsService,
+        NotificationLoggerService,
+        TemplateRendererService,
+        UserNotificationService,
         UserSyncService,
+        WebhookService,
     ],
     exports: [
-        UserNotificationService,
-        TemplateRendererService,
-        EventMappingService,
-        WebhookService,
-        NotificationLoggerService,
+        // 다른 모듈에서 필요한 서비스만 export
         AlertService,
+        EventMappingService,
+        NotificationLoggerService,
+        TemplateRendererService,
+        UserNotificationService,
         UserSyncService,
+        WebhookService,
     ],
 })
 export class SharedModule { }

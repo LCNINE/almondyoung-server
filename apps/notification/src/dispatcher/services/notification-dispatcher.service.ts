@@ -9,12 +9,13 @@ import { eq, desc } from 'drizzle-orm';
 import {
     notifications,
     NewNotification,
+    notificationEvents,
 } from '../../../database/schemas/notification-schema';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { UserNotificationService } from '../../shared/services/user-notification.service';
 import { TemplateService } from '../../template/services/template.service';
 import { TemplateRendererService } from '../../shared/services/template-renderer.service';
-import { Channel, Language, NotificationStatus, NotificationPriority } from '../../shared/enums';
+import { Channel, Language, NotificationStatus, NotificationPriority, NotificationCategory } from '../../shared/enums';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
 import { Logger } from '@nestjs/common';
 
@@ -38,20 +39,39 @@ export class NotificationDispatcherService {
     }
 
     async send(dto: SendNotificationDto): Promise<{ notificationIds: string[] }> {
-        // 사용자 알림 허용 확인
-        const isEnabled = await this.userNotificationService.isUserNotificationEnabled(dto.userId);
-        if (!isEnabled) {
-            this.logger.warn('User has notifications disabled', {
-                userId: dto.userId,
-                category: dto.category,
-            });
-            return { notificationIds: [] };
+        // 카테고리 확인 - 마케팅인 경우에만 수신 동의 확인
+        if (dto.category === NotificationCategory.MARKETING) {
+            const isMarketingEnabled = await this.userNotificationService.isMarketingEnabled(dto.userId);
+            if (!isMarketingEnabled) {
+                this.logger.warn('User has marketing notifications disabled', {
+                    userId: dto.userId,
+                    category: dto.category,
+                });
+                return { notificationIds: [] };
+            }
         }
+        // TRANSACTIONAL, SYSTEM 등 정보성 알림은 동의 확인 없이 발송
 
         const userSettings = await this.userNotificationService.getUserNotificationSettings(dto.userId);
         const language = userSettings?.preferredLanguage || Language.KO;
 
         const notificationIds: string[] = [];
+
+        // 이벤트 기반 발송인 경우
+        if (dto.eventKey) {
+            const event = await this.db.query.notificationEvents.findFirst({
+                where: eq(notificationEvents.eventKey, dto.eventKey),
+            });
+
+            if (event && event.isActive) {
+                // 이벤트에 정의된 채널 사용
+                const channelsToUse = event.defaultChannels as Channel[];
+                dto.channels = channelsToUse;
+                dto.templateKey = event.templateKey;
+                dto.category = event.category as NotificationCategory;
+                dto.priority = event.priority as NotificationPriority;
+            }
+        }
 
         // 템플릿 조회
         let templateContents: any = {};
@@ -152,10 +172,34 @@ export class NotificationDispatcherService {
                 category: dto.category,
                 priority: dto.priority,
                 scheduled: !!dto.sendAt,
+                eventKey: dto.eventKey,
             });
         }
 
         return { notificationIds };
+    }
+
+    async sendEvent(eventKey: string, userId: string, payload?: Record<string, any>): Promise<{ notificationIds: string[] }> {
+        // 이벤트 정보 조회
+        const event = await this.db.query.notificationEvents.findFirst({
+            where: eq(notificationEvents.eventKey, eventKey),
+        });
+
+        if (!event || !event.isActive) {
+            this.logger.warn('Event not found or inactive', { eventKey });
+            return { notificationIds: [] };
+        }
+
+        // 이벤트 기반 발송 - 동의 확인 없이 진행
+        return this.send({
+            userId,
+            eventKey,
+            channels: event.defaultChannels as Channel[],
+            templateKey: event.templateKey,
+            category: event.category as NotificationCategory,
+            priority: event.priority as NotificationPriority,
+            payload,
+        });
     }
 
     async getNotification(id: string) {

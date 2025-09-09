@@ -1,5 +1,5 @@
 // apps/notification/src/dispatcher/dispatcher.module.ts
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
@@ -8,7 +8,10 @@ import { NotificationDispatcherService } from './services/notification-dispatche
 import { NotificationProcessor } from './processors/notification.processor';
 import { ProviderModule } from '../provider/provider.module';
 import { TemplateModule } from '../template/template.module';
-import { SharedModule } from '../shared/shared.module';
+import { UserNotificationService } from '../shared/services/user-notification.service';
+import { TemplateRendererService } from '../shared/services/template-renderer.service';
+import { NotificationLoggerService } from '../shared/services/notification-logger.service';
+import { AlertService } from '../shared/services/alert.service';
 
 @Module({
     imports: [
@@ -24,13 +27,16 @@ import { SharedModule } from '../shared/shared.module';
             schema: notificationTables,
         }),
         ProviderModule,
-        forwardRef(() => TemplateModule),
-        SharedModule,
+        TemplateModule,
     ],
     controllers: [NotificationController],
     providers: [
         NotificationDispatcherService,
         NotificationProcessor,
+        UserNotificationService,
+        TemplateRendererService,
+        NotificationLoggerService,
+        AlertService,
     ],
     exports: [NotificationDispatcherService],
 })

@@ -1,15 +1,12 @@
+// apps/notification/src/provider/provider.module.ts (수정된 버전)
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
 import { ProviderController } from './controllers/provider.controller';
 import { ProviderManagerService } from './services/provider-manager.service';
-import { SharedModule } from '../shared/shared.module';
-
-import { ResendProvider } from './providers/email/resend.provider';
-import { TwilioProvider } from './providers/sms/twilio.provider';
-import { NHNProvider } from './providers/kakao/nhn.provider';
-import { FCMProvider } from './providers/push/fcm.provider';
+import { ProviderFactory } from './factories/provider.factory';
+import { AlertService } from '../shared/services/alert.service';
 
 @Module({
   imports: [
@@ -20,15 +17,12 @@ import { FCMProvider } from './providers/push/fcm.provider';
       },
       schema: notificationTables,
     }),
-    SharedModule,
   ],
   controllers: [ProviderController],
   providers: [
     ProviderManagerService,
-    ResendProvider,  // SendGrid 대신 Resend
-    TwilioProvider,
-    NHNProvider,
-    FCMProvider,
+    ProviderFactory,
+    AlertService, // SharedModule 의존성 제거, 직접 import
   ],
   exports: [ProviderManagerService],
 })
