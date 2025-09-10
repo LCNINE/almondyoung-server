@@ -38,7 +38,7 @@ export class HmsCardProvider implements PaymentProvider {
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   readonly providerId: PaymentProvider_ID = 'HMS_CARD';
-  readonly supportedTypes: PaymentType[] = ['ORDER', 'RECURRING'];
+  readonly supportedTypes: PaymentType[] = ['ORDER', 'MEMBERSHIP_FEE'];
 
   constructor() {
     // HMS API 초기화 (Adapter 제거하고 Provider에서 직접 관리)

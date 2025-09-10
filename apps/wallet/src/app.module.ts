@@ -35,7 +35,7 @@ import {
 // === Provider 전략 패턴 ===
 import { PaymentProviderFactory } from './providers/payment-provider.factory';
 import { HmsCardProvider } from './providers/hms-card.provider';
-import { HmsCmsProvider } from './providers/hms-cms.provider';
+
 import { HmsBnplProvider } from './providers/hms-bnpl.provider';
 import { TossProvider } from './providers/toss.provider';
 import { KakaopayProvider } from './providers/kakaopay.provider';
@@ -91,7 +91,7 @@ import * as schema from './shared/database/schema';
     // === Provider 전략 패턴 (PG 직접 통신) ===
     PaymentProviderFactory,
     HmsCardProvider, // HMS 카드 API 직접 호출
-    HmsCmsProvider, // HMS CMS API 직접 호출 (스텁)
+
     HmsBnplProvider, // HMS BNPL API 직접 호출
     TossProvider, // 토스 API 직접 호출 (스텁)
     KakaopayProvider, // 카카오페이 API 직접 호출 (스텁)

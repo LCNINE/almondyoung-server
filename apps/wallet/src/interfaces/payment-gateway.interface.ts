@@ -83,9 +83,7 @@ export interface RefundResult {
 
 export interface CaptureResult {
   success: boolean;
-  captureIds: string[];
   failedIds: string[];
-  error?: string;
   metadata?: Record<string, any>;
 }
 

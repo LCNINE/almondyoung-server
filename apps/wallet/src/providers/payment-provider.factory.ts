@@ -6,7 +6,6 @@ import {
   PaymentProvider_ID,
 } from './payment-provider.interface';
 import { HmsCardProvider } from './hms-card.provider';
-import { HmsCmsProvider } from './hms-cms.provider';
 import { HmsBnplProvider } from './hms-bnpl.provider';
 import { TossProvider } from './toss.provider';
 import { KakaopayProvider } from './kakaopay.provider';
@@ -24,7 +23,7 @@ export class PaymentProviderFactory {
 
   constructor(
     private readonly hmsCardProvider: HmsCardProvider,
-    private readonly hmsCmsProvider: HmsCmsProvider,
+
     private readonly hmsBnplProvider: HmsBnplProvider,
     private readonly tossProvider: TossProvider,
     private readonly kakaopayProvider: KakaopayProvider,
@@ -38,7 +37,6 @@ export class PaymentProviderFactory {
    */
   private initializeProviders(): void {
     this.providers.set('HMS_CARD', this.hmsCardProvider);
-    this.providers.set('HMS_CMS', this.hmsCmsProvider);
     this.providers.set('HMS_BNPL', this.hmsBnplProvider);
     this.providers.set('TOSS', this.tossProvider);
     this.providers.set('KAKAOPAY', this.kakaopayProvider);

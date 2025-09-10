@@ -81,9 +81,9 @@ export interface RefundRequest {
 }
 
 export interface CaptureRequest {
-  intentId: string;
   attemptIds: string[];
-  batchId?: string;
+  transactionIds?: string[]; // 스케줄러에서 미리 채워줄 수 있음
+  intentId?: string; // 선택적 (로깅/디버깅 용)
   metadata?: Record<string, any>;
 }
 
@@ -139,13 +139,12 @@ export interface ProfileRegistrationResult {
 
 export type PaymentType =
   | 'ORDER' // 일반 주문 결제
-  | 'RECURRING' // 정기 결제
+  | 'MEMBERSHIP_FEE' // 정기 결제
   | 'BNPL_CAPTURE' // BNPL 확정
   | 'REFUND'; // 환불
 
 export type PaymentProvider_ID =
   | 'HMS_CARD' // 효성 카드
-  | 'HMS_CMS' // 효성 CMS
   | 'HMS_BNPL' // 효성 BNPL
   | 'TOSS' // 토스페이먼츠
   | 'KAKAOPAY' // 카카오페이

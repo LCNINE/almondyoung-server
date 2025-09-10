@@ -8,9 +8,9 @@ import {
   UpdateMemberRequestDto,
   CreateMemberRequestDto,
   CreateMemberResponseDto,
+  PaymentResponseDto,
 } from 'hms-api-wrapper';
-import { generateUUIDv7 } from '../shared/utils/id-generator';
-import { eq } from 'drizzle-orm';
+
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 import { getTsid } from 'tsid-ts';
 
@@ -29,8 +29,8 @@ import {
   CaptureRequest,
   ProfileRegistrationRequest,
   PaymentType,
-  PaymentProvider_ID,
   ProfileRegistrationResult,
+  PaymentProvider_ID,
 } from './payment-provider.interface';
 import {
   PaymentResult,
@@ -65,130 +65,39 @@ export class HmsBnplProvider
   }
 
   async processPayment(request: PaymentRequest): Promise<PaymentResult> {
-    this.logger.log(
-      `HMS BNPL 승인 처리 시작 - Intent: ${request.intentId}, Amount: ${request.amount}KRW`,
-    );
+    this.logger.log(`HMS BNPL 승인 요청 - Intent=${request.intentId}`);
 
-    // Profile 기반 결제만 지원
     if (!request.profileId) {
-      throw new Error('HMS BNPL은 저장된 프로필이 필요합니다');
+      throw new Error('BNPL 결제는 저장된 프로필이 필요합니다');
     }
 
-    const metadata: PaymentMetadata = {
-      userId: request.userId,
-      sessionId: request.intentId,
-      paymentMethodId: request.profileId,
-      bnplAccountId: request.metadata?.bnplAccountId,
-      ...request.metadata,
+    return {
+      success: true,
+      transactionId: `BNPL_AUTH_${Date.now()}`,
+      authorizationId: `BNPL_AUTH_${Date.now()}`,
+      metadata: {
+        provider: 'HMS_BNPL',
+        method: 'authorize',
+        approvedAmount: request.amount,
+        paymentDate: new Date().toISOString(),
+      },
     };
-
-    try {
-      // 1. BNPL Account 조회 (profileId로부터)
-      const batchProfile = await this.dbService.db
-        .select()
-        .from(schema.cmsBatchProfiles)
-        .where(eq(schema.cmsBatchProfiles.id, request.profileId))
-        .limit(1);
-
-      if (batchProfile.length === 0) {
-        throw new Error(
-          `BNPL Account not found for profile: ${request.profileId}`,
-        );
-      }
-
-      // 효성 비즈니스 규칙: BNPL Account ID는 21자로 제한
-      const bnplAccountId = batchProfile[0].memberId.substring(0, 21);
-
-      // 2. Mock BNPL 승인 처리 (실제 HMS API 구현 예정)
-      const mockTransactionId = `BNPL_${getTsid().toString()}`;
-
-      // 3. 🎯 내부 원장에 BNPL 사용 기록 (DEBIT)
-      const bnplEventId = generateUUIDv7();
-      await this.dbService.db.insert(schema.bnplEvents).values({
-        id: bnplEventId,
-        bnplAccountId: bnplAccountId,
-        paymentSessionId: request.intentId,
-        transactionType: 'DEBIT', // 사용자가 BNPL로 구매 (차감)
-        status: 'AUTHORIZED', // 승인만, 실제 출금은 월별 billing
-        amount: request.amount,
-      });
-
-      this.logger.log(
-        `✅ BNPL 내부 원장 기록 완료 - EventId: ${bnplEventId}, AccountId: ${bnplAccountId}`,
-      );
-
-      const result = {
-        success: true,
-        transactionId: mockTransactionId,
-        authorizationId: mockTransactionId,
-        metadata: {
-          provider: 'hms_bnpl',
-          method: 'authorization_mock',
-          approvalNumber: `BNPL_${Date.now()}`,
-          paymentDate: new Date().toISOString(),
-          actualAmount: request.amount,
-          fee: 0,
-          bnplEventId, // 내부 원장 이벤트 ID 추가
-        },
-      };
-
-      this.logger.log(
-        `HMS BNPL 승인 완료 - AuthorizationId: ${result.authorizationId}`,
-      );
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `HMS BNPL 승인 실패 - Intent: ${request.intentId}`,
-        error,
-      );
-      return {
-        success: false,
-        transactionId: '',
-        error: `HMS BNPL 승인 실패: ${error.message}`,
-        metadata: { providerId: this.providerId },
-      };
-    }
   }
 
   async capturePayment(request: CaptureRequest): Promise<CaptureResult> {
-    this.logger.log(
-      `HMS BNPL 확정 처리 시작 - AttemptIds: ${request.attemptIds.join(', ')}`,
-    );
-
-    try {
-      // TODO: attemptIds에서 authorizationId 목록 추출 필요
-      const authorizationIds = request.attemptIds; // 임시로 동일하게 처리
-
-      // Mock BNPL 확정 처리
-      const result = {
-        success: true,
-        captureIds: authorizationIds,
-        failedIds: [],
-        metadata: {
-          provider: 'hms_bnpl',
-          method: 'capture_mock',
-          batchId: request.batchId,
-          captureDate: new Date().toISOString(),
-        },
-      };
-
-      this.logger.log(
-        `HMS BNPL 확정 완료 - CaptureIds: ${result.captureIds.join(', ')}`,
-      );
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `HMS BNPL 확정 실패 - AttemptIds: ${request.attemptIds.join(', ')}`,
-        error,
-      );
-      return {
-        success: false,
-        captureIds: [],
-        failedIds: request.attemptIds,
-        error: `HMS BNPL 확정 실패: ${error.message}`,
-        metadata: { providerId: this.providerId },
-      };
+    const results: PaymentResponseDto[] = [];
+    for (const txId of request.transactionIds!) {
+      const resp = await this.hmsApi.withdrawals.get(txId);
+      results.push(resp);
     }
+
+    return {
+      success: results.every((r) => r.payment.status === '완료'),
+      failedIds: results
+        .filter((r) => r.payment.status !== '완료')
+        .map((r) => r.payment.transactionId),
+      metadata: { provider: 'HMS_BNPL', method: 'capture' },
+    };
   }
 
   async refundPayment(request: RefundRequest): Promise<RefundResult> {

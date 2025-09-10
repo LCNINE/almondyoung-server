@@ -18,6 +18,7 @@ import {
 } from '../../shared/dtos/universal-checkout.dto';
 import { DbService } from '@app/db';
 import { PaymentProviderFactory } from '../../providers/payment-provider.factory';
+import { WalletTx } from '../../shared/database';
 
 /**
  * v4 아키텍처 Payment Intent 서비스
@@ -177,36 +178,28 @@ export class PaymentIntentService {
     );
 
     return await this.dbService.db.transaction(async (tx) => {
-      // 1. Intent 조회 및 검증
-      const intent = await tx
+      // 1) Intent 조회/기본 검증
+      const [session] = await tx
         .select()
         .from(schema.paymentIntents)
         .where(eq(schema.paymentIntents.id, intentId))
         .limit(1);
 
-      if (intent.length === 0) {
-        throw new Error(`Intent not found: ${intentId}`);
-      }
-
-      const session = intent[0];
-
+      if (!session) throw new Error(`Intent not found: ${intentId}`);
       if (session.status !== 'PENDING') {
         throw new Error(`Intent already processed: ${session.status}`);
       }
-
       if (new Date() > session.expiresAt) {
         throw new Error('Intent expired');
       }
 
-      // 2. 🛡️ 하드가드 검사 (BNPL_CAPTURE → CMS 강제)
-      if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'CMS') {
+      // 2) 하드가드(BNPL_CAPTURE→CMS), 정책검증
+      if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'HMS_CARD') {
         this.logger.error(
           `하드가드 위반: BNPL_CAPTURE는 CMS만 허용 - 요청된 Provider: ${dto.provider}`,
         );
         throw new Error('policy.bnpl.capture.cms.only');
       }
-
-      // 3. 일반 정책 검증
       this.policyValidator.validateIntentProvider(
         session.type,
         dto.provider,
@@ -214,16 +207,16 @@ export class PaymentIntentService {
         !!dto.instrumentRef,
       );
 
-      // 4. 런타임 허용 프로바이더 검증
-      const allowedProviders = this.resolveAllowedProviders(
+      // 3) 런타임 허용 Provider 확인
+      const allowed = this.resolveAllowedProviders(
         session.type,
         session.customerId,
       );
-      if (!allowedProviders.includes(dto.provider as any)) {
+      if (!allowed.includes(dto.provider as any)) {
         throw new Error(`Provider ${dto.provider} not allowed for this intent`);
       }
 
-      // 4. 프로필 검증 (저장형 결제수단 필요 시)
+      // 4) 저장형 프로필 검증 (필요 시)
       if (dto.profileId) {
         await this.validateProfile(
           tx,
@@ -233,95 +226,14 @@ export class PaymentIntentService {
         );
       }
 
-      // 5. Provider별 결제 실행
-      let paymentResult;
-      try {
-        paymentResult = await this.executePayment(
-          dto.provider,
-          session.amount,
-          {
-            sessionId: intentId,
-            hmsMemberId: dto.profileId,
-            paymentMethodId: dto.profileId,
-          },
-        );
-      } catch (error) {
-        this.logger.error(`결제 실행 실패: ${error.message}`);
-        paymentResult = {
-          success: false,
-          transactionId: '',
-          error: error.message,
-        };
-      }
-
-      // 4. Attempt 저장
-      const attemptId = generateUUIDv7();
-
-      // BNPL은 승인만 처리 (AUTHORIZED), 나머지는 즉시 확정 (CAPTURED)
-      let attemptStatus: 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
-      if (!paymentResult.success) {
-        attemptStatus = 'FAILED';
-      } else if (dto.provider === 'BNPL') {
-        attemptStatus = 'AUTHORIZED'; // BNPL은 승인만, 나중에 월별 billing에서 CAPTURE
-      } else {
-        attemptStatus = 'CAPTURED'; // PG, Points 등은 즉시 확정
-      }
-
-      await tx.insert(schema.paymentAttempts).values({
-        id: attemptId,
-        intentId: intentId,
-        provider: dto.provider,
-        instrumentRef: dto.instrumentRef || null,
-        profileId: dto.profileId || null,
-        amount: session.amount,
-        status: attemptStatus,
-        actor: dto.actor || 'USER',
-        errorMessage: paymentResult.error || null,
-        transactionId: paymentResult.transactionId || null,
-        approvalNumber: paymentResult.metadata?.approvalNumber || null,
-        eventContext: JSON.stringify({
-          pg: {
-            gateway: dto.provider.toLowerCase(),
-            approvalNumber: paymentResult.metadata?.approvalNumber,
-            paymentDate: paymentResult.metadata?.paymentDate,
-            transactionId: paymentResult.transactionId,
-          },
-          business: {
-            type: session.type,
-            source: dto.source || 'api',
-          },
-        }),
-      });
-
-      // 5. Intent 상태 업데이트
-      await tx
-        .update(schema.paymentIntents)
-        .set({
-          status: attemptStatus,
-          authorizedAt: paymentResult.success ? new Date() : null,
-          capturedAt: attemptStatus === 'CAPTURED' ? new Date() : null, // BNPL은 나중에 CAPTURE
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.paymentIntents.id, intentId));
-
-      const response: AttemptResponseDto = {
-        attemptId,
+      // 5) 내부용 실행(트랜잭션 내)으로 위임
+      return this.createAttemptInternal(
+        tx,
         intentId,
-        provider: dto.provider,
-        status: attemptStatus,
-        amount: session.amount,
-        createdAt: new Date().toISOString(),
-        actor: dto.actor || 'USER',
-        errorMessage: paymentResult.error,
-        instrumentRef: dto.profileId ? 'STORED' : 'EPHEMERAL',
-        transactionId: paymentResult.transactionId,
-        approvalNumber: paymentResult.metadata?.approvalNumber,
-      };
-
-      this.logger.log(
-        `Attempt 생성 완료: ${attemptId}, 결과: ${attemptStatus}`,
+        session,
+        dto,
+        idempotencyKey,
       );
-      return response;
     });
   }
 
@@ -444,82 +356,102 @@ export class PaymentIntentService {
   private async createAttemptInternal(
     tx: any,
     intentId: string,
-    session: any,
+    session: typeof schema.paymentIntents.$inferSelect,
     dto: AttemptCreateDto,
     idempotencyKey?: string,
   ): Promise<AttemptResponseDto> {
-    // 기존 createAttempt 로직과 동일하지만 트랜잭션 내에서 실행
     const attemptId = generateUUIDv7();
 
-    // 🛡️ 하드가드 검사 (BNPL_CAPTURE → CMS 강제)
-    if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'CMS') {
+    // 하드가드 재확인
+    if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'HMS_CARD') {
       this.logger.error(
         `하드가드 위반: BNPL_CAPTURE는 CMS만 허용 - 요청된 Provider: ${dto.provider}`,
       );
       throw new Error('policy.bnpl.capture.cms.only');
     }
 
-    // 정책 검증
-    this.policyValidator.validateIntentProvider(
-      session.type,
-      dto.provider,
-      !!dto.profileId,
-      !!dto.instrumentRef,
-    );
+    let attemptStatus: 'AUTHORIZED' | 'CAPTURED' | 'FAILED' = 'FAILED';
+    let transactionId: string | null = null;
+    let approvalNumber: string | null = null;
+    let errorMessage: string | null = null;
 
-    // 프로필 검증 (저장형 결제수단 필요 시)
-    if (dto.profileId) {
-      await this.validateProfile(
-        tx,
-        dto.profileId,
-        session.customerId,
-        session.type,
-      );
-    }
+    if (dto.provider === 'HMS_BNPL') {
+      // ── BNPL: 내부 승인만 ─────────────────────────────
+      // 1) BNPL 계정 존재 확인 (payment_profile_id = profileId)
+      const [account] = await tx
+        .select()
+        .from(schema.bnplAccounts)
+        .where(eq(schema.bnplAccounts.paymentProfileId, dto.profileId!))
+        .limit(1);
 
-    // Provider별 결제 실행
-    let paymentResult;
-    try {
-      paymentResult = await this.providerFactory
-        .getProvider(dto.provider as any)
-        .processPayment({
-          intentId: intentId,
-          attemptId: attemptId,
-          amount: session.amount,
-          type: session.type,
-          userId: session.customerId,
-          profileId: dto.profileId,
-          instrumentRef: dto.instrumentRef,
-          instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+      if (!account) {
+        throw new Error(`BNPL Account not found for profile ${dto.profileId}`);
+      }
 
-          metadata: {
-            type: session.type,
-            customerId: session.customerId,
-            source: dto.source || 'api',
-          },
-        });
-    } catch (error) {
-      this.logger.error(`Provider 결제 실행 실패: ${error.message}`);
-      paymentResult = {
-        success: false,
-        error: error.message,
-        transactionId: null,
-      };
-    }
+      // 2) 한도 체크 (MVP: 승인한도만 비교)
+      if (Number(session.amount) > Number(account.approvedLimit)) {
+        throw new Error(
+          `BNPL 한도 초과: ${session.amount} > ${account.approvedLimit}`,
+        );
+      }
 
-    // 결과에 따른 상태 결정
-    let attemptStatus: any;
-    if (!paymentResult.success) {
-      attemptStatus = 'FAILED';
-    } else if (dto.provider === 'BNPL') {
-      attemptStatus = 'AUTHORIZED'; // BNPL은 월말에 CAPTURE
+      // (옵션) TODO: 사용중 한도 집계하여 남은한도 확인 (AUTHORIZED/CAPTURED DEBIT - CREDIT)
+
+      // 3) 내부 원장 기록 (DEBIT / AUTHORIZED)
+      const bnplEventId = generateUUIDv7();
+      await tx.insert(schema.bnplEvents).values({
+        id: bnplEventId,
+        bnplAccountId: account.id,
+        paymentSessionId: intentId,
+        transactionType: 'DEBIT',
+        status: 'AUTHORIZED',
+        amount: session.amount,
+      });
+
+      // 4) 승인 식별자(내부)
+      transactionId = `BNPL_AUTH_${Date.now()}`;
+      approvalNumber = transactionId;
+      attemptStatus = 'AUTHORIZED';
     } else {
-      attemptStatus = 'CAPTURED'; // PG, Points 등은 즉시 확정
+      // ── 일반 PG: 즉시 CAPTURE ─────────────────────────
+      try {
+        const result = await this.providerFactory
+          .getProvider(dto.provider as any)
+          .processPayment({
+            intentId,
+            attemptId,
+            amount: session.amount,
+            type: session.type,
+            userId: session.customerId,
+            profileId: dto.profileId,
+            instrumentRef: dto.instrumentRef,
+            instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+            metadata: {
+              type: session.type,
+              customerId: session.customerId,
+              source: dto.source || 'api',
+            },
+          });
+
+        if (!result.success) {
+          attemptStatus = 'FAILED';
+          errorMessage = result.error || 'PG payment failed';
+        } else {
+          attemptStatus = 'CAPTURED';
+          transactionId = result.transactionId || null;
+          approvalNumber = result.metadata?.approvalNumber || null;
+        }
+      } catch (err: any) {
+        this.logger.error(`Provider 결제 실행 실패: ${err?.message}`);
+        attemptStatus = 'FAILED';
+        errorMessage = err?.message ?? 'provider_error';
+      }
     }
 
+    // ── payment_attempts 저장 ───────────────────────────
     await tx.insert(schema.paymentAttempts).values({
       id: attemptId,
-      intentId: intentId,
+      intentId,
       provider: dto.provider,
       instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
       instrumentRef: dto.instrumentRef || null,
@@ -527,30 +459,36 @@ export class PaymentIntentService {
       amount: session.amount,
       status: attemptStatus,
       actor: dto.actor || 'USER',
-      errorMessage: paymentResult.error || null,
-      transactionId: paymentResult.transactionId || null,
-      approvalNumber: paymentResult.metadata?.approvalNumber || null,
-      eventContext: JSON.stringify({
-        pg: {
-          gateway: dto.provider.toLowerCase(),
-          approvalNumber: paymentResult.metadata?.approvalNumber,
-          paymentDate: paymentResult.metadata?.paymentDate,
-          transactionId: paymentResult.transactionId,
-        },
-        business: {
-          type: session.type,
-          source: dto.source || 'api',
-        },
-      }),
+      errorMessage,
+      transactionId,
+      approvalNumber,
+      eventContext: JSON.stringify(
+        dto.provider === 'HMS_BNPL'
+          ? {
+              bnpl: {
+                ledgerEvent: 'AUTHORIZED',
+                transactionId,
+              },
+              business: { type: session.type, source: dto.source || 'api' },
+            }
+          : {
+              pg: {
+                gateway: dto.provider.toLowerCase(),
+                approvalNumber,
+                transactionId,
+              },
+              business: { type: session.type, source: dto.source || 'api' },
+            },
+      ),
     });
 
-    // Intent 상태 업데이트
+    // ── payment_intents 업데이트 ────────────────────────
     await tx
       .update(schema.paymentIntents)
       .set({
         status: attemptStatus,
-        authorizedAt: paymentResult.success ? new Date() : null,
-        capturedAt: attemptStatus === 'CAPTURED' ? new Date() : null, // BNPL은 나중에 CAPTURE
+        authorizedAt: attemptStatus !== 'FAILED' ? new Date() : null,
+        capturedAt: attemptStatus === 'CAPTURED' ? new Date() : null,
         updatedAt: new Date(),
       })
       .where(eq(schema.paymentIntents.id, intentId));
@@ -563,10 +501,10 @@ export class PaymentIntentService {
       amount: session.amount,
       createdAt: new Date().toISOString(),
       actor: dto.actor || 'USER',
-      errorMessage: paymentResult.error,
+      errorMessage: errorMessage || undefined,
       instrumentRef: dto.profileId ? 'STORED' : 'EPHEMERAL',
-      transactionId: paymentResult.transactionId,
-      approvalNumber: paymentResult.metadata?.approvalNumber,
+      transactionId: transactionId || undefined,
+      approvalNumber: approvalNumber || undefined,
     };
   }
 
@@ -602,10 +540,10 @@ export class PaymentIntentService {
   ) {
     // Provider ID 매핑 (schema -> Provider Factory)
     const providerMapping: Record<string, string> = {
-      CMS: 'HMS_CMS',
+      HMS_CARD: 'HMS_CARD',
       TOSS: 'TOSS',
       KAKAOPAY: 'KAKAOPAY',
-      BNPL: 'HMS_BNPL',
+      HMS_BNPL: 'HMS_BNPL',
       POINTS: 'POINTS',
     };
 
