@@ -6,11 +6,11 @@ import { SubscriptionModule } from './subscription/subscription.module';
 import { PlanModule } from './plan/plan.module';
 import { AdminOperationsModule } from './admin-operations/admin-operations.module';
 import { PauseModule } from './pause-resume/pause.module';
-
+import { BillingModule } from './billing/billing.module';
 import { PolicyManagementModule } from './policy-management/policy-management.module';
 // import { APP_FILTER } from '@nestjs/core';
 // import {
-//   // SubscriptionExceptionFilter,
+//   // SubscriptionExceptionFilter,og
 //   HttpExceptionFilter,
 //   GlobalExceptionFilter,
 // } from './shared/filters/subscription-exception.filter';
@@ -31,6 +31,7 @@ import { DevAuthModule } from './auth/dev-auth-module';
     PlanModule,
     AdminOperationsModule,
     PauseModule,
+    BillingModule,
     PolicyManagementModule,
     EventsModule,
     DbModule.forRoot({

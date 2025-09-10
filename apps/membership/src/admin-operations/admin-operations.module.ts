@@ -4,6 +4,7 @@ import { AdminOperationsService } from './admin-operations.service';
 import { PlanModule } from '../plan/plan.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
 import { PolicyManagementModule } from '../policy-management/policy-management.module';
+import { BillingModule } from '../billing/billing.module';
 
 /**
  * 관리자 운영 모듈
@@ -11,7 +12,7 @@ import { PolicyManagementModule } from '../policy-management/policy-management.m
  * 모든 하위 서비스를 사용할 수 있도록 구성합니다.
  */
 @Module({
-  imports: [PlanModule, SubscriptionModule, PolicyManagementModule],
+  imports: [PlanModule, SubscriptionModule, PolicyManagementModule, BillingModule],
   controllers: [AdminOperationsController],
   providers: [AdminOperationsService],
   exports: [AdminOperationsService],

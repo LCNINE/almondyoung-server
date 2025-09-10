@@ -131,6 +131,12 @@ export const subscriptionContracts = pgTable('subscription_contracts', {
   isVoided: boolean('is_voided').notNull().default(false),
   voidedAt: timestamp('voided_at', { withTimezone: true }),
   reason: text('reason'),
+  // 정기결제 연동 필드 (최소한의 메타데이터)
+  lastPaymentIntentId: text('last_payment_intent_id'), // 마지막 결제 Intent ID
+  lastPaymentAttemptId: text('last_payment_attempt_id'), // 마지막 결제 Attempt ID
+  paymentProfileId: text('payment_profile_id'), // 저장된 결제 프로필 ID
+  isPastDue: boolean('is_past_due').notNull().default(false), // 연체 상태
+  billingRetryCount: integer('billing_retry_count').notNull().default(0), // 현재 재시도 횟수
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -163,7 +169,7 @@ export const subscriptionEntitlement = pgTable('subscription_entitlement', {
 export const eventBatches = pgTable('event_batches', {
   id: uuid('id').primaryKey().defaultRandom(),
   type: text('type').notNull(),
-  adminId: uuid('admin_id'), // 관리자 ID
+  adminId: text('admin_id'),
   effectiveDate: date('effective_date').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
@@ -232,7 +238,7 @@ export const planRelations = relations(plan, ({ one, many }) => ({
 
 export const subscriptionContractsRelations = relations(
   subscriptionContracts,
-  ({ one }) => ({
+  ({ one, many }) => ({
     user: one(users, {
       fields: [subscriptionContracts.userId],
       references: [users.id],
@@ -240,6 +246,11 @@ export const subscriptionContractsRelations = relations(
     plan: one(plan, {
       fields: [subscriptionContracts.planId],
       references: [plan.id],
+    }),
+    // 정기결제 Dunning 관계 (선택적)
+    dunningQueue: one(membershipDunningQueue, {
+      fields: [subscriptionContracts.id],
+      references: [membershipDunningQueue.contractId],
     }),
   }),
 );
@@ -297,6 +308,42 @@ export const pauseEntitlementVoidsRelations = relations(
     entitlement: one(subscriptionEntitlement, {
       fields: [pauseEntitlementVoids.entitlementId],
       references: [subscriptionEntitlement.id],
+    }),
+  }),
+);
+
+// =================================================================
+// 정기결제 Dunning 관리 (선택적)
+// =================================================================
+
+/**
+ * Dunning 큐 - 결제 실패 시 재시도 스케줄 관리 (멤버십 도메인 전용)
+ */
+export const membershipDunningQueue = pgTable('membership_dunning_queue', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contractId: uuid('contract_id')
+    .notNull()
+    .references(() => subscriptionContracts.id),
+  nextRetryAt: timestamp('next_retry_at', { withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(3),
+  lastErrorCode: text('last_error_code'),
+  lastErrorMessage: text('last_error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// Dunning Queue Relations
+export const membershipDunningQueueRelations = relations(
+  membershipDunningQueue,
+  ({ one }) => ({
+    contract: one(subscriptionContracts, {
+      fields: [membershipDunningQueue.contractId],
+      references: [subscriptionContracts.id],
     }),
   }),
 );

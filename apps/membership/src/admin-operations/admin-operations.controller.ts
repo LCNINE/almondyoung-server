@@ -149,9 +149,22 @@ export class AdminOperationsController {
   }
 
   @Get('users/:userId/pause-history')
-  async getUserPauseHistory(
-    @Param('userId') userId: string,
-  ) {
+  async getUserPauseHistory(@Param('userId') userId: string) {
     return this.adminOperationsService.getUserPauseHistory(userId);
+  }
+
+  // =================================================================
+  // 정기결제 테스트 엔드포인트 (임시)
+  // =================================================================
+
+  @Post('billing/process-due')
+  async processDueBillings() {
+    // 임시로 간단한 응답 반환
+    return {
+      message: '정기결제 스케줄러는 매 5분마다 자동 실행됩니다',
+      status: '스케줄러가 백그라운드에서 실행 중입니다',
+      nextRun: '다음 5분 간격',
+      testData: 'quick-test-setup.sql을 실행하여 테스트 데이터를 준비해주세요',
+    };
   }
 }

@@ -30,9 +30,17 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
 
+  // CORS 설정 - 개발 환경에서는 모든 origin 허용
+  app.enableCors({
+    origin: isDev ? true : ['http://localhost:5000', 'http://127.0.0.1:5000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'],
+    credentials: true,
+  });
+
   // Swagger는 개발 환경에서만 활성화
 
-  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Application running: http://localhost:${port}/api`);
