@@ -24,6 +24,7 @@ export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
     MOVE_RESERVE: { fields: {}, description: '로케이션 이동 예약' },
     MOVE_CANCEL: { fields: {}, description: '로케이션 이동 예약 취소' },
     MOVE_COMMIT: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '로케이션 이동 확정' },
+    MOVE_INSTANT: { fields: {}, description: '로케이션 즉시 이동(요약은 이벤트 투영에서 처리)' },
 
     TRANSFER_SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 선적(출발 창고 감소, 이동 중 처리 별도)' },
     TRANSFER_RECEIVE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 도착(도착 창고 증가)' },
