@@ -1,7 +1,7 @@
 // services/v2/payment-intent.service.ts - v4 아키텍처 Intent 서비스
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../../shared/utils/id-generator';
 
 import * as schema from '../../shared/database/schema';
 import { PaymentPolicyValidator } from '../../shared/policies/payment-policy';
@@ -88,7 +88,7 @@ export class PaymentIntentService {
       }
 
       // 3. Intent 생성
-      const intentId = ulid();
+      const intentId = generateUUIDv7();
       const expiresAt = dto.expiresAt
         ? new Date(dto.expiresAt)
         : new Date(Date.now() + 30 * 60 * 1000); // 30분
@@ -255,7 +255,7 @@ export class PaymentIntentService {
       }
 
       // 4. Attempt 저장
-      const attemptId = ulid();
+      const attemptId = generateUUIDv7();
 
       // BNPL은 승인만 처리 (AUTHORIZED), 나머지는 즉시 확정 (CAPTURED)
       let attemptStatus: 'AUTHORIZED' | 'CAPTURED' | 'FAILED';
@@ -449,7 +449,7 @@ export class PaymentIntentService {
     idempotencyKey?: string,
   ): Promise<AttemptResponseDto> {
     // 기존 createAttempt 로직과 동일하지만 트랜잭션 내에서 실행
-    const attemptId = `pa_${ulid()}`;
+    const attemptId = generateUUIDv7();
 
     // 🛡️ 하드가드 검사 (BNPL_CAPTURE → CMS 강제)
     if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'CMS') {
@@ -623,7 +623,7 @@ export class PaymentIntentService {
       // Provider 인터페이스로 결제 실행
       const result = await paymentProvider.processPayment({
         intentId: metadata.sessionId,
-        attemptId: ulid(),
+        attemptId: generateUUIDv7(),
         amount,
         type: metadata.type || 'ORDER',
         userId: metadata.userId,
@@ -643,7 +643,7 @@ export class PaymentIntentService {
       // 폴백: Mock 응답 (Provider 구현 안된 경우)
       return {
         success: true,
-        transactionId: `${provider.toLowerCase()}_${ulid()}`,
+        transactionId: `${provider.toLowerCase()}_${generateUUIDv7()}`,
         metadata: { provider: provider.toLowerCase(), method: 'mock_fallback' },
       };
     }

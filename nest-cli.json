@@ -53,7 +53,8 @@
       "entryFile": "main",
       "sourceRoot": "apps/wallet/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/wallet/tsconfig.app.json"
+        "tsConfigPath": "apps/wallet/tsconfig.app.json",
+        "assets": ["html/**/*"]
       }
     }
   }

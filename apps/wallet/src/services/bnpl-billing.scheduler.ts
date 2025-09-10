@@ -5,8 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { eq, and, inArray } from 'drizzle-orm';
-import { ulid } from 'ulid';
-
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 /**
  * BNPL 월별 Billing 배치 스케줄러
  *
@@ -136,7 +135,7 @@ export class BnplBillingScheduler {
       (sum, event) => sum + parseFloat(event.amount),
       0,
     );
-    const invoiceId = ulid();
+    const invoiceId = generateUUIDv7();
 
     this.logger.log(
       `💰 Invoice 생성: ${invoiceId} (Account: ${bnplAccountId}, 총액: ${totalAmount}원, 건수: ${events.length})`,
@@ -158,7 +157,7 @@ export class BnplBillingScheduler {
       // 2. Settlement Batch Items 생성
       for (const event of events) {
         await this.dbService.db.insert(schema.bnplInvoiceItems).values({
-          id: ulid(),
+          id: generateUUIDv7(),
           invoiceId: invoiceId,
           bnplEventId: event.id,
           amount: parseFloat(event.amount),
@@ -167,7 +166,7 @@ export class BnplBillingScheduler {
       }
 
       // 3. Mock CMS 출금 신청 (실제로는 HMS API 호출)
-      const collectionEventId = ulid();
+      const collectionEventId = generateUUIDv7();
       await this.dbService.db.insert(schema.bnplCollectionEvents).values({
         id: collectionEventId,
         invoiceId: invoiceId,
@@ -214,7 +213,7 @@ export class BnplBillingScheduler {
           .where(eq(schema.bnplInvoices.id, invoice.id));
 
         await this.dbService.db.insert(schema.bnplCollectionEvents).values({
-          id: ulid(),
+          id: generateUUIDv7(),
           invoiceId: invoice.id,
           eventType: 'COLLECTION_COMPLETED',
           status: 'CAPTURED',
@@ -238,7 +237,7 @@ export class BnplBillingScheduler {
           .where(eq(schema.bnplInvoices.id, invoice.id));
 
         await this.dbService.db.insert(schema.bnplCollectionEvents).values({
-          id: ulid(),
+          id: generateUUIDv7(),
           invoiceId: invoice.id,
           invoiceItemId: invoice.id,
           eventType: 'COLLECTION_FAILED',

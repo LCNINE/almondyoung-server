@@ -1,8 +1,8 @@
 // payment-profile-v2.service.ts - 정규화된 스키마용 서비스
 import { Injectable, Inject } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
+
 import { eq, and } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { getTsid } from 'tsid-ts';
 
 import { DbService } from '@app/db';
@@ -31,7 +31,7 @@ export class PaymentProfileV2Service {
   async createProfile(
     dto: PaymentProfileCreateV2RequestDto,
   ): Promise<PaymentProfileV2ResponseDto> {
-    const profileId = ulid();
+    const profileId = generateUUIDv7();
     const memberId = getTsid().toString().slice(0, 20); // 20자로 제한
 
     await this.dbService.db.transaction(async (tx) => {

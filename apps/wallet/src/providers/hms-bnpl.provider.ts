@@ -4,19 +4,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   HmsAPI,
   MockHmsAPI,
-  CreatePaymentProfileDto,
-  PaymentTransactionRequest,
+  AgreementFileResponseDto,
+  UpdateMemberRequestDto,
   CreateMemberRequestDto,
   CreateMemberResponseDto,
-  RegisterAgreementRequest,
-  AgreementFileResponseDto,
-  BatchCmsResult,
 } from 'hms-api-wrapper';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { eq } from 'drizzle-orm';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 import { getTsid } from 'tsid-ts';
-import { Money } from '../shared/utils/money.util';
+
 import {
   WithdrawalConsentCapability,
   WithdrawalConsentRequest,
@@ -106,7 +103,7 @@ export class HmsBnplProvider
       const mockTransactionId = `BNPL_${getTsid().toString()}`;
 
       // 3. 🎯 내부 원장에 BNPL 사용 기록 (DEBIT)
-      const bnplEventId = ulid();
+      const bnplEventId = generateUUIDv7();
       await this.dbService.db.insert(schema.bnplEvents).values({
         id: bnplEventId,
         bnplAccountId: bnplAccountId,
@@ -232,327 +229,41 @@ export class HmsBnplProvider
     }
   }
 
-  async registerProfile(
-    request: ProfileRegistrationRequest,
-  ): Promise<ProfileRegistrationResult> {
+  // 회원 등록 API 호출
+  async createMember(
+    memberData: CreateMemberRequestDto,
+  ): Promise<CreateMemberResponseDto> {
+    this.logger.log(`➡️ HMS 회원 등록 요청: ${memberData.memberId}`);
+    return this.hmsApi.members.create(memberData);
+  }
+
+  // 회원 수정 API 호출
+  async updateMember(memberId: string, data: UpdateMemberRequestDto) {
+    this.logger.log(`➡️ HMS 회원 수정 요청: ${memberId}`);
+    return this.hmsApi.members.update(memberId, data);
+  }
+
+  // 회원 조회
+  async getMember(memberId: string) {
+    this.logger.log(`➡️ HMS 회원 조회: ${memberId}`);
+    return this.hmsApi.members.get(memberId);
+  }
+
+  // 회원 삭제
+  async deleteMember(memberId: string) {
+    this.logger.log(`➡️ HMS 회원 삭제: ${memberId}`);
+    return this.hmsApi.members.delete(memberId);
+  }
+
+  // 동의서 파일 업로드
+  async uploadAgreement(
+    custId: string,
+    memberId: string,
+    fileInput: { file: Buffer | Blob; filename: string },
+  ): Promise<AgreementFileResponseDto> {
     this.logger.log(
-      `HMS BNPL 프로필 등록 시작 - UserId: ${request.userId}, Type: ${request.profileType}`,
+      `➡️ HMS 동의서 업로드 요청: ${memberId} (${fileInput.filename})`,
     );
-
-    if (request.profileType !== 'BNPL') {
-      throw new Error('HMS BNPL Provider는 BNPL 타입만 지원합니다');
-    }
-
-    if (!request.creditLimit) {
-      throw new Error('BNPL 등록에는 creditLimit이 필요합니다');
-    }
-
-    try {
-      const registrationRequest: PaymentMethodRegistrationRequest = {
-        userId: request.userId,
-        memberName: request.profileName,
-        phone: request.metadata?.phone || '',
-        creditLimit: request.creditLimit,
-        billingCycleDay: request.billingCycleDay || 1,
-        ...request.metadata,
-      };
-
-      // Mock BNPL 프로필 등록 처리
-      const mockProfileId = `BNPL_PROFILE_${getTsid().toString()}`;
-      const mockHmsMemberId = `HMS_BNPL_${getTsid().toString()}`;
-
-      this.logger.log(
-        `HMS BNPL 프로필 등록 완료 - ProfileId: ${mockProfileId}`,
-      );
-
-      return {
-        success: true,
-        profileId: mockProfileId,
-        hmsMemberId: mockHmsMemberId,
-        metadata: {
-          providerId: this.providerId,
-          creditLimit: request.creditLimit,
-          billingCycleDay: request.billingCycleDay,
-          method: 'register_mock',
-          registrationDate: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.logger.error(
-        `HMS BNPL 프로필 등록 실패 - UserId: ${request.userId}`,
-        error,
-      );
-      return {
-        success: false,
-        profileId: '',
-        error: `HMS BNPL 프로필 등록 실패: ${error.message}`,
-        metadata: { providerId: this.providerId },
-      };
-    }
-  }
-
-  // === WithdrawalConsentCapability 구현 ===
-
-  /**
-   * BNPL 출금동의서 제출
-   * - HMS BatchCMS API를 통한 회원 등록
-   * - 동의서 파일 업로드 및 심사 요청
-   */
-  async submitWithdrawalConsent(
-    request: WithdrawalConsentRequest,
-  ): Promise<WithdrawalConsentResult> {
-    this.logger.log(`BNPL 출금동의서 제출 시작 - UserId: ${request.userId}`);
-
-    const consentId = `consent_${getTsid().toString()}`;
-
-    try {
-      // 1. HMS 회원 등록
-      const memberResult = await this.hmsApi.members.create(request.memberInfo);
-
-      if (
-        !memberResult.member?.result ||
-        memberResult.member.result.flag !== 'Y'
-      ) {
-        throw new Error(
-          `HMS 회원 등록 실패: ${memberResult.member?.result?.message || 'Unknown error'}`,
-        );
-      }
-
-      const hmsMemberId = memberResult.member.memberId;
-      if (!hmsMemberId) {
-        throw new Error('HMS 회원 ID를 받지 못했습니다');
-      }
-
-      // 2. 동의서 파일 등록 (임시로 Mock 처리)
-      const agreementResults: AgreementFileResponseDto[] = [];
-
-      // Node.js 환경에서 Blob 타입 이슈를 피하기 위해 임시 Mock 처리
-      this.logger.log('동의서 파일 등록 (Mock 처리)');
-
-      for (const agreement of request.agreementFiles) {
-        // Mock 동의서 결과 생성
-        const mockAgreementResult: AgreementFileResponseDto = {
-          agreementFile: {
-            registerStatus: '등록',
-            agreementKey: `agreement_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            memberId: hmsMemberId,
-            memberName: request.memberInfo.memberName,
-            agreementWay: 'F', // File
-            agreementKind: '서면',
-            fileExtension: 'pdf',
-            agreementTime: new Date().toISOString(),
-            result: {
-              code: '0000',
-              message: '정상처리',
-            },
-          },
-        };
-
-        agreementResults.push(mockAgreementResult);
-        this.logger.log(
-          `Mock 동의서 등록: ${mockAgreementResult.agreementFile.agreementKey}`,
-        );
-      }
-
-      // 3. 심사 요청 상태로 설정
-      const result: WithdrawalConsentResult = {
-        success: true,
-        consentId,
-        hmsMemberId,
-        status: 'UNDER_REVIEW',
-        submittedAt: new Date().toISOString(),
-        expectedReviewDays: 3, // 2-3일 심사 기간
-        reviewMessage:
-          '출금동의서가 접수되었습니다. 2-3일 내 심사 완료 예정입니다.',
-        metadata: {
-          batchCmsResult: memberResult.member.result,
-          agreementResults,
-          applicationReason: request.metadata?.applicationReason,
-          expectedUsage: request.metadata?.expectedUsage,
-        },
-      };
-
-      this.logger.log(`BNPL 출금동의서 제출 완료 - ConsentId: ${consentId}`);
-      return result;
-    } catch (error) {
-      this.logger.error(`BNPL 출금동의서 제출 실패`, error);
-
-      return {
-        success: false,
-        consentId,
-        status: 'REJECTED',
-        submittedAt: new Date().toISOString(),
-        expectedReviewDays: 0,
-        error: error.message,
-        metadata: {
-          errorDetails: error,
-        },
-      };
-    }
-  }
-
-  /**
-   * 출금동의서 심사 상태 조회
-   * - 실제로는 HMS API로 상태 확인
-   * - Mock으로 심사 상태 시뮬레이션
-   */
-  async checkConsentStatus(consentId: string): Promise<ConsentStatusResult> {
-    this.logger.log(`BNPL 출금동의서 상태 조회 - ConsentId: ${consentId}`);
-
-    try {
-      // Mock: 실제로는 HMS BatchCMS API로 회원 상태 조회
-      // const memberStatus = await this.hmsApi.batchCms.members.getMember(hmsMemberId);
-
-      // 시뮬레이션: 심사 상태 랜덤 생성
-      const statuses = ['UNDER_REVIEW', 'APPROVED', 'REJECTED'] as const;
-      const randomStatus =
-        statuses[Math.floor(Math.random() * statuses.length)];
-
-      const baseResult: ConsentStatusResult = {
-        consentId,
-        submittedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1일 전 제출
-        status: randomStatus,
-        canCreateProfile: randomStatus === 'APPROVED',
-      };
-
-      switch (randomStatus) {
-        case 'UNDER_REVIEW':
-          return {
-            ...baseResult,
-            nextAction: 'WAIT',
-            metadata: {
-              reviewerComments: '서류 검토 중입니다',
-              expectedCompletionDate: new Date(
-                Date.now() + 48 * 60 * 60 * 1000,
-              ).toISOString(),
-            },
-          };
-
-        case 'APPROVED':
-          return {
-            ...baseResult,
-            reviewedAt: new Date().toISOString(),
-            approvedAt: new Date().toISOString(),
-            hmsMemberId: `hms_approved_${getTsid().toString()}`,
-            nextAction: 'CREATE_PROFILE',
-            metadata: {
-              reviewerComments: '출금동의서가 승인되었습니다',
-              approvalMessage: '이제 정식 결제프로필을 생성할 수 있습니다',
-            },
-          };
-
-        case 'REJECTED':
-          return {
-            ...baseResult,
-            reviewedAt: new Date().toISOString(),
-            rejectedAt: new Date().toISOString(),
-            rejectionReason:
-              '제출된 서류가 불충분하거나 정책에 부합하지 않습니다',
-            nextAction: 'RESUBMIT',
-            metadata: {
-              reviewerComments: '추가 서류 제출 후 재신청해 주세요',
-              additionalRequirements: [
-                '신분증 사본',
-                '소득 증명서',
-                '통장 사본',
-              ],
-            },
-          };
-      }
-    } catch (error) {
-      this.logger.error(`BNPL 출금동의서 상태 조회 실패`, error);
-
-      return {
-        consentId,
-        status: 'REJECTED',
-        submittedAt: new Date().toISOString(),
-        canCreateProfile: false,
-        nextAction: 'CONTACT_SUPPORT',
-        metadata: {
-          error: error.message,
-        },
-      };
-    }
-  }
-
-  /**
-   * 승인된 출금동의서로 정식 결제프로필 생성
-   */
-  async createProfileFromApprovedConsent(
-    consentId: string,
-    profileOptions: {
-      profileName: string;
-      paymentPurpose: 'ORDER' | 'RECURRING' | 'BOTH';
-      isDefault?: boolean;
-      userId?: string; // 사용자 ID 추가
-    },
-  ): Promise<{ success: boolean; profileId?: string; error?: string }> {
-    this.logger.log(
-      `승인된 출금동의서로 프로필 생성 - ConsentId: ${consentId}`,
-    );
-
-    try {
-      // 1. 동의서 상태 확인
-      const consentStatus = await this.checkConsentStatus(consentId);
-
-      if (
-        consentStatus.status !== 'APPROVED' ||
-        !consentStatus.canCreateProfile
-      ) {
-        throw new Error(
-          `동의서가 승인되지 않았습니다: ${consentStatus.status}`,
-        );
-      }
-
-      if (!consentStatus.hmsMemberId) {
-        throw new Error('HMS 회원 ID가 없습니다');
-      }
-
-      // 2. 정식 결제프로필 생성 및 실제 DB 저장
-      const profileId = `pp_bnpl_${getTsid().toString()}`;
-
-      // 🔥 1. paymentProfiles에 기본 정보 저장
-      const paymentPurposeMapping = {
-        ORDER: 'PURCHASE',
-        RECURRING: 'SUBSCRIPTION',
-        BOTH: 'BOTH',
-      } as const;
-
-      await this.dbService.db.insert(schema.paymentProfiles).values({
-        id: profileId,
-        userId: profileOptions.userId || 'unknown_user',
-        kind: 'BATCH', // BNPL은 배치 CMS로 처리
-        name: profileOptions.profileName,
-        // paymentPurpose: paymentPurposeMapping[profileOptions.paymentPurpose], // paymentPurpose 필드 제거됨
-        status: 'ACTIVE',
-        // isDefault: profileOptions.isDefault || false, // isDefault 필드 제거됨
-      });
-
-      // 🔥 2. batchCmsProfile에 BNPL 전용 정보 저장
-      await this.dbService.db.insert(schema.cmsBatchProfiles).values({
-        id: profileId,
-        // paymentProfileId: profileId, // 정규화된 스키마에서는 id가 곧 paymentProfileId
-        memberId: consentStatus.hmsMemberId,
-        cmsStatus: 'REGISTERED',
-        billingDay: 28, // 매월 28일
-        // hmsMetadata는 선택사항이므로 제거하거나 필요시 추가
-      });
-
-      this.logger.log(
-        `BNPL 결제프로필 생성 및 DB 저장 완료 - ProfileId: ${profileId}`,
-      );
-
-      return {
-        success: true,
-        profileId,
-      };
-    } catch (error) {
-      this.logger.error(`BNPL 프로필 생성 실패`, error);
-
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
+    return this.hmsApi.agreements.register(custId, memberId, fileInput);
   }
 }

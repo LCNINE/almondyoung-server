@@ -1,5 +1,4 @@
 export type UUID = string; // UUIDv7 사용 예정
-export type ULID = string;
 
 export enum PaymentStatus {
   PENDING = 'PENDING',

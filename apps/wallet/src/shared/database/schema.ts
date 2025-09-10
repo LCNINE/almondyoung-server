@@ -18,8 +18,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
-import { ulid } from 'ulid';
 import { getTsid } from 'tsid-ts';
+import { generateUUIDv7 } from '../utils/id-generator';
 
 export const newMemberId = (): string => getTsid().toString();
 
@@ -202,9 +202,9 @@ export type PointTransactionType = keyof typeof POINT_TRANSACTION_TYPE;
 export const paymentProfiles = pgTable(
   'payment_profiles',
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => generateUUIDv7()),
     userId: varchar('user_id', { length: 64 }).notNull(),
 
     provider: varchar('provider', { length: 16 })
@@ -278,24 +278,27 @@ export const cmsCardProfiles = pgTable(
 export const cmsBatchProfiles = pgTable(
   'cms_batch_profiles',
   {
-    // 공통 프로필과 1:1
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 36 })
       .primaryKey()
       .references(() => paymentProfiles.id, { onDelete: 'cascade' }),
 
-    /** 필수 키 */
     memberId: varchar('member_id', { length: 20 }).notNull().unique(),
-
-    /** 상태 요약 */
     cmsStatus: varchar('cms_status', { length: 16 }).notNull(),
 
-    /** (선택) 은행 코드 3자리 */
     paymentCompany: varchar('payment_company', { length: 3 }),
-
-    /** ── 운영/UX 요약(민감값 금지) ── */
     payerName: varchar('payer_name', { length: 64 }),
     phoneMask: varchar('phone_mask', { length: 20 }),
-    billingDay: integer('billing_day'), // 1~31
+    billingDay: integer('billing_day'),
+
+    // 🔽 BNPL 전용 동의서 상태
+    consentId: varchar('consent_id', { length: 36 }),
+    agreementKey: varchar('agreement_key', { length: 36 }),
+    agreementKind: varchar('agreement_kind', { length: 8 }),
+    consentStatus: varchar('consent_status', { length: 16 }), // PENDING / AWAITING / REVIEW / APPROVED / REJECTED
+    consentSubmittedAt: timestamp('consent_submitted_at', {
+      withTimezone: true,
+    }),
+    consentReviewedAt: timestamp('consent_reviewed_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -304,9 +307,10 @@ export const cmsBatchProfiles = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [
-    uniqueIndex('uq_cms_batch_member').on(table.memberId),
-    index('idx_cms_batch_status').on(table.cmsStatus),
+  (t) => [
+    uniqueIndex('uq_cms_batch_member').on(t.memberId),
+    index('idx_cms_batch_status').on(t.cmsStatus),
+    index('idx_cms_batch_consent_status').on(t.consentStatus),
   ],
 );
 
@@ -350,9 +354,9 @@ export const bnplAccounts = pgTable(
 export const bnplActivationEvents = pgTable(
   'bnpl_activation_event',
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => generateUUIDv7()),
     paymentProfileId: varchar('payment_profile_id', { length: 26 })
       .notNull()
       .references(() => paymentProfiles.id),
@@ -377,9 +381,9 @@ export const bnplActivationEvents = pgTable(
 );
 
 export const bnplEvents = pgTable('bnpl_eventss', {
-  id: varchar('id', { length: 26 })
+  id: varchar('id', { length: 36 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => generateUUIDv7()),
   bnplAccountId: varchar('bnpl_account_id', { length: 21 })
     .notNull()
     .references(() => bnplAccounts.id),
@@ -401,9 +405,9 @@ export const bnplEvents = pgTable('bnpl_eventss', {
 // ────────────────────────────────────────────
 
 export const bnplInvoices = pgTable('bnpl_invoices', {
-  id: varchar('id', { length: 26 })
+  id: varchar('id', { length: 36 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => generateUUIDv7()),
   bnplAccountId: varchar('bnpl_account_id', { length: 21 })
     .notNull()
     .references(() => bnplAccounts.id),
@@ -430,9 +434,9 @@ export const bnplInvoices = pgTable('bnpl_invoices', {
 });
 
 export const bnplInvoiceItems = pgTable('bnpl_invoice_items', {
-  id: varchar('id', { length: 26 })
+  id: varchar('id', { length: 36 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => generateUUIDv7()),
   invoiceId: varchar('invoice_id', { length: 26 })
     .notNull()
     .references(() => bnplInvoices.id),
@@ -451,7 +455,7 @@ export const bnplInvoiceItems = pgTable('bnpl_invoice_items', {
 });
 
 export const bnplCollectionEvents = pgTable('bnpl_collection_events', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
   invoiceId: varchar('invoice_id', { length: 26 })
     .notNull()
     .references(() => bnplInvoices.id),
@@ -683,9 +687,9 @@ export const bnplCollectionEvents = pgTable('bnpl_collection_events', {
 export const userRefundAccounts = pgTable(
   'user_refund_accounts',
   {
-    id: varchar('id', { length: 26 })
+    id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => ulid()),
+      .$defaultFn(() => generateUUIDv7()),
     userId: varchar('user_id', { length: 64 }).notNull(),
     bankCode: varchar('bank_code', { length: 32 }).notNull(),
     bankName: varchar('bank_name', { length: 64 }).notNull(),
@@ -713,7 +717,7 @@ export const userRefundAccounts = pgTable(
 // ────────────────────────────────────────────
 
 export const refundEvents = pgTable('refund_events', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
   paymentAttemptId: varchar('payment_attempt_id', { length: 26 })
     .notNull()
     .references(() => paymentAttempts.id),
@@ -767,9 +771,9 @@ export const idempotencyKeys = pgTable(
 // ────────────────────────────────────────────
 
 export const points = pgTable('points', {
-  id: varchar('id', { length: 26 })
+  id: varchar('id', { length: 36 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => generateUUIDv7()),
   userId: varchar('user_id', { length: 64 }).notNull().unique(),
   balance: integer('balance').notNull().default(0),
   version: bigint('version', { mode: 'number' }).notNull().default(1),
@@ -784,7 +788,7 @@ export const points = pgTable('points', {
 export const pointEvents = pgTable('point_events', {
   id: varchar('id', { length: 26 })
     .primaryKey()
-    .$defaultFn(() => ulid()),
+    .$defaultFn(() => generateUUIDv7()),
   pointId: varchar('point_id', { length: 26 })
     .notNull()
     .references(() => points.id),
@@ -807,88 +811,13 @@ export const pointEvents = pgTable('point_events', {
  * - 런타임에 정책 변경 가능
  * - 어드민 UI에서 ON/OFF 제어
  */
-export const paymentTypeProviderPolicy = pgTable(
-  'payment_type_provider_policy',
-  {
-    id: varchar('id', { length: 26 })
-      .primaryKey()
-      .$defaultFn(() => ulid()),
-    type: varchar('type', { length: 32 }).$type<PaymentIntentType>().notNull(),
-    provider: varchar('provider', { length: 32 })
-      .$type<PaymentProvider>()
-      .notNull(),
-    requiresStoredProfile: boolean('requires_stored_profile')
-      .notNull()
-      .default(false),
-    allowsEphemeral: boolean('allows_ephemeral').notNull().default(true),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique('uq_type_provider').on(table.type, table.provider),
-    index('idx_policy_type').on(table.type),
-    index('idx_policy_provider').on(table.provider),
-    index('idx_policy_active').on(table.isActive),
-  ],
-);
-
-/**
- * Provider 능력/제약 테이블 (전역)
- */
-export const paymentProviderCapabilities = pgTable(
-  'payment_provider_capabilities',
-  {
-    provider: varchar('provider', { length: 32 })
-      .$type<PaymentProvider>()
-      .primaryKey(),
-    supportsCancel: boolean('supports_cancel').notNull().default(true),
-    supportsRefund: boolean('supports_refund').notNull().default(true),
-    maxRetries: integer('max_retries').notNull().default(3),
-    timeoutMs: integer('timeout_ms').notNull().default(30000),
-    supportedMethods: text('supported_methods'), // JSON array
-    notes: text('notes'),
-    isEnabled: boolean('is_enabled').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [index('idx_provider_enabled').on(table.isEnabled)],
-);
 
 /**
  * 타입별 비즈니스 파라미터 테이블 (선택적)
  */
-export const paymentTypeParameters = pgTable('payment_type_parameters', {
-  type: varchar('type', { length: 32 }).$type<PaymentIntentType>().primaryKey(),
-  maxAmount: numeric('max_amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull()
-    .default(10000000),
-  minAmount: numeric('min_amount', { precision: 19, scale: 4 })
-    .$type<number>()
-    .notNull()
-    .default(100),
-  params: text('params'), // JSON - 추가 파라미터들
-  description: varchar('description', { length: 255 }),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
 
 export const overdueAccounts = pgTable('overdue_accounts', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(ulid),
+  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
   userId: varchar('user_id', { length: 64 }).notNull(),
   overdueCount: integer('overdue_count').notNull().default(1), // 연체 횟수 누적
   lastFailedAt: timestamp('last_failed_at', { withTimezone: true })
@@ -1041,34 +970,15 @@ export const pointEventsRelations = relations(pointEvents, ({ one }) => ({
   }),
 }));
 
+// ────────────────────────────────────────────
+/** BNPL Enrollment - 단일 리소스 등록 플로우 */
+// ────────────────────────────────────────────
+
+/**
+ * BNPL 등록 단일 리소스 - 전체 플로우를 하나의 엔드포인트로 관리
+ */
+
 // Policy Tables Relations
-export const paymentTypeProviderPolicyRelations = relations(
-  paymentTypeProviderPolicy,
-  ({ one }) => ({
-    providerCapabilities: one(paymentProviderCapabilities, {
-      fields: [paymentTypeProviderPolicy.provider],
-      references: [paymentProviderCapabilities.provider],
-    }),
-    typeParameters: one(paymentTypeParameters, {
-      fields: [paymentTypeProviderPolicy.type],
-      references: [paymentTypeParameters.type],
-    }),
-  }),
-);
-
-export const paymentProviderCapabilitiesRelations = relations(
-  paymentProviderCapabilities,
-  ({ many }) => ({
-    policies: many(paymentTypeProviderPolicy),
-  }),
-);
-
-export const paymentTypeParametersRelations = relations(
-  paymentTypeParameters,
-  ({ many }) => ({
-    policies: many(paymentTypeProviderPolicy),
-  }),
-);
 
 // ────────────────────────────────────────────
 /** v2 Architecture Tables - 새로운 테이블 구조 (옵션 B: 리네임) */

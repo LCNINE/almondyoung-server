@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>멤버십 구독 결제 테스트</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        font-weight: 700;
+      }
+
+      .header p {
+        font-size: 1.1em;
+        opacity: 0.9;
+      }
+
+      .main-content {
+        padding: 40px;
+      }
+
+      .section {
+        margin-bottom: 40px;
+        padding: 30px;
+        background: #f8f9fa;
+        border-radius: 15px;
+        border-left: 5px solid #667eea;
+      }
+
+      .section h2 {
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 1.5em;
+        display: flex;
+        align-items: center;
+      }
+
+      .section h2::before {
+        content: '🔧';
+        margin-right: 10px;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #555;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e1e5e9;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s ease;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-right: 10px;
+        margin-bottom: 10px;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .btn-secondary {
+        background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+      }
+
+      .btn-success {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      }
+
+      .btn-danger {
+        background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+      }
+
+      .response-area {
+        margin-top: 20px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        min-height: 100px;
+      }
+
+      .response-area pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .plans-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .plan-card {
+        background: white;
+        border: 2px solid #e1e5e9;
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+
+      .plan-card:hover {
+        border-color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .plan-card.selected {
+        border-color: #667eea;
+        background: #f0f4ff;
+      }
+
+      .plan-tier {
+        font-size: 1.2em;
+        font-weight: 700;
+        color: #667eea;
+        margin-bottom: 10px;
+      }
+
+      .plan-price {
+        font-size: 1.5em;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 10px;
+      }
+
+      .plan-duration {
+        color: #666;
+        margin-bottom: 15px;
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+
+      .status-success {
+        background-color: #28a745;
+      }
+      .status-error {
+        background-color: #dc3545;
+      }
+      .status-warning {
+        background-color: #ffc107;
+      }
+      .status-info {
+        background-color: #17a2b8;
+      }
+
+      .two-column {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      @media (max-width: 768px) {
+        .two-column {
+          grid-template-columns: 1fr;
+        }
+
+        .plans-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      .sample-data {
+        background: #e3f2fd;
+        border: 1px solid #2196f3;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+      }
+
+      .sample-data h4 {
+        color: #1976d2;
+        margin-bottom: 10px;
+      }
+
+      .sample-data code {
+        background: rgba(25, 118, 210, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Monaco', 'Consolas', monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🎯 멤버십 구독 결제 테스트</h1>
+        <p>멤버십 시스템과 결제 시스템 통합 테스트 도구</p>
+      </div>
+
+      <div class="main-content">
+        <!-- 설정 섹션 -->
+        <div class="section">
+          <h2>기본 설정</h2>
+          <div class="sample-data">
+            <h4>📋 샘플 데이터 정보</h4>
+            <p>
+              • <strong>멤버십 API:</strong> <code>localhost:3001/api</code>
+            </p>
+            <p>• <strong>결제 API:</strong> <code>localhost:5000</code></p>
+            <p>
+              • <strong>테스트 사용자 ID:</strong>
+              <code>123e4567-e89b-12d3-a456-426614174000</code> (UUID 형식)
+            </p>
+          </div>
+
+          <div class="two-column">
+            <div class="form-group">
+              <label for="userId">사용자 ID</label>
+              <input
+                type="text"
+                id="userId"
+                value="123e4567-e89b-12d3-a456-426614174000"
+                placeholder="사용자 ID 입력 (UUID 형식)"
+              />
+            </div>
+            <div class="form-group">
+              <label for="paymentProfileId">정기결제 프로필 ID</label>
+              <input
+                type="text"
+                id="paymentProfileId"
+                placeholder="정기결제 프로필 ID 입력 (예: pp_test123)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 플랜 조회 섹션 -->
+        <div class="section">
+          <h2>1️⃣ 플랜 조회 및 선택</h2>
+          <button class="btn" onclick="loadPlans()">
+            📋 사용 가능한 플랜 조회
+          </button>
+          <button class="btn btn-secondary" onclick="loadTiers()">
+            🏆 티어 목록 조회
+          </button>
+
+          <div id="plansContainer" class="plans-grid"></div>
+          <div id="plansResponse" class="response-area">
+            <p>플랜 조회 버튼을 클릭하여 사용 가능한 플랜을 확인하세요.</p>
+          </div>
+        </div>
+
+        <!-- 구독 상태 조회 섹션 -->
+        <div class="section">
+          <h2>2️⃣ 현재 구독 상태 조회</h2>
+          <button class="btn btn-success" onclick="getCurrentSubscription()">
+            👤 현재 구독 상태 확인
+          </button>
+          <button class="btn btn-secondary" onclick="getSubscriptionHistory()">
+            📜 구독 이력 조회
+          </button>
+
+          <div id="subscriptionResponse" class="response-area">
+            <p>구독 상태 조회 버튼을 클릭하여 현재 구독 정보를 확인하세요.</p>
+          </div>
+        </div>
+
+        <!-- 결제 Intent 생성 섹션 -->
+        <div class="section">
+          <h2>3️⃣ 결제 Intent 생성</h2>
+          <div class="two-column">
+            <div class="form-group">
+              <label for="paymentAmount">결제 금액</label>
+              <input
+                type="number"
+                id="paymentAmount"
+                value="9900"
+                placeholder="결제 금액 입력"
+              />
+            </div>
+            <div class="form-group">
+              <label for="paymentType">결제 타입</label>
+              <select id="paymentType">
+                <option value="MEMBERSHIP_FEE">MEMBERSHIP_FEE</option>
+                <option value="ORDER">ORDER</option>
+                <option value="BNPL_CAPTURE">BNPL_CAPTURE</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="btn btn-success" onclick="createPaymentIntent()">
+            💳 결제 Intent 생성
+          </button>
+
+          <div id="paymentIntentResponse" class="response-area">
+            <p>결제 Intent 생성 버튼을 클릭하여 결제 준비를 시작하세요.</p>
+          </div>
+        </div>
+
+        <!-- 멤버십 구독 생성 섹션 (MSA 올바른 플로우) -->
+        <div class="section">
+          <h2>4️⃣ 멤버십 구독 생성</h2>
+          <p class="info-text">
+            <strong>MSA 아키텍처:</strong> 멤버십 서버가 구독을 생성하고, 필요시
+            내부적으로 결제 서버를 호출합니다.
+          </p>
+
+          <div class="form-group">
+            <label for="selectedPlanId">선택된 플랜 ID</label>
+            <input
+              type="text"
+              id="selectedPlanId"
+              placeholder="위에서 플랜을 선택하거나 직접 입력"
+            />
+          </div>
+
+          <button class="btn btn-success" onclick="createSubscription()">
+            🎯 구독 생성 (무료체험 시작)
+          </button>
+
+          <div id="subscriptionResponse" class="response-area">
+            <p>플랜을 선택한 후 구독을 생성하세요.</p>
+          </div>
+        </div>
+
+        <!-- 결제 상태 확인 섹션 (개발자용) -->
+        <div class="section">
+          <h2>🔧 개발자 도구</h2>
+          <div class="form-group">
+            <label for="intentId">Payment Intent ID (선택사항)</label>
+            <input
+              type="text"
+              id="intentId"
+              placeholder="결제 상태를 확인하려면 Intent ID 입력"
+            />
+          </div>
+
+          <button class="btn btn-secondary" onclick="checkPaymentStatus()">
+            🔍 결제 상태 확인
+          </button>
+
+          <div id="paymentStatusResponse" class="response-area">
+            <p>개발자용: 결제 Intent 상태를 확인할 수 있습니다.</p>
+          </div>
+        </div>
+
+        <!-- 통합 테스트 섹션 -->
+        <div class="section">
+          <h2>6️⃣ 통합 테스트 (자동화)</h2>
+          <div class="sample-data">
+            <h4>🚀 자동 테스트 시나리오</h4>
+            <p>
+              1. 플랜 조회 → 2. 결제 Intent 생성 → 3. 정기결제 실행 → 4. 구독
+              생성
+            </p>
+          </div>
+
+          <button class="btn btn-success" onclick="runFullIntegrationTest()">
+            🚀 전체 통합 테스트 실행
+          </button>
+          <button class="btn btn-danger" onclick="clearAllTests()">
+            🧹 모든 테스트 결과 초기화
+          </button>
+
+          <div id="integrationTestResponse" class="response-area">
+            <p>통합 테스트를 실행하여 전체 플로우를 확인하세요.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // API 설정
+      const MEMBERSHIP_API_BASE = 'http://localhost:3001/api';
+      const PAYMENT_API_BASE = 'http://localhost:5000';
+
+      // 전역 변수
+      let selectedPlan = null;
+      let currentIntentId = null;
+      let availablePlans = [];
+
+      // 유틸리티 함수
+      function getCurrentUserId() {
+        return (
+          document.getElementById('userId').value ||
+          '123e4567-e89b-12d3-a456-426614174000'
+        );
+      }
+
+      function getPaymentProfileId() {
+        return document.getElementById('paymentProfileId').value;
+      }
+
+      function updateResponse(elementId, content, isError = false) {
+        const element = document.getElementById(elementId);
+        if (typeof content === 'object') {
+          content = JSON.stringify(content, null, 2);
+        }
+
+        const statusClass = isError ? 'status-error' : 'status-success';
+        const statusIcon = isError ? '❌' : '✅';
+
+        element.innerHTML = `
+                <div style="margin-bottom: 10px;">
+                    <span class="status-indicator ${statusClass}"></span>
+                    <strong>${statusIcon} ${isError ? '실패' : '성공'}</strong>
+                </div>
+                <pre>${content}</pre>
+            `;
+      }
+
+      function showLoading(elementId) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <span class="status-indicator status-info"></span>
+                    <strong>⏳ 처리 중...</strong>
+                </div>
+            `;
+      }
+
+      // API 호출 함수들
+      async function apiCall(url, options = {}) {
+        try {
+          // 멤버십 API 호출 시 x-user-id 헤더 추가
+          const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+          };
+
+          if (url.includes(MEMBERSHIP_API_BASE)) {
+            headers['x-user-id'] = getCurrentUserId();
+          }
+
+          const response = await fetch(url, {
+            headers,
+            ...options,
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(
+              `HTTP ${response.status}: ${data.message || data.error?.message || '알 수 없는 오류'}`,
+            );
+          }
+
+          return data;
+        } catch (error) {
+          console.error('API 호출 오류:', error);
+          throw error;
+        }
+      }
+
+      // 1. 플랜 조회
+      async function loadPlans() {
+        showLoading('plansResponse');
+        try {
+          const response = await apiCall(`${MEMBERSHIP_API_BASE}/plans`);
+          availablePlans = response.data || response;
+
+          displayPlans(availablePlans);
+          updateResponse('plansResponse', response);
+        } catch (error) {
+          updateResponse(
+            'plansResponse',
+            `플랜 조회 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      function displayPlans(plans) {
+        const container = document.getElementById('plansContainer');
+        if (!plans || plans.length === 0) {
+          container.innerHTML = '<p>조회된 플랜이 없습니다.</p>';
+          return;
+        }
+
+        container.innerHTML = plans
+          .map(
+            (plan) => `
+                 <div class="plan-card" onclick="selectPlan('${plan.id}', '${plan.tierCode || 'UNKNOWN'}', ${plan.price})">
+                     <div class="plan-tier">${plan.tierCode || 'UNKNOWN'} 티어</div>
+                     <div class="plan-price">₩${plan.price?.toLocaleString() || '0'}</div>
+                     <div class="plan-duration">${plan.durationDays || 0}일 구독</div>
+                     <div style="font-size: 12px; color: #666;">
+                         플랜 ID: ${plan.id}
+                     </div>
+                 </div>
+             `,
+          )
+          .join('');
+      }
+
+      function selectPlan(planId, tierCode, price) {
+        selectedPlan = { id: planId, tierCode, price };
+        document.getElementById('selectedPlanId').value = planId;
+        document.getElementById('paymentAmount').value = price;
+
+        // 선택된 플랜 하이라이트
+        document.querySelectorAll('.plan-card').forEach((card) => {
+          card.classList.remove('selected');
+        });
+        event.target.closest('.plan-card').classList.add('selected');
+
+        updateResponse(
+          'plansResponse',
+          `플랜 선택됨: ${tierCode} (₩${price.toLocaleString()})`,
+          false,
+        );
+      }
+
+      // 2. 티어 조회
+      async function loadTiers() {
+        showLoading('plansResponse');
+        try {
+          const response = await apiCall(`${MEMBERSHIP_API_BASE}/tiers`);
+          updateResponse('plansResponse', response);
+        } catch (error) {
+          updateResponse(
+            'plansResponse',
+            `티어 조회 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 3. 현재 구독 상태 조회
+      async function getCurrentSubscription() {
+        showLoading('subscriptionResponse');
+        try {
+          const userId = getCurrentUserId();
+          const response = await apiCall(
+            `${MEMBERSHIP_API_BASE}/subscriptions/current?userId=${userId}`,
+          );
+          updateResponse('subscriptionResponse', response);
+        } catch (error) {
+          updateResponse(
+            'subscriptionResponse',
+            `구독 상태 조회 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 4. 구독 이력 조회
+      async function getSubscriptionHistory() {
+        showLoading('subscriptionResponse');
+        try {
+          const userId = getCurrentUserId();
+          const response = await apiCall(
+            `${MEMBERSHIP_API_BASE}/subscriptions/history?userId=${userId}`,
+          );
+          updateResponse('subscriptionResponse', response);
+        } catch (error) {
+          updateResponse(
+            'subscriptionResponse',
+            `구독 이력 조회 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 5. 구독 생성 (MSA 올바른 플로우)
+      async function createSubscription() {
+        showLoading('subscriptionResponse');
+        try {
+          const userId = getCurrentUserId();
+          const planId = document.getElementById('selectedPlanId').value;
+
+          if (!planId) {
+            throw new Error('플랜 ID를 선택하거나 입력해주세요.');
+          }
+
+          const response = await apiCall(
+            `${MEMBERSHIP_API_BASE}/subscriptions?userId=${userId}`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ planId }),
+            },
+          );
+
+          updateResponse('subscriptionResponse', response);
+        } catch (error) {
+          updateResponse(
+            'subscriptionResponse',
+            `구독 생성 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 6. 구독 취소
+      async function cancelSubscription() {
+        showLoading('subscriptionResponse');
+        try {
+          const userId = getCurrentUserId();
+          const response = await apiCall(
+            `${MEMBERSHIP_API_BASE}/subscriptions/cancel`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ reason: '테스트 취소' }),
+            },
+          );
+
+          updateResponse('subscriptionResponse', response);
+        } catch (error) {
+          updateResponse(
+            'subscriptionResponse',
+            `구독 취소 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 7. 결제 Intent 생성
+      async function createPaymentIntent() {
+        showLoading('paymentIntentResponse');
+        try {
+          const userId = getCurrentUserId();
+          const amount = document.getElementById('paymentAmount').value;
+          const type = document.getElementById('paymentType').value;
+
+          if (!amount) {
+            throw new Error('결제 금액을 입력해주세요.');
+          }
+
+          const response = await apiCall(
+            `${PAYMENT_API_BASE}/v2/payments/intents`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                userId: userId,
+                amount: parseInt(amount),
+                type: type,
+                metadata: {
+                  source: 'membership_test',
+                  planId: document.getElementById('selectedPlanId').value,
+                },
+              }),
+            },
+          );
+
+          // Intent ID 자동 설정
+          if (response.id) {
+            currentIntentId = response.id;
+            document.getElementById('intentId').value = response.id;
+          }
+
+          updateResponse('paymentIntentResponse', response);
+        } catch (error) {
+          updateResponse(
+            'paymentIntentResponse',
+            `결제 Intent 생성 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 8. 정기결제 실행
+      async function executeRecurringPayment() {
+        showLoading('recurringPaymentResponse');
+        try {
+          const intentId = document.getElementById('intentId').value;
+          const profileId = getPaymentProfileId();
+
+          if (!intentId) {
+            throw new Error('Payment Intent ID를 입력해주세요.');
+          }
+
+          if (!profileId) {
+            throw new Error('정기결제 프로필 ID를 입력해주세요.');
+          }
+
+          const response = await apiCall(
+            `${PAYMENT_API_BASE}/v2/payments/intents/${intentId}/attempts`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                profileId: profileId,
+                source: 'RECURRING',
+                actor: 'SYSTEM',
+                metadata: {
+                  membershipTest: true,
+                },
+              }),
+            },
+          );
+
+          updateResponse('recurringPaymentResponse', response);
+        } catch (error) {
+          updateResponse(
+            'recurringPaymentResponse',
+            `정기결제 실행 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 9. 결제 상태 확인 (개발자 도구)
+      async function checkPaymentStatus() {
+        showLoading('paymentStatusResponse');
+        try {
+          const intentId = document.getElementById('intentId').value;
+
+          if (!intentId) {
+            throw new Error('Payment Intent ID를 입력해주세요.');
+          }
+
+          const response = await apiCall(
+            `${PAYMENT_API_BASE}/v2/payments/intents/${intentId}`,
+          );
+          updateResponse('paymentStatusResponse', response);
+        } catch (error) {
+          updateResponse(
+            'paymentStatusResponse',
+            `결제 상태 확인 실패: ${error.message}`,
+            true,
+          );
+        }
+      }
+
+      // 10. 통합 테스트 실행
+      async function runFullIntegrationTest() {
+        showLoading('integrationTestResponse');
+
+        const testResults = {
+          startTime: new Date().toISOString(),
+          steps: [],
+        };
+
+        try {
+          // 1단계: 플랜 조회
+          testResults.steps.push({ step: '1. 플랜 조회', status: '진행중' });
+          updateResponse('integrationTestResponse', testResults);
+
+          const plansResponse = await apiCall(`${MEMBERSHIP_API_BASE}/plans`);
+          const plans = plansResponse.data || plansResponse;
+          if (!plans || plans.length === 0) {
+            throw new Error('사용 가능한 플랜이 없습니다.');
+          }
+
+          // 첫 번째 플랜 선택
+          const selectedPlan = plans[0];
+          document.getElementById('selectedPlanId').value = selectedPlan.id;
+          document.getElementById('paymentAmount').value = selectedPlan.price;
+
+          testResults.steps[0] = {
+            step: '1. 플랜 조회',
+            status: '완료',
+            data: `${selectedPlan.tierCode} 플랜 선택`,
+          };
+          updateResponse('integrationTestResponse', testResults);
+
+          // 2단계: 결제 Intent 생성
+          testResults.steps.push({
+            step: '2. 결제 Intent 생성',
+            status: '진행중',
+          });
+          updateResponse('integrationTestResponse', testResults);
+
+          const userId = getCurrentUserId();
+          const intentResponse = await apiCall(
+            `${PAYMENT_API_BASE}/v2/payments/intents`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                userId: userId,
+                amount: selectedPlan.price,
+                type: 'MEMBERSHIP_FEE',
+                metadata: {
+                  source: 'membership_integration_test',
+                  planId: selectedPlan.id,
+                },
+              }),
+            },
+          );
+
+          currentIntentId = intentResponse.id;
+          document.getElementById('intentId').value = intentResponse.id;
+
+          testResults.steps[1] = {
+            step: '2. 결제 Intent 생성',
+            status: '완료',
+            data: intentResponse,
+          };
+          updateResponse('integrationTestResponse', testResults);
+
+          // 3단계: 정기결제 실행 (프로필 ID가 있는 경우에만)
+          const profileId = getPaymentProfileId();
+          if (profileId) {
+            testResults.steps.push({
+              step: '3. 정기결제 실행',
+              status: '진행중',
+            });
+            updateResponse('integrationTestResponse', testResults);
+
+            const paymentResponse = await apiCall(
+              `${PAYMENT_API_BASE}/v2/payments/intents/${intentResponse.id}/attempts`,
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  profileId: profileId,
+                  source: 'RECURRING',
+                  actor: 'SYSTEM',
+                  metadata: {
+                    integrationTest: true,
+                  },
+                }),
+              },
+            );
+
+            testResults.steps[2] = {
+              step: '3. 정기결제 실행',
+              status: '완료',
+              data: paymentResponse,
+            };
+          } else {
+            testResults.steps.push({
+              step: '3. 정기결제 실행',
+              status: '건너뜀',
+              data: '정기결제 프로필 ID가 없어 건너뜀',
+            });
+          }
+
+          // 4단계: 구독 생성 (결제 성공 후)
+          testResults.steps.push({ step: '4. 구독 생성', status: '진행중' });
+          updateResponse('integrationTestResponse', testResults);
+
+          const subscriptionResponse = await apiCall(
+            `${MEMBERSHIP_API_BASE}/subscriptions?userId=${userId}`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ planId: selectedPlan.id }),
+            },
+          );
+
+          testResults.steps[3] = {
+            step: '4. 구독 생성',
+            status: '완료',
+            data: subscriptionResponse,
+          };
+
+          testResults.endTime = new Date().toISOString();
+          testResults.status = '전체 성공';
+          updateResponse('integrationTestResponse', testResults);
+        } catch (error) {
+          testResults.endTime = new Date().toISOString();
+          testResults.status = '실패';
+          testResults.error = error.message;
+          updateResponse('integrationTestResponse', testResults, true);
+        }
+      }
+
+      // 11. 모든 테스트 결과 초기화
+      function clearAllTests() {
+        const responseElements = [
+          'plansResponse',
+          'subscriptionResponse',
+          'createSubscriptionResponse',
+          'paymentIntentResponse',
+          'recurringPaymentResponse',
+          'integrationTestResponse',
+        ];
+
+        responseElements.forEach((elementId) => {
+          document.getElementById(elementId).innerHTML =
+            '<p>초기화되었습니다.</p>';
+        });
+
+        // 플랜 컨테이너 초기화
+        document.getElementById('plansContainer').innerHTML = '';
+
+        // 입력 필드 초기화 (사용자 ID와 프로필 ID는 유지)
+        document.getElementById('selectedPlanId').value = '';
+        document.getElementById('intentId').value = '';
+
+        selectedPlan = null;
+        currentIntentId = null;
+        availablePlans = [];
+      }
+
+      // 페이지 로드 시 초기화
+      document.addEventListener('DOMContentLoaded', function () {
+        console.log('멤버십 구독 결제 테스트 페이지 로드 완료');
+        console.log('멤버십 API:', MEMBERSHIP_API_BASE);
+        console.log('결제 API:', PAYMENT_API_BASE);
+      });
+    </script>
+  </body>
+</html>

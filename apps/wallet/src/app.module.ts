@@ -8,8 +8,7 @@ import { EventsModule } from '@app/events';
 import { PaymentIntentController } from './controllers/v2/payment-intent.controller';
 import { RefundController } from './controllers/v2/refund.controller';
 import { CheckoutSessionController } from './controllers/v2/checkout-session.controller';
-import { BnplProfileController } from './controllers/v2/bnpl-profile.controller';
-import { PaymentProfileController } from './controllers/v2/payment-profile.controller';
+import { BnplPaymentProfilesController } from './controllers/v2/bnpl-payment-profiles.controller';
 import { PaymentProfileV2Controller } from './controllers/v2/payment-profile-v2.controller';
 
 // === 유지되는 서비스들 ===
@@ -65,7 +64,7 @@ import * as schema from './shared/database/schema';
     PaymentIntentController,
     RefundController,
     CheckoutSessionController,
-    BnplProfileController,
+    BnplPaymentProfilesController,
     PaymentProfileV2Controller, // 정규화된 스키마용
   ],
   providers: [

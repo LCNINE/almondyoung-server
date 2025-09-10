@@ -1,7 +1,7 @@
 // services/v2/refund.service.ts - v4 아키텍처 환불 서비스
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../../shared/utils/id-generator';
 
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
@@ -99,7 +99,7 @@ export class RefundService {
       }
 
       // 5. 환불 생성
-      const refundId = ulid();
+      const refundId = generateUUIDv7();
       await tx.insert(schema.paymentRefunds).values({
         id: refundId,
         intentId: dto.intentId,

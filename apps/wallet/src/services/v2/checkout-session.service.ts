@@ -1,8 +1,8 @@
 // services/v2/checkout-session.service.ts
 
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { eq } from 'drizzle-orm';
+import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import {
@@ -68,7 +68,7 @@ export class CheckoutSessionService {
       }
 
       // 3. CheckoutSession 생성 (provider 없음)
-      const sessionId = `cs_${ulid()}`;
+      const sessionId = generateUUIDv7();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15분
 
       await tx.insert(schema.checkoutSessions).values({
@@ -148,16 +148,16 @@ export class CheckoutSessionService {
       // 3. (삭제됨: allowedProviders는 런타임에 계산)
 
       // 4. CheckoutSession 생성 (기본값 활용)
-      const sessionId = ulid();
+      const sessionId = generateUUIDv7();
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30분
 
       // 🔧 다시 Drizzle ORM 방식으로 시도 (최소 필드만)
       await db.insert(schema.checkoutSessions).values({
         id: sessionId,
         intentId: dto.intentId,
-        redirectUrl: 'http://localhost:3000/payment-success.html',
-        returnUrl: 'http://localhost:3000/payment-success.html',
-        cancelUrl: 'http://localhost:3000/payment-fail.html',
+        redirectUrl: 'http://localhost:5000/html/payment-success.html',
+        returnUrl: 'http://localhost:5000/html/payment-success.html',
+        cancelUrl: 'http://localhost:5000/html/payment-fail.html',
         status: 'PENDING', // 추가
         expiresAt,
         metadata: JSON.stringify({
@@ -456,7 +456,7 @@ export class CheckoutSessionService {
       // 단, 트랜잭션 내부이므로 직접 DB 조작이 필요할 수 있음
 
       // 임시: Attempt 레코드 직접 생성 (실제로는 PaymentIntentService 사용)
-      const attemptId = `pa_${ulid()}`;
+      const attemptId = generateUUIDv7();
 
       await tx.insert(schema.paymentAttempts).values({
         id: attemptId,

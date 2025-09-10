@@ -361,15 +361,14 @@ describe('BNPL 핵심 플로우 E2E Test', () => {
       await dbService.db.insert(schema.paymentProfiles).values({
         id: profileId,
         userId: uniqueUserId,
-        profileType: 'BNPL',
-        profileName: 'BNPL 테스트 프로필',
-        paymentPurpose: 'PURCHASE',
+        provider: 'CMS',
+        kind: 'BATCH',
         status: 'ACTIVE',
-        isDefault: false,
+        name: 'BNPL 테스트 프로필',
       });
 
       // 2. 직접 bnplAccount 생성 (Foreign Key 제약 해결)
-      await dbService.db.insert(schema.bnplAccount).values({
+      await dbService.db.insert(schema.bnplAccounts).values({
         id: hmsMemberId,
         userId: uniqueUserId,
         paymentProfileId: profileId,
@@ -379,17 +378,16 @@ describe('BNPL 핵심 플로우 E2E Test', () => {
       });
 
       // 3. 직접 batchCmsProfile 생성
-      await dbService.db.insert(schema.batchCmsProfile).values({
+      await dbService.db.insert(schema.cmsBatchProfiles).values({
         id: profileId,
-        paymentProfileId: profileId,
-        hmsMemberId: hmsMemberId,
-        creditLimit: 1000000,
-        approvedLimit: 1000000,
-        billingCycleDay: 28,
-        hmsMetadata: JSON.stringify({
-          consentId: 'test_consent',
-          approvedAt: new Date().toISOString(),
-        }),
+        memberId: hmsMemberId,
+        cmsStatus: 'REGISTERED',
+        billingDay: 28,
+        paymentCompany: '004',
+        payerName: '홍길동',
+        phoneMask: '01012345678',
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
       console.log(`✅ BNPL 프로필 직접 생성 완료: ${profileId}`);

@@ -75,33 +75,13 @@ export interface ConsentStatusResult {
  */
 export interface WithdrawalConsentCapability {
   /**
-   * 출금동의서 제출
+   * 출금동의서 파일 업로드
    */
-  submitWithdrawalConsent(
-    request: WithdrawalConsentRequest,
-  ): Promise<WithdrawalConsentResult>;
-
-  /**
-   * 출금동의서 심사 상태 조회
-   */
-  checkConsentStatus(consentId: string): Promise<ConsentStatusResult>;
-
-  /**
-   * 승인된 동의서로 정식 결제프로필 생성
-   */
-  createProfileFromApprovedConsent(
-    consentId: string,
-    profileOptions: {
-      profileName: string;
-      paymentPurpose: 'ORDER' | 'RECURRING' | 'BOTH';
-      isDefault?: boolean;
-      userId?: string; // 사용자 ID 추가
-    },
-  ): Promise<{
-    success: boolean;
-    profileId?: string;
-    error?: string;
-  }>;
+  uploadAgreement(
+    custId: string,
+    memberId: string,
+    fileInput: { file: Buffer | Blob; filename: string },
+  ): Promise<AgreementFileResponseDto>;
 }
 
 /**
@@ -110,9 +90,5 @@ export interface WithdrawalConsentCapability {
 export function hasWithdrawalConsentCapability(
   provider: any,
 ): provider is WithdrawalConsentCapability {
-  return (
-    typeof provider.submitWithdrawalConsent === 'function' &&
-    typeof provider.checkConsentStatus === 'function' &&
-    typeof provider.createProfileFromApprovedConsent === 'function'
-  );
+  return typeof provider.uploadAgreement === 'function';
 }

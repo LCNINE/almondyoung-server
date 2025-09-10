@@ -58,46 +58,48 @@ export class TossProvider implements PaymentProvider {
     );
 
     try {
-      // Mock: 토스페이먼츠 결제 승인 확정 API 호출
-      // 실제로는 POST https://api.tosspayments.com/v1/payments/confirm
-      const mockTransactionId = `TOSS_${getTsid().toString()}`;
+      // 토스페이먼츠 결제 승인 확정 API 호출
+      const confirmResponse = await this.callTossConfirmAPI(request);
 
-      // 성공 시뮬레이션 (90% 확률)
-      const isSuccess = Math.random() > 0.1;
-
-      if (isSuccess) {
+      if (confirmResponse.success) {
         const result: PaymentResult = {
           success: true,
-          transactionId: mockTransactionId,
+          transactionId: confirmResponse.data.lastTransactionKey,
+          captureId: confirmResponse.data.lastTransactionKey, // 토스는 즉시 확정
           metadata: {
             provider: 'toss',
-            method: 'ephemeral_confirm',
-            paymentKey: request.instrumentRef,
-            approvedAt: new Date().toISOString(),
-            actualAmount: request.amount,
-            fee: Math.floor(request.amount * 0.029), // 2.9% 수수료
+            apiMethod: 'confirm',
+            paymentKey: confirmResponse.data.paymentKey,
+            orderId: confirmResponse.data.orderId,
+            approvedAt: confirmResponse.data.approvedAt,
+            actualAmount: confirmResponse.data.totalAmount,
+            suppliedAmount: confirmResponse.data.suppliedAmount,
+            vat: confirmResponse.data.vat,
+            paymentMethod: confirmResponse.data.method,
+            status: confirmResponse.data.status,
+            card: confirmResponse.data.card,
+            easyPay: confirmResponse.data.easyPay,
+            receipt: confirmResponse.data.receipt,
+            rawResponse: confirmResponse.data,
           },
         };
 
         this.logger.log(
-          `토스페이먼츠 결제 성공 - TransactionId: ${mockTransactionId}`,
+          `토스페이먼츠 결제 성공 - PaymentKey: ${request.instrumentRef}`,
         );
         return result;
       } else {
-        // 실패 시뮬레이션
-        this.logger.error(
-          `토스페이먼츠 결제 실패 - paymentKey: ${request.instrumentRef}`,
-        );
+        this.logger.error(`토스페이먼츠 결제 실패: ${confirmResponse.error}`);
         return {
           success: false,
-          transactionId: mockTransactionId,
-          error: 'TOSS_PAYMENT_FAILED',
+          transactionId: `TOSS_FAILED_${getTsid().toString()}`,
+          error: confirmResponse.error,
           metadata: {
             provider: 'toss',
-            method: 'ephemeral_confirm',
+            apiMethod: 'confirm',
             paymentKey: request.instrumentRef,
             failedAt: new Date().toISOString(),
-            errorCode: 'INSUFFICIENT_BALANCE',
+            errorMessage: confirmResponse.errorMessage,
           },
         };
       }
@@ -109,10 +111,70 @@ export class TossProvider implements PaymentProvider {
         error: 'TOSS_API_ERROR',
         metadata: {
           provider: 'toss',
-          method: 'ephemeral_confirm',
+          apiMethod: 'confirm',
+          paymentKey: request.instrumentRef,
           errorMessage: error.message,
         },
       };
+    }
+  }
+
+  /**
+   * 토스페이먼츠 결제 승인 확정 API 호출
+   */
+  private async callTossConfirmAPI(request: PaymentRequest): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+    errorMessage?: string;
+  }> {
+    const secretKey = process.env.TOSS_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('TOSS_SECRET_KEY 환경변수가 설정되지 않았습니다');
+    }
+
+    // 요청 본문 구성 (토스 공식 API 스펙에 맞게)
+    const requestBody = {
+      paymentKey: request.instrumentRef, // 필수
+      orderId: request.metadata?.orderId || request.intentId, // 필수 (Intent ID를 orderId로 사용)
+      amount: request.amount, // 필수
+    };
+
+    try {
+      const response = await fetch(
+        'https://api.tosspayments.com/v1/payments/confirm',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        },
+      );
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+        this.logger.log(
+          '토스페이먼츠 승인 확정 API 성공:',
+          JSON.stringify(responseData),
+        );
+        return { success: true, data: responseData };
+      } else {
+        this.logger.error(
+          '토스페이먼츠 승인 확정 API 실패:',
+          JSON.stringify(responseData),
+        );
+        return {
+          success: false,
+          error: responseData.code || 'TOSS_CONFIRM_FAILED',
+          errorMessage: responseData.message || '토스페이먼츠 승인 확정 실패',
+        };
+      }
+    } catch (error) {
+      this.logger.error('토스페이먼츠 승인 확정 API 호출 중 오류:', error);
+      throw error;
     }
   }
 
@@ -122,38 +184,160 @@ export class TossProvider implements PaymentProvider {
     );
 
     try {
-      // Mock: 토스페이먼츠 환불 API 호출
-      // 실제로는 POST https://api.tosspayments.com/v1/payments/{paymentKey}/cancel
-      const mockRefundId = `TOSS_REFUND_${getTsid().toString()}`;
+      // 토스페이먼츠 결제 취소 API 호출
+      const cancelResponse = await this.callTossCancelAPI(request);
 
-      const result: RefundResult = {
-        success: true,
-        refundId: mockRefundId,
-        refundedAmount: request.amount,
-        pgTransactionId: mockRefundId,
-        metadata: {
-          provider: 'toss',
-          method: 'refund',
-          originalTransactionId: request.originalTransactionId,
-          refundedAt: new Date().toISOString(),
-          refundReason: request.reason,
-        },
-      };
+      if (cancelResponse.success) {
+        const result: RefundResult = {
+          success: true,
+          refundId: request.refundId,
+          refundedAmount: request.amount,
+          pgTransactionId: cancelResponse.data.lastTransactionKey,
+          metadata: {
+            provider: 'toss',
+            method: 'cancel',
+            paymentKey: cancelResponse.data.paymentKey,
+            originalTransactionId: request.originalTransactionId,
+            canceledAt: cancelResponse.data.cancels[0]?.canceledAt,
+            cancelReason: request.reason,
+            cancelStatus: cancelResponse.data.cancels[0]?.cancelStatus,
+            transactionKey: cancelResponse.data.cancels[0]?.transactionKey,
+            receiptKey: cancelResponse.data.cancels[0]?.receiptKey,
+            rawResponse: cancelResponse.data,
+          },
+        };
 
-      this.logger.log(`토스페이먼츠 환불 성공 - RefundId: ${mockRefundId}`);
-      return result;
+        this.logger.log(
+          `토스페이먼츠 환불 성공 - RefundId: ${request.refundId}`,
+        );
+        return result;
+      } else {
+        this.logger.error(`토스페이먼츠 환불 실패: ${cancelResponse.error}`);
+        return {
+          success: false,
+          refundId: request.refundId,
+          refundedAmount: 0,
+          error: cancelResponse.error,
+          metadata: {
+            provider: 'toss',
+            errorMessage: cancelResponse.errorMessage,
+            originalTransactionId: request.originalTransactionId,
+          },
+        };
+      }
     } catch (error) {
-      this.logger.error(`토스페이먼츠 환불 실패`, error);
+      this.logger.error(`토스페이먼츠 환불 API 호출 실패`, error);
       return {
         success: false,
-        refundId: `TOSS_REFUND_FAILED_${getTsid().toString()}`,
+        refundId: request.refundId,
         refundedAmount: 0,
-        error: 'TOSS_REFUND_FAILED',
+        error: 'TOSS_API_ERROR',
         metadata: {
           provider: 'toss',
           errorMessage: error.message,
+          originalTransactionId: request.originalTransactionId,
         },
       };
     }
+  }
+
+  /**
+   * 토스페이먼츠 결제 취소 API 호출
+   */
+  private async callTossCancelAPI(request: RefundRequest): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+    errorMessage?: string;
+  }> {
+    const secretKey = process.env.TOSS_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('TOSS_SECRET_KEY 환경변수가 설정되지 않았습니다');
+    }
+
+    // paymentKey 추출 (originalTransactionId에서 또는 metadata에서)
+    const paymentKey = this.extractPaymentKey(request);
+    if (!paymentKey) {
+      throw new Error('PaymentKey를 찾을 수 없습니다');
+    }
+
+    // 요청 본문 구성 (최소 필수값만)
+    const requestBody: any = {
+      cancelReason: request.reason,
+    };
+
+    // 부분 취소인 경우 cancelAmount 추가
+    if (request.amount && request.metadata?.totalAmount) {
+      const totalAmount = request.metadata.totalAmount as number;
+      if (request.amount < totalAmount) {
+        requestBody.cancelAmount = request.amount;
+      }
+    }
+
+    // 가상계좌 환불 계좌 정보 추가
+    if (request.metadata?.refundReceiveAccount) {
+      requestBody.refundReceiveAccount = request.metadata.refundReceiveAccount;
+    }
+
+    try {
+      const response = await fetch(
+        `https://api.tosspayments.com/v1/payments/${paymentKey}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        },
+      );
+
+      const responseData = await response.json();
+
+      if (response.ok) {
+        this.logger.log(
+          '토스페이먼츠 취소 API 성공:',
+          JSON.stringify(responseData),
+        );
+        return { success: true, data: responseData };
+      } else {
+        this.logger.error(
+          '토스페이먼츠 취소 API 실패:',
+          JSON.stringify(responseData),
+        );
+        return {
+          success: false,
+          error: responseData.code || 'TOSS_CANCEL_FAILED',
+          errorMessage: responseData.message || '토스페이먼츠 취소 실패',
+        };
+      }
+    } catch (error) {
+      this.logger.error('토스페이먼츠 취소 API 호출 중 오류:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * RefundRequest에서 paymentKey 추출
+   */
+  private extractPaymentKey(request: RefundRequest): string | null {
+    // 1. metadata에서 paymentKey 찾기
+    if (request.metadata?.paymentKey) {
+      return request.metadata.paymentKey as string;
+    }
+
+    // 2. originalTransactionId가 TOSS_ 형태인 경우 추출
+    if (request.originalTransactionId?.startsWith('TOSS_')) {
+      // 실제로는 DB에서 paymentKey를 조회해야 함
+      // 여기서는 간단히 originalTransactionId를 사용
+      return request.originalTransactionId;
+    }
+
+    // 3. metadata의 rawResponse에서 찾기
+    if (request.metadata?.rawResponse?.paymentKey) {
+      return request.metadata.rawResponse.paymentKey as string;
+    }
+
+    return null;
   }
 }

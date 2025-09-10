@@ -7,29 +7,33 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { join } from 'path';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
-    {
-      bufferLogs: true,
-      cors: {
-        origin: ['http://127.0.0.1:5500', 'http://localhost:5500'],
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Idempotency-Key'],
-        credentials: true,
-      },
-    },
   );
+
   app.useGlobalPipes(new ValidationPipe());
 
   await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: false,
+    attachFieldsToBody: false, // 🔧 false로 변경해서 전통적인 방식 사용
     limits: {
       fileSize: 1024 * 1024 * 10,
       files: 1,
     },
   });
+
+  // 정적 파일 서빙 설정 (HTML 파일들)
+  // 프로젝트 루트의 html 폴더를 가리킴 (폴더명 변경 대응)
+  const htmlPath = join(process.cwd(), 'html');
+
+  await app.register(require('@fastify/static'), {
+    root: htmlPath,
+    prefix: '/html/',
+  });
+
+  console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
   const config = new DocumentBuilder()
     .setTitle('Wallet Payment Server')

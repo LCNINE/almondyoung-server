@@ -177,8 +177,8 @@
             amount: { currency: 'KRW', value: parseInt(intent.amount, 10) },
             orderId: intent.id,
             orderName: intent.orderName,
-            successUrl: `${window.location.origin}/payment-success.html`,
-            failUrl: `${window.location.origin}/payment-fail.html`,
+            successUrl: `${window.location.origin}/html/payment-success.html`,
+            failUrl: `${window.location.origin}/html/payment-fail.html`,
           });
         } catch (error) {
           console.error('handleRedirectPayment에서 심각한 오류 발생:', error);

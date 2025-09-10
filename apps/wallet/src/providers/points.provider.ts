@@ -4,7 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { eq, and, sql } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import {
   PaymentProvider,
   PaymentRequest,
@@ -44,7 +44,7 @@ export class PointsProvider implements PaymentProvider {
       );
     }
 
-    const transactionId = `POINTS_${ulid()}`;
+    const transactionId = generateUUIDv7();
 
     try {
       // 1. 사용자 포인트 잔액 확인
@@ -106,7 +106,7 @@ export class PointsProvider implements PaymentProvider {
       `포인트 환불 처리 시작 - RefundId: ${request.refundId}, Amount: ${request.amount}KRW`,
     );
 
-    const refundId = `POINTS_REFUND_${ulid()}`;
+    const refundId = generateUUIDv7();
 
     try {
       // 포인트 적립 처리 (환불)

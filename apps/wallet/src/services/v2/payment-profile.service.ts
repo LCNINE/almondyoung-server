@@ -2,7 +2,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { ulid } from 'ulid';
+import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import {
@@ -105,7 +105,7 @@ export class PaymentProfileService {
     }
 
     // 4. 프로필 ID 생성 (HMS 응답 기반)
-    const profileId = `pm_${ulid()}`;
+    const profileId = generateUUIDv7();
 
     // 5. DB 트랜잭션으로 프로필 저장
     const profile = await this.dbService.db.transaction(async (tx) => {
@@ -445,7 +445,7 @@ export class PaymentProfileService {
       case PaymentProfileTypeDto.BNPL:
         // BNPL 계정 생성 (HMS 응답 포함)
         await tx.insert(schema.bnplAccounts).values({
-          id: registrationResult.hmsMemberId || `bnpl_${ulid()}`,
+          id: registrationResult.hmsMemberId || generateUUIDv7(),
           userId: dto.userId,
           paymentProfileId: profile.id,
           creditLimit: dto.creditLimit!,
@@ -465,7 +465,7 @@ export class PaymentProfileService {
         await tx.insert(schema.cmsBatchProfiles).values({
           id: profile.id, // paymentProfiles의 id와 동일
           paymentProfileId: profile.id,
-          hmsMemberId: registrationResult.hmsMemberId || `cms_${ulid()}`,
+          hmsMemberId: registrationResult.hmsMemberId || generateUUIDv7(),
           creditLimit: dto.creditLimit || 0,
           approvedLimit: dto.creditLimit || 0,
           billingCycleDay: dto.billingCycleDay || 28,
