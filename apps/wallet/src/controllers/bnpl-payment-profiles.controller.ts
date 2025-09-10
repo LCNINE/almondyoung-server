@@ -13,9 +13,9 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
-import { HmsBnplProvider } from '../../providers/hms-bnpl.provider';
+import * as schema from '../shared/database/schema';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
+import { HmsBnplProvider } from '../providers/hms-bnpl.provider';
 import { ApiProperty } from '@nestjs/swagger';
 import { eq } from 'drizzle-orm';
 
@@ -41,7 +41,7 @@ export class RegisterBnplProfileDto {
 }
 
 @ApiTags('BNPL Payment Profiles v2')
-@Controller('v2/bnpl-payment-profiles')
+@Controller('bnpl-payment-profiles')
 export class BnplPaymentProfilesController {
   private readonly logger = new Logger(BnplPaymentProfilesController.name);
 

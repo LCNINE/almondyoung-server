@@ -5,11 +5,11 @@ import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 
 // === v2 아키텍처 컨트롤러들 (레거시 제거됨) ===
-import { PaymentIntentController } from './controllers/v2/payment-intent.controller';
-import { RefundController } from './controllers/v2/refund.controller';
-import { CheckoutSessionController } from './controllers/v2/checkout-session.controller';
-import { BnplPaymentProfilesController } from './controllers/v2/bnpl-payment-profiles.controller';
-import { PaymentProfileV2Controller } from './controllers/v2/payment-profile-v2.controller';
+import { PaymentIntentController } from './controllers/payment-intent.controller';
+import { RefundController } from './controllers/refund.controller';
+import { CheckoutSessionController } from './controllers/checkout-session.controller';
+import { BnplPaymentProfilesController } from './controllers/bnpl-payment-profiles.controller';
+import { PaymentProfileV2Controller } from './controllers/payment-profile-v2.controller';
 
 // === 유지되는 서비스들 ===
 import { IdempotencyService } from './services/idempotency.service';

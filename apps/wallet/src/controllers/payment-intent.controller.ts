@@ -28,13 +28,13 @@ import {
   AttemptCreateDto,
   AttemptFinalizeDto,
   AttemptResponseDto,
-} from '../../shared/dtos/v2-payment.dto';
+} from '../shared/dtos/v2-payment.dto';
 import {
   UniversalFinalizeDto,
   UniversalFinalizeResponseDto,
-} from '../../shared/dtos/universal-checkout.dto';
+} from '../shared/dtos/universal-checkout.dto';
 
-import { PaymentIntentService } from '../../services/v2/payment-intent.service';
+import { PaymentIntentService } from '../services/v2/payment-intent.service';
 
 /**
  * v2 Payment Intent 컨트롤러 (v4 아키텍처)
@@ -44,8 +44,8 @@ import { PaymentIntentService } from '../../services/v2/payment-intent.service';
  * - 서비스에서 던진 Error를 HTTP 상태코드로 매핑
  * - Intent → Attempt → Finalize 플로우 지원
  */
-@ApiTags('v2 결제 Intent/Attempt API')
-@Controller('v2/payments')
+@ApiTags('v2 Payment Intent/Attempt API')
+@Controller('payments')
 export class PaymentIntentController {
   private readonly logger = new Logger(PaymentIntentController.name);
 

@@ -26,8 +26,8 @@ import {
   PaymentProfileCreateRequestDto,
   PaymentProfileResponseDto,
   UserPaymentProfilesResponseDto,
-} from '../../shared/dtos/payment-profile.dto';
-import { PaymentProfileService } from '../../services/v2/payment-profile.service';
+} from '../shared/dtos/payment-profile.dto';
+import { PaymentProfileService } from '../services/v2/payment-profile.service';
 
 /**
  * Payment Profile Controller v2
@@ -39,7 +39,7 @@ import { PaymentProfileService } from '../../services/v2/payment-profile.service
  * - CTO 스타일 에러 핸들링
  */
 @ApiTags('Payment Profiles v2')
-@Controller('v2/payment-profiles')
+@Controller('payment-profiles')
 export class PaymentProfileController {
   private readonly logger = new Logger(PaymentProfileController.name);
 

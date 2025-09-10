@@ -13,15 +13,15 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
-import { PaymentProfileV2Service } from '../../services/v2/payment-profile-v2.service';
+import { PaymentProfileV2Service } from '../services/v2/payment-profile-v2.service';
 import {
   PaymentProfileCreateV2RequestDto,
   PaymentProfileV2ResponseDto,
   PaymentProfileStatusUpdateDto,
-} from '../../shared/dtos/payment-profile-v2.dto';
+} from '../shared/dtos/payment-profile-v2.dto';
 
 @ApiTags('Payment Profiles V2')
-@Controller('v2/payment-profiles-v2')
+@Controller('payment-profiles-v2')
 export class PaymentProfileV2Controller {
   constructor(
     private readonly paymentProfileService: PaymentProfileV2Service,

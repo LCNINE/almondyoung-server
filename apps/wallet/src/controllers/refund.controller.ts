@@ -25,9 +25,9 @@ import {
 import {
   RefundCreateDto,
   RefundResponseDto,
-} from '../../shared/dtos/v2-payment.dto';
+} from '../shared/dtos/v2-payment.dto';
 
-import { RefundService } from '../../services/v2/refund.service';
+import { RefundService } from '../services/v2/refund.service';
 
 /**
  * v2 Refund 컨트롤러 (v4 아키텍처)
@@ -37,8 +37,8 @@ import { RefundService } from '../../services/v2/refund.service';
  * - Intent 기반 환불 처리 (attemptId 선택적 지정 가능)
  * - 전액/부분 환불 지원, 초과 환불 방지
  */
-@ApiTags('v2 환불 API')
-@Controller('v2/refunds')
+@ApiTags('Refunds API')
+@Controller('refunds')
 export class RefundController {
   private readonly logger = new Logger(RefundController.name);
 

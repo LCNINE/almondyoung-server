@@ -20,18 +20,18 @@ import {
   ApiNotFoundResponse,
   ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
-import { CheckoutSessionService } from '../../services/v2/checkout-session.service';
+import { CheckoutSessionService } from '../services/v2/checkout-session.service';
 import {
   CheckoutSessionCreateDto,
   CheckoutSessionResponseDto,
   CheckoutSessionCallbackDto,
-} from '../../shared/dtos/checkout-session.dto';
+} from '../shared/dtos/checkout-session.dto';
 import {
   UniversalCheckoutSessionCreateDto,
   UniversalCheckoutSessionResponseDto,
   UniversalFinalizeDto,
   UniversalFinalizeResponseDto,
-} from '../../shared/dtos/universal-checkout.dto';
+} from '../shared/dtos/universal-checkout.dto';
 
 /**
  * CheckoutSession v2 Controller
@@ -42,8 +42,8 @@ import {
  * - Intent/Attempt 자동 연동
  * - CTO 스타일 오류 매핑
  */
-@ApiTags('CheckoutSession v2')
-@Controller('v2/checkout')
+@ApiTags('CheckoutSession')
+@Controller('checkout')
 export class CheckoutSessionController {
   private readonly logger = new Logger(CheckoutSessionController.name);
 
