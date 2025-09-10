@@ -1,62 +1,273 @@
 <!doctype html>
-<html>
+<html lang="ko">
   <head>
-    <meta charset="utf-8" />
-    <title>Test Checkout - V2 API</title>
-  </head>
-
-  <body>
-    <h2>Create Payment Session (V2)</h2>
-    <label>Amount: <input id="amount" type="number" value="129000" /></label>
-    <label>Currency: <input id="currency" value="KRW" /></label>
-    <button id="create">Create Session</button>
-    <pre id="log"></pre>
-    <script>
-      const API_BASE = 'http://localhost:5000'; // 지갑 API 주소
-      const RETURN_URL = 'http://localhost:5500/redirect.html';
-
-      const log = (m) =>
-        (document.getElementById('log').textContent += m + '\n');
-
-      document.getElementById('create').onclick = async () => {
-        const amount = Number(document.getElementById('amount').value);
-        const currency = document.getElementById('currency').value.trim();
-        try {
-          // ✅ V2 API 사용
-          const resp = await fetch(API_BASE + '/v2/sessions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Idempotency-Key': 'idem_create_' + Date.now(),
-            },
-            body: JSON.stringify({
-              userId: 'user_test_123', // ✅ 반드시 문자열
-              amount,
-              currency,
-              metadata: { returnUrl: RETURN_URL },
-            }),
-          });
-          const data = await resp.json();
-          log('Session: ' + JSON.stringify(data, null, 2));
-          if (!resp.ok) {
-            alert('Create failed: ' + data.message);
-            return;
-          }
-
-          // ✅ design.md 스타일: checkout URL 사용
-          if (data.checkout && data.checkout.url) {
-            log('Redirecting to: ' + data.checkout.url);
-            location.href = data.checkout.url;
-          } else {
-            // 폴백: 직접 URL 구성
-            const checkoutUrl = `./checkout-v2.html?sessionId=${data.sessionId}&returnUrl=${encodeURIComponent(RETURN_URL)}`;
-            log('Fallback redirect to: ' + checkoutUrl);
-            location.href = checkoutUrl;
-          }
-        } catch (e) {
-          alert('Error: ' + e);
+    <meta charset="UTF-8" />
+    <title>Universal Checkout - v5 최종 진단본</title>
+    <style>
+      /* 스타일은 이전과 동일하므로 생략합니다 */
+      body {
+        font-family: sans-serif;
+        max-width: 800px;
+        margin: auto;
+        padding: 20px;
+      }
+      .container,
+      .order-summary,
+      .log,
+      .error {
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+      .container {
+        background: white;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+      .order-summary {
+        background: #f8f9fa;
+      }
+      .order-amount {
+        font-size: 2em;
+        font-weight: bold;
+        text-align: right;
+      }
+      .payment-method {
+        display: block;
+        width: 100%;
+        padding: 15px;
+        margin-bottom: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .payment-method:disabled {
+        cursor: not-allowed;
+        background: #eee;
+      }
+      .loading,
+      .spinner {
+        text-align: center;
+      }
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #007bff;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: auto;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
         }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .log {
+        background: #f1f1f1;
+        font-family: monospace;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .error {
+        color: #dc3545;
+        background: #f8d7da;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Universal Checkout</h1>
+      <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>결제 정보를 불러오는 중...</p>
+      </div>
+      <div id="checkout-content" style="display: none">
+        <div class="order-summary">
+          <h3 id="order-name"></h3>
+          <div id="order-amount" class="order-amount"></div>
+        </div>
+        <div class="payment-methods">
+          <h3>결제 수단 선택</h3>
+          <div id="payment-methods-container"></div>
+        </div>
+      </div>
+      <div id="error-message" class="error" style="display: none"></div>
+      <div id="log" class="log"></div>
+    </div>
+
+    <script>
+      const API_BASE = 'http://localhost:5000';
+      const log = (message) => {
+        const logEl = document.getElementById('log');
+        logEl.innerHTML += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
       };
+      const showError = (message) => {
+        const errEl = document.getElementById('error-message');
+        errEl.textContent = message;
+        errEl.style.display = 'block';
+        log(`<strong>ERROR:</strong> ${message}`);
+      };
+
+      // ==========================================================
+      // ❗ [핵심 수정] 진단 기능이 포함된 최종 로직입니다.
+      // ==========================================================
+      async function handleRedirectPayment(providerId, config, intent) {
+        log(`REDIRECT 결제 시작: ${providerId}`);
+
+        if (providerId !== 'TOSS') {
+          throw new Error(`지원하지 않는 REDIRECT Provider: ${providerId}`);
+        }
+
+        try {
+          // 1. SDK 로드 보장
+          await loadTossSDK();
+          log('SDK 로드 보장됨. window.TossPayments 객체 타입 확인...');
+
+          if (typeof window.TossPayments !== 'function') {
+            throw new Error(
+              'TossPayments가 함수가 아닙니다. SDK가 잘못 로드되었습니다.',
+            );
+          }
+          log(`TossPayments 타입: ${typeof window.TossPayments}. 정상.`);
+
+          // 2. clientKey 경로 확인 및 초기화
+          const clientKey = config.config.clientKey;
+          if (!clientKey) {
+            throw new Error('TOSS clientKey가 제공되지 않았습니다.');
+          }
+          log(`TossPayments 초기화 시도 (ClientKey: ${clientKey})`);
+          const tossPayments = TossPayments(clientKey);
+
+          // 3. [진단 코드] 생성된 tossPayments 인스턴스 구조를 콘솔에 출력
+          log(
+            'tossPayments 인스턴스 생성 완료. **개발자 도구 콘솔에서 객체 구조를 확인하세요.**',
+          );
+          console.log('--- [진단] tossPayments 인스턴스 ---');
+          console.dir(tossPayments);
+
+          // 4. Toss 공식 문서에 명시된 정확한 호출 체인 사용
+          if (typeof tossPayments.payment !== 'function') {
+            throw new Error(
+              'tossPayments 인스턴스에 payment 메서드가 없습니다! SDK 버전이나 로드 방식에 문제가 있을 수 있습니다.',
+            );
+          }
+          const payment = tossPayments.payment({ customerKey: intent.id });
+
+          // 5. [진단 코드] 생성된 payment 객체 구조를 콘솔에 출력
+          log(
+            'payment 객체 생성 완료. **개발자 도구 콘솔에서 객체 구조를 확인하세요.**',
+          );
+          console.log('--- [진단] payment 객체 ---');
+          console.dir(payment);
+
+          log('payment.requestPayment 호출 시도...');
+          if (typeof payment.requestPayment !== 'function') {
+            throw new Error(
+              '생성된 payment 객체에 requestPayment 메서드가 없습니다! 이것이 오류의 직접적인 원인입니다.',
+            );
+          }
+
+          // 6. 최종 결제창 호출
+          await payment.requestPayment({
+            method: 'CARD',
+            amount: { currency: 'KRW', value: parseInt(intent.amount, 10) },
+            orderId: intent.id,
+            orderName: intent.orderName,
+            successUrl: `${window.location.origin}/payment-success.html`,
+            failUrl: `${window.location.origin}/payment-fail.html`,
+          });
+        } catch (error) {
+          console.error('handleRedirectPayment에서 심각한 오류 발생:', error);
+          throw error;
+        }
+      }
+
+      function loadTossSDK() {
+        return new Promise((resolve, reject) => {
+          if (window.TossPayments) return resolve();
+          const script = document.createElement('script');
+          script.src = 'https://js.tosspayments.com/v2/standard';
+          script.onload = () => {
+            log('토스 SDK 스크립트 로드 완료');
+            resolve();
+          };
+          script.onerror = () =>
+            reject(new Error('토스 SDK 스크립트 로드 실패'));
+          document.head.appendChild(script);
+        });
+      }
+
+      // --- 이하 다른 자바스크립트 함수들은 이전과 동일 (생략) ---
+
+      async function loadCheckoutSession(intentId) {
+        /* 이전과 동일 */
+        const response = await fetch(`${API_BASE}/v2/checkout/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ intentId }),
+        });
+        if (!response.ok) throw new Error('세션 로딩 실패');
+        return response.json();
+      }
+      function renderPaymentMethods(session) {
+        /* 이전과 동일 */
+        document.getElementById('order-name').textContent =
+          session.intent.orderName || '결제';
+        document.getElementById('order-amount').textContent = `₩${parseInt(
+          session.intent.amount,
+          10,
+        ).toLocaleString()}`;
+        const container = document.getElementById('payment-methods-container');
+        container.innerHTML = '';
+        session.intent.allowedProviders.forEach((id) => {
+          const config = session.providers[id];
+          if (!config) return;
+          const btn = document.createElement('button');
+          btn.className = `payment-method ${config.flow.toLowerCase()}`;
+          btn.innerHTML = `<div>${id}로 결제</div><div class="payment-info">${config.flow} 방식</div>`;
+          btn.onclick = () =>
+            handlePaymentSelection(id, config, session.intent);
+          container.appendChild(btn);
+        });
+      }
+      async function handlePaymentSelection(providerId, config, intent) {
+        /* 이전과 동일 */
+        document
+          .querySelectorAll('.payment-method')
+          .forEach((btn) => (btn.disabled = true));
+        try {
+          if (config.flow === 'REDIRECT')
+            await handleRedirectPayment(providerId, config, intent);
+          else throw new Error(`지원하지 않는 flow: ${config.flow}`);
+        } catch (error) {
+          showError(`결제 처리 중 오류: ${error.message}`);
+          document
+            .querySelectorAll('.payment-method')
+            .forEach((btn) => (btn.disabled = false));
+        }
+      }
+
+      window.addEventListener('load', async () => {
+        /* 이전과 동일 */
+        const intentId = new URLSearchParams(window.location.search).get(
+          'intentId',
+        );
+        if (!intentId) return showError('intentId 파라미터가 필요합니다.');
+        document.getElementById('loading').style.display = 'block';
+        try {
+          const session = await loadCheckoutSession(intentId);
+          renderPaymentMethods(session);
+          document.getElementById('checkout-content').style.display = 'block';
+        } catch (e) {
+          showError(`초기화 실패: ${e.message}`);
+        } finally {
+          document.getElementById('loading').style.display = 'none';
+        }
+      });
     </script>
   </body>
 </html>

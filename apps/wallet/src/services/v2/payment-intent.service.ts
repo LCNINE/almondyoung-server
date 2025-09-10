@@ -12,6 +12,10 @@ import {
   AttemptResponseDto,
   AttemptFinalizeDto,
 } from '../../shared/dtos/v2-payment.dto';
+import {
+  UniversalFinalizeDto,
+  UniversalFinalizeResponseDto,
+} from '../../shared/dtos/universal-checkout.dto';
 import { DbService } from '@app/db';
 import { PaymentProviderFactory } from '../../providers/payment-provider.factory';
 
@@ -73,10 +77,15 @@ export class PaymentIntentService {
         });
       }
 
-      // 2. 정책 검증 (기본 Provider 설정)
-      const allowedProviders =
-        dto.allowedProviders ||
-        this.policyValidator.getAllowedProviders(dto.type);
+      // 2. 정책 기반 Provider 결정 (보안 강화)
+      // ✅ 서버 정책에서만 결정, 클라이언트 요청 무시
+      const allowedProviders = this.policyValidator.getAvailableProviders(
+        dto.type,
+      );
+
+      if (allowedProviders.length === 0) {
+        throw new Error(`No available providers for intent type: ${dto.type}`);
+      }
 
       // 3. Intent 생성
       const intentId = ulid();
@@ -90,7 +99,6 @@ export class PaymentIntentService {
         amount: dto.amount,
         status: 'PENDING',
         type: dto.type,
-        allowedProviders: JSON.stringify(allowedProviders),
         metadata: dto.metadata ? JSON.stringify(dto.metadata) : null,
         expiresAt,
       });
@@ -137,6 +145,13 @@ export class PaymentIntentService {
     }
 
     const session = intent[0];
+
+    // 런타임에 정책 기반으로 허용 프로바이더 계산
+    const allowedProviders = this.resolveAllowedProviders(
+      session.type,
+      session.customerId,
+    );
+
     return {
       intentId: session.id,
       status: session.status,
@@ -144,9 +159,7 @@ export class PaymentIntentService {
       type: session.type,
       createdAt: session.createdAt.toISOString(),
       expiresAt: session.expiresAt.toISOString(),
-      allowedProviders: session.allowedProviders
-        ? JSON.parse(session.allowedProviders)
-        : undefined,
+      allowedProviders,
       refundedAmount: session.refundedAmount,
     };
   }
@@ -194,9 +207,6 @@ export class PaymentIntentService {
       }
 
       // 3. 일반 정책 검증
-      const allowedProviders = session.allowedProviders
-        ? JSON.parse(session.allowedProviders)
-        : [];
       this.policyValidator.validateIntentProvider(
         session.type,
         dto.provider,
@@ -204,7 +214,12 @@ export class PaymentIntentService {
         !!dto.instrumentRef,
       );
 
-      if (!allowedProviders.includes(dto.provider)) {
+      // 4. 런타임 허용 프로바이더 검증
+      const allowedProviders = this.resolveAllowedProviders(
+        session.type,
+        session.customerId,
+      );
+      if (!allowedProviders.includes(dto.provider as any)) {
         throw new Error(`Provider ${dto.provider} not allowed for this intent`);
       }
 
@@ -256,7 +271,6 @@ export class PaymentIntentService {
         id: attemptId,
         intentId: intentId,
         provider: dto.provider,
-        instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
         instrumentRef: dto.instrumentRef || null,
         profileId: dto.profileId || null,
         amount: session.amount,
@@ -299,7 +313,7 @@ export class PaymentIntentService {
         createdAt: new Date().toISOString(),
         actor: dto.actor || 'USER',
         errorMessage: paymentResult.error,
-        instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+        instrumentRef: dto.profileId ? 'STORED' : 'EPHEMERAL',
         transactionId: paymentResult.transactionId,
         approvalNumber: paymentResult.metadata?.approvalNumber,
       };
@@ -309,6 +323,251 @@ export class PaymentIntentService {
       );
       return response;
     });
+  }
+
+  // ===============================
+  // v5 아키텍처: Universal Finalize API
+  // ===============================
+
+  /**
+   * Universal Finalize (v5 아키텍처)
+   * 모든 PG사의 최종 결제 승인을 처리하는 단일 창구
+   */
+  async universalFinalize(
+    intentId: string,
+    dto: UniversalFinalizeDto,
+    idempotencyKey?: string,
+  ): Promise<UniversalFinalizeResponseDto> {
+    this.logger.log(
+      `Universal Finalize 시작: intentId=${intentId}, provider=${dto.provider}`,
+    );
+
+    return await this.dbService.db.transaction(async (tx) => {
+      // 1. Intent 조회 및 검증
+      const intent = await tx
+        .select()
+        .from(schema.paymentIntents)
+        .where(eq(schema.paymentIntents.id, intentId))
+        .limit(1);
+
+      if (intent.length === 0) {
+        throw new Error(`Intent not found: ${intentId}`);
+      }
+
+      const session = intent[0];
+
+      if (session.status !== 'PENDING') {
+        throw new Error(`Intent already processed: ${session.status}`);
+      }
+
+      if (new Date() > session.expiresAt) {
+        throw new Error('Intent expired');
+      }
+
+      // 2. 정책 기반 Provider 허용 여부 확인
+      const allowedProviders = this.policyValidator.getAvailableProviders(
+        session.type,
+      );
+
+      if (!allowedProviders.includes(dto.provider as any)) {
+        throw new Error(
+          `Provider ${dto.provider} not allowed for intent type ${session.type}`,
+        );
+      }
+
+      // 3. 금액 검증 (선택적)
+      if (dto.amount && dto.amount !== Number(session.amount)) {
+        throw new Error(
+          `Amount mismatch: expected ${session.amount}, got ${dto.amount}`,
+        );
+      }
+
+      // 4. AttemptCreateDto로 변환하여 기존 로직 재사용
+      const attemptDto: AttemptCreateDto = {
+        provider: dto.provider as any,
+        instrumentRef: dto.instrumentRef,
+        actor: 'USER',
+        source: 'api',
+        metadata: dto.metadata || {},
+      };
+
+      // 5. 기존 createAttempt 로직 활용
+      const attemptResult = await this.createAttemptInternal(
+        tx,
+        intentId,
+        session,
+        attemptDto,
+        idempotencyKey,
+      );
+
+      // 6. Universal 응답 형식으로 변환
+      const response: UniversalFinalizeResponseDto = {
+        success: attemptResult.status === 'CAPTURED',
+        intentId: intentId,
+        attemptId: attemptResult.attemptId,
+        amount: attemptResult.amount,
+        status: attemptResult.status,
+        provider: dto.provider,
+        processedAt: new Date().toISOString(),
+        errorMessage: attemptResult.errorMessage,
+      };
+
+      this.logger.log(
+        `Universal Finalize 완료: ${attemptResult.attemptId}, 상태: ${attemptResult.status}`,
+      );
+
+      return response;
+    });
+  }
+
+  /**
+   * 런타임에 허용된 프로바이더 계산 (CTO 의도: 정책 기반)
+   */
+  private resolveAllowedProviders(intentType: any, customerId: string): any[] {
+    // 1. 정책에서 기본 허용 프로바이더 가져오기
+    const fromPolicy = this.policyValidator.getAvailableProviders(intentType);
+
+    // 2. (선택) 사용자별 제한 사항 적용 (예: 심사 미완료, 연체 등)
+    // const userEligible = this.checkUserEligibility(fromPolicy, customerId);
+
+    // 3. (선택) 메타데이터의 임시 오버라이드 처리
+    // const override = intent.metadata?.policyOverride?.allowedProviders;
+    // return override ? fromPolicy.filter(p => override.includes(p)) : fromPolicy;
+
+    // MVP: 정책 기본값만 사용
+    return fromPolicy;
+  }
+
+  /**
+   * 내부용 Attempt 생성 메서드 (트랜잭션 내에서 재사용)
+   */
+  private async createAttemptInternal(
+    tx: any,
+    intentId: string,
+    session: any,
+    dto: AttemptCreateDto,
+    idempotencyKey?: string,
+  ): Promise<AttemptResponseDto> {
+    // 기존 createAttempt 로직과 동일하지만 트랜잭션 내에서 실행
+    const attemptId = `pa_${ulid()}`;
+
+    // 🛡️ 하드가드 검사 (BNPL_CAPTURE → CMS 강제)
+    if (session.type === 'BNPL_CAPTURE' && dto.provider !== 'CMS') {
+      this.logger.error(
+        `하드가드 위반: BNPL_CAPTURE는 CMS만 허용 - 요청된 Provider: ${dto.provider}`,
+      );
+      throw new Error('policy.bnpl.capture.cms.only');
+    }
+
+    // 정책 검증
+    this.policyValidator.validateIntentProvider(
+      session.type,
+      dto.provider,
+      !!dto.profileId,
+      !!dto.instrumentRef,
+    );
+
+    // 프로필 검증 (저장형 결제수단 필요 시)
+    if (dto.profileId) {
+      await this.validateProfile(
+        tx,
+        dto.profileId,
+        session.customerId,
+        session.type,
+      );
+    }
+
+    // Provider별 결제 실행
+    let paymentResult;
+    try {
+      paymentResult = await this.providerFactory
+        .getProvider(dto.provider as any)
+        .processPayment({
+          intentId: intentId,
+          attemptId: attemptId,
+          amount: session.amount,
+          type: session.type,
+          userId: session.customerId,
+          profileId: dto.profileId,
+          instrumentRef: dto.instrumentRef,
+          instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+
+          metadata: {
+            type: session.type,
+            customerId: session.customerId,
+            source: dto.source || 'api',
+          },
+        });
+    } catch (error) {
+      this.logger.error(`Provider 결제 실행 실패: ${error.message}`);
+      paymentResult = {
+        success: false,
+        error: error.message,
+        transactionId: null,
+      };
+    }
+
+    // 결과에 따른 상태 결정
+    let attemptStatus: any;
+    if (!paymentResult.success) {
+      attemptStatus = 'FAILED';
+    } else if (dto.provider === 'BNPL') {
+      attemptStatus = 'AUTHORIZED'; // BNPL은 월말에 CAPTURE
+    } else {
+      attemptStatus = 'CAPTURED'; // PG, Points 등은 즉시 확정
+    }
+
+    await tx.insert(schema.paymentAttempts).values({
+      id: attemptId,
+      intentId: intentId,
+      provider: dto.provider,
+      instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+      instrumentRef: dto.instrumentRef || null,
+      profileId: dto.profileId || null,
+      amount: session.amount,
+      status: attemptStatus,
+      actor: dto.actor || 'USER',
+      errorMessage: paymentResult.error || null,
+      transactionId: paymentResult.transactionId || null,
+      approvalNumber: paymentResult.metadata?.approvalNumber || null,
+      eventContext: JSON.stringify({
+        pg: {
+          gateway: dto.provider.toLowerCase(),
+          approvalNumber: paymentResult.metadata?.approvalNumber,
+          paymentDate: paymentResult.metadata?.paymentDate,
+          transactionId: paymentResult.transactionId,
+        },
+        business: {
+          type: session.type,
+          source: dto.source || 'api',
+        },
+      }),
+    });
+
+    // Intent 상태 업데이트
+    await tx
+      .update(schema.paymentIntents)
+      .set({
+        status: attemptStatus,
+        authorizedAt: paymentResult.success ? new Date() : null,
+        capturedAt: attemptStatus === 'CAPTURED' ? new Date() : null, // BNPL은 나중에 CAPTURE
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentIntents.id, intentId));
+
+    return {
+      attemptId,
+      intentId,
+      provider: dto.provider,
+      status: attemptStatus,
+      amount: session.amount,
+      createdAt: new Date().toISOString(),
+      actor: dto.actor || 'USER',
+      errorMessage: paymentResult.error,
+      instrumentRef: dto.profileId ? 'STORED' : 'EPHEMERAL',
+      transactionId: paymentResult.transactionId,
+      approvalNumber: paymentResult.metadata?.approvalNumber,
+    };
   }
 
   /**
@@ -481,7 +740,7 @@ export class PaymentIntentService {
       actor: 'USER', // 기본값으로 USER 설정
       createdAt: attemptData.createdAt.toISOString(),
       errorMessage: undefined, // failureReason은 별도 필드가 없으므로 undefined
-      instrumentKind: attemptData.instrumentKind || undefined,
+      instrumentRef: attemptData.instrumentRef || undefined,
       transactionId: attemptData.transactionId || undefined,
       approvalNumber: attemptData.approvalNumber || undefined,
     };
@@ -520,7 +779,7 @@ export class PaymentIntentService {
       actor: 'USER', // 기본값으로 USER 설정
       createdAt: attemptData.createdAt.toISOString(),
       errorMessage: undefined, // failureReason은 별도 필드가 없으므로 undefined
-      instrumentKind: attemptData.instrumentKind || undefined,
+      instrumentRef: attemptData.instrumentRef || undefined,
       transactionId: attemptData.transactionId || undefined,
       approvalNumber: attemptData.approvalNumber || undefined,
     }));

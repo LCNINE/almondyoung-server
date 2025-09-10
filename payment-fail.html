@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>결제 실패</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f8f9fa;
+        color: #333;
+      }
+      .container {
+        background: white;
+        padding: 40px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+      .fail-icon {
+        font-size: 72px;
+        color: #dc3545;
+        margin-bottom: 20px;
+      }
+      h1 {
+        color: #dc3545;
+        margin-bottom: 20px;
+        font-size: 28px;
+      }
+      .fail-message {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        border-left: 4px solid #dc3545;
+      }
+      .fail-details {
+        background: #f8f9fa;
+        padding: 24px;
+        border-radius: 8px;
+        margin: 30px 0;
+        text-align: left;
+      }
+      .detail-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e9ecef;
+      }
+      .detail-row:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+      }
+      .detail-label {
+        font-weight: 600;
+        color: #495057;
+      }
+      .detail-value {
+        color: #212529;
+      }
+      .buttons {
+        margin-top: 30px;
+      }
+      .button {
+        display: inline-block;
+        padding: 12px 24px;
+        margin: 0 8px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+      .button:hover {
+        background-color: #0056b3;
+      }
+      .button.secondary {
+        background-color: #6c757d;
+      }
+      .button.secondary:hover {
+        background-color: #545b62;
+      }
+      .button.retry {
+        background-color: #28a745;
+      }
+      .button.retry:hover {
+        background-color: #1e7e34;
+      }
+      .common-reasons {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 30px 0;
+        text-align: left;
+      }
+      .common-reasons h4 {
+        color: #856404;
+        margin-top: 0;
+        margin-bottom: 15px;
+      }
+      .common-reasons ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .common-reasons li {
+        margin-bottom: 8px;
+        color: #856404;
+      }
+      .log {
+        margin-top: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="fail-icon">❌</div>
+      <h1>결제에 실패했습니다</h1>
+
+      <div class="fail-message">
+        <p id="fail-reason">결제 처리 중 문제가 발생했습니다.</p>
+      </div>
+
+      <div id="fail-details" class="fail-details" style="display: none">
+        <!-- 동적으로 채워집니다 -->
+      </div>
+
+      <div class="common-reasons">
+        <h4>💡 결제 실패 주요 원인</h4>
+        <ul>
+          <li>
+            <strong>카드 한도 초과:</strong> 일일/월간 결제 한도를 확인해주세요
+          </li>
+          <li>
+            <strong>잔액 부족:</strong> 계좌 잔액이나 카드 사용 가능 금액을
+            확인해주세요
+          </li>
+          <li>
+            <strong>카드 정보 오류:</strong> 카드번호, 유효기간, CVC 번호를 다시
+            확인해주세요
+          </li>
+          <li>
+            <strong>네트워크 오류:</strong> 인터넷 연결 상태를 확인해주세요
+          </li>
+          <li><strong>결제 시간 초과:</strong> 결제 시간이 초과되었습니다</li>
+        </ul>
+      </div>
+
+      <div class="buttons">
+        <button class="button retry" onclick="retry()">다시 결제하기</button>
+        <button class="button secondary" onclick="goToHome()">
+          홈으로 돌아가기
+        </button>
+        <button class="button" onclick="contactSupport()">고객지원</button>
+      </div>
+
+      <div id="log" class="log"></div>
+    </div>
+
+    <script>
+      const log = (message) => {
+        const logElement = document.getElementById('log');
+        const timestamp = new Date().toLocaleTimeString();
+        logElement.textContent += `[${timestamp}] ${message}\n`;
+        logElement.scrollTop = logElement.scrollHeight;
+      };
+
+      const showFailDetails = (data) => {
+        const detailsHtml = `
+          <div class="detail-row">
+            <span class="detail-label">주문번호</span>
+            <span class="detail-value">${data.orderId || 'N/A'}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">결제금액</span>
+            <span class="detail-value">₩${(data.amount || 0).toLocaleString()}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">결제수단</span>
+            <span class="detail-value">${getProviderName(data.provider)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">실패시간</span>
+            <span class="detail-value">${new Date().toLocaleString()}</span>
+          </div>
+          ${
+            data.errorCode
+              ? `
+          <div class="detail-row">
+            <span class="detail-label">오류코드</span>
+            <span class="detail-value">${data.errorCode}</span>
+          </div>
+          `
+              : ''
+          }
+        `;
+        document.getElementById('fail-details').innerHTML = detailsHtml;
+        document.getElementById('fail-details').style.display = 'block';
+      };
+
+      const getProviderName = (provider) => {
+        const names = {
+          TOSS: '토스페이먼츠',
+          POINTS: '포인트',
+          BNPL: '후불결제',
+          KAKAOPAY: '카카오페이',
+        };
+        return names[provider] || provider || '알 수 없음';
+      };
+
+      const getFailureMessage = (code, message) => {
+        // 토스 오류 코드별 사용자 친화적 메시지
+        const tossMessages = {
+          INSUFFICIENT_BALANCE:
+            '잔액이 부족합니다. 다른 결제 수단을 이용해주세요.',
+          EXCEED_MAX_DAILY_PAYMENT_COUNT: '일일 결제 한도를 초과했습니다.',
+          EXCEED_MAX_DAILY_PAYMENT_AMOUNT:
+            '일일 결제 금액 한도를 초과했습니다.',
+          CARD_PROCESSING_ERROR:
+            '카드 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+          INVALID_CARD_EXPIRY: '카드 유효기간이 만료되었거나 잘못되었습니다.',
+          INVALID_CARD_INSTALLMENT: '할부 개월 수가 잘못되었습니다.',
+          NOT_SUPPORTED_CARD: '지원하지 않는 카드입니다.',
+          INVALID_CARD_NUMBER: '카드번호가 잘못되었습니다.',
+          INVALID_UNREGISTERED_SUBMALL: '등록되지 않은 서브몰입니다.',
+          REJECT_CARD_COMPANY: '카드사에서 결제를 거절했습니다.',
+          FORBIDDEN_REQUEST: '잘못된 요청입니다.',
+          REJECT_TOSSPAY_INVALID_ACCOUNT: '토스페이 계정이 유효하지 않습니다.',
+          EXCEED_MAX_AMOUNT: '최대 결제 가능 금액을 초과했습니다.',
+          INVALID_API_KEY: 'API 키가 유효하지 않습니다.',
+          INVALID_SECRET_KEY: 'Secret 키가 유효하지 않습니다.',
+          TIMEOUT: '결제 시간이 초과되었습니다. 다시 시도해주세요.',
+        };
+
+        return (
+          tossMessages[code] || message || '알 수 없는 오류가 발생했습니다.'
+        );
+      };
+
+      const retry = () => {
+        log('결제 재시도');
+        window.history.back();
+      };
+
+      const goToHome = () => {
+        log('홈으로 이동');
+        window.location.href = './checkout.html';
+      };
+
+      const contactSupport = () => {
+        alert(
+          '고객지원팀에 문의해주세요.\n📞 1588-1234\n📧 support@example.com',
+        );
+      };
+
+      // ===============================
+      // 초기화 로직
+      // ===============================
+
+      window.addEventListener('load', () => {
+        log('Payment Fail 페이지 로드됨');
+
+        try {
+          // URL 파라미터에서 실패 정보 추출
+          const urlParams = new URLSearchParams(window.location.search);
+          const code = urlParams.get('code');
+          const message = urlParams.get('message');
+          const orderId = urlParams.get('orderId');
+          const amount = urlParams.get('amount');
+
+          log(
+            `실패 정보: code=${code}, message=${message}, orderId=${orderId}`,
+          );
+
+          // 실패 메시지 표시
+          const failureMessage = getFailureMessage(code, message);
+          document.getElementById('fail-reason').textContent = failureMessage;
+
+          // 상세 정보가 있으면 표시
+          if (orderId || amount || code) {
+            showFailDetails({
+              orderId,
+              amount: amount ? Number(amount) : null,
+              provider: 'TOSS', // 현재는 토스만 REDIRECT 방식
+              errorCode: code,
+            });
+          }
+
+          log('결제 실패 페이지 초기화 완료');
+        } catch (error) {
+          log(`초기화 중 오류: ${error.message}`);
+          document.getElementById('fail-reason').textContent =
+            '결제 실패 정보를 불러오는 중 오류가 발생했습니다.';
+        }
+      });
+    </script>
+  </body>
+</html>

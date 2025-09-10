@@ -24,20 +24,20 @@ export class CheckoutSessionCreateDto {
   intentId!: string;
 
   @ApiProperty({
-    description: '사용할 결제 Provider',
-    enum: PAYMENT_PROVIDER,
-    example: 'TOSS',
-  })
-  @IsEnum(PAYMENT_PROVIDER)
-  provider!: string;
-
-  @ApiProperty({
-    description: '결제 성공 시 리다이렉트 URL',
-    example: 'https://example.com/payment/success',
+    description: '결제 완료 후 리다이렉트할 URL (우리 호스트 결제 UI)',
+    example: 'https://checkout.example.com/redirect',
   })
   @IsUrl()
   @IsNotEmpty()
   redirectUrl!: string;
+
+  @ApiProperty({
+    description: '결제 완료 후 복귀할 URL (최종 목적지)',
+    example: 'https://example.com/payment/success',
+  })
+  @IsUrl()
+  @IsNotEmpty()
+  returnUrl!: string;
 
   @ApiProperty({
     description: '결제 취소 시 리다이렉트 URL',
@@ -48,11 +48,11 @@ export class CheckoutSessionCreateDto {
   cancelUrl!: string;
 
   @ApiProperty({
-    description: 'PG사별 추가 메타데이터',
+    description: '세션 메타데이터 (디바이스/언어 등)',
     example: {
-      customerName: '홍길동',
-      customerEmail: 'hong@example.com',
-      itemName: '상품명',
+      device: 'mobile',
+      language: 'ko',
+      userAgent: 'Mozilla/5.0...',
     },
     required: false,
   })
@@ -78,12 +78,6 @@ export class CheckoutSessionResponseDto {
   intentId!: string;
 
   @ApiProperty({
-    description: '결제 Provider',
-    example: 'TOSS',
-  })
-  provider!: string;
-
-  @ApiProperty({
     description: 'CheckoutSession 상태',
     enum: ['PENDING', 'COMPLETED', 'CANCELLED', 'EXPIRED'],
     example: 'PENDING',
@@ -91,22 +85,22 @@ export class CheckoutSessionResponseDto {
   status!: string;
 
   @ApiProperty({
-    description: '결제창 리다이렉트 URL (PG사)',
-    example: 'https://api.tosspayments.com/payments/redirect?sessionId=cs_xxx',
+    description: '결제창 URL (우리 호스트 결제 UI)',
+    example: 'https://checkout.example.com/session/cs_xxx',
   })
   checkoutUrl!: string;
-
-  @ApiProperty({
-    description: '세션 만료 시간',
-    example: '2024-01-15T10:30:00Z',
-  })
-  expiresAt!: string;
 
   @ApiProperty({
     description: '세션 생성 시간',
     example: '2024-01-15T10:00:00Z',
   })
   createdAt!: string;
+
+  @ApiProperty({
+    description: '세션 만료 시간',
+    example: '2024-01-15T10:30:00Z',
+  })
+  expiresAt!: string;
 
   @ApiProperty({
     description: '세션 완료 시간 (완료된 경우)',
@@ -116,10 +110,10 @@ export class CheckoutSessionResponseDto {
   completedAt?: string;
 
   @ApiProperty({
-    description: 'PG사별 추가 정보',
+    description: '세션 메타데이터',
     example: {
-      pgSessionId: 'toss_session_12345',
-      paymentKey: 'payment_key_abcdef',
+      device: 'mobile',
+      language: 'ko',
     },
     required: false,
   })

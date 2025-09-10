@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>결제 완료</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f8f9fa;
+        color: #333;
+      }
+      .container {
+        background: white;
+        padding: 40px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+      .success-icon {
+        font-size: 72px;
+        color: #28a745;
+        margin-bottom: 20px;
+      }
+      .processing-icon {
+        font-size: 48px;
+        margin-bottom: 20px;
+        animation: pulse 1.5s ease-in-out infinite alternate;
+      }
+      @keyframes pulse {
+        from {
+          opacity: 0.6;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      h1 {
+        color: #28a745;
+        margin-bottom: 20px;
+        font-size: 28px;
+      }
+      .processing-title {
+        color: #007bff;
+      }
+      .payment-info {
+        background: #f8f9fa;
+        padding: 24px;
+        border-radius: 8px;
+        margin: 30px 0;
+        text-align: left;
+        border-left: 4px solid #28a745;
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e9ecef;
+      }
+      .info-row:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+      }
+      .info-label {
+        font-weight: 600;
+        color: #495057;
+      }
+      .info-value {
+        color: #212529;
+      }
+      .amount {
+        font-size: 24px;
+        font-weight: bold;
+        color: #28a745;
+      }
+      .buttons {
+        margin-top: 30px;
+      }
+      .button {
+        display: inline-block;
+        padding: 12px 24px;
+        margin: 0 8px;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+      .button:hover {
+        background-color: #0056b3;
+      }
+      .button.secondary {
+        background-color: #6c757d;
+      }
+      .button.secondary:hover {
+        background-color: #545b62;
+      }
+      .error {
+        color: #dc3545;
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .log {
+        margin-top: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        text-align: left;
+      }
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #007bff;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- 처리 중 상태 -->
+      <div id="processing" style="display: none">
+        <div class="processing-icon">⏳</div>
+        <h1 class="processing-title">결제 승인 처리 중</h1>
+        <div class="spinner"></div>
+        <p>잠시만 기다려주세요...</p>
+      </div>
+
+      <!-- 성공 상태 -->
+      <div id="success" style="display: none">
+        <div class="success-icon">✅</div>
+        <h1>결제가 완료되었습니다!</h1>
+        <p>안전하게 결제가 처리되었습니다. 이용해 주셔서 감사합니다.</p>
+
+        <div id="payment-details" class="payment-info">
+          <!-- 동적으로 채워집니다 -->
+        </div>
+
+        <div class="buttons">
+          <button class="button" onclick="goToHome()">홈으로 돌아가기</button>
+          <button class="button secondary" onclick="viewOrder()">
+            주문 확인
+          </button>
+        </div>
+      </div>
+
+      <!-- 실패 상태 -->
+      <div id="error" class="error" style="display: none">
+        <h3>❌ 결제 처리 실패</h3>
+        <p id="error-message">결제 승인 중 오류가 발생했습니다.</p>
+        <div class="buttons">
+          <button class="button" onclick="retry()">다시 시도</button>
+          <button class="button secondary" onclick="goToHome()">
+            홈으로 돌아가기
+          </button>
+        </div>
+      </div>
+
+      <div id="log" class="log"></div>
+    </div>
+
+    <script>
+      const API_BASE = 'http://localhost:5000';
+
+      const log = (message) => {
+        const logElement = document.getElementById('log');
+        const timestamp = new Date().toLocaleTimeString();
+        logElement.textContent += `[${timestamp}] ${message}\n`;
+        logElement.scrollTop = logElement.scrollHeight;
+      };
+
+      const showProcessing = () => {
+        document.getElementById('processing').style.display = 'block';
+        document.getElementById('success').style.display = 'none';
+        document.getElementById('error').style.display = 'none';
+      };
+
+      const showSuccess = (data) => {
+        document.getElementById('processing').style.display = 'none';
+        document.getElementById('success').style.display = 'block';
+        document.getElementById('error').style.display = 'none';
+
+        // 결제 정보 표시
+        const detailsHtml = `
+          <div class="info-row">
+            <span class="info-label">주문번호</span>
+            <span class="info-value">${data.intentId || 'N/A'}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">결제금액</span>
+            <span class="info-value amount">₩${(data.amount || 0).toLocaleString()}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">결제수단</span>
+            <span class="info-value">${getProviderName(data.provider)}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">결제상태</span>
+            <span class="info-value">완료</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">처리시간</span>
+            <span class="info-value">${new Date().toLocaleString()}</span>
+          </div>
+        `;
+        document.getElementById('payment-details').innerHTML = detailsHtml;
+      };
+
+      const showError = (message) => {
+        document.getElementById('processing').style.display = 'none';
+        document.getElementById('success').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error-message').textContent = message;
+      };
+
+      const getProviderName = (provider) => {
+        const names = {
+          TOSS: '토스페이먼츠',
+          POINTS: '포인트',
+          BNPL: '후불결제',
+          KAKAOPAY: '카카오페이',
+        };
+        return names[provider] || provider;
+      };
+
+      const goToHome = () => {
+        window.location.href = './checkout.html';
+      };
+
+      const viewOrder = () => {
+        alert('주문 확인 페이지로 이동합니다.');
+        // 실제로는 주문 상세 페이지로 이동
+      };
+
+      const retry = () => {
+        window.history.back();
+      };
+
+      // ===============================
+      // v5 아키텍처: Universal Success 처리
+      // ===============================
+
+      /**
+       * 토스 REDIRECT 방식 결제 완료 처리
+       */
+      async function handleTossRedirectSuccess() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentKey = urlParams.get('paymentKey');
+        const orderId = urlParams.get('orderId'); // intentId
+        const amount = urlParams.get('amount');
+
+        log(`토스 REDIRECT 성공 처리: orderId=${orderId}, amount=${amount}`);
+
+        if (!paymentKey || !orderId || !amount) {
+          throw new Error('토스 결제 정보가 누락되었습니다.');
+        }
+
+        // Universal Finalize API 호출
+        const response = await fetch(
+          `${API_BASE}/v2/payments/intents/${orderId}/attempts/finalize`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key':
+                'success_finalize_' + orderId + '_' + Date.now(),
+            },
+            body: JSON.stringify({
+              provider: 'TOSS',
+              instrumentRef: paymentKey,
+              amount: Number(amount),
+            }),
+          },
+        );
+
+        const result = await response.json();
+        log(`Finalize 응답: ${JSON.stringify(result, null, 2)}`);
+
+        if (!result.success) {
+          throw new Error(result.errorMessage || '결제 승인에 실패했습니다.');
+        }
+
+        return result;
+      }
+
+      /**
+       * INLINE 방식 결제 완료 처리 (이미 완료됨)
+       */
+      function handleInlineSuccess() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const intentId = urlParams.get('intentId');
+        const amount = urlParams.get('amount');
+        const provider = urlParams.get('provider');
+
+        log(`INLINE 성공 처리: provider=${provider}, intentId=${intentId}`);
+
+        return {
+          success: true,
+          intentId,
+          amount: Number(amount),
+          provider,
+          status: 'CAPTURED',
+        };
+      }
+
+      // ===============================
+      // 초기화 로직
+      // ===============================
+
+      window.addEventListener('load', async () => {
+        log('Payment Success 페이지 로드됨');
+
+        try {
+          showProcessing();
+
+          const urlParams = new URLSearchParams(window.location.search);
+          const isInlineSuccess = urlParams.get('success') === 'true';
+
+          let result;
+          if (isInlineSuccess) {
+            // INLINE 방식 (포인트, BNPL 등) - 이미 처리 완료
+            result = handleInlineSuccess();
+            log('INLINE 결제 성공 확인됨');
+          } else {
+            // REDIRECT 방식 (토스 등) - 서버 승인 필요
+            result = await handleTossRedirectSuccess();
+            log('REDIRECT 결제 승인 완료');
+          }
+
+          showSuccess(result);
+          log('결제 완료 처리 성공!');
+        } catch (error) {
+          log(`오류 발생: ${error.message}`);
+          showError(error.message);
+        }
+      });
+    </script>
+  </body>
+</html>

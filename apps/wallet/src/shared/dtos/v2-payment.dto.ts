@@ -52,16 +52,18 @@ export class IntentCreateDto {
   @IsEnum(PAYMENT_INTENT_TYPE)
   type!: PaymentIntentType;
 
-  @ApiPropertyOptional({
-    description: '허용된 Provider 목록 (없으면 타입별 기본값 적용)',
-    enum: PAYMENT_PROVIDER,
-    isArray: true,
-    example: ['TOSS', 'KAKAOPAY', 'BNPL', 'POINTS'],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsEnum(PAYMENT_PROVIDER, { each: true })
-  allowedProviders?: PaymentProvider[];
+  // ❌ DEPRECATED: allowedProviders는 서버 정책에서 자동 결정됨
+  // 보안상 클라이언트에서 결제 수단을 직접 지정할 수 없음
+  // @ApiPropertyOptional({
+  //   description: '허용된 Provider 목록 (없으면 타입별 기본값 적용)',
+  //   enum: PAYMENT_PROVIDER,
+  //   isArray: true,
+  //   example: ['TOSS', 'KAKAOPAY', 'BNPL', 'POINTS'],
+  // })
+  // @IsOptional()
+  // @IsArray()
+  // @IsEnum(PAYMENT_PROVIDER, { each: true })
+  // allowedProviders?: PaymentProvider[];
 
   @ApiPropertyOptional({
     description: '만료 시각 (ISO 8601 형식)',
@@ -192,6 +194,17 @@ export class AttemptCreateDto {
   @IsOptional()
   @IsEnum(['USER', 'SYSTEM', 'SCHEDULER', 'ADMIN'])
   actor?: 'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN' = 'USER';
+
+  @ApiPropertyOptional({
+    description: '불투명 메타데이터 (저장 전용)',
+    example: {
+      source: 'universal_checkout',
+      userAgent: 'Mozilla/5.0...',
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
 
 export class AttemptFinalizeDto {
@@ -273,7 +286,7 @@ export class AttemptResponseDto {
     description: '수단 종류',
     example: 'stored',
   })
-  instrumentKind?: string;
+  instrumentRef?: string;
 
   @ApiPropertyOptional({
     description: 'PG 트랜잭션 ID',
@@ -409,34 +422,37 @@ export class CheckoutSessionCreateDto {
   intentId!: string;
 
   @ApiProperty({
-    description: 'Provider (웹 리다이렉트 지원하는 것만)',
-    enum: ['KAKAOPAY', 'TOSS'],
-    example: 'KAKAOPAY',
+    description: '결제 완료 후 리다이렉트할 URL (우리 호스트 결제 UI)',
+    example: 'https://checkout.example.com/redirect',
   })
-  @IsEnum(['KAKAOPAY', 'TOSS'])
-  provider!: 'KAKAOPAY' | 'TOSS';
+  @IsString()
+  redirectUrl!: string;
 
   @ApiProperty({
-    description: '성공 시 리다이렉트 URL',
+    description: '결제 완료 후 복귀할 URL (최종 목적지)',
     example: 'https://example.com/payment/success',
   })
   @IsString()
-  successUrl!: string;
+  returnUrl!: string;
 
   @ApiProperty({
-    description: '실패 시 리다이렉트 URL',
-    example: 'https://example.com/payment/fail',
-  })
-  @IsString()
-  failUrl!: string;
-
-  @ApiPropertyOptional({
     description: '취소 시 리다이렉트 URL',
     example: 'https://example.com/payment/cancel',
   })
-  @IsOptional()
   @IsString()
-  cancelUrl?: string;
+  cancelUrl!: string;
+
+  @ApiPropertyOptional({
+    description: '세션 메타데이터 (디바이스/언어 등)',
+    example: {
+      device: 'mobile',
+      language: 'ko',
+      userAgent: 'Mozilla/5.0...',
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
 
 export class CheckoutSessionResponseDto {
@@ -447,10 +463,29 @@ export class CheckoutSessionResponseDto {
   sessionId!: string;
 
   @ApiProperty({
-    description: '리다이렉트할 결제 URL',
-    example: 'https://online-pay.kakao.com/mockup/v1/...',
+    description: 'Intent ID',
+    example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
   })
-  redirectUrl!: string;
+  intentId!: string;
+
+  @ApiProperty({
+    description: 'Session 상태',
+    enum: ['PENDING', 'COMPLETED', 'CANCELLED', 'EXPIRED'],
+    example: 'PENDING',
+  })
+  status!: string;
+
+  @ApiProperty({
+    description: 'Checkout URL (결제창)',
+    example: 'https://checkout.example.com/session/cs_xxx',
+  })
+  checkoutUrl!: string;
+
+  @ApiProperty({
+    description: '세션 생성 시간',
+    example: '2025-01-08T10:00:00Z',
+  })
+  createdAt!: string;
 
   @ApiProperty({
     description: '만료 시각',

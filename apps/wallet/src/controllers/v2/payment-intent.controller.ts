@@ -29,6 +29,10 @@ import {
   AttemptFinalizeDto,
   AttemptResponseDto,
 } from '../../shared/dtos/v2-payment.dto';
+import {
+  UniversalFinalizeDto,
+  UniversalFinalizeResponseDto,
+} from '../../shared/dtos/universal-checkout.dto';
 
 import { PaymentIntentService } from '../../services/v2/payment-intent.service';
 
@@ -186,13 +190,82 @@ export class PaymentIntentController {
     }
   }
 
-  // -------------------------------
-  // Attempt 확정 (웹 결제 복귀용)
-  // -------------------------------
+  // ===============================
+  // v5 아키텍처: Universal Finalize API
+  // ===============================
+
+  /**
+   * Universal Finalize API (v5 아키텍처)
+   * 모든 PG사의 최종 결제 승인을 처리하는 단일 창구
+   */
   @Post('intents/:id/attempts/finalize')
   @HttpCode(200)
   @ApiOperation({
-    summary: '결제 Attempt 확정 (웹 결제 복귀)',
+    summary: '공용 결제 확정 API (v5)',
+    description: `
+모든 PG사의 최종 결제 승인을 처리하는 단일 창구:
+- 토스, 카카오페이, 포인트, BNPL 등 모든 Provider 지원
+- Provider별 instrumentRef(승인키) 기반 처리
+- 금액 검증 및 최종 상태 업데이트
+- 공용 API 계약으로 PG사 독립성 보장
+
+**v5 핵심**: 하나의 API로 모든 PG사 처리, Provider별 분기 없음
+    `,
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Intent ID',
+    example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 키 (선택사항)',
+    required: false,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '공용 결제 확정 성공',
+    type: UniversalFinalizeResponseDto,
+  })
+  @ApiBadRequestResponse({ description: '잘못된 승인키 또는 요청' })
+  @ApiNotFoundResponse({ description: 'Intent를 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async universalFinalize(
+    @Param('id') intentId: string,
+    @Body() dto: UniversalFinalizeDto,
+    @Headers('Idempotency-Key') idempotencyKey?: string,
+  ): Promise<UniversalFinalizeResponseDto> {
+    try {
+      this.logger.log(
+        `Universal Finalize 요청: intentId=${intentId}, provider=${dto.provider}, instrumentRef=${dto.instrumentRef ? '***' : 'none'}`,
+      );
+
+      const result = await this.intentService.universalFinalize(
+        intentId,
+        dto,
+        idempotencyKey,
+      );
+
+      this.logger.log(
+        `Universal Finalize 완료: ${result.attemptId}, 상태: ${result.status}`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Universal Finalize 실패: ${error.message}`,
+        error.stack,
+      );
+      throw this.mapErrorToHttpException(error);
+    }
+  }
+
+  // -------------------------------
+  // Attempt 확정 (웹 결제 복귀용) - Legacy
+  // -------------------------------
+  @Post('intents/:id/attempts/finalize/legacy')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '결제 Attempt 확정 (Legacy)',
     description: `
 웹 결제 후 복귀 시 Attempt를 확정합니다:
 - 카카오페이, 토스페이 등 승인키 기반 확정
@@ -222,14 +295,14 @@ export class PaymentIntentController {
   @ApiBadRequestResponse({ description: '잘못된 승인키 또는 요청' })
   @ApiNotFoundResponse({ description: 'Intent를 찾을 수 없음' })
   @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
-  async finalizeAttempt(
+  async legacyFinalizeAttempt(
     @Param('id') intentId: string,
     @Body() dto: AttemptFinalizeDto,
     @Headers('Idempotency-Key') idempotencyKey?: string,
   ): Promise<AttemptResponseDto> {
     try {
       this.logger.log(
-        `Attempt 확정 요청: intentId=${intentId}, approvalKey=${dto.approvalKey ? '***' : 'none'}`,
+        `Legacy Attempt 확정 요청: intentId=${intentId}, approvalKey=${dto.approvalKey ? '***' : 'none'}`,
       );
 
       const result = await this.intentService.finalizeAttempt(
@@ -238,10 +311,13 @@ export class PaymentIntentController {
         idempotencyKey,
       );
 
-      this.logger.log(`Attempt 확정 완료: ${result.attemptId}`);
+      this.logger.log(`Legacy Attempt 확정 완료: ${result.attemptId}`);
       return result;
     } catch (error) {
-      this.logger.error(`Attempt 확정 실패: ${error.message}`, error.stack);
+      this.logger.error(
+        `Legacy Attempt 확정 실패: ${error.message}`,
+        error.stack,
+      );
       throw this.mapErrorToHttpException(error);
     }
   }

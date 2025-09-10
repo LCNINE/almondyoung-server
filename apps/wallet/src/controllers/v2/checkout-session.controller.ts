@@ -26,6 +26,12 @@ import {
   CheckoutSessionResponseDto,
   CheckoutSessionCallbackDto,
 } from '../../shared/dtos/checkout-session.dto';
+import {
+  UniversalCheckoutSessionCreateDto,
+  UniversalCheckoutSessionResponseDto,
+  UniversalFinalizeDto,
+  UniversalFinalizeResponseDto,
+} from '../../shared/dtos/universal-checkout.dto';
 
 /**
  * CheckoutSession v2 Controller
@@ -78,13 +84,65 @@ export class CheckoutSessionController {
     );
   }
 
-  // -------------------------------
-  // CheckoutSession 생성
-  // -------------------------------
+  // ===============================
+  // v5 아키텍처: Universal Checkout Session API
+  // ===============================
+
+  /**
+   * Universal Checkout Session 생성 (v5 아키텍처)
+   * intentId만 받아서 UI 렌더링에 필요한 모든 데이터 제공
+   */
   @Post('sessions')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Universal Checkout Session 생성 (v5)',
+    description: `
+공용 체크아웃 UI를 위한 세션 생성:
+- Intent 정보 + Provider별 UI 설정 데이터 제공
+- 모든 PG사를 하나의 공용 UI로 처리
+- flow 기반 동적 렌더링 지원 (REDIRECT vs INLINE)
+- SDK 지연 로드 지원
+
+**v5 핵심**: PG사별 전용 API 없이 공용 API 계약만 사용
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Universal Checkout Session 생성 성공',
+    type: UniversalCheckoutSessionResponseDto,
+  })
+  @ApiBadRequestResponse({ description: '정책 위반 또는 잘못된 요청' })
+  @ApiNotFoundResponse({ description: 'Intent를 찾을 수 없음' })
+  @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
+  async createUniversalSession(
+    @Body() dto: UniversalCheckoutSessionCreateDto,
+  ): Promise<UniversalCheckoutSessionResponseDto> {
+    this.logger.log(
+      `Universal Checkout Session 생성 요청: intentId=${dto.intentId}`,
+    );
+
+    try {
+      const result =
+        await this.checkoutSessionService.createUniversalSession(dto);
+      this.logger.log(
+        `Universal Checkout Session 생성 완료: ${result.sessionId}`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Universal Checkout Session 생성 실패: ${error.message}`,
+      );
+      throw this.mapErrorToHttpException(error);
+    }
+  }
+
+  // -------------------------------
+  // 기존 CheckoutSession 생성 (하위 호환)
+  // -------------------------------
+  @Post('sessions/legacy')
   @HttpCode(200) // v4 아키텍처 규칙: 모든 POST는 200
   @ApiOperation({
-    summary: 'CheckoutSession 생성',
+    summary: 'CheckoutSession 생성 (Legacy)',
     description: `
 웹 리다이렉트 결제창을 위한 CheckoutSession을 생성합니다:
 - Intent와 연결된 경량 세션 생성
@@ -102,17 +160,19 @@ export class CheckoutSessionController {
   @ApiBadRequestResponse({ description: '정책 위반 또는 잘못된 요청' })
   @ApiNotFoundResponse({ description: 'Intent를 찾을 수 없음' })
   @ApiInternalServerErrorResponse({ description: '서버 내부 오류' })
-  async createSession(
+  async createLegacySession(
     @Body() dto: CheckoutSessionCreateDto,
   ): Promise<CheckoutSessionResponseDto> {
-    this.logger.log(`CheckoutSession 생성 요청: intentId=${dto.intentId}`);
+    this.logger.log(
+      `Legacy CheckoutSession 생성 요청: intentId=${dto.intentId}`,
+    );
 
     try {
       const result = await this.checkoutSessionService.createSession(dto);
-      this.logger.log(`CheckoutSession 생성 완료: ${result.sessionId}`);
+      this.logger.log(`Legacy CheckoutSession 생성 완료: ${result.sessionId}`);
       return result;
     } catch (error) {
-      this.logger.error(`CheckoutSession 생성 실패: ${error.message}`);
+      this.logger.error(`Legacy CheckoutSession 생성 실패: ${error.message}`);
       throw this.mapErrorToHttpException(error);
     }
   }

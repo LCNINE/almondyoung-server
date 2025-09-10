@@ -518,7 +518,8 @@ export const DEFAULT_PAYMENT_POLICY: PaymentPolicyConfig = {
       },
       MEMBERSHIP_FEE: {
         description: '멤버십 정기결제',
-        allowed: ['TOSS', 'BNPL'],
+        // ✅ CMS만 허용 (CARD CMS 전용)
+        allowed: ['CMS'],
         requiresStoredProfile: true,
         allowsEphemeral: false,
         maxAmount: 1000000,

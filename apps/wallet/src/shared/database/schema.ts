@@ -1075,12 +1075,12 @@ export const paymentTypeParametersRelations = relations(
 // ────────────────────────────────────────────
 
 /**
- * PaymentIntent 테이블 - 결제 의도 (한국 전용, currency 제거)
+ * PaymentIntent 테이블 - 결제 의도 (provider 없음, 실행 시점에서 결정)
  */
 export const paymentIntents = pgTable(
   'payment_intents',
   {
-    id: varchar('id', { length: 26 }).primaryKey(), // pi_xxxxx
+    id: varchar('id', { length: 30 }).primaryKey(), // pi_xxxxx
     customerId: varchar('customer_id', { length: 64 }).notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 })
       .$type<number>()
@@ -1093,21 +1093,20 @@ export const paymentIntents = pgTable(
       .$type<PaymentIntentType>()
       .notNull()
       .default('ORDER'),
-    allowedProviders: text('allowed_providers'), // JSON array
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    metadata: text('metadata'), // JSON
+    metadata: text('metadata'), // JSON - 외부 도메인 맥락 저장만
     refundedAmount: numeric('refunded_amount', { precision: 19, scale: 4 })
       .$type<number>()
       .notNull()
       .default(0),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),
     capturedAt: timestamp('captured_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     // 성능 최적화 인덱스
@@ -1125,32 +1124,39 @@ export const paymentIntents = pgTable(
 );
 
 /**
- * PaymentAttempt 테이블 - 결제 시도
+ * PaymentAttempt 테이블 - 결제 시도 (여기에만 provider 존재)
  */
 export const paymentAttempts = pgTable(
   'payment_attempts',
   {
-    id: varchar('id', { length: 26 }).primaryKey(), // pa_xxxxx
-    intentId: varchar('intent_id', { length: 26 })
+    id: varchar('id', { length: 30 }).primaryKey(), // pa_xxxxx
+    intentId: varchar('intent_id', { length: 30 })
       .notNull()
-      .references(() => paymentIntents.id),
+      .references(() => paymentIntents.id, { onDelete: 'cascade' }),
+
+    // 수단 선택 (둘 중 하나만)
+    profileId: varchar('profile_id', { length: 26 }), // 저장형 프로필
+    instrumentRef: text('instrument_ref'), // 웹 승인키 등(ephemeral)
+
+    // 실행된 프로바이더 (서버가 프로필/승인키로 해석)
     provider: varchar('provider', { length: 32 })
       .$type<PaymentProvider>()
       .notNull(),
-    instrumentKind: varchar('instrument_kind', {
-      length: 16,
-    }).$type<InstrumentKind>(),
-    instrumentRef: text('instrument_ref'),
-    profileId: varchar('profile_id', { length: 26 }),
+
     amount: numeric('amount', { precision: 19, scale: 4 })
       .$type<number>()
       .notNull(),
-    status: varchar('status', { length: 255 })
+    status: varchar('status', { length: 24 })
       .$type<TransactionStatus>()
       .notNull(),
-    actor: varchar('actor', { length: 255 })
-      .$type<'USER' | 'SCHEDULER' | 'ADMIN' | 'SYSTEM'>()
-      .notNull(),
+    actor: varchar('actor', { length: 16 })
+      .$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>()
+      .notNull()
+      .default('USER'),
+
+    // 요약 컨텍스트만 (raw 응답 금지)
+    eventContext: text('event_context'), // { pg:{gateway,approvalNumber?...}, business:{type,source} }
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1158,24 +1164,21 @@ export const paymentAttempts = pgTable(
       .notNull()
       .defaultNow(),
     errorMessage: text('error_message'),
-    eventContext: text('event_context').notNull(),
     transactionId: varchar('transaction_id', { length: 255 }), // PG사 트랜잭션 ID
     approvalNumber: varchar('approval_number', { length: 255 }), // 승인번호
   },
   (table) => [
     // 성능 최적화 인덱스
-    index('idx_payment_attempts_intent_id').on(table.intentId),
-    index('idx_payment_attempts_provider').on(table.provider),
+    index('idx_payment_attempts_intent_created').on(
+      table.intentId,
+      table.createdAt,
+    ),
     index('idx_payment_attempts_status').on(table.status),
-    index('idx_payment_attempts_created_at').on(table.createdAt),
+    index('idx_payment_attempts_provider').on(table.provider),
     index('idx_payment_attempts_profile_id').on(table.profileId),
     index('idx_payment_attempts_provider_status').on(
       table.provider,
       table.status,
-    ),
-    index('idx_payment_attempts_intent_provider').on(
-      table.intentId,
-      table.provider,
     ),
   ],
 );
@@ -1186,11 +1189,11 @@ export const paymentAttempts = pgTable(
 export const paymentRefunds = pgTable(
   'payment_refunds',
   {
-    id: varchar('id', { length: 26 }).primaryKey(), // rf_xxxxx
-    intentId: varchar('intent_id', { length: 26 })
+    id: varchar('id', { length: 30 }).primaryKey(), // rf_xxxxx
+    intentId: varchar('intent_id', { length: 30 })
       .notNull()
       .references(() => paymentIntents.id),
-    attemptId: varchar('attempt_id', { length: 26 })
+    attemptId: varchar('attempt_id', { length: 30 })
       .notNull()
       .references(() => paymentAttempts.id),
     amount: numeric('amount', { precision: 19, scale: 4 })
@@ -1218,30 +1221,28 @@ export const paymentRefunds = pgTable(
 );
 
 /**
- * CheckoutSession 테이블 - 웹 리다이렉트 UX용 경량 컨테이너
+ * CheckoutSession 테이블 - 웹 리다이렉트 UX용 경량 컨테이너 (provider 없음)
  */
 export const checkoutSessions = pgTable(
   'checkout_sessions',
   {
-    id: varchar('id', { length: 26 }).primaryKey(), // cs_xxxxx
-    intentId: varchar('intent_id', { length: 26 })
+    id: varchar('id', { length: 30 }).primaryKey(), // cs_xxxxx
+    intentId: varchar('intent_id', { length: 30 })
       .notNull()
-      .references(() => paymentIntents.id),
-    provider: varchar('provider', { length: 32 })
-      .$type<PaymentProvider>()
-      .notNull(),
-    redirectUrl: text('redirect_url').notNull(),
+      .references(() => paymentIntents.id, { onDelete: 'cascade' }),
+    redirectUrl: text('redirect_url').notNull(), // 우리 호스트 결제 UI or 지갑 허브
+    returnUrl: text('return_url').notNull(), // 복귀 URL
     cancelUrl: text('cancel_url').notNull(),
     status: varchar('status', { length: 24 })
       .$type<'PENDING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED'>()
       .notNull()
       .default('PENDING'),
+    // 세션이 생성된 컨텍스트(디바이스/언어 등) 정도만 메타로 보관
+    metadata: text('metadata'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    metadata: text('metadata'), // PG사별 세션 정보
   },
   (table) => [
     // 성능 최적화 인덱스
