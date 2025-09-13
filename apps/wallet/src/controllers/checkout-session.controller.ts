@@ -20,7 +20,7 @@ import {
   ApiNotFoundResponse,
   ApiInternalServerErrorResponse,
 } from '@nestjs/swagger';
-import { CheckoutSessionService } from '../services/v2/checkout-session.service';
+import { CheckoutSessionService } from '../services/checkout-session.service';
 import {
   CheckoutSessionCreateDto,
   CheckoutSessionResponseDto,

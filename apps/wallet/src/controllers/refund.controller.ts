@@ -27,7 +27,7 @@ import {
   RefundResponseDto,
 } from '../shared/dtos/v2-payment.dto';
 
-import { RefundService } from '../services/v2/refund.service';
+import { RefundService } from '../services/refund.service';
 
 /**
  * v2 Refund 컨트롤러 (v4 아키텍처)

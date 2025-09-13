@@ -15,10 +15,11 @@ import {
 } from 'class-validator';
 import {
   PaymentIntentType,
+  paymentIntentTypeEnum,
   PaymentProvider,
-  PAYMENT_INTENT_TYPE,
-  PAYMENT_PROVIDER,
+  paymentProviderEnum,
 } from '../database/schema';
+import { makeConstEnum } from '../utils/make-const-enum';
 
 // ================================================================
 // Intent 관련 DTO들
@@ -45,11 +46,11 @@ export class IntentCreateDto {
   amount!: number;
 
   @ApiProperty({
-    description: '결제 타입 (맥락)',
-    enum: PAYMENT_INTENT_TYPE,
+    description: '결제   타입 (맥락)',
+    enum: makeConstEnum(paymentIntentTypeEnum.enumValues),
     example: 'ORDER',
   })
-  @IsEnum(PAYMENT_INTENT_TYPE)
+  @IsEnum(makeConstEnum(paymentIntentTypeEnum.enumValues))
   type!: PaymentIntentType;
 
   // ❌ DEPRECATED: allowedProviders는 서버 정책에서 자동 결정됨
@@ -143,10 +144,10 @@ export class IntentResponseDto {
 export class AttemptCreateDto {
   @ApiProperty({
     description: '결제 Provider',
-    enum: PAYMENT_PROVIDER,
+    enum: makeConstEnum(paymentProviderEnum.enumValues),
     example: 'TOSS',
   })
-  @IsEnum(PAYMENT_PROVIDER)
+  @IsEnum(makeConstEnum(paymentProviderEnum.enumValues))
   provider!: PaymentProvider;
 
   @ApiPropertyOptional({
@@ -166,6 +167,15 @@ export class AttemptCreateDto {
   @IsString()
   @ValidateIf((o) => o.profileId === undefined)
   instrumentRef?: string;
+
+  @ApiPropertyOptional({
+    description: '결제 수단 종류',
+    enum: ['PROFILE', 'ONE_TIME'],
+    example: 'PROFILE',
+  })
+  @IsOptional()
+  @IsEnum(['PROFILE', 'ONE_TIME'])
+  instrumentType?: 'PROFILE' | 'ONE_TIME';
 
   @ApiPropertyOptional({
     description: '멱등성 키',
@@ -284,9 +294,10 @@ export class AttemptResponseDto {
 
   @ApiPropertyOptional({
     description: '수단 종류',
-    example: 'stored',
+    enum: ['PROFILE', 'ONE_TIME'],
+    example: 'PROFILE',
   })
-  instrumentRef?: string;
+  instrumentType?: 'PROFILE' | 'ONE_TIME';
 
   @ApiPropertyOptional({
     description: 'PG 트랜잭션 ID',

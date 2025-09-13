@@ -27,7 +27,7 @@ import {
   PaymentProfileResponseDto,
   UserPaymentProfilesResponseDto,
 } from '../shared/dtos/payment-profile.dto';
-import { PaymentProfileService } from '../services/v2/payment-profile.service';
+import { PaymentProfileService } from '../services/payment-profile.service';
 
 /**
  * Payment Profile Controller v2

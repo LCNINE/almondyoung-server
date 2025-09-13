@@ -34,7 +34,7 @@ import {
   UniversalFinalizeResponseDto,
 } from '../shared/dtos/universal-checkout.dto';
 
-import { PaymentIntentService } from '../services/v2/payment-intent.service';
+import { PaymentIntentService } from '../services/payment-intent.service';
 
 /**
  * v2 Payment Intent 컨트롤러 (v4 아키텍처)

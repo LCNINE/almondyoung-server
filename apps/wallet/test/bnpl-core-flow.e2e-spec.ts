@@ -374,7 +374,6 @@ describe('BNPL 핵심 플로우 E2E Test', () => {
         paymentProfileId: profileId,
         creditLimit: 1000000,
         approvedLimit: 1000000,
-        billingCycleDay: 28, // 매월 28일 결제
       });
 
       // 3. 직접 batchCmsProfile 생성

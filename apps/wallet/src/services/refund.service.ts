@@ -1,15 +1,15 @@
 // services/v2/refund.service.ts - v4 아키텍처 환불 서비스
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
-import { PaymentPolicyValidator } from '../../shared/policies/payment-policy';
+import * as schema from '../shared/database/schema';
+import { PaymentPolicyValidator } from '../shared/policies/payment-policy';
 import {
   RefundCreateDto,
   RefundResponseDto,
-} from '../../shared/dtos/v2-payment.dto';
+} from '../shared/dtos/v2-payment.dto';
 
 /**
  * v4 아키텍처 Refund 서비스
@@ -71,13 +71,6 @@ export class RefundService {
           `Refund amount ${refundAmount} exceeds remaining amount ${remainingAmount}`,
         );
       }
-
-      // 3. 정책 검증
-      this.policyValidator.validateRefundPolicy(
-        session.amount,
-        refundAmount,
-        dto.reason,
-      );
 
       // 4. Attempt 검증 (지정된 경우)
       let targetAttemptId = dto.attemptId;
@@ -207,6 +200,9 @@ export class RefundService {
 
   /**
    * 환불 승인 처리 (관리자용)
+   * @param refundId 환불 ID
+   * @param approvedBy 승인자
+   * @returns 환불 응답
    */
   async approveRefund(
     refundId: string,
@@ -217,8 +213,8 @@ export class RefundService {
     return await this.dbService.db.transaction(async (tx) => {
       const refund = await tx
         .select()
-        .from(schema.refundEvents)
-        .where(eq(schema.refundEvents.id, refundId))
+        .from(schema.paymentRefunds)
+        .where(eq(schema.paymentRefunds.id, refundId))
         .limit(1);
 
       if (refund.length === 0) {
@@ -233,22 +229,22 @@ export class RefundService {
 
       // 환불 상태 업데이트
       await tx
-        .update(schema.refundEvents)
+        .update(schema.paymentRefunds)
         .set({
           status: 'APPROVED',
           completedBy: approvedBy,
         })
-        .where(eq(schema.refundEvents.id, refundId));
+        .where(eq(schema.paymentRefunds.id, refundId));
 
       // TODO: 실제 환불 처리 (PG사 API 호출)
       // 현재는 바로 COMPLETED로 처리
       await tx
-        .update(schema.refundEvents)
+        .update(schema.paymentRefunds)
         .set({
           status: 'COMPLETED',
           completedAt: new Date(),
         })
-        .where(eq(schema.refundEvents.id, refundId));
+        .where(eq(schema.paymentRefunds.id, refundId));
 
       return this.getRefund(refundId);
     });

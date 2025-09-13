@@ -25,7 +25,7 @@ export class TossProvider implements PaymentProvider {
   private readonly logger = new Logger(TossProvider.name);
 
   readonly providerId: PaymentProvider_ID = 'TOSS';
-  readonly supportedTypes: PaymentType[] = ['ORDER'];
+  // supportedTypes 제거 - 정책 기반으로 결정
 
   async processPayment(request: PaymentRequest): Promise<PaymentResult> {
     this.logger.log(
@@ -33,17 +33,17 @@ export class TossProvider implements PaymentProvider {
     );
 
     // Ephemeral 지원: instrumentRef는 TOSS paymentKey
-    if (request.instrumentKind === 'EPHEMERAL' && request.instrumentRef) {
+    if (request.instrumentType === 'ONE_TIME' && request.instrumentRef) {
       return this.processEphemeralPayment(request);
     }
 
     // Stored Profile 지원 (향후 구현)
-    if (request.instrumentKind === 'STORED' && request.profileId) {
+    if (request.instrumentType === 'PROFILE' && request.profileId) {
       throw new Error('TOSS Stored Profile은 아직 구현되지 않았습니다');
     }
 
     throw new Error(
-      'TOSS Provider: instrumentKind 또는 instrumentRef가 필요합니다',
+      'TOSS Provider: instrumentType 또는 instrumentRef가 필요합니다',
     );
   }
 

@@ -97,7 +97,7 @@ export interface PaymentMethodRegistrationRequest {
   validYear?: string; // 유효연도
   validMonth?: string; // 유효월
   creditLimit?: number; // BNPL 한도
-  billingCycleDay?: number; // 결제일
+
   termsUrl?: string; // 약관 URL
 }
 

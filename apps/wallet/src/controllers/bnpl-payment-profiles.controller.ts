@@ -125,8 +125,7 @@ export class BnplPaymentProfilesController {
     await this.db.db.insert(schema.paymentProfiles).values({
       id: profileId,
       userId,
-      provider: 'CMS',
-      kind: 'BATCH',
+      kind: 'BANK_ACCOUNT',
       status: 'ACTIVE',
       name: profileName,
     });
@@ -142,12 +141,12 @@ export class BnplPaymentProfilesController {
     });
 
     await this.db.db
-      .update(schema.cmsBatchProfiles)
+      .update(schema.cmsBatchConsents)
       .set({
         agreementKey,
         agreementKind: agreementResult.agreementFile.agreementKind,
-        consentStatus: 'PENDING',
-        consentSubmittedAt: new Date(),
+        status: 'PENDING',
+        submittedAt: new Date(),
       })
       .where(eq(schema.cmsBatchProfiles.id, profileId));
     this.logger.log(`✅ BNPL 프로필 최종 등록 완료 - ProfileId=${profileId}`);

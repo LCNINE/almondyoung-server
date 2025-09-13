@@ -2,9 +2,9 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
+import * as schema from '../shared/database/schema';
 import {
   PaymentProfileCreateRequestDto,
   PaymentProfileResponseDto,
@@ -13,9 +13,9 @@ import {
   PaymentProfileTypeDto,
   PaymentProfileStatusDto,
   PaymentProfilePurposeDto,
-} from '../../shared/dtos/payment-profile.dto';
-import { PaymentProviderFactory } from '../../providers/payment-provider.factory';
-import { ProfileRegistrationRequest } from '../../providers/payment-provider.interface';
+} from '../shared/dtos/payment-profile.dto';
+import { PaymentProviderFactory } from '../providers/payment-provider.factory';
+import { ProfileRegistrationRequest } from '../providers/payment-provider.interface';
 
 /**
  * Payment Profile Service v2
@@ -48,37 +48,44 @@ export class PaymentProfileService {
     // 1. 입력 검증
     await this.validateCreateRequest(dto);
 
-    // 2. Provider 선택 및 HMS 등록 요청 데이터 구성
+    // 2. Provider 선택 및 등록 요청 데이터 구성
     const provider = this.getProviderForProfileType(dto.profileType);
     const profileRegistrationRequest: ProfileRegistrationRequest = {
+      // 공통 CMS 프로필 필수값
       userId: dto.userId,
       profileType: dto.profileType,
       profileName: dto.profileName,
+      paymentPurpose: dto.paymentPurpose,
+      isDefault: dto.isDefault,
+      phone: dto.phone,
 
-      // HMS 신용카드 API 필드 매핑 (callableSchema.ts 기준)
-      paymentNumber: dto.paymentNumber, // 카드번호
-      payerName: dto.payerName, // 카드 소유자명
-      payerNumber: dto.payerNumber, // 생년월일
-      validUntil: dto.validUntil, // 카드 유효기간 MMYY
-      password: dto.password, // 비밀번호 앞 2자리
+      // HMS 카드 회원등록 API 필수값
+      paymentNumber: dto.paymentNumber,
+      payerName: dto.payerName,
+      payerNumber: dto.payerNumber,
+      validUntil: dto.validUntil,
+      password: dto.password,
+      paymentCompany: dto.paymentCompany,
 
-      // HMS 배치 CMS API 필드 매핑
-      paymentCompany: dto.paymentCompany, // 은행 코드
-      accountNumber: dto.accountNumber, // 계좌번호 (paymentNumber로도 사용)
+      // HMS 배치 CMS 등록 API 필수값
+      accountNumber: dto.accountNumber,
+      billingDay: dto.billingDay,
+      consentId: dto.consentId,
+      agreementKey: dto.agreementKey,
+      agreementKind: dto.agreementKind,
+      consentStatus: dto.consentStatus,
+      consentSubmittedAt: dto.consentSubmittedAt,
+      consentReviewedAt: dto.consentReviewedAt,
 
       // BNPL 필드
       creditLimit: dto.creditLimit,
-      billingCycleDay: dto.billingCycleDay,
 
-      // 공통 필드
-      phone: dto.phone,
-
+      // 부가 정보 (UI 컨텍스트, 운영자 메모 등)
       metadata: {
-        paymentPurpose: dto.paymentPurpose,
-        isDefault: dto.isDefault,
+        ...dto.metadata,
         // HMS API 추가 필드들
-        smsFlag: 'Y', // SMS 발송 기본값
-        joinDate: new Date().toISOString().slice(0, 10).replace(/-/g, ''), // YYYYMMDD
+        smsFlag: 'Y',
+        joinDate: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
         paymentStartDate: new Date()
           .toISOString()
           .slice(0, 10)
@@ -389,10 +396,8 @@ export class PaymentProfileService {
 
       case PaymentProfileTypeDto.BNPL:
         // BNPL 필수 필드
-        if (!dto.creditLimit || !dto.billingCycleDay) {
-          throw new Error(
-            'BNPL 프로필 등록시 creditLimit과 billingCycleDay는 필수입니다',
-          );
+        if (!dto.creditLimit) {
+          throw new Error('BNPL 프로필 등록시 creditLimit 필수입니다');
         }
         break;
     }
@@ -425,8 +430,7 @@ export class PaymentProfileService {
         return this.providerFactory.getProvider('HMS_CARD');
       case PaymentProfileTypeDto.BNPL:
         return this.providerFactory.getProvider('HMS_BNPL');
-      case PaymentProfileTypeDto.BANK_ACCOUNT:
-        return this.providerFactory.getProvider('HMS_CMS');
+
       default:
         throw new Error(`지원하지 않는 프로필 타입입니다: ${profileType}`);
     }
@@ -450,7 +454,6 @@ export class PaymentProfileService {
           paymentProfileId: profile.id,
           creditLimit: dto.creditLimit!,
           availableCredit: dto.creditLimit!,
-          billingCycleDay: dto.billingCycleDay!,
           status: 'ACTIVE', // HMS 등록 성공 시 바로 ACTIVE
         });
         break;
@@ -468,7 +471,6 @@ export class PaymentProfileService {
           hmsMemberId: registrationResult.hmsMemberId || generateUUIDv7(),
           creditLimit: dto.creditLimit || 0,
           approvedLimit: dto.creditLimit || 0,
-          billingCycleDay: dto.billingCycleDay || 28,
           hmsMetadata: JSON.stringify({
             accountNumber: dto.accountNumber,
             payerName: dto.payerName,

@@ -20,8 +20,8 @@ export class PaymentProfileCreateV2RequestDto {
   userId!: string;
 
   @IsString()
-  @IsIn(['CARD', 'BATCH'])
-  kind!: 'CARD' | 'BATCH';
+  @IsIn(['CARD', 'BANK_ACCOUNT', 'WALLET'])
+  kind!: 'CARD' | 'BANK_ACCOUNT' | 'WALLET';
 
   @IsString()
   @IsOptional()
@@ -70,12 +70,6 @@ export class PaymentProfileCreateV2RequestDto {
   @IsOptional()
   @Length(3, 3)
   paymentCompany?: string; // 카드사/은행 코드
-
-  @IsInt()
-  @IsOptional()
-  @Min(1)
-  @Max(31)
-  billingDay?: number; // 결제일
 }
 
 /**
@@ -109,8 +103,8 @@ export class PaymentProfileV2ResponseDto {
  */
 export class PaymentProfileStatusUpdateDto {
   @IsString()
-  @IsIn(['PENDING', 'ACTIVE', 'INACTIVE'])
-  status!: 'PENDING' | 'ACTIVE' | 'INACTIVE';
+  @IsIn(['PENDING', 'ACTIVE'])
+  status!: 'PENDING' | 'ACTIVE';
 
   @IsString()
   @IsOptional()

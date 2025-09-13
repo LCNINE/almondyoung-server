@@ -20,7 +20,6 @@ export interface PaymentProvider {
   /**
    * 지원하는 결제 타입들
    */
-  readonly supportedTypes: PaymentType[];
 
   /**
    * 결제 처리
@@ -54,12 +53,10 @@ export interface PaymentRequest {
   type: PaymentType;
   userId: string;
 
-  // Profile 기반 결제
-  profileId?: string;
-
-  // Ephemeral 결제 (일회성)
-  instrumentRef?: string;
-  instrumentKind?: 'STORED' | 'EPHEMERAL';
+  // 결제 수단 종류 명시
+  instrumentType: 'PROFILE' | 'ONE_TIME';
+  profileId?: string; // PROFILE일 때 사용
+  instrumentRef?: string; // ONE_TIME일 때 승인키/토큰
 
   // 메타데이터
   metadata?: Record<string, any>;
@@ -89,41 +86,34 @@ export interface CaptureRequest {
 
 export interface ProfileRegistrationRequest {
   userId: string;
-  profileType: 'CARD' | 'BANK_ACCOUNT' | 'BNPL';
+  profileType: 'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'WALLET';
   profileName: string;
+  paymentPurpose: 'SUBSCRIPTION' | 'PURCHASE' | 'BOTH';
+  isDefault: boolean;
+  phone: string;
 
-  // HMS 신용카드 API 필드 (callableSchema.ts 기준)
-  paymentNumber?: string; // 카드번호 - 16자 이내 숫자만
-  payerName?: string; // 카드 소유자명 - 10자 이내
-  payerNumber?: string; // 생년월일 - 6-10자리 숫자만
-  validUntil?: string; // 카드 유효기간 MMYY - 4자리 숫자
-  password?: string; // 비밀번호 앞 2자리 - 2자리 숫자
+  // HMS 카드 회원등록 API 필수값
+  paymentNumber?: string; // 카드번호
+  payerName?: string; // 카드 소유자명
+  payerNumber?: string; // 생년월일
+  validUntil?: string; // 카드 유효기간 MMYY
+  password?: string; // 비밀번호 앞 2자리
+  paymentCompany?: string; // 카드사 코드
 
-  // HMS API 내부 변환용 (validUntil → validYear/validMonth)
-  validYear?: string; // 유효기간 년도 YY (내부 변환)
-  validMonth?: string; // 유효기간 월 MM (내부 변환)
-
-  // HMS 배치 CMS API 필드
-  paymentCompany?: string; // 은행 코드
+  // HMS 배치 CMS 등록 API 필수값
   accountNumber?: string; // 계좌번호
+  billingDay?: number; // 결제일
+  consentId?: string; // 동의서 ID
+  agreementKey?: string; // 동의서 키
+  agreementKind?: string; // 동의서 종류
+  consentStatus?: string; // 동의 상태
+  consentSubmittedAt?: string; // 동의서 제출 시간
+  consentReviewedAt?: string; // 동의서 검토 시간
 
   // BNPL 필드
   creditLimit?: number;
-  billingCycleDay?: number;
 
-  // 공통 연락처 정보 (HMS API 필수/선택 필드)
-  phone?: string;
-  email?: string;
-  zipcode?: string;
-  address1?: string;
-  address2?: string;
-
-  // 레거시 필드 (호환성 유지)
-  cardToken?: string;
-  billingKey?: string;
-  bankCode?: string;
-  accountHolder?: string;
-
+  // 부가 정보
   metadata?: Record<string, any>;
 }
 
@@ -140,8 +130,7 @@ export interface ProfileRegistrationResult {
 export type PaymentType =
   | 'ORDER' // 일반 주문 결제
   | 'MEMBERSHIP_FEE' // 정기 결제
-  | 'BNPL_CAPTURE' // BNPL 확정
-  | 'REFUND'; // 환불
+  | 'BNPL_CAPTURE'; // BNPL 확정
 
 export type PaymentProvider_ID =
   | 'HMS_CARD' // 효성 카드

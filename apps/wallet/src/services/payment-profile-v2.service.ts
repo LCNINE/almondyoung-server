@@ -2,24 +2,24 @@
 import { Injectable, Inject } from '@nestjs/common';
 
 import { eq, and } from 'drizzle-orm';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { getTsid } from 'tsid-ts';
 
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
+import * as schema from '../shared/database/schema';
 import {
   PaymentProfileCreateV2RequestDto,
   PaymentProfileV2ResponseDto,
   PaymentProfileStatusUpdateDto,
   CmsStatusUpdateDto,
-} from '../../shared/dtos/payment-profile-v2.dto';
+} from '../shared/dtos/payment-profile-v2.dto';
 import {
   maskPhone,
   extractCardLast4,
   maskPayerName,
   getCardBrand,
   generateProfileName,
-} from '../../shared/utils/masking.util';
+} from '../shared/utils/masking.util';
 
 @Injectable()
 export class PaymentProfileV2Service {
@@ -44,7 +44,6 @@ export class PaymentProfileV2Service {
         .values({
           id: profileId,
           userId: dto.userId,
-          provider: 'CMS',
           kind: dto.kind,
           status: initialStatus,
           name:
@@ -100,7 +99,6 @@ export class PaymentProfileV2Service {
         : undefined,
       payerName: dto.payerName ? maskPayerName(dto.payerName) : undefined,
       phoneMask: dto.phone ? maskPhone(dto.phone) : undefined,
-      billingDay: dto.billingDay,
     });
 
     if (!hmsResult.success) {
@@ -134,7 +132,6 @@ export class PaymentProfileV2Service {
       paymentCompany: dto.paymentCompany,
       payerName: dto.payerName ? maskPayerName(dto.payerName) : undefined,
       phoneMask: dto.phone ? maskPhone(dto.phone) : undefined,
-      billingDay: dto.billingDay,
     });
 
     if (!hmsResult.success) {

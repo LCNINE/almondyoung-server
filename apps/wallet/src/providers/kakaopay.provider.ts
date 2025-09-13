@@ -25,7 +25,7 @@ export class KakaopayProvider implements PaymentProvider {
   private readonly logger = new Logger(KakaopayProvider.name);
 
   readonly providerId: PaymentProvider_ID = 'KAKAOPAY';
-  readonly supportedTypes: PaymentType[] = ['ORDER'];
+  // supportedTypes 제거 - 정책 기반으로 결정
 
   async processPayment(request: PaymentRequest): Promise<PaymentResult> {
     this.logger.log(
@@ -33,17 +33,17 @@ export class KakaopayProvider implements PaymentProvider {
     );
 
     // Ephemeral 지원: instrumentRef는 KakaoPay tid
-    if (request.instrumentKind === 'EPHEMERAL' && request.instrumentRef) {
+    if (request.instrumentType === 'ONE_TIME' && request.instrumentRef) {
       return this.processEphemeralPayment(request);
     }
 
     // Stored Profile 지원 (향후 구현)
-    if (request.instrumentKind === 'STORED' && request.profileId) {
+    if (request.instrumentType === 'PROFILE' && request.profileId) {
       throw new Error('카카오페이 Stored Profile은 아직 구현되지 않았습니다');
     }
 
     throw new Error(
-      '카카오페이 Provider: instrumentKind 또는 instrumentRef가 필요합니다',
+      '카카오페이 Provider: instrumentType 또는 instrumentRef가 필요합니다',
     );
   }
 

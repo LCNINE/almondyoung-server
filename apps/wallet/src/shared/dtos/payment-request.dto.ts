@@ -10,8 +10,10 @@ import {
   Max,
   IsPositive,
   ValidateNested,
+  IsInt,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { maskAccountNumber } from '../utils/masking.util';
 
 /**
  * 가격 스냅샷 DTO (문서 가이드라인 준수)
@@ -156,4 +158,53 @@ export class PaymentRequestDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+}
+
+export class CreatePaymentIntentDto {
+  @ApiProperty({
+    description: '사용자 ID',
+    example: 'user_01HQZX8QJKMNPQRST9VWXY012',
+  })
+  @IsString()
+  userId!: string;
+
+  @ApiProperty({
+    description: '결제 금액(원)',
+    example: 50_000,
+    minimum: 100,
+    maximum: 10_000_000,
+  })
+  @IsInt()
+  @IsPositive()
+  @Min(100)
+  @Max(10_000_000)
+  amount!: number;
+
+  @ApiProperty({
+    description: '결제 의도 타입',
+    enum: maskAccountNumber(paymentIntentTypeEnum.enumValues),
+    example: 'ORDER',
+  })
+  @IsEnum(maskAccountNumber(paymentIntentTypeEnum.enumValues))
+  type!: PaymentIntentType;
+
+  @ApiProperty({
+    description: '세션 만료까지(분) - 미지정 시 기본 30분',
+    example: 30,
+    required: false,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24 * 60)
+  sessionExpiryMinutes?: number;
+
+  @ApiProperty({
+    description: '외부 도메인 맥락(주문번호 등) - JSON 문자열',
+    required: false,
+    example: '{"orderId":"ord_123"}',
+  })
+  @IsOptional()
+  @IsString()
+  metadata?: string;
 }

@@ -17,11 +17,11 @@ import { IdempotencyService } from './services/idempotency.service';
 import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 
 // === v2 아키텍처 서비스들 ===
-import { PaymentIntentService } from './services/v2/payment-intent.service';
-import { RefundService as V2RefundService } from './services/v2/refund.service';
-import { CheckoutSessionService } from './services/v2/checkout-session.service';
-import { PaymentProfileService } from './services/v2/payment-profile.service';
-import { PaymentProfileV2Service } from './services/v2/payment-profile-v2.service';
+import { PaymentIntentService } from './services/payment-intent.service';
+import { RefundService as V2RefundService } from './services/refund.service';
+import { CheckoutSessionService } from './services/checkout-session.service';
+import { PaymentProfileService } from './services/payment-profile.service';
+import { PaymentProfileV2Service } from './services/payment-profile-v2.service';
 import {
   PaymentPolicyValidator,
   loadPaymentPolicy,

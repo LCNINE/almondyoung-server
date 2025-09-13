@@ -11,10 +11,11 @@ import {
 
 /**
  * 결제프로필 타입 enum
+ * kind 필드로 CARD/BATCH 구분 유지
  */
 export enum PaymentProfileTypeDto {
   CARD = 'CARD', // HMS 카드 연동
-  BANK_ACCOUNT = 'BANK_ACCOUNT', // HMS CMS 연동
+  BANK_ACCOUNT = 'BANK_ACCOUNT', // HMS 배치 CMS 연동 (BATCH로 매핑)
   BNPL = 'BNPL', // HMS BNPL 연동
 }
 
@@ -42,18 +43,20 @@ export enum PaymentProfilePurposeDto {
 }
 
 /**
- * 결제프로필 등록 요청 DTO (공통 필드)
+ * 결제프로필 등록 요청 DTO
+ * HMS/CMS API별 필수 필드 명시적 분리
  */
 export class PaymentProfileCreateRequestDto {
+  // === 공통 CMS 프로필 필수값 ===
   @ApiProperty({
-    description: '사용자 ID',
+    description: '사용자 ID (공통 필수)',
     example: 'user_123456789',
   })
   @IsString()
   userId!: string;
 
   @ApiProperty({
-    description: '결제프로필 타입',
+    description: '결제수단 종류 (CARD: HMS 카드, BANK_ACCOUNT: HMS 배치 CMS)',
     enum: PaymentProfileTypeDto,
     example: PaymentProfileTypeDto.CARD,
   })
@@ -61,14 +64,14 @@ export class PaymentProfileCreateRequestDto {
   profileType!: PaymentProfileTypeDto;
 
   @ApiProperty({
-    description: '결제프로필 이름 (사용자 지정)',
+    description: '결제수단 별칭 (사용자 지정, 공통 필수)',
     example: '내 신용카드',
   })
   @IsString()
   profileName!: string;
 
   @ApiProperty({
-    description: '결제프로필 용도',
+    description: '결제프로필 용도 (공통 필수)',
     enum: PaymentProfilePurposeDto,
     example: PaymentProfilePurposeDto.BOTH,
   })
@@ -76,48 +79,47 @@ export class PaymentProfileCreateRequestDto {
   paymentPurpose!: PaymentProfilePurposeDto;
 
   @ApiProperty({
-    description: '기본 결제수단 여부',
+    description: '기본 결제수단 여부 (공통 필수)',
     example: false,
   })
   @IsBoolean()
   isDefault!: boolean;
 
   @ApiProperty({
-    description: '전화번호 (필수)',
-    example: '01012345678', // 전화번호 형식 맞추기
+    description: '전화번호 (공통 필수)',
+    example: '01012345678',
   })
   @IsString()
   phone!: string;
 
-  // === 신용카드 전용 필드 (callableSchema.ts 기준) ===
+  // === HMS 카드 회원등록 API 필수값 ===
   @ApiPropertyOptional({
-    description: '카드번호 (신용카드 프로필 등록 시 필수) - 16자 이내 숫자만',
-    example: '1111222233334444', // 카드번호 형식 맞추기
+    description: '카드번호 (HMS 카드 회원등록 API 필수) - 16자 이내 숫자만',
+    example: '1111222233334444',
   })
   @IsOptional()
   @IsString()
   paymentNumber?: string;
 
   @ApiPropertyOptional({
-    description: '카드 소유자명 (신용카드 프로필 등록 시 필수) - 10자 이내',
-    example: '홍길동', // 카드 소유자명 형식 맞추기
+    description: '카드 소유자명 (HMS 카드 회원등록 API 필수) - 10자 이내',
+    example: '홍길동',
   })
   @IsOptional()
   @IsString()
   payerName?: string;
 
   @ApiPropertyOptional({
-    description: '생년월일 6-10자리 (신용카드 프로필 등록 시 필수) - 숫자만',
-    example: '900101', // 생년월일 형식 맞추기
+    description: '생년월일 (HMS 카드 회원등록 API 필수) - 6-10자리 숫자만',
+    example: '900101',
   })
   @IsOptional()
   @IsString()
   payerNumber?: string;
 
   @ApiPropertyOptional({
-    description:
-      '카드 유효기간 MMYY (신용카드 프로필 등록 시 필수) - 4자리 숫자',
-    example: '1225', // 카드 유효기간 형식 맞추기
+    description: '카드 유효기간 MMYY (HMS 카드 회원등록 API 필수) - 4자리 숫자',
+    example: '1225',
   })
   @IsOptional()
   @IsString()
@@ -125,29 +127,85 @@ export class PaymentProfileCreateRequestDto {
 
   @ApiPropertyOptional({
     description:
-      '카드 비밀번호 앞 2자리 (신용카드 프로필 등록 시 필수) - 2자리 숫자',
-    example: '11', // 카드 비밀번호 형식 맞추기
+      '카드 비밀번호 앞 2자리 (HMS 카드 회원등록 API 필수) - 2자리 숫자',
+    example: '11',
   })
   @IsOptional()
   @IsString()
   password?: string;
 
-  // === 배치 CMS 전용 필드 ===
   @ApiPropertyOptional({
-    description: '은행 코드 (배치 CMS 프로필 등록 시 필수)',
+    description: '카드사 코드 (HMS 카드 회원등록 API 필수)',
     example: '088',
   })
   @IsOptional()
   @IsString()
   paymentCompany?: string;
 
+  // === HMS 배치(CMS 계좌) 등록 API 필수값 ===
   @ApiPropertyOptional({
-    description: '계좌번호 (배치 CMS 프로필 등록 시 필수)',
+    description: '계좌번호 (HMS 배치 CMS 등록 API 필수)',
     example: '1234567890123456',
   })
   @IsOptional()
   @IsString()
   accountNumber?: string;
+
+  @ApiPropertyOptional({
+    description: '결제일 (HMS 배치 CMS 등록 API 필수) - 1-31',
+    example: 1,
+  })
+  @IsOptional()
+  @IsNumber()
+  billingDay?: number;
+
+  @ApiPropertyOptional({
+    description: '동의서 ID (HMS 배치 CMS 등록 API 필수)',
+    example: 'consent_123456789',
+  })
+  @IsOptional()
+  @IsString()
+  consentId?: string;
+
+  @ApiPropertyOptional({
+    description: '동의서 키 (HMS 배치 CMS 등록 API 필수)',
+    example: 'agreement_key_xyz',
+  })
+  @IsOptional()
+  @IsString()
+  agreementKey?: string;
+
+  @ApiPropertyOptional({
+    description: '동의서 종류 (HMS 배치 CMS 등록 API 필수)',
+    example: 'CMS_AGREEMENT',
+  })
+  @IsOptional()
+  @IsString()
+  agreementKind?: string;
+
+  @ApiPropertyOptional({
+    description: '동의 상태 (HMS 배치 CMS 등록 API 필수)',
+    example: 'APPROVED',
+  })
+  @IsOptional()
+  @IsString()
+  consentStatus?: string;
+
+  @ApiPropertyOptional({
+    description: '동의서 제출 시간 (HMS 배치 CMS 등록 API 필수)',
+    example: '2024-01-01T10:00:00Z',
+  })
+  @IsOptional()
+  @IsString()
+  consentSubmittedAt?: string;
+
+  @ApiPropertyOptional({
+    description: '동의서 검토 시간 (HMS 배치 CMS 등록 API 필수)',
+    example: '2024-01-01T10:05:00Z',
+  })
+  @IsOptional()
+  @IsString()
+  consentReviewedAt?: string;
 
   // === BNPL 전용 필드 ===
   @ApiPropertyOptional({
@@ -158,15 +216,17 @@ export class PaymentProfileCreateRequestDto {
   @IsNumber()
   creditLimit?: number;
 
+  // === UI나 운영자 메모 등 부가 정보용(metadata 전용) ===
   @ApiPropertyOptional({
-    description: 'BNPL 청구주기 일자 (BNPL 프로필 등록 시 필수)',
-    example: 25,
+    description: '부가 정보 (UI 컨텍스트, 운영자 메모 등)',
+    example: {
+      source: 'mobile_app',
+      userAgent: 'Mozilla/5.0...',
+      adminNote: '테스트 계정',
+    },
   })
   @IsOptional()
-  @IsNumber()
-  billingCycleDay?: number;
-
-  // === 공통 선택 필드 (효성 API에서 요구하지 않으므로 제거) ===
+  metadata?: Record<string, any>;
 }
 
 /**

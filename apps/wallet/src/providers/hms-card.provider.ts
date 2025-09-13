@@ -38,7 +38,6 @@ export class HmsCardProvider implements PaymentProvider {
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   readonly providerId: PaymentProvider_ID = 'HMS_CARD';
-  readonly supportedTypes: PaymentType[] = ['ORDER', 'MEMBERSHIP_FEE'];
 
   constructor() {
     // HMS API 초기화 (Adapter 제거하고 Provider에서 직접 관리)
@@ -260,6 +259,7 @@ export class HmsCardProvider implements PaymentProvider {
       throw new Error('HMS 카드 Provider는 CARD 타입만 지원합니다');
     }
 
+    // HMS 카드 회원등록 API 필수 필드 검증
     if (!request.paymentNumber || !request.payerName || !request.payerNumber) {
       throw new Error(
         '카드 등록에는 카드번호, 카드소유자명, 생년월일이 필요합니다',
@@ -309,8 +309,7 @@ export class HmsCardProvider implements PaymentProvider {
       const hmsMemberId = getTsid().toString().substring(0, 21); // 21자 이하 TSID
 
       // validUntil(MMYY)을 validMonth(MM), validYear(YY)로 분리
-      const validUntil =
-        request.validUntil || request.metadata?.validUntil || '1225';
+      const validUntil = request.validUntil || '1225';
       const validMonth = validUntil.substring(0, 2); // MM
       const validYear = validUntil.substring(2, 4); // YY
 

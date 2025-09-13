@@ -69,10 +69,11 @@ export class PaymentProviderFactory {
 
   /**
    * 특정 결제 타입을 지원하는 Provider들 반환
+   * 정책 기반으로 결정되므로 삭제됨
    */
-  getProvidersForType(paymentType: string): PaymentProvider[] {
-    return Array.from(this.providers.values()).filter((provider) =>
-      provider.supportedTypes.includes(paymentType as any),
-    );
-  }
+  // getProvidersForType(paymentType: string): PaymentProvider[] {
+  //   return Array.from(this.providers.values()).filter((provider) =>
+  //     provider.supportedTypes.includes(paymentType as any),
+  //   );
+  // }
 }

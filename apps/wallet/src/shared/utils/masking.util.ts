@@ -104,7 +104,7 @@ export function maskAccountNumber(accountNumber: string): string {
  * @returns UI 표시용 이름 (예: "신한 **3456", "KB 계좌")
  */
 export function generateProfileName(
-  kind: 'CARD' | 'BATCH',
+  kind: 'CARD' | 'BANK_ACCOUNT' | 'WALLET',
   cardBrand?: string,
   cardLast4?: string,
   paymentCompany?: string,

@@ -95,7 +95,7 @@ export class IdempotencyService {
           'Idempotency-Key reused with different payload',
         );
       }
-      if (hit[0].status === 'COMPLETED' && hit[0].responseBody) {
+      if (hit[0].status === 'SUCCESS' && hit[0].responseBody) {
         return { hit: true, response: JSON.parse(hit[0].responseBody) as T };
       }
       // PROCESSING 상태이면 대기 중으로 간주
@@ -106,7 +106,7 @@ export class IdempotencyService {
         userId: 'unknown',
         requestPath: route,
         requestHash,
-        status: 'PROCESSING',
+        status: 'PENDING',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
     }
@@ -132,7 +132,7 @@ export class IdempotencyService {
     await tx
       .update(schema.idempotencyKeys)
       .set({
-        status: 'COMPLETED',
+        status: 'SUCCESS',
         responseCode: statusCode || 200,
         responseBody: JSON.stringify(response),
       })

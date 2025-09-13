@@ -10,7 +10,7 @@
  */
 export type PaymentProfileType =
   | 'CARD' // 저장카드 (빌링키) - HMS 연동
-  | 'BANK_ACCOUNT' // CMS 계좌 - HMS 연동
+  | 'BANK_ACCOUNT' // HMS 계좌 - HMS 연동
   | 'BNPL'; // BNPL 계정 - HMS 연동
 
 // ❌ REWARD_POINT는 결제프로필이 아님!
@@ -50,7 +50,6 @@ export interface PaymentProfileCreateRequest {
 
   // BNPL 프로필 등록 시
   creditLimit?: number;
-  billingCycleDay?: number;
 }
 
 /**

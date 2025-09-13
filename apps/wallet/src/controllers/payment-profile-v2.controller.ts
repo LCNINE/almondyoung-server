@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
-import { PaymentProfileV2Service } from '../services/v2/payment-profile-v2.service';
+import { PaymentProfileV2Service } from '../services/payment-profile-v2.service';
 import {
   PaymentProfileCreateV2RequestDto,
   PaymentProfileV2ResponseDto,

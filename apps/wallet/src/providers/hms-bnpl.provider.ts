@@ -54,7 +54,7 @@ export class HmsBnplProvider
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   readonly providerId: PaymentProvider_ID = 'HMS_BNPL';
-  readonly supportedTypes: PaymentType[] = ['ORDER', 'BNPL_CAPTURE'];
+  // supportedTypes 제거 - 정책 기반으로 결정
 
   constructor(private readonly dbService: DbService) {
     // HMS API 초기화 (Adapter 제거하고 Provider에서 직접 관리)

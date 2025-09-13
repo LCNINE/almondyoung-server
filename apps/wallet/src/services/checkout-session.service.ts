@@ -2,20 +2,20 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
+import * as schema from '../shared/database/schema';
 import {
   CheckoutSessionCreateDto,
   CheckoutSessionResponseDto,
   CheckoutSessionCallbackDto,
-} from '../../shared/dtos/checkout-session.dto';
+} from '../shared/dtos/checkout-session.dto';
 import {
   UniversalCheckoutSessionCreateDto,
   UniversalCheckoutSessionResponseDto,
-} from '../../shared/dtos/universal-checkout.dto';
+} from '../shared/dtos/universal-checkout.dto';
 import { PaymentIntentService } from './payment-intent.service';
-import { PaymentPolicyValidator } from '../../shared/policies/payment-policy';
+import { PaymentPolicyValidator } from '../shared/policies/payment-policy';
 
 /**
  * CheckoutSession v2 Service

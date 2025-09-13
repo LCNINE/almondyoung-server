@@ -9,7 +9,6 @@ import {
   IsObject,
   IsEnum,
 } from 'class-validator';
-import { PAYMENT_PROVIDER } from '../database/schema';
 
 /**
  * CheckoutSession 생성 요청 DTO

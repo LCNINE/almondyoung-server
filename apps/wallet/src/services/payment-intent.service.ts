@@ -1,24 +1,24 @@
 // services/v2/payment-intent.service.ts - v4 아키텍처 Intent 서비스
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 
-import * as schema from '../../shared/database/schema';
-import { PaymentPolicyValidator } from '../../shared/policies/payment-policy';
+import * as schema from '../shared/database/schema';
+import { PaymentPolicyValidator } from '../shared/policies/payment-policy';
 import {
   IntentCreateDto,
   IntentResponseDto,
   AttemptCreateDto,
   AttemptResponseDto,
   AttemptFinalizeDto,
-} from '../../shared/dtos/v2-payment.dto';
+} from '../shared/dtos/v2-payment.dto';
 import {
   UniversalFinalizeDto,
   UniversalFinalizeResponseDto,
-} from '../../shared/dtos/universal-checkout.dto';
+} from '../shared/dtos/universal-checkout.dto';
 import { DbService } from '@app/db';
-import { PaymentProviderFactory } from '../../providers/payment-provider.factory';
-import { WalletTx } from '../../shared/database';
+import { PaymentProviderFactory } from '../providers/payment-provider.factory';
+import { WalletTx } from '../shared/database';
 
 /**
  * v4 아키텍처 Payment Intent 서비스
@@ -60,7 +60,7 @@ export class PaymentIntentService {
           .limit(1);
 
         if (existing.length > 0) {
-          if (existing[0].status === 'COMPLETED' && existing[0].responseBody) {
+          if (existing[0].status === 'SUCCESS' && existing[0].responseBody) {
             this.logger.log(`멱등성 키 적중: ${idempotencyKey}`);
             return JSON.parse(existing[0].responseBody);
           }
@@ -73,14 +73,14 @@ export class PaymentIntentService {
           userId: dto.userId,
           requestPath: '/v2/payments/intents',
           requestHash: this.generateRequestHash(dto),
-          status: 'PROCESSING',
+          status: 'PENDING',
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24시간
         });
       }
 
       // 2. 정책 기반 Provider 결정 (보안 강화)
       // ✅ 서버 정책에서만 결정, 클라이언트 요청 무시
-      const allowedProviders = this.policyValidator.getAvailableProviders(
+      const allowedProviders = this.policyValidator.getAllowedProviders(
         dto.type,
       );
 
@@ -120,7 +120,7 @@ export class PaymentIntentService {
         await tx
           .update(schema.idempotencyKeys)
           .set({
-            status: 'COMPLETED',
+            status: 'SUCCESS',
             responseBody: JSON.stringify(response),
           })
           .where(eq(schema.idempotencyKeys.id, idempotencyKey));
@@ -277,7 +277,7 @@ export class PaymentIntentService {
       }
 
       // 2. 정책 기반 Provider 허용 여부 확인
-      const allowedProviders = this.policyValidator.getAvailableProviders(
+      const allowedProviders = this.policyValidator.getAllowedProviders(
         session.type,
       );
 
@@ -337,7 +337,7 @@ export class PaymentIntentService {
    */
   private resolveAllowedProviders(intentType: any, customerId: string): any[] {
     // 1. 정책에서 기본 허용 프로바이더 가져오기
-    const fromPolicy = this.policyValidator.getAvailableProviders(intentType);
+    const fromPolicy = this.policyValidator.getAllowedProviders(intentType);
 
     // 2. (선택) 사용자별 제한 사항 적용 (예: 심사 미완료, 연체 등)
     // const userEligible = this.checkUserEligibility(fromPolicy, customerId);
@@ -423,9 +423,9 @@ export class PaymentIntentService {
             amount: session.amount,
             type: session.type,
             userId: session.customerId,
+            instrumentType: dto.profileId ? 'PROFILE' : 'ONE_TIME',
             profileId: dto.profileId,
             instrumentRef: dto.instrumentRef,
-            instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
             metadata: {
               type: session.type,
               customerId: session.customerId,
@@ -453,7 +453,7 @@ export class PaymentIntentService {
       id: attemptId,
       intentId,
       provider: dto.provider,
-      instrumentKind: dto.profileId ? 'STORED' : 'EPHEMERAL',
+      instrumentType: dto.profileId ? 'PROFILE' : 'ONE_TIME',
       instrumentRef: dto.instrumentRef || null,
       profileId: dto.profileId || null,
       amount: session.amount,
@@ -502,7 +502,7 @@ export class PaymentIntentService {
       createdAt: new Date().toISOString(),
       actor: dto.actor || 'USER',
       errorMessage: errorMessage || undefined,
-      instrumentRef: dto.profileId ? 'STORED' : 'EPHEMERAL',
+      instrumentType: dto.profileId ? 'PROFILE' : 'ONE_TIME',
       transactionId: transactionId || undefined,
       approvalNumber: approvalNumber || undefined,
     };
@@ -565,9 +565,9 @@ export class PaymentIntentService {
         amount,
         type: metadata.type || 'ORDER',
         userId: metadata.userId,
+        instrumentType: metadata.paymentMethodId ? 'PROFILE' : 'ONE_TIME',
         profileId: metadata.paymentMethodId,
         instrumentRef: metadata.instrumentRef,
-        instrumentKind: metadata.instrumentKind || 'STORED',
         metadata,
       });
 
@@ -678,7 +678,7 @@ export class PaymentIntentService {
       actor: 'USER', // 기본값으로 USER 설정
       createdAt: attemptData.createdAt.toISOString(),
       errorMessage: undefined, // failureReason은 별도 필드가 없으므로 undefined
-      instrumentRef: attemptData.instrumentRef || undefined,
+      instrumentType: attemptData.instrumentType || undefined,
       transactionId: attemptData.transactionId || undefined,
       approvalNumber: attemptData.approvalNumber || undefined,
     };
@@ -717,7 +717,7 @@ export class PaymentIntentService {
       actor: 'USER', // 기본값으로 USER 설정
       createdAt: attemptData.createdAt.toISOString(),
       errorMessage: undefined, // failureReason은 별도 필드가 없으므로 undefined
-      instrumentRef: attemptData.instrumentRef || undefined,
+      instrumentType: attemptData.instrumentType || undefined,
       transactionId: attemptData.transactionId || undefined,
       approvalNumber: attemptData.approvalNumber || undefined,
     }));

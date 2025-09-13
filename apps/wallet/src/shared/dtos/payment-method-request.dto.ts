@@ -76,15 +76,6 @@ export class BnplInfoDto {
   @Max(5000000)
   approvedLimit!: number;
 
-  @ApiProperty({
-    description: '청구 주기 (일)',
-    example: 30,
-  })
-  @IsNumber()
-  @Min(1)
-  @Max(31)
-  billingCycleDay!: number;
-
   @ApiPropertyOptional({
     description: '약관 URL',
     example: 'https://example.com/terms',

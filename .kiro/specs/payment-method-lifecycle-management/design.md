@@ -85,7 +85,7 @@ interface RegisterMemberRequest {
   
   // BNPL/CMS 전용 필드
   creditLimit?: number
-  billingCycleDay?: number
+
   consentFile?: Buffer
   consentFileName?: string
 }
