@@ -8,6 +8,7 @@ import {
     integer,
     timestamp,
     json,
+    jsonb,
     text,
     pgEnum,
     primaryKey,
@@ -176,6 +177,44 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'express']);
+export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
+    'created',
+    'reserving',
+    'ready',
+    'labeled',
+    'shipped',
+    'canceled',
+]);
+export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', 'third_party_3pl', 'drop_ship']);
+export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
+
+// Audit system enums
+export const auditEventTypeEnum = pgEnum('audit_event_type', [
+    // 사용자 액션
+    'USER_LOGIN', 'USER_LOGOUT', 'USER_ACTION',
+
+    // 재고 관련
+    'STOCK_CREATED', 'STOCK_UPDATED', 'STOCK_DELETED',
+    'STOCK_RESERVED', 'STOCK_UNRESERVED', 'STOCK_MOVED',
+
+    // 주문 관련
+    'ORDER_CREATED', 'ORDER_CONFIRMED', 'ORDER_CANCELLED', 'ORDER_MERGED',
+    'FULFILLMENT_CREATED', 'FULFILLMENT_READY', 'FULFILLMENT_SHIPPED',
+
+    // SKU/상품 관련
+    'SKU_CREATED', 'SKU_UPDATED', 'SKU_DELETED',
+    'PRODUCT_MATCHED', 'PRODUCT_MATCHING_RESOLVED',
+
+    // 시스템 이벤트
+    'SYSTEM_STARTUP', 'SYSTEM_ERROR', 'SYSTEM_WARNING',
+
+    // 설정 변경
+    'CONFIG_CHANGED', 'POLICY_CHANGED'
+]);
+
+export const auditSeverityEnum = pgEnum('audit_severity', [
+    'INFO', 'WARN', 'ERROR', 'CRITICAL'
+]);
 
 // Inventory master enums
 export const inventoryMasterPurposeEnum = pgEnum('inventory_master_purpose', ['standard', 'set', 'material']);
@@ -319,7 +358,7 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
 export const inventoryMasterSkuLinks = pgTable('inventory_master_sku_links', {
     masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'cascade' }).notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    optionKey: json('option_key'),
+    optionKey: jsonb('option_key'),
     isPrimary: boolean('is_primary').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, t => ({
@@ -543,8 +582,7 @@ export const productMatchings = pgTable('product_matchings', {
     preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
     alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
 
-    // 사은품 플래그 추가
-    isGift: boolean('is_gift').notNull().default(false), //사은품 여부
+    // isGift 제거 (사은품 속성은 판매주문 라인 등 상위로 이동)
 
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -587,7 +625,7 @@ export const productOptionMatchings = pgTable('product_option_matchings', {
  * ORDER MANAGEMENT
  *──────────────────────────*/
 // 주문 테이블 추가
-export const orders = pgTable('orders', {
+export const salesOrders = pgTable('sales_orders', {
     id: uuid('id').primaryKey().defaultRandom(),
     channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
     salesChannel: salesChannelEnum('sales_channel').notNull(),
@@ -622,10 +660,10 @@ export const orders = pgTable('orders', {
 }));
 
 // 주문 상품 테이블 추가
-export const orderItems = pgTable('order_items', {
+export const salesOrderLines = pgTable('sales_order_lines', {
     id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id')
-        .references(() => orders.id, { onDelete: 'cascade' })
+    salesOrderId: uuid('sales_order_id')
+        .references(() => salesOrders.id, { onDelete: 'cascade' })
         .notNull(),
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
     productMatchingId: uuid('product_matching_id')
@@ -651,7 +689,7 @@ export const orderEvents = pgTable('order_events', {
     id: uuid('id').primaryKey().defaultRandom(),
     eventId: varchar('event_id', { length: 255 }).notNull().unique(), // 멱등성 체크용
     orderId: uuid('order_id')
-        .references(() => orders.id, { onDelete: 'cascade' })
+        .references(() => salesOrders.id, { onDelete: 'cascade' })
         .notNull(),
     eventType: eventTypeOrderEnum('event_type').notNull(),
     payload: json('payload').notNull(), // 이벤트 데이터
@@ -678,13 +716,41 @@ export const mergeGroups = pgTable('merge_groups', {
  * stock_events.orderId: 주문 연결
  *──────────────────────────*/
 
+// Fulfillment Orders (FO)
+export const fulfillmentOrders = pgTable('fulfillment_orders', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'cascade' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+    ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
+    status: fulfillmentStatusEnum('status').notNull().default('created'),
+    shippingAddress: json('shipping_address'),
+    labelNo: varchar('label_no', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    quantity: integer('quantity').notNull(),
+    reservedQty: integer('reserved_qty').notNull().default(0),
+    pickedQty: integer('picked_qty').notNull().default(0),
+    shippedQty: integer('shipped_qty').notNull().default(0),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
     reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id')
-        .references(() => orders.id, { onDelete: 'cascade' })
+    fulfillmentOrderLineId: uuid('fulfillment_order_line_id')
+        .references(() => fulfillmentOrderLines.id, { onDelete: 'cascade' })
         .notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
@@ -723,7 +789,7 @@ export const outboundTaskOrders = pgTable('outbound_task_orders', {
         .references(() => outboundTasks.id, { onDelete: 'cascade' })
         .notNull(),
     orderId: uuid('order_id')
-        .references(() => orders.id, { onDelete: 'cascade' })
+        .references(() => salesOrders.id, { onDelete: 'cascade' })
         .notNull(),
 
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -766,6 +832,7 @@ export const shipments = pgTable('shipments', {
     status: shipmentStatusEnum('status').notNull().default('created'),
     eta: timestamp('eta', { withTimezone: true }),
     splitStatus: boolean('split_status').notNull().default(false),
+    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
@@ -779,11 +846,26 @@ export const shipmentTracking = pgTable('shipment_tracking', {
 });
 
 /*───────────────────────────
+ * SALES VARIANT POLICIES
+ *──────────────────────────*/
+export const salesVariantPolicies = pgTable('sales_variant_policies', {
+    variantId: uuid('variant_id').primaryKey(),
+    inventoryManagement: boolean('inventory_management').notNull().default(false),
+    preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
+    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
+    fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }),
+    effectiveTo: timestamp('effective_to', { withTimezone: true }),
+    updatedBy: uuid('updated_by'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+/*───────────────────────────
  * RETURNS
  *──────────────────────────*/
 export const returns = pgTable('returns', {
     id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     status: returnStatusEnum('status').notNull().default('requested'),
     qcReason: varchar('qc_reason', { length: 255 }),
@@ -814,6 +896,26 @@ export const holidays = pgTable('holidays', {
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+/*───────────────────────────
+ * OUTBOX (EVENT DISPATCH)
+ *──────────────────────────*/
+export const outboxEvents = pgTable('outbox_events', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventType: varchar('event_type', { length: 128 }).notNull(),
+    aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
+    aggregateId: uuid('aggregate_id').notNull(),
+    partitionKey: varchar('partition_key', { length: 128 }).notNull(),
+    payload: json('payload').notNull(),
+    status: outboxStatusEnum('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
+}));
 
 /*───────────────────────────
  * PURCHASE ORDERS
@@ -952,6 +1054,59 @@ export const inboundWorkLogs = pgTable('inbound_work_logs', {
 }));
 
 /*───────────────────────────
+ * AUDIT LOGS
+ *──────────────────────────*/
+export const auditLogs = pgTable('audit_logs', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventType: auditEventTypeEnum('event_type').notNull(),
+    severity: auditSeverityEnum('severity').notNull().default('INFO'),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+
+    // 사용자 정보
+    userId: varchar('user_id', { length: 255 }),
+    userAgent: text('user_agent'),
+    ipAddress: varchar('ip_address', { length: 45 }),
+
+    // 리소스 정보
+    resourceType: varchar('resource_type', { length: 100 }), // 'order', 'sku', 'stock' 등
+    resourceId: varchar('resource_id', { length: 255 }),
+    resourceName: text('resource_name'),
+
+    // 변경 정보 (before/after)
+    changesBefore: jsonb('changes_before'),
+    changesAfter: jsonb('changes_after'),
+
+    // 컨텍스트 정보
+    action: varchar('action', { length: 100 }).notNull(), // 'create', 'update', 'delete' 등
+    module: varchar('module', { length: 50 }).notNull(), // 'inventory', 'order', 'fulfillment' 등
+    description: text('description'), // 사람이 읽을 수 있는 설명
+
+    // 추가 메타데이터
+    metadata: jsonb('metadata'), // 추가적인 컨텍스트 정보
+    errorMessage: text('error_message'), // 에러 발생 시
+    stackTrace: text('stack_trace'), // 에러 스택 트레이스
+
+    // 상관관계 ID (같은 트랜잭션/요청의 로그들을 그룹화)
+    correlationId: varchar('correlation_id', { length: 255 }),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => ({
+    // 인덱스 생성
+    idxAuditTimestamp: index('idx_audit_timestamp').on(t.timestamp.desc()),
+    idxAuditEventType: index('idx_audit_event_type').on(t.eventType),
+    idxAuditResourceType: index('idx_audit_resource_type').on(t.resourceType),
+    idxAuditResourceId: index('idx_audit_resource_id').on(t.resourceId),
+    idxAuditModule: index('idx_audit_module').on(t.module),
+    idxAuditSeverity: index('idx_audit_severity').on(t.severity),
+    idxAuditUserId: index('idx_audit_user_id').on(t.userId),
+    idxAuditCorrelationId: index('idx_audit_correlation_id').on(t.correlationId),
+
+    // 복합 인덱스
+    idxAuditResourceSearch: index('idx_audit_resource_search').on(t.resourceType, t.resourceId),
+    idxAuditTimeModule: index('idx_audit_time_module').on(t.timestamp.desc(), t.module),
+}));
+
+/*───────────────────────────
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
@@ -976,11 +1131,13 @@ export const wmsTables = {
     productMatchings,
     productVariantSkuLinks,
     productOptionMatchings,
-    orders,
-    orderItems,
+    salesOrders,
+    salesOrderLines,
     orderEvents,
     mergeGroups,
     stockReservations,
+    fulfillmentOrders,
+    fulfillmentOrderLines,
     outboundTasks,
     outboundTaskOrders,
     outboundTaskItems,
@@ -988,6 +1145,7 @@ export const wmsTables = {
     shipments,
     shipmentTracking,
     returns,
+    salesVariantPolicies,
     settings,
     holidays,
     purchaseOrders,
@@ -1002,4 +1160,6 @@ export const wmsTables = {
     movementJobs,
     movementJobLines,
     movementWorkLogs,
+    auditLogs,
+    outboxEvents,
 } as const;

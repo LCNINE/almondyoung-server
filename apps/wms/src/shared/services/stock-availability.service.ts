@@ -213,13 +213,11 @@ export class StockAvailabilityService {
 
     /**
      * 사은품 가능 여부를 확인
+     * Note: isGift 속성이 상위 레벨로 이동됨. 현재는 일반 재고 확인만 수행
      */
     async isGiftAvailable(variantId: string): Promise<boolean> {
         const matching = await this.db.query.productMatchings.findFirst({
-            where: and(
-                eq(wmsTables.productMatchings.variantId, variantId),
-                eq(wmsTables.productMatchings.isGift, true)
-            )
+            where: eq(wmsTables.productMatchings.variantId, variantId)
         });
 
         if (!matching || matching.status !== 'matched') {

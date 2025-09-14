@@ -123,27 +123,77 @@ export class InventoryService implements OnModuleInit {
     }
 
     async deleteSku(skuId: string): Promise<void> {
-        const [agg] = await this.db
-            .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
-            .from(wmsTables.stockLedgers)
-            .where(eq(wmsTables.stockLedgers.skuId, skuId));
-
-        if ((agg?.qty ?? 0) > 0) {
-            throw new ConflictException(`Cannot delete SKU ${skuId}: Active stock exists`);
+        if (!skuId || typeof skuId !== 'string') {
+            throw new BadRequestException('Valid SKU ID is required');
         }
 
-        const matchings = await this.db.query.productVariantSkuLinks.findMany({
-            where: eq(wmsTables.productVariantSkuLinks.skuId, skuId),
-        });
+        try {
+            // 1. SKU 존재 확인
+            const sku = await this.db.query.skus.findFirst({
+                where: eq(wmsTables.skus.id, skuId)
+            });
 
-        if (matchings.length > 0) {
-            throw new ConflictException(`Cannot delete SKU ${skuId}: Used in product matchings`);
+            if (!sku) {
+                throw new NotFoundException(`SKU with ID ${skuId} not found`);
+            }
+
+            // 2. 활성 재고 확인
+            const [stockAgg] = await this.db
+                .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
+                .from(wmsTables.stockLedgers)
+                .where(eq(wmsTables.stockLedgers.skuId, skuId));
+
+            const totalStock = stockAgg?.qty ?? 0;
+            if (totalStock > 0) {
+                throw new ConflictException(
+                    `Cannot delete SKU ${skuId}: Has active stock of ${totalStock} units. ` +
+                    'Please adjust stock to zero before deletion.'
+                );
+            }
+
+            // 3. 상품 매칭 사용 확인
+            const matchings = await this.db.query.productVariantSkuLinks.findMany({
+                where: eq(wmsTables.productVariantSkuLinks.skuId, skuId),
+            });
+
+            if (matchings.length > 0) {
+                const matchingIds = matchings.map(m => m.productMatchingId).join(', ');
+                throw new ConflictException(
+                    `Cannot delete SKU ${skuId}: Used in ${matchings.length} product matching(s): ${matchingIds}. ` +
+                    'Please remove from product matchings first.'
+                );
+            }
+
+            // 4. 예약 확인
+            const reservations = await this.db.query.stockReservations.findMany({
+                where: and(
+                    eq(wmsTables.stockReservations.skuId, skuId),
+                    eq(wmsTables.stockReservations.status, 'confirmed')
+                )
+            });
+
+            if (reservations.length > 0) {
+                throw new ConflictException(
+                    `Cannot delete SKU ${skuId}: Has ${reservations.length} active reservation(s). ` +
+                    'Please release all reservations first.'
+                );
+            }
+
+            // 5. 삭제 실행
+            const deleteResult = await this.db.delete(wmsTables.skus)
+                .where(eq(wmsTables.skus.id, skuId))
+                .returning();
+
+            if (deleteResult.length === 0) {
+                throw new ConflictException(`Failed to delete SKU ${skuId}. It may have been deleted by another process.`);
+            }
+
+            this.logger.log(`SKU ${skuId} (${sku.name}) deleted successfully`);
+
+        } catch (error) {
+            this.logger.error(`Failed to delete SKU ${skuId}:`, error);
+            throw error;
         }
-
-        await this.db.delete(wmsTables.skus)
-            .where(eq(wmsTables.skus.id, skuId));
-
-        this.logger.log(`SKU ${skuId} deleted successfully`);
     }
 
     async getSkuById(skuId: string, tx?: DbOrTx): Promise<SkuResponseDto> {

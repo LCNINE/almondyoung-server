@@ -70,6 +70,42 @@ npm run db:migrate:pim
 npm run db:push:pim
 ```
 
+### Database (WMS Service)
+```bash
+# Generate database migrations
+npm run db:generate.wms
+
+# Push schema to database (dev)
+npm run db:push.wms
+
+# Push schema to database (test)
+npm run db:push.wms:test
+```
+
+### WMS Service Development
+```bash
+# Build WMS service
+npm run build:wms
+
+# Start WMS service
+npm run start:wms
+
+# Start WMS service in watch mode
+npm run start:wms:dev
+
+# Start WMS service in production
+npm run start:wms:prod
+
+# Run WMS unit tests
+npm run wms:test:unit
+
+# Run WMS e2e tests
+npm run wms:test:e2e
+
+# Run all WMS tests
+npm run wms:test
+```
+
 ## Architecture
 
 ### Monorepo Structure
@@ -158,3 +194,32 @@ Use NestJS CLI: `nest generate app [service-name]` or `nest generate library [li
 
 ### API Documentation
 Refer to `apps/pim/docs/pim-comprehensive-guide.md` for complete API endpoints and business logic understanding.
+
+## WMS Service Specifics
+The WMS (Warehouse Management System) service handles inventory management, order fulfillment, and warehouse operations:
+
+### WMS Core Modules
+- **InventoryModule**: Stock management, SKU matching, location operations
+- **MovementModule**: Internal stock movements and transfers
+- **InboundModule**: Purchase orders and receiving operations
+- **OrderModule**: Sales orders and fulfillment orders (currently being implemented)
+- **SharedModule**: Common utilities (barcodes, FIFO, transactions, audit logging)
+
+### WMS Key Features
+- **Order Domain**: Sales Orders (SO) and Fulfillment Orders (FO) with reservation system
+- **Multi-fulfillment Support**: In-house, 3PL, and drop-ship modes
+- **Inventory Management**: Event-sourced stock tracking with projections
+- **Product Matching**: PIM variant to WMS SKU mapping system
+- **Location Management**: Warehouse layout and FIFO allocation
+- **Transaction Safety**: Comprehensive audit logging and transaction management
+
+### WMS Documentation
+- Core architecture: `apps/wms/docs/wms_nestjs_structure.md`
+- Order system design: `apps/wms/docs/wms-orders-design.md`
+- Follow the documentation in `apps/wms/docs/` rather than scanning all code files
+
+### WMS Database Schema Changes
+1. Modify schema in `apps/wms/database/schemas/wms-schema.ts`
+2. Generate migration: `npm run db:generate.wms`
+3. Apply to dev database: `npm run db:push.wms`
+4. Apply to test database: `npm run db:push.wms:test`

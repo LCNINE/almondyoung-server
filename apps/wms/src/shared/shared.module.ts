@@ -7,6 +7,10 @@ import { WeightCalculatorService } from './services/weight-calculator.service';
 import { FifoService } from './services/fifo.service';
 import { TransactionService } from './services/transaction.service';
 import { AuditService } from './services/audit.service';
+import { MetricsService } from './services/metrics.service';
+import { HealthService } from './services/health.service';
+import { MetricsController } from './controllers/metrics.controller';
+import { HealthController } from './controllers/health.controller';
 
 @Module({
     imports: [
@@ -18,12 +22,15 @@ import { AuditService } from './services/audit.service';
             schema: wmsTables,
         }),
     ],
+    controllers: [MetricsController, HealthController],
     providers: [
         BarcodeService,
         WeightCalculatorService,
         FifoService,
         TransactionService,
         AuditService,
+        MetricsService,
+        HealthService,
     ],
     exports: [
         BarcodeService,
@@ -31,6 +38,8 @@ import { AuditService } from './services/audit.service';
         FifoService,
         TransactionService,
         AuditService,
+        MetricsService,
+        HealthService,
     ],
 })
 export class SharedModule { }

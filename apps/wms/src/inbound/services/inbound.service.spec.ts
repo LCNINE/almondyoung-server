@@ -58,9 +58,10 @@ describe('InboundService (unit-like)', () => {
     }
     created.locationIds.push(sysInbound!.id);
 
-    // create two SKUs
-    const [sku1] = await dbService.db.insert(wmsTables.skus).values({ name: 'UNIT-SKU-1', code: 'UNIT-SKU-1' } as any).returning();
-    const [sku2] = await dbService.db.insert(wmsTables.skus).values({ name: 'UNIT-SKU-2', code: 'UNIT-SKU-2' } as any).returning();
+    // create two SKUs with unique codes
+    const timestamp = Date.now();
+    const [sku1] = await dbService.db.insert(wmsTables.skus).values({ name: `UNIT-SKU-1-${timestamp}`, code: `UNIT-SKU-1-${timestamp}` } as any).returning();
+    const [sku2] = await dbService.db.insert(wmsTables.skus).values({ name: `UNIT-SKU-2-${timestamp}`, code: `UNIT-SKU-2-${timestamp}` } as any).returning();
     created.skuIds.push(sku1.id, sku2.id);
   });
 

@@ -59,31 +59,66 @@ export class ProductMatchingService {
     }
 
     async handleManualMatchingRequest(payload: PimProductPayload) {
+        if (!payload || !payload.productId || !Array.isArray(payload.variants)) {
+            throw new BadRequestException('Invalid payload: productId and variants array are required');
+        }
+
         this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
+        const results: Array<{ variantId: string; status: 'created' | 'exists' | 'error'; error?: string }> = [];
+
         for (const variant of payload.variants) {
-            const existingMatching = await this.db.query.productMatchings.findFirst({
-                where: eq(wmsTables.productMatchings.variantId, variant.id),
-            });
+            try {
+                if (!variant.id) {
+                    this.logger.error(`Variant missing ID in product ${payload.productId}`);
+                    results.push({ variantId: 'unknown', status: 'error', error: 'Variant ID is required' });
+                    continue;
+                }
 
-            if (existingMatching) {
-                this.logger.warn(`Product matching already exists for variant ${variant.id}, skipping creation.`);
-                continue;
+                const existingMatching = await this.db.query.productMatchings.findFirst({
+                    where: eq(wmsTables.productMatchings.variantId, variant.id),
+                });
+
+                if (existingMatching) {
+                    this.logger.warn(`Product matching already exists for variant ${variant.id}, skipping creation.`);
+                    results.push({ variantId: variant.id, status: 'exists' });
+                    continue;
+                }
+
+                const [newProductMatching] = await this.db.insert(wmsTables.productMatchings).values({
+                    variantId: variant.id,
+                    status: 'pending',
+                    priority: 'high',
+                    strategy: null,
+                    isResolved: false,
+                }).returning();
+
+                if (!newProductMatching) {
+                    throw new Error(`Product matching entry creation failed for variant ${variant.id}`);
+                }
+
+                this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
+                results.push({ variantId: variant.id, status: 'created' });
+
+            } catch (error) {
+                this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
+                results.push({
+                    variantId: variant.id,
+                    status: 'error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                });
             }
-
-            const [newProductMatching] = await this.db.insert(wmsTables.productMatchings).values({
-                variantId: variant.id,
-                status: 'pending',
-                priority: 'high',
-                strategy: null,
-                isResolved: false,
-            }).returning();
-
-            if (!newProductMatching) {
-                throw new Error('Product matching entry(pending) 생성에 실패했습니다.');
-            }
-            this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
         }
+
+        const successCount = results.filter(r => r.status === 'created').length;
+        const errorCount = results.filter(r => r.status === 'error').length;
+
+        if (errorCount > 0) {
+            this.logger.warn(`Manual matching request completed with ${errorCount} errors out of ${payload.variants.length} variants`);
+        }
+
+        this.logger.log(`Manual matching request completed: ${successCount} created, ${errorCount} errors`);
+        return results;
     }
 
     async handleAutomaticMatchingRequest(payload: PimProductPayload) {
@@ -101,7 +136,6 @@ export class ProductMatchingService {
                     inventoryManagement: false,
                     preStockSellable: true,
                     alwaysSellableZeroStock: false,
-                    isGift: false,
                 }).onConflictDoNothing();
                 this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
                 continue;
@@ -118,7 +152,6 @@ export class ProductMatchingService {
                     inventoryManagement: true,
                     preStockSellable: true,
                     alwaysSellableZeroStock: false,
-                    isGift: false,
                 }).returning();
 
                 if (!newProductMatching) {
@@ -218,7 +251,6 @@ export class ProductMatchingService {
                 inventoryManagement: false,
                 preStockSellable: true,
                 alwaysSellableZeroStock: false,
-                isGift: false,
                 updatedAt: new Date(),
             }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
             this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
@@ -268,7 +300,6 @@ export class ProductMatchingService {
                     strategy: strategy,
                     isResolved: true,
                     ...finalStockPolicy,
-                    isGift,
                     updatedAt: new Date(),
                 }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
 
@@ -277,8 +308,7 @@ export class ProductMatchingService {
                 this.logger.log(
                     `Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. ` +
                     `SKUs: ${totalSkus}, Total Quantity: ${totalQuantity}, ` +
-                    `Stock Policy: ${JSON.stringify(finalStockPolicy)}, ` +
-                    `IsGift: ${isGift}`
+                    `Stock Policy: ${JSON.stringify(finalStockPolicy)}`
                 );
                 return updatedMatching;
             });
@@ -487,7 +517,6 @@ export class ProductMatchingService {
         inventoryManagement: boolean;
         preStockSellable: boolean;
         alwaysSellableZeroStock: boolean;
-        isGift: boolean;
     } | null> {
         const matching = await this.db.query.productMatchings.findFirst({
             where: eq(wmsTables.productMatchings.variantId, variantId)
@@ -501,7 +530,6 @@ export class ProductMatchingService {
             inventoryManagement: matching.inventoryManagement,
             preStockSellable: matching.preStockSellable,
             alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
-            isGift: matching.isGift,
         };
     }
 
