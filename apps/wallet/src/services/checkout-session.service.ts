@@ -15,7 +15,7 @@ import {
   UniversalCheckoutSessionResponseDto,
 } from '../shared/dtos/universal-checkout.dto';
 import { PaymentIntentService } from './payment-intent.service';
-import { PaymentPolicyValidator } from '../shared/policies/payment-policy';
+import { PaymentPolicy } from '../providers/payment-policy';
 
 /**
  * CheckoutSession v2 Service
@@ -33,7 +33,6 @@ export class CheckoutSessionService {
   constructor(
     private readonly dbService: DbService,
     private readonly paymentIntentService: PaymentIntentService,
-    private readonly policyValidator: PaymentPolicyValidator,
   ) {}
 
   /**
@@ -165,8 +164,8 @@ export class CheckoutSessionService {
         }),
       });
       // 5. Provider별 UI 설정 데이터 생성 (런타임 계산)
-      const allowedProviders = this.policyValidator.getAvailableProviders(
-        intent.type,
+      const allowedProviders = PaymentPolicy.getAllowedProviders(
+        intent.type as any,
       );
       const providers = await this.generateProviderConfigs(
         allowedProviders,
@@ -284,11 +283,13 @@ export class CheckoutSessionService {
   /**
    * Intent metadata에서 orderName 추출
    */
-  private extractOrderName(metadata: string | null): string {
+  private extractOrderName(metadata: unknown): string {
     if (!metadata) return '결제';
 
     try {
-      const parsed = JSON.parse(metadata);
+      const metadataStr =
+        typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
+      const parsed = JSON.parse(metadataStr);
       return parsed.orderName || parsed.itemName || '결제';
     } catch {
       return '결제';

@@ -5,7 +5,7 @@ import {
   EarnParams,
   RedeemParams,
   EarnCancelParams,
-} from '../repositories/point.repository';
+} from './point.repository';
 
 @Injectable()
 export class PointService {

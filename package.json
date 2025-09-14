@@ -17,7 +17,12 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json"
+    "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
+    "test:payment": "jest --testPathPattern=payment.*spec.ts",
+    "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
+    "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
+    "test:payment:real": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"실제 API\"",
+    "test:payment:integration": "jest --testPathPattern=payment-flow.integration.spec.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^9.0.3",
@@ -38,17 +43,20 @@
     "drizzle-orm": "^0.44.5",
     "hms-api-wrapper": "file:../hms-api-wrapper/hms-api-wrapper-1.0.0.tgz",
     "kafkajs": "^2.2.4",
+    "nestjs-zod": "^5.0.1",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tsid-ts": "^0.0.9",
     "ulid": "^3.0.1",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
+    "@faker-js/faker": "^10.0.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
@@ -70,6 +78,7 @@
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.1.4",
+    "test-data-bot": "^0.8.0",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",

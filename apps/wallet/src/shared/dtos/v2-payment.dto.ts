@@ -31,7 +31,7 @@ export class IntentCreateDto {
     example: 'user_01HQZX8QJKMNPQRST9VWXY012',
   })
   @IsString()
-  userId!: string;
+  userId?: string;
 
   @ApiProperty({
     description: '결제 금액 (최종 과금액, 원)',
@@ -43,7 +43,7 @@ export class IntentCreateDto {
   @IsPositive()
   @Min(100)
   @Max(10000000)
-  amount!: number;
+  amount?: number;
 
   @ApiProperty({
     description: '결제   타입 (맥락)',
@@ -104,7 +104,7 @@ export class IntentResponseDto {
     description: '결제 금액 (KRW)',
     example: 50000,
   })
-  amount!: number;
+  amount?: number;
 
   @ApiProperty({
     description: '결제 타입',
@@ -122,7 +122,7 @@ export class IntentResponseDto {
     description: '만료 시각',
     example: '2025-01-08T11:00:00Z',
   })
-  expiresAt!: string;
+  expiresAt?: string;
 
   @ApiPropertyOptional({
     description: '허용된 Provider 목록',
@@ -148,7 +148,7 @@ export class AttemptCreateDto {
     example: 'TOSS',
   })
   @IsEnum(makeConstEnum(paymentProviderEnum.enumValues))
-  provider!: PaymentProvider;
+  provider?: PaymentProvider;
 
   @ApiPropertyOptional({
     description: '저장형 결제수단 ID (저장형일 때만)',
@@ -248,19 +248,19 @@ export class AttemptResponseDto {
     description: 'Attempt ID',
     example: 'pa_01HQZX8QJKMNPQRST9VWXY012',
   })
-  attemptId!: string;
+  attemptId?: string;
 
   @ApiProperty({
     description: 'Intent ID',
     example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
   })
-  intentId!: string;
+  intentId?: string;
 
   @ApiProperty({
     description: 'Provider',
     example: 'TOSS',
   })
-  provider!: string;
+  provider?: string;
 
   @ApiProperty({
     description: 'Attempt 상태',
@@ -272,7 +272,7 @@ export class AttemptResponseDto {
     description: '결제 금액',
     example: 50000,
   })
-  amount!: number;
+  amount?: number;
 
   @ApiProperty({
     description: '생성 시각',
@@ -284,7 +284,7 @@ export class AttemptResponseDto {
     description: '실행 주체',
     example: 'USER',
   })
-  actor!: string;
+  actor?: string;
 
   @ApiPropertyOptional({
     description: '에러 메시지 (실패 시)',
@@ -381,25 +381,25 @@ export class RefundResponseDto {
     description: '원본 Intent ID',
     example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
   })
-  intentId!: string;
+  intentId?: string;
 
   @ApiProperty({
     description: '환불 금액',
     example: 25000,
   })
-  amount!: number;
+  amount?: number;
 
   @ApiProperty({
     description: '환불 상태 (COMPLETED는 환불 도메인 전용)',
     example: 'REQUESTED',
   })
-  status!: string;
+  status?: string;
 
   @ApiProperty({
     description: '생성 시각',
     example: '2025-01-08T10:40:00Z',
   })
-  createdAt!: string;
+  createdAt?: string;
 
   @ApiPropertyOptional({
     description: '환불 사유',
@@ -430,28 +430,28 @@ export class CheckoutSessionCreateDto {
     example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
   })
   @IsString()
-  intentId!: string;
+  intentId?: string;
 
   @ApiProperty({
     description: '결제 완료 후 리다이렉트할 URL (우리 호스트 결제 UI)',
     example: 'https://checkout.example.com/redirect',
   })
   @IsString()
-  redirectUrl!: string;
+  redirectUrl?: string;
 
   @ApiProperty({
     description: '결제 완료 후 복귀할 URL (최종 목적지)',
     example: 'https://example.com/payment/success',
   })
   @IsString()
-  returnUrl!: string;
+  returnUrl?: string;
 
   @ApiProperty({
     description: '취소 시 리다이렉트 URL',
     example: 'https://example.com/payment/cancel',
   })
   @IsString()
-  cancelUrl!: string;
+  cancelUrl?: string;
 
   @ApiPropertyOptional({
     description: '세션 메타데이터 (디바이스/언어 등)',
@@ -471,36 +471,36 @@ export class CheckoutSessionResponseDto {
     description: 'Checkout Session ID',
     example: 'cs_01HQZX8QJKMNPQRST9VWXY012',
   })
-  sessionId!: string;
+  sessionId?: string;
 
   @ApiProperty({
     description: 'Intent ID',
     example: 'pi_01HQZX8QJKMNPQRST9VWXY012',
   })
-  intentId!: string;
+  intentId?: string;
 
   @ApiProperty({
     description: 'Session 상태',
     enum: ['PENDING', 'COMPLETED', 'CANCELLED', 'EXPIRED'],
     example: 'PENDING',
   })
-  status!: string;
+  status?: string;
 
   @ApiProperty({
     description: 'Checkout URL (결제창)',
     example: 'https://checkout.example.com/session/cs_xxx',
   })
-  checkoutUrl!: string;
+  checkoutUrl?: string;
 
   @ApiProperty({
     description: '세션 생성 시간',
     example: '2025-01-08T10:00:00Z',
   })
-  createdAt!: string;
+  createdAt?: string;
 
   @ApiProperty({
     description: '만료 시각',
     example: '2025-01-08T11:00:00Z',
   })
-  expiresAt!: string;
+  expiresAt?: string;
 }

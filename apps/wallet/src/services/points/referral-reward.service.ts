@@ -1,7 +1,7 @@
 // apps/wallet/src/services/referral-reward-v2.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { PointService } from './point-v2.service';
-import { PointRepository } from '../repositories/point.repository';
+import { PointService } from './point.service';
+import { PointRepository } from './point.repository';
 
 /**
  * CTO 철학:

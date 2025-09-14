@@ -1,84 +1,96 @@
-// payment-profile.types.ts - 결제프로필 타입 정의 (리뉴얼.md 3.1절)
-//
-// 핵심 구분:
-// - 결제수단(Method): Provider가 제공하는 추상 API 집합 (코드에 존재)
-// - 결제프로필(Profile): 사용자가 등록/보유한 수단의 인스턴스 (DB에 저장)
-// - Instrument(ephemeral): 일회성 토큰/키 (세션 중에만 존재)
+// apps/wallet/src/shared/types/payment-profile.types.ts
+// 단일 출처 원칙: schema.ts에서 자동 생성된 타입만 사용
 
-/**
- * 결제프로필 타입 (사용자별 등록된 결제 수단)
- */
-export type PaymentProfileType =
-  | 'CARD' // 저장카드 (빌링키) - HMS 연동
-  | 'BANK_ACCOUNT' // HMS 계좌 - HMS 연동
-  | 'BNPL'; // BNPL 계정 - HMS 연동
+import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import * as schema from '../database/schema';
 
-// ❌ REWARD_POINT는 결제프로필이 아님!
-// ✅ 포인트는 내부 원장 기반 Provider로 profileId 없이 바로 사용
+// ===============================
+// 단일 출처: Schema 기반 타입들
+// ===============================
 
-/**
- * 결제프로필 상태
- */
-export type PaymentProfileStatus =
-  | 'PENDING' // 등록 중
-  | 'ACTIVE' // 사용 가능
-  | 'INACTIVE' // 비활성화
-  | 'EXPIRED' // 만료됨
-  | 'BLOCKED'; // 차단됨
+/** 결제 프로필 (Select) */
+export type PaymentProfile = InferSelectModel<typeof schema.paymentProfiles>;
 
-/**
- * 결제프로필 용도
- */
-export type PaymentProfilePurpose =
-  | 'SUBSCRIPTION' // 정기결제 전용
-  | 'PURCHASE' // 일반 구매 전용
-  | 'BOTH'; // 모든 용도
+/** 결제 프로필 (Insert) */
+export type NewPaymentProfile = InferInsertModel<typeof schema.paymentProfiles>;
 
-/**
- * 결제프로필 등록 요청
- */
-export interface PaymentProfileCreateRequest {
+/** 결제 프로필 (Update) */
+export type UpdatePaymentProfile = Partial<
+  Omit<NewPaymentProfile, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+/** HMS 카드 프로필 (Select) */
+export type CmsCardProfile = InferSelectModel<typeof schema.cmsCardProfiles>;
+
+/** HMS 카드 프로필 (Insert) */
+export type NewCmsCardProfile = InferInsertModel<typeof schema.cmsCardProfiles>;
+
+/** HMS 카드 프로필 (Update) */
+export type UpdateCmsCardProfile = Partial<
+  Omit<NewCmsCardProfile, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+/** HMS 배치 프로필 (Select) */
+export type CmsBatchProfile = InferSelectModel<typeof schema.cmsBatchProfiles>;
+
+/** HMS 배치 프로필 (Insert) */
+export type NewCmsBatchProfile = InferInsertModel<
+  typeof schema.cmsBatchProfiles
+>;
+
+/** HMS 배치 프로필 (Update) */
+export type UpdateCmsBatchProfile = Partial<
+  Omit<NewCmsBatchProfile, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===============================
+// DTO 타입들 (공통 인터페이스 + 단일 출처)
+// ===============================
+
+/** 결제 프로필 생성 요청 DTO (실용적 접근) */
+export interface PaymentProfileCreateV2RequestDto {
   userId: string;
-  profileType: PaymentProfileType;
-  profileName: string;
-  paymentPurpose: PaymentProfilePurpose;
-  isDefault: boolean;
+  kind: PaymentProfile['kind']; // 단일 출처: schema에서 추론
+  name?: string;
 
-  // 카드 프로필 등록 시
-  cardToken?: string;
-  billingKey?: string;
+  // HMS 카드 필드 (kind === 'CARD'일 때만 사용)
+  paymentNumber?: string;
+  validUntil?: string; // MMYY
+  password?: string;
+  payerName?: string;
+  payerNumber?: string;
+  phone?: string;
+  paymentCompany?: string;
 
-  // BNPL 프로필 등록 시
-  creditLimit?: number;
+  // HMS 배치 필드 (kind === 'BANK_ACCOUNT'일 때만 사용)
+  accountNumber?: string;
+  billingDay?: number;
+
+  // 메타데이터
+  metadata?: Record<string, any>;
 }
 
-/**
- * 결제프로필 응답
- */
-export interface PaymentProfileResponse {
+/** 결제 프로필 응답 DTO */
+export interface PaymentProfileV2ResponseDto {
   profileId: string;
   userId: string;
-  profileType: PaymentProfileType;
-  profileName: string;
-  status: PaymentProfileStatus;
-  paymentPurpose: PaymentProfilePurpose;
-  isDefault: boolean;
+  kind: PaymentProfile['kind']; // 단일 출처
+  status: PaymentProfile['status']; // 단일 출처
+  name: string;
+  memberId?: string; // HMS에서 생성된 ID
   createdAt: string;
   updatedAt: string;
-
-  // HMS 관련 (카드/BNPL)
-  hmsMemberId?: string;
+  metadata?: Record<string, any>;
 }
 
-/**
- * 사용자 결제프로필 목록 응답
- */
-export interface UserPaymentProfilesResponse {
-  userId: string;
-  profiles: PaymentProfileResponse[];
-  summary: {
-    totalCount: number;
-    activeCount: number;
-    defaultProfileId?: string;
-  };
+/** 결제 프로필 상태 업데이트 DTO */
+export interface PaymentProfileStatusUpdateDto {
+  status: PaymentProfile['status']; // 단일 출처
+  reason?: string;
+}
+
+/** CMS 상태 업데이트 DTO (내부용) */
+export interface CmsStatusUpdateDto {
+  memberId: string;
+  cmsStatus: CmsCardProfile['cmsStatus']; // 단일 출처
 }

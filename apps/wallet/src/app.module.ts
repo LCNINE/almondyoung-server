@@ -3,29 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
+import { PaymentController } from './controllers/payment.controller';
 
-// === v2 아키텍처 컨트롤러들 (레거시 제거됨) ===
-import { PaymentIntentController } from './controllers/payment-intent.controller';
-import { RefundController } from './controllers/refund.controller';
-import { CheckoutSessionController } from './controllers/checkout-session.controller';
-import { BnplPaymentProfilesController } from './controllers/bnpl-payment-profiles.controller';
-import { PaymentProfileV2Controller } from './controllers/payment-profile-v2.controller';
-
-// === 유지되는 서비스들 ===
-import { IdempotencyService } from './services/idempotency.service';
-// import { RecurringPaymentScheduler } from './services/recurring-payment.scheduler'; // 임시 비활성화
-import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
-
-// === v2 아키텍처 서비스들 ===
-import { PaymentIntentService } from './services/payment-intent.service';
-import { RefundService as V2RefundService } from './services/refund.service';
-import { CheckoutSessionService } from './services/checkout-session.service';
-import { PaymentProfileService } from './services/payment-profile.service';
-import { PaymentProfileV2Service } from './services/payment-profile-v2.service';
-import {
-  PaymentPolicyValidator,
-  loadPaymentPolicy,
-} from './shared/policies/payment-policy';
+import { PaymentIntentService } from './services/intents/intent.service';
+import { PaymentProfileService } from './services/profiles/payment-profile.service';
+// 신규 정책 시스템은 Provider Factory에서 직접 사용
 
 // === 어댑터들 (기존 호환성만) ===
 
@@ -33,15 +15,26 @@ import {
 // ❌ import { HmsBnplPaymentAdapter } from './adapters/hms-bnpl-payment.adapter'; // Provider로 통합됨
 
 // === Provider 전략 패턴 ===
-import { PaymentProviderFactory } from './providers/payment-provider.factory';
-import { HmsCardProvider } from './providers/hms-card.provider';
-
-import { HmsBnplProvider } from './providers/hms-bnpl.provider';
-import { TossProvider } from './providers/toss.provider';
-import { KakaopayProvider } from './providers/kakaopay.provider';
-import { PointsProvider } from './providers/points.provider';
 
 import * as schema from './shared/database/schema';
+import { PaymentService } from './services/payment.service';
+import {
+  PaymentOrchestratorService,
+  PaymentExecutorService,
+} from './services/payment';
+import {
+  CmsBatchProfilesRepository,
+  CmsCardProfilesRepository,
+  PaymentProfilesRepository,
+} from './services/profiles/payment-profile.repository';
+import { ProviderRegistry } from './providers/provider-registry';
+import { HmsCardRegistrar } from './providers/hms-card.registrar';
+import { HmsBnplRegistrar } from './providers/hms-bnpl.registrar';
+import { HmsCardChargeProvider } from './providers/hms-card.charge';
+import { HmsBnplChargeProvider } from './providers/hms-bnpl.charge';
+import { TossChargeProvider } from './providers/toss.charge';
+import { HmsCardRefundProvider } from './providers/hms-card.refund';
+import { TossRefundProvider } from './providers/toss.refund';
 
 @Module({
   imports: [
@@ -60,49 +53,36 @@ import * as schema from './shared/database/schema';
     EventsModule,
   ],
   controllers: [
-    // === v2 아키텍처 컨트롤러들만 (레거시 제거됨) ===
-    PaymentIntentController,
-    RefundController,
-    CheckoutSessionController,
-    BnplPaymentProfilesController,
-    PaymentProfileV2Controller, // 정규화된 스키마용
+    // === 신규 아키텍처 ===
+    PaymentController,
   ],
   providers: [
-    // === 유지되는 서비스들 ===
-    IdempotencyService,
-    // RecurringPaymentScheduler, // 임시 비활성화
-    BnplBillingScheduler,
-
-    // === v2 아키텍처 서비스들 ===
-    PaymentProfileService,
-    PaymentProfileV2Service,
+    PaymentService,
     PaymentIntentService,
-    V2RefundService,
-    CheckoutSessionService,
-    // PaymentProfileService, // 임시 비활성화 (스키마 변경으로 인한 에러)
-    PaymentProfileV2Service, // 정규화된 스키마용
-    {
-      provide: PaymentPolicyValidator,
-      useFactory: () => new PaymentPolicyValidator(loadPaymentPolicy()),
-    },
+    PaymentProfileService,
 
-    // === 어댑터들 (기존 호환성) ===
+    // --- 내부 흐름 제어 서비스 ---
+    PaymentOrchestratorService,
+    PaymentExecutorService,
 
-    // === Provider 전략 패턴 (PG 직접 통신) ===
-    PaymentProviderFactory,
-    HmsCardProvider, // HMS 카드 API 직접 호출
+    // --- 데이터 접근 ---
+    PaymentProfilesRepository,
+    CmsCardProfilesRepository,
+    CmsBatchProfilesRepository,
 
-    HmsBnplProvider, // HMS BNPL API 직접 호출
-    TossProvider, // 토스 API 직접 호출 (스텁)
-    KakaopayProvider, // 카카오페이 API 직접 호출 (스텁)
-    PointsProvider, // 내부 포인트 원장
+    // --- Provider 아키텍처 ---
+    ProviderRegistry,
+    // 개별 Provider 구현체들
+    HmsCardRegistrar,
+    HmsBnplRegistrar,
+    HmsCardChargeProvider,
+    HmsBnplChargeProvider,
+    TossChargeProvider,
+    HmsCardRefundProvider,
+    TossRefundProvider,
   ],
   exports: [
     // === v2 아키텍처 서비스들만 export ===
-    PaymentIntentService,
-    V2RefundService,
-    CheckoutSessionService,
-    IdempotencyService,
   ],
 })
 export class AppModule {}

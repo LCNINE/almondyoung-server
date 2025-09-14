@@ -1,140 +1,114 @@
-// providers/payment-provider.interface.ts
+// Domain SSOT: Provider/Payment Types, Ports, Payload Map
+// 변경 전 모든 중복 타입들을 여기로 수렴시키세요.
 
-import {
-  PaymentResult,
-  RefundResult,
-  CaptureResult,
-} from '../interfaces/payment-gateway.interface';
-
-/**
- * 결제 Provider 전략 인터페이스
- * - 모든 Provider (HMS, TOSS, KAKAOPAY, POINTS, BNPL)가 구현
- * - 정책 기반 라우팅과 연동
- */
-export interface PaymentProvider {
-  /**
-   * Provider 식별자
-   */
-  readonly providerId: string;
-
-  /**
-   * 지원하는 결제 타입들
-   */
-
-  /**
-   * 결제 처리
-   */
-  processPayment(request: PaymentRequest): Promise<PaymentResult>;
-
-  /**
-   * 환불 처리
-   */
-  refundPayment(request: RefundRequest): Promise<RefundResult>;
-
-  /**
-   * 결제 확정 (BNPL 전용)
-   */
-  capturePayment?(request: CaptureRequest): Promise<CaptureResult>;
-
-  /**
-   * 프로필 등록 (저장형 결제수단용)
-   */
-  registerProfile?(
-    request: ProfileRegistrationRequest,
-  ): Promise<ProfileRegistrationResult>;
+export enum PaymentType {
+  ORDER = 'ORDER',
+  BNPL_CAPTURE = 'BNPL_CAPTURE',
+  MEMBERSHIP = 'MEMBERSHIP',
 }
 
-// === 요청/응답 타입 ===
+export enum ProviderType {
+  HMS_CARD = 'HMS_CARD',
+  HMS_BNPL = 'HMS_BNPL',
+  TOSS = 'TOSS',
+}
 
+// 공급자 중립 Request (PG 전용 필드는 절대 넣지 않음)
 export interface PaymentRequest {
   intentId: string;
   attemptId: string;
   amount: number;
-  type: PaymentType;
+  paymentType: PaymentType;
   userId: string;
-
-  // 결제 수단 종류 명시
   instrumentType: 'PROFILE' | 'ONE_TIME';
-  profileId?: string; // PROFILE일 때 사용
-  instrumentRef?: string; // ONE_TIME일 때 승인키/토큰
-
-  // 메타데이터
+  profileId?: string; // PROFILE일 때만
+  instrumentRef?: string; // ONE_TIME일 때(예: 토스 원타임 토큰)
   metadata?: Record<string, any>;
 }
 
-export interface RefundRequest {
-  intentId: string;
-  originalAttemptId: string;
-  refundId: string;
-  amount: number;
-  reason?: string;
-  userId: string; // 환불 대상 사용자 ID
-
-  // 원본 결제 정보
-  originalTransactionId: string;
-  originalProvider: string;
-
-  metadata?: Record<string, any>;
-}
-
-export interface CaptureRequest {
-  attemptIds: string[];
-  transactionIds?: string[]; // 스케줄러에서 미리 채워줄 수 있음
-  intentId?: string; // 선택적 (로깅/디버깅 용)
-  metadata?: Record<string, any>;
-}
-
-export interface ProfileRegistrationRequest {
-  userId: string;
-  profileType: 'CARD' | 'BANK_ACCOUNT' | 'BNPL' | 'WALLET';
-  profileName: string;
-  paymentPurpose: 'SUBSCRIPTION' | 'PURCHASE' | 'BOTH';
-  isDefault: boolean;
-  phone: string;
-
-  // HMS 카드 회원등록 API 필수값
-  paymentNumber?: string; // 카드번호
-  payerName?: string; // 카드 소유자명
-  payerNumber?: string; // 생년월일
-  validUntil?: string; // 카드 유효기간 MMYY
-  password?: string; // 비밀번호 앞 2자리
-  paymentCompany?: string; // 카드사 코드
-
-  // HMS 배치 CMS 등록 API 필수값
-  accountNumber?: string; // 계좌번호
-  billingDay?: number; // 결제일
-  consentId?: string; // 동의서 ID
-  agreementKey?: string; // 동의서 키
-  agreementKind?: string; // 동의서 종류
-  consentStatus?: string; // 동의 상태
-  consentSubmittedAt?: string; // 동의서 제출 시간
-  consentReviewedAt?: string; // 동의서 검토 시간
-
-  // BNPL 필드
-  creditLimit?: number;
-
-  // 부가 정보
-  metadata?: Record<string, any>;
-}
-
-export interface ProfileRegistrationResult {
+export interface PaymentResult {
   success: boolean;
-  profileId: string;
-  hmsMemberId?: string;
-  error?: string;
-  metadata?: Record<string, any>;
+  transactionId?: string;
+  code?: string; // 도메인 코드(성공/실패)
+  message?: string; // 사용자/로그 메시지
+  raw?: unknown; // 원 응답 스냅샷(옵션)
 }
 
-// === 공통 타입 ===
+export interface RefundResult {
+  success: boolean;
+  refundId?: string;
+  code?: string;
+  message?: string;
+  raw?: unknown;
+}
+export interface CancelResult {
+  success: boolean;
+  cancelId?: string;
+  code?: string;
+  message?: string;
+  raw?: unknown;
+}
 
-export type PaymentType =
-  | 'ORDER' // 일반 주문 결제
-  | 'MEMBERSHIP_FEE' // 정기 결제
-  | 'BNPL_CAPTURE'; // BNPL 확정
+// Provider별 최종 Payload (코어 Resolver가 조립)
+export type HmsCardPayload = { memberId: string; amount: number };
+export type HmsBnplPayload = {
+  memberId: string;
+  captureAmount: number;
+  invoiceId: string;
+};
+export type TossPayload = {
+  amount: number;
+  billingKey?: string;
+  oneTimeToken?: string;
+  metadata?: Record<string, any>; // 이 줄을 추가해주세요.
+};
 
-export type PaymentProvider_ID =
-  | 'HMS_CARD' // 효성 카드
-  | 'HMS_BNPL' // 효성 BNPL
-  | 'TOSS' // 토스페이먼츠
-  | 'KAKAOPAY' // 카카오페이
-  | 'POINTS'; // 내부 포인트
+export type ProviderPayloadMap = {
+  HMS_CARD: HmsCardPayload;
+  HMS_BNPL: HmsBnplPayload;
+  TOSS: TossPayload;
+};
+
+// ───────────────────── Ports (capabilities) ─────────────────────
+// 결제 실행(필수)
+export interface ChargePort<K extends ProviderType = ProviderType> {
+  process(payload: ProviderPayloadMap[K]): Promise<PaymentResult>;
+}
+// 선택 기능들(필요해지면 구현)
+export interface RefundPort<Payload = any> {
+  refund(payload: Payload): Promise<RefundResult>;
+}
+export interface CancelPort<Payload = any> {
+  cancel(payload: Payload): Promise<CancelResult>;
+}
+
+// 프로필 등록/검증/해지 포트(결제프로필 전용)
+export interface ProfileRegistrar<TInput = any, TMeta = any> {
+  register(
+    input: TInput,
+    ctx: { tx: any },
+  ): Promise<{ externalId?: string; status: string; meta?: TMeta }>;
+  revoke?(profileId: string, ctx: { tx: any }): Promise<void>;
+  verify?(
+    profileId: string,
+    ctx: { tx: any },
+  ): Promise<{ ok: boolean; status?: string; meta?: TMeta }>;
+}
+
+// 레지스트리에서 노출할 핸들(Provider별 지원 capability)
+export type ProviderHandle = {
+  id: ProviderType;
+  profile?: ProfileRegistrar | null;
+  charge?: ChargePort | null;
+  refund?: RefundPort | null;
+  cancel?: CancelPort | null;
+};
+
+export class PaymentError extends Error {
+  constructor(
+    public code: string,
+    msg?: string,
+  ) {
+    super(msg ?? code);
+  }
+}

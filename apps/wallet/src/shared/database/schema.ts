@@ -142,7 +142,9 @@ export const paymentProfiles = pgTable(
     kind: varchar('kind', { length: 16 })
       .$type<'CARD' | 'BANK_ACCOUNT' | 'WALLET'>()
       .notNull(),
-
+    provider: varchar('provider', { length: 16 })
+      .$type<'HMS_CARD' | 'HMS_BNPL' | 'TOSS'>()
+      .notNull(),
     status: paymentProfileStatusEnum('status').notNull().default('PENDING'),
 
     name: varchar('name', { length: 64 }),
@@ -602,40 +604,40 @@ export const overdueAccounts = pgTable('overdue_accounts', {
 // Relations
 // ────────────────────────────────────────────
 
-// Payment method relations - 정규화된 구조
-export const paymentProfilesRelations = relations(
-  paymentProfiles,
-  ({ one }) => ({
-    card: one(cmsCardProfiles, {
-      fields: [paymentProfiles.id],
-      references: [cmsCardProfiles.id],
-    }),
-    batch: one(cmsBatchProfiles, {
-      fields: [paymentProfiles.id],
-      references: [cmsBatchProfiles.id],
-    }),
-  }),
-);
+// Payment method relations - 정규화된 구조 (임시 비활성화)
+// export const paymentProfilesRelations = relations(
+//   paymentProfiles,
+//   ({ one }) => ({
+//     card: one(cmsCardProfiles, {
+//       fields: [paymentProfiles.id],
+//       references: [cmsCardProfiles.id],
+//     }),
+//     batch: one(cmsBatchProfiles, {
+//       fields: [paymentProfiles.id],
+//       references: [cmsBatchProfiles.id],
+//     }),
+//   }),
+// );
 
-export const cmsCardProfilesRelations = relations(
-  cmsCardProfiles,
-  ({ one }) => ({
-    paymentProfile: one(paymentProfiles, {
-      fields: [cmsCardProfiles.id],
-      references: [paymentProfiles.id],
-    }),
-  }),
-);
+// export const cmsCardProfilesRelations = relations(
+//   cmsCardProfiles,
+//   ({ one }) => ({
+//     paymentProfile: one(paymentProfiles, {
+//       fields: [cmsCardProfiles.id],
+//       references: [paymentProfiles.id],
+//     }),
+//   }),
+// );
 
-export const cmsBatchProfilesRelations = relations(
-  cmsBatchProfiles,
-  ({ one }) => ({
-    paymentProfile: one(paymentProfiles, {
-      fields: [cmsBatchProfiles.id],
-      references: [paymentProfiles.id],
-    }),
-  }),
-);
+// export const cmsBatchProfilesRelations = relations(
+//   cmsBatchProfiles,
+//   ({ one }) => ({
+//     paymentProfile: one(paymentProfiles, {
+//       fields: [cmsBatchProfiles.id],
+//       references: [paymentProfiles.id],
+//     }),
+//   }),
+// );
 
 export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
   bnplAccount: one(bnplAccounts, {
@@ -710,15 +712,25 @@ export const pointEventsRelations = relations(pointEvents, ({ one, many }) => ({
 export const pointEventDetailsRelations = relations(
   pointEventDetails,
   ({ one }) => ({
+    // detail → event (OK)
     event: one(pointEvents, {
       fields: [pointEventDetails.pointEventId],
       references: [pointEvents.id],
       relationName: 'event_details_to_event',
     }),
-    originalEvent: one(pointEvents, {
-      fields: [pointEventDetails.originalEventId],
-      references: [pointEvents.id],
-      relationName: 'event_details_to_original_event',
+
+    // detail → earned detail (self reference)
+    earnedFrom: one(pointEventDetails, {
+      fields: [pointEventDetails.earnedEventDetailId],
+      references: [pointEventDetails.id],
+      relationName: 'detail_to_earned_detail',
+    }),
+
+    // detail → original detail (self reference)  **여기가 문제였음**
+    originalOf: one(pointEventDetails, {
+      fields: [pointEventDetails.originalEventDetailId],
+      references: [pointEventDetails.id],
+      relationName: 'detail_to_original_detail',
     }),
   }),
 );
@@ -880,3 +892,35 @@ export const checkoutSessions = pgTable(
 // settlement_batch = BNPL Invoice
 // settlement_batch_item = BNPL Invoice Item
 // settlement_process_event = BNPL Collection Event
+
+// ===============================
+// 전체 스키마 객체 Export (Drizzle ORM 규칙)
+// ===============================
+export const walletSchema = {
+  // v2 Architecture Tables
+  paymentIntents,
+  paymentAttempts,
+  paymentRefunds,
+  checkoutSessions,
+
+  // Payment Profiles
+  paymentProfiles,
+  cmsCardProfiles,
+  cmsBatchProfiles,
+
+  // BNPL System
+  bnplAccounts,
+  bnplEvents,
+
+  // Refund System
+  userRefundAccounts,
+
+  // Point System
+  pointEvents,
+  pointEventDetails,
+
+  // Utility Tables
+  idempotencyKeys,
+} as const;
+
+export type WalletSchema = typeof walletSchema;

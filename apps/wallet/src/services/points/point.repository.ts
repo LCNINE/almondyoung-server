@@ -1,7 +1,7 @@
 // apps/wallet/src/repositories/point.repository.ts
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, isNotNull, sql } from 'drizzle-orm';
-import * as schema from '../shared/database/schema'; // 질문에 준 Drizzle 스키마 (point_* 테이블)
+import * as schema from '../../shared/database/schema'; // 질문에 준 Drizzle 스키마 (point_* 테이블)
 import { DbService } from '@app/db';
 export type PointAction = 'EARN' | 'REDEEM' | 'EARN_CANCEL' | 'REDEEM_CANCEL';
 
