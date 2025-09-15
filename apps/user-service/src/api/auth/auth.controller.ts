@@ -130,11 +130,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '이메일 인증 성공' })
   @Post('callback/verify-email')
   @Public()
-  async verifyEmail(
+  async verifySignUpEmail(
     @Body(ValidationPipe) { token }: { token: string },
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    return await this.authService.verifyEmail(token, res);
+    return await this.authService.verifySignUpEmail(token, res);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
