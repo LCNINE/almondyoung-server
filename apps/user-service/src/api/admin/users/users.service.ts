@@ -61,6 +61,7 @@ export class UsersService {
           id: schema.users.id,
           loginId: schema.users.loginId,
           username: schema.users.username,
+          nickname: schema.users.nickname,
           email: schema.users.email,
           isEmailVerified: schema.users.isEmailVerified,
           lastActivityAt: schema.users.lastActivityAt,
