@@ -8,6 +8,7 @@ import {
   date,
   pgEnum,
   jsonb,
+  varchar,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -67,16 +68,6 @@ export const policyRuleTypeEnum = pgEnum('policy_rule_type', [
 // Users (기존 유지)
 // =================================================================
 
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
 // =================================================================
 // 새로운 7개 테이블 구조
 // =================================================================
@@ -122,7 +113,7 @@ export const plan = pgTable('plan', {
  */
 export const subscriptionContracts = pgTable('subscription_contracts', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: varchar('user_id').notNull(), // users 테이블 참조
   planId: uuid('plan_id')
     .notNull()
     .references(() => plan.id),
@@ -147,7 +138,7 @@ export const subscriptionContracts = pgTable('subscription_contracts', {
  */
 export const subscriptionEntitlement = pgTable('subscription_entitlement', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: varchar('user_id').notNull(), // users 테이블 참조
   tierId: uuid('tier_id')
     .notNull()
     .references(() => tiers.id),
@@ -181,7 +172,7 @@ export const eventBatches = pgTable('event_batches', {
  */
 export const pausePeriods = pgTable('pause_periods', {
   id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(), // users 테이블 참조
+  userId: varchar('user_id').notNull(), // users 테이블 참조
   startsAt: date('starts_at').notNull(),
   endsAt: date('ends_at').notNull(),
   reason: text('reason'),
@@ -217,12 +208,6 @@ export const pauseEntitlementVoids = pgTable('pause_entitlement_voids', {
 // Relations for New Schema
 // =================================================================
 
-export const usersRelations = relations(users, ({ many }) => ({
-  contracts: many(subscriptionContracts),
-  entitlements: many(subscriptionEntitlement),
-  pausePeriods: many(pausePeriods),
-}));
-
 export const tiersRelations = relations(tiers, ({ many }) => ({
   plans: many(plan),
   entitlements: many(subscriptionEntitlement),
@@ -238,11 +223,7 @@ export const planRelations = relations(plan, ({ one, many }) => ({
 
 export const subscriptionContractsRelations = relations(
   subscriptionContracts,
-  ({ one, many }) => ({
-    user: one(users, {
-      fields: [subscriptionContracts.userId],
-      references: [users.id],
-    }),
+  ({ one }) => ({
     plan: one(plan, {
       fields: [subscriptionContracts.planId],
       references: [plan.id],
@@ -258,10 +239,6 @@ export const subscriptionContractsRelations = relations(
 export const subscriptionEntitlementRelations = relations(
   subscriptionEntitlement,
   ({ one, many }) => ({
-    user: one(users, {
-      fields: [subscriptionEntitlement.userId],
-      references: [users.id],
-    }),
     tier: one(tiers, {
       fields: [subscriptionEntitlement.tierId],
       references: [tiers.id],
@@ -287,16 +264,9 @@ export const eventBatchesRelations = relations(eventBatches, ({ many }) => ({
   }),
 }));
 
-export const pausePeriodsRelations = relations(
-  pausePeriods,
-  ({ one, many }) => ({
-    user: one(users, {
-      fields: [pausePeriods.userId],
-      references: [users.id],
-    }),
-    entitlementVoids: many(pauseEntitlementVoids),
-  }),
-);
+export const pausePeriodsRelations = relations(pausePeriods, ({ many }) => ({
+  entitlementVoids: many(pauseEntitlementVoids),
+}));
 
 export const pauseEntitlementVoidsRelations = relations(
   pauseEntitlementVoids,

@@ -21,7 +21,9 @@
     "test:membership:e2e": "jest --config ./apps/membership/test/jest-e2e.json",
     "test:membership:e2e:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
     "test:membership:e2e:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
-    "test:membership:e2e:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage"
+    "test:membership:e2e:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
+    "db:seed": "cd apps/membership && npx tsx drizzle/seed.ts",
+    "db:seed:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts"
   },
   "dependencies": {
     "@fastify/swagger-ui": "^5.2.3",
@@ -40,6 +42,7 @@
     "date-fns": "^4.1.0",
     "drizzle-kit": "^0.31.4",
     "drizzle-orm": "^0.44.2",
+    "drizzle-seed": "^0.3.1",
     "kafkajs": "^2.2.4",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
@@ -74,6 +77,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },

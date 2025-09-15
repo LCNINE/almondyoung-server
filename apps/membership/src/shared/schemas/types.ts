@@ -6,8 +6,7 @@ import { PostgresJsTransaction } from 'drizzle-orm/postgres-js';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
 
 // ====== Drizzle 스키마 기반 엔티티 타입 ======
-export type User = InferSelectModel<typeof schema.users>;
-export type NewUser = InferInsertModel<typeof schema.users>;
+
 
 export type DrizzleTransaction = PostgresJsTransaction<
   typeof schema,

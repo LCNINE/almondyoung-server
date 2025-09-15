@@ -80,10 +80,25 @@ export class RecurringBillingService {
       } catch (error) {
         this.logger.error(
           `Failed to process billing for contract ${contract.id}: ${error.message}`,
+          error.stack,
         );
+
+        // 에러 타입별 분류
+        let errorCode = 'UNKNOWN_ERROR';
+        if (error.message.includes('Cannot connect to Wallet server')) {
+          errorCode = 'WALLET_CONNECTION_ERROR';
+        } else if (error.message.includes('Payment intent not found')) {
+          errorCode = 'PAYMENT_INTENT_ERROR';
+        } else if (error.message.includes('No active payment profile')) {
+          errorCode = 'NO_PAYMENT_PROFILE';
+        } else if (error.message.includes('Plan not found')) {
+          errorCode = 'PLAN_NOT_FOUND';
+        }
+
         results.push({
           contractId: contract.id,
           success: false,
+          errorCode,
           errorMessage: error.message,
         });
       }
@@ -150,57 +165,60 @@ export class RecurringBillingService {
             .where(eq(schema.subscriptionContracts.id, contract.id));
         }
 
-        // 3. PaymentIntent 생성
+        // 3. PaymentIntent 생성 (Wallet v4 호환)
         const paymentIntent = await this.paymentClient.createPaymentIntent({
-          userId: contract.userId, // 최상위 필드로 이동
-          type: 'MEMBERSHIP_FEE',
+          customerId: contract.userId, // Wallet v4: customerId 사용
+          type: 'MEMBERSHIP_FEE', // Wallet v4: 실제 사용하는 타입
           amount: plan.price,
-          currency: plan.currency,
-          description: `멤버십 정기결제 - ${plan.tier.code}`,
           metadata: {
             contractId: contract.id,
             planId: contract.planId,
+            billingCycle: `${contract.id}-${new Date().toISOString().split('T')[0]}`, // 정기결제 식별용
           },
         });
 
-        // 4. PaymentAttempt 실행
-        const paymentAttempt = await this.paymentClient.createPaymentAttempt(
-          paymentIntent.intentId, // 필드명 수정: id → intentId
+        // 4. 결제 실행 (Wallet v4: PaymentOrchestratorService 사용)
+        this.logger.debug(
+          `Payment profile ID type and value: ${typeof paymentProfileId}, ${paymentProfileId}`,
+        );
+
+        const paymentResult = await this.paymentClient.processPayment(
+          paymentIntent.id, // Wallet v4: id 필드 사용
           {
-            provider: 'CMS', // MEMBERSHIP_FEE 타입에 허용된 provider 사용
+            providerType: 'HMS_CARD', // MEMBERSHIP_FEE 타입은 HMS_CARD만 허용
             profileId: paymentProfileId,
           },
         );
 
-        // 5. 결제 결과 처리
-        if (paymentAttempt.status === 'CAPTURED') {
+        // 5. 결제 결과 처리 (Wallet v4 PaymentResult 구조 반영)
+        if (paymentResult.success) {
           await this.handleSuccessfulBilling(
             tx,
             contract,
             paymentIntent,
-            paymentAttempt,
+            paymentResult,
             plan,
           );
           return {
             contractId: contract.id,
             success: true,
-            paymentIntentId: paymentIntent.intentId,
-            paymentAttemptId: paymentAttempt.attemptId, // 필드명 수정: id → attemptId
+            paymentIntentId: paymentIntent.id,
+            paymentAttemptId: paymentResult.transactionId,
           };
         } else {
           await this.handleFailedBilling(
             tx,
             contract,
             paymentIntent,
-            paymentAttempt,
+            paymentResult,
           );
           return {
             contractId: contract.id,
             success: false,
-            paymentIntentId: paymentIntent.intentId,
-            paymentAttemptId: paymentAttempt.attemptId, // 필드명 수정: id → attemptId
-            errorCode: paymentAttempt.errorMessage, // 실제 응답 필드명: errorMessage
-            errorMessage: paymentAttempt.errorMessage,
+            paymentIntentId: paymentIntent.id,
+            paymentAttemptId: paymentResult.transactionId,
+            errorCode: paymentResult.errorCode,
+            errorMessage: paymentResult.errorMessage,
           };
         }
       } catch (error) {
@@ -219,19 +237,19 @@ export class RecurringBillingService {
     tx: any,
     contract: any,
     paymentIntent: any,
-    paymentAttempt: any,
+    paymentResult: any,
     plan: any,
   ) {
     const now = new Date();
     const nextBillingDate = addDays(now, plan.durationDays);
 
-    // 1. 계약 정보 업데이트
+    // 1. 계약 정보 업데이트 (Wallet v4 필드명 반영)
     await tx
       .update(schema.subscriptionContracts)
       .set({
         nextBillingDate: format(nextBillingDate, 'yyyy-MM-dd'),
-        lastPaymentIntentId: paymentIntent.intentId, // 필드명 수정
-        lastPaymentAttemptId: paymentAttempt.attemptId, // 필드명 수정
+        lastPaymentIntentId: paymentIntent.id,
+        lastPaymentAttemptId: paymentResult.transactionId,
         isPastDue: false,
         billingRetryCount: 0,
       })
@@ -241,7 +259,7 @@ export class RecurringBillingService {
     await this.entitlementService.extendEntitlement(
       contract.userId,
       plan.durationDays,
-      `정기결제 성공 - Intent: ${paymentIntent.intentId}`, // 필드명 수정
+      `정기결제 성공 - Intent: ${paymentIntent.id}`,
     );
 
     // 3. Dunning 큐에서 제거 (있는 경우)
@@ -261,17 +279,17 @@ export class RecurringBillingService {
     tx: any,
     contract: any,
     paymentIntent: any,
-    paymentAttempt: any,
+    paymentResult: any,
   ) {
     const retryCount = (contract.billingRetryCount || 0) + 1;
     const maxRetries = 3;
 
-    // 1. 계약 상태 업데이트
+    // 1. 계약 상태 업데이트 (Wallet v4 필드명 반영)
     await tx
       .update(schema.subscriptionContracts)
       .set({
         lastPaymentIntentId: paymentIntent.id,
-        lastPaymentAttemptId: paymentAttempt.id,
+        lastPaymentAttemptId: paymentResult.transactionId,
         isPastDue: true,
         billingRetryCount: retryCount,
       })
@@ -288,16 +306,16 @@ export class RecurringBillingService {
           nextRetryAt,
           attempts: retryCount,
           maxAttempts: maxRetries,
-          lastErrorCode: paymentAttempt.failureCode,
-          lastErrorMessage: paymentAttempt.failureMessage,
+          lastErrorCode: paymentResult.errorCode,
+          lastErrorMessage: paymentResult.errorMessage,
         })
         .onConflictDoUpdate({
           target: schema.membershipDunningQueue.contractId,
           set: {
             nextRetryAt,
             attempts: retryCount,
-            lastErrorCode: paymentAttempt.failureCode,
-            lastErrorMessage: paymentAttempt.failureMessage,
+            lastErrorCode: paymentResult.errorCode,
+            lastErrorMessage: paymentResult.errorMessage,
             updatedAt: new Date(),
           },
         });

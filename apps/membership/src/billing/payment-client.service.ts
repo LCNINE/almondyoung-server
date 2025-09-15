@@ -3,46 +3,43 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
-// 결제 서버 API 타입 정의
+// Wallet v4 API 타입 정의 (최신 아키텍처 반영)
 export interface PaymentIntentRequest {
-  userId: string; // 최상위 필드로 이동 (결제 서버 요구사항)
-  type: 'MEMBERSHIP_FEE';
+  customerId: string; // Wallet v4: customerId 사용 (userId가 아님)
+  type: 'MEMBERSHIP_FEE'; // Wallet v4: 실제 사용하는 타입
   amount: number;
-  currency: string;
-  description: string;
   metadata: {
     contractId: string;
     planId: string;
+    billingCycle: string; // 정기결제 식별용
   };
 }
 
 export interface PaymentIntentResponse {
-  intentId: string; // 결제 서버는 intentId로 반환 (id가 아님)
+  id: string; // Wallet v4: 실제로는 'id' 필드 사용
+  customerId: string;
   type: string;
   amount: number;
-  currency: string;
-  status: 'PENDING' | 'PROCESSING' | 'CAPTURED' | 'FAILED';
-  description: string;
+  status: 'PENDING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED' | 'CANCELED';
   metadata: Record<string, any>;
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface PaymentAttemptRequest {
-  provider: string; // 임시: 결제 서버 요구사항 (추후 서버에서 profileId 기반 자동 추론 예정)
-  profileId: string; // 저장된 결제 프로필 ID (필수)
+// Wallet v4: 서버 간 결제 실행 요청 (PaymentOrchestratorService 사용)
+export interface PaymentProcessRequest {
+  providerType: 'HMS_CARD' | 'HMS_BNPL' | 'TOSS'; // Wallet v4에서 실제 지원하는 Provider
+  profileId?: string; // HMS_CARD의 경우 필수
+  instrumentRef?: string; // HMS BNPL의 경우 사용
 }
 
-export interface PaymentAttemptResponse {
-  attemptId: string; // 실제 응답 필드명: attemptId
-  intentId: string;
-  provider: string;
-  status: 'PENDING' | 'PROCESSING' | 'CAPTURED' | 'FAILED';
-  amount: string; // 실제 응답: 문자열 형태
-  createdAt: string;
-  actor: string;
-  errorMessage?: string; // 실제 응답 필드명: errorMessage
-  instrumentKind: string;
-  transactionId: string;
+// Wallet v4: 실제 결제 실행 결과 (PaymentResult 인터페이스)
+export interface PaymentProcessResponse {
+  success: boolean;
+  transactionId?: string;
+  code?: string; // 도메인 코드(성공/실패)
+  message?: string; // 사용자/로그 메시지
+  raw?: unknown; // 원 응답 스냅샷(옵션)
 }
 
 export interface PaymentProfile {
@@ -102,7 +99,7 @@ export class PaymentClientService {
       );
 
       this.logger.log(
-        `Payment intent created successfully: ${response.data.intentId}`,
+        `Payment intent created successfully: ${response.data.id}`,
       );
       return response.data as PaymentIntentResponse;
     } catch (error) {
@@ -112,28 +109,54 @@ export class PaymentClientService {
         this.logger.error(
           `Response data: ${JSON.stringify(error.response.data)}`,
         );
+
+        // Wallet v4 특정 에러 코드 처리
+        if (error.response.status === 400) {
+          throw new Error(
+            `Invalid payment intent request: ${error.response.data?.message || error.message}`,
+          );
+        } else if (error.response.status === 404) {
+          throw new Error(
+            `Payment endpoint not found - check Wallet server version`,
+          );
+        } else if (error.response.status >= 500) {
+          throw new Error(`Wallet server error: ${error.response.status}`);
+        }
       }
+
+      // 네트워크 에러 처리
+      if (error.code === 'ECONNREFUSED') {
+        throw new Error(
+          `Cannot connect to Wallet server at ${this.paymentServerUrl}`,
+        );
+      }
+
       throw new Error(`Payment intent creation failed: ${error.message}`);
     }
   }
 
   /**
-   * 결제 시도 실행
+   * 결제 실행 (Wallet v4: PaymentOrchestratorService 사용)
    * @param intentId 결제 Intent ID
-   * @param request 결제 시도 요청 데이터
+   * @param request 결제 실행 요청 데이터
    */
-  async createPaymentAttempt(
+  async processPayment(
     intentId: string,
-    request: PaymentAttemptRequest,
-  ): Promise<PaymentAttemptResponse> {
+    request: PaymentProcessRequest,
+  ): Promise<PaymentProcessResponse> {
     try {
       this.logger.log(
-        `Creating payment attempt for intent: ${intentId} with profile: ${request.profileId}`,
+        `Processing payment for intent: ${intentId} with provider: ${request.providerType}`,
+      );
+
+      // 디버깅: 실제 전송되는 데이터 확인
+      this.logger.debug(
+        `Payment process request data: ${JSON.stringify(request)}`,
       );
 
       const response = await firstValueFrom(
-        this.httpService.post<PaymentAttemptResponse>(
-          `${this.paymentServerUrl}/v2/payments/intents/${intentId}/attempts`,
+        this.httpService.post<PaymentProcessResponse>(
+          `${this.paymentServerUrl}/v2/payments/intents/${intentId}/process`,
           request,
           {
             headers: {
@@ -143,16 +166,46 @@ export class PaymentClientService {
         ),
       );
 
-      this.logger.log(
-        `Payment attempt created: ${response.data.attemptId} with status: ${response.data.status}`,
+      // 디버깅: 실제 응답 데이터 확인
+      this.logger.debug(
+        `Payment process response data: ${JSON.stringify(response.data)}`,
       );
-      return response.data as PaymentAttemptResponse;
+
+      this.logger.log(
+        `Payment processed: ${response.data.transactionId} with success: ${response.data.success}`,
+      );
+      return response.data as PaymentProcessResponse;
     } catch (error) {
       this.logger.error(
-        `Failed to create payment attempt: ${error.message}`,
+        `Failed to process payment: ${error.message}`,
         error.stack,
       );
-      throw new Error(`Payment attempt creation failed: ${error.message}`);
+
+      if (error.response) {
+        this.logger.error(
+          `Payment process response status: ${error.response.status}`,
+        );
+        this.logger.error(
+          `Payment process response data: ${JSON.stringify(error.response.data)}`,
+        );
+
+        // Wallet v4 결제 실행 특정 에러 처리
+        if (error.response.status === 400) {
+          throw new Error(
+            `Invalid payment process request: ${error.response.data?.message || error.message}`,
+          );
+        } else if (error.response.status === 404) {
+          throw new Error(`Payment intent not found: ${intentId}`);
+        } else if (error.response.status === 409) {
+          throw new Error(`Payment already processed: ${intentId}`);
+        } else if (error.response.status >= 500) {
+          throw new Error(
+            `Wallet server error during payment processing: ${error.response.status}`,
+          );
+        }
+      }
+
+      throw new Error(`Payment processing failed: ${error.message}`);
     }
   }
 
@@ -166,9 +219,9 @@ export class PaymentClientService {
 
       const response = await firstValueFrom(
         this.httpService.get<PaymentProfile[]>(
-          `${this.paymentServerUrl}/v2/payment-profiles`,
+          `${this.paymentServerUrl}/v2/payments/profiles/hms-card`,
           {
-            params: { userId, isDefault: true, status: 'ACTIVE' },
+            params: { customerId: userId, status: 'ACTIVE' }, // Wallet v4: customerId 사용
             headers: {
               'Content-Type': 'application/json',
             },
@@ -222,15 +275,15 @@ export class PaymentClientService {
    * 결제 Attempt 상태 조회
    * @param attemptId 결제 Attempt ID
    */
-  async getPaymentAttempt(attemptId: string): Promise<PaymentAttemptResponse> {
+  async getPaymentAttempt(attemptId: string): Promise<PaymentProcessResponse> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get<PaymentAttemptResponse>(
+        this.httpService.get<PaymentProcessResponse>(
           `${this.paymentServerUrl}/v2/payments/attempts/${attemptId}`,
         ),
       );
 
-      return response.data as PaymentAttemptResponse;
+      return response.data as PaymentProcessResponse;
     } catch (error) {
       this.logger.error(
         `Failed to get payment attempt ${attemptId}: ${error.message}`,
