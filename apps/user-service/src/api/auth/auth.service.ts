@@ -230,7 +230,7 @@ export class AuthService {
     }
   }
 
-  async verifyEmail(
+  async verifySignUpEmail(
     token: string,
     reply: FastifyReply,
   ): Promise<{ accessToken: string }> {
@@ -289,6 +289,8 @@ export class AuthService {
         reply,
       );
       await this.setRefreshToken(verificationToken.user.id, reply);
+      // 마지막 활동일 업데이트
+      await this.lastActivityAtUpdate(verificationToken.user);
 
       await this.eventPublisher.publishEvent('USER_CREATED', {
         userId: verificationToken.user.id,
