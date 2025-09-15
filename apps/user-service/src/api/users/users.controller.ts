@@ -124,6 +124,7 @@ export class UsersController {
   @ApiOperation({ summary: '현재 사용자 정보 조회' })
   @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
   @Get('me')
+  @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: User) {
     return this.usersService.retrieveMe(user.id);

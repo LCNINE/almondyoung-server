@@ -42,7 +42,7 @@ export const userConsents = pgTable('user_consents', {
   id: serial('id').primaryKey(),
   userId: uuid('user_id')
     .notNull()
-    .references(() => users.id)
+    .references(() => users.id, { onDelete: 'cascade' })
     .unique(),
   // 필수 동의 항목들
   isOver14: boolean('is_over_14').notNull().default(false), // 만 14세 이상
@@ -196,6 +196,10 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     references: [profiles.userId],
   }),
   identities: many(userIdentities),
+  consents: one(userConsents, {
+    fields: [users.id],
+    references: [userConsents.userId],
+  }),
 }));
 
 export const tokensRelations = relations(tokens, ({ one }) => ({
@@ -242,6 +246,13 @@ export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
 export const userIdentitiesRelations = relations(userIdentities, ({ one }) => ({
   user: one(users, {
     fields: [userIdentities.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userConsentsRelations = relations(userConsents, ({ one }) => ({
+  user: one(users, {
+    fields: [userConsents.userId],
     references: [users.id],
   }),
 }));
