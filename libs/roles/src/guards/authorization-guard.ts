@@ -8,7 +8,6 @@ export interface JwtPayload {
   sub: string;
   scopes: string[];
 }
-
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -19,8 +18,9 @@ export class AuthorizationGuard implements CanActivate {
       SCOPES_KEY,
       [context.getHandler(), context.getClass()],
     );
+
     if (!requiredScopes || requiredScopes.length === 0) {
-      // 스코프 요구가 없다면 이 가드 관점에서는 통과
+      // 스코프 요구가 없다면 통과
       return true;
     }
 
@@ -33,16 +33,14 @@ export class AuthorizationGuard implements CanActivate {
     }
 
     // 사용자의 스코프 집합
-    const have = new Set(user.scopes);
+    const userScopes = new Set(user.scopes);
 
-    // master면 바로통과
-    if (have.has('master')) return true;
+    // master 스코프가 있으면 바로 통과
+    if (userScopes.has('master')) {
+      return true;
+    }
 
-    // master가 아닌 경우, master를 제외한 모든 required 스코프를 가지고 있어야 통과
-    const nonMasterScopes = requiredScopes.filter(
-      (scope) => scope !== 'master',
-    );
-
-    return nonMasterScopes.every((s) => have.has(s));
+    // required 스코프 중 하나라도 가지고 있으면 통과
+    return requiredScopes.some((scope) => userScopes.has(scope));
   }
 }
