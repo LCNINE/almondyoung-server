@@ -118,72 +118,43 @@
       async function handleRedirectPayment(providerId, config, intent) {
         log(`REDIRECT 결제 시작: ${providerId}`);
 
-        if (providerId !== 'TOSS') {
-          throw new Error(`지원하지 않는 REDIRECT Provider: ${providerId}`);
-        }
-
         try {
-          // 1. SDK 로드 보장
-          await loadTossSDK();
-          log('SDK 로드 보장됨. window.TossPayments 객체 타입 확인...');
-
-          if (typeof window.TossPayments !== 'function') {
-            throw new Error(
-              'TossPayments가 함수가 아닙니다. SDK가 잘못 로드되었습니다.',
-            );
+          if (providerId === 'TOSS') {
+            // Toss 테스트 서버를 사용한 실제 결제 처리
+            await handleTossRedirectPayment(config, intent);
+          } else {
+            throw new Error(`지원하지 않는 Provider: ${providerId}`);
           }
-          log(`TossPayments 타입: ${typeof window.TossPayments}. 정상.`);
-
-          // 2. clientKey 경로 확인 및 초기화
-          const clientKey = config.config.clientKey;
-          if (!clientKey) {
-            throw new Error('TOSS clientKey가 제공되지 않았습니다.');
-          }
-          log(`TossPayments 초기화 시도 (ClientKey: ${clientKey})`);
-          const tossPayments = TossPayments(clientKey);
-
-          // 3. [진단 코드] 생성된 tossPayments 인스턴스 구조를 콘솔에 출력
-          log(
-            'tossPayments 인스턴스 생성 완료. **개발자 도구 콘솔에서 객체 구조를 확인하세요.**',
-          );
-          console.log('--- [진단] tossPayments 인스턴스 ---');
-          console.dir(tossPayments);
-
-          // 4. Toss 공식 문서에 명시된 정확한 호출 체인 사용
-          if (typeof tossPayments.payment !== 'function') {
-            throw new Error(
-              'tossPayments 인스턴스에 payment 메서드가 없습니다! SDK 버전이나 로드 방식에 문제가 있을 수 있습니다.',
-            );
-          }
-          const payment = tossPayments.payment({ customerKey: intent.id });
-
-          // 5. [진단 코드] 생성된 payment 객체 구조를 콘솔에 출력
-          log(
-            'payment 객체 생성 완료. **개발자 도구 콘솔에서 객체 구조를 확인하세요.**',
-          );
-          console.log('--- [진단] payment 객체 ---');
-          console.dir(payment);
-
-          log('payment.requestPayment 호출 시도...');
-          if (typeof payment.requestPayment !== 'function') {
-            throw new Error(
-              '생성된 payment 객체에 requestPayment 메서드가 없습니다! 이것이 오류의 직접적인 원인입니다.',
-            );
-          }
-
-          // 6. 최종 결제창 호출
-          await payment.requestPayment({
-            method: 'CARD',
-            amount: { currency: 'KRW', value: parseInt(intent.amount, 10) },
-            orderId: intent.id,
-            orderName: intent.orderName,
-            successUrl: `${window.location.origin}/html/payment-success.html`,
-            failUrl: `${window.location.origin}/html/payment-fail.html`,
-          });
         } catch (error) {
-          console.error('handleRedirectPayment에서 심각한 오류 발생:', error);
+          console.error('handleRedirectPayment에서 오류 발생:', error);
           throw error;
         }
+      }
+
+      async function handleTossRedirectPayment(config, intent) {
+        // 1. SDK 로드
+        await loadTossSDK();
+        log('Toss SDK 로드 완료');
+
+        // 2. TossPayments 초기화
+        const clientKey = config.config.clientKey;
+        if (!clientKey) {
+          throw new Error('TOSS clientKey가 제공되지 않았습니다.');
+        }
+
+        const tossPayments = TossPayments(clientKey);
+        const payment = tossPayments.payment({ customerKey: intent.id });
+
+        // 3. 결제창 호출 (Toss에서 결제 완료 후 successUrl로 리다이렉트)
+        await payment.requestPayment({
+          method: 'CARD',
+          amount: { currency: 'KRW', value: parseInt(intent.amount, 10) },
+          orderId: intent.id,
+          orderName: intent.orderName,
+          // Toss는 결제 완료 후 paymentKey, orderId, amount를 쿼리 파라미터로 전달
+          successUrl: `http://127.0.0.1:5500/almondyoung-server/html/payment-success.html`,
+          failUrl: `http://127.0.0.1:5500/almondyoung-server/html/payment-fail.html`,
+        });
       }
 
       function loadTossSDK() {
@@ -204,14 +175,38 @@
       // --- 이하 다른 자바스크립트 함수들은 이전과 동일 (생략) ---
 
       async function loadCheckoutSession(intentId) {
-        /* 이전과 동일 */
-        const response = await fetch(`${API_BASE}/v2/checkout/sessions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ intentId }),
-        });
-        if (!response.ok) throw new Error('세션 로딩 실패');
-        return response.json();
+        // 🔒 보안 개선: UI 데이터만 조회하는 전용 API 사용
+        const response = await fetch(
+          `${API_BASE}/v2/payments/checkout/ui-data/${intentId}`,
+          {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'UI 데이터 로딩 실패');
+        }
+
+        const uiData = await response.json();
+
+        // 서버에서 검증된 안전한 UI 데이터로 세션 구성
+        return {
+          intent: {
+            id: uiData.intentId,
+            amount: uiData.amount,
+            orderName: uiData.orderName,
+            allowedProviders: uiData.allowedProviders,
+          },
+          providers: {
+            TOSS: {
+              flow: 'REDIRECT',
+              config: {
+                clientKey: uiData.clientConfig?.TOSS?.clientKey,
+              },
+            },
+          },
+        };
       }
       function renderPaymentMethods(session) {
         /* 이전과 동일 */
@@ -256,14 +251,24 @@
         const intentId = new URLSearchParams(window.location.search).get(
           'intentId',
         );
-        if (!intentId) return showError('intentId 파라미터가 필요합니다.');
+        if (!intentId)
+          return showError(
+            'URL에 intentId 파라미터가 필요합니다. 예: ?intentId=pi_xxxxx',
+          );
+
+        log(`결제 Intent ID: ${intentId}`);
         document.getElementById('loading').style.display = 'block';
+
         try {
           const session = await loadCheckoutSession(intentId);
+          log('Intent 정보 로드 완료', session.intent);
           renderPaymentMethods(session);
           document.getElementById('checkout-content').style.display = 'block';
         } catch (e) {
-          showError(`초기화 실패: ${e.message}`);
+          console.error('초기화 오류:', e);
+          showError(
+            `초기화 실패: ${e.message}. 서버가 실행 중인지 확인하세요 (${API_BASE})`,
+          );
         } finally {
           document.getElementById('loading').style.display = 'none';
         }

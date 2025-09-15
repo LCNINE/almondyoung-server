@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   ChargePort,
+  PaymentError,
   PaymentResult,
   ProviderType,
   TossPayload,
@@ -9,129 +10,114 @@ import {
 @Injectable()
 export class TossChargeProvider implements ChargePort<ProviderType.TOSS> {
   private readonly logger = new Logger(TossChargeProvider.name);
-
-  async process(payload: TossPayload): Promise<PaymentResult> {
-    this.logger.log(`➡️ 토스 결제 처리 시작 - Amount: ${payload.amount}KRW`);
-
-    try {
-      // 1. 빌링키를 이용한 결제
-      if (payload.billingKey) {
-        this.logger.log(`토스 빌링키 결제 - BillingKey: ${payload.billingKey}`);
-        // TODO: 실제 토스 빌링키 결제 API 호출 로직 구현
-        // 현재는 Mock 처리
-        const transactionId = `TOSS_BILLING_${Date.now()}`;
-        return {
-          success: true,
-          transactionId,
-          code: 'SUCCESS',
-          message: '토스 빌링키 결제 성공',
-          raw: { billingKey: payload.billingKey },
-        };
-      }
-
-      // 2. 일회성 토큰(paymentKey)을 이용한 결제 승인
-      if (payload.oneTimeToken) {
-        this.logger.log(
-          `토스 일회성 결제 승인 - Token: ${payload.oneTimeToken}`,
-        );
-        return await this.confirmPayment(
-          payload.oneTimeToken,
-          payload.amount,
-          payload.metadata,
-        );
-      }
-
-      throw new Error(
-        'TossPayload에는 billingKey 또는 oneTimeToken이 필요합니다.',
-      );
-    } catch (error: any) {
-      this.logger.error(`❌ 토스 결제 실패: ${error.message}`, error.stack);
-      return {
-        success: false,
-        code: 'TOSS_PAYMENT_ERROR',
-        message: `토스 결제 실패: ${error.message}`,
-        raw: error,
-      };
-    }
-  }
+  private readonly TOSS_API_URL = 'https://api.tosspayments.com/v1';
 
   /**
-   * 토스페이먼츠 결제 승인 API를 호출하여 최종 결제를 완료합니다.
-   * @param paymentKey 프론트에서 전달받은 일회성 결제 키
-   * @param amount 검증할 결제 금액
-   * @param metadata 주문 ID 등 추가 정보
+   * TossPayload를 받아 결제를 처리합니다.
+   * oneTimeToken (paymentKey) 또는 billingKey를 기반으로 결제를 실행합니다.
    */
-  private async confirmPayment(
-    paymentKey: string,
-    amount: number,
-    metadata: any,
-  ): Promise<PaymentResult> {
-    const orderId = metadata?.orderId ?? `TOSS_ORDER_${Date.now()}`;
-    const response = await this.callTossConfirmAPI({
-      paymentKey,
-      amount,
-      orderId,
-    });
+  async process(payload: TossPayload): Promise<PaymentResult> {
+    // 1. 일회성 토큰(paymentKey)을 이용한 결제 승인
+    if (payload.oneTimeToken) {
+      this.logger.log(
+        `➡️ 토스 일회성 결제 승인 요청 - OrderId: ${
+          payload.metadata?.intentId ?? 'N/A'
+        }`,
+      );
+      return this.confirmPayment(payload);
+    }
 
-    if (response.success) {
+    // 2. 빌링키를 이용한 결제
+    if (payload.billingKey) {
+      this.logger.log(
+        `➡️ 토스 빌링키 결제 요청 - BillingKey: ${payload.billingKey.slice(
+          -4,
+        )}`,
+      );
+      // TODO: 실제 토스 빌링키 결제 API 연동 로직 구현 필요
+      // 현재는 Mock 성공을 반환합니다.
       return {
         success: true,
-        transactionId: response.data.lastTransactionKey,
-        code: 'SUCCESS',
-        message: '토스페이먼츠 결제 성공',
-        raw: response.data,
-      };
-    } else {
-      return {
-        success: false,
-        code: response.error,
-        message: response.errorMessage,
-        raw: response,
+        transactionId: `toss_billing_${Date.now()}`,
+        code: 'SUCCESS_MOCKED',
+        message: '토스 빌링키 결제 (Mock)',
       };
     }
+
+    // 두 가지 필수 값 중 하나도 없으면 에러 처리
+    throw new PaymentError(
+      'INVALID_PAYLOAD',
+      'TossPayload에는 oneTimeToken 또는 billingKey가 반드시 필요합니다.',
+    );
   }
 
   /**
-   * 외부 API 호출을 담당하는 private 메서드
+   * 토스페이먼츠의 '결제 승인 API'를 호출합니다.
+   * @private
    */
-  private async callTossConfirmAPI(payload: {
-    paymentKey: string;
-    amount: number;
-    orderId: string;
-  }): Promise<{
-    success: boolean;
-    data?: any;
-    error?: string;
-    errorMessage?: string;
-  }> {
+  private async confirmPayment(payload: TossPayload): Promise<PaymentResult> {
     const secretKey = process.env.TOSS_SECRET_KEY;
-    if (!secretKey) throw new Error('TOSS_SECRET_KEY가 설정되지 않았습니다.');
+    if (!secretKey) {
+      throw new PaymentError(
+        'PROVIDER_CONFIG_ERROR',
+        'TOSS_SECRET_KEY 환경변수가 설정되지 않았습니다.',
+      );
+    }
 
-    const response = await fetch(
-      'https://api.tosspayments.com/v1/payments/confirm',
-      {
+    // 상위 서비스(Orchestrator)에서 intentId를 metadata로 넘겨주는 것이 이상적입니다.
+    const orderId = payload.metadata?.intentId ?? `temp-order-${Date.now()}`;
+    const paymentKey = payload.oneTimeToken!;
+
+    try {
+      const response = await fetch(`${this.TOSS_API_URL}/payments/confirm`, {
         method: 'POST',
         headers: {
-          Authorization: `Basic ${Buffer.from(secretKey + ':').toString('base64')}`,
+          // 토스페이먼츠 인증 헤더
+          Authorization: `Basic ${Buffer.from(secretKey + ':').toString(
+            'base64',
+          )}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          paymentKey: payload.paymentKey,
-          orderId: payload.orderId,
+          paymentKey: paymentKey,
+          orderId: orderId,
           amount: payload.amount,
         }),
-      },
-    );
+      });
 
-    const responseData = await response.json();
-    if (response.ok) {
-      return { success: true, data: responseData };
-    } else {
-      return {
-        success: false,
-        error: responseData.code || 'TOSS_CONFIRM_FAILED',
-        errorMessage: responseData.message || '토스페이먼츠 승인 실패',
-      };
+      const responseData = await response.json();
+
+      // API 응답을 우리 시스템의 PaymentResult 형식으로 '번역'합니다.
+      if (response.ok) {
+        this.logger.log(`✅ 토스 결제 승인 성공 - OrderId: ${orderId}`);
+        return {
+          success: true,
+          transactionId: responseData.paymentKey, // 고유 식별자로 paymentKey를 사용
+          code: responseData.status, // 예: 'DONE', 'CANCELED' 등
+          message: '토스페이먼츠 결제 승인 성공',
+          raw: responseData, // 디버깅 및 추가 정보 저장을 위해 원본 응답 포함
+        };
+      } else {
+        this.logger.warn(
+          `⚠️ 토스 결제 승인 실패 - OrderId: ${orderId}, Code: ${responseData.code}, Msg: ${responseData.message}`,
+        );
+        return {
+          success: false,
+          code: responseData.code,
+          message: responseData.message,
+          raw: responseData,
+        };
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ 토스 API 호출 중 예외 발생: ${error.message}`,
+        error.stack,
+      );
+      // 네트워크 에러 등 예기치 못한 실패 처리
+      throw new PaymentError(
+        'PROVIDER_API_ERROR',
+        `토스 API 요청 실패: ${error.message}`,
+      );
     }
   }
 }

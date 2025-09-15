@@ -23,6 +23,10 @@ async function bootstrap() {
       files: 1,
     },
   });
+  app.enableCors({
+    origin: ['http://127.0.0.1:5500', 'http://localhost:5000'], // Live Server 주소 허용
+    credentials: true,
+  });
 
   // 정적 파일 서빙 설정 (HTML 파일들)
   // 프로젝트 루트의 html 폴더를 가리킴 (폴더명 변경 대응)

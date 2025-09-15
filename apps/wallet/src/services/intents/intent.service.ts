@@ -4,6 +4,7 @@ import * as schema from '../../shared/database/schema';
 
 import { NewPaymentIntent, PaymentIntent } from '../../shared/database/types'; // Drizzle 타입
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { WalletExecutor } from '../../shared/database';
 
 /**
  * PaymentIntentService - 결제 의도(Intent)의 생명주기 관리
@@ -24,32 +25,31 @@ export class PaymentIntentService {
    * @param params Intent 생성에 필요한 정보
    * @returns 생성된 PaymentIntent 객체
    */
-  async createIntent(params: {
-    customerId: string;
-    amount: number;
-    type: schema.PaymentIntentType;
-    expiresInMinutes?: number;
-    metadata?: Record<string, any>;
-  }): Promise<PaymentIntent> {
-    const {
-      customerId,
-      amount,
-      type,
-      expiresInMinutes = 30,
-      metadata,
-    } = params;
+  async createIntent(
+    params: {
+      customerId: string;
+      amount: number;
+      type: schema.PaymentIntentType;
+      expiresInMinutes?: number;
+      metadata?: Record<string, any>;
+    },
+    tx?: WalletExecutor, // ✨ [개선] 트랜잭션 객체를 받을 수 있도록 tx 인자 추가
+  ): Promise<PaymentIntent> {
+    const executor = tx || this.db.db; // tx가 없으면 기본 DB 인스턴스 사용
 
     const newIntent: NewPaymentIntent = {
-      id: generateUUIDv7(), // Payment Intent Prefix
-      customerId,
-      amount,
-      type,
+      id: generateUUIDv7(),
+      customerId: params.customerId,
+      amount: params.amount,
+      type: params.type,
       status: 'PENDING',
-      expiresAt: new Date(Date.now() + expiresInMinutes * 60 * 1000),
-      metadata,
+      expiresAt: new Date(
+        Date.now() + (params.expiresInMinutes || 30) * 60 * 1000,
+      ),
+      metadata: params.metadata,
     };
 
-    const [createdIntent] = await this.db.db
+    const [createdIntent] = await executor
       .insert(schema.paymentIntents)
       .values(newIntent)
       .returning();

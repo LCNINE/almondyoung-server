@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { eq, and } from 'drizzle-orm';
 import { WalletExecutor } from '../../shared/database';
+import { ProviderType } from '../../providers/payment-provider.interface';
 
 /**
  * 공통 `payment_profiles` 테이블을 관리하는 Repository
@@ -20,14 +21,14 @@ export class PaymentProfilesRepository {
       id: string;
       userId: string;
       kind: 'CARD' | 'BANK_ACCOUNT' | 'WALLET';
-
+      provider: ProviderType;
       name?: string | null;
     },
     tx: WalletExecutor = this.executor,
   ) {
     const [result] = await tx
       .insert(schema.paymentProfiles)
-      .values({ ...input, status: 'PENDING', provider: 'HMS_CARD' })
+      .values({ ...input, status: 'PENDING', provider: input.provider })
       .returning({ id: schema.paymentProfiles.id });
     return result.id;
   }

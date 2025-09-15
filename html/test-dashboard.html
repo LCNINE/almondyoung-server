@@ -2,186 +2,143 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <title>Universal Checkout 테스트 대시보드</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wallet Service 테스트 대시보드 v3</title>
     <style>
+      /* ... (스타일은 기존과 동일하게 유지하거나 필요에 따라 추가) ... */
       body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f5f6fa;
+        font-family: 'Pretendard', sans-serif;
+        background-color: #f4f7f9;
         color: #333;
+        margin: 0;
+        padding: 24px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
       }
       .container {
-        background: white;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-      }
-      h1 {
-        color: #2c3e50;
-        text-align: center;
-        margin-bottom: 30px;
-      }
-      h2 {
-        color: #34495e;
-        border-bottom: 2px solid #3498db;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
-      }
-      .test-section {
-        margin-bottom: 40px;
-        padding: 20px;
-        border: 1px solid #e9ecef;
+        background: #fff;
+        padding: 24px;
         border-radius: 8px;
-        background: #f8f9fa;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        margin-bottom: 24px;
+      }
+      h1,
+      h2 {
+        color: #1a202c;
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 12px;
+        margin-top: 0;
+      }
+      .step-indicator {
+        display: flex;
+        justify-content: space-around;
+        margin: 24px 0;
+      }
+      .step {
+        text-align: center;
+        color: #a0aec0;
+        flex: 1;
+        padding: 10px;
+        border-bottom: 4px solid #e2e8f0;
+        transition: all 0.3s ease;
+      }
+      .step.active {
+        color: #2c5282;
+        border-bottom-color: #4299e1;
+        font-weight: bold;
+      }
+      .step.completed {
+        color: #2f855a;
+        border-bottom-color: #48bb78;
       }
       .form-group {
-        margin-bottom: 15px;
+        margin-bottom: 16px;
       }
       label {
         display: block;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
         font-weight: 600;
-        color: #495057;
+        font-size: 14px;
       }
       input,
       select,
       textarea {
         width: 100%;
         padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
+        border-radius: 6px;
+        border: 1px solid #cbd5e0;
         box-sizing: border-box;
       }
       button {
-        padding: 12px 24px;
-        background-color: #3498db;
-        color: white;
+        padding: 10px 18px;
         border: none;
         border-radius: 6px;
+        background-color: #4299e1;
+        color: white;
+        font-weight: bold;
         cursor: pointer;
-        font-size: 16px;
-        font-weight: 500;
-        margin-right: 10px;
-        margin-bottom: 10px;
-        transition: background-color 0.3s;
+        transition: background-color 0.2s;
       }
       button:hover {
-        background-color: #2980b9;
+        background-color: #2b6cb0;
       }
       button.secondary {
-        background-color: #95a5a6;
+        background-color: #a0aec0;
       }
       button.secondary:hover {
-        background-color: #7f8c8d;
-      }
-      button.success {
-        background-color: #27ae60;
-      }
-      button.success:hover {
-        background-color: #229954;
+        background-color: #718096;
       }
       button.danger {
-        background-color: #e74c3c;
+        background-color: #e53e3e;
       }
       button.danger:hover {
-        background-color: #c0392b;
+        background-color: #c53030;
       }
-      .response-area {
-        background: #2c3e50;
-        color: #ecf0f1;
-        padding: 15px;
-        border-radius: 6px;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        max-height: 300px;
-        overflow-y: auto;
-        margin-top: 10px;
-        white-space: pre-wrap;
+      button.success {
+        background-color: #48bb78;
       }
-      .step-indicator {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 30px;
-        padding: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 8px;
-        color: white;
-      }
-      .step {
-        flex: 1;
-        text-align: center;
-        padding: 10px;
-        border-radius: 4px;
-        margin: 0 5px;
-        background: rgba(255, 255, 255, 0.2);
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-      .step.active {
-        background: rgba(255, 255, 255, 0.3);
-        transform: scale(1.05);
-      }
-      .step.completed {
-        background: rgba(46, 204, 113, 0.8);
-      }
-      .quick-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-bottom: 20px;
-      }
-      .status-indicator {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 12px;
-        font-weight: bold;
-        margin-left: 10px;
-      }
-      .status-success {
-        background: #d4edda;
-        color: #155724;
-      }
-      .status-error {
-        background: #f8d7da;
-        color: #721c24;
-      }
-      .status-pending {
-        background: #fff3cd;
-        color: #856404;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-      }
-      @media (max-width: 768px) {
-        .grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      .copy-btn {
-        font-size: 12px;
-        padding: 4px 8px;
-        margin-left: 10px;
+      button:disabled {
+        background-color: #e2e8f0;
+        cursor: not-allowed;
       }
       .api-endpoint {
-        background: #e8f4fd;
-        border: 1px solid #bee5eb;
-        padding: 10px;
+        background-color: #edf2f7;
+        padding: 8px 12px;
         border-radius: 4px;
-        font-family: monospace;
-        margin-bottom: 10px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 14px;
+        margin-bottom: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .response-area {
+        background-color: #1a202c;
+        color: #f7fafc;
+        padding: 16px;
+        border-radius: 6px;
+        height: 300px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 13px;
+      }
+      .quick-actions button {
+        margin-right: 8px;
+      }
+      .copy-btn {
+        padding: 4px 8px;
+        font-size: 12px;
+        background-color: #718096;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>🚀 Universal Checkout 테스트 대시보드</h1>
+      <h1>🚀 Wallet Service 테스트 대시보드 (v3 Architecture)</h1>
 
       <div class="step-indicator">
         <div class="step" id="step-1">
@@ -203,11 +160,8 @@
       </div>
 
       <div class="quick-actions">
-        <button onclick="loadPreset('order')">📦 주문 결제 테스트</button>
-        <button onclick="loadPreset('membership')">
-          👑 멤버십 결제 테스트
-        </button>
-        <button onclick="loadPreset('bnpl')">💳 BNPL 테스트</button>
+        <button onclick="loadPreset('order')">📦 주문 결제</button>
+        <button onclick="loadPreset('membership')">👑 멤버십 결제</button>
         <button class="secondary" onclick="clearAll()">🗑️ 전체 초기화</button>
         <button class="danger" onclick="checkServerStatus()">
           🔍 서버 상태 확인
@@ -216,27 +170,23 @@
     </div>
 
     <div class="grid">
-      <!-- 왼쪽: 테스트 폼들 -->
       <div>
-        <!-- 1. Intent 생성 -->
         <div class="container">
           <div class="test-section">
-            <h2>1️⃣ Intent 생성</h2>
+            <h2>1️⃣ Intent 생성 (Orchestrator 준비)</h2>
             <div class="api-endpoint">
               POST /v2/payments/intents
               <button
                 class="copy-btn"
-                onclick="copyToClipboard('POST http://localhost:5000/v2/payments/intents')"
+                onclick="copyToClipboard('POST /v2/payments/intents')"
               >
-                📋 복사
+                📋
               </button>
             </div>
-
             <div class="form-group">
               <label>사용자 ID</label>
               <input type="text" id="userId" value="test_user_001" />
             </div>
-
             <div class="form-group">
               <label>결제 금액 (원)</label>
               <input
@@ -247,20 +197,6 @@
                 max="10000000"
               />
             </div>
-
-            <div class="form-group">
-              <label>결제 타입</label>
-              <select id="paymentType">
-                <option value="ORDER">ORDER - 일반 주문</option>
-                <option value="MEMBERSHIP_FEE">
-                  MEMBERSHIP_FEE - 멤버십 정기결제
-                </option>
-                <option value="BNPL_CAPTURE">
-                  BNPL_CAPTURE - BNPL 월말 캡처
-                </option>
-              </select>
-            </div>
-
             <div class="form-group">
               <label>메타데이터 (JSON)</label>
               <textarea
@@ -269,7 +205,6 @@
                 placeholder='{"orderName": "아몬드 스페셜 에디션", "source": "web"}'
               ></textarea>
             </div>
-
             <button onclick="createIntent()">🚀 Intent 생성</button>
             <button class="secondary" onclick="getIntent()">
               🔍 Intent 조회
@@ -277,20 +212,18 @@
           </div>
         </div>
 
-        <!-- 2. Session 생성 -->
         <div class="container">
           <div class="test-section">
-            <h2>2️⃣ Universal Checkout Session 생성</h2>
+            <h2>2️⃣ Checkout Session 생성 (웹 결제 흐름)</h2>
             <div class="api-endpoint">
               POST /v2/checkout/sessions
               <button
                 class="copy-btn"
-                onclick="copyToClipboard('POST http://localhost:5000/v2/checkout/sessions')"
+                onclick="copyToClipboard('POST /v2/checkout/sessions')"
               >
-                📋 복사
+                📋
               </button>
             </div>
-
             <div class="form-group">
               <label>Intent ID</label>
               <input
@@ -299,7 +232,6 @@
                 placeholder="pi_xxxxxxxxxx"
               />
             </div>
-
             <button onclick="createSession()">🎨 Session 생성</button>
             <button
               class="success"
@@ -312,67 +244,62 @@
           </div>
         </div>
 
-        <!-- 3. 직접 Finalize 테스트 -->
         <div class="container">
           <div class="test-section">
-            <h2>3️⃣ 직접 Finalize 테스트</h2>
+            <h2>3️⃣ 서버 to 서버 결제 테스트 (API 직접 호출)</h2>
             <div class="api-endpoint">
-              POST /v2/payments/intents/{intentId}/attempts/finalize
+              POST /v2/payments/{intentId}/execute
               <button
                 class="copy-btn"
-                onclick="copyToClipboard('POST http://localhost:5000/v2/payments/intents/{intentId}/attempts/finalize')"
+                onclick="copyToClipboard('POST /v2/payments/{intentId}/execute')"
               >
-                📋 복사
+                📋
               </button>
             </div>
-
             <div class="form-group">
               <label>Intent ID</label>
               <input
                 type="text"
-                id="finalizeIntentId"
+                id="executeIntentId"
                 placeholder="pi_xxxxxxxxxx"
               />
             </div>
-
             <div class="form-group">
               <label>Provider</label>
-              <select id="finalizeProvider">
+              <select id="executeProvider">
                 <option value="TOSS">TOSS</option>
-                <option value="POINTS">POINTS</option>
-                <option value="BNPL">BNPL</option>
-                <option value="CMS">CMS</option>
+                <option value="HMS_BNPL">HMS_BNPL</option>
+                <option value="TEST_MOCK">TEST_MOCK</option>
               </select>
             </div>
-
             <div class="form-group">
-              <label>Instrument Ref (승인키)</label>
+              <label>Payment Key (e.g., Toss 결제키)</label>
               <input
                 type="text"
-                id="instrumentRef"
-                placeholder="mock_payment_key_12345"
-                value="mock_payment_key_12345"
+                id="paymentKey"
+                placeholder="tgen_xxxxxxxxxx"
+                value="mock-payment-key-succeeded"
               />
             </div>
-
-            <button onclick="finalizePayment()">✅ 결제 확정</button>
+            <button onclick="executePayment()">🚀 결제 실행 (Execute)</button>
           </div>
         </div>
       </div>
 
-      <!-- 오른쪽: 응답 및 상태 -->
       <div>
         <div class="container">
           <h2>📊 API 응답</h2>
           <div class="form-group">
-            <label>
+            <label style="display: flex; justify-content: space-between">
               최근 응답
-              <button class="copy-btn" onclick="copyResponse()">
-                📋 응답 복사
-              </button>
-              <button class="copy-btn secondary" onclick="clearResponse()">
-                🗑️ 지우기
-              </button>
+              <div>
+                <button class="copy-btn" onclick="copyResponse()">
+                  📋 복사
+                </button>
+                <button class="copy-btn secondary" onclick="clearResponse()">
+                  🗑️ 지우기
+                </button>
+              </div>
             </label>
             <div id="responseArea" class="response-area">
               테스트를 시작하려면 위의 버튼들을 클릭하세요.
@@ -387,52 +314,35 @@
               <strong>Intent ID:</strong> <span id="currentIntentId">-</span>
             </p>
             <p>
+              <strong>Intent Status:</strong>
+              <span id="currentIntentStatus">-</span>
+            </p>
+            <p>
               <strong>Session ID:</strong> <span id="currentSessionId">-</span>
             </p>
             <p><strong>결제 금액:</strong> <span id="currentAmount">-</span></p>
-            <p><strong>결제 타입:</strong> <span id="currentType">-</span></p>
-            <p>
-              <strong>허용 Provider:</strong>
-              <span id="currentProviders">-</span>
-            </p>
           </div>
-        </div>
-
-        <div class="container">
-          <h2>🛠️ 유틸리티</h2>
-          <button onclick="generateTestData()">🎲 테스트 데이터 생성</button>
-          <button onclick="exportTestCase()">💾 테스트 케이스 내보내기</button>
-          <button onclick="importTestCase()">📁 테스트 케이스 가져오기</button>
-          <input
-            type="file"
-            id="importFile"
-            style="display: none"
-            accept=".json"
-          />
         </div>
       </div>
     </div>
 
     <script>
-      const API_BASE = 'http://localhost:5000';
+      const API_BASE = 'http://localhost:5000'; // 포트를 실제 서버에 맞게 변경
       let currentState = {
         intentId: null,
+        intentStatus: null,
         sessionId: null,
         amount: null,
-        type: null,
-        providers: null,
       };
 
       // 로그 함수
       function log(message, data = null) {
         const timestamp = new Date().toLocaleTimeString();
         const responseArea = document.getElementById('responseArea');
-
         let logMessage = `[${timestamp}] ${message}`;
         if (data) {
           logMessage += '\n' + JSON.stringify(data, null, 2);
         }
-
         responseArea.textContent =
           logMessage + '\n\n' + responseArea.textContent;
       }
@@ -444,19 +354,21 @@
           method,
           headers: {
             'Content-Type': 'application/json',
-            'Idempotency-Key': 'test_' + Date.now(),
           },
         };
-
+        // POST, PUT, PATCH 요청에만 멱등성 키 추가
+        if (['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) {
+          options.headers['Idempotency-Key'] = 'test-' + crypto.randomUUID();
+        }
         if (body) {
           options.body = JSON.stringify(body);
         }
 
         log(`🚀 ${method} ${endpoint}`, body);
-
         try {
           const response = await fetch(url, options);
           const data = await response.json();
+          const responseLog = document.createElement('div');
 
           if (response.ok) {
             log(`✅ 성공 (${response.status})`, data);
@@ -475,35 +387,37 @@
       async function createIntent() {
         const userId = document.getElementById('userId').value;
         const amount = parseInt(document.getElementById('amount').value);
-        const type = document.getElementById('paymentType').value;
-        const metadataText = document.getElementById('intentMetadata').value;
-
         let metadata = {};
-        if (metadataText.trim()) {
-          try {
+        try {
+          const metadataText = document
+            .getElementById('intentMetadata')
+            .value.trim();
+          if (metadataText) {
             metadata = JSON.parse(metadataText);
-          } catch (e) {
-            alert('메타데이터 JSON 형식이 잘못되었습니다.');
-            return;
           }
+        } catch (e) {
+          alert('메타데이터 JSON 형식이 잘못되었습니다.');
+          return;
         }
 
-        const body = { userId, amount, type, metadata };
+        // [수정 전]
+        // const body = { userId, amount, metadata };
+
+        // [✅ 수정 후] 서버의 CreateIntentDto 스키마에 맞게 필드명을 변경하고 'type'을 추가합니다.
+        const body = {
+          customerId: userId, // 'userId' -> 'customerId'로 변경
+          amount: amount,
+          type: 'ORDER', // 'type' 필드 추가 (예시로 'ORDER' 하드코딩, 필요시 select box에서 값을 가져오세요)
+          metadata: metadata,
+        };
+
         const result = await apiCall('POST', '/v2/payments/intents', body);
 
         if (result.success) {
-          currentState.intentId = result.data.intentId;
-          currentState.amount = result.data.amount;
-          currentState.type = result.data.type;
-          currentState.providers = result.data.allowedProviders;
-
-          updateCurrentStatus();
-          document.getElementById('sessionIntentId').value =
-            result.data.intentId;
-          document.getElementById('finalizeIntentId').value =
-            result.data.intentId;
-
+          updateStateAndDOM(result.data);
           setStepCompleted(1);
+          // Intent가 생성되면 체크아웃 UI 버튼 활성화
+          document.getElementById('openCheckoutBtn').disabled = false;
         }
       }
 
@@ -513,124 +427,158 @@
           currentState.intentId ||
           document.getElementById('sessionIntentId').value;
         if (!intentId) {
-          alert('Intent ID가 필요합니다.');
+          alert('조회할 Intent ID가 없습니다.');
           return;
         }
-
         const result = await apiCall('GET', `/v2/payments/intents/${intentId}`);
         if (result.success) {
-          updateCurrentStatus(result.data);
+          updateStateAndDOM(result.data);
         }
       }
 
       // 2. Session 생성
+      // In the test page's <script> tag
+
       async function createSession() {
         const intentId = document.getElementById('sessionIntentId').value;
         if (!intentId) {
-          alert('Intent ID가 필요합니다.');
+          alert('Session을 생성할 Intent ID가 필요합니다.');
           return;
         }
 
-        const body = { intentId };
-        const result = await apiCall('POST', '/v2/checkout/sessions', body);
+        const body = {
+          intentId: intentId,
+          returnUrl: 'https://example.com/payment/success',
+          cancelUrl: 'https://example.com/payment/cancel',
+        };
+
+        const result = await apiCall(
+          'POST',
+          '/v2/payments/checkout/sessions',
+          body,
+        );
 
         if (result.success) {
-          currentState.sessionId = result.data.sessionId;
+          // ✅ [수정] 서버 응답의 'sessionId' 필드를 정확히 참조합니다.
+          currentState.sessionId = result.data.sessionId; // 'result.data.id' -> 'result.data.sessionId'
+
           updateCurrentStatus();
           document.getElementById('openCheckoutBtn').disabled = false;
           setStepCompleted(2);
         }
       }
-
       // 체크아웃 UI 열기
       function openCheckoutUI() {
         if (!currentState.intentId) {
-          alert('Intent ID가 필요합니다.');
+          alert('먼저 Intent를 생성해주세요.');
           return;
         }
-
-        const url = `/html/checkout.html?intentId=${currentState.intentId}`;
-        window.open(url, '_blank');
+        // checkout.html 페이지로 intentId를 파라미터로 전달
+        const checkoutUrl = `./checkout.html?intentId=${currentState.intentId}`;
+        window.open(checkoutUrl, '_blank');
         setStepActive(3);
+        // 결제가 완료되었는지 폴링 시작
+        startPollingIntentStatus(currentState.intentId);
       }
 
-      // 3. 직접 Finalize
-      async function finalizePayment() {
-        const intentId = document.getElementById('finalizeIntentId').value;
-        const provider = document.getElementById('finalizeProvider').value;
-        const instrumentRef = document.getElementById('instrumentRef').value;
+      // 3. 서버 to 서버 결제 실행
+      async function executePayment() {
+        const intentId = document.getElementById('executeIntentId').value;
+        const provider = document.getElementById('executeProvider').value;
+        const paymentKey = document.getElementById('paymentKey').value;
 
-        if (!intentId || !provider || !instrumentRef) {
+        if (!intentId || !provider || !paymentKey) {
           alert('모든 필드를 입력해주세요.');
           return;
         }
 
-        const body = { provider, instrumentRef };
+        const body = { provider, paymentKey };
         const result = await apiCall(
           'POST',
-          `/v2/payments/intents/${intentId}/attempts/finalize`,
+          `/v2/payments/${intentId}/execute`,
           body,
         );
 
         if (result.success) {
+          updateStateAndDOM(result.data);
           setStepCompleted(4);
         }
       }
 
+      // 상태 폴링
+      let pollingInterval;
+      function startPollingIntentStatus(intentId) {
+        log(`🔍 Intent [${intentId}] 상태 폴링 시작...`);
+        clearInterval(pollingInterval); // 기존 폴링 중지
+
+        pollingInterval = setInterval(async () => {
+          const result = await apiCall(
+            'GET',
+            `/v2/payments/intents/${intentId}`,
+          );
+          if (result.success) {
+            updateStateAndDOM(result.data);
+            if (
+              ['SUCCEEDED', 'FAILED', 'CANCELED'].includes(result.data.status)
+            ) {
+              log(
+                `✅ Intent [${intentId}] 최종 상태 [${result.data.status}] 확인. 폴링을 중지합니다.`,
+              );
+              clearInterval(pollingInterval);
+              setStepCompleted(4);
+            }
+          } else {
+            log(`❌ 폴링 중 오류 발생. 폴링을 중지합니다.`);
+            clearInterval(pollingInterval);
+          }
+        }, 3000); // 3초마다 확인
+      }
+
       // 프리셋 로드
       function loadPreset(type) {
-        switch (type) {
-          case 'order':
-            document.getElementById('userId').value = 'test_customer_001';
-            document.getElementById('amount').value = '50000';
-            document.getElementById('paymentType').value = 'ORDER';
-            document.getElementById('intentMetadata').value =
-              '{"orderName": "아몬드 스페셜 에디션", "source": "web"}';
-            break;
-          case 'membership':
-            document.getElementById('userId').value = 'member_premium_001';
-            document.getElementById('amount').value = '29900';
-            document.getElementById('paymentType').value = 'MEMBERSHIP_FEE';
-            document.getElementById('intentMetadata').value =
-              '{"planName": "프리미엄 멤버십", "cycle": "monthly"}';
-            break;
-          case 'bnpl':
-            document.getElementById('userId').value = 'bnpl_user_001';
-            document.getElementById('amount').value = '150000';
-            document.getElementById('paymentType').value = 'ORDER';
-            document.getElementById('intentMetadata').value =
-              '{"orderName": "BNPL 테스트 주문", "installments": 3}';
-            break;
+        clearAll();
+        if (type === 'order') {
+          document.getElementById('userId').value = 'test_customer_001';
+          document.getElementById('amount').value = '75000';
+          document.getElementById('intentMetadata').value =
+            '{"orderName": "프리미엄 원두 세트", "source": "web_test_dashboard"}';
+        } else if (type === 'membership') {
+          document.getElementById('userId').value = 'member_premium_001';
+          document.getElementById('amount').value = '9900';
+          document.getElementById('intentMetadata').value =
+            '{"planName": "월간 프리미엄", "cycle": "monthly"}';
         }
       }
 
       // 서버 상태 확인
       async function checkServerStatus() {
-        try {
-          const response = await fetch(`${API_BASE}/health`);
-          if (response.ok) {
-            log('✅ 서버 연결 정상');
-          } else {
-            log('⚠️ 서버 응답 이상', { status: response.status });
-          }
-        } catch (error) {
-          log('❌ 서버 연결 실패', { message: error.message });
-        }
+        log('📡 서버 상태 확인 중...');
+        const result = await apiCall('GET', '/health');
+        // apiCall 함수가 이미 로그를 찍어주므로 추가 작업 불필요
       }
 
-      // 현재 상태 업데이트
-      function updateCurrentStatus(data = null) {
-        const state = data || currentState;
+      // 상태 업데이트 헬퍼
+      function updateStateAndDOM(intentData) {
+        currentState.intentId = intentData.id;
+        currentState.intentStatus = intentData.status;
+        currentState.amount = intentData.amount;
+        // intentId를 다른 입력 필드에도 동기화
+        document.getElementById('sessionIntentId').value = intentData.id;
+        document.getElementById('executeIntentId').value = intentData.id;
+        updateCurrentStatus();
+      }
+
+      function updateCurrentStatus() {
         document.getElementById('currentIntentId').textContent =
-          state.intentId || '-';
+          currentState.intentId || '-';
+        document.getElementById('currentIntentStatus').textContent =
+          currentState.intentStatus || '-';
         document.getElementById('currentSessionId').textContent =
-          state.sessionId || '-';
-        document.getElementById('currentAmount').textContent = state.amount
-          ? `₩${state.amount.toLocaleString()}`
-          : '-';
-        document.getElementById('currentType').textContent = state.type || '-';
-        document.getElementById('currentProviders').textContent =
-          state.providers ? state.providers.join(', ') : '-';
+          currentState.sessionId || '-';
+        document.getElementById('currentAmount').textContent =
+          currentState.amount
+            ? `₩${currentState.amount.toLocaleString()}`
+            : '-';
       }
 
       // 단계 표시
@@ -638,31 +586,33 @@
         document
           .querySelectorAll('.step')
           .forEach((s) => s.classList.remove('active'));
-        document.getElementById(`step-${step}`).classList.add('active');
+        document.getElementById(`step-${step}`)?.classList.add('active');
       }
 
       function setStepCompleted(step) {
-        document.getElementById(`step-${step}`).classList.add('completed');
-        if (step < 4) {
-          setStepActive(step + 1);
-        }
+        document.getElementById(`step-${step}`)?.classList.add('completed');
+        if (step < 4) setStepActive(step + 1);
       }
 
-      // 유틸리티 함수들
+      // 유틸리티 함수
       function clearAll() {
         currentState = {
           intentId: null,
+          intentStatus: null,
           sessionId: null,
           amount: null,
-          type: null,
-          providers: null,
         };
         updateCurrentStatus();
+        ['sessionIntentId', 'executeIntentId'].forEach(
+          (id) => (document.getElementById(id).value = ''),
+        );
         document.getElementById('responseArea').textContent =
           '초기화되었습니다.';
         document.querySelectorAll('.step').forEach((s) => {
           s.classList.remove('active', 'completed');
         });
+        document.getElementById('openCheckoutBtn').disabled = true;
+        clearInterval(pollingInterval);
         setStepActive(1);
       }
 
@@ -671,88 +621,22 @@
       }
 
       function copyResponse() {
-        const text = document.getElementById('responseArea').textContent;
-        navigator.clipboard.writeText(text);
-        alert('응답이 클립보드에 복사되었습니다.');
+        navigator.clipboard
+          .writeText(document.getElementById('responseArea').textContent)
+          .then(() => alert('응답이 클립보드에 복사되었습니다.'));
       }
 
       function copyToClipboard(text) {
-        navigator.clipboard.writeText(text);
-        alert('클립보드에 복사되었습니다.');
+        navigator.clipboard
+          .writeText(text)
+          .then(() => alert('클립보드에 복사되었습니다.'));
       }
-
-      function generateTestData() {
-        const randomId = Math.random().toString(36).substr(2, 9);
-        document.getElementById('userId').value = `test_${randomId}`;
-        document.getElementById('amount').value =
-          Math.floor(Math.random() * 100000) + 10000;
-        document.getElementById('instrumentRef').value = `mock_key_${randomId}`;
-      }
-
-      function exportTestCase() {
-        const testCase = {
-          currentState,
-          formData: {
-            userId: document.getElementById('userId').value,
-            amount: document.getElementById('amount').value,
-            paymentType: document.getElementById('paymentType').value,
-            intentMetadata: document.getElementById('intentMetadata').value,
-          },
-          timestamp: new Date().toISOString(),
-        };
-
-        const blob = new Blob([JSON.stringify(testCase, null, 2)], {
-          type: 'application/json',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `test-case-${Date.now()}.json`;
-        a.click();
-      }
-
-      function importTestCase() {
-        document.getElementById('importFile').click();
-      }
-
-      // 파일 import 처리
-      document
-        .getElementById('importFile')
-        .addEventListener('change', function (e) {
-          const file = e.target.files[0];
-          if (!file) return;
-
-          const reader = new FileReader();
-          reader.onload = function (e) {
-            try {
-              const testCase = JSON.parse(e.target.result);
-              currentState = testCase.currentState;
-
-              if (testCase.formData) {
-                document.getElementById('userId').value =
-                  testCase.formData.userId || '';
-                document.getElementById('amount').value =
-                  testCase.formData.amount || '';
-                document.getElementById('paymentType').value =
-                  testCase.formData.paymentType || 'ORDER';
-                document.getElementById('intentMetadata').value =
-                  testCase.formData.intentMetadata || '';
-              }
-
-              updateCurrentStatus();
-              log('📁 테스트 케이스 로드됨', testCase);
-            } catch (error) {
-              alert('잘못된 테스트 케이스 파일입니다.');
-            }
-          };
-          reader.readAsText(file);
-        });
 
       // 초기화
       window.addEventListener('load', () => {
-        setStepActive(1);
-        log('🎉 Universal Checkout 테스트 대시보드가 준비되었습니다.');
-        loadPreset('order'); // 기본 프리셋 로드
+        clearAll();
+        loadPreset('order');
+        log('🎉 Wallet Service 테스트 대시보드가 준비되었습니다.');
       });
     </script>
   </body>

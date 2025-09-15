@@ -4,7 +4,7 @@
 export enum PaymentType {
   ORDER = 'ORDER',
   BNPL_CAPTURE = 'BNPL_CAPTURE',
-  MEMBERSHIP = 'MEMBERSHIP',
+  MEMBERSHIP_FEE = 'MEMBERSHIP_FEE',
 }
 
 export enum ProviderType {
@@ -87,7 +87,12 @@ export interface ProfileRegistrar<TInput = any, TMeta = any> {
   register(
     input: TInput,
     ctx: { tx: any },
-  ): Promise<{ externalId?: string; status: string; meta?: TMeta }>;
+  ): Promise<{
+    externalId?: string;
+    status: string;
+    // TMeta는 성공 시의 메타 타입, 실패 시엔 Record<string, any>를 허용
+    meta?: TMeta | Record<string, any>;
+  }>;
   revoke?(profileId: string, ctx: { tx: any }): Promise<void>;
   verify?(
     profileId: string,

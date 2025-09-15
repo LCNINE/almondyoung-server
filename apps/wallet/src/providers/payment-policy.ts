@@ -21,8 +21,8 @@ export const PAYMENT_POLICY_TABLE = {
   [PaymentType.BNPL_CAPTURE]: [
     ProviderType.HMS_BNPL, // CMS만 허용 - 토스는 수수료 이익 없음
   ],
-  [PaymentType.MEMBERSHIP]: [
-    ProviderType.HMS_BNPL, // 정기 결제는 CMS가 적합
+  [PaymentType.MEMBERSHIP_FEE]: [
+    ProviderType.HMS_CARD, // 멤버십 정기 결제는 HMS_CARD만 허용
   ],
 } as const;
 

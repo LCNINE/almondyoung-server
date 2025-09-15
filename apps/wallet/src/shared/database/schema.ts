@@ -861,8 +861,8 @@ export const paymentRefunds = pgTable(
 export const checkoutSessions = pgTable(
   'checkout_sessions',
   {
-    id: varchar('id', { length: 30 }).primaryKey(), // cs_xxxxx
-    intentId: varchar('intent_id', { length: 30 })
+    id: varchar('id', { length: 36 }).primaryKey(), // cs_xxxxx
+    intentId: varchar('intent_id', { length: 36 })
       .notNull()
       .references(() => paymentIntents.id, { onDelete: 'cascade' }),
     redirectUrl: text('redirect_url').notNull(), // 우리 호스트 결제 UI or 지갑 허브
@@ -873,7 +873,19 @@ export const checkoutSessions = pgTable(
       .notNull()
       .default('PENDING'),
     // 세션이 생성된 컨텍스트(디바이스/언어 등) 정도만 메타로 보관
-    metadata: text('metadata'),
+    metadata: jsonb('metadata')
+      .$type<{
+        deviceInfo?: {
+          userAgent?: string;
+          platform?: string;
+          language?: string;
+        };
+        source?: string;
+        referrer?: string;
+        [key: string]: any; // 추가 필드 허용
+      }>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(), // NOT NULL이지만 기본값이 있어서 문제없음
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

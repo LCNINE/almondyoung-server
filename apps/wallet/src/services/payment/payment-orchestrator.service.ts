@@ -2,9 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-
-// ✨ [변경] Executor만 주입받고, Validator는 제거합니다.
 import { PaymentExecutorService } from './payment-executor.service';
 import {
   PaymentRequest,
@@ -14,25 +11,17 @@ import {
 } from '../../providers/payment-provider.interface';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
 
-/**
- * [리팩토링] PaymentOrchestrator - 얇은 외피(Facade) 역할
- *
- * 책임:
- * - 기존 호출부와의 호환성 유지 (점진적 폐지 예정)
- * - Intent 조회 후, 새로운 PaymentExecutorService 호출
- * - 결제 시도(Attempt) 결과 기록
- */
 @Injectable()
 export class PaymentOrchestratorService {
   private readonly logger = new Logger(PaymentOrchestratorService.name);
 
   constructor(
     private readonly db: DbService<typeof schema>,
-    private readonly paymentExecutor: PaymentExecutorService, // ✨ [변경] 새로운 Executor 주입
+    private readonly paymentExecutor: PaymentExecutorService,
   ) {}
 
   /**
-   * 결제 실행 - 모든 로직을 새로운 Executor에게 위임합니다.
+   * 결제 실행 - Intent 조회부터 모든 상태 업데이트까지 담당합니다.
    */
   async executePayment(
     intentId: string,
@@ -40,6 +29,7 @@ export class PaymentOrchestratorService {
     options: {
       profileId?: string;
       instrumentRef?: string;
+      sessionId?: string;
       actor?: string;
       source?: string;
     } = {},
@@ -48,8 +38,6 @@ export class PaymentOrchestratorService {
       `Orchestrating payment for Intent: ${intentId} via ${providerType}`,
     );
 
-    // 트랜잭션은 이제 Executor가 관리하므로, Orchestrator는 트랜잭션을 시작하지 않습니다.
-    // 1. Intent 조회 (Executor에게 넘겨줄 정보를 위해)
     const intent = await this.db.db.query.paymentIntents.findFirst({
       where: eq(schema.paymentIntents.id, intentId),
     });
@@ -58,10 +46,9 @@ export class PaymentOrchestratorService {
       throw new Error(`Intent not found: ${intentId}`);
     }
 
-    // 2. 새로운 Executor가 요구하는 PaymentRequest 형식으로 변환
     const paymentRequest: PaymentRequest = {
       intentId: intent.id,
-      attemptId: generateUUIDv7(), // 고유한 Attempt ID 생성
+      attemptId: generateUUIDv7(),
       amount: intent.amount,
       paymentType: intent.type as PaymentType,
       userId: intent.customerId,
@@ -69,71 +56,120 @@ export class PaymentOrchestratorService {
       profileId: options.profileId,
       instrumentRef: options.instrumentRef,
       metadata: {
-        intentType: intent.type,
+        sessionId: options.sessionId,
         source: options.source || 'api',
         actor: options.actor || 'SYSTEM',
       },
     };
 
-    try {
-      // 3. ✨ 핵심: 모든 복잡한 로직을 새로운 Executor에게 위임
-      const result = await this.paymentExecutor.execute(
-        paymentRequest,
-        providerType,
-        intent,
-      );
+    // ✨ [핵심 개선] 모든 DB 업데이트를 하나의 트랜잭션으로 묶어 원자성을 보장합니다.
+    return this.db.db.transaction(async (tx) => {
+      try {
+        // 1. Executor에게 실제 결제 실행을 위임 (트랜잭션 컨텍스트 전달)
+        const result = await this.paymentExecutor.execute(
+          paymentRequest,
+          providerType,
+          intent,
+          { tx },
+        );
 
-      // 4. 결과(Attempt) 기록 (이 책임은 당분간 Orchestrator에 유지)
-      await this.saveAttemptRecord(paymentRequest, result, providerType);
-      await this.updateIntentStatus(intentId, result);
+        // 2. 성공 시 모든 관련 상태를 이 트랜잭션 안에서 업데이트합니다.
+        await this.saveAttemptRecord(paymentRequest, result, providerType, tx);
+        await this.updateIntentStatus(intentId, result, paymentRequest, tx);
+        if (options.sessionId) {
+          await this.updateCheckoutSessionStatus(options.sessionId, result, tx);
+        }
 
-      this.logger.log(
-        `Orchestration successful for Intent: ${intentId}, Success: ${result.success}`,
-      );
-      return result;
-    } catch (error: any) {
-      this.logger.error(
-        `Orchestration failed for Intent: ${intentId}`,
-        error.stack,
-      );
-      // 실패 시에도 Attempt 기록
-      const failedResult: PaymentResult = {
-        success: false,
-        code: error.code,
-        message: error.message,
-        raw: error,
-      };
-      await this.saveAttemptRecord(paymentRequest, failedResult, providerType);
-      await this.updateIntentStatus(intentId, failedResult);
-      throw error; // 에러를 다시 던져서 호출자에게 알림
-    }
+        this.logger.log(
+          `Orchestration successful for Intent: ${intentId}, Success: ${result.success}`,
+        );
+        return result;
+      } catch (error: any) {
+        this.logger.error(
+          `Orchestration failed for Intent: ${intentId}`,
+          error.stack,
+        );
+
+        // 3. 실패 시에도 필요한 기록은 남기고, 트랜잭션은 롤백됩니다.
+        const failedResult: PaymentResult = {
+          success: false,
+          code: error.code,
+          message: error.message,
+        };
+        await this.saveAttemptRecord(
+          paymentRequest,
+          failedResult,
+          providerType,
+          tx,
+        );
+        if (options.sessionId) {
+          await this.updateCheckoutSessionStatus(
+            options.sessionId,
+            failedResult,
+            tx,
+          );
+        }
+
+        // 에러를 다시 던져서 트랜잭션을 롤백시키고 호출자에게 알림
+        throw error;
+      }
+    });
   }
 
+  // ✨ [신규] Checkout Session의 상태를 업데이트하는 책임 추가
+  private async updateCheckoutSessionStatus(
+    sessionId: string,
+    result: PaymentResult,
+    tx: any, // Drizzle 트랜잭션 객체
+  ): Promise<void> {
+    this.logger.log(
+      `Updating Checkout Session ${sessionId} status to ${result.success ? 'COMPLETED' : 'CANCELLED'}`,
+    );
+    await tx
+      .update(schema.checkoutSessions)
+      .set({
+        status: result.success ? 'COMPLETED' : 'CANCELLED',
+      })
+      .where(eq(schema.checkoutSessions.id, sessionId));
+  }
+
+  // ✨ [수정] 트랜잭션 객체(tx)를 받도록 수정
   private async saveAttemptRecord(
     request: PaymentRequest,
     result: PaymentResult,
     providerType: ProviderType,
+    tx: any,
   ): Promise<void> {
-    await this.db.db.insert(schema.paymentAttempts).values({
+    const finalStatus =
+      request.paymentType === 'BNPL_CAPTURE' ? 'AUTHORIZED' : 'CAPTURED';
+
+    await tx.insert(schema.paymentAttempts).values({
       id: request.attemptId,
       intentId: request.intentId,
       provider: providerType,
       instrumentType: request.instrumentType,
       profileId: request.profileId || null,
       amount: request.amount,
-      status: result.success ? 'CAPTURED' : 'FAILED',
-      // ... (기타 필드)
+      status: result.success ? finalStatus : 'FAILED',
+      transactionId: result.transactionId ?? null,
+      eventContext: JSON.stringify(request.metadata),
     });
   }
 
+  // ✨ [수정] 트랜잭션 객체(tx)를 받도록 수정
   private async updateIntentStatus(
     intentId: string,
     result: PaymentResult,
+    request: PaymentRequest,
+    tx: any,
   ): Promise<void> {
-    await this.db.db
+    const finalStatus =
+      request.paymentType === 'BNPL_CAPTURE' ? 'AUTHORIZED' : 'CAPTURED';
+
+    await tx
       .update(schema.paymentIntents)
       .set({
-        status: result.success ? 'CAPTURED' : 'FAILED',
+        status: result.success ? finalStatus : 'FAILED',
         updatedAt: new Date(),
       })
       .where(eq(schema.paymentIntents.id, intentId));

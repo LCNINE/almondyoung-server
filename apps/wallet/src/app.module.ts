@@ -35,6 +35,8 @@ import { HmsBnplChargeProvider } from './providers/hms-bnpl.charge';
 import { TossChargeProvider } from './providers/toss.charge';
 import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
+import { IdempotencyService } from './services/idempotency.service';
+import { CheckoutSessionService } from './services/checkout-session.service';
 
 @Module({
   imports: [
@@ -60,11 +62,12 @@ import { TossRefundProvider } from './providers/toss.refund';
     PaymentService,
     PaymentIntentService,
     PaymentProfileService,
+    CheckoutSessionService,
 
     // --- 내부 흐름 제어 서비스 ---
     PaymentOrchestratorService,
     PaymentExecutorService,
-
+    IdempotencyService,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
     CmsCardProfilesRepository,
