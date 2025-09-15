@@ -145,8 +145,8 @@ export class AuthService {
         throw new ConflictException('이미 존재하는 아이디입니다.');
       }
 
-      const existingUserByNickname = await this.usersService.findUserByUsername(
-        signUpDto.username,
+      const existingUserByNickname = await this.usersService.findUserByNickname(
+        signUpDto.nickname,
       );
 
       if (existingUserByNickname) {
