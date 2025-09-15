@@ -56,15 +56,6 @@ export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
   thirdPartySharing: boolean;
 
   @ApiProperty({
-    description: '마케팅 정보 수신 동의 (광고성 정보 수신 동의)',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsBoolean()
-  marketingConsent?: boolean;
-
-  @ApiProperty({
     description: '이메일 수신 동의',
     example: false,
     required: false,
@@ -115,6 +106,18 @@ export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
   @MinLength(2, { message: '이름은 최소 2자 이상이어야 합니다.' })
   @MaxLength(8, { message: '이름은 최대 8자 이하여야 합니다.' })
   username: string;
+
+  @ApiProperty({
+    description: '닉네임',
+    example: '홍길동',
+    minLength: 2,
+    maxLength: 8,
+  })
+  @IsString({ message: '닉네임은 문자열이어야 합니다.' })
+  @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
+  @MinLength(2, { message: '닉네임은 최소 2자 이상이어야 합니다.' })
+  @MaxLength(8, { message: '닉네임은 최대 8자 이하여야 합니다.' })
+  nickname: string;
 }
 
 // 일반 회원가입 DTO (비밀번호 필수)

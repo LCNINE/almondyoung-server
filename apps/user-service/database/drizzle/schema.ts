@@ -53,7 +53,6 @@ export const userConsents = pgTable('user_consents', {
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
   // 선택 동의 항목들
-  marketingConsent: boolean('marketing_consent').default(false), // 마케팅 정보 수신 동의 (광고성 정보 수신 동의)
   emailConsent: boolean('email_consent').default(false), // 이메일 수신 동의
   smsConsent: boolean('sms_consent').default(false), // SMS 수신 동의
   pushConsent: boolean('push_consent').default(false), // 앱 푸시 알림 수신 동의
@@ -68,6 +67,7 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   loginId: varchar('login_id', { length: 255 }).notNull().unique(),
   username: varchar('username', { length: 255 }).notNull(),
+  nickname: varchar('nickname', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: varchar('password', { length: 255 }),
   isEmailVerified: boolean('is_email_verified').notNull().default(false),

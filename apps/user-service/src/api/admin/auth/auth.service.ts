@@ -48,7 +48,7 @@ export class AuthService {
   ) {
     const client = this.getClient(tx);
 
-    const { name, loginId, password, roleId, phone_number, email } =
+    const { name, loginId, password, roleId, phone_number, email, nickname } =
       createAccountDto;
 
     const saltOrRounds = 10;
@@ -59,6 +59,7 @@ export class AuthService {
       .insert(schema.users)
       .values({
         username: name,
+        nickname,
         loginId,
         password: hash,
         isEmailVerified: true,

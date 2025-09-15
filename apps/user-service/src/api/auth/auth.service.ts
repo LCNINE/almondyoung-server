@@ -61,6 +61,7 @@ export class AuthService {
     const {
       email,
       username,
+      nickname,
       password,
       loginId,
       isOver14,
@@ -68,7 +69,6 @@ export class AuthService {
       electronicTransaction,
       privacyPolicy,
       thirdPartySharing,
-      marketingConsent,
       emailConsent,
       smsConsent,
       pushConsent,
@@ -134,7 +134,7 @@ export class AuthService {
 
         return {
           message:
-            '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 이메일로 발송했습니다.',
+            '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
         };
       }
 
@@ -163,6 +163,7 @@ export class AuthService {
           .values({
             email,
             username,
+            nickname,
             loginId,
             password: hash,
             isEmailVerified: false,
@@ -177,7 +178,6 @@ export class AuthService {
           electronicTransaction,
           privacyPolicy,
           thirdPartySharing,
-          marketingConsent,
           emailConsent,
           smsConsent,
           pushConsent,
@@ -531,6 +531,7 @@ export class AuthService {
       .values({
         loginId: `${provider}_${socialUser.providerId}`,
         username: socialUser.name,
+        nickname: socialUser.name,
         email: socialUser.email,
         password: null,
         isEmailVerified: true,

@@ -24,6 +24,14 @@ export class CreateAccountDto {
   name: string;
 
   @ApiProperty({
+    description: '닉네임',
+    example: '홍길동',
+  })
+  @IsString({ message: '닉네임은 문자열이어야 합니다.' })
+  @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
+  nickname: string;
+
+  @ApiProperty({
     description: '로그인 ID',
     example: 'user123',
     minLength: 4,
