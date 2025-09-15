@@ -206,7 +206,7 @@ export class AuthService {
           scopes: '',
           expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
         });
-
+        console.log('verificationToken:', verificationToken);
         // 이메일 발송
         await this.notificationPublisher.publishUserVerificationEvent(
           user.id,
