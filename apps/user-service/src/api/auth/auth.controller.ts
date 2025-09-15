@@ -128,7 +128,7 @@ export class AuthController {
 
   @ApiOperation({ summary: '이메일 인증' })
   @ApiResponse({ status: 200, description: '이메일 인증 성공' })
-  @Post('callback/verify-email')
+  @Post('callback/confirm-signup')
   @Public()
   async verifySignUpEmail(
     @Body(ValidationPipe) { token }: { token: string },
