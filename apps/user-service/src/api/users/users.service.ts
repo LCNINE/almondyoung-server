@@ -170,6 +170,23 @@ export class UsersService {
     }
   }
 
+  // 닉네임으로 사용자 찾기
+  async findUserByNickname(nickname: string): Promise<schema.User | null> {
+    try {
+      const [users] = await this.dbService.db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.nickname, nickname))
+        .limit(1);
+
+      return users;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        '사용자명으로 사용자 조회 중 오류가 발생했습니다.',
+      );
+    }
+  }
+
   // 로그인 ID로 사용자 찾기
   async findUserByLoginId(id: string): Promise<schema.User | null> {
     try {
