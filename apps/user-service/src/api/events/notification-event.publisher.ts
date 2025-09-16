@@ -16,12 +16,14 @@ export class NotificationEventPublisher {
     email: string,
     name: string,
     verificationToken: string,
+    redirect_to: string,
   ) {
     return this.eventPublisher.publishEvent('USER_VERIFICATION', {
       userId,
       email,
       name,
       verificationToken,
+      redirect_to,
     });
   }
 
