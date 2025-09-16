@@ -27,7 +27,6 @@ import { NotificationEventPublisher } from '../events/notification-event.publish
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-import { REDIRECT_TO } from '../../constants/auth.constant';
 
 @Injectable()
 export class AuthService {
@@ -50,9 +49,27 @@ export class AuthService {
 
   private getSocialRedirectUrl(provider: ProviderType): string {
     const frontBaseUrl =
-      this.configService.get('SIGNUP_REDIRECT_URL') || 'http://localhost:3000';
+      this.configService.get('AUTH_SOCIAL_LOGIN_REDIRECT_URL') ||
+      'http://localhost:3000';
 
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
+  }
+
+  private getEmailVerifyCallbackUrl(): string {
+    // 서버쪽 주소
+    const frontBaseUrl =
+      this.configService.get('AUTH_EMAIL_VERIFY_CALLBACK_URL') ||
+      'http://localhost:5000/auth/callback/signup';
+
+    return new URL(`/auth/callback/signup`, frontBaseUrl).toString();
+  }
+
+  private getEmailVerifyRedirectUrl(): string {
+    const frontBaseUrl =
+      this.configService.get('AUTH_EMAIL_VERIFY_REDIRECT_URL') ||
+      'http://localhost:8000';
+
+    return new URL(`/auth/callback/signup`, frontBaseUrl).toString();
   }
 
   async signUp(
@@ -126,13 +143,14 @@ export class AuthService {
         });
 
         // 이메일 재발송
-        await this.notificationPublisher.publishUserVerificationEvent(
-          existingUser.id,
-          existingUser.email,
-          existingUser.username,
-          verificationToken,
-          REDIRECT_TO!,
-        );
+        await this.notificationPublisher.publishUserVerificationEvent({
+          userId: existingUser.id,
+          email: existingUser.email,
+          name: existingUser.username,
+          verificationToken: verificationToken,
+          callbackUrl: this.getEmailVerifyCallbackUrl(),
+          redirectTo: this.getEmailVerifyRedirectUrl(),
+        });
 
         return {
           message:
@@ -210,13 +228,14 @@ export class AuthService {
         });
 
         // 이메일 발송
-        await this.notificationPublisher.publishUserVerificationEvent(
-          user.id,
-          user.email,
-          user.username,
-          verificationToken,
-          REDIRECT_TO!,
-        );
+        await this.notificationPublisher.publishUserVerificationEvent({
+          userId: user.id,
+          email: user.email,
+          name: user.username,
+          verificationToken: verificationToken,
+          callbackUrl: this.getEmailVerifyCallbackUrl(),
+          redirectTo: this.getEmailVerifyRedirectUrl(),
+        });
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
@@ -233,7 +252,7 @@ export class AuthService {
     }
   }
 
-  async verifyEmail(
+  async signupVerifyEmail(
     token: string,
     reply: FastifyReply,
     redirectTo: string,
@@ -344,13 +363,14 @@ export class AuthService {
     });
 
     // 이메일 재발송
-    this.notificationPublisher.publishUserVerificationEvent(
-      user.id,
-      user.email,
-      user.username,
-      verificationToken,
-      REDIRECT_TO!,
-    );
+    this.notificationPublisher.publishUserVerificationEvent({
+      userId: user.id,
+      email: user.email,
+      name: user.username,
+      verificationToken: verificationToken,
+      callbackUrl: this.getEmailVerifyCallbackUrl(),
+      redirectTo: this.getEmailVerifyRedirectUrl(),
+    });
 
     return;
   }

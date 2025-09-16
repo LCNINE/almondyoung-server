@@ -3,6 +3,15 @@ import { Injectable } from '@nestjs/common';
 import { EventPublisherService, InjectEventPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/events/user.events';
 
+interface UserVerificationEvent {
+  userId: string;
+  email: string;
+  name: string;
+  verificationToken: string;
+  callbackUrl: string;
+  redirectTo: string;
+}
+
 @Injectable()
 export class NotificationEventPublisher {
   constructor(
@@ -11,19 +20,21 @@ export class NotificationEventPublisher {
   ) {}
 
   // 회원가입시 이메일 인증 이벤트 발행
-  async publishUserVerificationEvent(
-    userId: string,
-    email: string,
-    name: string,
-    verificationToken: string,
-    redirect_to: string,
-  ) {
+  async publishUserVerificationEvent({
+    userId,
+    email,
+    name,
+    verificationToken,
+    callbackUrl,
+    redirectTo,
+  }: UserVerificationEvent) {
     return this.eventPublisher.publishEvent('USER_VERIFICATION', {
       userId,
       email,
       name,
       verificationToken,
-      redirect_to,
+      callbackUrl,
+      redirectTo,
     });
   }
 

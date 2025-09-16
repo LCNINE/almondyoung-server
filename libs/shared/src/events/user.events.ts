@@ -11,7 +11,8 @@ export interface UserVerification extends BaseEventPayload {
   email: string;
   name: string;
   verificationToken: string;
-  redirect_to: string;
+  callbackUrl: string;
+  redirectTo: string;
 }
 
 export interface UserUpdatedPayload extends BaseEventPayload {
