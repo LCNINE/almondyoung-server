@@ -710,7 +710,9 @@ export class AuthService {
             secure: true,
             httpOnly: true,
           }
-        : {}),
+        : {
+            secure: false,
+          }),
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
