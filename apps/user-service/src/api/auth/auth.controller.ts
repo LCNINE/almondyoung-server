@@ -128,14 +128,14 @@ export class AuthController {
 
   @ApiOperation({ summary: '이메일 인증' })
   @ApiResponse({ status: 200, description: '이메일 인증 성공' })
-  @Post('callback/signup')
+  @Get('callback/signup')
   @Public()
-  async verifyEmail(
+  async signupVerifyEmail(
     @Query('token') token: string,
     @Query('redirect_to') redirectTo: string,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
-    return await this.authService.verifyEmail(token, res, redirectTo);
+    return await this.authService.signupVerifyEmail(token, res, redirectTo);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
