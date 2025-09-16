@@ -2,12 +2,14 @@
 import {
     Controller,
     Get,
+    Post,
     Put,
     Body,
     Param,
     ValidationPipe,
 } from '@nestjs/common';
 import { UserNotificationService } from '../services/user-notification.service';
+import { CreateUserNotificationSettingsDto, UpdateUserNotificationSettingsDto } from '../dto/user-notification-settings.dto';
 
 @Controller('api/v1/users/:userId/notification-settings')
 export class UserNotificationController {
@@ -19,16 +21,25 @@ export class UserNotificationController {
 
         return {
             userId,
-            isNotificationEnabled: settings?.isNotificationEnabled ?? true,
+            isMarketingEnabled: settings?.isMarketingEnabled ?? false,
             preferredLanguage: settings?.preferredLanguage ?? 'ko',
+            pushSettings: settings?.pushSettings || {},
             settings: settings?.settings || {},
         };
+    }
+
+    @Post()
+    async createSettings(
+        @Param('userId') userId: string,
+        @Body(ValidationPipe) dto: CreateUserNotificationSettingsDto,
+    ) {
+        return this.notificationService.createNotificationSettings(userId, dto);
     }
 
     @Put()
     async updateSettings(
         @Param('userId') userId: string,
-        @Body(ValidationPipe) dto: any,
+        @Body(ValidationPipe) dto: UpdateUserNotificationSettingsDto,
     ) {
         return this.notificationService.updateNotificationSettings(userId, dto);
     }

@@ -6,6 +6,9 @@ export interface LogContext {
 }
 
 export class StructuredLogger {
+    info(arg0: string, arg1: { friendlyName: string; channels: string[]; }) {
+        throw new Error('Method not implemented.');
+    }
     constructor(private readonly logger: Logger) { }
 
     log(message: string, context: LogContext) {

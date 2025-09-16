@@ -33,6 +33,10 @@ export class SendNotificationDto {
     @IsOptional()
     payload?: Record<string, any>;
 
+    @IsObject()
+    @IsOptional()
+    variables?: Record<string, any>;
+
     @IsString()
     @IsOptional()
     correlationId?: string;

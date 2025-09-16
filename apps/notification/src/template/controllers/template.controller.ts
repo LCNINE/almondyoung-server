@@ -1,54 +1,70 @@
-// apps/notification/src/template/controllers/template.controller.ts
-import {
-    Controller,
-    Get,
-    Post,
-    Put,
-    Body,
-    Param,
-    Query,
-    ValidationPipe,
-} from '@nestjs/common';
-import { TemplateService } from '../services/template.service';
-import {
-    CreateTemplateDto,
-    UpdateTemplateDto,
-    TemplateFilterDto,
-    PreviewTemplateDto,
-} from '../dto';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, ValidationPipe } from "@nestjs/common";
+import { TemplateService } from "../services/template.service";
+import { CreateTemplateDto, UpdateTemplateDto, TemplateFilterDto, PreviewTemplateDto } from "../dto";
 
-@Controller('api/v1/templates')
+@Controller("api/v1/templates")
 export class TemplateController {
     constructor(private readonly templateService: TemplateService) { }
 
-    @Get()
-    async findAll(@Query(ValidationPipe) filter: TemplateFilterDto) {
-        return this.templateService.findAll(filter);
+    // 구체적인 라우트들을 먼저 정의
+    @Get("kakao/list")
+    async getKakaoTemplateList() {
+        return this.templateService.getKakaoTemplateList();
     }
 
-    @Get(':key')
-    async findOne(@Param('key') key: string) {
-        return this.templateService.findByKey(key);
+    @Get("sms/list")
+    async getSmsTemplates() {
+        return this.templateService.getSmsTemplateList();
+    }
+
+    // 기본 CRUD 엔드포인트들
+    @Get()
+    async findAll(@Query(new ValidationPipe({ transform: true })) filterDto: TemplateFilterDto) {
+        return this.templateService.findAllTemplates(filterDto);
     }
 
     @Post()
-    async create(@Body(ValidationPipe) dto: CreateTemplateDto) {
-        return this.templateService.create(dto);
+    async create(@Body(ValidationPipe) createTemplateDto: CreateTemplateDto) {
+        return this.templateService.createTemplate(createTemplateDto);
     }
 
-    @Put(':key')
-    async update(
-        @Param('key') key: string,
-        @Body(ValidationPipe) dto: UpdateTemplateDto,
-    ) {
-        return this.templateService.update(key, dto);
+    // 파라미터 라우트들은 마지막에 정의
+        @Post("register-kakao/:key")
+    async registerKakaoTemplate(@Param("key") templateKey: string, @Body() templateData: any) {
+        return this.templateService.registerKakaoTemplate(templateKey, templateData);
     }
 
-    @Post(':key/preview')
-    async preview(
-        @Param('key') key: string,
-        @Body(ValidationPipe) dto: PreviewTemplateDto,
+    @Post("register-sms/:key")
+    async registerSmsTemplate(@Param("key") templateKey: string) {
+        return this.templateService.registerSmsTemplate(templateKey);
+    }
+
+    @Get("by-id/:id")
+    async findOne(@Param("id") id: string) {
+        return this.templateService.findTemplateById(id);
+    }
+
+    @Put("by-id/:id")
+    async update(@Param("id") id: string, @Body() updateTemplateDto: UpdateTemplateDto) {
+        return this.templateService.updateTemplate(id, updateTemplateDto);
+    }
+
+    @Delete("by-id/:id")
+    async remove(@Param("id") id: string) {
+        return this.templateService.deleteTemplate(id);
+    }
+
+    @Post("preview/:id")
+    async previewTemplate(@Param("id") id: string, @Body(ValidationPipe) previewDto: PreviewTemplateDto) {
+        return this.templateService.previewTemplate(id, previewDto);
+    }
+
+    @Post(":key/test/:channel")
+    async testChannelTemplate(
+        @Param("key") templateKey: string,
+        @Param("channel") channel: string,
+        @Body() testDto: any
     ) {
-        return this.templateService.preview(key, dto);
+        return this.templateService.testChannelTemplate(templateKey, channel, testDto);
     }
 }

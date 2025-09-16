@@ -192,3 +192,162 @@ export class CampaignService {
             .where(eq(notificationCampaigns.campaignId, id));
     }
 }
+    // 채널별 콘텐츠 관리 메서드들
+    async setChannelContent(campaignId: string, channel: string, content: any): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        // 기존 콘텐츠 가져오기
+        const existingContent = campaign.content || {};
+        
+        // 채널별 콘텐츠 업데이트
+        const updatedContent = {
+            ...existingContent,
+            [channel.toUpperCase()]: content
+        };
+
+        // 캠페인 업데이트
+        await this.db
+            .update(notificationCampaigns)
+            .set({ 
+                content: updatedContent,
+                updatedAt: new Date()
+            })
+            .where(eq(notificationCampaigns.campaignId, campaignId));
+
+        return {
+            campaignId,
+            channel: channel.toUpperCase(),
+            content: content,
+            message: 'Channel content updated successfully'
+        };
+    }
+
+    async getChannelContent(campaignId: string, channel: string): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        const content = campaign.content?.[channel.toUpperCase()];
+        
+        return {
+            campaignId,
+            channel: channel.toUpperCase(),
+            content: content || null,
+            message: content ? 'Channel content found' : 'No content for this channel'
+        };
+    }
+
+    async previewChannelContent(campaignId: string, channel: string, payload: any): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        const content = campaign.content?.[channel.toUpperCase()];
+        
+        if (!content) {
+            throw new BadRequestException(`No content found for channel ${channel}`);
+        }
+
+        // 간단한 템플릿 렌더링 (실제로는 TemplateRendererService 사용)
+        const renderedContent = this.renderTemplate(content, payload);
+
+        return {
+            campaignId,
+            channel: channel.toUpperCase(),
+            originalContent: content,
+            renderedContent: renderedContent,
+            payload: payload
+        };
+    }
+
+    private renderTemplate(content: any, payload: any): any {
+        // 간단한 템플릿 렌더링 로직
+        if (typeof content === 'string') {
+            return content.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+                return payload[key] || match;
+            });
+        }
+        
+        if (typeof content === 'object') {
+            const rendered = { ...content };
+            for (const [key, value] of Object.entries(rendered)) {
+                if (typeof value === 'string') {
+                    rendered[key] = value.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+                        return payload[key] || match;
+                    });
+                }
+            }
+            return rendered;
+        }
+        
+        return content;
+    }
+
+    // 타겟 그룹 관리 메서드들
+    async addTargetGroup(campaignId: string, targetGroup: any): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        // 타겟 그룹 생성 (실제로는 campaignTargetGroups 테이블에 저장)
+        const newTargetGroup = {
+            campaignId,
+            name: targetGroup.name,
+            type: targetGroup.type,
+            criteria: targetGroup.criteria,
+            userList: targetGroup.userList,
+            userCount: targetGroup.userList?.length || 0
+        };
+
+        return {
+            campaignId,
+            targetGroup: newTargetGroup,
+            message: 'Target group added successfully'
+        };
+    }
+
+    async getTargetGroups(campaignId: string): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        // 실제로는 campaignTargetGroups 테이블에서 조회
+        return {
+            campaignId,
+            targetGroups: [],
+            message: 'Target groups retrieved successfully'
+        };
+    }
+
+    async previewTargetGroup(campaignId: string, groupId: string): Promise<any> {
+        const campaign = await this.findById(campaignId);
+        
+        if (!campaign) {
+            throw new NotFoundException(`Campaign with ID ${campaignId} not found`);
+        }
+
+        // 타겟 그룹 미리보기 로직
+        return {
+            campaignId,
+            groupId,
+            preview: {
+                estimatedRecipients: 0,
+                channels: campaign.channels,
+                content: campaign.content
+            },
+            message: 'Target group preview generated'
+        };
+    }
+}

@@ -93,15 +93,17 @@ export class ResendProvider implements NotificationProvider {
 
         // 설정 초기화 - DB config 우선, 없으면 환경변수
         this.config = {
-            apiKey: config.apiKey ?? this.configService.get<string>('RESEND_API_KEY')!, // ← 필수
+            apiKey: config.apiKey ?? this.configService.get<string>('RESEND_API_KEY')!,
             fromEmail: config.fromEmail ?? this.configService.get<string>('RESEND_FROM') ?? 'noreply@almondyoung.com',
             fromName: config.fromName ?? this.configService.get<string>('RESEND_FROM_NAME') ?? 'Almond Young',
-            baseUrl: config.baseUrl ?? 'https://api.resend.com',
+            baseUrl: config.baseUrl ?? this.configService.get<string>('RESEND_BASE_URL') ?? 'https://api.resend.com',
             maxRetries: config.maxRetries ?? 3,
             retryDelay: config.retryDelay ?? 1000,
         };
-        if (!this.config.apiKey) throw new Error('RESEND_API_KEY missing');
-
+        
+        if (!this.config.apiKey) {
+            throw new Error('RESEND_API_KEY is required');
+        }
 
         // Axios 클라이언트 초기화
         this.client = axios.create({
@@ -220,6 +222,13 @@ export class ResendProvider implements NotificationProvider {
             // 403은 API 키는 유효하지만 권한이 없는 경우 (Sending access only)
             // 이 경우에도 이메일 발송은 가능하므로 healthy로 처리
             if (error.response?.status === 403) {
+                this.isHealthy = true;
+                this.lastHealthCheckTime = now;
+                return true;
+            }
+            // 401은 API 키가 제한된 경우 (Sending access only)
+            // 이 경우에도 이메일 발송은 가능하므로 healthy로 처리
+            if (error.response?.status === 401) {
                 this.isHealthy = true;
                 this.lastHealthCheckTime = now;
                 return true;

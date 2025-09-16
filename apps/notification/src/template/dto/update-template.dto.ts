@@ -1,24 +1,10 @@
-// apps/notification/src/template/dto/update-template.dto.ts
-import { IsString, IsObject, IsOptional } from 'class-validator';
+import { PartialType } from '@nestjs/swagger';
+import { CreateTemplateDto, KakaoTemplateConfig, FCMConfig, EmailConfig, SMSConfig } from './create-template.dto';
 
-export class UpdateTemplateDto {
-    @IsString()
-    @IsOptional()
-    name?: string;
-
-    @IsObject()
-    @IsOptional()
-    contents?: Record<string, Record<string, {
-        subject?: string;
-        body: string;
-        metadata?: Record<string, any>;
-    }>>;
-
-    @IsObject()
-    @IsOptional()
-    variablesSchema?: Record<string, any>;
-
-    @IsObject()
-    @IsOptional()
-    metadata?: Record<string, any>;
+export class UpdateTemplateDto extends PartialType(CreateTemplateDto) {
+    // 채널별 고급 설정도 업데이트 가능하도록 확장
+    fcmConfig?: FCMConfig;
+    emailConfig?: EmailConfig;
+    smsConfig?: SMSConfig;
+    kakaoTemplateConfig?: KakaoTemplateConfig;
 }

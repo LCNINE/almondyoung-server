@@ -255,6 +255,7 @@ export const notificationEvents = pgTable('notification_events', {
     isActive: boolean('is_active').default(true).notNull(),
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     eventKeyActiveIdx: index('idx_event_key_active').on(table.eventKey, table.isActive),

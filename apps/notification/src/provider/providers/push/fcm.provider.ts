@@ -1,3 +1,4 @@
+// apps/notification/src/provider/providers/push/fcm.provider.ts
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
@@ -53,6 +54,17 @@ export class FCMProvider implements NotificationProvider {
             clientEmail: config.clientEmail || this.configService.get<string>('FIREBASE_CLIENT_EMAIL')!,
             clientId: config.clientId || this.configService.get<string>('FIREBASE_CLIENT_ID')!,
         };
+
+        // 필수 설정값 검증
+        if (!this.config.projectId) {
+            throw new Error('FIREBASE_PROJECT_ID is required');
+        }
+        if (!this.config.privateKey) {
+            throw new Error('FIREBASE_PRIVATE_KEY is required');
+        }
+        if (!this.config.clientEmail) {
+            throw new Error('FIREBASE_CLIENT_EMAIL is required');
+        }
 
         this.initializeFirebase();
     }
@@ -280,41 +292,60 @@ export class FCMProvider implements NotificationProvider {
     }
 
     private buildAndroidConfig(androidConfig: any): admin.messaging.AndroidConfig {
+        const n = androidConfig?.notification ?? {};
+
+        const vibrateTimingsMillis: number[] | undefined = Array.isArray(n.vibrateTimings)
+            ? n.vibrateTimings
+                .map((v: any) => {
+                    if (typeof v === 'number') return v;
+                    if (typeof v !== 'string') return undefined;
+                    const s = v.trim().toLowerCase();
+                    if (s.endsWith('ms')) return Number(s.replace('ms', '').trim());
+                    if (s.endsWith('s')) return Math.round(Number(s.replace('s', '').trim()) * 1000);
+                    const num = Number(s);
+                    return Number.isFinite(num) ? num : undefined;
+                })
+                .filter((x: any) => Number.isFinite(x)) as number[]
+            : undefined;
+
+        const notification: admin.messaging.AndroidNotification | undefined = n
+            ? {
+                title: n.title,
+                body: n.body,
+                icon: n.icon,
+                color: n.color,
+                sound: n.sound,
+                tag: n.tag,
+                clickAction: n.clickAction,
+                bodyLocKey: n.bodyLocKey,
+                bodyLocArgs: n.bodyLocArgs,
+                titleLocKey: n.titleLocKey,
+                titleLocArgs: n.titleLocArgs,
+                channelId: n.channelId,
+                ticker: n.ticker,
+                sticky: n.sticky,
+                localOnly: n.localOnly,
+                defaultSound: n.defaultSound,
+                defaultVibrateTimings: n.defaultVibrateTimings,
+                defaultLightSettings: n.defaultLightSettings,
+                visibility: n.visibility,
+                notificationCount: n.notificationCount,
+                lightSettings: n.lightSettings,
+                imageUrl: n.imageUrl ?? n.image,
+                vibrateTimingsMillis: vibrateTimingsMillis,
+            }
+            : undefined;
+
         return {
             priority: androidConfig.priority || 'high',
-            ttl: androidConfig.ttl ? parseInt(androidConfig.ttl) * 1000 : undefined, // 초를 밀리초로 변환
-            notification: androidConfig.notification ? {
-                title: androidConfig.notification.title,
-                body: androidConfig.notification.body,
-                icon: androidConfig.notification.icon,
-                color: androidConfig.notification.color,
-                sound: androidConfig.notification.sound,
-                tag: androidConfig.notification.tag,
-                clickAction: androidConfig.notification.clickAction,
-                bodyLocKey: androidConfig.notification.bodyLocKey,
-                bodyLocArgs: androidConfig.notification.bodyLocArgs,
-                titleLocKey: androidConfig.notification.titleLocKey,
-                titleLocArgs: androidConfig.notification.titleLocArgs,
-                channelId: androidConfig.notification.channelId,
-                ticker: androidConfig.notification.ticker,
-                sticky: androidConfig.notification.sticky,
-                eventTime: androidConfig.notification.eventTime,
-                localOnly: androidConfig.notification.localOnly,
-                notificationPriority: androidConfig.notification.notificationPriority,
-                defaultSound: androidConfig.notification.defaultSound,
-                defaultVibrateTimings: androidConfig.notification.defaultVibrateTimings,
-                defaultLightSettings: androidConfig.notification.defaultLightSettings,
-                vibrateTimings: androidConfig.notification.vibrateTimings,
-                visibility: androidConfig.notification.visibility,
-                notificationCount: androidConfig.notification.notificationCount,
-                lightSettings: androidConfig.notification.lightSettings,
-                image: androidConfig.notification.image,
-            } : undefined,
+            ttl: androidConfig.ttl ? parseInt(androidConfig.ttl, 10) * 1000 : undefined,
+            notification,
             data: androidConfig.data,
             restrictedPackageName: androidConfig.restrictedPackageName,
             collapseKey: androidConfig.collapseKey,
         };
     }
+
 
     private buildApnsConfig(apnsConfig: any): admin.messaging.ApnsConfig {
         return {

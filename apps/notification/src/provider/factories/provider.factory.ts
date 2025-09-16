@@ -24,6 +24,7 @@ export class ProviderFactory {
             case 'twilio':
                 return new TwilioProvider(providerId, config, this.configService);
             case 'kakao':
+            case 'nhn-kakao':
             case 'nhn':
                 return new NHNProvider(providerId, config, this.configService);
             case 'fcm':

@@ -102,13 +102,24 @@ export class NHNProvider implements NotificationProvider {
 
         // 설정 초기화 - DB config 우선, 없으면 환경변수
         this.config = {
-            apiUrl: config.apiUrl || 'https://api-alimtalk.cloud.toast.com',
-            appKey: config.appKey || '56ySy3UiPmNhryr8',
-            secretKey: config.secretKey || 'p2CCuK4jPYJLZvydoVNEykYKOZb6IvkV',
-            senderKey: config.senderKey || '4bd6430a65cad17d327c758006e5cf4a773d82e6',
-            plusFriendId: config.plusFriendId || '@아몬드영',
+            apiUrl: config.apiUrl || this.configService.get<string>('NHN_API_URL') || 'https://api-alimtalk.cloud.toast.com',
+            appKey: config.appKey || this.configService.get<string>('NHN_APP_KEY')!,
+            secretKey: config.secretKey || this.configService.get<string>('NHN_SECRET_KEY')!,
+            senderKey: config.senderKey || this.configService.get<string>('NHN_SENDER_KEY')!,
+            plusFriendId: config.plusFriendId || this.configService.get<string>('NHN_PLUS_FRIEND_ID') || '@아몬드영',
             resendAppKey: config.resendAppKey || this.configService.get<string>('NHN_SMS_APP_KEY'),
         };
+
+        // 필수 설정값 검증
+        if (!this.config.appKey) {
+            throw new Error('NHN_APP_KEY is required');
+        }
+        if (!this.config.secretKey) {
+            throw new Error('NHN_SECRET_KEY is required');
+        }
+        if (!this.config.senderKey) {
+            throw new Error('NHN_SENDER_KEY is required');
+        }
 
         // Axios 클라이언트 초기화
         this.client = axios.create({
@@ -178,19 +189,13 @@ export class NHNProvider implements NotificationProvider {
                     recipientList: [{
                         recipientNo: this.formatPhoneNumber(message.to),
                         templateParameter: templateParameters,
-                        resendParameter: {
-                            isResend: true,
-                            resendType: this.getResendType(message.content),
-                            resendContent: message.content,
-                            resendSendNo,
-                        },
                         buttons: buttons.length > 0 ? buttons : undefined,
                     }],
                     statsId: metadata.statsId,
                 };
 
                 response = await this.client.post(
-                    `/alimtalk/v2.3/appkeys/${this.config.appKey}/messages`,
+                    `/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages`,
                     request
                 );
             } else {
@@ -202,12 +207,6 @@ export class NHNProvider implements NotificationProvider {
                         content: message.content,
                         templateTitle: message.subject,
                         buttons: buttons.length > 0 ? buttons : undefined,
-                        resendParameter: {
-                            isResend: true,
-                            resendType: this.getResendType(message.content),
-                            resendContent: message.content,
-                            resendSendNo,
-                        },
                     }],
                     statsId: metadata.statsId,
                 };
@@ -328,12 +327,6 @@ export class NHNProvider implements NotificationProvider {
             const recipientList: AlimtalkRecipient[] = messages.map(message => ({
                 recipientNo: this.formatPhoneNumber(message.to),
                 templateParameter: message.metadata?.templateParameters || {},
-                resendParameter: {
-                    isResend: true,
-                    resendType: this.getResendType(message.content),
-                    resendContent: message.content,
-                    resendSendNo,
-                },
                 buttons: message.metadata?.buttons || undefined,
                 recipientGroupingKey: message.metadata?.userId,
             }));
@@ -346,7 +339,7 @@ export class NHNProvider implements NotificationProvider {
             };
 
             const response = await this.client.post(
-                `/alimtalk/v2.3/appkeys/${this.config.appKey}/messages`,
+                `/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages`,
                 request
             );
 
@@ -414,15 +407,15 @@ export class NHNProvider implements NotificationProvider {
     }
 
     // 템플릿 관련 메서드들
-    async createTemplate(template: any): Promise<any> {
+    async registerTemplate(templateData: any): Promise<any> {
         try {
             const response = await this.client.post(
                 `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates`,
-                template
+                templateData
             );
             return response.data;
         } catch (error: any) {
-            this.logger.error('Failed to create template', {
+            this.logger.error('Failed to register template', {
                 error: error.message,
                 response: error.response?.data,
             });
@@ -430,25 +423,78 @@ export class NHNProvider implements NotificationProvider {
         }
     }
 
-    async getTemplates(): Promise<any[]> {
+    async createTemplate(templateData: any): Promise<any> {
+        try {
+            const requestBody = {
+                templateCode: templateData.templateCode,
+                templateName: templateData.templateName,
+                templateContent: templateData.templateContent,
+                templateMessageType: templateData.templateMessageType || 'BA',
+                templateEmphasizeType: templateData.templateEmphasizeType || 'NONE',
+                templateExtra: templateData.templateExtra,
+                templateTitle: templateData.templateTitle,
+                templateSubtitle: templateData.templateSubtitle,
+                templateHeader: templateData.templateHeader,
+                templateItem: templateData.templateItem,
+                templateItemHighlight: templateData.templateItemHighlight,
+                templateRepresentLink: templateData.templateRepresentLink,
+                templateImageName: templateData.templateImageName,
+                templateImageUrl: templateData.templateImageUrl,
+                securityFlag: templateData.securityFlag || false,
+                categoryCode: templateData.categoryCode || '999999',
+                buttons: templateData.buttons || [],
+                quickReplies: templateData.quickReplies || [],
+            };
+
+            const response = await this.client.post(
+                `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates`,
+                requestBody
+            );
+
+            this.logger.log('NHN KakaoTalk template created successfully', {
+                templateCode: templateData.templateCode,
+                response: response.data,
+            });
+
+            return {
+                templateCode: templateData.templateCode,
+                templateId: response.data.templateId,
+                status: 'PENDING',
+                ...response.data,
+            };
+        } catch (error) {
+            this.logger.error('Failed to create NHN KakaoTalk template', {
+                templateCode: templateData.templateCode,
+                error: error.response?.data || error.message,
+            });
+            throw error;
+        }
+    }
+
+    async getTemplates(): Promise<any> {
         try {
             const response = await this.client.get(
                 `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates`
             );
-            return response.data?.templateListResponse?.templates || [];
-        } catch (error: any) {
-            this.logger.error('Failed to get templates', {
-                error: error.message,
+
+            this.logger.log('NHN KakaoTalk templates retrieved successfully', {
+                count: response.data.templates?.length || 0,
             });
-            return [];
+
+            return response.data;
+        } catch (error) {
+            this.logger.error('Failed to get NHN KakaoTalk templates', {
+                error: error.response?.data || error.message,
+            });
+            throw error;
         }
     }
 
     async getMessageStatus(requestId: string, recipientSeq?: number): Promise<any> {
         try {
             const url = recipientSeq !== undefined
-                ? `/alimtalk/v2.3/appkeys/${this.config.appKey}/messages/${requestId}/${recipientSeq}`
-                : `/alimtalk/v2.3/appkeys/${this.config.appKey}/messages?requestId=${requestId}`;
+                ? `/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages/${requestId}/${recipientSeq}`
+                : `/alimtalk/v2.3/appkeys/${this.config.appKey}/auth/messages?requestId=${requestId}`;
 
             const response = await this.client.get(url);
             return response.data;
@@ -456,6 +502,74 @@ export class NHNProvider implements NotificationProvider {
             this.logger.error('Failed to get message status', {
                 requestId,
                 error: error.message,
+            });
+            throw error;
+        }
+    }
+    
+    getConfig(): NHNKakaoConfig {
+        return this.config;
+    }
+
+    // NHN 카카오톡 템플릿 상세 조회
+    async getTemplateDetail(templateCode: string): Promise<any> {
+        try {
+            const response = await this.client.get(
+                `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates/${templateCode}`
+            );
+
+            this.logger.log('NHN KakaoTalk template detail retrieved successfully', {
+                templateCode,
+            });
+
+            return response.data;
+        } catch (error) {
+            this.logger.error('Failed to get NHN KakaoTalk template detail', {
+                templateCode,
+                error: error.response?.data || error.message,
+            });
+            throw error;
+        }
+    }
+
+    // NHN 카카오톡 템플릿 수정
+    async updateTemplate(templateCode: string, updateData: any): Promise<any> {
+        try {
+            const response = await this.client.put(
+                `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates/${templateCode}`,
+                updateData
+            );
+
+            this.logger.log('NHN KakaoTalk template updated successfully', {
+                templateCode,
+            });
+
+            return response.data;
+        } catch (error) {
+            this.logger.error('Failed to update NHN KakaoTalk template', {
+                templateCode,
+                error: error.response?.data || error.message,
+            });
+            throw error;
+        }
+    }
+
+    // NHN 카카오톡 템플릿 삭제
+    async deleteTemplate(templateCode: string): Promise<any> {
+        try {
+            const response = await this.client.delete(
+                `/alimtalk/v2.3/appkeys/${this.config.appKey}/senders/${this.config.senderKey}/templates/${templateCode}`
+            );
+
+            this.logger.log('NHN KakaoTalk template deleted successfully', {
+                templateCode,
+            });
+
+            return response.data;
+        } catch (error) {
+            this.logger.error('Failed to delete NHN KakaoTalk template', {
+                templateCode,
+                error: error.response?.data || error.message,
             });
             throw error;
         }

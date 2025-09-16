@@ -12,6 +12,7 @@ import {
     GeneralSettings,
 } from '../../../database/schemas/notification-schema';
 import { Language } from '../enums';
+import { CreateUserNotificationSettingsDto, UpdateUserNotificationSettingsDto } from '../dto/user-notification-settings.dto';
 
 @Injectable()
 export class UserNotificationService {
@@ -40,14 +41,29 @@ export class UserNotificationService {
         return new Map(settings.map(s => [s.userId, s]));
     }
 
+    async createNotificationSettings(
+        userId: string,
+        dto: CreateUserNotificationSettingsDto,
+    ): Promise<UserNotificationSetting> {
+        const newSetting: NewUserNotificationSetting = {
+            userId,
+            isMarketingEnabled: dto.isMarketingEnabled,
+            preferredLanguage: dto.preferredLanguage as any,
+            pushSettings: dto.pushSettings,
+            settings: dto.settings,
+        };
+
+        const [created] = await this.db
+            .insert(userNotificationSettings)
+            .values(newSetting)
+            .returning();
+
+        return created;
+    }
+
     async updateNotificationSettings(
         userId: string,
-        dto: {
-            isMarketingEnabled?: boolean;
-            preferredLanguage?: Language;
-            pushSettings?: PushSettings;
-            settings?: GeneralSettings;
-        },
+        dto: UpdateUserNotificationSettingsDto,
     ): Promise<UserNotificationSetting> {
         const existing = await this.getUserNotificationSettings(userId);
 

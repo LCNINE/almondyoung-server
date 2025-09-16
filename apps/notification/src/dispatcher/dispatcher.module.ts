@@ -29,7 +29,7 @@ import { AlertService } from '../shared/services/alert.service';
         ProviderModule,
         TemplateModule,
     ],
-    controllers: [NotificationController],
+    controllers: [NotificationController, UserNotificationController],
     providers: [
         NotificationDispatcherService,
         NotificationProcessor,

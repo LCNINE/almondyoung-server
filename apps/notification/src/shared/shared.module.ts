@@ -8,7 +8,6 @@ import { notificationTables } from '../../database/schemas/notification-schema';
 import { EventController } from './controllers/event.controller';
 import { LogController } from './controllers/log.controller';
 import { MetricsController } from './controllers/metrics.controller';
-import { UserNotificationController } from './controllers/user-notification.controller';
 import { WebhookController } from './controllers/webhook.controller';
 
 // Services
@@ -35,7 +34,7 @@ import { WebhookService } from './services/webhook.service';
         EventController,
         LogController,
         MetricsController,
-        UserNotificationController,
+        
         WebhookController,
     ],
     providers: [

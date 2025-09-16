@@ -226,3 +226,147 @@ export class NotificationDispatcherService {
         return priorityMap[priority] || 3;
     }
 }
+    // 이벤트 기반 개별 발송 메서드
+    async processEvent(eventData: {
+        eventKey: string;
+        userId: string;
+        payload: Record<string, any>;
+        channels?: string[];
+        metadata?: Record<string, any>;
+    }): Promise<{ notificationIds: string[] }> {
+        try {
+            // 1. 이벤트 매핑 조회
+            const eventMapping = await this.getEventMapping(eventData.eventKey);
+            if (!eventMapping) {
+                throw new Error(`Event mapping not found for key: ${eventData.eventKey}`);
+            }
+
+            // 2. 템플릿 조회
+            const template = await this.templateService.findByKey(eventMapping.templateKey);
+            if (!template) {
+                throw new Error(`Template not found for key: ${eventMapping.templateKey}`);
+            }
+
+            // 3. 사용자 알림 설정 확인 (마케팅 알림인 경우)
+            if (eventMapping.category === 'MARKETING') {
+                const isMarketingEnabled = await this.userNotificationService.isMarketingEnabled(eventData.userId);
+                if (!isMarketingEnabled) {
+                    this.logger.warn('User has marketing notifications disabled', {
+                        userId: eventData.userId,
+                        eventKey: eventData.eventKey,
+                        category: eventMapping.category,
+                    });
+                    return { notificationIds: [] };
+                }
+            }
+
+            // 4. 발송할 채널 결정
+            const channelsToSend = eventData.channels || eventMapping.defaultChannels;
+            
+            // 5. 각 채널별로 알림 생성 및 발송
+            const notificationIds: string[] = [];
+            
+            for (const channel of channelsToSend) {
+                try {
+                    // 채널별 템플릿 콘텐츠 확인
+                    const channelContent = template.contents[channel as keyof typeof template.contents];
+                    if (!channelContent) {
+                        this.logger.warn(`No content found for channel ${channel}`, {
+                            templateKey: template.templateKey,
+                            channel,
+                        });
+                        continue;
+                    }
+
+                    // 알림 생성
+                    const notification = await this.createNotification({
+                        userId: eventData.userId,
+                        eventKey: eventData.eventKey,
+                        templateKey: template.templateKey,
+                        templateId: template.templateId,
+                        category: eventMapping.category,
+                        priority: eventMapping.priority,
+                        channel: channel as any,
+                        language: 'ko', // 기본값
+                        payload: eventData.payload,
+                        metadata: eventData.metadata,
+                    });
+
+                    notificationIds.push(notification.notificationId);
+
+                    // 큐에 발송 작업 추가
+                    await this.notificationQueue.add('send-notification', {
+                        notificationId: notification.notificationId,
+                        channel,
+                        template: template,
+                        payload: eventData.payload,
+                    });
+
+                } catch (error: any) {
+                    this.logger.error(`Failed to process channel ${channel}`, {
+                        userId: eventData.userId,
+                        eventKey: eventData.eventKey,
+                        channel,
+                        error: error.message,
+                    });
+                }
+            }
+
+            return { notificationIds };
+
+        } catch (error: any) {
+            this.logger.error('Failed to process event', {
+                eventKey: eventData.eventKey,
+                userId: eventData.userId,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    private async getEventMapping(eventKey: string): Promise<any> {
+        // EventMappingService를 통해 이벤트 매핑 조회
+        // 실제로는 EventMappingService를 주입받아 사용
+        return {
+            eventKey,
+            templateKey: 'default-template',
+            category: 'TRANSACTIONAL',
+            priority: 'NORMAL',
+            defaultChannels: ['EMAIL', 'PUSH']
+        };
+    }
+
+    private async createNotification(data: {
+        userId: string;
+        eventKey: string;
+        templateKey: string;
+        templateId: string;
+        category: string;
+        priority: string;
+        channel: string;
+        language: string;
+        payload: Record<string, any>;
+        metadata?: Record<string, any>;
+    }): Promise<any> {
+        const newNotification = {
+            userId: data.userId,
+            eventKey: data.eventKey,
+            templateKey: data.templateKey,
+            templateId: data.templateId,
+            category: data.category as any,
+            priority: data.priority as any,
+            channel: data.channel as any,
+            language: data.language as any,
+            payload: data.payload,
+            status: 'PENDING' as any,
+            metadata: data.metadata,
+        };
+
+        const [result] = await this.db
+            .insert(notifications)
+            .values(newNotification)
+            .returning();
+
+        return result;
+    }
+}

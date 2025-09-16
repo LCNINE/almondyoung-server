@@ -27,7 +27,7 @@ interface TwilioMessageOptions {
     messagingServiceSid?: string;
     statusCallback?: string;
     validityPeriod?: number;
-    maxPrice?: string;
+    maxPrice?: number;
     attemptCount?: number;
     smartEncoded?: boolean;
     shortenUrls?: boolean;
@@ -53,13 +53,21 @@ export class TwilioProvider implements NotificationProvider {
 
         // 설정 초기화 - DB config 우선, 없으면 환경변수
         this.config = {
-            accountSid: config.accountSid || 'ACe059ce3d5e1eb2d741c51bcea1cac1db',
-            authToken: config.authToken || 'f6f5f83e0ceb21921a96afaf464894ad',
+            accountSid: config.accountSid || this.configService.get<string>('TWILIO_ACCOUNT_SID')!,
+            authToken: config.authToken || this.configService.get<string>('TWILIO_AUTH_TOKEN')!,
             messagingServiceSid: config.messagingServiceSid || this.configService.get<string>('TWILIO_MESSAGING_SERVICE_SID'),
-            fromNumber: config.fromNumber || '+15856342856',
+            fromNumber: config.fromNumber || this.configService.get<string>('TWILIO_FROM_NUMBER'),
             statusCallbackUrl: config.statusCallbackUrl || this.configService.get<string>('TWILIO_STATUS_CALLBACK_URL'),
             useTestCredentials: config.useTestCredentials || false,
         };
+
+        // 필수 설정값 검증
+        if (!this.config.accountSid) {
+            throw new Error('TWILIO_ACCOUNT_SID is required');
+        }
+        if (!this.config.authToken) {
+            throw new Error('TWILIO_AUTH_TOKEN is required');
+        }
 
         // Twilio 클라이언트 초기화
         this.client = twilio(
@@ -423,5 +431,78 @@ export class TwilioProvider implements NotificationProvider {
                 valid: false,
             };
         }
+    }
+    // Twilio Verify 템플릿 관리 메서드들
+    async getTemplates(): Promise<any[]> {
+        try {
+            const templates = await this.client.verify.v2.templates.list({ limit: 1000 });
+            return templates.map(template => ({
+                sid: template.sid,
+                friendlyName: template.friendlyName,
+                channels: template.channels,
+                translations: template.translations,
+                status: template.translations?.en?.status || 'unknown'
+            }));
+        } catch (error: any) {
+            this.logger.error('Failed to get Twilio templates', {
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    async createTemplate(templateData: {
+        friendlyName: string;
+        text: string;
+        channels: string[];
+    }): Promise<any> {
+        try {
+            // Twilio Verify 템플릿 생성은 별도 API가 필요
+            // 여기서는 기본 템플릿 정보만 반환
+            this.logger.info('Twilio template creation requested', {
+                friendlyName: templateData.friendlyName,
+                channels: templateData.channels,
+            });
+
+            return {
+                message: 'Twilio template creation requires manual setup in Twilio Console',
+                friendlyName: templateData.friendlyName,
+                channels: templateData.channels,
+                text: templateData.text
+            };
+        } catch (error: any) {
+            this.logger.error('Failed to create Twilio template', {
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    async getTemplateStatus(templateSid: string): Promise<any> {
+        try {
+            const templates = await this.getTemplates();
+            const template = templates.find(t => t.sid === templateSid);
+
+            if (!template) {
+                throw new Error(`Template ${templateSid} not found`);
+            }
+
+            return {
+                sid: template.sid,
+                status: template.status,
+                friendlyName: template.friendlyName,
+                channels: template.channels
+            };
+        } catch (error: any) {
+            this.logger.error('Failed to get template status', {
+                templateSid,
+                error: error.message,
+            });
+            throw error;
+        }
+    }
+
+    getConfig(): TwilioConfig {
+        return this.config;
     }
 }

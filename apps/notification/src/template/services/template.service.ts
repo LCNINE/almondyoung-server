@@ -12,34 +12,60 @@ import {
     PreviewTemplateDto,
 } from '../dto';
 import { TemplateRendererService } from '../../shared/services/template-renderer.service';
+import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 
 @Injectable()
 export class TemplateService {
     constructor(
         @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
-        private readonly rendererService: TemplateRendererService,
-    ) { }
+        private readonly templateRendererService: TemplateRendererService,
+        private readonly providerManagerService: ProviderManagerService,
+    ) {}
 
-    private get db() {
-        return this.dbService.db;
+    async createTemplate(createTemplateDto: CreateTemplateDto): Promise<Template> {
+        const newTemplate: NewTemplate = {
+            ...createTemplateDto,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        };
+
+        const [template] = await this.dbService.insert(templates).values(newTemplate).returning();
+        return template;
     }
 
-    async findAll(filter: TemplateFilterDto): Promise<Template[]> {
-        const conditions: any[] = [];
+    async findAllTemplates(filterDto: TemplateFilterDto): Promise<Template[]> {
+        let query = this.dbService.select().from(templates);
 
-        if (filter.isActive !== undefined) {
-            conditions.push(eq(templates.isActive, filter.isActive));
+        if (filterDto.category) {
+            query = query.where(eq(templates.category, filterDto.category));
         }
 
-        return this.db.query.templates.findMany({
-            where: conditions.length > 0 ? and(...conditions) : undefined,
-        });
+        if (filterDto.supportedChannels && filterDto.supportedChannels.length > 0) {
+            // Note: This is a simplified filter. In a real implementation, you might need to use JSON operations
+            // depending on your database's JSON support
+        }
+
+        return await query;
+    }
+
+    async findTemplateById(id: string): Promise<Template> {
+        const [template] = await this.dbService
+            .select()
+            .from(templates)
+            .where(eq(templates.id, id));
+
+        if (!template) {
+            throw new NotFoundException(`Template with ID ${id} not found`);
+        }
+
+        return template;
     }
 
     async findByKey(key: string): Promise<Template> {
-        const template = await this.db.query.templates.findFirst({
-            where: and(eq(templates.templateKey, key), eq(templates.isActive, true))
-        });
+        const [template] = await this.dbService
+            .select()
+            .from(templates)
+            .where(eq(templates.templateKey, key));
 
         if (!template) {
             throw new NotFoundException(`Template with key ${key} not found`);
@@ -48,94 +74,188 @@ export class TemplateService {
         return template;
     }
 
-    async findById(id: string): Promise<Template> {
-        const template = await this.db.query.templates.findFirst({
-            where: eq(templates.templateId, id)
-        });
+    async updateTemplate(id: string, updateTemplateDto: UpdateTemplateDto): Promise<Template> {
+        const [template] = await this.dbService
+            .update(templates)
+            .set({ ...updateTemplateDto, updatedAt: new Date() })
+            .where(eq(templates.id, id))
+            .returning();
 
         if (!template) {
-            throw new NotFoundException(`Template with id ${id} not found`);
+            throw new NotFoundException(`Template with ID ${id} not found`);
         }
 
         return template;
     }
 
-    async create(dto: CreateTemplateDto): Promise<Template> {
-        const newTemplate: NewTemplate = {
-            templateKey: dto.templateKey,
-            name: dto.name,
-            category: dto.category || 'MARKETING',
-            contents: dto.contents, // { EMAIL: { ko: {...}, en: {...} }, KAKAO: {...} }
-            variablesSchema: dto.variablesSchema,
-            version: 1,
-            isActive: true,
-            metadata: dto.metadata,
-        };
+    async deleteTemplate(id: string): Promise<void> {
+        const result = await this.dbService
+            .delete(templates)
+            .where(eq(templates.id, id));
 
-        const [result] = await this.db
-            .insert(templates)
-            .values(newTemplate)
-            .returning();
-
-        return result;
+        if (result.rowCount === 0) {
+            throw new NotFoundException(`Template with ID ${id} not found`);
+        }
     }
 
-    async update(key: string, dto: UpdateTemplateDto): Promise<Template> {
-        const existing = await this.findByKey(key);
+    async previewTemplate(id: string, previewDto: PreviewTemplateDto): Promise<Record<string, string>> {
+        const template = await this.findTemplateById(id);
+        const renderedContents: Record<string, string> = {};
 
-        // Deactivate current version
-        await this.db
-            .update(templates)
-            .set({ isActive: false })
-            .where(eq(templates.templateId, existing.templateId));
-
-        // Create new version
-        const newTemplate: NewTemplate = {
-            ...existing,
-            ...dto,
-            templateId: undefined,
-            version: existing.version + 1,
-            isActive: true,
-            createdAt: undefined,
-            updatedAt: undefined,
-        };
-
-        const [result] = await this.db
-            .insert(templates)
-            .values(newTemplate)
-            .returning();
-
-        return result;
+        for (const channel of previewDto.channels) {
+            const content = this.getChannelTemplateContent(template, channel, previewDto.language);
+            if (content) {
+                renderedContents[channel] = this.templateRendererService.render(content, previewDto.payload);
+            }
+        }
+        
+        return renderedContents;
     }
 
-    async preview(key: string, dto: PreviewTemplateDto) {
-        const template = await this.findByKey(key);
+    getChannelTemplateContent(template: Template, channel: string, language: string): string | undefined {
+        const channelUpper = channel.toUpperCase();
+        return template.contents?.[channelUpper]?.[language] || template.contents?.[channelUpper]?.['ko'];
+    }
 
-        // 선택된 채널들에 대해서만 렌더링
-        const renderedContents: Record<string, any> = {};
-
-        for (const channel of dto.channels) {
-            const contents = template.contents as Record<string, any>;
-            const channelContent = contents[channel];
-            if (!channelContent) continue;
-
-            const langContent = channelContent[dto.language] || channelContent['ko'];
-            if (!langContent) continue;
-
-            const rendered = await this.rendererService.render(
-                langContent.body,
-                dto.payload,
-            );
-
-            renderedContents[channel] = {
-                subject: langContent.subject
-                    ? await this.rendererService.render(langContent.subject, dto.payload)
-                    : undefined,
-                body: rendered,
-                metadata: langContent.metadata,
-            };
+    // NHN KakaoTalk Template Management
+    async registerKakaoTemplate(templateKey: string): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        const kakaoProvider = this.providerManagerService.getProvider('nhn-kakao');
+        const kakaoContent = template.contents?.['KAKAO'];
+        if (!kakaoContent) {
+            throw new NotFoundException('KakaoTalk content not found in template');
         }
 
-        return renderedContents;
+        // Get the KakaoTalk content for Korean
+        const content = kakaoContent['ko'] || Object.values(kakaoContent)[0];
+        
+        const templateData = {
+            templateCode: template.templateKey,
+            templateName: template.name,
+            templateContent: content,
+            templateMessageType: 'BA',
+            templateEmphasizeType: 'NONE',
+            categoryCode: '999999'
+        };
+
+        return await kakaoProvider.registerTemplate(templateData);
+    }
+
+    async getKakaoTemplateList(): Promise<any> {
+        const kakaoProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await kakaoProvider.getTemplates();
+    }
+
+    async getKakaoTemplateDetail(templateCode: string): Promise<any> {
+        const kakaoProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await kakaoProvider.getTemplateDetail(templateCode);
+    }
+
+    async updateKakaoTemplate(templateKey: string, updateData: any): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        const kakaoProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await kakaoProvider.updateTemplate(template.templateKey, updateData);
+    }
+
+    async deleteKakaoTemplate(templateCode: string): Promise<any> {
+        const kakaoProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await kakaoProvider.deleteTemplate(templateCode);
+    }
+
+    // Twilio SMS Template Management
+    async registerSmsTemplate(templateKey: string): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        const smsProvider = this.providerManagerService.getProvider('twilio');
+        const smsContent = template.contents?.['SMS'];
+        if (!smsContent) {
+            throw new NotFoundException('SMS content not found in template');
+        }
+
+        const content = smsContent['ko'] || Object.values(smsContent)[0];
+        
+        const templateData = {
+            friendlyName: template.name,
+            text: content
+        };
+
+        return await smsProvider.createTemplate(templateData);
+    }
+
+    async getSmsTemplates(): Promise<any> {
+        const smsProvider = this.providerManagerService.getProvider('twilio');
+        return await smsProvider.getTemplates();
+    }
+
+    async getSmsTemplateDetail(templateSid: string): Promise<any> {
+        const smsProvider = this.providerManagerService.getProvider('twilio');
+        return await smsProvider.getTemplateDetail(templateSid);
+    }
+
+    async updateSmsTemplate(templateKey: string, updateData: any): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        const smsProvider = this.providerManagerService.getProvider('twilio');
+        return await smsProvider.updateTemplate(template.templateKey, updateData);
+    }
+
+    async deleteSmsTemplate(templateSid: string): Promise<any> {
+        const smsProvider = this.providerManagerService.getProvider('twilio');
+        return await smsProvider.deleteTemplate(templateSid);
+    }
+
+    // NHN 카카오톡 템플릿 등록
+    async registerKakaoTemplate(templateKey: string, templateData: any): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        
+        // NHN API로 템플릿 등록
+        const nhnProvider = this.providerManagerService.getProvider('nhn-kakao');
+        const result = await nhnProvider.createTemplate(templateData);
+        
+        // DB에 NHN 템플릿 정보 업데이트
+        await this.dbService.update(templates)
+            .set({
+                nhnTemplateCode: result.templateCode,
+                nhnTemplateStatus: 'PENDING',
+                nhnTemplateId: result.templateId,
+                nhnRegisteredAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(templates.templateKey, templateKey));
+        
+        return result;
+    }
+
+    // NHN 카카오톡 템플릿 목록 조회
+    async getKakaoTemplateList(): Promise<any> {
+        const nhnProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await nhnProvider.getTemplates();
+    }
+
+    // NHN 카카오톿 템플릿 상세 조회
+    async getKakaoTemplateDetail(templateCode: string): Promise<any> {
+        const nhnProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await nhnProvider.getTemplateDetail(templateCode);
+    }
+
+    // NHN 카카오톡 템플릿 수정
+    async updateKakaoTemplate(templateKey: string, updateData: any): Promise<any> {
+        const template = await this.findByKey(templateKey);
+        const nhnProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await nhnProvider.updateTemplate(template.nhnTemplateCode, updateData);
+    }
+
+    // NHN 카카오톡 템플릿 삭제
+    async deleteKakaoTemplate(templateCode: string): Promise<any> {
+        const nhnProvider = this.providerManagerService.getProvider('nhn-kakao');
+        return await nhnProvider.deleteTemplate(templateCode);
+    }
+
+    // NHN 카카오톡 템플릿 승인 상태 업데이트
+    async updateKakaoTemplateStatus(templateKey: string, status: string): Promise<void> {
+        await this.dbService.update(templates)
+            .set({
+                nhnTemplateStatus: status,
+                updatedAt: new Date(),
+            })
+            .where(eq(templates.templateKey, templateKey));
     }
 }
