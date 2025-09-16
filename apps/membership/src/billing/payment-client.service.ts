@@ -25,7 +25,7 @@ export interface PaymentIntentResponse {
   createdAt: string;
   updatedAt: string;
 }
-
+// 추후 결제서버에서 결제정책을 판단하도록 바꿀것 즉 provider없애도됨
 // Wallet v4: 서버 간 결제 실행 요청 (PaymentOrchestratorService 사용)
 export interface PaymentProcessRequest {
   providerType: 'HMS_CARD' | 'HMS_BNPL' | 'TOSS'; // Wallet v4에서 실제 지원하는 Provider
@@ -51,6 +51,25 @@ export interface PaymentProfile {
   maskedInfo: string;
   createdAt: string;
 }
+
+// // 멤버십 서버의 스케줄러 로직 (수정 제안)
+
+// // 1. 만료된 멤버십 조회
+// const expiredContracts = await this.contractService.findExpired();
+
+// for (const contract of expiredContracts) {
+//   // 2. 결제 의도 생성
+//   const intent = await this.paymentClient.createPaymentIntent({
+//     customerId: contract.userId,
+//     type: 'MEMBERSHIP',
+//     amount: contract.plan.price,
+//     metadata: { contractId: contract.id, /* ... */ },
+//   });
+
+//   // 3. ✨ 결제 실행 요청 (프로필 정보 없이 Intent ID만 전달)
+//   // 결제 서버가 알아서 기본 프로필로 결제할 것을 믿고 요청만 보냅니다.
+//   await this.paymentClient.executePayment(intent.id);
+// }
 
 /**
  * 결제 서버 연동 클라이언트 서비스

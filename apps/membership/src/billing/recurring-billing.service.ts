@@ -217,8 +217,8 @@ export class RecurringBillingService {
             success: false,
             paymentIntentId: paymentIntent.id,
             paymentAttemptId: paymentResult.transactionId,
-            errorCode: paymentResult.errorCode,
-            errorMessage: paymentResult.errorMessage,
+            errorCode: paymentResult.code,
+            errorMessage: paymentResult.message,
           };
         }
       } catch (error) {
