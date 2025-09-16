@@ -27,6 +27,7 @@ import { NotificationEventPublisher } from '../events/notification-event.publish
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
+import { REDIRECT_TO } from '../../constants/auth.constant';
 
 @Injectable()
 export class AuthService {
@@ -130,6 +131,7 @@ export class AuthService {
           existingUser.email,
           existingUser.username,
           verificationToken,
+          REDIRECT_TO!,
         );
 
         return {
@@ -206,13 +208,14 @@ export class AuthService {
           scopes: '',
           expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
         });
-        console.log('verificationToken:', verificationToken);
+
         // 이메일 발송
         await this.notificationPublisher.publishUserVerificationEvent(
           user.id,
           user.email,
           user.username,
           verificationToken,
+          REDIRECT_TO!,
         );
 
         return {
@@ -230,10 +233,11 @@ export class AuthService {
     }
   }
 
-  async verifySignUpEmail(
+  async verifyEmail(
     token: string,
     reply: FastifyReply,
-  ): Promise<{ accessToken: string }> {
+    redirectTo: string,
+  ): Promise<void | { accessToken: string }> {
     try {
       //  토큰 검증
       const verificationToken = await this.dbService.db
@@ -298,7 +302,7 @@ export class AuthService {
         name: verificationToken.user.username,
       });
 
-      return { accessToken };
+      return reply.status(302).redirect(redirectTo);
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
@@ -345,6 +349,7 @@ export class AuthService {
       user.email,
       user.username,
       verificationToken,
+      REDIRECT_TO!,
     );
 
     return;
