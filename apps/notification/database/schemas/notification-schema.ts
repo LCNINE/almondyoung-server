@@ -19,10 +19,11 @@ export const targetTypeEnum = pgEnum('target_type', ['all', 'filter', 'excel', '
 export const membershipTypeEnum = pgEnum('membership_type', ['general', 'premium']);
 export const devicePlatformEnum = pgEnum('device_platform', ['ios', 'android', 'web']);
 
-// 알림 카테고리
+// 알림 카테고리 - notification-rules.mdc에 맞게 수정
 export const notificationCategoryEnum = pgEnum('notification_category', [
+    'INFORMATIONAL',    // 정보성 알림 (동의 없이 발송 가능)
+    'MARKETING',        // 마케팅/프로모션 (동의 필요)
     'TRANSACTIONAL',    // 거래 관련 (주문, 결제 등)
-    'MARKETING',        // 마케팅/프로모션
     'SYSTEM',          // 시스템 알림 (비밀번호 변경 등)
     'ADMIN',           // 관리자 알림
     'OPERATIONAL',     // 운영 알림 (점검 등)
@@ -320,7 +321,7 @@ export const alerts = pgTable('alerts', {
 // Types
 export type Channel = 'EMAIL' | 'SMS' | 'KAKAO' | 'PUSH';
 export type Language = 'ko' | 'en';
-export type NotificationCategory = 'TRANSACTIONAL' | 'MARKETING' | 'SYSTEM' | 'ADMIN' | 'OPERATIONAL' | 'CUSTOMER_SERVICE';
+export type NotificationCategory = 'INFORMATIONAL' | 'MARKETING' | 'TRANSACTIONAL' | 'SYSTEM' | 'ADMIN' | 'OPERATIONAL' | 'CUSTOMER_SERVICE';
 export type NotificationPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 export type DevicePlatform = 'ios' | 'android' | 'web';
 

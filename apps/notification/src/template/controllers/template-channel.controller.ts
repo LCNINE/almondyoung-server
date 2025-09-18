@@ -12,6 +12,6 @@ export class TemplateChannelController {
 
     @Get("sms/list")
     async getSmsTemplates() {
-        return this.templateService.getSmsTemplateList();
+        return this.templateService.getSmsTemplates();
     }
 }

@@ -14,7 +14,7 @@ export class TemplateController {
 
     @Get("sms/list")
     async getSmsTemplates() {
-        return this.templateService.getSmsTemplateList();
+        return this.templateService.getSmsTemplates();
     }
 
     // 기본 CRUD 엔드포인트들
@@ -60,11 +60,11 @@ export class TemplateController {
     }
 
     @Post(":key/test/:channel")
-    async testChannelTemplate(
+    async previewTemplate(
         @Param("key") templateKey: string,
         @Param("channel") channel: string,
         @Body() testDto: any
     ) {
-        return this.templateService.testChannelTemplate(templateKey, channel, testDto);
+        return this.templateService.previewTemplate(templateKey, channel, testDto);
     }
 }

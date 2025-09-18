@@ -65,17 +65,8 @@ export class CampaignController {
     async getStats(@Param('id') id: string) {
         return this.campaignService.getStats(id);
     }
-}
-    // 채널별 콘텐츠 관리 엔드포인트들
-    @Post(':id/channels/:channel/content')
-    async setChannelContent(
-        @Param('id') campaignId: string,
-        @Param('channel') channel: string,
-        @Body() content: any
-    ) {
-        return this.campaignService.setChannelContent(campaignId, channel, content);
-    }
 
+    // 채널별 콘텐츠 관리 엔드포인트들
     @Get(':id/channels/:channel/content')
     async getChannelContent(
         @Param('id') campaignId: string,

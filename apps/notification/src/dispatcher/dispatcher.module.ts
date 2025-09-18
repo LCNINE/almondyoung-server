@@ -2,7 +2,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
-import { notificationTables } from '../../database/schemas/notification-schema';
 import { NotificationController } from './controllers/notification.controller';
 import { NotificationDispatcherService } from './services/notification-dispatcher.service';
 import { NotificationProcessor } from './processors/notification.processor';
@@ -24,12 +23,12 @@ import { AlertService } from '../shared/services/alert.service';
             config: {
                 connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
             },
-            schema: notificationTables,
+            schema: {},
         }),
         ProviderModule,
         TemplateModule,
     ],
-    controllers: [NotificationController, UserNotificationController],
+    controllers: [NotificationController],
     providers: [
         NotificationDispatcherService,
         NotificationProcessor,

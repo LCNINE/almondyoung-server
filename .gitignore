@@ -105,3 +105,15 @@ template-data.json
 *_TEST_GUIDE.md
 *_TEST_STEP_BY_STEP.md
 *_EXAMPLES.md
+
+# Drizzle ORM migration files
+apps/*/database/drizzle/
+**/drizzle/
+**/meta/
+**/*.sql
+
+# Cursor Rules (personal settings)
+.cursor/
+**/*.mdc
+**/cursor-rules.*
+**/nofication-rules.*

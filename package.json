@@ -41,7 +41,7 @@
     "googleapis": "^154.1.0",
     "handlebars": "^4.7.8",
     "kafkajs": "^2.2.4",
-    "pg": "^8.16.2",
+    "pg": "^8.16.3",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
