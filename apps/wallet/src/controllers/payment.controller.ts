@@ -212,13 +212,16 @@ export class PaymentController {
     status: 200,
     description: '결제 실행 성공',
   })
-  @UsePipes(new ZodValidationPipe(ExecutePaymentSchema))
+  // @UsePipes(new ZodValidationPipe(ExecutePaymentSchema)) // 임시 비활성화
   async executePayment(
     @Param('intentId') intentId: string,
-    @Body() dto: ExecutePaymentDto,
+    @Body() dto: any, // ExecutePaymentDto -> any로 임시 변경
+    @Req() request: any,
     @Headers('Idempotency-Key') idemKey?: string,
   ) {
     try {
+      this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
+      this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
       this.logger.log(
         `결제 실행 요청: Intent ${intentId}, Provider ${dto.provider}`,
       );
@@ -236,16 +239,44 @@ export class PaymentController {
 
         this.logger.log(`Toss 결제 승인 처리: paymentKey=${dto.paymentKey}`);
 
-        // 임시로 성공 응답 (실제로는 Toss API 호출 결과)
-        return {
-          success: true,
-          intentId: intentId,
-          status: 'SUCCEEDED',
-          provider: 'TOSS',
-          amount: intent.amount,
-          paymentKey: dto.paymentKey,
-          message: 'Toss 테스트 결제가 성공적으로 완료되었습니다.',
-        };
+        // CTO 설계: /execute에서 실제 결제 처리까지 완료
+        this.logger.log(
+          `🎯 실제 결제 처리 시작: PaymentOrchestratorService 호출`,
+        );
+
+        // TOSS Provider에게 oneTimeToken으로 paymentKey 전달
+        const result = await this.paymentService.processPaymentByIntent(
+          intentId,
+          'TOSS' as any, // ProviderType
+          {
+            // paymentKey를 oneTimeToken으로 전달하기 위해 instrumentRef에 저장
+            instrumentRef: dto.paymentKey, // 이것이 TossPayload.oneTimeToken이 됨
+            source: 'toss_execute_api',
+            actor: 'frontend_user',
+          },
+        );
+
+        this.logger.log(`🎯 결제 처리 결과:`, JSON.stringify(result));
+
+        if (result.success) {
+          const response = {
+            success: true,
+            intentId: intentId,
+            status: 'CAPTURED', // SUCCEEDED -> CAPTURED로 변경
+            provider: 'TOSS',
+            amount: intent.amount,
+            paymentKey: dto.paymentKey,
+            message: 'Toss 결제가 성공적으로 완료되었습니다.',
+          };
+
+          this.logger.log(`🎉 Toss 결제 완료 응답:`, JSON.stringify(response));
+          return response;
+        } else {
+          throw new HttpException(
+            `결제 처리 실패: ${result.message}`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
       }
 
       throw new HttpException(
@@ -411,7 +442,7 @@ export class PaymentController {
           TOSS: {
             clientKey:
               process.env.TOSS_CLIENT_KEY ||
-              'test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO',
+              'test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO', // 시크릿 키와 매칭되는 클라이언트 키
           },
         },
       };

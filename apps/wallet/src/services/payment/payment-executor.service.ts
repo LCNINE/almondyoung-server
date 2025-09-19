@@ -94,6 +94,11 @@ export class PaymentExecutorService {
     if (request.instrumentType === 'ONE_TIME' && request.instrumentRef) {
       if (provider === ProviderType.TOSS) {
         (payload as TossPayload).oneTimeToken = request.instrumentRef;
+        // intentId를 metadata로 전달 (토스 orderId로 사용)
+        (payload as TossPayload).metadata = {
+          ...(payload as TossPayload).metadata,
+          intentId: request.intentId,
+        };
       }
     }
 

@@ -13,7 +13,7 @@ export class CheckoutSessionService {
   private readonly logger = new Logger(CheckoutSessionService.name);
   // ✨ [수정] 우리 서비스의 결제 UI 기본 URL. 실제로는 ConfigService 등을 통해 주입받아야 합니다.
   private readonly WALLET_UI_BASE_URL =
-    process.env.WALLET_UI_BASE_URL || 'https://my-wallet-ui.com/pay';
+    process.env.WALLET_UI_BASE_URL || 'http://localhost:8000/kr/payment';
 
   constructor(
     private readonly db: DbService<typeof schema>,
@@ -39,7 +39,7 @@ export class CheckoutSessionService {
     const metadata = options.metadata || {};
     const sessionId = `cs_${getTsid().toString()}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    const paymentUiUrl = `${this.WALLET_UI_BASE_URL}/${sessionId}`;
+    const paymentUiUrl = `${this.WALLET_UI_BASE_URL}?sessionId=${sessionId}`;
 
     // 1. 삽입할 데이터를 먼저 객체로 만듭니다.
     const newSessionData: any = {

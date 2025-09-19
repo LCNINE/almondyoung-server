@@ -11,6 +11,7 @@ export enum ProviderType {
   HMS_CARD = 'HMS_CARD',
   HMS_BNPL = 'HMS_BNPL',
   TOSS = 'TOSS',
+  POINTS = 'POINTS',
 }
 
 // 공급자 중립 Request (PG 전용 필드는 절대 넣지 않음)
@@ -67,6 +68,14 @@ export type ProviderPayloadMap = {
   HMS_CARD: HmsCardPayload;
   HMS_BNPL: HmsBnplPayload;
   TOSS: TossPayload;
+  POINTS: PointsPayload; // ✅ 맵에 추가
+};
+
+// ✅ 포인트 결제를 위한 Payload 타입 정의
+export type PointsPayload = {
+  partnerId: number;
+  amount: number;
+  reason?: string;
 };
 
 // ───────────────────── Ports (capabilities) ─────────────────────

@@ -56,13 +56,18 @@ export class TossChargeProvider implements ChargePort<ProviderType.TOSS> {
    * @private
    */
   private async confirmPayment(payload: TossPayload): Promise<PaymentResult> {
-    const secretKey = process.env.TOSS_SECRET_KEY;
+    // 임시로 테스트 시크릿 키 하드코딩 (개발용) - 클라이언트 키와 매칭
+    const secretKey =
+      process.env.TOSS_SECRET_KEY || 'test_sk_ALnQvDd2VJxMDd5NLwna8Mj7X41m';
+
     if (!secretKey) {
       throw new PaymentError(
         'PROVIDER_CONFIG_ERROR',
         'TOSS_SECRET_KEY 환경변수가 설정되지 않았습니다.',
       );
     }
+
+    this.logger.log(`🔑 토스 시크릿 키 확인: ${secretKey.slice(-4)}****`);
 
     // 상위 서비스(Orchestrator)에서 intentId를 metadata로 넘겨주는 것이 이상적입니다.
     const orderId = payload.metadata?.intentId ?? `temp-order-${Date.now()}`;

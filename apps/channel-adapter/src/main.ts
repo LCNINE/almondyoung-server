@@ -1,6 +1,6 @@
 // main.ts
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
@@ -10,11 +10,32 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
+    AdapterModule,
     new FastifyAdapter(),
   );
 
   app.useGlobalPipes(new ValidationPipe());
+
+  // Swagger API 문서 설정
+  const config = new DocumentBuilder()
+    .setTitle('아몬드영 채널 어댑터 API')
+    .setDescription(
+      '판매채널(네이버 스마트스토어, 쿠팡 등)과 내부 시스템 간의 데이터 동기화 및 이벤트 중계를 위한 API',
+    )
+    .setVersion('1.0.0')
+    .addTag('adapter', '채널 어댑터 핵심 기능')
+    .addTag('sync-status', '동기화 상태 및 통계')
+    .addServer('http://localhost:3003', '개발 서버')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api-docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+  });
 
   await app.register(require('@fastify/multipart'), {
     attachFieldsToBody: false, // 🔧 false로 변경해서 전통적인 방식 사용
@@ -45,14 +66,6 @@ async function bootstrap() {
 
   console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
-  const config = new DocumentBuilder()
-    .setTitle('Wallet Payment Server')
-    .setDescription('MVP payment server for Medusa integration')
-    .setVersion('0.1.0')
-    .build();
-
-  const doc = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/docs', app, doc);
   await app.listen(3003);
 }
 bootstrap();

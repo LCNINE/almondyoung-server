@@ -60,6 +60,15 @@ export class ProviderRegistry {
           refund: null, // 아직 구현하지 않았다면 null
           cancel: null, // 아직 구현하지 않았다면 null
         };
+
+      case ProviderType.POINTS:
+        // POINTS에 대한 능력들을 조립해서 반환합니다.
+        return {
+          id: ProviderType.POINTS,
+        };
+
+      default:
+        throw new Error(`Unknown provider type: ${provider}`);
     }
   }
 }

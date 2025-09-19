@@ -143,7 +143,7 @@ export const paymentProfiles = pgTable(
       .$type<'CARD' | 'BANK_ACCOUNT' | 'WALLET'>()
       .notNull(),
     provider: varchar('provider', { length: 16 })
-      .$type<'HMS_CARD' | 'HMS_BNPL' | 'TOSS'>()
+      .$type<'HMS_CARD' | 'HMS_BNPL' | 'TOSS' | 'POINTS'>()
       .notNull(),
     status: paymentProfileStatusEnum('status').notNull().default('PENDING'),
 

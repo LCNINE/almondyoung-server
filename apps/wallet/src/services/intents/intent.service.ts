@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
+import { eq } from 'drizzle-orm';
 
 import { NewPaymentIntent, PaymentIntent } from '../../shared/database/types'; // Drizzle 타입
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
@@ -56,6 +57,30 @@ export class PaymentIntentService {
 
     this.logger.log(`New Payment Intent created: ${createdIntent.id}`);
     return createdIntent;
+  }
+
+  /**
+   * Intent 상태를 업데이트합니다.
+   * @param intentId 업데이트할 Intent의 ID
+   * @param status 새로운 상태
+   * @param tx 트랜잭션 객체 (선택사항)
+   */
+  async updateIntentStatus(
+    intentId: string,
+    status: schema.PaymentIntentStatus,
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    const executor = tx || this.db.db;
+
+    await executor
+      .update(schema.paymentIntents)
+      .set({
+        status: status,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentIntents.id, intentId));
+
+    this.logger.log(`Intent ${intentId} status updated to: ${status}`);
   }
 
   /**
