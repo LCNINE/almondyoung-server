@@ -29,6 +29,81 @@ export interface SyncResult {
   data?: any; // API 응답 데이터
 }
 
+// ===== 내부 데이터 타입들 =====
+
+/** 내부 PIM 시스템의 상품 데이터 형식 */
+export interface InternalProductData {
+  id: string;
+  name: string;
+  price: number;
+  description: string;
+  categoryId?: string;
+  brand?: string;
+  options?: Array<{
+    name: string;
+    value: string;
+    additionalPrice?: number;
+  }>;
+}
+
+/** 내부 WMS 시스템의 재고 데이터 형식 */
+export interface InternalInventoryData {
+  productId: string; // 네이버의 originProductNo 또는 내부 상품 ID
+  stockQuantity: number;
+  isOptionProduct: boolean; // 옵션 상품 여부
+  reservedQuantity?: number;
+  availableQuantity?: number;
+  warehouseId?: string;
+  // 옵션 상품인 경우 필요한 추가 정보
+  optionInfo?: {
+    optionCombinations?: Array<{
+      id: number;
+      stockQuantity: number;
+      price?: number;
+      usable?: boolean;
+    }>;
+    optionStandards?: Array<{
+      id: number;
+      stockQuantity: number;
+      usable?: boolean;
+    }>;
+  };
+}
+
+/** 내부 주문 상태 업데이트 데이터 형식 */
+export interface InternalOrderStatusData {
+  orderId: string;
+  status: string;
+  updatedAt: string;
+  reason?: string;
+}
+
+// ===== 동기화 페이로드 타입들 (식별 가능한 유니언) =====
+
+/** 상품 정보 동기화를 위한 페이로드 */
+export interface ProductSyncPayload {
+  dataType: 'products';
+  payload: InternalProductData;
+}
+
+/** 재고 정보 동기화를 위한 페이로드 */
+export interface InventorySyncPayload {
+  dataType: 'inventory';
+  payload: InternalInventoryData;
+}
+
+/** 주문 상태 동기화를 위한 페이로드 */
+export interface OrderStatusSyncPayload {
+  dataType: 'order_status';
+  payload: InternalOrderStatusData;
+}
+
+/** 모든 동기화 타입의 유니언 */
+export type SyncToChannelPayload =
+  | ProductSyncPayload
+  | InventorySyncPayload
+  | OrderStatusSyncPayload;
+
 export type ClaimType = 'CANCEL' | 'RETURN' | 'EXCHANGE';
 
 export interface ClaimInfo {

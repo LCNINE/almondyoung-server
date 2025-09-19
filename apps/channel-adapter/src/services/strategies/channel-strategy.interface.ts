@@ -1,5 +1,5 @@
 import { InternalOrderEvent } from '../../types';
-import { DataType, SyncResult } from '../../types';
+import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import { ChannelCommand } from '../../types';
 
 export interface ChannelStrategy {
@@ -15,10 +15,10 @@ export interface ChannelStrategy {
   syncFromChannel(dataType: DataType): Promise<InternalOrderEvent[]>;
 
   /**
-   * 내부 데이터를 외부 채널로 동기화
-   * 예: 내부 주문 상태/송장번호 → 네이버/쿠팡 API 호출
+   * 내부 데이터를 외부 채널로 동기화 (상태 지향)
+   * 예: PIM 상품 정보 변경 → 네이버 상품 업데이트, WMS 재고 변경 → 네이버 재고 업데이트
    */
-  syncToChannel(data: any, dataType: DataType): Promise<SyncResult>;
+  syncToChannel(payload: SyncToChannelPayload): Promise<SyncResult>;
 
   /**
    * 채널별 복잡한 액션(취소/반품/교환/발송 등)을 Command로 통합 처리

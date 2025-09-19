@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ChannelStrategy } from './channel-strategy.interface';
-import { DataType, SyncResult } from '../../types';
+import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import { InternalOrderEvent } from '../../types';
 import { ChannelCommand } from '../../types';
 import { firstValueFrom } from 'rxjs';
@@ -115,9 +115,72 @@ export class CoupangStrategy implements ChannelStrategy {
     }
   }
 
-  async syncToChannel(data: any, dataType: DataType): Promise<SyncResult> {
-    // 예: 송장번호/발송정보를 쿠팡에 업데이트
-    return { success: true };
+  async syncToChannel(payload: SyncToChannelPayload): Promise<SyncResult> {
+    try {
+      switch (payload.dataType) {
+        case 'products': {
+          const productData = payload.payload;
+          console.log(
+            `📦 쿠팡 상품 정보 동기화: ${productData.name} (${productData.id})`,
+          );
+
+          // TODO: 쿠팡 상품 업데이트 API 구현
+          return {
+            success: true,
+            processedCount: 1,
+            data: { productId: productData.id, syncType: 'product_update' },
+          };
+        }
+
+        case 'inventory': {
+          const inventoryData = payload.payload;
+          console.log(
+            `📦 쿠팡 재고 정보 동기화: ${inventoryData.productId} (${inventoryData.stockQuantity}개)`,
+          );
+
+          // TODO: 쿠팡 재고 업데이트 API 구현
+          return {
+            success: true,
+            processedCount: 1,
+            data: {
+              productId: inventoryData.productId,
+              syncType: 'inventory_update',
+            },
+          };
+        }
+
+        case 'order_status': {
+          const orderStatusData = payload.payload;
+          console.log(
+            `📦 쿠팡 주문 상태 동기화: ${orderStatusData.orderId} → ${orderStatusData.status}`,
+          );
+
+          // TODO: 쿠팡 주문 상태 업데이트 API 구현
+          return {
+            success: true,
+            processedCount: 1,
+            data: {
+              orderId: orderStatusData.orderId,
+              syncType: 'order_status_update',
+            },
+          };
+        }
+
+        default: {
+          const _exhaustiveCheck: never = payload;
+          return {
+            success: false,
+            errors: [{ message: '지원하지 않는 데이터 타입' }],
+          };
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        errors: [{ message: `쿠팡 동기화 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
   }
 
   async executeCommand(command: ChannelCommand): Promise<SyncResult> {
