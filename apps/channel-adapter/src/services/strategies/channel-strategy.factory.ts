@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ChannelStrategy } from './channel-strategy.interface';
 import { NaverSmartstoreStrategy } from './naver-smartstore.strategy';
 import { CoupangStrategy } from './coupang.strategy';
+import { MedusaStrategy } from './medusa.strategy';
 
 /**
  * 지원되는 판매채널 타입
@@ -9,7 +10,7 @@ import { CoupangStrategy } from './coupang.strategy';
  * - `naver_smartstore`: 네이버 스마트스토어
  * - `coupang`: 쿠팡
  */
-export type ChannelType = 'naver_smartstore' | 'coupang';
+export type ChannelType = 'naver_smartstore' | 'coupang' | 'medusa';
 
 /**
  * 채널별 전략 팩토리 서비스
@@ -35,6 +36,7 @@ export class ChannelStrategyFactory {
   constructor(
     private readonly naver: NaverSmartstoreStrategy,
     private readonly coupang: CoupangStrategy,
+    private readonly medusa: MedusaStrategy,
   ) {
     this.logger.log(
       `📦 채널 전략 팩토리 초기화 완료 (${this.getSupportedChannels().length}개 채널)`,
@@ -65,6 +67,8 @@ export class ChannelStrategyFactory {
         return this.naver;
       case 'coupang':
         return this.coupang;
+      case 'medusa':
+        return this.medusa;
       default:
         const error = `지원하지 않는 채널 타입: ${channelType}`;
         this.logger.error(`❌ ${error}`);
@@ -91,7 +95,7 @@ export class ChannelStrategyFactory {
    * ```
    */
   getSupportedChannels(): ChannelType[] {
-    return ['naver_smartstore', 'coupang'];
+    return ['naver_smartstore', 'coupang', 'medusa'];
   }
 
   /**

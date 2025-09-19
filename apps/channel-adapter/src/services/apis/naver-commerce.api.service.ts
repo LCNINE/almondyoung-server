@@ -546,9 +546,26 @@ export class NaverCommerceApiService {
     const timestamp = Date.now().toString();
     const clientId = process.env.NAVER_CLIENT_ID ?? '';
     const clientSecret = process.env.NAVER_CLIENT_SECRET ?? '';
+
+    // 네이버 API 전자서명 생성 방식
+    // 1. password: client_id + "_" + timestamp
     const password = `${clientId}_${timestamp}`;
-    const salt = clientSecret;
+
+    // 2. client_secret은 bcrypt salt 형식이어야 함 (예: $2a$10$abcdefghijklmnopqrstuv)
+    // Mock 환경에서는 유효한 bcrypt salt를 생성
+    let salt = clientSecret;
+    if (!salt.startsWith('$2a$') && !salt.startsWith('$2b$')) {
+      // Mock 환경: 유효한 bcrypt salt 생성
+      salt = bcrypt.genSaltSync(10);
+      this.logger.debug(
+        `Mock 환경: bcrypt salt 생성됨 ${salt.substring(0, 10)}...`,
+      );
+    }
+
+    // 3. bcrypt 해싱
     const hashed = bcrypt.hashSync(password, salt);
+
+    // 4. Base64 인코딩
     const clientSecretSign = Buffer.from(hashed, 'utf-8').toString('base64');
     const params = new URLSearchParams([
       ['grant_type', 'client_credentials'],
@@ -559,7 +576,7 @@ export class NaverCommerceApiService {
     ]);
     const res = await firstValueFrom(
       this.http.post<NaverTokenResponse>(
-        'https://api.commerce.naver.com/external/v1/oauth2/token',
+        `${this.apiBaseUrl}/oauth2/token`,
         params,
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       ),

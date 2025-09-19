@@ -11,6 +11,7 @@
 import * as dotenv from 'dotenv';
 import { HttpService } from '@nestjs/axios';
 import { NaverSmartstoreStrategy } from './src/services/strategies/naver-smartstore.strategy';
+import { NaverCommerceApiService } from './src/services/apis/naver-commerce.api.service';
 import * as path from 'path';
 
 // 환경변수 로드 (프로젝트 루트의 .env 파일)
@@ -20,9 +21,10 @@ class NaverSyncTester {
   private readonly strategy: NaverSmartstoreStrategy;
 
   constructor() {
-    // HttpService 인스턴스 생성 (실제 NestJS 환경이 아니므로 수동 생성)
+    // HttpService와 NaverCommerceApiService 인스턴스 생성
     const httpService = new HttpService();
-    this.strategy = new NaverSmartstoreStrategy(httpService);
+    const naverApiService = new NaverCommerceApiService(httpService);
+    this.strategy = new NaverSmartstoreStrategy(naverApiService);
 
     console.log('🔧 환경변수 확인:');
     console.log(

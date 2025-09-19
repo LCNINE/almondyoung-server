@@ -17,7 +17,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ChannelType } from '../services/strategies/channel-strategy.factory';
-import { DataType, ChannelCommand } from '../types';
+import { DataType, ChannelCommand, SyncToChannelPayload } from '../types';
 import { ChannelAdapterService } from '../services/channel-adapter.service';
 import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
 
@@ -163,6 +163,84 @@ export class ChannelAdapterController {
       }
       throw new HttpException(
         '웹훅 처리 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('sync-to/:channel')
+  @ApiOperation({ summary: '내부 데이터를 외부 채널로 동기화 (송신)' })
+  @ApiBody({
+    description: '동기화할 데이터 페이로드',
+    examples: {
+      inventory: {
+        summary: '재고 동기화',
+        value: {
+          dataType: 'inventory',
+          payload: {
+            productId: '12345',
+            stockQuantity: 100,
+            isOptionProduct: false,
+          },
+        },
+      },
+      optionInventory: {
+        summary: '옵션 상품 재고 동기화',
+        value: {
+          dataType: 'inventory',
+          payload: {
+            productId: '67890',
+            stockQuantity: 50,
+            isOptionProduct: true,
+            optionInfo: {
+              optionCombinations: [{ id: 1001, stockQuantity: 25 }],
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: '동기화가 성공적으로 완료되었습니다.',
+  })
+  async syncToChannel(
+    @Param('channel') channel: ChannelType,
+    @Body() payload: SyncToChannelPayload,
+  ) {
+    try {
+      if (!payload || !payload.dataType || !payload.payload) {
+        throw new HttpException(
+          '동기화할 데이터 페이로드가 올바르지 않습니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.log(`📤 송신 동기화 요청: ${channel}/${payload.dataType}`);
+      const result = await this.channelAdapterService.syncToChannel(
+        channel,
+        payload,
+      );
+      this.logger.log(`✅ 송신 동기화 완료: ${channel}/${payload.dataType}`);
+
+      return {
+        success: true,
+        dataType: payload.dataType,
+        result,
+        message: `${channel} 채널에 ${payload.dataType} 데이터가 성공적으로 동기화되었습니다.`,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ 송신 동기화 실패: ${channel}/${payload?.dataType}`,
+        error.stack,
+      );
+      if (error instanceof HttpException) throw error;
+      if (error.message.includes('찾을 수 없습니다')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        '송신 동기화 중 오류가 발생했습니다.',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

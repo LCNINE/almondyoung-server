@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AdapterOrchestrationService } from './adapter-orchestration.service';
 import { ChannelType } from './strategies/channel-strategy.factory';
-import { DataType, InternalOrderEvent, SyncResult } from '../types';
+import {
+  DataType,
+  InternalOrderEvent,
+  SyncResult,
+  SyncToChannelPayload,
+} from '../types';
 import { ChannelCommand } from '../types';
 
 /**
@@ -145,6 +150,47 @@ export class ChannelAdapterService {
   async syncAll(dataType: DataType) {
     this.logger.log(`🌐 전체 채널 ${dataType} 동기화 요청`);
     return this.orchestrator.syncAllChannels(dataType);
+  }
+
+  /**
+   * 내부 데이터를 외부 채널로 동기화 (송신)
+   *
+   * @param channel - 대상 판매채널
+   * @param payload - 동기화할 데이터 페이로드
+   * @returns 동기화 처리 결과
+   *
+   * @example
+   * ```typescript
+   * // 네이버 스마트스토어에 재고 업데이트
+   * const result = await channelAdapter.syncToChannel('naver_smartstore', {
+   *   dataType: 'inventory',
+   *   payload: {
+   *     productId: '12345',
+   *     stockQuantity: 100,
+   *     isOptionProduct: false
+   *   }
+   * });
+   *
+   * // 옵션 상품 재고 업데이트
+   * const optionResult = await channelAdapter.syncToChannel('naver_smartstore', {
+   *   dataType: 'inventory',
+   *   payload: {
+   *     productId: '67890',
+   *     stockQuantity: 50,
+   *     isOptionProduct: true,
+   *     optionInfo: {
+   *       optionCombinations: [{ id: 1001, stockQuantity: 25 }]
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  async syncToChannel(
+    channel: ChannelType,
+    payload: SyncToChannelPayload,
+  ): Promise<SyncResult> {
+    this.logger.log(`📤 [${channel}] ${payload.dataType} 송신 동기화 요청`);
+    return this.orchestrator.syncToChannel(channel, payload);
   }
 
   /**

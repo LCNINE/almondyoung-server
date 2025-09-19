@@ -1,5 +1,15 @@
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eventLogs, syncHistories } from './schema';
+
+// ===== DATABASE SERVICE 타입 =====
+export const channelAdapterSchema = {
+  eventLogs,
+  syncHistories,
+} as const;
+
+export type ChannelAdapterSchema = typeof channelAdapterSchema;
+export type DbService = PostgresJsDatabase<ChannelAdapterSchema>;
 // ===== EVENT LOGS 타입 =====
 export type EventLog = InferSelectModel<typeof eventLogs>;
 export type NewEventLog = InferInsertModel<typeof eventLogs>;
@@ -134,7 +144,7 @@ export interface BuyerInfo {
 }
 
 export interface InternalOrderEvent {
-  channelType: 'naver_smartstore' | 'coupang';
+  channelType: 'naver_smartstore' | 'coupang' | 'medusa';
   externalOrderId: string; // 주문번호
   externalProductOrderId?: string; // 상품주문 단위 (네이버 productOrderId 등)
   status: string; // 주문 상태
