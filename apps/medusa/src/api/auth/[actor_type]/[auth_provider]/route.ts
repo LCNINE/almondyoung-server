@@ -79,7 +79,7 @@ export const GET = async (
       error || 'Authentication failed',
     );
   } catch (error) {
-    console.error('에러 발생', error);
+    console.error(`/auth/[actor_type]/[auth_provider] 에러`, error);
     if (error instanceof MedusaError) {
       return res
         .status(error.type === MedusaError.Types.UNAUTHORIZED ? 401 : 500)
