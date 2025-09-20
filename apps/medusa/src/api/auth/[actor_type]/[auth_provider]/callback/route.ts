@@ -53,7 +53,7 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
 
     const { http } = config.projectConfig;
 
-    const token = generateJwtTokenForAuthIdentity(
+    const medusa_token = generateJwtTokenForAuthIdentity(
       { authIdentity, actorType: actorType as string },
       {
         secret: http.jwtSecret!,
@@ -63,9 +63,9 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     );
 
     // 쿠키 설정
-    setAuthCookie(res, token);
+    setAuthCookie(res, medusa_token);
 
-    return res.status(200).json({ token });
+    return res.status(200).json({ medusa_token });
   }
 
   throw new MedusaError(

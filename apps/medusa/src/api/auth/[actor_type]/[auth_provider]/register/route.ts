@@ -1,18 +1,12 @@
-import {
-  AuthenticatedMedusaRequest,
-  MedusaRequest,
-  MedusaResponse,
-} from '@medusajs/framework/http';
-import {
-  ContainerRegistrationKeys,
-  MedusaError,
-} from '@medusajs/framework/utils';
+import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { AuthenticationInput } from '@medusajs/framework/types';
+import { MedusaError } from '@medusajs/framework/utils';
 import { registerCustomerWorkflow } from '@workflows/auth/workflows/register-customer-workflow';
 import { registerUserWorkflow } from '@workflows/auth/workflows/register-user-workflow';
 
 type RegisterCustomerInput = {
   almond_user_id: string;
+  almond_login_id: string;
   email: string;
   first_name?: string;
   last_name?: string;
@@ -43,6 +37,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
             last_name: body.last_name || '',
             metadata: {
               almond_user_id: body.almond_user_id,
+              almond_login_id: body.almond_login_id,
             },
           },
         },
