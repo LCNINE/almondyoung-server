@@ -187,6 +187,38 @@ Use NestJS CLI: `nest generate app [service-name]` or `nest generate library [li
 - TypeScript strict mode with some relaxed rules for `any` types
 - Korean comments acceptable for business domain concepts
 
+#### Comment Guidelines
+**IMPORTANT**: Avoid excessive comments that simply describe what the code does - the code should be self-explanatory. Use comments only for:
+
+1. **JSDoc comments**: Method and class documentation describing purpose, parameters, and return values
+2. **TODO comments**: Mark areas that need future implementation or improvement
+3. **Complex logic explanation**: Document non-obvious algorithms, business rules, or "magic numbers" (like the famous fast inverse square root algorithm)
+4. **Business context**: Explain domain-specific concepts that aren't obvious from code alone
+
+**Bad example** (obvious comment):
+```typescript
+// Increment counter by 1
+counter++;
+```
+
+**Good examples**:
+```typescript
+/**
+ * 판매상품을 재고상품으로 변환하여 출고주문 아이템 생성
+ * @param salesOrderId - 원본 판매주문 ID
+ * @param productId - PIM 판매상품 ID
+ * @returns 생성된 FOI 목록
+ */
+async createFulfillmentOrderItems(salesOrderId: string, productId: string): Promise<FOI[]>
+
+// TODO: 세트 상품의 부분 출고 정책 구현 필요
+const allowPartialShipment = false;
+
+// 0x5f3759df: 고속 역제곱근 알고리즘의 매직 넘버
+// IEEE 754 부동소수점 표현을 이용한 초기 추정값
+const magic = 0x5f3759df - (i >> 1);
+```
+
 ### Testing
 - Jest for unit tests
 - E2E tests in service-specific directories (`apps/pim/test/`)

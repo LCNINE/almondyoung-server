@@ -101,7 +101,7 @@ export class InventoryController {
                         inboundPendingQuantity: { type: 'number' },
                         outboundPendingQuantity: { type: 'number' },
                         movingQuantity: { type: 'number' },
-                        damageQuantity: { type: 'number' },
+                        defectiveQuantity: { type: 'number' },
                         returnPendingQuantity: { type: 'number' },
                         lastUpdated: { type: 'string', format: 'date-time' }
                     }

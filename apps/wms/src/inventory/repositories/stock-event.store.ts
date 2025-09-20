@@ -351,31 +351,25 @@ export class StockEventStore {
 
   private getReversalType(t: TransitionType): TransitionType {
     const map: Record<TransitionType, TransitionType> = {
-      RECEIVE: 'RECEIPT_REVERSAL',
-      RECEIPT_CORRECTION_UP: 'RECEIPT_CORRECTION_DOWN',
-      RECEIPT_CORRECTION_DOWN: 'RECEIPT_CORRECTION_UP',
-      RECEIPT_REVERSAL: 'RECEIVE',
+      // 기본 흐름
+      RECEIVE: 'ADJUST_DOWN',
       RESERVE_SALES: 'UNRESERVE_SALES',
       UNRESERVE_SALES: 'RESERVE_SALES',
-      SHIP: 'SHIP_REVERSAL',
-      SHIP_REVERSAL: 'SHIP',
-      MOVE_RESERVE: 'MOVE_CANCEL',
-      MOVE_CANCEL: 'MOVE_RESERVE',
-      MOVE_COMMIT: 'MOVE_RESERVE',
-      MOVE_INSTANT: 'MOVE_INSTANT',
-      TRANSFER_SHIP: 'TRANSFER_CANCEL_SHIP',
-      TRANSFER_RECEIVE: 'TRANSFER_CANCEL_SHIP',
-      TRANSFER_CANCEL_SHIP: 'TRANSFER_SHIP',
-      TRANSFER_LOSS: 'ADJUST_UP',
-      TRANSFER_DAMAGE: 'REWORK_GOOD',
+      SHIP: 'ADJUST_UP',
+      MOVE: 'MOVE', // 이동은 반대 방향 이동으로 역분개
+
+      // 품질 관리
       MARK_DEFECT: 'REWORK_GOOD',
       REWORK_GOOD: 'MARK_DEFECT',
-      QUARANTINE_HOLD: 'QUARANTINE_RELEASE',
-      QUARANTINE_RELEASE: 'QUARANTINE_HOLD',
+      SCRAP: 'ADJUST_UP', // 폐기 취소는 재고 증가
+
+      // 수동 조정
       ADJUST_UP: 'ADJUST_DOWN',
       ADJUST_DOWN: 'ADJUST_UP',
-      SCRAP: 'UNSCRAP',
-      UNSCRAP: 'SCRAP',
+
+      // 예약 관리
+      RESERVE_MOVE: 'UNRESERVE_MOVE',
+      UNRESERVE_MOVE: 'RESERVE_MOVE',
     } as const;
     return map[t] ?? 'ADJUST_DOWN';
   }

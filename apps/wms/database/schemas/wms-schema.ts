@@ -35,42 +35,25 @@ export const stockStateEnum = pgEnum("stock_state", [
 ]);
 /** 상태 전이 타입(enum) */
 export const transitionTypeEnum = pgEnum("transition_type", [
-    // 입고/정정
-    "RECEIVE",                 // null → ON_HAND
-    "RECEIPT_CORRECTION_UP",   // (정정 +Δ) null → ON_HAND
-    "RECEIPT_CORRECTION_DOWN", // (정정 −Δ) ON_HAND → null  (= RECEIPT_REV0ERSAL의 친절한 별칭)
-    "RECEIPT_REVERSAL",        // ON_HAND → null (원입고 상쇄)
-  
-    // 판매 예약/출고
-    "RESERVE_SALES",           // ON_HAND → RESERVED_SALES
-    "UNRESERVE_SALES",         // RESERVED_SALES → ON_HAND
-    "SHIP",                    // RESERVED_SALES (또는 정책상 ON_HAND) → null
-    "SHIP_REVERSAL",           // null → ON_HAND (출고 취소/반품 즉시 재가용)
-  
-    // 로케이션 이동(동일 창고 내)
-    "MOVE_RESERVE",            // ON_HAND(A) → RESERVED_MOVE(A)  (이동 시작: 가용 잠금)
-    "MOVE_CANCEL",             // RESERVED_MOVE(A) → ON_HAND(A)  (이동 취소)
-    "MOVE_COMMIT",             // RESERVED_MOVE(A) → ON_HAND(B)  (이동 확정: 목적지 반영)
-    "MOVE_INSTANT",            // ON_HAND(A) → ON_HAND(B)        (예약 없이 즉시 이동)
-  
-    // 창고 간 이동(인터-웨어하우스)
-    "TRANSFER_SHIP",           // ON_HAND(src) → IN_TRANSFER(src)    (출발 창고 선적)
-    "TRANSFER_RECEIVE",        // IN_TRANSFER(dst) → ON_HAND(dst)     (도착 창고 입고)
-    "TRANSFER_CANCEL_SHIP",    // IN_TRANSFER(src) → ON_HAND(src)     (선적 취소/반송)
-    "TRANSFER_LOSS",           // IN_TRANSFER(*) → SCRAPPED           (운송 중 분실)
-    "TRANSFER_DAMAGE",         // IN_TRANSFER(*) → DEFECTIVE          (운송 중 파손)
-  
-    // 품질/검수
-    "MARK_DEFECT",             // ON_HAND → DEFECTIVE
-    "REWORK_GOOD",             // DEFECTIVE → ON_HAND
-    "QUARANTINE_HOLD",         // ON_HAND → QUARANTINE
-    "QUARANTINE_RELEASE",      // QUARANTINE → ON_HAND
-  
-    // 조정/폐기
-    "ADJUST_UP",               // null → ON_HAND        (재고 발견/실사 가산)
-    "ADJUST_DOWN",             // ON_HAND → null        (감모/실사 차감)
-    "SCRAP",                   // (ON_HAND|DEFECTIVE 등) → SCRAPPED
-    "UNSCRAP"                  // SCRAPPED → ON_HAND    (잘못 폐기 처리 복원; 운영 정책에 따라 제외 가능)
+    // 기본 흐름
+    "RECEIVE",                 // null → ON_HAND (입고)
+    "RESERVE_SALES",           // ON_HAND → RESERVED_SALES (판매 예약)
+    "UNRESERVE_SALES",         // RESERVED_SALES → ON_HAND (판매 예약 취소)
+    "SHIP",                    // RESERVED_SALES → null (출고)
+    "MOVE",                    // 이동 (창고내/창고간 통합)
+
+    // 품질 관리
+    "MARK_DEFECT",             // ON_HAND → DEFECTIVE (불량 지정)
+    "REWORK_GOOD",             // DEFECTIVE → ON_HAND (불량 양품화)
+    "SCRAP",                   // (ON_HAND|DEFECTIVE) → SCRAPPED (폐기)
+
+    // 수동 조정 (reason 필드로 상세 사유 기록)
+    "ADJUST_UP",               // null → ON_HAND (재고 증가)
+    "ADJUST_DOWN",             // ON_HAND → null (재고 감소)
+
+    // 예약 관리 (필요시)
+    "RESERVE_MOVE",            // ON_HAND → RESERVED_MOVE (이동 예약)
+    "UNRESERVE_MOVE"           // RESERVED_MOVE → ON_HAND (이동 예약 취소)
   ]);
 
 
@@ -187,6 +170,12 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', 'third_party_3pl', 'drop_ship']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
+
+// FOI 기반 확장 enums
+export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
+export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
+export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'printed', 'shipped', 'canceled']);
 
 // Audit system enums
 export const auditEventTypeEnum = pgEnum('audit_event_type', [
@@ -458,10 +447,8 @@ export const locations = pgTable('locations', {
  *──────────────────────────*/
 export const stockJournals = pgTable("stock_journals", {
     id: uuid("id").primaryKey().default(sql`uuid_v7()`),
-    sourceType: varchar("source_type", { length: 64 }), 
+    sourceType: varchar("source_type", { length: 64 }),
     sourceId: uuid("source_id"),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
     idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
     actorId: uuid("actor_id"),
   });
@@ -553,7 +540,7 @@ export const stockSummary = pgTable('stock_summary', {
     inboundPendingQuantity: integer('inbound_pending_quantity').notNull().default(0),
     outboundPendingQuantity: integer('outbound_pending_quantity').notNull().default(0),
     movingQuantity: integer('moving_quantity').notNull().default(0),
-    damageQuantity: integer('damage_quantity').notNull().default(0),
+    defectiveQuantity: integer('defective_quantity').notNull().default(0),
     returnPendingQuantity: integer('return_pending_quantity').notNull().default(0),
 
     lastEventId: uuid('last_event_id').references(() => stockEvents.id),
@@ -749,8 +736,8 @@ export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
     reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
-    fulfillmentOrderLineId: uuid('fulfillment_order_line_id')
-        .references(() => fulfillmentOrderLines.id, { onDelete: 'cascade' })
+    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+        .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
         .notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
@@ -1107,6 +1094,145 @@ export const auditLogs = pgTable('audit_logs', {
 }));
 
 /*───────────────────────────
+ * PRODUCT-SKU MAPPING SYSTEM
+ *──────────────────────────*/
+
+/**
+ * 판매상품→재고상품 매핑 규칙 (현재 활성 매핑)
+ */
+export const productSkuMappings = pgTable('product_sku_mappings', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productId: varchar('product_id', { length: 255 }).notNull(), // PIM의 판매상품 ID
+    version: integer('version').notNull().default(1),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }).defaultNow(),
+    isActive: boolean('is_active').notNull().default(true),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxProductWarehouse: index('idx_product_sku_mappings_product_warehouse').on(t.productId, t.warehouseId),
+    idxActiveVersion: index('idx_product_sku_mappings_active').on(t.productId, t.warehouseId, t.isActive),
+}));
+
+export const productSkuMappingItems = pgTable('product_sku_mapping_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    qtyPerProduct: integer('qty_per_product').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxMapping: index('idx_product_sku_mapping_items_mapping').on(t.mappingId),
+}));
+
+/**
+ * 주문시점 매핑 스냅샷 (불변)
+ */
+export const productSkuMappingSnapshots = pgTable('product_sku_mapping_snapshots', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    productId: varchar('product_id', { length: 255 }).notNull(),
+    sourceVersion: integer('source_version').notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+    snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
+}));
+
+/*───────────────────────────
+ * FULFILLMENT ORDER ITEMS (FOI) - 핵심 확장
+ *──────────────────────────*/
+
+/**
+ * 출고주문 아이템 - SO의 판매상품을 SKU로 변환하여 저장
+ */
+export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+        .notNull(),
+
+    // 추적 정보
+    salesOrderId: varchar('sales_order_id', { length: 255 }).notNull(), // 원본 SO ID
+    salesOrderLineId: varchar('sales_order_line_id', { length: 255 }).notNull(), // 원본 SOL ID
+    mappingSnapshotId: uuid('mapping_snapshot_id')
+        .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
+        .notNull(),
+
+    // 실제 출고 정보
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    qty: integer('qty').notNull(),
+
+    // 진행 상태
+    reservedQty: integer('reserved_qty').notNull().default(0),
+    pickedQty: integer('picked_qty').notNull().default(0),
+    shippedQty: integer('shipped_qty').notNull().default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
+    idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
+    idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
+}));
+
+/*───────────────────────────
+ * OUTBOUND BATCH SYSTEM
+ *──────────────────────────*/
+
+export const outboundBatches = pgTable('outbound_batches', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    batchNumber: varchar('batch_number', { length: 64 }).notNull().unique(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+    status: batchStatusEnum('status').notNull().default('created'),
+    pickingMethod: pickingMethodEnum('picking_method').notNull(),
+    cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
+    assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+}, t => ({
+    idxWarehouseStatus: index('idx_outbound_batches_warehouse_status').on(t.warehouseId, t.status),
+    idxBatchNumber: index('idx_outbound_batches_number').on(t.batchNumber),
+}));
+
+export const fulfillmentOrderBatches = pgTable('fulfillment_order_batches', {
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+        .notNull(),
+    batchId: uuid('batch_id')
+        .references(() => outboundBatches.id, { onDelete: 'cascade' })
+        .notNull(),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }).defaultNow(),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removeReason: varchar('remove_reason', { length: 255 }),
+}, t => ({
+    pk: primaryKey(t.fulfillmentOrderId, t.batchId),
+    idxBatch: index('idx_fulfillment_order_batches_batch').on(t.batchId),
+}));
+
+/*───────────────────────────
+ * INVOICE MANAGEMENT
+ *──────────────────────────*/
+
+export const invoices = pgTable('invoices', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+        .notNull(),
+    invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
+    carrierCode: varchar('carrier_code', { length: 32 }),
+    issueMethod: invoiceMethodEnum('issue_method').notNull(),
+    goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
+    status: invoiceStatusEnum('status').notNull().default('issued'),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow(),
+    printedAt: timestamp('printed_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, t => ({
+    idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
+    idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
+    idxStatus: index('idx_invoices_status').on(t.status),
+}));
+
+/*───────────────────────────
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
@@ -1162,4 +1288,13 @@ export const wmsTables = {
     movementWorkLogs,
     auditLogs,
     outboxEvents,
+
+    // FOI 기반 확장 스키마
+    productSkuMappings,
+    productSkuMappingItems,
+    productSkuMappingSnapshots,
+    fulfillmentOrderItems,
+    outboundBatches,
+    fulfillmentOrderBatches,
+    invoices,
 } as const;

@@ -10,7 +10,7 @@ export type StockUpdateData = Pick<
     | 'inboundPendingQuantity'
     | 'outboundPendingQuantity'
     | 'movingQuantity'
-    | 'damageQuantity'
+    | 'defectiveQuantity'
     | 'returnPendingQuantity'
 >;
 

@@ -471,7 +471,7 @@ export class InventoryService implements OnModuleInit {
                 inboundPendingQuantity: summary.inboundPendingQuantity,
                 outboundPendingQuantity: summary.outboundPendingQuantity,
                 movingQuantity: summary.movingQuantity,
-                damageQuantity: summary.damageQuantity,
+                defectiveQuantity: summary.defectiveQuantity,
                 returnPendingQuantity: summary.returnPendingQuantity,
                 lastUpdated: summary.lastUpdated,
             } : null,

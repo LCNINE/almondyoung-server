@@ -341,7 +341,7 @@ export class SalesOrdersService {
           await trx
             .update(wmsTables.stockReservations)
             .set({ status: 'released' })
-            .where(inArray(wmsTables.stockReservations.fulfillmentOrderLineId, folIds) as any);
+            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, folIds) as any);
           // FOL reservedQty 초기화
           await trx
             .update(wmsTables.fulfillmentOrderLines)

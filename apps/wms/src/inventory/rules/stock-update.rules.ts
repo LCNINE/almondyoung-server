@@ -10,37 +10,74 @@ import { wmsTables } from '../../../database/schemas/wms-schema';
 // RESERVE/CONFIRM/RELEASE: 별도 메서드에서 처리
 
 export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
-    // 전이 타입 기반 규칙 (입고/출고/이동/예약/품질/조정/폐기)
-    RECEIVE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고' },
-    RECEIPT_CORRECTION_UP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 정정 증가' },
-    RECEIPT_CORRECTION_DOWN: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 정정 감소(역이벤트로 처리됨)' },
-    RECEIPT_REVERSAL: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '입고 역분개' },
+    // 기본 흐름
+    RECEIVE: {
+        fields: { currentQuantity: '+', availableQuantity: '+' },
+        description: '입고'
+    },
+    RESERVE_SALES: {
+        fields: { availableQuantity: '+', reservedQuantity: '+' },
+        description: '판매 예약'
+    },
+    UNRESERVE_SALES: {
+        fields: { availableQuantity: '+', reservedQuantity: '+' },
+        description: '판매 예약 해제'
+    },
+    SHIP: {
+        fields: { currentQuantity: '+', reservedQuantity: '+' },
+        description: '출고'
+    },
+    MOVE: {
+        fields: { currentQuantity: '+', availableQuantity: '+' },
+        description: '이동 (창고내/창고간)'
+    },
 
-    RESERVE_SALES: { fields: {}, description: '판매 예약(요약에서 예약 수량 별도 처리)' },
-    UNRESERVE_SALES: { fields: {}, description: '판매 예약 해제(요약에서 예약 수량 별도 처리)' },
-    SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '출고' },
-    SHIP_REVERSAL: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '출고 역분개' },
+    // 품질 관리 (불량품 전용)
+    MARK_DEFECT: {
+        fields: { availableQuantity: '+' },
+        custom: ({ existing, delta }) => ({
+            defectiveQuantity: existing.defectiveQuantity + Math.abs(delta)
+        }),
+        description: '불량 지정'
+    },
+    REWORK_GOOD: {
+        fields: { availableQuantity: '+' },
+        custom: ({ existing, delta }) => ({
+            defectiveQuantity: existing.defectiveQuantity - Math.abs(delta)
+        }),
+        description: '불량 양품화'
+    },
+    SCRAP: {
+        fields: { currentQuantity: '+' },
+        custom: ({ existing, delta, eventType }) => {
+            // DEFECTIVE에서 오는 경우 defectiveQuantity 감소
+            const fromDefective = existing.defectiveQuantity > 0;
+            return fromDefective ? {
+                defectiveQuantity: existing.defectiveQuantity - Math.abs(delta)
+            } : {};
+        },
+        description: '폐기'
+    },
 
-    MOVE_RESERVE: { fields: {}, description: '로케이션 이동 예약' },
-    MOVE_CANCEL: { fields: {}, description: '로케이션 이동 예약 취소' },
-    MOVE_COMMIT: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '로케이션 이동 확정' },
-    MOVE_INSTANT: { fields: {}, description: '로케이션 즉시 이동(요약은 이벤트 투영에서 처리)' },
+    // 수동 조정 (reason 필드로 상세 사유 기록)
+    ADJUST_UP: {
+        fields: { currentQuantity: '+', availableQuantity: '+' },
+        description: '재고 증가 (입고 정정, 발견, 출고 취소 등)'
+    },
+    ADJUST_DOWN: {
+        fields: { currentQuantity: '+', availableQuantity: '+' },
+        description: '재고 감소 (입고 취소, 감모, 운송 분실/파손 등)'
+    },
 
-    TRANSFER_SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 선적(출발 창고 감소, 이동 중 처리 별도)' },
-    TRANSFER_RECEIVE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '창고 간 도착(도착 창고 증가)' },
-    TRANSFER_CANCEL_SHIP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '선적 취소' },
-    TRANSFER_LOSS: { fields: { currentQuantity: '+', availableQuantity: '+' }, custom: ({ existing, delta }) => ({ damageQuantity: existing.damageQuantity + Math.abs(delta) }), description: '운송 중 분실' },
-    TRANSFER_DAMAGE: { fields: { currentQuantity: '+', availableQuantity: '+' }, custom: ({ existing, delta }) => ({ damageQuantity: existing.damageQuantity + Math.abs(delta) }), description: '운송 중 파손' },
-
-    MARK_DEFECT: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '불량 지정' },
-    REWORK_GOOD: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '수리 후 정상 전환' },
-    QUARANTINE_HOLD: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '격리 보류' },
-    QUARANTINE_RELEASE: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '격리 해제' },
-
-    ADJUST_UP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '조정 증가' },
-    ADJUST_DOWN: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '조정 감소' },
-    SCRAP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '폐기' },
-    UNSCRAP: { fields: { currentQuantity: '+', availableQuantity: '+' }, description: '폐기 복원' },
+    // 예약 관리 (필요시)
+    RESERVE_MOVE: {
+        fields: { availableQuantity: '+', movingQuantity: '+' },
+        description: '이동 예약'
+    },
+    UNRESERVE_MOVE: {
+        fields: { availableQuantity: '+', movingQuantity: '+' },
+        description: '이동 예약 취소'
+    },
 } as const;
 
 // 규칙 적용 함수
@@ -125,7 +162,7 @@ export function createInitialState(): StockUpdateData {
         inboundPendingQuantity: 0,
         outboundPendingQuantity: 0,
         movingQuantity: 0,
-        damageQuantity: 0,
+        defectiveQuantity: 0,
         returnPendingQuantity: 0,
     };
 }

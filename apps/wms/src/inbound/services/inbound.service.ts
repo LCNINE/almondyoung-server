@@ -74,7 +74,6 @@ export class InboundService {
             // 회차(journal + receipt) 생성
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-                occurredAt: new Date(),
             } as any).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
@@ -144,7 +143,6 @@ export class InboundService {
 
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-                occurredAt: new Date(),
             } as any).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
@@ -210,7 +208,6 @@ export class InboundService {
 
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-                occurredAt: new Date(),
             } as any).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
@@ -530,7 +527,6 @@ export class InboundService {
             // 회차(journal + receipt) 생성
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-                occurredAt: new Date(),
             } as any).returning();
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
                 method: 'planned',
@@ -700,7 +696,7 @@ export class InboundService {
                 fromWarehouseId: receipt.warehouseId,
                 fromLocationId: originLocationId,
                 fromState: 'ON_HAND',
-                transitionType: 'RECEIPT_CORRECTION_DOWN',
+                transitionType: 'ADJUST_DOWN',
                 quantity: dto.quantity,
                 occurredAt: new Date(),
                 reason: 'RETURN',

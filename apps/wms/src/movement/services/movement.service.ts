@@ -55,7 +55,6 @@ export class MovementService {
       const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
       const [journal] = await tx.insert(wmsTables.stockJournals).values({
         sourceType: 'MOVEMENT',
-        occurredAt,
         actorId,
       }).returning();
 
@@ -94,7 +93,7 @@ export class MovementService {
           toLocationId: line.toLocationId,
           fromState: 'ON_HAND',
           toState: 'ON_HAND',
-          transitionType: 'MOVE_INSTANT',
+          transitionType: 'MOVE',
           quantity: line.quantity,
           occurredAt,
           reason: line.memo ?? memo ?? undefined,

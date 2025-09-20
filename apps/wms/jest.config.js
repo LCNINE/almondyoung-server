@@ -1,32 +1,59 @@
-const { pathsToModuleNameMapper } = require('ts-jest');
-const { compilerOptions } = require('./tsconfig.json');
-
 module.exports = {
-  displayName: 'wms',
-  preset: 'ts-jest',
+  displayName: 'WMS Tests',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src', '<rootDir>/test'],
+  rootDir: '.',
   testMatch: [
-    '**/__tests__/**/*.+(ts|tsx|js)',
-    '**/*.(test|spec).+(ts|tsx|js)',
+    '<rootDir>/test/**/*.test.ts',
+    '<rootDir>/test/**/*.spec.ts'
   ],
   transform: {
-    '^.+\\.(ts|tsx)$': 'ts-jest',
+    '^.+\\.(t|j)s$': 'ts-jest',
   },
-  moduleNameMapping: pathsToModuleNameMapper(compilerOptions.paths, {
-    prefix: '<rootDir>/../..',
-  }),
   collectCoverageFrom: [
-    'src/**/*.{ts,js}',
-    '!src/**/*.d.ts',
-    '!src/**/*.module.ts',
+    'src/**/*.(t|j)s',
+    '!src/**/*.spec.ts',
+    '!src/**/*.test.ts',
     '!src/**/index.ts',
-    '!src/main.ts',
+    '!src/**/*.interface.ts',
+    '!src/**/*.dto.ts',
   ],
-  coverageDirectory: 'coverage',
+  coverageDirectory: '<rootDir>/coverage',
   coverageReporters: ['text', 'lcov', 'html'],
-  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
-  testTimeout: 30000,
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+
+  // Global setup and teardown for testcontainers
+  globalSetup: '<rootDir>/test/support/jest-setup.ts',
+  globalTeardown: '<rootDir>/test/support/jest-teardown.ts',
+
+  // Test timeout (testcontainers can be slow)
+  testTimeout: 60000,
+
+  // Run tests serially to avoid DB conflicts
+  maxWorkers: 1,
+
+  // Module path mapping
+  moduleNameMapper: {
+    '^@app/(.*)$': '<rootDir>/../../libs/$1/src',
+  },
+
+  // Setup files to run before each test
+  setupFilesAfterEnv: [
+    '<rootDir>/test/support/test-setup.ts'
+  ],
+
+  // Clear mocks between tests
+  clearMocks: true,
+
+  // Verbose output for better debugging
   verbose: true,
+
+  // Transform @faker-js/faker ESM module
+  transformIgnorePatterns: [
+    'node_modules/(?!(@faker-js/faker)/)'
+  ],
+
+  // Force Jest to exit after tests complete
+  forceExit: true,
+
+  // Detect open handles for debugging
+  detectOpenHandles: false,
 };

@@ -120,7 +120,7 @@ export class ReservationsService {
 
           // 4. 예약 레코드 생성
           await trx.insert(wmsTables.stockReservations).values({
-            fulfillmentOrderLineId: fol.id,
+            fulfillmentOrderItemId: fol.id,
             skuId: fol.skuId,
             quantity: dto.quantity,
             status: 'confirmed',
@@ -257,7 +257,7 @@ export class ReservationsService {
 
       // 대상 예약 생성/증가
       await trx.insert(wmsTables.stockReservations).values({
-        fulfillmentOrderLineId: dst.id,
+        fulfillmentOrderItemId: dst.id,
         skuId: dst.skuId,
         quantity: moveQty,
         status: 'confirmed',
