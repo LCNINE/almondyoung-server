@@ -38,7 +38,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         const createdAuthIdentity = await authIdentityProviderService.create({
           entity_id: data.body!.email, // email or some ID
           provider_metadata: {
-            // user_id: data.body!.user_id,
+            almond_user_id: data.body!.almond_user_id,
             password: data.body!.password,
             // can include password or any other relevant information
           },
@@ -62,10 +62,10 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     try {
       // 토큰 인증 처리
       const authHeader = data?.headers?.authorization;
-      let token;
+      let almond_token;
 
       if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
+        almond_token = authHeader.split(' ')[1];
       } else {
         // 쿠키에서 토큰 조회
         const cookies = data?.headers?.cookie;
@@ -74,19 +74,20 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             .split(';')
             .find((cookie) => cookie.trim().startsWith('accessToken='));
           if (tokenCookie) {
-            token = tokenCookie.split('=')[1];
+            almond_token = tokenCookie.split('=')[1];
           }
         }
       }
 
-      if (!token) {
+      if (!almond_token) {
         return {
           success: false,
           error: 'No token found',
         };
       }
 
-      const user = await this.userCustomModule.getUserDetailsByToken(token);
+      const user =
+        await this.userCustomModule.getUserDetailsByToken(almond_token);
 
       if (!user) {
         return {
@@ -102,7 +103,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
 
       const userRoles = await this.userCustomModule.getUserRoles(
         user.id,
-        token,
+        almond_token,
       );
 
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
