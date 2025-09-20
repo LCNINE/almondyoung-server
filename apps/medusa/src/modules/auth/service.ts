@@ -9,6 +9,7 @@ import {
   MedusaError,
 } from '@medusajs/framework/utils';
 import CustomUserModuleService from '@modules/custom-user/service';
+import { Console } from 'console';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
@@ -35,10 +36,12 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
         // provider_identity 테이블에 생성됌
+
         const createdAuthIdentity = await authIdentityProviderService.create({
           entity_id: data.body!.email, // email or some ID
           provider_metadata: {
             almond_user_id: data.body!.almond_user_id,
+            almond_login_id: data.body!.almond_login_id,
             password: data.body!.password,
             // can include password or any other relevant information
           },
