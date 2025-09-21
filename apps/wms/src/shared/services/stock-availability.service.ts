@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
 import { eq, and } from 'drizzle-orm';
 
@@ -122,11 +122,12 @@ export class StockAvailabilityService {
 
         // 각 SKU의 재고 확인
         for (const link of links) {
-            const stockSummaries = await this.db.query.stockSummary.findMany({
-                where: eq(wmsTables.stockSummary.skuId, link.skuId)
-            });
+            const stockSummaries = await this.db
+                .select()
+                .from(wmsSchema.stockSummary)
+                .where(eq(wmsSchema.stockSummary.skuId, link.skuId));
 
-            const totalAvailable = stockSummaries.reduce((sum, s) => sum + s.availableQuantity, 0);
+            const totalAvailable = stockSummaries.reduce((sum, s) => sum + s.availableQty, 0);
 
             if (totalAvailable < link.quantity) {
                 // 하나라도 부족하면 false
@@ -180,10 +181,10 @@ export class StockAvailabilityService {
 
         for (const link of links) {
             const stockSummaries = await this.db.query.stockSummary.findMany({
-                where: eq(wmsTables.stockSummary.skuId, link.skuId)
+                where: eq(wmsSchema.stockSummary.skuId, link.skuId)
             });
 
-            const totalAvailable = stockSummaries.reduce((sum, s) => sum + s.availableQuantity, 0);
+            const totalAvailable = stockSummaries.reduce((sum, s) => sum + s.availableQty, 0);
             const orderableForThisSku = Math.floor(totalAvailable / link.quantity);
 
             details.push({

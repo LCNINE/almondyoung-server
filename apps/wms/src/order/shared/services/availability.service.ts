@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
 import { wmsTables } from '../../../../database/schemas/wms-schema';
-
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 
 @Injectable()
@@ -13,7 +12,7 @@ export class AvailabilityService {
     const row = await db.query.stockSummary.findFirst({
       where: (s, { and, eq }) => and(eq(s.skuId, skuId), eq(s.warehouseId, warehouseId)),
     });
-    return row?.availableQuantity ?? 0;
+    return row?.availableQty ?? 0;
   }
 }
 

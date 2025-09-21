@@ -48,66 +48,6 @@ export class InventoryCommandService {
     return tx ? exec(tx) : this.db.transaction(exec);
   }
 
-  async reserveSales(input: {
-    skuId: string;
-    warehouseId: string;
-    locationId?: string | null;
-    quantity: number;
-    occurredAt?: Date;
-    idempotencyKey?: string;
-    reason?: string;
-  }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        fromWarehouseId: input.warehouseId,
-        fromLocationId: input.locationId ?? null,
-        fromState: 'ON_HAND',
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.locationId ?? null,
-        toState: 'RESERVED_SALES',
-        transitionType: 'RESERVE_SALES',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
-  async unreserveSales(input: {
-    skuId: string;
-    warehouseId: string;
-    locationId?: string | null;
-    quantity: number;
-    occurredAt?: Date;
-    idempotencyKey?: string;
-    reason?: string;
-  }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        fromWarehouseId: input.warehouseId,
-        fromLocationId: input.locationId ?? null,
-        fromState: 'RESERVED_SALES',
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.locationId ?? null,
-        toState: 'ON_HAND',
-        transitionType: 'UNRESERVE_SALES',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
   async ship(input: {
     skuId: string;
     warehouseId: string;
@@ -123,99 +63,8 @@ export class InventoryCommandService {
         skuId: input.skuId,
         fromWarehouseId: input.warehouseId,
         fromLocationId: input.locationId ?? null,
-        fromState: 'RESERVED_SALES',
+        fromState: 'ON_HAND', // 예약 없이 직접 출고
         transitionType: 'SHIP',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
-  async moveReserve(input: {
-    skuId: string;
-    warehouseId: string;
-    fromLocationId: string;
-    quantity: number;
-    occurredAt?: Date;
-    idempotencyKey?: string;
-    reason?: string;
-  }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        fromWarehouseId: input.warehouseId,
-        fromLocationId: input.fromLocationId,
-        fromState: 'ON_HAND',
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.fromLocationId,
-        toState: 'RESERVED_MOVE',
-        transitionType: 'RESERVE_MOVE',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
-  async moveCancel(input: {
-    skuId: string;
-    warehouseId: string;
-    fromLocationId: string;
-    quantity: number;
-    occurredAt?: Date;
-    idempotencyKey?: string;
-    reason?: string;
-  }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        fromWarehouseId: input.warehouseId,
-        fromLocationId: input.fromLocationId,
-        fromState: 'RESERVED_MOVE',
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.fromLocationId,
-        toState: 'ON_HAND',
-        transitionType: 'UNRESERVE_MOVE',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
-  async moveCommit(input: {
-    skuId: string;
-    warehouseId: string;
-    fromLocationId: string;
-    toLocationId: string;
-    quantity: number;
-    occurredAt?: Date;
-    idempotencyKey?: string;
-    reason?: string;
-  }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        fromWarehouseId: input.warehouseId,
-        fromLocationId: input.fromLocationId,
-        fromState: 'RESERVED_MOVE',
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.toLocationId,
-        toState: 'ON_HAND',
-        transitionType: 'MOVE',
         quantity: input.quantity,
         occurredAt: input.occurredAt ?? new Date(),
         idempotencyKey: input.idempotencyKey,
@@ -328,6 +177,37 @@ export class InventoryCommandService {
         fromLocationId: input.locationId ?? null,
         fromState: 'ON_HAND',
         transitionType: 'ADJUST_DOWN',
+        quantity: input.quantity,
+        occurredAt: input.occurredAt ?? new Date(),
+        idempotencyKey: input.idempotencyKey,
+        reason: input.reason,
+      }, trx);
+      return { eventId: event?.id ?? null };
+    };
+    return tx ? exec(tx) : this.db.transaction(exec);
+  }
+
+  async moveInternal(input: {
+    skuId: string;
+    warehouseId: string;
+    fromLocationId: string;
+    toLocationId: string;
+    quantity: number;
+    occurredAt?: Date;
+    idempotencyKey?: string;
+    reason?: string;
+  }, tx?: DbTx) {
+    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    const exec = async (trx: DbTx) => {
+      const event = await this.eventStore.createEvent({
+        skuId: input.skuId,
+        fromWarehouseId: input.warehouseId,
+        fromLocationId: input.fromLocationId,
+        toWarehouseId: input.warehouseId,
+        toLocationId: input.toLocationId,
+        fromState: 'ON_HAND',
+        toState: 'ON_HAND',
+        transitionType: 'MOVE',
         quantity: input.quantity,
         occurredAt: input.occurredAt ?? new Date(),
         idempotencyKey: input.idempotencyKey,

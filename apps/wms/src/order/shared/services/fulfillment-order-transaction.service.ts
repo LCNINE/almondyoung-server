@@ -176,19 +176,7 @@ export class FulfillmentOrderTransactionService {
     }
 
     await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.stockReservations)
-        .set({ status: 'canceled', canceledAt: new Date() })
-        .where(
-          inArray(
-            wmsTables.stockReservations.fulfillmentOrderItemId,
-            fulfillmentOrder.items.map(item => item.id)
-          )
-        );
-
-      await tx.update(wmsTables.fulfillmentOrderItems)
-        .set({ reservedQty: 0 })
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
-
+      // 1. FO 상태 업데이트
       await tx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'canceled',
@@ -197,7 +185,106 @@ export class FulfillmentOrderTransactionService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      this.logger.log(`Canceled FO ${fulfillmentOrderId} and released ${fulfillmentOrder.items.length} reservations`);
+      // 2. 예약 생명주기 서비스로 예약 처리 위임
+      // TODO: DI로 주입받도록 수정 필요
+      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
+      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
+
+      const unifiedReservation = new UnifiedReservationService(this.dbService);
+      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
+
+      await lifecycleService.handleFulfillmentOrderStatusChange(
+        fulfillmentOrderId,
+        fulfillmentOrder.status,
+        'canceled',
+        tx
+      );
+
+      this.logger.log(`Canceled FO ${fulfillmentOrderId} and released reservations via lifecycle service`);
+    });
+  }
+
+  /**
+   * FO 완료 처리 - 예약 자동 해제
+   */
+  async completeFulfillmentOrder(fulfillmentOrderId: string): Promise<void> {
+    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
+      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId)
+    });
+
+    if (!fulfillmentOrder) {
+      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+    }
+
+    if (fulfillmentOrder.status === 'completed') {
+      return; // 이미 완료됨
+    }
+
+    await this.db.transaction(async (tx) => {
+      // 1. FO 상태 업데이트
+      await tx.update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+          totalReservedQty: 0
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+
+      // 2. 예약 생명주기 서비스로 예약 처리 위임
+      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
+      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
+
+      const unifiedReservation = new UnifiedReservationService(this.dbService);
+      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
+
+      await lifecycleService.handleFulfillmentOrderStatusChange(
+        fulfillmentOrderId,
+        fulfillmentOrder.status,
+        'completed',
+        tx
+      );
+
+      this.logger.log(`Completed FO ${fulfillmentOrderId} and released reservations`);
+    });
+  }
+
+  /**
+   * FO 출고 처리 - 예약 자동 해제
+   */
+  async shipFulfillmentOrder(fulfillmentOrderId: string): Promise<void> {
+    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
+      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId)
+    });
+
+    if (!fulfillmentOrder) {
+      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+    }
+
+    await this.db.transaction(async (tx) => {
+      // 1. FO 상태 업데이트
+      await tx.update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'shipped',
+          shippedAt: new Date(),
+          totalReservedQty: 0
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+
+      // 2. 예약 생명주기 서비스로 예약 처리 위임
+      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
+      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
+
+      const unifiedReservation = new UnifiedReservationService(this.dbService);
+      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
+
+      await lifecycleService.handleFulfillmentOrderStatusChange(
+        fulfillmentOrderId,
+        fulfillmentOrder.status,
+        'shipped',
+        tx
+      );
+
+      this.logger.log(`Shipped FO ${fulfillmentOrderId} and released reservations`);
     });
   }
 

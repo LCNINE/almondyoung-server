@@ -1,17 +1,18 @@
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
-type StockSummaryRow = typeof wmsTables.stockSummary.$inferSelect;
+// stockSummary view의 타입 정의 (Drizzle에서 자동 추론)
+type StockSummaryRow = typeof wmsSchema.stockSummary.$inferSelect;
 
 export type StockUpdateData = Pick<
     StockSummaryRow,
-    | 'currentQuantity'
-    | 'availableQuantity'
-    | 'reservedQuantity'
-    | 'inboundPendingQuantity'
-    | 'outboundPendingQuantity'
-    | 'movingQuantity'
-    | 'defectiveQuantity'
-    | 'returnPendingQuantity'
+    | 'onHandQty'
+    | 'availableQty'
+    | 'reservedQty'
+    | 'inboundPendingQty'
+    | 'onOrderQty'
+    | 'inTransferQty'
+    | 'defectiveQty'
+    | 'transferPendingQty'
 >;
 
 // TransitionType derived strictly from DB enum

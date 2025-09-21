@@ -243,8 +243,15 @@ export class FulfillmentsService {
         })
         .returning();
 
-      // 3) 라인 분할
+      // 3) 라인 분할 및 예약 처리
       const moves: Array<{ fulfillmentOrderLineId: string; quantity: number }> = dto?.lines ?? [];
+      const splitItems: Array<{
+        fulfillmentOrderLineId: string;
+        skuId: string;
+        splitQuantity: number;
+        originalQuantity: number;
+      }> = [];
+
       for (const mv of moves) {
         const line = await trx.query.fulfillmentOrderLines.findFirst({
           where: (l, { eq }) => eq(l.id, mv.fulfillmentOrderLineId),
@@ -256,19 +263,48 @@ export class FulfillmentsService {
         // 원본 라인 수량 감소
         await trx
           .update(wmsTables.fulfillmentOrderLines)
-          .set({ quantity: line.quantity - moveQty })
+          .set({
+            quantity: line.quantity - moveQty,
+            reservedQty: Math.max(0, line.reservedQty - moveQty) // 예약 수량도 조정
+          })
           .where(eq(wmsTables.fulfillmentOrderLines.id, line.id));
 
         // 새 라인 생성
-        await trx.insert(wmsTables.fulfillmentOrderLines).values({
+        const [newLine] = await trx.insert(wmsTables.fulfillmentOrderLines).values({
           fulfillmentOrderId: newFo.id,
           skuId: line.skuId,
           quantity: moveQty,
-          reservedQty: 0,
+          reservedQty: 0, // 예약은 lifecycle service에서 처리
           pickedQty: 0,
           shippedQty: 0,
           status: 'pending',
+        }).returning();
+
+        // 예약 처리를 위한 정보 수집
+        splitItems.push({
+          fulfillmentOrderLineId: newLine.id,
+          skuId: line.skuId,
+          splitQuantity: moveQty,
+          originalQuantity: line.quantity
         });
+      }
+
+      // 4) 예약 재분배 처리
+      if (splitItems.length > 0) {
+        // TODO: DI로 주입받도록 수정 필요
+        const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
+        const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
+
+        const dbService = this.db; // 현재 DB 서비스 사용
+        const unifiedReservation = new UnifiedReservationService(dbService as any);
+        const lifecycleService = new ReservationLifecycleService(dbService as any, unifiedReservation);
+
+        await lifecycleService.handleFulfillmentOrderSplit(
+          id,
+          newFo.id,
+          splitItems,
+          trx
+        );
       }
 
       return newFo;

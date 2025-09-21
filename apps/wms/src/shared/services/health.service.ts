@@ -251,7 +251,7 @@ export class HealthService {
   private async checkInventoryService(): Promise<{ status: 'healthy' | 'unhealthy'; details?: any }> {
     try {
       // 재고 테이블 기본 조회
-      const result = await this.db.select().from(wmsTables.stockSummary).limit(1);
+      const result = await this.db.select().from(wmsTables.stockLedgers).limit(1);
       return { status: 'healthy', details: { service: 'inventory', accessible: true } };
     } catch (error) {
       return { status: 'unhealthy', details: { service: 'inventory', error: error.message } };

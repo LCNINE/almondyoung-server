@@ -1,7 +1,8 @@
 // apps/wms/database/schemas/wms-schema.ts
-import { sql } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 import {
     pgTable,
+    pgView,
     uuid,
     varchar,
     boolean,
@@ -28,8 +29,6 @@ export const sourceTypeEnum = pgEnum('source_type', ['direct', 'in_house', 'over
 export const eventStatusEnum = pgEnum('event_status', ['PENDING','POSTED','VOIDED']);
 export const stockStateEnum = pgEnum("stock_state", [
     "ON_HAND",         // 출고가능 or 가용재고
-    "RESERVED_SALES",  // 판매 예약
-    "RESERVED_MOVE",   // 이동 작업 예약
     "DEFECTIVE",       // 불량
     "IN_TRANSFER",     // 창고간 운송중
 ]);
@@ -37,23 +36,17 @@ export const stockStateEnum = pgEnum("stock_state", [
 export const transitionTypeEnum = pgEnum("transition_type", [
     // 기본 흐름
     "RECEIVE",                 // null → ON_HAND (입고)
-    "RESERVE_SALES",           // ON_HAND → RESERVED_SALES (판매 예약)
-    "UNRESERVE_SALES",         // RESERVED_SALES → ON_HAND (판매 예약 취소)
-    "SHIP",                    // RESERVED_SALES → null (출고)
+    "SHIP",                    // ON_HAND → null (출고) - 예약 없이 직접 출고
     "MOVE",                    // 이동 (창고내/창고간 통합)
 
     // 품질 관리
     "MARK_DEFECT",             // ON_HAND → DEFECTIVE (불량 지정)
     "REWORK_GOOD",             // DEFECTIVE → ON_HAND (불량 양품화)
-    "SCRAP",                   // (ON_HAND|DEFECTIVE) → SCRAPPED (폐기)
+    "SCRAP",                   // (ON_HAND|DEFECTIVE) → null (폐기)
 
     // 수동 조정 (reason 필드로 상세 사유 기록)
     "ADJUST_UP",               // null → ON_HAND (재고 증가)
     "ADJUST_DOWN",             // ON_HAND → null (재고 감소)
-
-    // 예약 관리 (필요시)
-    "RESERVE_MOVE",            // ON_HAND → RESERVED_MOVE (이동 예약)
-    "UNRESERVE_MOVE"           // RESERVED_MOVE → ON_HAND (이동 예약 취소)
   ]);
 
 
@@ -523,35 +516,91 @@ export const stockLedgers = pgTable(
 );
 
 // 재고 현황 테이블
-export const stockSummary = pgTable('stock_summary', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
-    warehouseId: uuid('warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'cascade' })
-        .notNull(),
+// stockSummary를 VIEW로 전환 - 실시간 집계를 위한 PostgreSQL VIEW
+export const stockSummary = pgView('stock_summary_view', {
+    skuId: uuid('sku_id').notNull(),
+    warehouseId: uuid('warehouse_id').notNull(),
+    skuName: varchar('sku_name', { length: 255 }),
+    warehouseName: varchar('warehouse_name', { length: 255 }),
 
-    currentQuantity: integer('current_quantity').notNull().default(0),
-    availableQuantity: integer('available_quantity').notNull().default(0),
-    reservedQuantity: integer('reserved_quantity').notNull().default(0),
+    // 물리적 재고
+    onHandQty: integer('on_hand_qty').notNull().default(0),
+    defectiveQty: integer('defective_qty').notNull().default(0),
+    inTransferQty: integer('in_transfer_qty').notNull().default(0),
 
-    // 상태별 재고 현황
-    inboundPendingQuantity: integer('inbound_pending_quantity').notNull().default(0),
-    outboundPendingQuantity: integer('outbound_pending_quantity').notNull().default(0),
-    movingQuantity: integer('moving_quantity').notNull().default(0),
-    defectiveQuantity: integer('defective_quantity').notNull().default(0),
-    returnPendingQuantity: integer('return_pending_quantity').notNull().default(0),
+    // 예약 상태
+    reservedQty: integer('reserved_qty').notNull().default(0),
+    availableQty: integer('available_qty').notNull().default(0),
 
-    lastEventId: uuid('last_event_id').references(() => stockEvents.id),
-    lastUpdated: timestamp('last_updated', { withTimezone: true }).defaultNow(),
-    version: integer('version').notNull().default(1),
+    // 예정 상태
+    inboundPendingQty: integer('inbound_pending_qty').notNull().default(0),
+    onOrderQty: integer('on_order_qty').notNull().default(0),
+    transferPendingQty: integer('transfer_pending_qty').notNull().default(0),
 
-}, t => ({
-    uniqueSkuWarehouse: unique().on(t.skuId, t.warehouseId),
-    skuIdx: index('stock_summary_sku_idx').on(t.skuId),
-    warehouseIdx: index('stock_summary_warehouse_idx').on(t.warehouseId),
-}));
+    // 계산된 전망
+    projectedAvailableQty: integer('projected_available_qty').notNull().default(0),
+
+    lastCalculatedAt: timestamp('last_calculated_at', { withTimezone: true }).notNull(),
+}).as(sql`
+    SELECT
+        s.id as sku_id,
+        w.id as warehouse_id,
+        s.name as sku_name,
+        w.name as warehouse_name,
+
+        -- 물리적 재고
+        COALESCE(on_hand.qty, 0) as on_hand_qty,
+        COALESCE(defective.qty, 0) as defective_qty,
+        COALESCE(in_transfer.qty, 0) as in_transfer_qty,
+
+        -- 예약 상태
+        COALESCE(reserved.qty, 0) as reserved_qty,
+        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) as available_qty,
+
+        -- 예정 상태
+        COALESCE(inbound_pending.qty, 0) as inbound_pending_qty,
+        0 as on_order_qty,
+        0 as transfer_pending_qty,
+
+        -- 계산된 전망
+        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) + COALESCE(inbound_pending.qty, 0) as projected_available_qty,
+
+        NOW() as last_calculated_at
+
+    FROM skus s
+    CROSS JOIN warehouses w
+    LEFT JOIN (
+        SELECT sku_id, warehouse_id, SUM(qty) as qty
+        FROM stock_ledgers
+        WHERE stock_state = 'ON_HAND'
+        GROUP BY sku_id, warehouse_id
+    ) on_hand ON s.id = on_hand.sku_id AND w.id = on_hand.warehouse_id
+    LEFT JOIN (
+        SELECT sku_id, warehouse_id, SUM(qty) as qty
+        FROM stock_ledgers
+        WHERE stock_state = 'DEFECTIVE'
+        GROUP BY sku_id, warehouse_id
+    ) defective ON s.id = defective.sku_id AND w.id = defective.warehouse_id
+    LEFT JOIN (
+        SELECT sku_id, warehouse_id, SUM(qty) as qty
+        FROM stock_ledgers
+        WHERE stock_state = 'IN_TRANSFER'
+        GROUP BY sku_id, warehouse_id
+    ) in_transfer ON s.id = in_transfer.sku_id AND w.id = in_transfer.warehouse_id
+    LEFT JOIN (
+        SELECT sku_id, warehouse_id, SUM(quantity) as qty
+        FROM stock_reservations
+        WHERE status = 'confirmed'
+        GROUP BY sku_id, warehouse_id
+    ) reserved ON s.id = reserved.sku_id AND w.id = reserved.warehouse_id
+    LEFT JOIN (
+        SELECT ipi.sku_id, ip.warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
+        FROM inbound_plan_items ipi
+        INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
+        WHERE ipi.status = 'pending'
+        GROUP BY ipi.sku_id, ip.warehouse_id
+    ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.warehouse_id
+`);
 
 /*───────────────────────────
  * PRODUCT / VARIANT / SKU MAPPING
@@ -736,16 +785,32 @@ export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
     reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
+
+    // 통합 예약 대상 정보
+    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
+    targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
+
+    // 기존 FO 호환성을 위해 유지 (nullable로 변경)
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
-        .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
-        .notNull(),
+        .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' }),
+
+    // 예약 기본 정보
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
     status: reservationStatusEnum('status').notNull().default('pending'),
+
+    // 예약 메타 정보
     timeoutAt: timestamp('timeout_at', { withTimezone: true }),
+    reason: text('reason'), // 예약 사유
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-});
+}, t => ({
+    // 인덱스 추가
+    targetIdx: index('stock_reservations_target_idx').on(t.targetType, t.targetId),
+    skuWarehouseIdx: index('stock_reservations_sku_warehouse_idx').on(t.skuId, t.warehouseId),
+    statusIdx: index('stock_reservations_status_idx').on(t.status),
+}));
 
 /*───────────────────────────
  * OUTBOUND TASKS
@@ -1253,7 +1318,6 @@ export const wmsTables = {
     stockJournals,
     stockEvents,
     stockLedgers,
-    stockSummary,
     productMatchings,
     productVariantSkuLinks,
     productOptionMatchings,
@@ -1297,4 +1361,45 @@ export const wmsTables = {
     outboundBatches,
     fulfillmentOrderBatches,
     invoices,
+
+    // Views
+    stockSummary,
+} as const;
+
+/*───────────────────────────
+ * RELATIONS
+ *──────────────────────────*/
+
+import { relations } from 'drizzle-orm';
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
+    lines: many(purchaseOrderLines),
+    supplier: one(suppliers, {
+        fields: [purchaseOrders.supplierId],
+        references: [suppliers.id],
+    }),
+}));
+
+export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
+    purchaseOrder: one(purchaseOrders, {
+        fields: [purchaseOrderLines.purchaseOrderId],
+        references: [purchaseOrders.id],
+    }),
+    sku: one(skus, {
+        fields: [purchaseOrderLines.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const purchaseOrderCartRelations = relations(purchaseOrderCart, ({ one }) => ({
+    sku: one(skus, {
+        fields: [purchaseOrderCart.skuId],
+        references: [skus.id],
+    }),
+}));
+
+// Views schema for queries (includes both tables and views)
+export const wmsSchema = {
+    ...wmsTables,
+    stockSummary,
 } as const;

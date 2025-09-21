@@ -428,9 +428,9 @@ export class InventoryService implements OnModuleInit {
 
         const total = summaries.reduce(
             (acc, summary) => ({
-                totalRealQuantity: acc.totalRealQuantity + summary.currentQuantity,
-                totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQuantity,
-                totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQuantity,
+                totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+                totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
+                totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
             }),
             { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 }
         );
@@ -465,15 +465,15 @@ export class InventoryService implements OnModuleInit {
 
         return {
             summary: summary ? {
-                currentQuantity: summary.currentQuantity,
-                availableQuantity: summary.availableQuantity,
-                reservedQuantity: summary.reservedQuantity,
-                inboundPendingQuantity: summary.inboundPendingQuantity,
-                outboundPendingQuantity: summary.outboundPendingQuantity,
-                movingQuantity: summary.movingQuantity,
-                defectiveQuantity: summary.defectiveQuantity,
-                returnPendingQuantity: summary.returnPendingQuantity,
-                lastUpdated: summary.lastUpdated,
+                currentQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+                availableQuantity: summary.availableQty,
+                reservedQuantity: summary.reservedQty,
+                inboundPendingQuantity: summary.inboundPendingQty,
+                outboundPendingQuantity: summary.onOrderQty,
+                movingQuantity: summary.inTransferQty,
+                defectiveQuantity: summary.defectiveQty,
+                returnPendingQuantity: summary.transferPendingQty,
+                lastUpdated: summary.lastCalculatedAt,
             } : null,
             details,
         };
@@ -523,16 +523,16 @@ export class InventoryService implements OnModuleInit {
         const warehouseStocks = summaries.map(summary => ({
             warehouseId: summary.warehouseId,
             warehouseName: warehouseMap.get(summary.warehouseId)?.name || 'Unknown Warehouse',
-            realQuantity: summary.currentQuantity,
-            reservedQuantity: summary.reservedQuantity,
-            availableQuantity: summary.availableQuantity,
+            realQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+            reservedQuantity: summary.reservedQty,
+            availableQuantity: summary.availableQty,
         }));
 
         const totals = summaries.reduce(
             (acc, summary) => ({
-                totalRealQuantity: acc.totalRealQuantity + summary.currentQuantity,
-                totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQuantity,
-                totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQuantity,
+                totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+                totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
+                totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
             }),
             { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 }
         );
@@ -751,7 +751,7 @@ export class InventoryService implements OnModuleInit {
         const generatedBarcode = `SKU_B_${skuId.substring(0, 8).toUpperCase()}_${Date.now()}`;
 
         const [newSkuBarcode] = await db.insert(wmsTables.skuBarcodes).values({
-            skuId: skuId,
+            where: eq(wmsTables.stockSummary.skuId, skuId),
             barcode: generatedBarcode,
             barcodeType: 'standard',
         }).returning();

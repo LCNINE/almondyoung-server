@@ -353,8 +353,6 @@ export class StockEventStore {
     const map: Record<TransitionType, TransitionType> = {
       // 기본 흐름
       RECEIVE: 'ADJUST_DOWN',
-      RESERVE_SALES: 'UNRESERVE_SALES',
-      UNRESERVE_SALES: 'RESERVE_SALES',
       SHIP: 'ADJUST_UP',
       MOVE: 'MOVE', // 이동은 반대 방향 이동으로 역분개
 
@@ -366,10 +364,6 @@ export class StockEventStore {
       // 수동 조정
       ADJUST_UP: 'ADJUST_DOWN',
       ADJUST_DOWN: 'ADJUST_UP',
-
-      // 예약 관리
-      RESERVE_MOVE: 'UNRESERVE_MOVE',
-      UNRESERVE_MOVE: 'RESERVE_MOVE',
     } as const;
     return map[t] ?? 'ADJUST_DOWN';
   }

@@ -12,48 +12,40 @@ import { wmsTables } from '../../../database/schemas/wms-schema';
 export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
     // 기본 흐름
     RECEIVE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
+        fields: { onHandQty: '+', availableQty: '+' },
         description: '입고'
     },
-    RESERVE_SALES: {
-        fields: { availableQuantity: '+', reservedQuantity: '+' },
-        description: '판매 예약'
-    },
-    UNRESERVE_SALES: {
-        fields: { availableQuantity: '+', reservedQuantity: '+' },
-        description: '판매 예약 해제'
-    },
     SHIP: {
-        fields: { currentQuantity: '+', reservedQuantity: '+' },
-        description: '출고'
+        fields: { onHandQty: '+', availableQty: '+' },
+        description: '출고 - 예약 없이 직접 출고'
     },
     MOVE: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
+        fields: { onHandQty: '+', availableQty: '+' },
         description: '이동 (창고내/창고간)'
     },
 
     // 품질 관리 (불량품 전용)
     MARK_DEFECT: {
-        fields: { availableQuantity: '+' },
+        fields: { availableQty: '+' },
         custom: ({ existing, delta }) => ({
-            defectiveQuantity: existing.defectiveQuantity + Math.abs(delta)
+            defectiveQty: existing.defectiveQty + Math.abs(delta)
         }),
         description: '불량 지정'
     },
     REWORK_GOOD: {
-        fields: { availableQuantity: '+' },
+        fields: { availableQty: '+' },
         custom: ({ existing, delta }) => ({
-            defectiveQuantity: existing.defectiveQuantity - Math.abs(delta)
+            defectiveQty: existing.defectiveQty - Math.abs(delta)
         }),
         description: '불량 양품화'
     },
     SCRAP: {
-        fields: { currentQuantity: '+' },
+        fields: { onHandQty: '+' },
         custom: ({ existing, delta, eventType }) => {
             // DEFECTIVE에서 오는 경우 defectiveQuantity 감소
-            const fromDefective = existing.defectiveQuantity > 0;
+            const fromDefective = existing.defectiveQty > 0;
             return fromDefective ? {
-                defectiveQuantity: existing.defectiveQuantity - Math.abs(delta)
+                defectiveQty: existing.defectiveQty - Math.abs(delta)
             } : {};
         },
         description: '폐기'
@@ -61,22 +53,12 @@ export const STOCK_RULES: Readonly<Record<EventType, Rule>> = {
 
     // 수동 조정 (reason 필드로 상세 사유 기록)
     ADJUST_UP: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
+        fields: { onHandQty: '+', availableQty: '+' },
         description: '재고 증가 (입고 정정, 발견, 출고 취소 등)'
     },
     ADJUST_DOWN: {
-        fields: { currentQuantity: '+', availableQuantity: '+' },
+        fields: { onHandQty: '+', availableQty: '+' },
         description: '재고 감소 (입고 취소, 감모, 운송 분실/파손 등)'
-    },
-
-    // 예약 관리 (필요시)
-    RESERVE_MOVE: {
-        fields: { availableQuantity: '+', movingQuantity: '+' },
-        description: '이동 예약'
-    },
-    UNRESERVE_MOVE: {
-        fields: { availableQuantity: '+', movingQuantity: '+' },
-        description: '이동 예약 취소'
     },
 } as const;
 
@@ -156,13 +138,13 @@ export function validateRules(): void {
 // 유틸리티: 초기 상태 생성
 export function createInitialState(): StockUpdateData {
     return {
-        currentQuantity: 0,
-        availableQuantity: 0,
-        reservedQuantity: 0,
-        inboundPendingQuantity: 0,
-        outboundPendingQuantity: 0,
-        movingQuantity: 0,
-        defectiveQuantity: 0,
-        returnPendingQuantity: 0,
+        onHandQty: 0,
+        availableQty: 0,
+        reservedQty: 0,
+        inboundPendingQty: 0,
+        onOrderQty: 0,
+        inTransferQty: 0,
+        defectiveQty: 0,
+        transferPendingQty: 0,
     };
 }

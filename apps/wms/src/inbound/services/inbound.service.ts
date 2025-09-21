@@ -623,21 +623,14 @@ export class InboundService {
                 throw new BadRequestException('insufficient on-hand at origin');
             }
 
-            // 이동: 예약 → 커밋 (즉시)
-            await this.commandService.moveReserve({
-                skuId: line.skuId,
-                warehouseId: receipt.warehouseId,
-                fromLocationId: originLocationId,
-                quantity: dto.quantity,
-                reason: 'putaway_reserve',
-            }, tx);
-            const commit = await this.commandService.moveCommit({
+            // 내부 이동: 원본 위치 → 목표 위치 (즉시)
+            const moveResult = await this.commandService.moveInternal({
                 skuId: line.skuId,
                 warehouseId: receipt.warehouseId,
                 fromLocationId: originLocationId,
                 toLocationId: dto.toLocationId,
                 quantity: dto.quantity,
-                reason: 'putaway_commit',
+                reason: 'putaway_internal_move',
             }, tx);
 
             await tx.update(wmsTables.inboundReceiptLines)
@@ -653,7 +646,7 @@ export class InboundService {
                 fromLocationId: originLocationId,
                 toLocationId: dto.toLocationId,
                 quantity: dto.quantity,
-                eventId: commit.eventId ?? null,
+                eventId: moveResult.eventId ?? null,
             } as any);
 
             return { success: true };
