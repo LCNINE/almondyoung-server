@@ -88,6 +88,7 @@ export class AuthService {
   async signUp(
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
+    redirect_to?: string,
   ): Promise<{ message: string }> {
     const {
       email,
@@ -247,7 +248,7 @@ export class AuthService {
           name: user.username,
           verificationToken: verificationToken,
           callbackUrl: this.getEmailVerifyCallbackUrl(),
-          redirectTo: this.getEmailVerifyRedirectUrl(),
+          redirectTo: this.getEmailVerifyRedirectUrl(redirect_to),
         });
 
         return {
