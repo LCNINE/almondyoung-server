@@ -50,26 +50,39 @@ export class AuthService {
   private getSocialRedirectUrl(provider: ProviderType): string {
     const frontBaseUrl =
       this.configService.get('AUTH_SOCIAL_LOGIN_REDIRECT_URL') ||
-      'http://localhost:3000';
+      'http://localhost:8000';
 
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
   }
 
-  private getEmailVerifyCallbackUrl(): string {
+  private getEmailVerifyCallbackUrl(redirectTo?: string): string {
     // 서버쪽 주소
     const frontBaseUrl =
       this.configService.get('AUTH_EMAIL_VERIFY_CALLBACK_URL') ||
       'http://localhost:5000/auth/callback/signup';
 
-    return new URL(`/auth/callback/signup`, frontBaseUrl).toString();
+    return new URL(
+      `/auth/callback/signup?redirect_to=${redirectTo}`,
+      frontBaseUrl,
+    ).toString();
   }
 
-  private getEmailVerifyRedirectUrl(): string {
+  private getEmailVerifyRedirectUrl(redirectTo?: string): string {
     const frontBaseUrl =
       this.configService.get('AUTH_EMAIL_VERIFY_REDIRECT_URL') ||
       'http://localhost:8000';
 
-    return new URL(`/auth/callback/signup`, frontBaseUrl).toString();
+    return new URL(
+      `/auth/callback/signup?redirect_to=${redirectTo}`,
+      frontBaseUrl,
+    ).toString();
+  }
+
+  private getRedirectUrl(redirectTo: string): string {
+    const baseUrl = process.env.APP_BASE_URL ?? 'http://localhost:8000';
+    const redirectUrl = new URL(baseUrl);
+    redirectUrl.searchParams.set('redirect_to', redirectTo);
+    return redirectUrl.toString();
   }
 
   async signUp(
@@ -404,20 +417,9 @@ export class AuthService {
     await this.lastActivityAtUpdate(user);
 
     if (redirectTo) {
-      const whitelist = [
-        'http://localhost:3000',
-        process.env.MEDUSA_CALLBACK_URL!,
-        process.env.CORS_ORIGIN_DOMAIN!,
-      ];
+      const redirectUrl = this.getRedirectUrl(redirectTo);
 
-      if (!whitelist.some((url) => redirectTo.startsWith(url))) {
-        throw new BadRequestException('Invalid redirect URL');
-      }
-
-      const url = new URL(redirectTo);
-      url.searchParams.set('token', accessToken);
-
-      return reply.status(302).redirect(url.toString());
+      return reply.status(302).redirect(redirectUrl.toString());
     }
 
     return { accessToken };
@@ -458,20 +460,31 @@ export class AuthService {
         return newUser;
       }
 
-      return existingUser ?? null;
+      return existingUser;
     };
 
     if (tx) {
       const result = await processSignIn(tx);
-      return reply.status(302).redirect(result.redirectUrl);
+
+      await this.setRefreshToken(result.user.id, reply, false, tx);
+      await this.getAccessToken(result.user, reply, tx);
+      await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
+
+      return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
-        return reply.status(302).redirect(result.redirectUrl);
+
+        await this.setRefreshToken(result.user.id, reply, false, transaction);
+        await this.getAccessToken(result.user, reply, transaction);
+        await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
+
+        return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
       });
     }
   }
 
+  // 소셜 로그인
   private async _signInWithSocialWithTransaction(
     socialUser: {
       name: string;
@@ -481,9 +494,7 @@ export class AuthService {
     provider: ProviderType,
     reply: FastifyReply,
     tx: DbTransaction,
-  ): Promise<{ redirectUrl: string; user: User } | null> {
-    const result: { redirectUrl?: string; user?: User } = {};
-
+  ) {
     // 소셜 providerId로 기존 identity 조회
     const existingIdentity = await tx
       .select({
@@ -507,30 +518,13 @@ export class AuthService {
       .limit(1)
       .then((rows) => rows[0]);
 
-    result.redirectUrl = this.getSocialRedirectUrl(provider);
-    result.user = existingIdentity?.user;
-
     if (!existingIdentity) {
-      // 소셜 로그인 회원가입 처리
-      const newUser = await this._signUpWithSocialWithTransaction(
-        socialUser,
-        provider,
-        reply,
-        tx,
-      );
-
-      result.user = newUser.user;
-      result.redirectUrl = newUser.redirectUrl;
+      return null;
     }
-
-    // 토큰 발급
-    await this.setRefreshToken(result.user.id, reply, false, tx);
-    await this.getAccessToken(result.user, reply, tx);
-    await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
-
-    return { redirectUrl: result.redirectUrl, user: result.user };
+    return existingIdentity;
   }
 
+  // 소셜 회원가입
   private async _signUpWithSocialWithTransaction(
     socialUser: {
       name: string;
@@ -541,7 +535,7 @@ export class AuthService {
     reply: FastifyReply,
 
     tx: DbTransaction,
-  ): Promise<{ redirectUrl: string; user: User }> {
+  ): Promise<{ user: User }> {
     // 이메일 중복 확인
     const existingUser = await this.usersService.findUserByEmail(
       socialUser.email,
@@ -591,14 +585,7 @@ export class AuthService {
       roleId: userRole.roleId,
     });
 
-    // 토큰 발급
-    await this.setRefreshToken(newUser.id, reply, false, tx);
-    await this.getAccessToken(newUser, reply, tx);
-    await this.lastActivityAtUpdate(newUser, tx); // 마지막 활동일 업데이트
-
-    const redirectUrl = this.getSocialRedirectUrl(provider);
-
-    return { redirectUrl, user: newUser };
+    return { user: newUser };
   }
 
   async signOut(req: FastifyRequest, user: User) {
@@ -728,15 +715,16 @@ export class AuthService {
 
     const cookieOptions = {
       path: '/',
+      httpOnly: true,
       ...(process.env.NODE_ENV === 'production'
         ? {
             domain: process.env.CORS_ORIGIN_DOMAIN,
             sameSite: 'none' as const,
             secure: true,
-            httpOnly: true,
           }
         : {
-            secure: false,
+            sameSite: 'lax' as const,
+            secure: process.env.NODE_ENV === 'production',
           }),
     };
 
@@ -824,9 +812,11 @@ export class AuthService {
     );
   }
 
-  async forgotPassword(email: string) {
+  async forgotPassword(email: string, loginId: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
+    if (user.loginId !== loginId)
+      throw new NotFoundException('존재하지 않는 아이디입니다');
 
     const verificationToken = this.jwtService.sign(
       { email },
@@ -956,116 +946,6 @@ export class AuthService {
       );
     }
   }
-
-  // async socialSignUp(socialSignUpDto: SocialSignUpDto, reply: FastifyReply) {
-  //   try {
-  //     // 이미 가입된 사용자인지 확인
-  //     const existingIdentity = await this.dbService.db
-  //       .select()
-  //       .from(userServiceSchema.userIdentities)
-  //       .where(
-  //         and(
-  //           eq(
-  //             userServiceSchema.userIdentities.provider,
-  //             socialSignUpDto.provider,
-  //           ),
-  //           eq(
-  //             userServiceSchema.userIdentities.providerId,
-  //             socialSignUpDto.providerId,
-  //           ),
-  //         ),
-  //       )
-  //       .limit(1)
-  //       .then((rows) => rows[0]);
-
-  //     if (existingIdentity) {
-  //       throw new ConflictException('이미 가입된 사용자입니다.');
-  //     }
-
-  //     // 이메일 중복 확인
-  //     const existingUser = await this.usersService.findUserByEmail(
-  //       socialSignUpDto.email,
-  //     );
-
-  //     if (existingUser) {
-  //       throw new ConflictException('이미 사용중인 이메일입니다.');
-  //     }
-
-  //     return await this.dbService.db.transaction(async (tx) => {
-  //       // 새 사용자 생성
-  //       const [newUser] = await tx
-  //         .insert(userServiceSchema.users)
-  //         .values({
-  //           loginId: `${socialSignUpDto.provider}_${socialSignUpDto.providerId}`,
-  //           username: socialSignUpDto.username,
-  //           email: socialSignUpDto.email,
-  //           password: null,
-  //           isEmailVerified: true,
-  //         })
-  //         .returning();
-
-  //       // identity 생성
-  //       await tx.insert(userServiceSchema.userIdentities).values({
-  //         userId: newUser.id,
-  //         provider: socialSignUpDto.provider,
-  //         providerId: socialSignUpDto.providerId,
-  //         providerData: {
-  //           name: socialSignUpDto.username,
-  //           email: socialSignUpDto.email,
-  //         },
-  //       });
-
-  //       // 프로필 생성
-  //       if (
-  //         socialSignUpDto.phoneNumber ||
-  //         socialSignUpDto.address ||
-  //         socialSignUpDto.birthDate ||
-  //         socialSignUpDto.profileImageUrl
-  //       ) {
-  //         await tx.insert(userServiceSchema.profiles).values({
-  //           userId: newUser.id,
-  //           phoneNumber: socialSignUpDto.phoneNumber,
-  //           address: socialSignUpDto.address || {},
-  //           birthDate: socialSignUpDto.birthDate,
-  //           profileImageUrl: socialSignUpDto.profileImageUrl,
-  //         });
-  //       }
-
-  //       // 기본 역할 설정
-  //       const userRole = await tx
-  //         .select()
-  //         .from(userServiceSchema.roles)
-  //         .where(eq(userServiceSchema.roles.name, 'user'))
-  //         .limit(1)
-  //         .then((rows) => rows[0]);
-
-  //       if (!userRole) {
-  //         throw new Error('기본 사용자 역할이 설정되어 있지 않습니다.');
-  //       }
-
-  //       await tx.insert(userServiceSchema.userRoleAssignments).values({
-  //         userId: newUser.id,
-  //         roleId: userRole.roleId,
-  //       });
-
-  //       // 토큰 발급
-  //       await this.setRefreshToken(newUser.id, reply, false, tx);
-  //       await this.getAccessToken(newUser, reply, tx);
-
-  //       await this.consentsService.getUserConsent(newUser.id, tx);
-
-  //       return;
-  //     });
-  //   } catch (error) {
-  //     if (error instanceof ConflictException) {
-  //       throw error;
-  //     }
-  //     console.error('소셜 회원가입 중 오류:', error);
-  //     throw new InternalServerErrorException(
-  //       '소셜 회원가입 중 오류가 발생했습니다.',
-  //     );
-  //   }
-  // }
 
   private async lastActivityAtUpdate(user: User, tx?: DbTransaction) {
     const client = this.getClient(tx);
