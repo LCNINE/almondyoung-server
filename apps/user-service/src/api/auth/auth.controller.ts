@@ -48,8 +48,9 @@ export class AuthController {
   async signUp(
     @Body() localSignUpDto: LocalSignUpDto,
     @Res({ passthrough: true }) res: FastifyReply,
+    @Query('redirect_to') redirect_to?: string,
   ) {
-    return this.authService.signUp(localSignUpDto, res);
+    return this.authService.signUp(localSignUpDto, res, redirect_to);
   }
 
   @ApiOperation({ summary: '로그인' })
