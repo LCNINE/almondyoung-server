@@ -46,7 +46,7 @@ export class AuthController {
   @Post('signup')
   @Public()
   async signUp(
-    @Body(ValidationPipe) localSignUpDto: LocalSignUpDto,
+    @Body() localSignUpDto: LocalSignUpDto,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
     return this.authService.signUp(localSignUpDto, res);
@@ -58,7 +58,7 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   async signIn(
-    @Body(ValidationPipe) signInDto: SignInDto,
+    @Body() signInDto: SignInDto,
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirectTo?: string,
   ) {
@@ -111,8 +111,11 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '비밀번호 재설정 이메일 전송 성공' })
   @Post('forget-password')
   @Public()
-  async forgotPassword(@Body(ValidationPipe) { email }: { email: string }) {
-    return this.authService.forgotPassword(email);
+  async forgotPassword(
+    @Body(ValidationPipe)
+    { email, loginId }: { email: string; loginId: string },
+  ) {
+    return this.authService.forgotPassword(email, loginId);
   }
 
   @ApiOperation({ summary: '비밀번호 재설정' })
