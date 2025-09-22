@@ -978,6 +978,16 @@ export const purchaseOrders = pgTable('purchase_orders', {
     supplierId: uuid('supplier_id').references(() => suppliers.id), // 공급사 참조 추가
     expectedArrival: timestamp('expected_arrival', { mode: 'date' }),
     status: poStatusEnum('status').notNull().default('created'),
+
+    // 최종 목적지 창고 추적을 위한 새 필드들
+    sourceWarehouseId: uuid('source_warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(), // 직접 입고될 창고 (중국/부천)
+    destinationWarehouseId: uuid('destination_warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(), // 최종 목적지 창고 (보통 부천)
+    requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
+
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
