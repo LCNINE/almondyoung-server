@@ -167,7 +167,7 @@ export class PurchaseOrderService {
     }
 
     /**
-     * 발주에서 입고 계획 생성
+     * 발주에서 입고 계획 생성 (이중 입고 계획 지원)
      */
     private async createInboundPlanFromPO(tx: any, poId: string): Promise<void> {
         const purchaseOrder = await tx.query.purchaseOrders.findFirst({
@@ -185,37 +185,96 @@ export class PurchaseOrderService {
             throw new NotFoundException(`Purchase order ${poId} not found`);
         }
 
-        // 발주에서 창고 정보 가져오기
         const sourceWarehouseId = purchaseOrder.sourceWarehouseId;
         const destinationWarehouseId = purchaseOrder.destinationWarehouseId;
-        const requiresTransfer = purchaseOrder.requiresTransfer;
+        const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
 
-        // 입고 계획 생성 - 목적지 정보 포함
-        const [inboundPlan] = await tx
-            .insert(wmsTables.inboundPlans)
-            .values({
-                warehouseId: sourceWarehouseId,                    // 입고될 창고
-                destinationWarehouseId: destinationWarehouseId,    // 최종 목적지
-                requiresTransfer: requiresTransfer,                // 이동 필요 여부
-                expectedDate: purchaseOrder.expectedArrival,
-                status: 'pending',
-            })
-            .returning();
+        if (requiresTransfer) {
+            // 🔥 핵심: 이중 계획 생성 (해외 발주)
 
-        // 입고 계획 아이템 생성
-        await tx
-            .insert(wmsTables.inboundPlanItems)
-            .values(
-                purchaseOrder.lines.map(line => ({
-                    planId: inboundPlan.id,
-                    skuId: line.skuId,
-                    expectedQty: line.quantity,
-                    receivedQty: 0,
+            // 1. Source Plan 생성 (중국 창고)
+            const [sourcePlan] = await tx
+                .insert(wmsTables.inboundPlans)
+                .values({
+                    warehouseId: sourceWarehouseId,
+                    planType: 'source',
+                    linkedPurchaseOrderId: poId,
+                    destinationWarehouseId: destinationWarehouseId, // 하위 호환성
+                    requiresTransfer: true, // 하위 호환성
+                    expectedDate: purchaseOrder.expectedArrival,
                     status: 'pending',
-                }))
-            );
+                })
+                .returning();
 
-        this.logger.log(`Created inbound plan ${inboundPlan.id} for purchase order ${poId}`);
+            // 2. Destination Plan 생성 (부천 창고)
+            const [destinationPlan] = await tx
+                .insert(wmsTables.inboundPlans)
+                .values({
+                    warehouseId: destinationWarehouseId,
+                    planType: 'destination',
+                    parentPlanId: sourcePlan.id,
+                    linkedPurchaseOrderId: poId,
+                    destinationWarehouseId: destinationWarehouseId, // 하위 호환성
+                    requiresTransfer: false, // destination은 이동 불필요
+                    expectedDate: null, // 이동 완료 후 설정
+                    status: 'pending',
+                })
+                .returning();
+
+            // 3. 동일한 아이템을 양쪽 계획에 추가
+            const sourceItems = purchaseOrder.lines.map(line => ({
+                planId: sourcePlan.id,
+                skuId: line.skuId,
+                expectedQty: line.quantity,
+                receivedQty: 0,
+                status: 'pending' as const,
+            }));
+
+            const destinationItems = purchaseOrder.lines.map(line => ({
+                planId: destinationPlan.id,
+                skuId: line.skuId,
+                expectedQty: line.quantity,
+                receivedQty: 0,
+                status: 'pending' as const,
+            }));
+
+            await tx.insert(wmsTables.inboundPlanItems).values([
+                ...sourceItems,
+                ...destinationItems
+            ]);
+
+            this.logger.log(`Created dual inbound plans: source=${sourcePlan.id}, destination=${destinationPlan.id} for PO ${poId}`);
+
+        } else {
+            // 국내 발주는 기존 로직 유지 (destination plan만 생성)
+            const [plan] = await tx
+                .insert(wmsTables.inboundPlans)
+                .values({
+                    warehouseId: destinationWarehouseId,
+                    planType: 'destination',
+                    linkedPurchaseOrderId: poId,
+                    destinationWarehouseId: destinationWarehouseId,
+                    requiresTransfer: false,
+                    expectedDate: purchaseOrder.expectedArrival,
+                    status: 'pending',
+                })
+                .returning();
+
+            // 기존 아이템 생성 로직
+            await tx
+                .insert(wmsTables.inboundPlanItems)
+                .values(
+                    purchaseOrder.lines.map(line => ({
+                        planId: plan.id,
+                        skuId: line.skuId,
+                        expectedQty: line.quantity,
+                        receivedQty: 0,
+                        status: 'pending',
+                    }))
+                );
+
+            this.logger.log(`Created single inbound plan ${plan.id} for domestic PO ${poId}`);
+        }
     }
 
     /**

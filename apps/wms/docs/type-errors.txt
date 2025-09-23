@@ -1,0 +1,2036 @@
+
+> almondyoung-server@0.0.1 build:wms
+> nest build wms
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/database/schemas/wms-schema.ts:1426:37[39m[22m
+[1mTS2339: Property 'purchaseOrderId' does not exist on type 'PgTableWithColumns<{ name: "purchase_order_lines"; schema: undefined; columns: { poId: PgColumn<{ name: "po_id"; tableName: "purchase_order_lines"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>; skuId: PgColumn<...>; quantity: PgColumn<....'.
+    1424 | export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
+    1425 |     purchaseOrder: one(purchaseOrders, {
+  > 1426 |         fields: [purchaseOrderLines.purchaseOrderId],
+         |                                     ^^^^^^^^^^^^^^^
+    1427 |         references: [purchaseOrders.id],
+    1428 |     }),
+    1429 |     sku: one(skus, {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:14:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    12 | import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
+    13 |
+  > 14 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    15 |
+    16 | @Injectable()
+    17 | export class InboundService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:295:52[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    293 |                 expectedDate: plan.expectedDate,
+    294 |                 isLinkedPlan: !!plan.parentPlanId, // destination plan 여부
+  > 295 |                 sourcePlanStatus: plan.parentPlan?.status, // 중국 plan 상태
+        |                                                    ^^^^^^
+    296 |                 purchaseOrder: {
+    297 |                     id: plan.linkedPurchaseOrder.id,
+    298 |                     type: plan.linkedPurchaseOrder.type,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:297:50[39m[22m
+[1mTS2339: Property 'id' does not exist on type '{ [x: string]: any; supplier: { [x: string]: any; }[]; }[]'.
+    295 |                 sourcePlanStatus: plan.parentPlan?.status, // 중국 plan 상태
+    296 |                 purchaseOrder: {
+  > 297 |                     id: plan.linkedPurchaseOrder.id,
+        |                                                  ^^
+    298 |                     type: plan.linkedPurchaseOrder.type,
+    299 |                     supplier: plan.linkedPurchaseOrder.supplier ? {
+    300 |                         name: plan.linkedPurchaseOrder.supplier.name,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:298:52[39m[22m
+[1mTS2339: Property 'type' does not exist on type '{ [x: string]: any; supplier: { [x: string]: any; }[]; }[]'.
+    296 |                 purchaseOrder: {
+    297 |                     id: plan.linkedPurchaseOrder.id,
+  > 298 |                     type: plan.linkedPurchaseOrder.type,
+        |                                                    ^^^^
+    299 |                     supplier: plan.linkedPurchaseOrder.supplier ? {
+    300 |                         name: plan.linkedPurchaseOrder.supplier.name,
+    301 |                         contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:299:56[39m[22m
+[1mTS2339: Property 'supplier' does not exist on type '{ [x: string]: any; supplier: { [x: string]: any; }[]; }[]'.
+    297 |                     id: plan.linkedPurchaseOrder.id,
+    298 |                     type: plan.linkedPurchaseOrder.type,
+  > 299 |                     supplier: plan.linkedPurchaseOrder.supplier ? {
+        |                                                        ^^^^^^^^
+    300 |                         name: plan.linkedPurchaseOrder.supplier.name,
+    301 |                         contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo
+    302 |                     } : undefined[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:300:56[39m[22m
+[1mTS2339: Property 'supplier' does not exist on type '{ [x: string]: any; supplier: { [x: string]: any; }[]; }[]'.
+    298 |                     type: plan.linkedPurchaseOrder.type,
+    299 |                     supplier: plan.linkedPurchaseOrder.supplier ? {
+  > 300 |                         name: plan.linkedPurchaseOrder.supplier.name,
+        |                                                        ^^^^^^^^
+    301 |                         contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo
+    302 |                     } : undefined
+    303 |                 },[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:301:63[39m[22m
+[1mTS2339: Property 'supplier' does not exist on type '{ [x: string]: any; supplier: { [x: string]: any; }[]; }[]'.
+    299 |                     supplier: plan.linkedPurchaseOrder.supplier ? {
+    300 |                         name: plan.linkedPurchaseOrder.supplier.name,
+  > 301 |                         contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo
+        |                                                               ^^^^^^^^
+    302 |                     } : undefined
+    303 |                 },
+    304 |                 items: plan.items.map(item => ({[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:306:39[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    304 |                 items: plan.items.map(item => ({
+    305 |                     skuId: item.skuId,
+  > 306 |                     skuName: item.sku.name,
+        |                                       ^^^^
+    307 |                     skuCode: item.sku.code,
+    308 |                     expectedQty: item.expectedQty,
+    309 |                     receivedQty: item.receivedQty,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/inbound.service.ts:307:39[39m[22m
+[1mTS2339: Property 'code' does not exist on type '{ [x: string]: any; }[]'.
+    305 |                     skuId: item.skuId,
+    306 |                     skuName: item.sku.name,
+  > 307 |                     skuCode: item.sku.code,
+        |                                       ^^^^
+    308 |                     expectedQty: item.expectedQty,
+    309 |                     receivedQty: item.receivedQty,
+    310 |                     pendingQty: item.expectedQty - item.receivedQty[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:102:18[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { type: SQL<unknown> | "foreign" | "domestic" | Placeholder<string, any>; sourceWarehouseId: string | SQL<unknown> | Placeholder<string, any>; destinationWarehouseId: string | ... 1 more ... | Placeholder<...>; ... 6 more ...; requiresTransfer?: boolean | ... 2 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '{ type: "foreign" | "domestic"; supplierId: string | undefined; expectedArrival: Date | null; status: "created"; }' is not assignable to parameter of type '{ type: SQL<unknown> | "foreign" | "domestic" | Placeholder<string, any>; sourceWarehouseId: string | SQL<unknown> | Placeholder<string, any>; destinationWarehouseId: string | ... 1 more ... | Placeholder<...>; ... 6 more ...; requiresTransfer?: boolean | ... 2 more ... | undefined; }'.
+      Type '{ type: "foreign" | "domestic"; supplierId: string | undefined; expectedArrival: Date | null; status: "created"; }' is missing the following properties from type '{ type: SQL<unknown> | "foreign" | "domestic" | Placeholder<string, any>; sourceWarehouseId: string | SQL<unknown> | Placeholder<string, any>; destinationWarehouseId: string | ... 1 more ... | Placeholder<...>; ... 6 more ...; requiresTransfer?: boolean | ... 2 more ... | undefined; }': sourceWarehouseId, destinationWarehouseId
+  Overload 2 of 2, '(values: { type: SQL<unknown> | "foreign" | "domestic" | Placeholder<string, any>; sourceWarehouseId: string | SQL<unknown> | Placeholder<string, any>; destinationWarehouseId: string | ... 1 more ... | Placeholder<...>; ... 6 more ...; requiresTransfer?: boolean | ... 2 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'type' does not exist in type '{ type: SQL<unknown> | "foreign" | "domestic" | Placeholder<string, any>; sourceWarehouseId: string | SQL<unknown> | Placeholder<string, any>; destinationWarehouseId: string | ... 1 more ... | Placeholder<...>; ... 6 more ...; requiresTransfer?: boolean | ... 2 more ... | undefined; }[]'.
+    100 |             const [purchaseOrder] = await tx
+    101 |                 .insert(wmsTables.purchaseOrders)
+  > 102 |                 .values({
+        |                  ^^^^^^
+    103 |                     type: types[0],
+    104 |                     supplierId: createDto.supplierId,
+    105 |                     expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:355:37[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    353 |                 unitPrice: line.unitPrice,
+    354 |                 sku: {
+  > 355 |                     name: line.sku?.name || '',
+        |                                     ^^^^
+    356 |                     barcode: line.sku?.barcode || '',
+    357 |                 },
+    358 |             })) || [],[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:356:40[39m[22m
+[1mTS2339: Property 'barcode' does not exist on type '{ [x: string]: any; }[]'.
+    354 |                 sku: {
+    355 |                     name: line.sku?.name || '',
+  > 356 |                     barcode: line.sku?.barcode || '',
+        |                                        ^^^^^^^
+    357 |                 },
+    358 |             })) || [],
+    359 |             supplier: purchaseOrder.supplier ? {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:360:46[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    358 |             })) || [],
+    359 |             supplier: purchaseOrder.supplier ? {
+  > 360 |                 name: purchaseOrder.supplier.name || '',
+        |                                              ^^^^
+    361 |                 contactInfo: purchaseOrder.supplier.contactInfo || '',
+    362 |             } : undefined,
+    363 |         };[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:361:53[39m[22m
+[1mTS2339: Property 'contactInfo' does not exist on type '{ [x: string]: any; }[]'.
+    359 |             supplier: purchaseOrder.supplier ? {
+    360 |                 name: purchaseOrder.supplier.name || '',
+  > 361 |                 contactInfo: purchaseOrder.supplier.contactInfo || '',
+        |                                                     ^^^^^^^^^^^
+    362 |             } : undefined,
+    363 |         };
+    364 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:413:37[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    411 |                 unitPrice: line.unitPrice,
+    412 |                 sku: {
+  > 413 |                     name: line.sku?.name || '',
+        |                                     ^^^^
+    414 |                     barcode: line.sku?.barcode || '',
+    415 |                 },
+    416 |             })) || [],[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:414:40[39m[22m
+[1mTS2339: Property 'barcode' does not exist on type '{ [x: string]: any; }[]'.
+    412 |                 sku: {
+    413 |                     name: line.sku?.name || '',
+  > 414 |                     barcode: line.sku?.barcode || '',
+        |                                        ^^^^^^^
+    415 |                 },
+    416 |             })) || [],
+    417 |             supplier: po.supplier ? {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:418:35[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    416 |             })) || [],
+    417 |             supplier: po.supplier ? {
+  > 418 |                 name: po.supplier.name || '',
+        |                                   ^^^^
+    419 |                 contactInfo: po.supplier.contactInfo || '',
+    420 |             } : undefined,
+    421 |         }));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:419:42[39m[22m
+[1mTS2339: Property 'contactInfo' does not exist on type '{ [x: string]: any; }[]'.
+    417 |             supplier: po.supplier ? {
+    418 |                 name: po.supplier.name || '',
+  > 419 |                 contactInfo: po.supplier.contactInfo || '',
+        |                                          ^^^^^^^^^^^
+    420 |             } : undefined,
+    421 |         }));
+    422 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:527:33[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    525 |             updatedAt: item.updatedAt!,
+    526 |             sku: {
+  > 527 |                 name: item.sku?.name || '',
+        |                                 ^^^^
+    528 |                 barcode: item.sku?.barcode || '',
+    529 |             },
+    530 |         }));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:528:36[39m[22m
+[1mTS2339: Property 'barcode' does not exist on type '{ [x: string]: any; }[]'.
+    526 |             sku: {
+    527 |                 name: item.sku?.name || '',
+  > 528 |                 barcode: item.sku?.barcode || '',
+        |                                    ^^^^^^^
+    529 |             },
+    530 |         }));
+    531 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:557:32[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    555 |             updatedAt: item.updatedAt!,
+    556 |             sku: {
+  > 557 |                 name: item.sku.name,
+        |                                ^^^^
+    558 |                 barcode: item.sku.barcode,
+    559 |             },
+    560 |         };[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inbound/services/purchase-order.service.ts:558:35[39m[22m
+[1mTS2339: Property 'barcode' does not exist on type '{ [x: string]: any; }[]'.
+    556 |             sku: {
+    557 |                 name: item.sku.name,
+  > 558 |                 barcode: item.sku.barcode,
+        |                                   ^^^^^^^
+    559 |             },
+    560 |         };
+    561 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/repositories/stock-event.store.ts:9:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     7 |
+     8 | // 트랜잭션 실행자 타입
+  >  9 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    10 |
+    11 | // TransitionType alias for strong typing
+    12 | type TransitionType = typeof wmsTables.stockEvents.$inferInsert['transitionType'];[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory-command.service.ts:7:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     5 | import { StockEventStore } from '../repositories/stock-event.store';
+     6 |
+  >  7 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+     8 |
+     9 | @Injectable()
+    10 | export class InventoryCommandService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory-query.service.ts:7:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     5 | import { wmsTables } from '../../../database/schemas/wms-schema';
+     6 |
+  >  7 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+     8 |
+     9 | export interface SkuLocationInfo {
+    10 |   locationId: string;[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:20:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    18 | import { LocationService } from './location.service';
+    19 |
+  > 20 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    21 | type DbOrTx = DbTx | TypedDatabase<typeof wmsTables>;
+    22 |
+    23 | @Injectable()[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:21:36[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    19 |
+    20 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+  > 21 | type DbOrTx = DbTx | TypedDatabase<typeof wmsTables>;
+       |                                    ^^^^^^^^^^^^^^^^
+    22 |
+    23 | @Injectable()
+    24 | export class InventoryService implements OnModuleInit {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:425:47[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    423 |         totalAvailableQuantity: number;
+    424 |     }> {
+  > 425 |         const summaries = await this.db.query.stockSummary.findMany({
+        |                                               ^^^^^^^^^^^^
+    426 |             where: eq(wmsTables.stockSummary.skuId, skuId),
+    427 |         });
+    428 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:447:45[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    445 |
+    446 |     async getStockBySkuAndWarehouse(skuId: string, warehouseId: string) {
+  > 447 |         const summary = await this.db.query.stockSummary.findFirst({
+        |                                             ^^^^^^^^^^^^
+    448 |             where: and(
+    449 |                 eq(wmsTables.stockSummary.skuId, skuId),
+    450 |                 eq(wmsTables.stockSummary.warehouseId, warehouseId)[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:491:47[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    489 |         if (warehouseId) conditions.push(eq(wmsTables.stockSummary.warehouseId, warehouseId));
+    490 |
+  > 491 |         const summaries = await this.db.query.stockSummary.findMany({
+        |                                               ^^^^^^^^^^^^
+    492 |             where: conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined,
+    493 |             with: {
+    494 |                 sku: true,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:512:47[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    510 |         }
+    511 |
+  > 512 |         const summaries = await this.db.query.stockSummary.findMany({
+        |                                               ^^^^^^^^^^^^
+    513 |             where: eq(wmsTables.stockSummary.skuId, skuId),
+    514 |         });
+    515 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/inventory.service.ts:754:13[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { skuId: string | SQL<unknown> | Placeholder<string, any>; barcode: string | SQL<unknown> | Placeholder<string, any>; barcodeType: SQL<unknown> | "standard" | Placeholder<...>; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; updatedAt?: Date | ... 3 more ... | undefined; packingUnit?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'where' does not exist in type '{ skuId: string | SQL<unknown> | Placeholder<string, any>; barcode: string | SQL<unknown> | Placeholder<string, any>; barcodeType: SQL<unknown> | "standard" | Placeholder<...>; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; updatedAt?: Date | ... 3 more ... | undefined; pack...'.
+  Overload 2 of 2, '(values: { skuId: string | SQL<unknown> | Placeholder<string, any>; barcode: string | SQL<unknown> | Placeholder<string, any>; barcodeType: SQL<unknown> | "standard" | Placeholder<...>; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; updatedAt?: Date | ... 3 more ... | undefined; packingUnit?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'where' does not exist in type '{ skuId: string | SQL<unknown> | Placeholder<string, any>; barcode: string | SQL<unknown> | Placeholder<string, any>; barcodeType: SQL<unknown> | "standard" | Placeholder<...>; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; updatedAt?: Date | ... 3 more ... | undefined; pack...'.
+    752 |
+    753 |         const [newSkuBarcode] = await db.insert(wmsTables.skuBarcodes).values({
+  > 754 |             where: eq(wmsTables.stockSummary.skuId, skuId),
+        |             ^^^^^
+    755 |             barcode: generatedBarcode,
+    756 |             barcodeType: 'standard',
+    757 |         }).returning();[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/master.service.ts:10:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     8 | import { and, eq } from 'drizzle-orm';
+     9 |
+  > 10 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    11 |
+    12 | @Injectable()
+    13 | export class MasterService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/inventory/services/stock-event.service.ts:12:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    10 | import { InventoryCommandService } from '../services/inventory-command.service';
+    11 |
+  > 12 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    13 |
+    14 | @Injectable()
+    15 | export class StockEventService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/movement/services/movement.service.ts:9:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     7 | import { and, eq, inArray } from 'drizzle-orm';
+     8 |
+  >  9 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    10 |
+    11 | @Injectable()
+    12 | export class MovementService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/fulfillments/controllers/fulfillments.controller.ts:72:30[39m[22m
+[1mTS2551: Property 'reserve' does not exist on type 'ReservationsService'. [1m[32mDid you mean 'unreserve'?[39m[22m[1m
+    70 |   @UsePipes(new ZodValidationPipe(ReserveSchema))
+    71 |   reserve(@Param('id') id: string, @Body() dto: any) {
+  > 72 |     return this.reservations.reserve(dto);
+       |                              ^^^^^^^
+    73 |   }
+    74 |
+    75 |   @Post(':id/unreserve')[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/fulfillments/controllers/fulfillments.controller.ts:84:30[39m[22m
+[1mTS2554: Expected 2-4 arguments, but got 1.
+    82 |   @UsePipes(new ZodValidationPipe(TransferSchema))
+    83 |   transfer(@Param('id') id: string, @Body() dto: any) {
+  > 84 |     return this.reservations.transferReservation(dto);
+       |                              ^^^^^^^^^^^^^^^^^^^
+    85 |   }
+    86 | }
+    87 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/fulfillments/services/fulfillments.service.ts:14:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    12 | import { MatchingsService } from '../../matchings/services/matchings.service';
+    13 |
+  > 14 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    15 |
+    16 | @Injectable()
+    17 | export class FulfillmentsService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/matchings/services/matchings.service.ts:6:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    4 | import { eq } from 'drizzle-orm';
+    5 |
+  > 6 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+      |                                                 ^^^^^^^^^^^^^^^^
+    7 |
+    8 | @Injectable()
+    9 | export class MatchingsService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/sales-orders/services/sales-orders.service.ts:15:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    13 | import { MetricsService } from '../../../shared/services/metrics.service';
+    14 |
+  > 15 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    16 |
+    17 | @Injectable()
+    18 | export class SalesOrdersService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/sales-orders/services/sales-orders.service.ts:203:51[39m[22m
+[1mTS2345: Argument of type '{ fulfillmentOrderLineId: string; quantity: number; }' is not assignable to parameter of type 'string'.
+    201 |             if (fol.reservedQty > 0 && this.reservations) {
+    202 |               try {
+  > 203 |                 await this.reservations.unreserve({
+        |                                                   ^
+  > 204 |                   fulfillmentOrderLineId: fol.id,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 205 |                   quantity: fol.reservedQty
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 206 |                 }, trx);
+        | ^^^^^^^^^^^^^^^^^^
+    207 |                 this.logger.log(`Released ${fol.reservedQty} reserved qty for FOL ${fol.id}`);
+    208 |               } catch ([1m[31merror[39m[22m[1m) {
+    209 |                 this.logger.[1m[31merror[39m[22m[1m(`[1m[31mFailed[39m[22m[1m to release reservation for FOL ${fol.id}:`, [1m[31merror[39m[22m[1m);[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/availability.service.ts:4:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    2 | import { DbService, TypedDatabase } from '@app/db';
+    3 | import { wmsTables } from '../../../../database/schemas/wms-schema';
+  > 4 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+      |                                                 ^^^^^^^^^^^^^^^^
+    5 |
+    6 | @Injectable()
+    7 | export class AvailabilityService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/availability.service.ts:12:32[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    10 |   async getAvailableQuantity(skuId: string, warehouseId: string, tx?: DbTx) {
+    11 |     const db = tx ?? this.db.db;
+  > 12 |     const row = await db.query.stockSummary.findFirst({
+       |                                ^^^^^^^^^^^^
+    13 |       where: (s, { and, eq }) => and(eq(s.skuId, skuId), eq(s.warehouseId, warehouseId)),
+    14 |     });
+    15 |     return row?.availableQty ?? 0;[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/consolidation.service.ts:184:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"pending"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    182 |       where: and(
+    183 |         eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
+  > 184 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+        |         ^^
+    185 |         isNull(wmsTables.fulfillmentOrders.batchId),
+    186 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house') // Exclude direct ship
+    187 |       ),[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/consolidation.service.ts:185:44[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    183 |         eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
+    184 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+  > 185 |         isNull(wmsTables.fulfillmentOrders.batchId),
+        |                                            ^^^^^^^
+    186 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house') // Exclude direct ship
+    187 |       ),
+    188 |       with: {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/consolidation.service.ts:186:40[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    184 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+    185 |         isNull(wmsTables.fulfillmentOrders.batchId),
+  > 186 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house') // Exclude direct ship
+        |                                        ^^^^^^^^^^^^^^^
+    187 |       ),
+    188 |       with: {
+    189 |         items: true[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/consolidation.service.ts:224:24[39m[22m
+[1mTS2339: Property 'priority' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    222 |           },
+    223 |           deliveryService: ['standard', 'express', 'same_day'][Math.floor(Math.random() * 3)],
+  > 224 |           priority: fo.priority,
+        |                        ^^^^^^^^
+    225 |           slaDeadline: new Date(Date.now() + Math.random() * 72 * 60 * 60 * 1000),
+    226 |           totalItems: items.length,
+    227 |           totalWeight: Math.random() * 10 + 1,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:81:59[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    79 |     warehouseId?: string;
+    80 |   }): Promise<DirectShipOrder[]> {
+  > 81 |     let whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship')];
+       |                                                           ^^^^^^^^^^^^^^^
+    82 |
+    83 |     if (filters?.companyName) {
+    84 |       whereConditions.push(eq(wmsTables.fulfillmentOrders.ownerId, filters.companyName));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:88:28[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"pending" | "canceled" | "completed" | "forwarded"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+      Type '"pending"' is not assignable to type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<"pending" | "canceled" | "completed" | "forwarded">, right: SQLWrapper | "pending" | "canceled" | "completed" | "forwarded"): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<"pending" | "canceled" | "completed" | "forwarded">'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<"pending" | "canceled" | "completed" | "forwarded">': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    86 |
+    87 |     if (filters?.status) {
+  > 88 |       whereConditions.push(eq(wmsTables.fulfillmentOrders.status, filters.status));
+       |                            ^^
+    89 |     }
+    90 |
+    91 |     if (filters?.warehouseId) {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:113:20[39m[22m
+[1mTS2339: Property 'priority' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    111 |       supplierCode: undefined, // TODO: Get from company mapping
+    112 |       status: this.mapFOStatusToDirectShipStatus(fo.status),
+  > 113 |       priority: fo.priority,
+        |                    ^^^^^^^^
+    114 |       totalItems: fo.totalItems,
+    115 |       totalQty: fo.totalQty,
+    116 |       createdAt: fo.createdAt!,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:114:22[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    112 |       status: this.mapFOStatusToDirectShipStatus(fo.status),
+    113 |       priority: fo.priority,
+  > 114 |       totalItems: fo.totalItems,
+        |                      ^^^^^^^^^^
+    115 |       totalQty: fo.totalQty,
+    116 |       createdAt: fo.createdAt!,
+    117 |       forwardedAt: fo.allocatedAt,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:115:20[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    113 |       priority: fo.priority,
+    114 |       totalItems: fo.totalItems,
+  > 115 |       totalQty: fo.totalQty,
+        |                    ^^^^^^^^
+    116 |       createdAt: fo.createdAt!,
+    117 |       forwardedAt: fo.allocatedAt,
+    118 |       completedAt: fo.shippedAt,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:117:23[39m[22m
+[1mTS2339: Property 'allocatedAt' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    115 |       totalQty: fo.totalQty,
+    116 |       createdAt: fo.createdAt!,
+  > 117 |       forwardedAt: fo.allocatedAt,
+        |                       ^^^^^^^^^^^
+    118 |       completedAt: fo.shippedAt,
+    119 |       items: fo.items.map(item => ({
+    120 |         foiId: item.id,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:118:23[39m[22m
+[1mTS2339: Property 'shippedAt' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    116 |       createdAt: fo.createdAt!,
+    117 |       forwardedAt: fo.allocatedAt,
+  > 118 |       completedAt: fo.shippedAt,
+        |                       ^^^^^^^^^
+    119 |       items: fo.items.map(item => ({
+    120 |         foiId: item.id,
+    121 |         salesOrderLineId: item.salesOrderLineId,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:123:27[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    121 |         salesOrderLineId: item.salesOrderLineId,
+    122 |         skuId: item.skuId,
+  > 123 |         skuName: item.sku.name,
+        |                           ^^^^
+    124 |         qty: item.qty,
+    125 |         supplierSku: undefined // TODO: Get from supplier mapping
+    126 |       }))[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:149:40[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    147 |       where: and(
+    148 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+  > 149 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+        |                                        ^^^^^^^^^^^^^^^
+    150 |         eq(wmsTables.fulfillmentOrders.status, 'pending')
+    151 |       )
+    152 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:150:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"pending"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    148 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+    149 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+  > 150 |         eq(wmsTables.fulfillmentOrders.status, 'pending')
+        |         ^^
+    151 |       )
+    152 |     });
+    153 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:166:11[39m[22m
+[1mTS2322: Type '"forwarded"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    164 |       await tx.update(wmsTables.fulfillmentOrders)
+    165 |         .set({
+  > 166 |           status: 'forwarded',
+        |           ^^^^^^
+    167 |           allocatedAt: new Date(),
+    168 |           ownerId: companyName
+    169 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:180:40[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    178 |       where: and(
+    179 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+  > 180 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+        |                                        ^^^^^^^^^^^^^^^
+    181 |         eq(wmsTables.fulfillmentOrders.status, 'forwarded')
+    182 |       )
+    183 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:181:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"forwarded"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    179 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+    180 |         eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+  > 181 |         eq(wmsTables.fulfillmentOrders.status, 'forwarded')
+        |         ^^
+    182 |       )
+    183 |     });
+    184 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/direct-ship.service.ts:202:11[39m[22m
+[1mTS2322: Type '"completed"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    200 |       await tx.update(wmsTables.fulfillmentOrders)
+    201 |         .set({
+  > 202 |           status: 'completed',
+        |           ^^^^^^
+    203 |           shippedAt: new Date()
+    204 |         })
+    205 |         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:64:10[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'fulfillmentMode' does not exist in type '{ id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'warehouseId' does not exist in type '{ id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<unknown> | Placeholder<string, any> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }[]'.
+    62 |     return this.db.transaction(async (tx) => {
+    63 |       const [fulfillmentOrder] = await tx.insert(wmsTables.fulfillmentOrders)
+  > 64 |         .values({
+       |          ^^^^^^
+    65 |           warehouseId,
+    66 |           fulfillmentMode,
+    67 |           priority,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:111:12[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { skuId: string | SQL<unknown> | Placeholder<string, any>; warehouseId: string | SQL<unknown> | Placeholder<string, any>; quantity: number | SQL<unknown> | Placeholder<...>; ... 8 more ...; fulfillmentOrderItemId?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Type '"active"' is not assignable to type 'SQL<unknown> | "pending" | "confirmed" | "released" | Placeholder<string, any> | undefined'.
+  Overload 2 of 2, '(values: { skuId: string | SQL<unknown> | Placeholder<string, any>; warehouseId: string | SQL<unknown> | Placeholder<string, any>; quantity: number | SQL<unknown> | Placeholder<...>; ... 8 more ...; fulfillmentOrderItemId?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'skuId' does not exist in type '{ skuId: string | SQL<unknown> | Placeholder<string, any>; warehouseId: string | SQL<unknown> | Placeholder<string, any>; quantity: number | SQL<unknown> | Placeholder<...>; ... 8 more ...; fulfillmentOrderItemId?: string | ... 3 more ... | undefined; }[]'.
+    109 |
+    110 |         const [reservation] = await tx.insert(wmsTables.stockReservations)
+  > 111 |           .values({
+        |            ^^^^^^
+    112 |             skuId: variantMapping.skuId,
+    113 |             warehouseId,
+    114 |             fulfillmentOrderItemId: foItem.id,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:136:27[39m[22m
+[1mTS2339: Property 'id' does not exist on type '{ createdAt: Date | null; updatedAt: Date | null; skuId: string; warehouseId: string; quantity: number; reason: string | null; status: "pending" | "confirmed" | "released"; ... 4 more ...; fulfillmentOrderItemId: string | null; }'.
+    134 |
+    135 |         reservations.push({
+  > 136 |           id: reservation.id,
+        |                           ^^
+    137 |           skuId: variantMapping.skuId,
+    138 |           qty: requiredSkuQty,
+    139 |           foiId: foItem.id[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:145:11[39m[22m
+[1mTS2322: Type '"pending"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    143 |       await tx.update(wmsTables.fulfillmentOrders)
+    144 |         .set({
+  > 145 |           status: 'pending',
+        |           ^^^^^^
+    146 |           totalReservedQty: reservations.reduce((sum, r) => sum + r.qty, 0)
+    147 |         })
+    148 |         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrder.id));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:174:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"completed"' have no overlap.
+    172 |     }
+    173 |
+  > 174 |     if (fulfillmentOrder.status === 'completed' || fulfillmentOrder.status === 'shipped') {
+        |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    175 |       throw new ConflictException(`Cannot cancel FO in status: ${fulfillmentOrder.status}`);
+    176 |     }
+    177 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:183:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'canceledAt' does not exist in type '{ id?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; createdAt?: Date | PgColumn<...> | SQL<...> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+    181 |         .set({
+    182 |           status: 'canceled',
+  > 183 |           canceledAt: new Date(),
+        |           ^^^^^^^^^^
+    184 |           totalReservedQty: 0
+    185 |         })
+    186 |         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:219:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"completed"' have no overlap.
+    217 |     }
+    218 |
+  > 219 |     if (fulfillmentOrder.status === 'completed') {
+        |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    220 |       return; // 이미 완료됨
+    221 |     }
+    222 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:227:11[39m[22m
+[1mTS2322: Type '"completed"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    225 |       await tx.update(wmsTables.fulfillmentOrders)
+    226 |         .set({
+  > 227 |           status: 'completed',
+        |           ^^^^^^
+    228 |           completedAt: new Date(),
+    229 |           totalReservedQty: 0
+    230 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:268:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'shippedAt' does not exist in type '{ id?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; createdAt?: Date | PgColumn<...> | SQL<...> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+    266 |         .set({
+    267 |           status: 'shipped',
+  > 268 |           shippedAt: new Date(),
+        |           ^^^^^^^^^
+    269 |           totalReservedQty: 0
+    270 |         })
+    271 |         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:293:14[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'priority' does not exist in type '{ id?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; createdAt?: Date | PgColumn<...> | SQL<...> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+    291 |   async updateFulfillmentOrderPriority(fulfillmentOrderId: string, priority: 'normal' | 'high' | 'urgent'): Promise<void> {
+    292 |     const [updated] = await this.db.update(wmsTables.fulfillmentOrders)
+  > 293 |       .set({ priority, updatedAt: new Date() })
+        |              ^^^^^^^^
+    294 |       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+    295 |       .returning();
+    296 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:313:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"pending"' have no overlap.
+    311 |     }
+    312 |
+  > 313 |     if (fulfillmentOrder.status !== 'pending') {
+        |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    314 |       throw new ConflictException(`FO [1m[33mmust[39m[22m[1m be in pending status. Current: ${fulfillmentOrder.status}`);
+    315 |     }
+    316 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:332:11[39m[22m
+[1mTS2322: Type '"allocated"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    330 |       await tx.update(wmsTables.fulfillmentOrders)
+    331 |         .set({
+  > 332 |           status: 'allocated',
+        |           ^^^^^^
+    333 |           batchId,
+    334 |           allocatedAt: new Date()
+    335 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:340:20[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'totalItems' does not exist in type '{ id?: boolean | undefined; batchNumber?: boolean | undefined; warehouseId?: boolean | undefined; status?: boolean | undefined; pickingMethod?: boolean | undefined; cartCapacity?: boolean | undefined; assignedTo?: boolean | undefined; createdAt?: boolean | undefined; completedAt?: boolean | undefined; }'.
+    338 |       const currentBatchItems = await tx.query.outboundBatches.findFirst({
+    339 |         where: eq(wmsTables.outboundBatches.id, batchId),
+  > 340 |         columns: { totalItems: true, totalQty: true }
+        |                    ^^^^^^^^^^
+    341 |       });
+    342 |
+    343 |       await tx.update(wmsTables.outboundBatches)[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:345:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'totalItems' does not exist in type '{ warehouseId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; batchNumber?: string | PgColumn<...> | SQL<...> | undefined; ... 6 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+    343 |       await tx.update(wmsTables.outboundBatches)
+    344 |         .set({
+  > 345 |           totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
+        |           ^^^^^^^^^^
+    346 |           totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+    347 |         })
+    348 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:345:43[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    343 |       await tx.update(wmsTables.outboundBatches)
+    344 |         .set({
+  > 345 |           totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
+        |                                           ^^^^^^^^^^
+    346 |           totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+    347 |         })
+    348 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:345:79[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    343 |       await tx.update(wmsTables.outboundBatches)
+    344 |         .set({
+  > 345 |           totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
+        |                                                                               ^^^^^^^^^^
+    346 |           totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+    347 |         })
+    348 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:346:41[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    344 |         .set({
+    345 |           totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
+  > 346 |           totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+        |                                         ^^^^^^^^
+    347 |         })
+    348 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    349 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:346:75[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    344 |         .set({
+    345 |           totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
+  > 346 |           totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+        |                                                                           ^^^^^^^^
+    347 |         })
+    348 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    349 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:401:22[39m[22m
+[1mTS2339: Property 'stocks' does not exist on type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...'.
+    399 |     const stock = await tx.query.stocks.findFirst({
+    400 |       where: and(
+  > 401 |         eq(wmsTables.stocks.skuId, skuId),
+        |                      ^^^^^^
+    402 |         eq(wmsTables.stocks.warehouseId, warehouseId)
+    403 |       )
+    404 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:402:22[39m[22m
+[1mTS2339: Property 'stocks' does not exist on type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...'.
+    400 |       where: and(
+    401 |         eq(wmsTables.stocks.skuId, skuId),
+  > 402 |         eq(wmsTables.stocks.warehouseId, warehouseId)
+        |                      ^^^^^^
+    403 |       )
+    404 |     });
+    405 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/fulfillment-order-transaction.service.ts:414:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "stock_reservations"; dataType: "string"; columnType: "PgEnumColumn"; data: "pending" | "confirmed" | "released"; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 2 more ... | "released"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"active"' is not assignable to parameter of type 'SQLWrapper | "pending" | "confirmed" | "released"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "stock_reservations"; dataType: "string"; columnType: "PgEnumColumn"; data: "pending" | "confirmed" | "released"; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "stock_reservations"; dataType: "string"; columnType: "PgEnumColumn"; data: "pending" | "confirmed" | "released"; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "stock_reservations"; dataType: "string"; columnType: "PgEnumColumn"; data: "pending" | "confirmed" | "released"; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    412 |         eq(wmsTables.stockReservations.skuId, skuId),
+    413 |         eq(wmsTables.stockReservations.warehouseId, warehouseId),
+  > 414 |         eq(wmsTables.stockReservations.status, 'active')
+        |         ^^
+    415 |       )
+    416 |     });
+    417 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:94:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"picked"' have no overlap.
+    92 |     }
+    93 |
+  > 94 |     if (fulfillmentOrder.status !== 'picked') {
+       |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    95 |       throw new ConflictException(`Cannot start inspection for FO in status: ${fulfillmentOrder.status}`);
+    96 |     }
+    97 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:105:25[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    103 |       salesOrderLineId: item.salesOrderLineId,
+    104 |       skuId: item.skuId,
+  > 105 |       skuName: item.sku.name,
+        |                         ^^^^
+    106 |       requiredQty: item.qty,
+    107 |       pickedQty: item.pickedQty,
+    108 |       inspectedQty: 0,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:132:9[39m[22m
+[1mTS2322: Type '"inspecting"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    130 |     await this.db.update(wmsTables.fulfillmentOrders)
+    131 |       .set({
+  > 132 |         status: 'inspecting',
+        |         ^^^^^^
+    133 |         inspectionStartedAt: new Date()
+    134 |       })
+    135 |       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:177:30[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    175 |     }
+    176 |
+  > 177 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+        |                              ^^^^^^
+    178 |       throw new ConflictException(`Cannot inspect item for FO in status: ${foi.fulfillmentOrder.status}`);
+    179 |     }
+    180 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:178:97[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    176 |
+    177 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+  > 178 |       throw new ConflictException(`Cannot inspect item for FO in status: ${foi.fulfillmentOrder.status}`);
+        |                                                                                                 ^^^^^^
+    179 |     }
+    180 |
+    181 |     if (inspectedQty > foi.pickedQty) {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:219:24[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    217 |       salesOrderLineId: foi.salesOrderLineId,
+    218 |       skuId: foi.skuId,
+  > 219 |       skuName: foi.sku.name,
+        |                        ^^^^
+    220 |       requiredQty: foi.qty,
+    221 |       pickedQty: foi.pickedQty,
+    222 |       inspectedQty,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:252:30[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    250 |     }
+    251 |
+  > 252 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+        |                              ^^^^^^
+    253 |       throw new ConflictException(`Cannot force shipment for FO in status: ${foi.fulfillmentOrder.status}`);
+    254 |     }
+    255 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:253:99[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    251 |
+    252 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+  > 253 |       throw new ConflictException(`Cannot force shipment for FO in status: ${foi.fulfillmentOrder.status}`);
+        |                                                                                                   ^^^^^^
+    254 |     }
+    255 |
+    256 |     if (forceQty > foi.qty) {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:285:30[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    283 |     }
+    284 |
+  > 285 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+        |                              ^^^^^^
+    286 |       throw new ConflictException(`Cannot reset inspection for FO in status: ${foi.fulfillmentOrder.status}`);
+    287 |     }
+    288 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:286:101[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    284 |
+    285 |     if (foi.fulfillmentOrder.status !== 'inspecting') {
+  > 286 |       throw new ConflictException(`Cannot reset inspection for FO in status: ${foi.fulfillmentOrder.status}`);
+        |                                                                                                     ^^^^^^
+    287 |     }
+    288 |
+    289 |     // Reset inspection data[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/inspection.service.ts:355:28[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    353 |
+    354 |     const validFois = fois.filter(foi =>
+  > 355 |       foi.fulfillmentOrder.status === 'inspecting' && foi.pickedQty > 0
+        |                            ^^^^^^
+    356 |     );
+    357 |
+    358 |     if (validFois.length === 0) {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:86:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"picked"' have no overlap.
+    84 |     );
+    85 |
+  > 86 |     if (fulfillmentOrder.status !== 'picked') {
+       |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    87 |       throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
+    88 |     }
+    89 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:118:35[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    116 |           deliveryMessage: request.deliveryMessage,
+    117 |           items: fulfillmentOrder.items.map(item => ({
+  > 118 |             productName: item.sku.name,
+        |                                   ^^^^
+    119 |             quantity: item.qty,
+    120 |             price: priceMap.get(item.salesOrderLineId) || 0
+    121 |           }))[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:147:11[39m[22m
+[1mTS2322: Type '"invoiced"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    145 |       await tx.update(wmsTables.fulfillmentOrders)
+    146 |         .set({
+  > 147 |           status: 'invoiced',
+        |           ^^^^^^
+    148 |           invoicedAt: new Date()
+    149 |         })
+    150 |         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:222:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'shippedAt' does not exist in type '{ id?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; createdAt?: Date | PgColumn<...> | SQL<...> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+    220 |         .set({
+    221 |           status: 'shipped',
+  > 222 |           shippedAt: new Date()
+        |           ^^^^^^^^^
+    223 |         })
+    224 |         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
+    225 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:258:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'canceledAt' does not exist in type '{ fulfillmentOrderId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; invoiceNumber?: string | ... 2 more ... | undefined; ... 8 more ...; shippedAt?: Date | ... 3 more ... | undefined; }'.
+    256 |         .set({
+    257 |           status: 'canceled',
+  > 258 |           canceledAt: new Date()
+        |           ^^^^^^^^^^
+    259 |         })
+    260 |         .where(eq(wmsTables.invoices.id, invoiceId));
+    261 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:264:11[39m[22m
+[1mTS2322: Type '"picked"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    262 |       await tx.update(wmsTables.fulfillmentOrders)
+    263 |         .set({
+  > 264 |           status: 'picked' // Revert to picked status
+        |           ^^^^^^
+    265 |         })
+    266 |         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
+    267 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:288:7[39m[22m
+[1mTS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+    286 |       fulfillmentOrderId: invoice.fulfillmentOrderId,
+    287 |       invoiceNumber: invoice.invoiceNumber,
+  > 288 |       carrierCode: invoice.carrierCode,
+        |       ^^^^^^^^^^^
+    289 |       issueMethod: invoice.issueMethod,
+    290 |       goodsflowServiceId: invoice.goodsflowServiceId,
+    291 |       status: invoice.status,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:290:7[39m[22m
+[1mTS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+    288 |       carrierCode: invoice.carrierCode,
+    289 |       issueMethod: invoice.issueMethod,
+  > 290 |       goodsflowServiceId: invoice.goodsflowServiceId,
+        |       ^^^^^^^^^^^^^^^^^^
+    291 |       status: invoice.status,
+    292 |       issuedAt: invoice.issuedAt,
+    293 |       printedAt: invoice.printedAt,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:292:7[39m[22m
+[1mTS2322: Type 'Date | null' is not assignable to type 'Date | undefined'.
+  Type 'null' is not assignable to type 'Date | undefined'.
+    290 |       goodsflowServiceId: invoice.goodsflowServiceId,
+    291 |       status: invoice.status,
+  > 292 |       issuedAt: invoice.issuedAt,
+        |       ^^^^^^^^
+    293 |       printedAt: invoice.printedAt,
+    294 |       shippedAt: invoice.shippedAt,
+    295 |       items: invoice.items.map(item => ({[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:293:7[39m[22m
+[1mTS2322: Type 'Date | null' is not assignable to type 'Date | undefined'.
+  Type 'null' is not assignable to type 'Date | undefined'.
+    291 |       status: invoice.status,
+    292 |       issuedAt: invoice.issuedAt,
+  > 293 |       printedAt: invoice.printedAt,
+        |       ^^^^^^^^^
+    294 |       shippedAt: invoice.shippedAt,
+    295 |       items: invoice.items.map(item => ({
+    296 |         id: item.id,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/invoice.service.ts:294:7[39m[22m
+[1mTS2322: Type 'Date | null' is not assignable to type 'Date | undefined'.
+  Type 'null' is not assignable to type 'Date | undefined'.
+    292 |       issuedAt: invoice.issuedAt,
+    293 |       printedAt: invoice.printedAt,
+  > 294 |       shippedAt: invoice.shippedAt,
+        |       ^^^^^^^^^
+    295 |       items: invoice.items.map(item => ({
+    296 |         id: item.id,
+    297 |         foiId: item.foiId,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:76:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; batchNumber: string | SQL<unknown> | Placeholder<string, any>; pickingMethod: SQL<...> | "individual" | "total_picking" | Placeholder<...>; ... 5 more ...; completedAt?: Date | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'name' does not exist in type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; batchNumber: string | SQL<unknown> | Placeholder<string, any>; pickingMethod: SQL<unknown> | "individual" | "total_picking" | Placeholder<...>; ... 5 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; batchNumber: string | SQL<unknown> | Placeholder<string, any>; pickingMethod: SQL<...> | "individual" | "total_picking" | Placeholder<...>; ... 5 more ...; completedAt?: Date | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'name' does not exist in type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; batchNumber: string | SQL<unknown> | Placeholder<string, any>; pickingMethod: SQL<unknown> | "individual" | "total_picking" | Placeholder<...>; ... 5 more ...; completedAt?: Date | ... 3 more ... | undefined; }[]'.
+    74 |     const [batch] = await this.db.insert(wmsTables.outboundBatches)
+    75 |       .values({
+  > 76 |         name: batchName,
+       |         ^^^^
+    77 |         warehouseId,
+    78 |         pickingMethod,
+    79 |         status: 'created',[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:106:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"pending"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    104 |       where: and(
+    105 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+  > 106 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+        |         ^^
+    107 |         isNull(wmsTables.fulfillmentOrders.batchId)
+    108 |       )
+    109 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:107:44[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    105 |         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+    106 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+  > 107 |         isNull(wmsTables.fulfillmentOrders.batchId)
+        |                                            ^^^^^^^
+    108 |       )
+    109 |     });
+    110 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:115:61[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    113 |     }
+    114 |
+  > 115 |     const directShipFOs = fulfillmentOrders.filter(fo => fo.fulfillmentMode === 'direct_ship');
+        |                                                             ^^^^^^^^^^^^^^^
+    116 |     if (directShipFOs.length > 0) {
+    117 |       throw new BadRequestException(`Direct ship FOs cannot be added to batches: ${directShipFOs.map(fo => fo.id).join(', ')}`);
+    118 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:123:11[39m[22m
+[1mTS2322: Type '"allocated"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    121 |       await tx.update(wmsTables.fulfillmentOrders)
+    122 |         .set({
+  > 123 |           status: 'allocated',
+        |           ^^^^^^
+    124 |           batchId,
+    125 |           allocatedAt: new Date()
+    126 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:129:73[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    127 |         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
+    128 |
+  > 129 |       const totalItems = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalItems, 0);
+        |                                                                         ^^^^^^^^^^
+    130 |       const totalQty = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalQty, 0);
+    131 |
+    132 |       await tx.update(wmsTables.outboundBatches)[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:130:71[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    128 |
+    129 |       const totalItems = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalItems, 0);
+  > 130 |       const totalQty = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalQty, 0);
+        |                                                                       ^^^^^^^^
+    131 |
+    132 |       await tx.update(wmsTables.outboundBatches)
+    133 |         .set({[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:134:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'totalItems' does not exist in type '{ warehouseId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; batchNumber?: string | PgColumn<...> | SQL<...> | undefined; ... 6 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+    132 |       await tx.update(wmsTables.outboundBatches)
+    133 |         .set({
+  > 134 |           totalItems: batch.totalItems + totalItems,
+        |           ^^^^^^^^^^
+    135 |           totalQty: batch.totalQty + totalQty
+    136 |         })
+    137 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:134:29[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    132 |       await tx.update(wmsTables.outboundBatches)
+    133 |         .set({
+  > 134 |           totalItems: batch.totalItems + totalItems,
+        |                             ^^^^^^^^^^
+    135 |           totalQty: batch.totalQty + totalQty
+    136 |         })
+    137 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:135:27[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    133 |         .set({
+    134 |           totalItems: batch.totalItems + totalItems,
+  > 135 |           totalQty: batch.totalQty + totalQty
+        |                           ^^^^^^^^
+    136 |         })
+    137 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    138 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:159:40[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    157 |       where: and(
+    158 |         eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
+  > 159 |         eq(wmsTables.fulfillmentOrders.batchId, batchId)
+        |                                        ^^^^^^^
+    160 |       )
+    161 |     });
+    162 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:170:11[39m[22m
+[1mTS2322: Type '"pending"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    168 |       await tx.update(wmsTables.fulfillmentOrders)
+    169 |         .set({
+  > 170 |           status: 'pending',
+        |           ^^^^^^
+    171 |           batchId: null,
+    172 |           allocatedAt: null
+    173 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:178:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'totalItems' does not exist in type '{ warehouseId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; batchNumber?: string | PgColumn<...> | SQL<...> | undefined; ... 6 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+    176 |       await tx.update(wmsTables.outboundBatches)
+    177 |         .set({
+  > 178 |           totalItems: batch.totalItems - fulfillmentOrder.totalItems,
+        |           ^^^^^^^^^^
+    179 |           totalQty: batch.totalQty - fulfillmentOrder.totalQty
+    180 |         })
+    181 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:178:29[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    176 |       await tx.update(wmsTables.outboundBatches)
+    177 |         .set({
+  > 178 |           totalItems: batch.totalItems - fulfillmentOrder.totalItems,
+        |                             ^^^^^^^^^^
+    179 |           totalQty: batch.totalQty - fulfillmentOrder.totalQty
+    180 |         })
+    181 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:178:59[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    176 |       await tx.update(wmsTables.outboundBatches)
+    177 |         .set({
+  > 178 |           totalItems: batch.totalItems - fulfillmentOrder.totalItems,
+        |                                                           ^^^^^^^^^^
+    179 |           totalQty: batch.totalQty - fulfillmentOrder.totalQty
+    180 |         })
+    181 |         .where(eq(wmsTables.outboundBatches.id, batchId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:179:27[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    177 |         .set({
+    178 |           totalItems: batch.totalItems - fulfillmentOrder.totalItems,
+  > 179 |           totalQty: batch.totalQty - fulfillmentOrder.totalQty
+        |                           ^^^^^^^^
+    180 |         })
+    181 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    182 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:179:55[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    177 |         .set({
+    178 |           totalItems: batch.totalItems - fulfillmentOrder.totalItems,
+  > 179 |           totalQty: batch.totalQty - fulfillmentOrder.totalQty
+        |                                                       ^^^^^^^^
+    180 |         })
+    181 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    182 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:200:15[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    198 |     }
+    199 |
+  > 200 |     if (batch.totalItems === 0) {
+        |               ^^^^^^^^^^
+    201 |       throw new BadRequestException('Cannot start picking for empty batch');
+    202 |     }
+    203 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:208:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'startedAt' does not exist in type '{ warehouseId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; batchNumber?: string | PgColumn<...> | SQL<...> | undefined; ... 6 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+    206 |         .set({
+    207 |           status: 'picking',
+  > 208 |           startedAt: new Date()
+        |           ^^^^^^^^^
+    209 |         })
+    210 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    211 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:213:16[39m[22m
+[1mTS2322: Type '"picking"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    211 |
+    212 |       await tx.update(wmsTables.fulfillmentOrders)
+  > 213 |         .set({ status: 'picking' })
+        |                ^^^^^^
+    214 |         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+    215 |
+    216 |       this.logger.log(`Started picking for batch ${batchId}`);[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:214:47[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    212 |       await tx.update(wmsTables.fulfillmentOrders)
+    213 |         .set({ status: 'picking' })
+  > 214 |         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+        |                                               ^^^^^^^
+    215 |
+    216 |       this.logger.log(`Started picking for batch ${batchId}`);
+    217 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:257:16[39m[22m
+[1mTS2322: Type '"picked"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    255 |
+    256 |       await tx.update(wmsTables.fulfillmentOrders)
+  > 257 |         .set({ status: 'picked' })
+        |                ^^^^^^
+    258 |         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+    259 |
+    260 |       this.logger.log(`Completed batch ${batchId}`);[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:258:47[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    256 |       await tx.update(wmsTables.fulfillmentOrders)
+    257 |         .set({ status: 'picked' })
+  > 258 |         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+        |                                               ^^^^^^^
+    259 |
+    260 |       this.logger.log(`Completed batch ${batchId}`);
+    261 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:280:11[39m[22m
+[1mTS2322: Type '"pending"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    278 |       await tx.update(wmsTables.fulfillmentOrders)
+    279 |         .set({
+  > 280 |           status: 'pending',
+        |           ^^^^^^
+    281 |           batchId: null,
+    282 |           allocatedAt: null
+    283 |         })[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:284:47[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    282 |           allocatedAt: null
+    283 |         })
+  > 284 |         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+        |                                               ^^^^^^^
+    285 |
+    286 |       await tx.update(wmsTables.outboundBatches)
+    287 |         .set({[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:289:11[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'canceledAt' does not exist in type '{ warehouseId?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; batchNumber?: string | PgColumn<...> | SQL<...> | undefined; ... 6 more ...; completedAt?: Date | ... 3 more ... | undefined; }'.
+    287 |         .set({
+    288 |           status: 'canceled',
+  > 289 |           canceledAt: new Date()
+        |           ^^^^^^^^^^
+    290 |         })
+    291 |         .where(eq(wmsTables.outboundBatches.id, batchId));
+    292 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:319:19[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; fulfillmentOrders: { ...; }[]; }'.
+    317 |     return {
+    318 |       id: batch.id,
+  > 319 |       name: batch.name,
+        |                   ^^^^
+    320 |       warehouseId: batch.warehouseId,
+    321 |       pickingMethod: batch.pickingMethod,
+    322 |       status: batch.status,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:323:25[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; fulfillmentOrders: { ...; }[]; }'.
+    321 |       pickingMethod: batch.pickingMethod,
+    322 |       status: batch.status,
+  > 323 |       totalItems: batch.totalItems,
+        |                         ^^^^^^^^^^
+    324 |       totalQty: batch.totalQty,
+    325 |       scheduledPickingAt: batch.scheduledPickingAt,
+    326 |       startedAt: batch.startedAt,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:324:23[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; fulfillmentOrders: { ...; }[]; }'.
+    322 |       status: batch.status,
+    323 |       totalItems: batch.totalItems,
+  > 324 |       totalQty: batch.totalQty,
+        |                       ^^^^^^^^
+    325 |       scheduledPickingAt: batch.scheduledPickingAt,
+    326 |       startedAt: batch.startedAt,
+    327 |       completedAt: batch.completedAt,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:325:33[39m[22m
+[1mTS2339: Property 'scheduledPickingAt' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; fulfillmentOrders: { ...; }[]; }'.
+    323 |       totalItems: batch.totalItems,
+    324 |       totalQty: batch.totalQty,
+  > 325 |       scheduledPickingAt: batch.scheduledPickingAt,
+        |                                 ^^^^^^^^^^^^^^^^^^
+    326 |       startedAt: batch.startedAt,
+    327 |       completedAt: batch.completedAt,
+    328 |       fulfillmentOrders: batch.fulfillmentOrders.map(fo => ({[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:326:24[39m[22m
+[1mTS2339: Property 'startedAt' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; fulfillmentOrders: { ...; }[]; }'.
+    324 |       totalQty: batch.totalQty,
+    325 |       scheduledPickingAt: batch.scheduledPickingAt,
+  > 326 |       startedAt: batch.startedAt,
+        |                        ^^^^^^^^^
+    327 |       completedAt: batch.completedAt,
+    328 |       fulfillmentOrders: batch.fulfillmentOrders.map(fo => ({
+    329 |         id: fo.id,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:327:7[39m[22m
+[1mTS2322: Type 'Date | null' is not assignable to type 'Date | undefined'.
+  Type 'null' is not assignable to type 'Date | undefined'.
+    325 |       scheduledPickingAt: batch.scheduledPickingAt,
+    326 |       startedAt: batch.startedAt,
+  > 327 |       completedAt: batch.completedAt,
+        |       ^^^^^^^^^^^
+    328 |       fulfillmentOrders: batch.fulfillmentOrders.map(fo => ({
+    329 |         id: fo.id,
+    330 |         status: fo.status,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:375:31[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    373 |           skuMap.set(skuId, {
+    374 |             skuId,
+  > 375 |             skuName: item.sku.name,
+        |                               ^^^^
+    376 |             locationCode: undefined, // TODO: Get from location service
+    377 |             totalQty: 0,
+    378 |             fulfillmentOrderItems: [][39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:409:9[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 3, '(left: PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 9 more ...; generated: undefined; }, {}, {}>, right: SQLWrapper | ... 5 more ... | "labeled"): SQL<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '"pending"' is not assignable to parameter of type 'SQLWrapper | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"'.
+  Overload 2 of 3, '(left: Aliased<string>, right: string | SQLWrapper): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'Aliased<string>'.
+      Type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is missing the following properties from type 'Aliased<string>': sql, fieldAlias
+  Overload 3 of 3, '(left: never, right: unknown): SQL<unknown>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type 'PgColumn<{ name: "status"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgEnumColumn"; data: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; driverParam: string; ... 8 more ...; generated: undefined; }, {}, {}>' is not assignable to parameter of type 'never'.
+    407 |       where: and(
+    408 |         eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
+  > 409 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+        |         ^^
+    410 |         isNull(wmsTables.fulfillmentOrders.batchId)
+    411 |       ),
+    412 |       orderBy: [desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt)][39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:410:44[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    408 |         eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
+    409 |         eq(wmsTables.fulfillmentOrders.status, 'pending'),
+  > 410 |         isNull(wmsTables.fulfillmentOrders.batchId)
+        |                                            ^^^^^^^
+    411 |       ),
+    412 |       orderBy: [desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt)]
+    413 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:412:50[39m[22m
+[1mTS2339: Property 'priority' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    410 |         isNull(wmsTables.fulfillmentOrders.batchId)
+    411 |       ),
+  > 412 |       orderBy: [desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt)]
+        |                                                  ^^^^^^^^
+    413 |     });
+    414 |
+    415 |     return fulfillmentOrders[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:416:24[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    414 |
+    415 |     return fulfillmentOrders
+  > 416 |       .filter(fo => fo.fulfillmentMode !== 'direct_ship')
+        |                        ^^^^^^^^^^^^^^^
+    417 |       .map(fo => ({
+    418 |         id: fo.id,
+    419 |         priority: fo.priority,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:419:22[39m[22m
+[1mTS2339: Property 'priority' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    417 |       .map(fo => ({
+    418 |         id: fo.id,
+  > 419 |         priority: fo.priority,
+        |                      ^^^^^^^^
+    420 |         fulfillmentMode: fo.fulfillmentMode,
+    421 |         totalItems: fo.totalItems,
+    422 |         totalQty: fo.totalQty,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:420:29[39m[22m
+[1mTS2339: Property 'fulfillmentMode' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    418 |         id: fo.id,
+    419 |         priority: fo.priority,
+  > 420 |         fulfillmentMode: fo.fulfillmentMode,
+        |                             ^^^^^^^^^^^^^^^
+    421 |         totalItems: fo.totalItems,
+    422 |         totalQty: fo.totalQty,
+    423 |         createdAt: fo.createdAt![39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:421:24[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    419 |         priority: fo.priority,
+    420 |         fulfillmentMode: fo.fulfillmentMode,
+  > 421 |         totalItems: fo.totalItems,
+        |                        ^^^^^^^^^^
+    422 |         totalQty: fo.totalQty,
+    423 |         createdAt: fo.createdAt!
+    424 |       }));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:422:22[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; shippingAddress: unknown; salesOrderId: string | null; ownerId: string | null; labelNo: string | null; }'.
+    420 |         fulfillmentMode: fo.fulfillmentMode,
+    421 |         totalItems: fo.totalItems,
+  > 422 |         totalQty: fo.totalQty,
+        |                      ^^^^^^^^
+    423 |         createdAt: fo.createdAt!
+    424 |       }));
+    425 |   }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:445:19[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    443 |     return batches.map(batch => ({
+    444 |       id: batch.id,
+  > 445 |       name: batch.name,
+        |                   ^^^^
+    446 |       warehouseId: batch.warehouseId,
+    447 |       pickingMethod: batch.pickingMethod,
+    448 |       status: batch.status,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:449:25[39m[22m
+[1mTS2339: Property 'totalItems' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    447 |       pickingMethod: batch.pickingMethod,
+    448 |       status: batch.status,
+  > 449 |       totalItems: batch.totalItems,
+        |                         ^^^^^^^^^^
+    450 |       totalQty: batch.totalQty,
+    451 |       scheduledPickingAt: batch.scheduledPickingAt,
+    452 |       createdAt: batch.createdAt![39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:450:23[39m[22m
+[1mTS2339: Property 'totalQty' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    448 |       status: batch.status,
+    449 |       totalItems: batch.totalItems,
+  > 450 |       totalQty: batch.totalQty,
+        |                       ^^^^^^^^
+    451 |       scheduledPickingAt: batch.scheduledPickingAt,
+    452 |       createdAt: batch.createdAt!
+    453 |     }));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbound-batch.service.ts:451:33[39m[22m
+[1mTS2339: Property 'scheduledPickingAt' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; status: "created" | "picking" | "canceled" | "completed"; assignedTo: string | null; batchNumber: string; pickingMethod: "individual" | "total_picking"; cartCapacity: number | null; completedAt: Date | null; }'.
+    449 |       totalItems: batch.totalItems,
+    450 |       totalQty: batch.totalQty,
+  > 451 |       scheduledPickingAt: batch.scheduledPickingAt,
+        |                                 ^^^^^^^^^^^^^^^^^^
+    452 |       createdAt: batch.createdAt!
+    453 |     }));
+    454 |   }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbox-dispatcher.service.ts:7:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     5 | import { EventPublisherService } from '@app/events';
+     6 |
+  >  7 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+     8 |
+     9 | @Injectable()
+    10 | export class OutboxDispatcherService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/outbox.service.ts:5:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    3 | import { wmsTables } from '../../../../database/schemas/wms-schema';
+    4 |
+  > 5 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+      |                                                 ^^^^^^^^^^^^^^^^
+    6 |
+    7 | @Injectable()
+    8 | export class OutboxService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:158:51[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type 'PgTableWithColumns<{ name: "fulfillment_orders"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "fulfillment_orders"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 7 more ...; updatedAt: PgColumn<...'.
+    156 |           this.db.select({ id: wmsTables.fulfillmentOrders.id })
+    157 |             .from(wmsTables.fulfillmentOrders)
+  > 158 |             .where(eq(wmsTables.fulfillmentOrders.batchId, batchId))
+        |                                                   ^^^^^^^
+    159 |         )
+    160 |       ),
+    161 |       orderBy: wmsTables.fulfillmentOrderItems.createdAt[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:270:9[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"allocated"' have no overlap.
+    268 |     }
+    269 |
+  > 270 |     if (fulfillmentOrder.status !== 'allocated' && fulfillmentOrder.status !== 'picking') {
+        |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    271 |       throw new ConflictException(`Cannot start individual picking for FO in status: ${fulfillmentOrder.status}`);
+    272 |     }
+    273 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:270:52[39m[22m
+[1mTS2367: This comparison appears to be unintentional because the types '"created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"' and '"picking"' have no overlap.
+    268 |     }
+    269 |
+  > 270 |     if (fulfillmentOrder.status !== 'allocated' && fulfillmentOrder.status !== 'picking') {
+        |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    271 |       throw new ConflictException(`Cannot start individual picking for FO in status: ${fulfillmentOrder.status}`);
+    272 |     }
+    273 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:276:16[39m[22m
+[1mTS2322: Type '"picking"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    274 |     if (fulfillmentOrder.status === 'allocated') {
+    275 |       await this.db.update(wmsTables.fulfillmentOrders)
+  > 276 |         .set({ status: 'picking' })
+        |                ^^^^^^
+    277 |         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+    278 |     }
+    279 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:287:27[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    285 |         foiId: item.id,
+    286 |         skuId: item.skuId,
+  > 287 |         skuName: item.sku.name,
+        |                           ^^^^
+    288 |         requiredQty: item.qty,
+    289 |         pickedQty: item.pickedQty,
+    290 |         locationCode: undefined, // TODO: Get from location service[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:317:31[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    315 |     }
+    316 |
+  > 317 |     if (item.fulfillmentOrder.status !== 'picking') {
+        |                               ^^^^^^
+    318 |       throw new ConflictException(`Cannot pick from FO in status: ${item.fulfillmentOrder.status}`);
+    319 |     }
+    320 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:318:91[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    316 |
+    317 |     if (item.fulfillmentOrder.status !== 'picking') {
+  > 318 |       throw new ConflictException(`Cannot pick from FO in status: ${item.fulfillmentOrder.status}`);
+        |                                                                                           ^^^^^^
+    319 |     }
+    320 |
+    321 |     const newPickedQty = item.pickedQty + pickedQty;[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:359:9[39m[22m
+[1mTS2322: Type '"picked"' is not assignable to type 'PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled" | undefined'.
+    357 |     await this.db.update(wmsTables.fulfillmentOrders)
+    358 |       .set({
+  > 359 |         status: 'picked',
+        |         ^^^^^^
+    360 |         pickedAt: new Date()
+    361 |       })
+    362 |       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:379:31[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    377 |     }
+    378 |
+  > 379 |     if (item.fulfillmentOrder.status !== 'picking') {
+        |                               ^^^^^^
+    380 |       throw new ConflictException(`Cannot reset picking for FO in status: ${item.fulfillmentOrder.status}`);
+    381 |     }
+    382 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/picking-process.service.ts:380:99[39m[22m
+[1mTS2339: Property 'status' does not exist on type '{ [x: string]: any; }[]'.
+    378 |
+    379 |     if (item.fulfillmentOrder.status !== 'picking') {
+  > 380 |       throw new ConflictException(`Cannot reset picking for FO in status: ${item.fulfillmentOrder.status}`);
+        |                                                                                                   ^^^^^^
+    381 |     }
+    382 |
+    383 |     await this.db.update(wmsTables.fulfillmentOrderItems)[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/policies.service.ts:6:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    4 | import { nowSeoul } from '../../../shared/services/time.util';
+    5 |
+  > 6 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+      |                                                 ^^^^^^^^^^^^^^^^
+    7 |
+    8 | @Injectable()
+    9 | export class PoliciesService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:74:11[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'mappingId' does not exist in type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Object literal may only specify known properties, and 'mappingId' does not exist in type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]'.
+    72 |       await tx.insert(wmsTables.productSkuMappingSnapshots)
+    73 |         .values({
+  > 74 |           mappingId: newMapping.id,
+       |           ^^^^^^^^^
+    75 |           variantId,
+    76 |           skuId,
+    77 |           quantity[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:173:17[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is not assignable to parameter of type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }'.
+      Type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is missing the following properties from type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }': warehouseId, productId, sourceVersion, snapshotData
+  Overload 2 of 2, '(values: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is not assignable to parameter of type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]'.
+      Type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }' is missing the following properties from type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }': warehouseId, productId, sourceVersion, snapshotData
+    171 |
+    172 |       await tx.insert(wmsTables.productSkuMappingSnapshots)
+  > 173 |         .values(allMappings.map(mapping => ({
+        |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 174 |           mappingId: newMapping.id,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 175 |           variantId: mapping.variantId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 176 |           skuId: mapping.skuId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 177 |           quantity: mapping.quantity
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 178 |         })));
+        | ^^^^^^^^^^^^
+    179 |
+    180 |       this.logger.log(`Added variant ${variantId} to product ${productId} mapping, new version: ${currentMapping.version + 1}`);
+    181 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:223:17[39m[22m
+[1mTS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is not assignable to parameter of type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }'.
+      Type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is missing the following properties from type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }': warehouseId, productId, sourceVersion, snapshotData
+  Overload 2 of 2, '(values: { warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following [1m[31merror[39m[22m[1m.
+    Argument of type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }[]' is not assignable to parameter of type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }[]'.
+      Type '{ mappingId: string; variantId: string; skuId: string; quantity: number; }' is missing the following properties from type '{ warehouseId: string | SQL<unknown> | Placeholder<string, any>; productId: string | SQL<unknown> | Placeholder<string, any>; sourceVersion: number | SQL<...> | Placeholder<...>; snapshotData: unknown; id?: string | ... 2 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; }': warehouseId, productId, sourceVersion, snapshotData
+    221 |
+    222 |       await tx.insert(wmsTables.productSkuMappingSnapshots)
+  > 223 |         .values(remainingMappings.map(mapping => ({
+        |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 224 |           mappingId: newMapping.id,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 225 |           variantId: mapping.variantId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 226 |           skuId: mapping.skuId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 227 |           quantity: mapping.quantity
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 228 |         })));
+        | ^^^^^^^^^^^^
+    229 |
+    230 |       this.logger.log(`Removed variant ${variantId} from product ${productId} mapping, new version: ${currentMapping.version + 1}`);
+    231 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:263:54[39m[22m
+[1mTS2339: Property 'variantId' does not exist on type 'PgTableWithColumns<{ name: "product_sku_mapping_snapshots"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "product_sku_mapping_snapshots"; dataType: "string"; columnType: "PgUUID"; data: string; ... 9 more ...; generated: undefined; }, {}, {}>; ... 4 more ...; createdAt: PgColumn<...>; }; diale...'.
+    261 |   async getSkuMappingForVariant(variantId: string, warehouseId: string): Promise<{ skuId: string; quantity: number } | null> {
+    262 |     const snapshot = await this.db.query.productSkuMappingSnapshots.findFirst({
+  > 263 |       where: eq(wmsTables.productSkuMappingSnapshots.variantId, variantId),
+        |                                                      ^^^^^^^^^
+    264 |       with: {
+    265 |         mapping: {
+    266 |           where: and([39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:279:23[39m[22m
+[1mTS2339: Property 'skuId' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; productId: string; sourceVersion: number; snapshotData: unknown; mapping: { [x: string]: any; }[]; }'.
+    277 |
+    278 |     return {
+  > 279 |       skuId: snapshot.skuId,
+        |                       ^^^^^
+    280 |       quantity: snapshot.quantity
+    281 |     };
+    282 |   }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/product-sku-mapping.service.ts:280:26[39m[22m
+[1mTS2339: Property 'quantity' does not exist on type '{ id: string; createdAt: Date | null; warehouseId: string; productId: string; sourceVersion: number; snapshotData: unknown; mapping: { [x: string]: any; }[]; }'.
+    278 |     return {
+    279 |       skuId: snapshot.skuId,
+  > 280 |       quantity: snapshot.quantity
+        |                          ^^^^^^^^
+    281 |     };
+    282 |   }
+    283 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/reservations.service.ts:9:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     7 | import { UnifiedReservationService, ReserveStockDto } from '../../../shared/services/unified-reservation.service';
+     8 |
+  >  9 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+    10 |
+    11 | interface ReserveFulfilmentOrderLineDto {
+    12 |   fulfillmentOrderItemId: string;[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/reservations.service.ts:60:57[39m[22m
+[1mTS2339: Property 'id' does not exist on type '{ [x: string]: any; }[]'.
+    58 |       const reservation = await this.unifiedReservation.reserveStock({
+    59 |         targetType: 'FULFILLMENT_ORDER',
+  > 60 |         targetId: fulfillmentOrderItem.fulfillmentOrder.id,
+       |                                                         ^^
+    61 |         skuId: dto.skuId,
+    62 |         warehouseId: dto.warehouseId,
+    63 |         quantity: dto.quantity,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/order/shared/services/reservations.service.ts:157:49[39m[22m
+[1mTS2339: Property 'id' does not exist on type '{ [x: string]: any; }[]'.
+    155 |         fromReservation.reservationId,
+    156 |         'FULFILLMENT_ORDER',
+  > 157 |         toFulfillmentOrderItem.fulfillmentOrder.id,
+        |                                                 ^^
+    158 |         trx
+    159 |       );
+    160 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/audit.service.ts:8:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     6 | import { eq, gte, lte, desc, and } from 'drizzle-orm';
+     7 |
+  >  8 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+     9 |
+    10 | export interface AuditContext {
+    11 |   userId?: string;[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:116:39[39m[22m
+[1mTS2339: Property 'stocks' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    114 |     }
+    115 |
+  > 116 |     const stock = await this.db.query.stocks.findFirst({
+        |                                       ^^^^^^
+    117 |       where: and(
+    118 |         eq(wmsTables.stocks.skuId, skuId),
+    119 |         eq(wmsTables.stocks.warehouseId, warehouseId)[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:118:22[39m[22m
+[1mTS2339: Property 'stocks' does not exist on type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...'.
+    116 |     const stock = await this.db.query.stocks.findFirst({
+    117 |       where: and(
+  > 118 |         eq(wmsTables.stocks.skuId, skuId),
+        |                      ^^^^^^
+    119 |         eq(wmsTables.stocks.warehouseId, warehouseId)
+    120 |       )
+    121 |     });[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:119:22[39m[22m
+[1mTS2339: Property 'stocks' does not exist on type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...'.
+    117 |       where: and(
+    118 |         eq(wmsTables.stocks.skuId, skuId),
+  > 119 |         eq(wmsTables.stocks.warehouseId, warehouseId)
+        |                      ^^^^^^
+    120 |       )
+    121 |     });
+    122 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:167:45[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    165 |     }
+    166 |
+  > 167 |     this.logger.log(`FOI scanned: ${foi.sku.name} for SO ${foi.salesOrderId}`);
+        |                                             ^^^^
+    168 |
+    169 |     return {
+    170 |       foiId: foi.id,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:175:24[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    173 |       salesOrderLineId: foi.salesOrderLineId,
+    174 |       skuId: foi.skuId,
+  > 175 |       skuName: foi.sku.name,
+        |                        ^^^^
+    176 |       requiredQty: foi.qty,
+    177 |       pickedQty: foi.pickedQty,
+    178 |       remainingQty: foi.qty - foi.pickedQty,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:179:37[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type '{ [x: string]: any; batch: { [x: string]: any; }[]; }[]'.
+    177 |       pickedQty: foi.pickedQty,
+    178 |       remainingQty: foi.qty - foi.pickedQty,
+  > 179 |       batchId: foi.fulfillmentOrder.batchId
+        |                                     ^^^^^^^
+    180 |     };
+    181 |   }
+    182 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:232:19[39m[22m
+[1mTS2339: Property 'batchId' does not exist on type '{ id: string; createdAt: Date | null; updatedAt: Date | null; warehouseId: string | null; status: "created" | "shipped" | "canceled" | "reserving" | "ready" | "labeled"; ... 4 more ...; items: { ...; }[]; }'.
+    230 |       totalItems: fo.items.length,
+    231 |       completedItems,
+  > 232 |       batchId: fo.batchId,
+        |                   ^^^^^^^
+    233 |       items: fo.items.map(item => ({
+    234 |         foiId: item.id,
+    235 |         skuName: item.sku.name,[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/barcode.service.ts:235:27[39m[22m
+[1mTS2339: Property 'name' does not exist on type '{ [x: string]: any; }[]'.
+    233 |       items: fo.items.map(item => ({
+    234 |         foiId: item.id,
+  > 235 |         skuName: item.sku.name,
+        |                           ^^^^
+    236 |         requiredQty: item.qty,
+    237 |         pickedQty: item.pickedQty,
+    238 |         isCompleted: item.pickedQty >= item.qty[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/reservation-lifecycle.service.ts:7:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+     5 | import { UnifiedReservationService } from './unified-reservation.service';
+     6 |
+  >  7 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+       |                                                 ^^^^^^^^^^^^^^^^
+     8 |
+     9 | @Injectable()
+    10 | export class ReservationLifecycleService {[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/reservation-lifecycle.service.ts:104:14[39m[22m
+[1mTS2353: Object literal may only specify known properties, and 'totalReservedQty' does not exist in type '{ id?: string | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | SQL<unknown> | undefined; createdAt?: Date | PgColumn<...> | SQL<...> | null | undefined; ... 6 more ...; labelNo?: string | ... 3 more ... | undefined; }'.
+    102 |     await tx
+    103 |       .update(wmsTables.fulfillmentOrders)
+  > 104 |       .set({ totalReservedQty: 0 })
+        |              ^^^^^^^^^^^^^^^^
+    105 |       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+    106 |
+    107 |     this.logger.log(`Released ${reservations.length} FO reservations. Reason: ${reason}`);[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/stock-availability.service.ts:183:56[39m[22m
+[1mTS2339: Property 'stockSummary' does not exist on type '{ readonly suppliers: RelationalQueryBuilder<ExtractTablesWithRelations<{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; ... 8 more ...; generated...'.
+    181 |
+    182 |         for (const link of links) {
+  > 183 |             const stockSummaries = await this.db.query.stockSummary.findMany({
+        |                                                        ^^^^^^^^^^^^
+    184 |                 where: eq(wmsSchema.stockSummary.skuId, link.skuId)
+    185 |             });
+    186 |[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/stock-summary-view.service.ts:114:19[39m[22m
+[1mTS2339: Property 'rows' does not exist on type 'RowList<Record<string, unknown>[]>'.
+    112 |
+    113 |     const result = await this.db.execute(sql.raw(query));
+  > 114 |     return result.rows as StockSummaryViewResult[];
+        |                   ^^^^
+    115 |   }
+    116 |
+    117 |   // 기존 인터페이스 호환성을 위한 wrapper 메서드들[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/transaction.service.ts:17:60[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    15 |
+    16 |     async runInTransaction<T>(
+  > 17 |         callback: (tx: Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0]) => Promise<T>
+       |                                                            ^^^^^^^^^^^^^^^^
+    18 |     ): Promise<T> {
+    19 |         return this.db.transaction(callback);
+    20 |     }[39m[22m
+
+[1m[31mERROR[39m[22m in [1m./apps/wms/src/shared/services/unified-reservation.service.ts:6:49[39m[22m
+[1mTS2344: Type '{ readonly suppliers: PgTableWithColumns<{ name: "suppliers"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "suppliers"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; name: PgColumn<...>; contactInfo...' does not satisfy the constraint 'DrizzleSchema'.
+  Property 'stockSummary' is incompatible with index signature.
+    Property '$inferInsert' is missing in type 'PgView<"stock_summary_view", false, { skuId: PgColumn<{ name: "sku_id"; tableName: "stock_summary_view"; dataType: "string"; columnType: "PgUUID"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, {}>; ... 12 more ...; lastCalculatedAt: PgColumn<...>; }> & { ...; }' but [1m[33mrequired[39m[22m[1m in type 'Table<any>'.
+    4 | import { eq, and, inArray, sum } from 'drizzle-orm';
+    5 |
+  > 6 | type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+      |                                                 ^^^^^^^^^^^^^^^^
+    7 |
+    8 | export interface ReserveStockDto {
+    9 |   targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';[39m[22m
+
+webpack 5.99.6 compiled with [1m[31m187 errors[39m[22m in 11626 ms

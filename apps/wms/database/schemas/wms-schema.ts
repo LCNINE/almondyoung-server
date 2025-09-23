@@ -102,6 +102,9 @@ export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'receiv
 export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
+// 이중 입고 계획을 위한 새 enum
+export const planTypeEnum = pgEnum('plan_type', ['source', 'destination']);
+
 // Inbound domain enums
 export const inboundMethodEnum = pgEnum('inbound_method', [
     'individual',           // 개별입고
@@ -1056,18 +1059,21 @@ export const inboundReceipts = pgTable('inbound_receipts', {
 
 export const inboundPlans = pgTable('inbound_plans', {
     id: uuid('id').primaryKey().defaultRandom(),
-    expectedDate: timestamp('expected_date', { mode: 'date' }).notNull(),
+    expectedDate: timestamp('expected_date', { mode: 'date' }),
 
     // 기존 warehouseId는 입고될 창고 (source)
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
 
-    // 최종 목적지 창고 추가
+    // 이중 입고 계획을 위한 새 필드들
+    planType: planTypeEnum('plan_type').notNull().default('destination'), // 'source' | 'destination'
+    parentPlanId: uuid('parent_plan_id').references(() => inboundPlans.id), // destination → source 참조
+    linkedPurchaseOrderId: uuid('linked_purchase_order_id').references(() => purchaseOrders.id).notNull(), // 원본 발주 추적
+
+    // 기존 필드들 (하위 호환성 유지)
     destinationWarehouseId: uuid('destination_warehouse_id')
         .references(() => warehouses.id, { onDelete: 'restrict' })
         .notNull(), // 최종 목적지 창고 (stockSummary 집계 기준)
-
-    // 창고간 이동 필요 여부 (warehouseId ≠ destinationWarehouseId)
-    requiresTransfer: boolean('requires_transfer').notNull().default(false),
+    requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
     status: inboundStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -1075,6 +1081,10 @@ export const inboundPlans = pgTable('inbound_plans', {
 }, t => ({
     idxInboundPlansWhDate: index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
     idxInboundPlansDestination: index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
+    // 이중 입고 계획을 위한 새 인덱스들
+    idxInboundPlansWarehouseTypeStatus: index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
+    idxInboundPlansParent: index('idx_inbound_plans_parent').on(t.parentPlanId),
+    idxInboundPlansPurchaseOrder: index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
 }));
 
 export const inboundPlanItems = pgTable('inbound_plan_items', {
@@ -1407,6 +1417,8 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
         fields: [purchaseOrders.supplierId],
         references: [suppliers.id],
     }),
+    // 이중 입고 계획 관계 추가
+    inboundPlans: many(inboundPlans),
 }));
 
 export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
@@ -1424,6 +1436,28 @@ export const purchaseOrderCartRelations = relations(purchaseOrderCart, ({ one })
     sku: one(skus, {
         fields: [purchaseOrderCart.skuId],
         references: [skus.id],
+    }),
+}));
+
+// 이중 입고 계획 관계 정의
+export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => ({
+    linkedPurchaseOrder: one(purchaseOrders, {
+        fields: [inboundPlans.linkedPurchaseOrderId],
+        references: [purchaseOrders.id],
+    }),
+    parentPlan: one(inboundPlans, {
+        fields: [inboundPlans.parentPlanId],
+        references: [inboundPlans.id],
+    }),
+    childPlans: many(inboundPlans),
+    items: many(inboundPlanItems),
+    warehouse: one(warehouses, {
+        fields: [inboundPlans.warehouseId],
+        references: [warehouses.id],
+    }),
+    destinationWarehouse: one(warehouses, {
+        fields: [inboundPlans.destinationWarehouseId],
+        references: [warehouses.id],
     }),
 }));
 

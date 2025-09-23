@@ -184,4 +184,47 @@ export class ListPlanItemsQueryDto {
   skuId?: string;
 }
 
+// 이중 입고 계획을 위한 새 응답 DTO
+export interface InboundPendingResponse {
+  planId: string;
+  planType: 'source' | 'destination';
+  warehouseId: string;
+  expectedDate: Date | null;
+
+  // 연관 정보
+  isLinkedPlan: boolean;           // destination plan 여부
+  sourcePlanStatus?: string;       // 중국 plan 상태 (destination plan인 경우)
+
+  // 발주 정보
+  purchaseOrder: {
+    id: string;
+    type: 'domestic' | 'foreign';
+    supplier?: {
+      name: string;
+      contactInfo: string;
+    };
+  };
+
+  // 아이템 목록
+  items: Array<{
+    skuId: string;
+    skuName: string;
+    skuCode: string;
+    expectedQty: number;
+    receivedQty: number;
+    pendingQty: number;
+  }>;
+
+  // 집계 정보
+  totalQuantity: number;
+  totalPendingQuantity: number;
+}
+
+export interface InboundPendingListResponse {
+  warehouseId?: string;
+  totalPendingPlans: number;
+  totalPendingQuantity: number;
+  pendingPlans: InboundPendingResponse[];
+}
+
 

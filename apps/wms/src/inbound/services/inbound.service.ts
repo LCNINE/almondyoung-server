@@ -8,7 +8,7 @@ import { InventoryCommandService } from '../../inventory/services/inventory-comm
 import { LocationService } from '../../inventory/services/location.service';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
-import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto } from '../dto/simple-inbound.dto';
+import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto, InboundPendingListResponse } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
@@ -261,73 +261,65 @@ export class InboundService {
     }
     // 레거시 제거: processInbound/createStockEntry 삭제
 
-    // 입고 예정 목록 조회
-    async getInboundPending(warehouseId?: string, tx?: DbTx) {
-        // 구매 주문 중 아직 입고되지 않은 항목 조회
-        const pendingPOs = await this.db.query.purchaseOrders.findMany({
-            where: eq(wmsTables.purchaseOrders.status, 'confirmed'),
-        });
+    // 입고 예정 목록 조회 (이중 입고 계획 지원)
+    async getInboundPending(warehouseId?: string, tx?: DbTx): Promise<InboundPendingListResponse> {
+        return this.inTx(async (tx) => {
+            // 🔥 개선: planType 필터링 없이 warehouse 기준으로만 조회
+            const plans = await tx.query.inboundPlans.findMany({
+                where: and(
+                    eq(wmsTables.inboundPlans.status, 'pending'),
+                    warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined
+                ),
+                with: {
+                    items: {
+                        where: eq(wmsTables.inboundPlanItems.status, 'pending'),
+                        with: {
+                            sku: true
+                        }
+                    },
+                    linkedPurchaseOrder: {
+                        with: {
+                            supplier: true
+                        }
+                    },
+                    parentPlan: true // source plan 정보 포함
+                }
+            });
 
-        // 창고별 필터링
-        const filtered = warehouseId
-            ? pendingPOs.filter(po => {
-                // 해외 거래처면 해외 창고, 국내는 국내 창고
-                const expectedWarehouse = po.type === 'foreign'
-                    ? this.inventoryService.getDefaultWarehouseIdByType('overseas')
-                    : this.inventoryService.getDefaultWarehouseIdByType('domestic');
-                return expectedWarehouse === warehouseId;
-            })
-            : pendingPOs;
-
-        const poIds = filtered.map(po => po.id);
-        const supplierIds = filtered.map(po => po.supplierId).filter(id => id);
-
-        const purchaseOrderLines = await this.db.query.purchaseOrderLines.findMany({
-            where: sql`${wmsTables.purchaseOrderLines.poId} = ANY(${poIds})`,
-        });
-
-        const skuIds = purchaseOrderLines.map(line => line.skuId);
-        const skus = await this.db.query.skus.findMany({
-            where: sql`${wmsTables.skus.id} = ANY(${skuIds})`,
-        });
-
-        const suppliers = await this.db.query.suppliers.findMany({
-            where: sql`${wmsTables.suppliers.id} = ANY(${supplierIds})`,
-        });
-
-        const skuMap = new Map(skus.map(sku => [sku.id, sku]));
-        const supplierMap = new Map(suppliers.map(supplier => [supplier.id, supplier]));
-
-        const inboundPending = filtered.map(po => {
-            const poLines = purchaseOrderLines.filter(line => line.poId === po.id);
-            const supplier = po.supplierId ? supplierMap.get(po.supplierId) : null;
+            const inboundPending = plans.map(plan => ({
+                planId: plan.id,
+                planType: plan.planType,
+                warehouseId: plan.warehouseId,
+                expectedDate: plan.expectedDate,
+                isLinkedPlan: !!plan.parentPlanId, // destination plan 여부
+                sourcePlanStatus: plan.parentPlan?.status, // 중국 plan 상태
+                purchaseOrder: {
+                    id: plan.linkedPurchaseOrder.id,
+                    type: plan.linkedPurchaseOrder.type,
+                    supplier: plan.linkedPurchaseOrder.supplier ? {
+                        name: plan.linkedPurchaseOrder.supplier.name,
+                        contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo
+                    } : undefined
+                },
+                items: plan.items.map(item => ({
+                    skuId: item.skuId,
+                    skuName: item.sku.name,
+                    skuCode: item.sku.code,
+                    expectedQty: item.expectedQty,
+                    receivedQty: item.receivedQty,
+                    pendingQty: item.expectedQty - item.receivedQty
+                })),
+                totalQuantity: plan.items.reduce((sum, item) => sum + item.expectedQty, 0),
+                totalPendingQuantity: plan.items.reduce((sum, item) => sum + (item.expectedQty - item.receivedQty), 0)
+            }));
 
             return {
-                purchaseOrderId: po.id,
-                supplierName: supplier?.name || 'Unknown',
-                type: po.type,
-                expectedArrival: po.expectedArrival,
-                items: poLines.map(line => {
-                    const sku = skuMap.get(line.skuId);
-                    return {
-                        skuId: line.skuId,
-                        skuName: sku?.name || 'Unknown',
-                        skuCode: sku?.code || 'Unknown',
-                        quantity: line.quantity,
-                        unitPrice: line.unitPrice,
-                    };
-                }),
-                totalQuantity: poLines.reduce((sum, line) => sum + line.quantity, 0),
-                totalValue: poLines.reduce((sum, line) => sum + (line.quantity * (line.unitPrice || 0)), 0),
+                warehouseId,
+                totalPendingPlans: inboundPending.length,
+                totalPendingQuantity: inboundPending.reduce((sum, plan) => sum + plan.totalPendingQuantity, 0),
+                pendingPlans: inboundPending,
             };
-        });
-
-        return {
-            warehouseId,
-            totalPendingOrders: inboundPending.length,
-            totalPendingQuantity: inboundPending.reduce((sum, po) => sum + po.totalQuantity, 0),
-            pendingOrders: inboundPending,
-        };
+        }, tx);
     }
 
     // 입고내역(현황) 조회 - (sku, quantity, occurredAt, method)

@@ -20,7 +20,6 @@
 - **[wms-orders-design.md](./wms-orders-design.md)** - 주문 도메인(SO/FO) 설계 문서
 - **[order-services-guide.md](./order-services-guide.md)** - Order 모듈 핵심 서비스들 상세 가이드
 - **[so-fo-relationship-diagram.md](./so-fo-relationship-diagram.md)** - SO-FO 관계 다이어그램
-- **[so-fo-ai-response.md](./so-fo-ai-response.md)** - SO-FO 설계 논의 기록
 
 #### 출고 시스템 (Outbound)
 - **[wms-outbound-requirements.md](./wms-outbound-requirements.md)** - 출고 시스템 요구사항

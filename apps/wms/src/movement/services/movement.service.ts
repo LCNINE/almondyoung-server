@@ -4,7 +4,7 @@ import { DbService, TypedDatabase } from '@app/db';
 import { wmsTables } from '../../../database/schemas/wms-schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
 
@@ -159,6 +159,59 @@ export class MovementService {
         gte(w.timestamp, since),
       ),
       orderBy: (w, { desc }) => [desc(w.timestamp)],
+    });
+  }
+
+  /**
+   * 창고간 이동 완료 시 destination plan 활성화
+   * 중국 창고에서 부천 창고로 이동 완료되면 부천 입고예정 활성화
+   */
+  async completeInterWarehouseMovement(movementJobId: string): Promise<void> {
+    return this.db.transaction(async (tx) => {
+      const job = await tx.query.movementJobs.findFirst({
+        where: eq(wmsTables.movementJobs.id, movementJobId),
+        with: { lines: true }
+      });
+
+      if (!job) {
+        throw new BadRequestException(`Movement job ${movementJobId} not found`);
+      }
+
+      // 기존 이동 완료 로직은 이미 moveImmediately에서 처리됨
+
+      // 🔥 추가: destination plan 활성화
+      const affectedSkus = job.lines.map(line => line.skuId);
+
+      if (affectedSkus.length === 0) return;
+
+      // 해당 SKU의 destination plan들 찾기
+      const destinationPlans = await tx.query.inboundPlans.findMany({
+        where: and(
+          eq(wmsTables.inboundPlans.planType, 'destination'),
+          eq(wmsTables.inboundPlans.warehouseId, job.warehouseId), // 목적지 창고
+          eq(wmsTables.inboundPlans.status, 'pending')
+        ),
+        with: {
+          items: {
+            where: (item, { inArray }) => inArray(item.skuId, affectedSkus)
+          }
+        }
+      });
+
+      // destination plan의 예상 입고일 설정
+      for (const plan of destinationPlans) {
+        if (plan.items.length > 0) { // 해당 SKU가 포함된 plan만
+          await tx
+            .update(wmsTables.inboundPlans)
+            .set({
+              expectedDate: new Date(), // 즉시 입고 가능
+              updatedAt: new Date()
+            })
+            .where(eq(wmsTables.inboundPlans.id, plan.id));
+        }
+      }
+
+      console.log(`Activated ${destinationPlans.length} destination plans after movement completion`);
     });
   }
 }
