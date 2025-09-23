@@ -56,7 +56,6 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "form-data": "^4.0.4",
-    "hms-api-wrapper": "file:../hms-api-wrapper/hms-api-wrapper-1.0.0.tgz",
     "kafkajs": "^2.2.4",
     "nestjs-zod": "^5.0.1",
     "node-fetch": "^2.7.0",
