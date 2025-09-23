@@ -555,12 +555,12 @@ export const stockSummary = pgView('stock_summary_view', {
 
         -- 예약 상태
         COALESCE(reserved.qty, 0) as reserved_qty,
-        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) as available_qty,
+        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) - COALESCE(transit_out.qty, 0) as available_qty,
 
         -- 예정 상태
         COALESCE(inbound_pending.qty, 0) as inbound_pending_qty,
         0 as on_order_qty,
-        0 as transfer_pending_qty,
+        COALESCE(transit_out.qty, 0) as transfer_pending_qty,
 
         -- 계산된 전망
         COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) + COALESCE(inbound_pending.qty, 0) as projected_available_qty,
@@ -594,12 +594,19 @@ export const stockSummary = pgView('stock_summary_view', {
         GROUP BY sku_id, warehouse_id
     ) reserved ON s.id = reserved.sku_id AND w.id = reserved.warehouse_id
     LEFT JOIN (
-        SELECT ipi.sku_id, ip.warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
+        SELECT ipi.sku_id, ip.destination_warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
         FROM inbound_plan_items ipi
         INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
         WHERE ipi.status = 'pending'
+        GROUP BY ipi.sku_id, ip.destination_warehouse_id
+    ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.destination_warehouse_id
+    LEFT JOIN (
+        SELECT ipi.sku_id, ip.warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
+        FROM inbound_plan_items ipi
+        INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
+        WHERE ipi.status = 'pending' AND ip.requires_transfer = true AND ip.warehouse_id != ip.destination_warehouse_id
         GROUP BY ipi.sku_id, ip.warehouse_id
-    ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.warehouse_id
+    ) transit_out ON s.id = transit_out.sku_id AND w.id = transit_out.warehouse_id
 `);
 
 /*───────────────────────────
@@ -1050,12 +1057,24 @@ export const inboundReceipts = pgTable('inbound_receipts', {
 export const inboundPlans = pgTable('inbound_plans', {
     id: uuid('id').primaryKey().defaultRandom(),
     expectedDate: timestamp('expected_date', { mode: 'date' }).notNull(),
+
+    // 기존 warehouseId는 입고될 창고 (source)
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+
+    // 최종 목적지 창고 추가
+    destinationWarehouseId: uuid('destination_warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(), // 최종 목적지 창고 (stockSummary 집계 기준)
+
+    // 창고간 이동 필요 여부 (warehouseId ≠ destinationWarehouseId)
+    requiresTransfer: boolean('requires_transfer').notNull().default(false),
+
     status: inboundStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 }, t => ({
     idxInboundPlansWhDate: index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
+    idxInboundPlansDestination: index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
 }));
 
 export const inboundPlanItems = pgTable('inbound_plan_items', {

@@ -35,6 +35,11 @@ export class PurchaseOrderService {
      */
     async createPurchaseOrder(createDto: CreatePurchaseOrderDto): Promise<PurchaseOrderResponse> {
         return this.transactionService.runInTransaction(async (tx) => {
+            // 임시: 창고 라우팅 로직 (나중에 DTO로 받도록 개선)
+            const sourceWarehouseId = await this.getSourceWarehouseId(createDto.type);
+            const destinationWarehouseId = await this.getDestinationWarehouseId(createDto.type);
+            const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
+
             // 발주 헤더 생성
             const [purchaseOrder] = await tx
                 .insert(wmsTables.purchaseOrders)
@@ -43,6 +48,9 @@ export class PurchaseOrderService {
                     supplierId: createDto.supplierId,
                     expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
                     status: 'created',
+                    sourceWarehouseId: sourceWarehouseId,
+                    destinationWarehouseId: destinationWarehouseId,
+                    requiresTransfer: requiresTransfer,
                 })
                 .returning();
 
@@ -177,17 +185,20 @@ export class PurchaseOrderService {
             throw new NotFoundException(`Purchase order ${poId} not found`);
         }
 
-        // 기본 창고 설정 (향후 요구사항에 따라 동적 처리)
-        const targetWarehouseId = await this.getDefaultWarehouseId(purchaseOrder.type);
+        // 발주에서 창고 정보 가져오기
+        const sourceWarehouseId = purchaseOrder.sourceWarehouseId;
+        const destinationWarehouseId = purchaseOrder.destinationWarehouseId;
+        const requiresTransfer = purchaseOrder.requiresTransfer;
 
-        // 입고 계획 생성
+        // 입고 계획 생성 - 목적지 정보 포함
         const [inboundPlan] = await tx
             .insert(wmsTables.inboundPlans)
             .values({
-                poId: poId,
-                warehouseId: targetWarehouseId,
+                warehouseId: sourceWarehouseId,                    // 입고될 창고
+                destinationWarehouseId: destinationWarehouseId,    // 최종 목적지
+                requiresTransfer: requiresTransfer,                // 이동 필요 여부
                 expectedDate: purchaseOrder.expectedArrival,
-                status: 'planned',
+                status: 'pending',
             })
             .returning();
 
@@ -208,15 +219,45 @@ export class PurchaseOrderService {
     }
 
     /**
-     * 발주 유형에 따른 기본 창고 ID 반환
+     * 발주 유형에 따른 입고 창고 ID 반환 (source)
      */
-    private async getDefaultWarehouseId(type: PurchaseOrderType): Promise<string> {
-        // 임시로 첫 번째 창고 반환 (향후 설정에서 관리)
-        const warehouse = await this.db.query.warehouses.findFirst();
-        if (!warehouse) {
+    private async getSourceWarehouseId(type: PurchaseOrderType): Promise<string> {
+        const warehouses = await this.db.query.warehouses.findMany();
+        if (warehouses.length === 0) {
             throw new BadRequestException('No warehouse found');
         }
-        return warehouse.id;
+
+        // 임시 라우팅 로직 (향후 설정 테이블로 관리)
+        if (type === 'domestic') {
+            // 국내 → 부천 창고 직송
+            const domestic = warehouses.find(w => w.type === 'domestic');
+            return domestic?.id || warehouses[0].id;
+        } else {
+            // 해외 → 중국 창고 경유
+            const overseas = warehouses.find(w => w.type === 'overseas');
+            return overseas?.id || warehouses[0].id;
+        }
+    }
+
+    /**
+     * 발주 유형에 따른 최종 목적지 창고 ID 반환 (destination)
+     */
+    private async getDestinationWarehouseId(type: PurchaseOrderType): Promise<string> {
+        const warehouses = await this.db.query.warehouses.findMany();
+        if (warehouses.length === 0) {
+            throw new BadRequestException('No warehouse found');
+        }
+
+        // 현재는 모든 물건이 부천 창고가 최종 목적지
+        const domestic = warehouses.find(w => w.type === 'domestic');
+        return domestic?.id || warehouses[0].id;
+    }
+
+    /**
+     * 기존 호환성을 위한 메서드 (deprecated)
+     */
+    private async getDefaultWarehouseId(type: PurchaseOrderType): Promise<string> {
+        return this.getSourceWarehouseId(type);
     }
 
     /**
