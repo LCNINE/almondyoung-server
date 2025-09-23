@@ -14,10 +14,11 @@ async function bootstrap() {
     new FastifyAdapter(),
   );
 
-  app.useGlobalPipes(new ValidationPipe());
+  // ZodValidationPipe와 충돌하므로 글로벌 ValidationPipe 비활성화
+  // app.useGlobalPipes(new ValidationPipe());
 
   await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: false, // 🔧 false로 변경해서 전통적인 방식 사용
+    attachFieldsToBody: true, // 🔧 false로 변경해서 전통적인 방식 사용
     limits: {
       fileSize: 1024 * 1024 * 10,
       files: 1,
@@ -53,6 +54,9 @@ async function bootstrap() {
 
   const doc = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('/docs', app, doc);
-  await app.listen(3003);
+
+  const port = process.env.PORT || 5000;
+  await app.listen(port);
+  console.log(`🚀 Wallet server is running on port ${port}`);
 }
 bootstrap();

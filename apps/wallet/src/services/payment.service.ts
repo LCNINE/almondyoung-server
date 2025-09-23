@@ -3,18 +3,16 @@ import {
   PaymentResult,
   RefundResult,
   CancelResult,
+  RefundRequest,
+  CancelRequest,
   PaymentType,
   ProviderType,
-  // ✨ [변경] RefundRequest, CancelRequest 등 거대 인터페이스는 더 이상 사용하지 않습니다.
+  PaymentError,
 } from '../providers/payment-provider.interface';
 import { PaymentPolicy } from '../providers/payment-policy';
 import { PaymentOrchestratorService } from './payment/payment-orchestrator.service';
 import { ProviderRegistry } from '../providers/provider-registry';
-import {
-  HmsCancelPayload,
-  HmsRefundPayload,
-} from '../providers/hms-card.refund';
-import { TossRefundPayload } from '../providers/toss.refund';
+// ✨ [CTO 스타일] Provider별 DTO는 더 이상 PaymentService에서 알 필요 없음
 
 /**
  * [리팩토링 완료] PaymentService - 최상위 통합 레이어 (Public Facade)
@@ -34,7 +32,55 @@ export class PaymentService {
   ) {}
 
   /**
-   * 결제 처리 - Intent 기반 (주력 결제 방식)
+   * 결제 승인 - Intent 기반 (새로운 방식)
+   */
+  async authorizePaymentByIntent(
+    intentId: string,
+    providerType: ProviderType,
+    options: {
+      profileId?: string;
+      instrumentRef?: string;
+      actor?: string;
+      source?: string;
+    } = {},
+  ): Promise<PaymentResult> {
+    this.logger.log(
+      `Authorizing payment for intent: ${intentId} with provider: ${providerType}`,
+    );
+
+    return this.paymentOrchestrator.authorizePayment(
+      intentId,
+      providerType,
+      options,
+    );
+  }
+
+  /**
+   * 결제 캡처 - Intent 기반 (새로운 방식)
+   */
+  async capturePaymentByIntent(
+    intentId: string,
+    attemptId: string,
+    amount?: number,
+    options: {
+      actor?: string;
+      source?: string;
+    } = {},
+  ): Promise<PaymentResult> {
+    this.logger.log(
+      `Capturing payment for intent: ${intentId}, attempt: ${attemptId}`,
+    );
+
+    return this.paymentOrchestrator.capturePayment(
+      intentId,
+      attemptId,
+      amount,
+      options,
+    );
+  }
+
+  /**
+   * 결제 처리 - Intent 기반 (레거시 호환용 - auth + capture 통합)
    */
   async processPaymentByIntent(
     intentId: string,
@@ -47,11 +93,32 @@ export class PaymentService {
     } = {},
   ): Promise<PaymentResult> {
     this.logger.log(
-      `Processing payment for intent: ${intentId} with provider: ${providerType}`,
+      `Processing payment (legacy) for intent: ${intentId} with provider: ${providerType}`,
     );
 
-    // ✨ [수정] 전달받은 providerType 값을 Orchestrator에게 그대로 넘겨줍니다.
-    return this.paymentOrchestrator.executePayment(
+    // 🚫 [레거시 호환 - 더 이상 사용하지 않음] authorize + capture를 순차 실행
+    // const authResult = await this.paymentOrchestrator.authorizePayment(
+    //   intentId,
+    //   providerType,
+    //   options,
+    // );
+
+    // if (!authResult.success) {
+    //   return authResult;
+    // }
+
+    // // 즉시 캡처
+    // const captureResult = await this.paymentOrchestrator.capturePayment(
+    //   intentId,
+    //   authResult.attemptId!,
+    //   undefined, // 전액 캡처
+    //   options,
+    // );
+
+    // return captureResult;
+
+    // ✅ [신규] 모든 결제는 AUTHORIZED 상태로만 처리 (정산은 별도 프로세스)
+    return await this.paymentOrchestrator.authorizePayment(
       intentId,
       providerType,
       options,
@@ -60,103 +127,46 @@ export class PaymentService {
 
   /**
    * 환불 처리
-   * ✨ [변경] 범용 RefundRequest 대신, 환불에 필요한 최소한의 정보를 받습니다.
+   * ✨ [CTO 스타일] 공통 파라미터만 받고, Provider별 DTO 조립은 각 Provider에서 담당
    */
   async refundPayment(
     providerType: ProviderType,
-    payload: {
-      transactionId?: string; // HMS 등에서 사용하는 원거래 ID
-      paymentKey?: string; // Toss 등에서 사용하는 원거래 키
-      reason: string;
-      amount?: number; // 부분 환불 금액
-    },
+    request: RefundRequest,
   ): Promise<RefundResult> {
     this.logger.log(`Processing refund for provider: ${providerType}`);
 
     const handle = this.providerRegistry.get(providerType);
     if (!handle.refund) {
-      throw new Error(`${providerType} does not support refund functionality.`);
+      throw new PaymentError(
+        'REFUND_NOT_SUPPORTED',
+        `${providerType} does not support refund functionality.`,
+      );
     }
 
-    // ✨ [변경] Provider 타입에 맞는 전용 Payload를 여기서 직접 만들어 전달합니다.
-    let providerPayload: HmsRefundPayload | TossRefundPayload;
-
-    if (
-      providerType === ProviderType.HMS_CARD ||
-      providerType === ProviderType.HMS_BNPL
-    ) {
-      if (!payload.transactionId || !payload.amount) {
-        throw new Error('HMS refund requires transactionId and amount.');
-      }
-      providerPayload = {
-        transactionId: payload.transactionId,
-        amount: payload.amount,
-        reason: payload.reason,
-      };
-    } else if (providerType === ProviderType.TOSS) {
-      if (!payload.paymentKey) {
-        throw new Error('Toss refund requires a paymentKey.');
-      }
-      providerPayload = {
-        paymentKey: payload.paymentKey,
-        reason: payload.reason,
-        cancelAmount: payload.amount,
-      };
-    } else {
-      throw new Error(`Refund logic not implemented for ${providerType}`);
-    }
-
-    // ✨ [수정] Port 객체 내부의 실제 메서드를 호출합니다.
-    return handle.refund.refund(providerPayload);
+    // Provider별 클래스에서 DTO 조립 및 API 호출 담당
+    return handle.refund.refund(request);
   }
 
   /**
    * 결제 취소
-   * ✨ [변경] 범용 CancelRequest 대신, 취소에 필요한 최소한의 정보를 받습니다.
+   * ✨ [CTO 스타일] 공통 파라미터만 받고, Provider별 DTO 조립은 각 Provider에서 담당
    */
   async cancelPayment(
     providerType: ProviderType,
-    payload: {
-      transactionId?: string; // HMS 등에서 사용하는 원거래 ID
-      paymentKey?: string; // Toss 등에서 사용하는 원거래 키
-      reason: string;
-    },
+    request: CancelRequest,
   ): Promise<CancelResult> {
     this.logger.log(`Processing cancellation for provider: ${providerType}`);
 
     const handle = this.providerRegistry.get(providerType);
     if (!handle.cancel) {
-      throw new Error(`${providerType} does not support cancel functionality.`);
+      throw new PaymentError(
+        'CANCEL_NOT_SUPPORTED',
+        `${providerType} does not support cancel functionality.`,
+      );
     }
 
-    // ✨ [변경] Provider 타입에 맞는 전용 Payload를 만들어 전달합니다.
-    let providerPayload:
-      | HmsCancelPayload
-      | { paymentKey: string; reason: string };
-
-    if (
-      providerType === ProviderType.HMS_CARD ||
-      providerType === ProviderType.HMS_BNPL
-    ) {
-      if (!payload.transactionId)
-        throw new Error('HMS cancel requires transactionId.');
-      providerPayload = {
-        transactionId: payload.transactionId,
-        reason: payload.reason,
-      };
-    } else if (providerType === ProviderType.TOSS) {
-      if (!payload.paymentKey)
-        throw new Error('Toss cancel requires a paymentKey.');
-      providerPayload = {
-        paymentKey: payload.paymentKey,
-        reason: payload.reason,
-      };
-    } else {
-      throw new Error(`Cancel logic not implemented for ${providerType}`);
-    }
-
-    // ✨ [수정] Port 객체 내부의 실제 메서드를 호출합니다.
-    return handle.cancel.cancel(providerPayload);
+    // Provider별 클래스에서 DTO 조립 및 API 호출 담당
+    return handle.cancel.cancel(request);
   }
 
   /**

@@ -17,6 +17,7 @@ import {
 import { PaymentService } from '../services/payment.service';
 import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
+import { BnplAccountService } from '../services/bnpl-account.service';
 
 import { z } from 'zod';
 
@@ -40,6 +41,8 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
+import { UploadedFile } from '../shared/types/fastify-file';
+
 import { CheckoutSessionService } from '../services/checkout-session.service';
 // Zod 스키마 정의
 export const CreateIntentSchema = z.object({
@@ -116,11 +119,17 @@ export const OnboardHmsBnplProfileSchema = z.object({
   name: z.string().optional().nullable(), // 우리 시스템에서 사용할 프로필 별칭
 });
 
+export const CreateBnplAccountSchema = z.object({
+  userId: z.string().trim().min(1, '사용자 ID는 필수입니다.'),
+  creditLimit: z.number().int().positive('신용 한도는 양수여야 합니다.'),
+});
+
 // --- DTO 타입 추론 ---
 // ... (기존 타입)
 export type OnboardHmsBnplProfileDto = z.infer<
   typeof OnboardHmsBnplProfileSchema
 >;
+export type CreateBnplAccountDto = z.infer<typeof CreateBnplAccountSchema>;
 
 // DTO 타입 추론
 export type CreateIntentDto = z.infer<typeof CreateIntentSchema>;
@@ -136,9 +145,21 @@ export const CreateCheckoutSessionSchema = z.object({
   cancelUrl: z.string().url('올바른 URL 형식이 아닙니다.'),
 });
 
+export const AuthorizePaymentSchema = z.object({
+  provider: z.string().min(1, 'provider는 필수입니다.'),
+  paymentKey: z.string().min(1, 'paymentKey는 필수입니다.'),
+});
+
+export const CapturePaymentSchema = z.object({
+  attemptId: z.string().min(1, 'attemptId는 필수입니다.'),
+  amount: z.number().int().positive().optional(),
+});
+
 export type CreateCheckoutSessionDto = z.infer<
   typeof CreateCheckoutSessionSchema
 >;
+export type AuthorizePaymentDto = z.infer<typeof AuthorizePaymentSchema>;
+export type CapturePaymentDto = z.infer<typeof CapturePaymentSchema>;
 
 @Controller('v2/payments') // API 버전 명시
 export class PaymentController {
@@ -147,15 +168,15 @@ export class PaymentController {
     private readonly paymentService: PaymentService,
     private readonly intentService: PaymentIntentService,
     private readonly profileService: PaymentProfileService,
+    private readonly bnplAccountService: BnplAccountService,
     private readonly db: DbService<typeof schema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly checkoutSessionService: CheckoutSessionService,
   ) {}
 
   @Post('intents')
-  @UsePipes(new ZodValidationPipe(CreateIntentSchema))
   async createPaymentIntent(
-    @Body() dto: CreateIntentDto,
+    @Body(new ZodValidationPipe(CreateIntentSchema)) dto: CreateIntentDto,
     @Headers('Idempotency-Key') idemKey?: string,
   ) {
     return runInTransaction(this.db, async (tx) => {
@@ -203,35 +224,33 @@ export class PaymentController {
     }
   }
 
-  @Post('intents/:intentId/execute')
+  @Post('intents/:intentId/authorize')
   @ApiOperation({
-    summary: '결제 실행',
-    description: '클라이언트에서 받은 결제 정보로 실제 결제를 실행합니다.',
+    summary: '결제 승인',
+    description:
+      '클라이언트에서 받은 결제 정보로 결제를 승인합니다 (캡처는 별도 처리).',
   })
   @ApiResponse({
     status: 200,
-    description: '결제 실행 성공',
+    description: '결제 승인 성공',
   })
-  // @UsePipes(new ZodValidationPipe(ExecutePaymentSchema)) // 임시 비활성화
-  async executePayment(
+  async authorizePayment(
     @Param('intentId') intentId: string,
-    @Body() dto: any, // ExecutePaymentDto -> any로 임시 변경
+    @Body(new ZodValidationPipe(AuthorizePaymentSchema))
+    dto: AuthorizePaymentDto,
     @Req() request: any,
     @Headers('Idempotency-Key') idemKey?: string,
   ) {
     try {
+      this.logger.log(`🔍 AUTHORIZE 시작 - intentId: ${intentId}`);
       this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
       this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
       this.logger.log(
-        `결제 실행 요청: Intent ${intentId}, Provider ${dto.provider}`,
+        `결제 승인 요청: Intent ${intentId}, Provider ${dto.provider}`,
       );
 
       // Toss 결제 승인 처리
       if (dto.provider === 'TOSS') {
-        // 실제 Toss 결제 승인 로직은 PaymentOrchestratorService를 통해 처리
-        // 여기서는 클라이언트에서 받은 paymentKey로 Toss API 승인 요청
-        // TODO: PaymentOrchestratorService.executePayment() 호출
-
         const intent = await this.intentService.findIntentById(intentId);
         if (!intent) {
           throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
@@ -239,41 +258,40 @@ export class PaymentController {
 
         this.logger.log(`Toss 결제 승인 처리: paymentKey=${dto.paymentKey}`);
 
-        // CTO 설계: /execute에서 실제 결제 처리까지 완료
-        this.logger.log(
-          `🎯 실제 결제 처리 시작: PaymentOrchestratorService 호출`,
-        );
-
         // TOSS Provider에게 oneTimeToken으로 paymentKey 전달
-        const result = await this.paymentService.processPaymentByIntent(
+        const result = await this.paymentService.authorizePaymentByIntent(
           intentId,
           'TOSS' as any, // ProviderType
           {
             // paymentKey를 oneTimeToken으로 전달하기 위해 instrumentRef에 저장
             instrumentRef: dto.paymentKey, // 이것이 TossPayload.oneTimeToken이 됨
-            source: 'toss_execute_api',
+            source: 'toss_authorize_api',
             actor: 'frontend_user',
           },
         );
 
-        this.logger.log(`🎯 결제 처리 결과:`, JSON.stringify(result));
+        this.logger.log(`🎯 결제 승인 결과:`, JSON.stringify(result));
 
         if (result.success) {
           const response = {
             success: true,
             intentId: intentId,
-            status: 'CAPTURED', // SUCCEEDED -> CAPTURED로 변경
+            attemptId: result.attemptId,
+            status: 'AUTHORIZED',
             provider: 'TOSS',
             amount: intent.amount,
             paymentKey: dto.paymentKey,
-            message: 'Toss 결제가 성공적으로 완료되었습니다.',
+            message: 'Toss 결제 승인이 성공적으로 완료되었습니다.',
           };
 
-          this.logger.log(`🎉 Toss 결제 완료 응답:`, JSON.stringify(response));
+          this.logger.log(
+            `🎉 Toss 결제 승인 완료 응답:`,
+            JSON.stringify(response),
+          );
           return response;
         } else {
           throw new HttpException(
-            `결제 처리 실패: ${result.message}`,
+            `결제 승인 실패: ${result.message}`,
             HttpStatus.BAD_REQUEST,
           );
         }
@@ -284,50 +302,127 @@ export class PaymentController {
         HttpStatus.BAD_REQUEST,
       );
     } catch (error) {
+      this.handleError(error, '결제 승인');
+    }
+  }
+
+  @Post('intents/:intentId/capture')
+  @ApiOperation({
+    summary: '결제 캡처',
+    description: '승인된 결제를 실제로 정산 처리합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '결제 캡처 성공',
+  })
+  async capturePayment(
+    @Param('intentId') intentId: string,
+    @Body(new ZodValidationPipe(CapturePaymentSchema)) dto: CapturePaymentDto,
+    @Headers('Idempotency-Key') idemKey?: string,
+  ) {
+    try {
+      this.logger.log(
+        `결제 캡처 요청: Intent ${intentId}, Attempt ${dto.attemptId}`,
+      );
+
+      const result = await this.paymentService.capturePaymentByIntent(
+        intentId,
+        dto.attemptId,
+        dto.amount,
+        {
+          source: 'capture_api',
+          actor: 'system',
+        },
+      );
+
+      this.logger.log(`🎯 결제 캡처 결과:`, JSON.stringify(result));
+
+      if (result.success) {
+        const response = {
+          success: true,
+          intentId: intentId,
+          attemptId: dto.attemptId,
+          status: 'CAPTURED',
+          amount: dto.amount,
+          message: '결제 캡처가 성공적으로 완료되었습니다.',
+        };
+
+        this.logger.log(`🎉 결제 캡처 완료 응답:`, JSON.stringify(response));
+        return response;
+      } else {
+        throw new HttpException(
+          `결제 캡처 실패: ${result.message}`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } catch (error) {
+      this.handleError(error, '결제 캡처');
+    }
+  }
+
+  @Post('intents/:intentId/execute')
+  @ApiOperation({
+    summary: '결제 실행 (레거시)',
+    description:
+      '클라이언트에서 받은 결제 정보로 실제 결제를 실행합니다. (auth + capture 통합)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '결제 실행 성공',
+  })
+  async executePayment(
+    @Param('intentId') intentId: string,
+    @Body(new ZodValidationPipe(AuthorizePaymentSchema))
+    dto: AuthorizePaymentDto, // ExecutePaymentDto와 AuthorizePaymentDto가 동일한 구조
+    @Req() request: any,
+    @Headers('Idempotency-Key') idemKey?: string,
+  ) {
+    try {
+      this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
+      this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
+      this.logger.log(
+        `결제 실행 요청 (레거시): Intent ${intentId}, Provider ${dto.provider}`,
+      );
+
+      // 1단계: 승인
+      const authResult = await this.authorizePayment(
+        intentId,
+        dto,
+        request,
+        idemKey,
+      );
+
+      // 2단계: 즉시 캡처 (레거시 호환을 위해)
+      const captureDto = {
+        attemptId: (authResult as any).attemptId,
+        amount: (authResult as any).amount,
+      };
+      const captureResult = await this.capturePayment(
+        intentId,
+        captureDto,
+        idemKey,
+      );
+
+      // 레거시 응답 형식으로 반환
+      return {
+        success: true,
+        intentId: intentId,
+        status: 'CAPTURED',
+        provider: dto.provider,
+        amount: (authResult as any).amount,
+        paymentKey: dto.paymentKey,
+        message: '결제가 성공적으로 완료되었습니다.',
+      };
+    } catch (error) {
       this.handleError(error, '결제 실행');
     }
   }
 
-  @Post('intents/:intentId/process')
-  // @UsePipes(new ZodValidationPipe(ProcessIntentSchema)) // 임시로 비활성화
-  async processPayment(
-    @Param('intentId') intentId: string,
-    @Body() dto: any, // 임시로 any 타입 사용
-    @Headers('Idempotency-Key') idemKey?: string,
-  ) {
-    return runInTransaction(this.db, async (tx) => {
-      const intent = await tx.query.paymentIntents.findFirst({
-        where: eq(schema.paymentIntents.id, intentId),
-      });
-      if (!intent)
-        throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
-
-      const { hit, response } = await this.idempotencyService.checkOrCreate(
-        tx,
-        idemKey,
-        intent.customerId,
-        dto,
-        `v2/payments/intents/${intentId}/process`,
-      );
-      if (hit) return response;
-
-      const result = await this.paymentService.processPaymentByIntent(
-        intentId,
-        dto.providerType as ProviderType,
-        {
-          profileId: dto.profileId,
-          instrumentRef: dto.instrumentRef,
-        },
-      );
-
-      await this.idempotencyService.complete(tx, idemKey, result);
-      return result;
-    });
-  }
-
   @Post('profiles/hms-card')
-  @UsePipes(new ZodValidationPipe(CreateHmsCardProfileSchema))
-  async createHmsCardProfile(@Body() dto: CreateHmsCardProfileDto) {
+  async createHmsCardProfile(
+    @Body(new ZodValidationPipe(CreateHmsCardProfileSchema))
+    dto: CreateHmsCardProfileDto,
+  ) {
     try {
       // 추후 userid jwt토큰에서 추출하는것으로 바꿀것.
       // const { userId, ...profileData } = dto;
@@ -346,21 +441,6 @@ export class PaymentController {
   @ApiOperation({ summary: 'HMS BNPL 프로필 및 동의서 등록' })
   @ApiConsumes('multipart/form-data')
   // Swagger를 위한 Body 스키마 명시 (실제 DTO는 파싱해서 사용)
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        userId: { type: 'string' },
-        payerName: { type: 'string' },
-        phone: { type: 'string' },
-        paymentCompany: { type: 'string' },
-        paymentNumber: { type: 'string' },
-        payerNumber: { type: 'string' },
-        name: { type: 'string', nullable: true },
-        agreementFile: { type: 'string', format: 'binary' },
-      },
-    },
-  })
   async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
     try {
       // 1. Multipart 요청 파싱
@@ -399,6 +479,38 @@ export class PaymentController {
       return { success: true, ...result };
     } catch (error) {
       this.handleError(error, 'HMS BNPL 프로필 온보딩');
+    }
+  }
+
+  @Post('bnpl/accounts')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'BNPL 계정 생성' })
+  @ApiResponse({
+    status: 201,
+    description: 'BNPL 계정 생성 성공',
+  })
+  async createBnplAccount(
+    @Body(new ZodValidationPipe(CreateBnplAccountSchema))
+    dto: CreateBnplAccountDto,
+  ) {
+    try {
+      this.logger.log(`BNPL 계정 생성 요청: ${JSON.stringify(dto)}`);
+
+      const account = await this.bnplAccountService.createBnplAccount(
+        dto.userId,
+        dto.creditLimit,
+      );
+
+      return {
+        success: true,
+        accountId: account.id,
+        userId: account.userId,
+        creditLimit: account.creditLimit,
+        availableLimit: account.availableLimit,
+        status: account.status,
+      };
+    } catch (error) {
+      this.handleError(error, 'BNPL 계정 생성');
     }
   }
 
@@ -461,8 +573,10 @@ export class PaymentController {
     status: 201,
     description: '세션 생성 성공. paymentUrl로 리다이렉트 하세요.',
   })
-  @UsePipes(new ZodValidationPipe(CreateCheckoutSessionSchema))
-  async createSession(@Body() dto: CreateCheckoutSessionDto) {
+  async createSession(
+    @Body(new ZodValidationPipe(CreateCheckoutSessionSchema))
+    dto: CreateCheckoutSessionDto,
+  ) {
     try {
       this.logger.log(`체크아웃 세션 생성 요청: Intent ID ${dto.intentId}`);
 

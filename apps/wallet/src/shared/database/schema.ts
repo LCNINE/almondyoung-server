@@ -17,7 +17,8 @@ import {
   index,
   pgEnum,
   jsonb,
-  serial, // Supabase에서 사용하는 serial 추가
+  serial,
+  date, // Supabase에서 사용하는 serial 추가
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -100,11 +101,6 @@ export const paymentPurposeEnum = pgEnum('payment_purpose', [
 ]);
 
 // BNPLAccountStatus
-export const bnplAccountStatusEnum = pgEnum('bnpl_account_status', [
-  'ACTIVE',
-  'SUSPENDED',
-  'OVERDUE',
-]);
 
 // RefundStatus
 export const refundStatusEnum = pgEnum('refund_status', [
@@ -126,6 +122,128 @@ export const pointActionEnum = pgEnum('point_action', [
 // 레거시 호환성용 (기존 코드에서 사용)
 export const pointTransactionTypeEnum = pointActionEnum;
 
+export const TaxInvoiceStatus = {
+  PENDING: 'PENDING',
+  ISSUED: 'ISSUED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export const TaxInvoiceKind = {
+  NORMAL: 'NORMAL',
+  MODIFICATION: 'MODIFICATION',
+} as const;
+
+export const ModificationType = {
+  INCREASE: 'INCREASE',
+  DECREASE: 'DECREASE',
+  CANCEL: 'CANCEL',
+} as const;
+
+export const AggregationType = {
+  SINGLE: 'SINGLE',
+  DAILY: 'DAILY',
+  WEEKLY: 'WEEKLY',
+  MONTHLY: 'MONTHLY',
+} as const;
+
+export const TaxInvoiceEventType = {
+  CREATED: 'CREATED',
+  VALIDATED: 'VALIDATED',
+  EXPORTED: 'EXPORTED',
+  ISSUED: 'ISSUED',
+  CANCELLED: 'CANCELLED',
+  REFUNDED: 'REFUNDED',
+  ERROR: 'ERROR',
+} as const;
+
+export const CancelReason = {
+  CHANGE_OF_MIND: 'CHANGE_OF_MIND',
+  DEFECTIVE: 'DEFECTIVE',
+  WRONG_DELIVERY: 'WRONG_DELIVERY',
+  DUPLICATE: 'DUPLICATE',
+  ADMIN_REQUEST: 'ADMIN_REQUEST',
+} as const;
+
+export const ErrorCode = {
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  HOMETAX_ERROR: 'HOMETAX_ERROR',
+  NETWORK_ERROR: 'NETWORK_ERROR',
+  DUPLICATE_REQUEST: 'DUPLICATE_REQUEST',
+} as const;
+
+export const ReasonCode = {
+  CUSTOMER_REQUEST: 'CUSTOMER_REQUEST',
+  WRONG_AMOUNT: 'WRONG_AMOUNT',
+  DUPLICATE: 'DUPLICATE',
+  SYSTEM_ERROR: 'SYSTEM_ERROR',
+  ADMIN_ACTION: 'ADMIN_ACTION',
+} as const;
+
+export const ValidationFailedReason = {
+  INVALID_BUSINESS_NUMBER: 'INVALID_BUSINESS_NUMBER',
+  AMOUNT_MISMATCH: 'AMOUNT_MISMATCH',
+  MISSING_REQUIRED: 'MISSING_REQUIRED',
+  DATE_ERROR: 'DATE_ERROR',
+} as const;
+
+export const bnplAccountStatusEnum = pgEnum('bnpl_account_status', [
+  'ACTIVE',
+  'SUSPENDED',
+  'CLOSED',
+]);
+
+export const bnplEventTypeEnum = pgEnum('bnpl_event_type', [
+  // 거래 이벤트
+  'PURCHASE', // 구매
+  'REFUND', // 환불
+  'PARTIAL_REFUND', // 부분 환불
+
+  // 신용 한도 이벤트
+  'CREDIT_INCREASE', // 한도 증가
+  'CREDIT_DECREASE', // 한도 감소
+
+  // 청구 이벤트
+  'INVOICE_CREATED', // 청구서 생성
+  'INVOICE_DUE', // 청구서 만기
+
+  // 결제 이벤트
+  'PAYMENT_SCHEDULED', // 결제 예약
+  'PAYMENT_ATTEMPTED', // 결제 시도
+  'PAYMENT_SUCCESS', // 결제 성공
+  'PAYMENT_FAILED', // 결제 실패
+  'PAYMENT_RETRY', // 결제 재시도
+
+  // 연체 이벤트
+  'LATE_FEE', // 연체료
+  'OVERDUE_NOTICE', // 연체 통지
+]);
+export const bnplEventCategoryEnum = pgEnum('bnpl_event_category', [
+  'CREDIT', // 한도 사용
+  'DEBIT', // 한도 복원
+  'NEUTRAL', // 신용변동 없음
+]);
+
+export const bnplEventStatusEnum = pgEnum('bnpl_event_status', [
+  'PENDING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'AGGREGATED',
+]);
+
+export const bnplReasonCodeEnum = pgEnum('bnpl_reason_code', [
+  'CUSTOMER_REQUEST',
+  'INSUFFICIENT_FUNDS',
+  'CARD_DECLINED',
+  'FRAUD_SUSPECTED',
+  'SYSTEM_ERROR',
+  'ADMIN_ACTION',
+]);
+
+export type BnplEventType = (typeof bnplEventTypeEnum.enumValues)[number];
+export type BnplEventCategory =
+  (typeof bnplEventCategoryEnum.enumValues)[number];
+export type BnplEventStatus = (typeof bnplEventStatusEnum.enumValues)[number];
 // ────────────────────────────────────────────
 // Payment Method Schemas - 정규화된 구조 (민감값 저장 금지)
 // ────────────────────────────────────────────
@@ -245,122 +363,135 @@ export const cmsBatchConsents = pgTable(
 // ────────────────────────────────────────────
 
 export const bnplAccounts = pgTable(
-  'bnpl_account',
+  'bnpl_accounts',
   {
-    id: varchar('id', { length: 36 })
-      .primaryKey()
-      .$defaultFn(() => generateUUIDv7()), // 통일
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
+
     userId: varchar('user_id', { length: 64 }).notNull(),
-    paymentProfileId: varchar('payment_profile_id', { length: 36 })
-      .notNull()
-      .references(() => paymentProfiles.id),
+
+    // 한도
     creditLimit: bigint('credit_limit', { mode: 'number' }).notNull(),
-    approvedLimit: bigint('approved_limit', { mode: 'number' }).notNull(),
-    status: bnplAccountStatusEnum('status').notNull().default('ACTIVE'),
+    availableLimit: bigint('available_limit', { mode: 'number' }).notNull(),
+
+    status: varchar('status', { length: 16 }).notNull().default('ACTIVE'),
+    // ACTIVE | SUSPENDED | OVERDUE
+
+    // 결제주기/정산정보
+    billingCycleStart: date('billing_cycle_start'), // 이번 결제주기 시작일
+    billingCycleEnd: date('billing_cycle_end'), // 이번 결제주기 종료일
+    nextBillingDate: date('next_billing_date'), // 다음 CMS 출금 신청일
+    lastBilledAt: timestamp('last_billed_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+      .notNull()
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+      .notNull()
+      .defaultNow(),
   },
-  (table) => [uniqueIndex('idx_bnpl_account_user_unique').on(table.userId)],
+  (t) => [
+    uniqueIndex('uq_bnpl_user').on(t.userId),
+    index('idx_bnpl_status').on(t.status),
+    index('idx_bnpl_next_billing').on(t.nextBillingDate),
+  ],
 );
 
-export const bnplEvents = pgTable('bnpl_events', {
-  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
-  bnplAccountId: varchar('bnpl_account_id', { length: 36 })
-    .notNull()
-    .references(() => bnplAccounts.id),
-  paymentSessionId: varchar('payment_session_id', { length: 36 }).notNull(),
-  transactionType: text('transaction_type')
-    .$type<'DEBIT' | 'CREDIT'>()
-    .notNull(),
-  status: transactionStatusEnum('status').notNull(),
-  amount: bigint('amount', { mode: 'number' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
 // ────────────────────────────────────────────
-// BNPL Invoice & Collection Schemas (리뉴얼.md 기준 물리테이블)
+// 2️⃣ BNPL 이벤트 (모든 것을 이벤트로)
 // ────────────────────────────────────────────
 
-export const bnplInvoices = pgTable('bnpl_invoices', {
-  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
-  bnplAccountId: varchar('bnpl_account_id', { length: 36 })
-    .notNull()
-    .references(() => bnplAccounts.id),
-  invoiceNumber: varchar('invoice_number', { length: 50 }).notNull(),
-  totalAmount: bigint('total_amount', { mode: 'number' }).notNull().default(0),
-  dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
-  status: text('status')
-    .$type<'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'>()
-    .notNull()
-    .default('PENDING'),
-  pgTransactionId: varchar('pg_transaction_id', { length: 255 }),
-  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
-  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const bnplEvents = pgTable(
+  'bnpl_events',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
 
-export const bnplInvoiceItems = pgTable('bnpl_invoice_items', {
-  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
-  invoiceId: varchar('invoice_id', { length: 36 })
-    .notNull()
-    .references(() => bnplInvoices.id),
-  bnplEventId: varchar('bnpl_event_id', { length: 36 })
-    .notNull()
-    .references(() => bnplEvents.id),
-  amount: bigint('amount', { mode: 'number' }).notNull(),
-  transactionDate: timestamp('transaction_date', {
-    withTimezone: true,
-  }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+    accountId: varchar('account_id', { length: 26 })
+      .notNull()
+      .references(() => bnplAccounts.id, { onDelete: 'cascade' }),
 
-export const bnplCollectionEvents = pgTable('bnpl_collection_events', {
-  id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
-  invoiceId: varchar('invoice_id', { length: 26 })
-    .notNull()
-    .references(() => bnplInvoices.id),
-  invoiceItemId: varchar('invoice_item_id', { length: 26 }).references(
-    () => bnplInvoiceItems.id,
-  ),
-  eventType: varchar('event_type', { length: 50 })
-    .$type<
-      | 'COLLECTION_STARTED'
-      | 'ITEM_PROCESSING'
-      | 'ITEM_AUTHORIZED'
-      | 'ITEM_CAPTURED'
-      | 'ITEM_FAILED'
-      | 'COLLECTION_COMPLETED'
-      | 'COLLECTION_FAILED'
-    >()
-    .notNull(),
-  status: varchar('status', { length: 50 })
-    .$type<'PROCESSING' | 'AUTHORIZED' | 'CAPTURED' | 'FAILED'>()
-    .notNull(),
-  paymentEventId: varchar('payment_event_id', { length: 26 }),
-  errorMessage: text('error_message'),
-  metadata: text('metadata'),
-  actor: varchar('actor', { length: 255 })
-    .$type<'SCHEDULER' | 'ADMIN' | 'SYSTEM' | 'USER'>()
-    .notNull()
-    .default('SCHEDULER'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    // 이벤트 타입/카테고리
+    eventType: bnplEventTypeEnum('event_type').notNull(),
+    eventCategory: bnplEventCategoryEnum('event_category').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
 
+    // 주문/결제 참조
+    externalOrderId: varchar('external_order_id', { length: 64 }),
+    paymentIntentId: varchar('payment_intent_id', { length: 36 }),
+
+    // 청구주기·CMS 배치 정보
+    aggregationPeriod: varchar('aggregation_period', { length: 16 }), // '2024-09'
+    isAggregated: boolean('is_aggregated').notNull().default(false),
+    batchTransactionId: varchar('batch_transaction_id', { length: 50 }), // CMS 거래ID
+    batchDueDate: date('batch_due_date'), // CMS 출금 신청일
+
+    // CMS 응답·상태
+    cmsStatus: varchar('cms_status', { length: 32 }), // REQUESTED/PROCESSED/FAILED
+    cmsErrorCode: varchar('cms_error_code', { length: 64 }),
+    cmsResponseSnapshot: jsonb('cms_response_snapshot'),
+
+    // 상태·사유
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    reasonCode: varchar('reason_code', { length: 32 }),
+    reasonDetail: text('reason_detail'),
+    errorMessage: text('error_message'),
+
+    actor: varchar('actor', { length: 32 }).notNull().default('SYSTEM'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_be_account').on(t.accountId),
+    index('idx_be_type').on(t.eventType),
+    index('idx_be_category').on(t.eventCategory),
+    index('idx_be_period').on(t.aggregationPeriod),
+    index('idx_be_batch').on(t.batchTransactionId),
+    index('idx_be_due_date').on(t.batchDueDate),
+    index('idx_be_status').on(t.status),
+  ],
+);
+// 3️⃣ BNPL 이벤트 상세 (복식부기)
+// ────────────────────────────────────────────
+
+export const bnplEventDetails = pgTable(
+  'bnpl_event_details',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
+
+    eventId: varchar('event_id', { length: 26 })
+      .notNull()
+      .references(() => bnplEvents.id, { onDelete: 'cascade' }),
+
+    accountId: varchar('account_id', { length: 26 }).notNull(),
+    eventType: bnplEventTypeEnum('event_type').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+
+    // 복식부기 패턴
+    purchaseEventDetailId: varchar('purchase_event_detail_id', {
+      length: 26,
+    }).references(() => bnplEventDetails.id),
+    originalEventDetailId: varchar('original_event_detail_id', {
+      length: 26,
+    }).references(() => bnplEventDetails.id),
+
+    // 잔액 스냅샷
+    balanceBefore: bigint('balance_before', { mode: 'number' }).notNull(),
+    balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
+    availableBefore: bigint('available_before', { mode: 'number' }).notNull(),
+    availableAfter: bigint('available_after', { mode: 'number' }).notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_bed_event').on(t.eventId),
+    index('idx_bed_account').on(t.accountId),
+    index('idx_bed_purchase').on(t.purchaseEventDetailId),
+    index('idx_bed_original').on(t.originalEventDetailId),
+  ],
+);
 //
 // ────────────────────────────────────────────
 /** User Refund Account Schemas */
@@ -600,90 +731,38 @@ export const overdueAccounts = pgTable('overdue_accounts', {
     .default('ACTIVE'),
 });
 
-// ────────────────────────────────────────────
-// Relations
-// ────────────────────────────────────────────
-
-// Payment method relations - 정규화된 구조 (임시 비활성화)
-// export const paymentProfilesRelations = relations(
-//   paymentProfiles,
-//   ({ one }) => ({
-//     card: one(cmsCardProfiles, {
-//       fields: [paymentProfiles.id],
-//       references: [cmsCardProfiles.id],
-//     }),
-//     batch: one(cmsBatchProfiles, {
-//       fields: [paymentProfiles.id],
-//       references: [cmsBatchProfiles.id],
-//     }),
-//   }),
 // );
 
-// export const cmsCardProfilesRelations = relations(
-//   cmsCardProfiles,
-//   ({ one }) => ({
-//     paymentProfile: one(paymentProfiles, {
-//       fields: [cmsCardProfiles.id],
-//       references: [paymentProfiles.id],
-//     }),
-//   }),
-// );
-
-// export const cmsBatchProfilesRelations = relations(
-//   cmsBatchProfiles,
-//   ({ one }) => ({
-//     paymentProfile: one(paymentProfiles, {
-//       fields: [cmsBatchProfiles.id],
-//       references: [paymentProfiles.id],
-//     }),
-//   }),
-// );
-
-export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
-  bnplAccount: one(bnplAccounts, {
-    fields: [bnplEvents.bnplAccountId],
-    references: [bnplAccounts.id],
-  }),
-  // paymentSession 관계는 순환 참조 문제로 인해 제거
-  // 필요시 서비스 레이어에서 별도 조회
-  bnplInvoiceItems: many(bnplInvoiceItems),
+export const bnplAccountsRelations = relations(bnplAccounts, ({ many }) => ({
+  events: many(bnplEvents),
+  bnplevents: many(bnplEvents),
 }));
 
-export const bnplInvoicesRelations = relations(
-  bnplInvoices,
-  ({ one, many }) => ({
-    bnplAccount: one(bnplAccounts, {
-      fields: [bnplInvoices.bnplAccountId],
-      references: [bnplAccounts.id],
-    }),
-    items: many(bnplInvoiceItems),
+export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
+  account: one(bnplAccounts, {
+    fields: [bnplEvents.accountId],
+    references: [bnplAccounts.id],
   }),
-);
+  details: many(bnplEventDetails),
+}));
 
-export const bnplInvoiceItemsRelations = relations(
-  bnplInvoiceItems,
+// ③ 디테일 → 이벤트 / 디테일 자기참조
+export const bnplEventDetailsRelations = relations(
+  bnplEventDetails,
   ({ one }) => ({
-    bnplInvoice: one(bnplInvoices, {
-      fields: [bnplInvoiceItems.invoiceId],
-      references: [bnplInvoices.id],
-    }),
-    bnplEvent: one(bnplEvents, {
-      fields: [bnplInvoiceItems.bnplEventId],
+    event: one(bnplEvents, {
+      fields: [bnplEventDetails.eventId],
       references: [bnplEvents.id],
     }),
-  }),
-);
-
-export const bnplCollectionEventsRelations = relations(
-  bnplCollectionEvents,
-  ({ one }) => ({
-    bnplInvoice: one(bnplInvoices, {
-      fields: [bnplCollectionEvents.invoiceId],
-      references: [bnplInvoices.id],
+    // 이 디테일이 어떤 구매 디테일에서 파생되었는가 (부분환불 등)
+    purchaseDetail: one(bnplEventDetails, {
+      fields: [bnplEventDetails.purchaseEventDetailId],
+      references: [bnplEventDetails.id],
     }),
-    bnplInvoiceItem: one(bnplInvoiceItems, {
-      fields: [bnplCollectionEvents.invoiceItemId],
-      references: [bnplInvoiceItems.id],
+    // 이 디테일이 어떤 원본 디테일의 정정/취소인가
+    originalDetail: one(bnplEventDetails, {
+      fields: [bnplEventDetails.originalEventDetailId],
+      references: [bnplEventDetails.id],
     }),
   }),
 );
@@ -734,20 +813,278 @@ export const pointEventDetailsRelations = relations(
     }),
   }),
 );
+
+// 세금계산서 상태 (내부 운영 상태)
+export const taxInvoiceStatusEnum = pgEnum('tax_invoice_status', [
+  // 생성~발행 전 단계
+  'PENDING', // 발행 예정(데이터 적립)
+  'READY', // 검증 완료, 배치 대상 확정
+  'EXPORTED', // 엑셀 파일 생성/배치 묶임
+  // 발행 결과
+  'ISSUED', // 홈택스 발행 성공
+  'ERROR', // 검증/발행 오류
+  // 무효/취소
+  'CANCELLED', // 내부 취소(발행 전)
+]);
+
+// 세금계산서 종류
+export const taxInvoiceKindEnum = pgEnum('tax_invoice_kind', [
+  'NORMAL', // 일반 세금계산서
+  'MODIFICATION', // 수정세금계산서
+]);
+
+// 수정세금계산서 유형 (국세청 분류 단순화)
+export const modificationTypeEnum = pgEnum('modification_type', [
+  'INCREASE', // 금액 증가
+  'DECREASE', // 금액 감소(환불/부분취소)
+  'CANCEL', // 전체 취소/무효
+]);
+
+// 과세유형 (필요 시 확장: 면세/영세율 등)
+export const taxTypeEnum = pgEnum('tax_type', [
+  'GENERAL', // 일반과세(10%)
+  'ZERO', // 영세율(0%)
+  'EXEMPT', // 면세
+]);
+
+// 출처(집계 단위) — 선택
+export const invoiceSourceEnum = pgEnum('tax_invoice_source', [
+  'ORDER', // 주문 단위
+  'SETTLEMENT', // 월말/정산 단위(총액)
+]);
+
 // ────────────────────────────────────────────
-/** BNPL Enrollment - 단일 리소스 등록 플로우 */
+// ────────────────────────────────────────────
+// 1️⃣ 마스터 테이블 (초경량 - 10개 필드)
 // ────────────────────────────────────────────
 
-/**
- * BNPL 등록 단일 리소스 - 전체 플로우를 하나의 엔드포인트로 관리
- */
+export const taxInvoices = pgTable(
+  'tax_invoices',
+  {
+    id: varchar('id', { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => generateUUIDv7()),
 
-// Policy Tables Relations
+    // 핵심 식별자
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    externalOrderId: varchar('external_order_id', { length: 128 }),
+    // 'ord_12345' (단일 주문)
+    // 'agg_user123_2024-01' (합산)
+    // 'manual_20240115_001' (수동)
+
+    // 핵심 정보만
+    supplyDate: date('supply_date').notNull(),
+    totalAmount: bigint('total_amount', { mode: 'number' }).notNull(),
+
+    // 상태
+    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
+    // PENDING | ISSUED | CANCELLED
+
+    // 홈택스 결과
+    hometaxApprovalNumber: varchar('hometax_approval_number', { length: 64 }),
+
+    // 취소/에러 (명시적)
+    cancelReason: varchar('cancel_reason', { length: 32 }),
+    // CHANGE_OF_MIND | DEFECTIVE | WRONG_DELIVERY | DUPLICATE | ADMIN_REQUEST
+    errorCode: varchar('error_code', { length: 32 }),
+    // VALIDATION_FAILED | HOMETAX_ERROR | NETWORK_ERROR | DUPLICATE_REQUEST
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_ti_user_date').on(t.userId, t.supplyDate),
+    index('idx_ti_status').on(t.status),
+    index('idx_ti_order').on(t.externalOrderId),
+    uniqueIndex('uq_ti_order').on(t.externalOrderId),
+  ],
+);
 
 // ────────────────────────────────────────────
-/** v2 Architecture Tables - 새로운 테이블 구조 (옵션 B: 리네임) */
+// 2️⃣ 이벤트 테이블 (명시적 필드, no metadata)
 // ────────────────────────────────────────────
 
+export const taxInvoiceEvents = pgTable(
+  'tax_invoice_events',
+  {
+    id: varchar('id', { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => {
+        return generateUUIDv7();
+      }),
+
+    invoiceId: varchar('invoice_id', { length: 36 })
+      .notNull()
+      .references(() => taxInvoices.id, { onDelete: 'cascade' }),
+
+    // 이벤트 타입
+    eventType: varchar('event_type', { length: 32 }).notNull(),
+    // CREATED | VALIDATED | EXPORTED | ISSUED | CANCELLED | REFUNDED | ERROR
+
+    // 상태 변경 추적
+    previousStatus: varchar('previous_status', { length: 16 }),
+    newStatus: varchar('new_status', { length: 16 }),
+
+    // 금액 변경 추적 (수정세금계산서)
+    previousAmount: bigint('previous_amount', { mode: 'number' }),
+    newAmount: bigint('new_amount', { mode: 'number' }),
+
+    // 사유 (명시적)
+    reasonCode: varchar('reason_code', { length: 32 }),
+    // CUSTOMER_REQUEST | WRONG_AMOUNT | DUPLICATE | SYSTEM_ERROR | ADMIN_ACTION
+    reasonDetail: text('reason_detail'),
+
+    // 배치 정보
+    batchId: varchar('batch_id', { length: 36 }),
+
+    // 실행자
+    actor: varchar('actor', { length: 64 }).notNull().default('SYSTEM'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_tie_invoice').on(t.invoiceId),
+    index('idx_tie_type').on(t.eventType),
+    index('idx_tie_created').on(t.createdAt),
+    index('idx_tie_batch').on(t.batchId),
+  ],
+);
+
+// ────────────────────────────────────────────
+// 3️⃣ 상세 테이블 (무거운 데이터 격리)
+// ────────────────────────────────────────────
+
+export const taxInvoiceEventsDetails = pgTable(
+  'tax_invoice_events_details',
+  {
+    id: varchar('id', { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => {
+        return generateUUIDv7();
+      }),
+
+    invoiceId: varchar('invoice_id', { length: 36 })
+      .notNull()
+      .references(() => taxInvoices.id, { onDelete: 'cascade' })
+      .unique(), // 1:1 관계
+
+    // 결제 참조
+    paymentIntentId: varchar('payment_intent_id', { length: 36 }).references(
+      () => paymentIntents.id,
+      { onDelete: 'set null' },
+    ),
+    paymentAttemptId: varchar('payment_attempt_id', { length: 36 }),
+
+    // 세금계산서 종류
+    kind: varchar('kind', { length: 16 }).notNull().default('NORMAL'),
+    // NORMAL | MODIFICATION
+    modificationType: varchar('modification_type', { length: 16 }),
+    // INCREASE | DECREASE | CANCEL
+    originalInvoiceId: varchar('original_invoice_id', {
+      length: 36,
+    }).references(() => taxInvoices.id, { onDelete: 'restrict' }),
+
+    // 합산 발행 정보
+    aggregationType: varchar('aggregation_type', { length: 16 }),
+    // SINGLE | DAILY | WEEKLY | MONTHLY
+    aggregationKey: varchar('aggregation_key', { length: 128 }),
+    // 'user123_2024-01' (월 합산)
+    // 'user123_2024-W03' (주 합산)
+
+    // 고객 정보
+    customerName: varchar('customer_name', { length: 128 }).notNull(),
+    customerBusinessNumber: varchar('customer_business_number', { length: 20 }),
+
+    // 날짜 상세
+    issueDate: date('issue_date').notNull(),
+
+    // 금액 상세
+    supplyAmount: bigint('supply_amount', { mode: 'number' }).notNull(),
+    taxAmount: bigint('tax_amount', { mode: 'number' }).notNull(),
+
+    // 환불 추적
+    refundedAmount: bigint('refunded_amount', { mode: 'number' })
+      .notNull()
+      .default(0),
+    netAmount: bigint('net_amount', { mode: 'number' }).notNull(),
+
+    // 배치 처리
+    batchId: varchar('batch_id', { length: 36 }),
+    batchExportedAt: timestamp('batch_exported_at', { withTimezone: true }),
+    batchSequence: integer('batch_sequence'),
+    batchPeriod: varchar('batch_period', { length: 10 }), // '2024-01'
+    exportedFilePath: text('exported_file_path'),
+
+    // 검증
+    isValidated: boolean('is_validated').notNull().default(false),
+    validationFailedReason: varchar('validation_failed_reason', { length: 64 }),
+    // INVALID_BUSINESS_NUMBER | AMOUNT_MISMATCH | MISSING_REQUIRED | DATE_ERROR
+
+    // 홈택스 발행 시각
+    hometaxIssuedAt: timestamp('hometax_issued_at', { withTimezone: true }),
+
+    // 오류 상세
+    errorMessage: text('error_message'),
+
+    // 불변 스냅샷 (구조화된 불변 데이터)
+    invoiceSnapshot: jsonb('invoice_snapshot')
+      .$type<{
+        supplier: {
+          businessNumber: string;
+          name: string;
+          ceoName: string;
+          address: string;
+          email?: string;
+          businessType?: string;
+          businessCategory?: string;
+        };
+        customer: {
+          businessNumber?: string;
+          name: string;
+          ceoName?: string;
+          address?: string;
+          email?: string;
+        };
+        items: Array<{
+          name: string;
+          spec?: string;
+          quantity?: number;
+          unitPrice?: number;
+          supplyAmount: number;
+          taxAmount: number;
+        }>;
+        orderMeta?: {
+          orderDate?: string;
+          deliveryDate?: string;
+          shippingAddress?: string;
+        };
+        aggregatedOrderIds?: string[]; // 합산시 원본 주문들
+      }>()
+      .notNull(),
+
+    // 감사
+    createdBy: varchar('created_by', { length: 64 })
+      .notNull()
+      .default('SYSTEM'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_tid_invoice').on(t.invoiceId),
+    index('idx_tid_payment').on(t.paymentIntentId),
+    index('idx_tid_batch').on(t.batchId),
+    index('idx_tid_original').on(t.originalInvoiceId),
+    index('idx_tid_period').on(t.batchPeriod),
+    index('idx_tid_aggregation').on(t.aggregationType, t.aggregationKey),
+  ],
+);
 /**
  * PaymentIntent 테이블 - 결제 의도 (provider 없음, 실행 시점에서 결정)
  */
@@ -900,6 +1237,42 @@ export const checkoutSessions = pgTable(
   ],
 );
 
+export const taxInvoicesRelations = relations(taxInvoices, ({ one, many }) => ({
+  detail: one(taxInvoiceEventsDetails, {
+    fields: [taxInvoices.id],
+    references: [taxInvoiceEventsDetails.invoiceId],
+  }),
+  events: many(taxInvoiceEvents),
+}));
+
+export const taxInvoiceEventsDetailsRelations = relations(
+  taxInvoiceEventsDetails,
+  ({ one }) => ({
+    invoice: one(taxInvoices, {
+      fields: [taxInvoiceEventsDetails.invoiceId],
+      references: [taxInvoices.id],
+    }),
+    originalInvoice: one(taxInvoices, {
+      fields: [taxInvoiceEventsDetails.originalInvoiceId],
+      references: [taxInvoices.id],
+    }),
+    paymentIntent: one(paymentIntents, {
+      fields: [taxInvoiceEventsDetails.paymentIntentId],
+      references: [paymentIntents.id],
+    }),
+  }),
+);
+
+export const taxInvoiceEventsRelations = relations(
+  taxInvoiceEvents,
+  ({ one }) => ({
+    invoice: one(taxInvoices, {
+      fields: [taxInvoiceEvents.invoiceId],
+      references: [taxInvoices.id],
+    }),
+  }),
+);
+
 // BNPL View들 제거됨 - 물리테이블만 사용
 // settlement_batch = BNPL Invoice
 // settlement_batch_item = BNPL Invoice Item
@@ -931,7 +1304,11 @@ export const walletSchema = {
   pointEvents,
   pointEventDetails,
 
-  // Utility Tables
+  // Utility Tables (Tax Invoice)
+  taxInvoices,
+  taxInvoiceEventsDetails,
+  taxInvoiceEvents,
+
   idempotencyKeys,
 } as const;
 

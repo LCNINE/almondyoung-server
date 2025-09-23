@@ -28,6 +28,7 @@
     "test:naver-sync:token": "ts-node apps/channel-adapter/test-naver-sync.ts token",
     "test:orchestration": "ts-node apps/channel-adapter/test-orchestration.ts",
     "test:orchestration:poll": "ts-node apps/channel-adapter/test-orchestration.ts poll",
+    "test:bnpl:itdoc": "jest --testPathPattern=bnpl-api.itdoc.spec.ts --verbose",
     "test:orchestration:webhook": "ts-node apps/channel-adapter/test-orchestration.ts webhook",
     "test:orchestration:command": "ts-node apps/channel-adapter/test-orchestration.ts command",
     "test:coupang:sync": "ts-node apps/channel-adapter/test-coupang-sync.ts",
@@ -55,10 +56,13 @@
     "cors": "^2.8.5",
     "drizzle-kit": "^0.31.4",
     "drizzle-orm": "^0.44.5",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "form-data": "^4.0.4",
     "hms-api-wrapper": "file:../hms-api-wrapper/hms-api-wrapper-1.0.0.tgz",
     "kafkajs": "^2.2.4",
     "nestjs-zod": "^5.0.1",
+    "node-fetch": "^2.7.0",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
@@ -90,6 +94,7 @@
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
+    "itdoc": "^0.4.1",
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
@@ -111,21 +116,59 @@
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "paths": {
+              "@app/db": [
+                "libs/db/src"
+              ],
+              "@app/db/*": [
+                "libs/db/src/*"
+              ],
+              "@app/events": [
+                "libs/events/src"
+              ],
+              "@app/events/*": [
+                "libs/events/src/*"
+              ],
+              "@app/shared": [
+                "libs/shared/src"
+              ],
+              "@app/shared/*": [
+                "libs/shared/src/*"
+              ]
+            }
+          }
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
+    "globalSetup": "<rootDir>/apps/wallet/test/global-setup.ts",
     "roots": [
       "<rootDir>/apps/",
       "<rootDir>/libs/"
     ],
     "moduleNameMapper": {
-      "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
-      "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
-      "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
+      "^@app/db$": "<rootDir>/libs/db/src",
+      "^@app/db/(.*)$": "<rootDir>/libs/db/src/$1",
+      "^@app/events$": "<rootDir>/libs/events/src",
+      "^@app/events/(.*)$": "<rootDir>/libs/events/src/$1",
+      "^@app/shared$": "<rootDir>/libs/shared/src",
+      "^@app/shared/(.*)$": "<rootDir>/libs/shared/src/$1"
+    }
+  },
+  "itdoc": {
+    "output": "./docs/api",
+    "document": {
+      "baseUrl": "https://api.almondyoung.com",
+      "title": "AlmondYoung BNPL API Documentation",
+      "description": "BNPL(나중결제) 시스템의 API 문서입니다. 결제 프로필 생성, 결제 처리, 환불 등의 기능을 제공합니다."
     }
   }
 }

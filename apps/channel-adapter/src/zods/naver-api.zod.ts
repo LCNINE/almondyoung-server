@@ -1,5 +1,31 @@
 import { z } from 'zod';
 
+// =================================================================
+// == 네이버 API 공통 응답 구조 (제네릭 헬퍼)
+// =================================================================
+
+// 네이버 API 공통 응답 구조 생성 헬퍼 (타입 체크용)
+export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
+  dataSchema: T,
+) {
+  return z.object({
+    timestamp: z.string().datetime(), // 응답 타임스탬프
+    traceId: z.string(), // 추적 ID
+    data: dataSchema, // 실제 데이터
+  });
+}
+
+// 네이버 API 공통 응답 구조 (data가 optional인 경우)
+export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(
+  dataSchema: T,
+) {
+  return z.object({
+    timestamp: z.string().datetime(), // 응답 타임스탬프
+    traceId: z.string(), // 추적 ID
+    data: dataSchema.optional(), // 실제 데이터 (선택적)
+  });
+}
+
 // -----------------------------------------------------------------
 // -- 교환 관련 타입 (Exchange Types)
 // -----------------------------------------------------------------
@@ -380,18 +406,37 @@ export interface ChangedProductOrder {
   receiverAddressChanged: boolean;
 }
 
-/** 변경된 주문 목록 조회 API의 응답 데이터 타입 */
-interface LastChangedStatusesData {
-  lastChangeStatuses: ChangedProductOrder[];
-  more?: { moreFrom: string; moreSequence: string };
-}
+// 변경된 주문 목록 조회 응답 데이터 스키마 (타입 체크용)
+const NaverLastChangedStatusesDataSchema = z.object({
+  lastChangeStatuses: z.array(
+    z.object({
+      orderId: z.string(),
+      productOrderId: z.string(),
+      lastChangedType: z.string(),
+      paymentDate: z.string(),
+      lastChangedDate: z.string(),
+      productOrderStatus: z.string(),
+      claimType: z.string().optional(),
+      claimStatus: z.string().optional(),
+      receiverAddressChanged: z.boolean(),
+    }),
+  ),
+  more: z
+    .object({
+      moreFrom: z.string(),
+      moreSequence: z.string(),
+    })
+    .optional(),
+});
+
+/** 변경된 주문 목록 조회 API의 전체 응답 스키마 (제네릭 헬퍼 사용) */
+export const NaverLastChangedStatusResponseSchema =
+  createNaverApiResponseSchema(NaverLastChangedStatusesDataSchema);
 
 /** 변경된 주문 목록 조회 API의 전체 응답 타입 */
-export interface NaverLastChangedStatusResponse {
-  timestamp: string;
-  traceId: string;
-  data: LastChangedStatusesData;
-}
+export type NaverLastChangedStatusResponse = z.infer<
+  typeof NaverLastChangedStatusResponseSchema
+>;
 
 /** 상품 주문 상세 정보 하위 객체 (Placeholder) */
 interface NaverOrderDetails {
@@ -420,19 +465,38 @@ export interface ProductOrderInfo {
   delivery: NaverDeliveryDetails;
 }
 
+// 상품 주문 상세 내역 조회 API 응답 스키마 (타입 체크용)
+export const NaverProductOrderDetailsResponseSchema =
+  createNaverApiResponseSchema(
+    z.array(
+      z.object({
+        order: z.any(), // 주문 공통 상세 정보
+        productOrder: z.any(), // 상품 주문 상세 정보
+        cancel: z.any().optional(), // 취소 상세 정보
+        return: z.any().optional(), // 반품 상세 정보
+        exchange: z.any().optional(), // 교환 상세 정보
+        beforeClaim: z.object({}), // 클레임 이전 정보
+        currentClaim: z.any(), // 현재 클레임 정보
+        completedClaims: z.array(z.any()), // 완료된 클레임 목록
+        delivery: z.any(), // 배송 상세 정보
+      }),
+    ),
+  );
+
 /** 상품 주문 상세 내역 조회 API의 전체 응답 타입 */
-export interface NaverProductOrderDetailsResponse {
-  timestamp: string;
-  traceId: string;
-  data: ProductOrderInfo[];
-}
+export type NaverProductOrderDetailsResponse = z.infer<
+  typeof NaverProductOrderDetailsResponseSchema
+>;
+
+// 주문 번호로 상품 주문 번호 목록 조회 API 응답 스키마 (타입 체크용)
+export const NaverProductOrderIdsResponseSchema = createNaverApiResponseSchema(
+  z.array(z.string()),
+);
 
 /** 주문 번호로 상품 주문 번호 목록 조회 API의 전체 응답 타입 */
-export interface NaverProductOrderIdsResponse {
-  timestamp: string;
-  traceId: string;
-  data: string[];
-}
+export type NaverProductOrderIdsResponse = z.infer<
+  typeof NaverProductOrderIdsResponseSchema
+>;
 
 const NAVER_RANGE_TYPES = [
   'PAYED_DATETIME',

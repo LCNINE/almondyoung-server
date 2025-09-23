@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createNaverApiResponseSchemaOptional } from './naver-api.zod';
 
 /**
  * 네이버 커머스 API 발송처리 Zod 스키마
@@ -147,42 +148,24 @@ export const NaverDispatchRequestSchema = z.object({
     ),
 });
 
-/**
- * 네이버 발송처리 API 응답 스키마
- */
-export const NaverDispatchResponseSchema = z.object({
-  /**
-   * 응답 타임스탬프
-   * @example "2023-01-16T17:14:51.794+09:00"
-   */
-  timestamp: z.string().datetime(),
-
-  /**
-   * 추적 ID
-   */
-  traceId: z.string(),
-
-  /**
-   * 응답 데이터
-   */
-  data: z
-    .object({
-      /**
-       * 처리 결과 (성공/실패 상품 주문 처리 내역)
-       */
-      results: z
-        .array(
-          z.object({
-            productOrderId: z.string(),
-            success: z.boolean(),
-            message: z.string().optional(),
-            errorCode: z.string().optional(),
-          }),
-        )
-        .optional(),
-    })
-    .optional(),
+// 네이버 발송처리 응답 데이터 스키마 (타입 체크용)
+const NaverDispatchDataSchema = z.object({
+  results: z
+    .array(
+      z.object({
+        productOrderId: z.string(),
+        success: z.boolean(),
+        message: z.string().optional(),
+        errorCode: z.string().optional(),
+      }),
+    )
+    .optional(), // 처리 결과 목록 (성공/실패 내역)
 });
+
+// 네이버 발송처리 API 응답 스키마 (타입 체크용, data가 optional)
+export const NaverDispatchResponseSchema = createNaverApiResponseSchemaOptional(
+  NaverDispatchDataSchema,
+);
 
 /**
  * 내부 명령에서 네이버 API 요청으로 변환하는 스키마

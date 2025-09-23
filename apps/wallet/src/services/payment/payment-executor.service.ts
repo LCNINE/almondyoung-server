@@ -16,6 +16,7 @@ import {
   assertIntentIsNotExpired,
 } from '../intents/intent.assets';
 import { PaymentIntent } from '../../shared/database/types';
+import { BnplAccountService } from '../bnpl-account.service';
 
 @Injectable()
 export class PaymentExecutorService {
@@ -25,15 +26,16 @@ export class PaymentExecutorService {
     private readonly db: DbService<typeof schema>,
     private readonly registry: ProviderRegistry,
     private readonly profiles: PaymentProfileService,
+    private readonly bnplAccountService: BnplAccountService,
   ) {}
 
   /**
-   * 결제 시도(Attempt)를 검증하고 실행합니다.
+   * 결제 승인(Authorization)을 검증하고 실행합니다.
    * @param request 결제 시도 정보 (Attempt)
    * @param provider 사용할 결제 수단
    * @param intent 원본 결제 의도 객체 (검증용)
    */
-  async execute(
+  async authorize(
     request: PaymentRequest,
     provider: ProviderType,
     intent: PaymentIntent,
@@ -43,14 +45,8 @@ export class PaymentExecutorService {
     // ✨ [핵심 개선] 전달받은 tx가 있으면 사용하고, 없으면 새로운 트랜잭션을 시작합니다.
     const transaction = options?.tx ?? this.db.db;
 
-    // 만약 자체 트랜잭션이 필요한 경우, 아래와 같이 감쌀 수 있습니다.
-    // return options?.tx
-    //   ? this.executeLogic(request, provider, intent, options.tx)
-    //   : this.db.db.transaction(tx => this.executeLogic(request, provider, intent, tx));
-    // 위 패턴은 복잡도를 높일 수 있어, 현재는 Orchestrator가 트랜잭션을 책임지는 구조를 유지합니다.
-
     this.logger.log(
-      `Executing attempt ${request.attemptId} for intent ${request.intentId}`,
+      `Authorizing attempt ${request.attemptId} for intent ${request.intentId}`,
     );
 
     // =======================================================
@@ -80,6 +76,21 @@ export class PaymentExecutorService {
         `${provider} does not support charge`,
       );
     }
+
+    // 4. BNPL 특별 처리: 한도 차감 및 신용 사용 이벤트 생성
+    if (provider === ProviderType.HMS_BNPL) {
+      await this.bnplAccountService.createCreditEvent(
+        intent.customerId,
+        request.amount,
+        request.metadata?.externalOrderId || request.intentId,
+        request.intentId,
+        transaction,
+      );
+
+      this.logger.log(
+        `BNPL credit event created for user ${intent.customerId}, amount: ${request.amount}`,
+      );
+    }
     // =======================================================
 
     // 📝 Payload 조립
@@ -102,12 +113,62 @@ export class PaymentExecutorService {
       }
     }
 
-    // 🚀 실제 결제 실행
-    const result = await handle.charge.process(payload as any);
+    // 🚀 실제 결제 승인 실행 (authorize 모드)
+    const result = handle.charge.authorize
+      ? await handle.charge.authorize(payload as any)
+      : await handle.charge.process(payload as any); // fallback to process
 
     if (!result.success) {
       throw new PaymentError(
-        result.code || 'PAYMENT_PROVIDER_FAILED',
+        result.code || 'PAYMENT_AUTHORIZATION_FAILED',
+        result.message,
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * 결제 캡처(Capture)를 실행합니다.
+   * @param attemptId 캡처할 시도 ID
+   * @param provider 사용할 결제 수단
+   * @param amount 캡처할 금액
+   */
+  async capture(
+    attemptId: string,
+    provider: ProviderType,
+    amount: number,
+    options?: { tx?: any },
+  ) {
+    const transaction = options?.tx ?? this.db.db;
+
+    this.logger.log(`Capturing attempt ${attemptId} with amount ${amount}`);
+
+    // Provider의 capture 능력 확인
+    const handle = this.registry.get(provider);
+    if (!handle.charge) {
+      throw new PaymentError(
+        'CHARGE_NOT_SUPPORTED',
+        `${provider} does not support charge`,
+      );
+    }
+
+    // 🚀 실제 결제 캡처 실행
+    const result = handle.charge.capture
+      ? await handle.charge.capture({
+          attemptId,
+          amount,
+        })
+      : {
+          success: true,
+          transactionId: `capture_${attemptId}`,
+          code: 'CAPTURE_NOT_IMPLEMENTED',
+          message: 'Capture not implemented for this provider',
+        };
+
+    if (!result.success) {
+      throw new PaymentError(
+        result.code || 'PAYMENT_CAPTURE_FAILED',
         result.message,
       );
     }

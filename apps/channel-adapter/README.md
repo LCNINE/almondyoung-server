@@ -42,6 +42,18 @@ GET    /adapter/logs/:channel            # 채널별 로그 조회
 POST   /adapter/test/:channel            # 채널 연결 테스트
 ```
 
+### 채널별 단건 조회 API (전략 패턴)
+
+```
+GET    /adapter/:channel/query/:queryType/:identifier      # 범용 단건 조회 (전략 패턴 적용)
+```
+
+**지원 채널 및 조회 타입:**
+
+- **쿠팡**: `coupang/query/ordersheet/{shipmentBoxId}`, `coupang/query/ordersheet-by-orderid/{orderId}`
+- **네이버**: `naver_smartstore/query/order/{productOrderId}` (향후 구현)
+- **기타**: 각 전략에서 구현된 조회 타입
+
 ### 동기화 상태
 
 ```
@@ -59,6 +71,122 @@ GET    /adapter/sync-status/performance           # 성능 지표
 ```
 http://localhost:3003/api-docs
 ```
+
+## 🔍 채널별 단건 조회 API (전략 패턴)
+
+### 개요
+
+전략 패턴을 활용한 범용 단건 조회 API입니다. 각 채널별로 특화된 조회 기능을 제공하며, 새로운 채널 추가 시 전략만 구현하면 자동으로 API가 확장됩니다.
+
+### 엔드포인트
+
+```
+GET /adapter/{channel}/query/{queryType}/{identifier}
+```
+
+**파라미터:**
+
+- `channel`: 채널 타입 (coupang, naver_smartstore 등)
+- `queryType`: 조회 타입 (각 채널별로 지원하는 타입이 다름)
+- `identifier`: 조회 식별자 (shipmentBoxId, orderId, productOrderId 등)
+
+### 쿠팡 지원 조회 타입
+
+#### 1. shipmentBoxId 기준 조회
+
+```
+GET /adapter/coupang/query/ordersheet/{shipmentBoxId}
+```
+
+#### 2. orderId 기준 조회
+
+```
+GET /adapter/coupang/query/ordersheet-by-orderid/{orderId}
+```
+
+### 주요 사용 사례
+
+1. **🏠 배송지 변경 확인**
+
+   - 결제 완료 후 고객이 배송지를 변경할 수 있음
+   - 상품준비중 처리 이후 반드시 배송지 정보 확인 필요
+
+2. **📦 상품 정보 일치 여부 확인**
+
+   - 출고 전 `sellerProductName + sellerProductItemName`과 `vendorItemName` 정보 일치 확인
+   - 불일치 시 출고 보류 및 온라인 문의 접수 필요
+
+3. **🚚 실시간 배송 상태 조회**
+   - 운송장 번호, 배송 상태 등 최신 정보 확인
+
+### 요청 예시
+
+#### 1. shipmentBoxId 기준 조회
+
+```bash
+# cURL 요청
+curl -X GET "http://localhost:3003/adapter/coupang/ordersheet/642538971006401429" \
+  -H "Content-Type: application/json"
+
+# 테스트 스크립트 사용
+npx tsx test-coupang-single.ts 642538971006401429
+```
+
+#### 2. orderId 기준 조회
+
+```bash
+# cURL 요청
+curl -X GET "http://localhost:3003/adapter/coupang/ordersheet/by-orderid/500000596" \
+  -H "Content-Type: application/json"
+
+# 테스트 스크립트 사용 (orderId 버전)
+npx tsx test-coupang-single-orderid.ts 500000596
+```
+
+### 응답 예시
+
+```json
+{
+  "success": true,
+  "data": {
+    "channelType": "coupang",
+    "externalOrderId": "5077495966",
+    "externalProductOrderId": "16885250726",
+    "status": "PAID",
+    "buyer": {
+      "name": "김철수",
+      "contact": "050-1234-5678",
+      "address": {
+        "postalCode": "12345",
+        "roadAddress": "서울시 강남구 테헤란로 123",
+        "detailAddress": "456호"
+      }
+    },
+    "dispatch": {
+      "deliveryCompanyCode": "CJ대한통운",
+      "trackingNumber": "123456789012",
+      "dispatchedAt": "2023-01-01T15:00:00+09:00"
+    },
+    "quantity": 2,
+    "priceAmount": 19000,
+    "discountAmount": 1000
+  },
+  "meta": {
+    "shipmentBoxId": "642538971006401429",
+    "retrievedAt": "2023-01-01T10:00:00.000Z",
+    "source": "coupang_single_query"
+  }
+}
+```
+
+### 에러 응답
+
+| 상태 코드 | 설명                  | 해결 방법                      |
+| --------- | --------------------- | ------------------------------ |
+| 400       | 잘못된 배송번호 형식  | shipmentBoxId 형식 확인        |
+| 401       | API 인증 실패         | 쿠팡 API 키 확인               |
+| 404       | 발주서를 찾을 수 없음 | shipmentBoxId 존재 여부 확인   |
+| 500       | 쿠팡 API 호출 실패    | 네트워크 상태 및 API 상태 확인 |
 
 ## 🛠 실행 방법
 
@@ -179,6 +307,9 @@ node test-naver-sync.ts
 
 # 쿠팡 테스트
 node test-coupang-sync.ts
+
+# 쿠팡 발주서 단건 조회 테스트
+npx tsx test-coupang-single.ts <shipmentBoxId>
 
 # 오케스트레이션 테스트
 node test-orchestration.ts

@@ -33,6 +33,11 @@ export const walletSchema = {
 
   // Utility Tables
   idempotencyKeys: schema.idempotencyKeys,
+
+  // Tax Invoice System
+  taxInvoices: schema.taxInvoices,
+  taxInvoiceEvents: schema.taxInvoiceEvents,
+  taxInvoiceEventsDetails: schema.taxInvoiceEventsDetails,
 };
 
 export type WalletSchema = typeof walletSchema;
@@ -112,6 +117,9 @@ export type UpdateBnplAccount = Partial<
 
 export type BnplEvent = InferSelectModel<typeof schema.bnplEvents>;
 export type NewBnplEvent = InferInsertModel<typeof schema.bnplEvents>;
+export type UpdateBnplEvent = Partial<
+  Omit<NewBnplEvent, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===============================
 // Point System 타입들
@@ -176,4 +184,34 @@ export type BnplAccountWithEvents = BnplAccount & {
  */
 export type RefundWithAccount = PaymentRefund & {
   refundAccount?: UserRefundAccount;
+};
+
+// ===============================
+// Tax Invoice 타입들
+// ===============================
+export type TaxInvoice = InferSelectModel<typeof schema.taxInvoices>;
+export type NewTaxInvoice = InferInsertModel<typeof schema.taxInvoices>;
+export type UpdateTaxInvoice = Partial<Omit<NewTaxInvoice, 'id' | 'createdAt'>>;
+
+export type TaxInvoiceEvent = InferSelectModel<typeof schema.taxInvoiceEvents>;
+export type NewTaxInvoiceEvent = InferInsertModel<
+  typeof schema.taxInvoiceEvents
+>;
+
+export type TaxInvoiceEventsDetail = InferSelectModel<
+  typeof schema.taxInvoiceEventsDetails
+>;
+export type NewTaxInvoiceEventsDetail = InferInsertModel<
+  typeof schema.taxInvoiceEventsDetails
+>;
+export type UpdateTaxInvoiceEventsDetail = Partial<
+  Omit<NewTaxInvoiceEventsDetail, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+/**
+ * 세금계산서와 상세 정보를 조인한 결과 타입
+ */
+export type TaxInvoiceWithDetails = TaxInvoice & {
+  details: TaxInvoiceEventsDetail;
+  events?: TaxInvoiceEvent[];
 };

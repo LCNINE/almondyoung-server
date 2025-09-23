@@ -29,10 +29,25 @@ export interface PaymentRequest {
 
 export interface PaymentResult {
   success: boolean;
+  attemptId?: string; // 결제 시도 ID (승인 시 생성)
   transactionId?: string;
   code?: string; // 도메인 코드(성공/실패)
   message?: string; // 사용자/로그 메시지
   raw?: unknown; // 원 응답 스냅샷(옵션)
+}
+
+// 공통 환불/취소 요청 (Provider 중립적)
+export interface RefundRequest {
+  transactionId?: string; // HMS에서 사용
+  paymentKey?: string; // Toss에서 사용
+  amount?: number; // 부분 환불 금액
+  reason: string;
+}
+
+export interface CancelRequest {
+  transactionId?: string; // HMS에서 사용
+  paymentKey?: string; // Toss에서 사용
+  reason: string;
 }
 
 export interface RefundResult {
@@ -81,14 +96,19 @@ export type PointsPayload = {
 // ───────────────────── Ports (capabilities) ─────────────────────
 // 결제 실행(필수)
 export interface ChargePort<K extends ProviderType = ProviderType> {
-  process(payload: ProviderPayloadMap[K]): Promise<PaymentResult>;
+  process(payload: ProviderPayloadMap[K]): Promise<PaymentResult>; // 레거시 호환용
+  authorize?(payload: ProviderPayloadMap[K]): Promise<PaymentResult>; // 승인만
+  capture?(payload: {
+    attemptId: string;
+    amount: number;
+  }): Promise<PaymentResult>; // 캡처만
 }
 // 선택 기능들(필요해지면 구현)
-export interface RefundPort<Payload = any> {
-  refund(payload: Payload): Promise<RefundResult>;
+export interface RefundPort {
+  refund(request: RefundRequest): Promise<RefundResult>;
 }
-export interface CancelPort<Payload = any> {
-  cancel(payload: Payload): Promise<CancelResult>;
+export interface CancelPort {
+  cancel(request: CancelRequest): Promise<CancelResult>;
 }
 
 // 프로필 등록/검증/해지 포트(결제프로필 전용)

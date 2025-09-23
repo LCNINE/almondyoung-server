@@ -7,7 +7,7 @@ import {
   SyncToChannelPayload,
   InternalInventoryData,
 } from '../../types';
-import { InternalOrderEvent } from '../../types';
+import { InternalOrderEvent, OrderQuery } from '../../types';
 import { ChannelCommand } from '../../types';
 
 import {
@@ -174,8 +174,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       this.logger.log(`✅ 상세 주문 정보 ${orderDetails.length}건 조회 완료`);
 
       // 6. 네이버 형식을 내부 표준 이벤트 형식으로 변환 (진정한 어댑터 역할)
-      const internalEvents =
-        this.transformProductInfosToInternalEvents(orderDetails);
+      const internalEvents = this.transformProductInfosToInternalEvents(
+        orderDetails as any,
+      );
 
       this.logger.log(`🎯 내부 이벤트 변환 완료: ${internalEvents.length}건`);
       return internalEvents;
@@ -883,5 +884,94 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         optionStandards: inventoryData.optionInfo.optionStandards || [],
       },
     };
+  }
+
+  /**
+   * 🔍 표준화된 쿼리 객체를 사용하여 주문 정보를 조회합니다.
+   * 네이버는 API 조합을 통해 '진짜 조회' 기능을 구현합니다.
+   *
+   * @param query 조회 조건을 담은 표준 쿼리 객체
+   * @returns 변환된 내부 주문 이벤트 배열. 결과가 없으면 빈 배열을 반환합니다.
+   */
+  async findOrders(query: OrderQuery): Promise<InternalOrderEvent[]> {
+    try {
+      this.logger.log(`🔍 [네이버] 주문 조회 시작: ${query.by} = ${query.id}`);
+
+      // 실제 토큰을 가져옵니다
+      const token = await this.naverApi.getAccessToken();
+
+      switch (query.by) {
+        case 'channelProductOrderId':
+          // 네이버 productOrderId로 직접 조회 (의도: 단건)
+          this.logger.log(`📋 [네이버] productOrderId 직접 조회: ${query.id}`);
+          const productOrderDetails = await this.naverApi.getOrderDetails(
+            token,
+            [query.id],
+          );
+          const directResult = await this.transformToInternal(
+            productOrderDetails,
+            'orders',
+          );
+          this.logger.log(
+            `✅ [네이버] productOrderId 조회 완료: ${directResult.length}건`,
+          );
+          return directResult;
+
+        case 'channelOrderId':
+          // 네이버 orderId → productOrderIds → 상세 조회 (API 조합의 핵심!)
+          this.logger.log(
+            `🔗 [네이버] orderId → productOrderIds 조합 조회: ${query.id}`,
+          );
+
+          // 1단계: orderId로 productOrderId 목록 조회
+          const productOrderIdsResponse =
+            await this.naverApi.getProductOrderIdsByOrderId(token, query.id);
+          const productOrderIds = productOrderIdsResponse.data || [];
+
+          if (productOrderIds.length === 0) {
+            this.logger.warn(
+              `⚠️ [네이버] orderId ${query.id}에 해당하는 productOrderId가 없습니다`,
+            );
+            return [];
+          }
+
+          this.logger.log(
+            `🔍 [네이버] 발견된 productOrderIds: ${productOrderIds.length}개`,
+          );
+
+          // 2단계: productOrderId 목록으로 상세 정보 조회
+          const orderDetails = await this.naverApi.getOrderDetails(
+            token,
+            productOrderIds,
+          );
+          const combinedResult = await this.transformToInternal(
+            orderDetails,
+            'orders',
+          );
+          this.logger.log(
+            `✅ [네이버] API 조합 조회 완료: ${combinedResult.length}건`,
+          );
+          return combinedResult;
+
+        case 'channelShipmentId':
+          // 네이버는 shipmentId 개념이 없음
+          this.logger.warn(
+            `❌ [네이버] 'channelShipmentId' 조회는 지원하지 않습니다 (네이버 특성상 불가능)`,
+          );
+          return [];
+
+        default:
+          this.logger.warn(
+            `❌ [네이버] 지원하지 않는 조회 타입: ${(query as any).by}`,
+          );
+          return [];
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ [네이버] 주문 조회 실패 (${query.by}=${query.id}):`,
+        error.message,
+      );
+      return [];
+    }
   }
 }

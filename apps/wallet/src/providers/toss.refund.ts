@@ -2,41 +2,37 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   CancelPort,
   CancelResult,
+  CancelRequest,
   RefundPort,
   RefundResult,
+  RefundRequest,
+  PaymentError,
 } from './payment-provider.interface';
 
-// 토스 환불/취소에 필요한 Payload 타입 정의
-export type TossRefundPayload = {
-  paymentKey: string; // 환불/취소를 위한 필수 키
-  reason: string;
-  cancelAmount?: number; // 부분 환불 금액
-  refundReceiveAccount?: {
-    // 가상계좌 환불 시 필요
-    bank: string;
-    accountNumber: string;
-    holderName: string;
-  };
-};
-
 @Injectable()
-export class TossRefundProvider
-  implements
-    RefundPort<TossRefundPayload>,
-    CancelPort<{ paymentKey: string; reason: string }>
-{
+export class TossRefundProvider implements RefundPort, CancelPort {
   private readonly logger = new Logger(TossRefundProvider.name);
 
-  async refund(payload: TossRefundPayload): Promise<RefundResult> {
+  /**
+   * ✨ [CTO 스타일] 공통 RefundRequest를 받아서 Toss 전용 DTO로 변환
+   */
+  async refund(request: RefundRequest): Promise<RefundResult> {
+    // Toss는 paymentKey가 필수
+    if (!request.paymentKey) {
+      throw new PaymentError(
+        'INVALID_REFUND_REQUEST',
+        'Toss refund requires paymentKey.',
+      );
+    }
+
     this.logger.log(
-      `➡️ 토스 환불 처리 시작 - PaymentKey: ${payload.paymentKey}`,
+      `➡️ 토스 환불 처리 시작 - PaymentKey: ${request.paymentKey}`,
     );
     const response = await this.callTossCancelAPI(
-      payload.paymentKey,
-      payload.reason,
+      request.paymentKey,
+      request.reason,
       {
-        cancelAmount: payload.cancelAmount,
-        refundReceiveAccount: payload.refundReceiveAccount,
+        cancelAmount: request.amount,
       },
     );
 
@@ -58,17 +54,25 @@ export class TossRefundProvider
     }
   }
 
-  async cancel(payload: {
-    paymentKey: string;
-    reason: string;
-  }): Promise<CancelResult> {
+  /**
+   * ✨ [CTO 스타일] 공통 CancelRequest를 받아서 Toss 전용 DTO로 변환
+   */
+  async cancel(request: CancelRequest): Promise<CancelResult> {
+    // Toss는 paymentKey가 필수
+    if (!request.paymentKey) {
+      throw new PaymentError(
+        'INVALID_CANCEL_REQUEST',
+        'Toss cancel requires paymentKey.',
+      );
+    }
+
     this.logger.log(
-      `➡️ 토스 결제 취소 시작 - PaymentKey: ${payload.paymentKey}`,
+      `➡️ 토스 결제 취소 시작 - PaymentKey: ${request.paymentKey}`,
     );
     // 토스는 환불과 취소가 동일한 'cancel' API를 사용합니다.
     const response = await this.callTossCancelAPI(
-      payload.paymentKey,
-      payload.reason,
+      request.paymentKey,
+      request.reason,
     );
 
     if (response.success) {

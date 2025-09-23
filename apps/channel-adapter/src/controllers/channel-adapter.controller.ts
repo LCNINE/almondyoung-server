@@ -17,7 +17,12 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ChannelType } from '../services/strategies/channel-strategy.factory';
-import { DataType, ChannelCommand, SyncToChannelPayload } from '../types';
+import {
+  DataType,
+  ChannelCommand,
+  SyncToChannelPayload,
+  OrderQuery,
+} from '../types';
 import { ChannelAdapterService } from '../services/channel-adapter.service';
 import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
 
@@ -289,6 +294,208 @@ export class ChannelAdapterController {
         '명령 실행 중 오류가 발생했습니다.',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  /**
+   * 🔍 채널별 주문 조회 (전략 패턴 적용)
+   *
+   * 식별자 하나로 조회하지만, 결과는 여러 건일 수 있습니다:
+   * - 쿠팡 orderId: 하나의 주문에 여러 발주서가 있을 수 있음
+   * - 네이버 orderId: 여러 상품 주문이 포함될 수 있음
+   *
+   * 주요 사용 사례:
+   * - 🚚 출고 직전 최신 배송지 확인
+   * - 📞 CS 문의 시 실시간 주문 상태 조회
+   * - 🛠️ 데이터 불일치 해결을 위한 원본 데이터 확인
+   *
+   * @param channel 채널 타입 (coupang, naver_smartstore 등)
+   * @param queryType 조회 타입 (ordersheet, ordersheet-by-orderid 등)
+   * @param identifier 조회 식별자 (shipmentBoxId, orderId 등)
+   * @returns 조회된 주문 정보 배열 (0~N건)
+   */
+  @Get(':channel/query/:queryType/:identifier')
+  @ApiOperation({
+    summary: '채널별 주문 조회 (전략 패턴)',
+    description: `식별자 하나로 조회하되, 결과는 여러 건일 수 있습니다. 전략 패턴을 통해 각 채널별 특화된 조회를 수행합니다.
+
+**지원 채널 및 조회 타입:**
+- **쿠팡 (coupang)**: 
+  - \`ordersheet\` + shipmentBoxId: 배송번호 기준 발주서 조회
+  - \`ordersheet-by-orderid\` + orderId: 주문번호 기준 발주서 조회
+- **네이버 (naver_smartstore)**: 
+  - \`order\` + productOrderId: 상품주문번호 기준 조회
+- **기타 채널**: 각 전략에서 구현된 조회 타입
+
+**쿠팡 사용 사례:**
+- 🏠 **배송지 변경 확인**: 결제 완료 후 고객 배송지 변경 여부 확인
+- 📦 **상품 정보 검증**: 출고 전 상품명과 옵션 정보 일치 여부 확인
+- 🚚 **실시간 상태 조회**: 운송장 번호, 배송 상태 등 최신 정보
+
+**주의사항:**
+- 각 채널별로 지원하는 queryType이 다를 수 있습니다
+- 전략에서 지원하지 않는 queryType 사용 시 400 에러가 반환됩니다`,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '쿠팡 발주서 단건 조회 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        data: {
+          type: 'object',
+          properties: {
+            channelType: { type: 'string', example: 'coupang' },
+            externalOrderId: { type: 'string', example: '5077495966' },
+            externalProductOrderId: { type: 'string', example: '16885250726' },
+            status: { type: 'string', example: 'PAID' },
+            buyer: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', example: '김철수' },
+                contact: { type: 'string', example: '050-1234-5678' },
+                address: {
+                  type: 'object',
+                  properties: {
+                    postalCode: { type: 'string', example: '12345' },
+                    roadAddress: {
+                      type: 'string',
+                      example: '서울시 강남구 테헤란로 123',
+                    },
+                    detailAddress: { type: 'string', example: '456호' },
+                  },
+                },
+              },
+            },
+            dispatch: {
+              type: 'object',
+              properties: {
+                deliveryCompanyCode: { type: 'string', example: 'CJ대한통운' },
+                trackingNumber: { type: 'string', example: '123456789012' },
+                dispatchedAt: {
+                  type: 'string',
+                  example: '2023-01-01T15:00:00+09:00',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청 파라미터' })
+  @ApiResponse({ status: 404, description: '발주서를 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '쿠팡 API 호출 실패' })
+  async queryOrders(
+    @Param('channel') channel: ChannelType,
+    @Param('queryType') queryType: 'ordersheet' | 'ordersheet-by-orderid',
+    @Param('identifier') identifier: string,
+  ) {
+    try {
+      this.logger.log(
+        `🔍 [${channel}] ${queryType} 주문 조회 요청: ${identifier}`,
+      );
+
+      // queryType을 표준 OrderQuery로 변환
+      const query: OrderQuery = this.mapQueryTypeToOrderQuery(
+        queryType,
+        identifier,
+      );
+
+      // 오케스트레이션 서비스를 통해 전략 패턴으로 주문 조회 수행
+      const orders = await this.orchestrationService.findOrders(channel, query);
+
+      this.logger.log(
+        `✅ [${channel}] ${queryType} 주문 조회 성공: ${identifier} → ${orders.length}건 조회됨`,
+      );
+
+      return {
+        success: true,
+        data: orders,
+        count: orders.length,
+        meta: {
+          channel,
+          queryType,
+          identifier,
+          retrievedAt: new Date().toISOString(),
+          source: `${channel}_${queryType}_query`,
+          implementation: this.getChannelImplementationInfo(channel),
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ [${channel}] ${queryType} 주문 조회 실패 (${identifier}):`,
+        error.message,
+      );
+
+      // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
+      if (
+        error.message.includes('not found') ||
+        error.message.includes('찾을 수 없')
+      ) {
+        throw new HttpException(
+          `${queryType} 조회 결과가 없습니다: ${identifier}`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      if (
+        error.message.includes('지원하지 않는') ||
+        error.message.includes('invalid') ||
+        error.message.includes('잘못된')
+      ) {
+        throw new HttpException(
+          `${channel} 채널에서 지원하지 않는 조회 타입이거나 잘못된 식별자입니다: ${queryType}`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (error.message.includes('인증') || error.message.includes('auth')) {
+        throw new HttpException(
+          `${channel} 채널 API 인증에 실패했습니다.`,
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      // 기타 모든 오류는 500으로 처리
+      throw new HttpException(
+        `${channel} 채널 ${queryType} 조회 중 오류가 발생했습니다.`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 🔄 queryType을 표준 OrderQuery 객체로 변환
+   */
+  private mapQueryTypeToOrderQuery(
+    queryType: 'ordersheet' | 'ordersheet-by-orderid',
+    identifier: string,
+  ): OrderQuery {
+    switch (queryType) {
+      case 'ordersheet':
+        return { by: 'channelShipmentId', id: identifier };
+      case 'ordersheet-by-orderid':
+        return { by: 'channelOrderId', id: identifier };
+      default:
+        throw new Error(`지원하지 않는 queryType: ${queryType}`);
+    }
+  }
+
+  /**
+   * 📋 채널별 구현 방식 정보 제공
+   */
+  private getChannelImplementationInfo(channel: ChannelType): string {
+    switch (channel) {
+      case 'coupang':
+        return 'Direct API calls (shipmentBoxId, orderId)';
+      case 'naver_smartstore':
+        return 'API composition (orderId → productOrderIds → getOrderDetails)';
+      case 'medusa':
+        return 'Direct API calls (orderId)';
+      default:
+        return 'Standard findOrders implementation';
     }
   }
 }

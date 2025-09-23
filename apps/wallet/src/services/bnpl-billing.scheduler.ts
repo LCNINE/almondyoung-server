@@ -1,352 +1,286 @@
 // services/bnpl-billing.scheduler.ts
-
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
-/**
- * BNPL 월별 Billing 배치 스케줄러
- *
- * 📋 플로우:
- * 1. 1분 주기: AUTHORIZED 상태 BNPL 거래 수집 → CMS 출금 신청
- * 2. 1분 후: 출금 조회 → 성공 시 CAPTURED 변환
- */
+import { BnplAccountService } from './bnpl-account.service';
+import { HmsApiFactory } from '../shared/utils/hms-api.factory';
+import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import {
+  CmsWithdrawalRequestSchema,
+  type CmsWithdrawalRequestDto,
+} from '../shared/zods/cms-withdrawal.zod';
+import { PaymentOrchestratorService } from './payment/payment-orchestrator.service';
+
 @Injectable()
 export class BnplBillingScheduler {
   private readonly logger = new Logger(BnplBillingScheduler.name);
+  private readonly hmsApi: HmsAPI | MockHmsAPI;
 
-  constructor(private readonly dbService: DbService) {}
-
-  /**
-   * 🎯 1단계: BNPL 출금 신청 배치 (1분 주기 - 테스트용)
-   * 실제 운영: 매월 28일 오전 9시
-   */
-  @Cron('*/1 * * * *', {
-    name: 'bnpl-collection-request',
-    timeZone: 'Asia/Seoul',
-  })
-  async processBnplCollectionRequest() {
-    this.logger.log('🏦 BNPL 출금 신청 배치 시작');
-
-    try {
-      // 1. AUTHORIZED 상태인 BNPL 이벤트들 조회
-      const authorizedEvents = await this.dbService.db
-        .select({
-          id: schema.bnplEvents.id,
-          bnplAccountId: schema.bnplEvents.bnplAccountId,
-          paymentSessionId: schema.bnplEvents.paymentSessionId,
-          amount: schema.bnplEvents.amount,
-          createdAt: schema.bnplEvents.createdAt,
-        })
-        .from(schema.bnplEvents)
-        .where(
-          and(
-            eq(schema.bnplEvents.status, 'AUTHORIZED'),
-            eq(schema.bnplEvents.transactionType, 'DEBIT'),
-          ),
-        );
-
-      if (authorizedEvents.length === 0) {
-        this.logger.log('📋 처리할 AUTHORIZED BNPL 거래가 없습니다.');
-        return;
-      }
-
-      this.logger.log(
-        `📊 AUTHORIZED BNPL 거래 ${authorizedEvents.length}건 발견`,
-      );
-
-      // 2. 사용자별로 그룹핑하여 Invoice 생성
-      const userGroups = this.groupByUser(authorizedEvents);
-
-      for (const [bnplAccountId, events] of userGroups) {
-        await this.createInvoiceAndRequestCollection(bnplAccountId, events);
-      }
-
-      this.logger.log('✅ BNPL 출금 신청 배치 완료');
-    } catch (error) {
-      this.logger.error('❌ BNPL 출금 신청 배치 실패', error);
-    }
-  }
-
-  /**
-   * 🎯 2단계: BNPL 출금 조회 및 CAPTURE 배치 (1분 주기 - 테스트용)
-   * 실제 운영: 매월 29일 오전 9시
-   */
-  @Cron('*/1 * * * *', {
-    name: 'bnpl-collection-check',
-    timeZone: 'Asia/Seoul',
-  })
-  async processBnplCollectionCheck() {
-    this.logger.log('🔍 BNPL 출금 조회 및 CAPTURE 배치 시작');
-
-    try {
-      // 1. PROCESSING 상태인 Invoice들 조회 (실제로는 vBnplInvoice VIEW 사용)
-      const processingInvoices = await this.dbService.db
-        .select()
-        .from(schema.bnplInvoices)
-        .where(eq(schema.bnplInvoices.status, 'PROCESSING'));
-
-      if (processingInvoices.length === 0) {
-        this.logger.log('📋 처리할 PROCESSING Invoice가 없습니다.');
-        return;
-      }
-
-      this.logger.log(
-        `📊 PROCESSING Invoice ${processingInvoices.length}건 발견`,
-      );
-
-      for (const invoice of processingInvoices) {
-        await this.checkCollectionAndCapture(invoice);
-      }
-
-      this.logger.log('✅ BNPL 출금 조회 및 CAPTURE 배치 완료');
-    } catch (error) {
-      this.logger.error('❌ BNPL 출금 조회 배치 실패', error);
-    }
-  }
-
-  /**
-   * 사용자별로 BNPL 이벤트 그룹핑
-   */
-  private groupByUser(events: any[]): Map<string, any[]> {
-    const groups = new Map<string, any[]>();
-
-    for (const event of events) {
-      const key = event.bnplAccountId;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(event);
-    }
-
-    return groups;
-  }
-
-  /**
-   * Invoice 생성 및 CMS 출금 신청
-   */
-  private async createInvoiceAndRequestCollection(
-    bnplAccountId: string,
-    events: any[],
+  constructor(
+    private readonly db: DbService<typeof schema>,
+    private readonly bnpl: BnplAccountService,
+    private readonly orchestrator: PaymentOrchestratorService,
   ) {
-    const totalAmount = events.reduce(
-      (sum, event) => sum + parseFloat(event.amount),
-      0,
+    this.hmsApi = HmsApiFactory.createForBnpl();
+  }
+
+  // 출금 신청 (매일 새벽 02:00) — 데모용 단축
+  @Cron('0 2 * * *', { name: 'bnpl-cms-billing', timeZone: 'Asia/Seoul' })
+  async processBnplBilling() {
+    this.logger.log('🏦 BNPL CMS 출금 신청 배치 시작');
+    const accounts = await this.bnpl.findAccountsForBilling();
+    if (accounts.length === 0) return this.logger.log('📋 대상 없음');
+
+    for (const account of accounts) {
+      await this.processSingleAccountBilling(account);
+    }
+    this.logger.log('✅ 출금 신청 배치 완료');
+  }
+
+  // 결과 조회 (매일 오전 10:00) — 데모용 단축
+  @Cron('0 10 * * *', { name: 'bnpl-cms-result-check', timeZone: 'Asia/Seoul' })
+  async processCmsResultCheck() {
+    this.logger.log('🔍 CMS 출금 결과 조회 시작');
+
+    // 신청 완료(대기)인 PURCHASE 이벤트 조회
+    const events = await this.db.db.query.bnplEvents.findMany({
+      where: and(
+        eq(schema.bnplEvents.status, 'AGGREGATED'),
+        eq(schema.bnplEvents.eventType, 'PURCHASE'),
+      ),
+    });
+    if (events.length === 0) return this.logger.log('📋 조회 대상 없음');
+
+    // batchTransactionId로 그룹핑
+    const groups = new Map<string, typeof events>();
+    for (const e of events) {
+      if (!e.batchTransactionId) continue;
+      if (!groups.has(e.batchTransactionId))
+        groups.set(e.batchTransactionId, [] as any);
+      (groups.get(e.batchTransactionId) as any).push(e);
+    }
+
+    for (const [batchId, list] of groups) {
+      await this.checkAndProcessCmsResult(batchId, list);
+    }
+
+    this.logger.log('✅ 결과 조회 배치 완료');
+  }
+
+  private async processSingleAccountBilling(account: any) {
+    const unbilled = await this.bnpl.getUnbilledAmount(account.id);
+    if (unbilled <= 0) {
+      await this.bnpl.updateNextBillingDate(account.id);
+      this.logger.log(`📋 미정산 0원 — skip: ${account.id}`);
+      return;
+    }
+
+    const batchId = this.generateBatchTransactionId();
+    const batchDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    await this.bnpl.markEventsAsAggregated(account.id, batchId, batchDate);
+
+    // CMS 출금 신청
+    const dto: CmsWithdrawalRequestDto = {
+      transactionId: batchId,
+      memberId: account.userId,
+      paymentDate: batchDate.replace(/-/g, ''), // YYYYMMDD
+      callAmount: unbilled,
+    };
+    const parsed = CmsWithdrawalRequestSchema.safeParse(dto);
+    if (!parsed.success) {
+      this.logger.error(
+        `❌ CMS 요청 DTO invalid: ${parsed.error.issues[0]?.message}`,
+      );
+      return;
+    }
+
+    const res = await this.callHmsCmsApi(parsed.data);
+    await this.bnpl.updateCmsResponse(
+      batchId,
+      res.success ? 'REQUESTED' : 'FAILED',
+      res.payment?.result?.code,
+      res.payment,
     );
-    const invoiceId = generateUUIDv7();
 
-    this.logger.log(
-      `💰 Invoice 생성: ${invoiceId} (Account: ${bnplAccountId}, 총액: ${totalAmount}원, 건수: ${events.length})`,
-    );
+    // 다음 결제일만 미리 업데이트
+    await this.bnpl.updateNextBillingDate(account.id);
 
-    try {
-      // 1. Settlement Batch (Invoice) 생성
-      await this.dbService.db.insert(schema.bnplInvoices).values({
-        id: invoiceId,
-        bnplAccountId: bnplAccountId,
-        invoiceNumber: `BNPL_${Date.now()}`,
-        totalAmount: totalAmount,
-        status: 'PROCESSING', // 출금 신청 중
-        dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // 내일까지
-        periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30일 전
-        periodEnd: new Date(),
-      });
+    if (res.success) {
+      this.logger.log(`✅ CMS 신청 성공: ${batchId}, amount=${unbilled}`);
+    } else {
+      this.logger.error(
+        `❌ CMS 신청 실패: ${batchId}, ${res.payment?.result?.message || 'Unknown'}`,
+      );
+    }
+  }
 
-      // 2. Settlement Batch Items 생성
-      for (const event of events) {
-        await this.dbService.db.insert(schema.bnplInvoiceItems).values({
-          id: generateUUIDv7(),
-          invoiceId: invoiceId,
-          bnplEventId: event.id,
-          amount: parseFloat(event.amount),
-          transactionDate: event.createdAt,
-        });
-      }
+  private async checkAndProcessCmsResult(batchId: string, events: any[]) {
+    const res = await this.checkHmsCmsResult(batchId);
 
-      // 3. Mock CMS 출금 신청 (실제로는 HMS API 호출)
-      const collectionEventId = generateUUIDv7();
-      await this.dbService.db.insert(schema.bnplCollectionEvents).values({
-        id: collectionEventId,
-        invoiceId: invoiceId,
-        eventType: 'COLLECTION_STARTED',
-        status: 'PROCESSING',
-        actor: 'SCHEDULER',
-        metadata: JSON.stringify({
-          totalAmount,
-          eventCount: events.length,
-          requestedAt: new Date().toISOString(),
-        }),
-      });
+    if (res.payment?.status === 'PROCESSED') {
+      await this.processCmsSuccess(batchId, events);
+    } else if (res.payment?.status === 'FAILED') {
+      await this.processCmsFailure(
+        batchId,
+        events,
+        res.payment?.result?.message || 'FAILED',
+      );
+    } else {
+      this.logger.log(`⏳ 처리중: ${batchId} — 다음 배치에서 재확인`);
+    }
+  }
 
-      // 4. 출금 신청만 기록 (상태는 PROCESSING 유지)
-      // 실제 결과는 2단계에서 Mock으로 처리
-      this.logger.log(
-        `🏦 출금 신청 완료: Invoice ${invoiceId} (상태: PROCESSING)`,
+  private async processCmsSuccess(batchId: string, events: any[]) {
+    await this.db.db.transaction(async (tx) => {
+      // 1) 상태 업데이트
+      await this.bnpl.updateCmsResponse(
+        batchId,
+        'PROCESSED',
+        undefined,
+        undefined,
+        tx,
       );
 
-      // 🎯 중요: 여기서는 상태를 PROCESSING으로 유지하여 2단계에서 처리할 수 있도록 함
-    } catch (error) {
-      this.logger.error(`❌ Invoice 생성 실패: ${invoiceId}`, error);
-    }
-  }
+      // 2) 각 이벤트 기준으로 상환/한도복원 + 결제 CAPTURE
+      // paymentIntentId 모아 처리
+      const intentIds = Array.from(
+        new Set(
+          events.map((e) => e.paymentIntentId).filter(Boolean) as string[],
+        ),
+      );
 
-  /**
-   * 출금 조회 및 CAPTURE 처리
-   */
-  private async checkCollectionAndCapture(invoice: any) {
-    this.logger.log(`🔍 출금 조회: Invoice ${invoice.id}`);
-
-    try {
-      // 🎯 Mock: 랜덤하게 성공/실패 시뮬레이션 (실제로는 HMS API 조회)
-      const isSuccess = Math.random() > 0.3; // 70% 성공률
-
-      if (isSuccess) {
-        // 성공: 출금 승인 → COMPLETED로 변경
-        await this.dbService.db
-          .update(schema.bnplInvoices)
-          .set({
-            status: 'COMPLETED',
-            pgTransactionId: `CMS_${Date.now()}`,
-          })
-          .where(eq(schema.bnplInvoices.id, invoice.id));
-
-        await this.dbService.db.insert(schema.bnplCollectionEvents).values({
-          id: generateUUIDv7(),
-          invoiceId: invoice.id,
-          eventType: 'COLLECTION_COMPLETED',
-          status: 'CAPTURED',
-          actor: 'SCHEDULER',
-          metadata: JSON.stringify({
-            pgTransactionId: `CMS_${Date.now()}`,
-            capturedAt: new Date().toISOString(),
-          }),
+      // 한 계정당 총액을 event.amount로 알 수 있으면 그대로 사용
+      for (const e of events) {
+        const account = await tx.query.bnplAccounts.findFirst({
+          where: eq(schema.bnplAccounts.id, e.accountId),
         });
+        if (!account) continue;
 
-        // 성공: 모든 관련 BNPL 이벤트를 CAPTURED로 변환
-        await this.captureAllRelatedEvents(invoice.id);
-        this.logger.log(
-          `✅ Mock 출금 성공 → CAPTURE 완료: Invoice ${invoice.id}`,
-        );
-      } else {
-        // 실패: 출금 거절 → FAILED로 변경
-        await this.dbService.db
-          .update(schema.bnplInvoices)
-          .set({ status: 'FAILED' })
-          .where(eq(schema.bnplInvoices.id, invoice.id));
-
-        await this.dbService.db.insert(schema.bnplCollectionEvents).values({
-          id: generateUUIDv7(),
-          invoiceId: invoice.id,
-          invoiceItemId: invoice.id,
-          eventType: 'COLLECTION_FAILED',
-          status: 'FAILED',
-          actor: 'SCHEDULER',
-          errorMessage: 'Mock: 잔액 부족 또는 계좌 오류',
-          metadata: JSON.stringify({
-            failedAt: new Date().toISOString(),
-            reason: 'INSUFFICIENT_FUNDS',
-          }),
-        });
-
-        // 실패: 모든 관련 BNPL 이벤트를 FAILED로 변환
-        await this.failAllRelatedEvents(invoice.id);
-        this.logger.log(
-          `❌ Mock 출금 실패 → FAILED 처리 완료: Invoice ${invoice.id}`,
+        // 구매 이벤트 금액을 상환 처리 (amount는 구매 시 +, 상환 시 -로 기록)
+        await this.bnpl.createDebitEvent(
+          account.userId,
+          e.amount,
+          batchId,
+          e.aggregationPeriod,
+          tx,
         );
       }
-    } catch (error) {
-      this.logger.error(`❌ 출금 조회 실패: Invoice ${invoice.id}`, error);
+
+      // AUTHORIZED → CAPTURED 전환
+      for (const intentId of intentIds) {
+        const attempts = await tx.query.paymentAttempts.findMany({
+          where: and(
+            eq(schema.paymentAttempts.intentId, intentId),
+            eq(schema.paymentAttempts.status, 'AUTHORIZED'),
+          ),
+        });
+
+        for (const attempt of attempts) {
+          try {
+            await this.orchestrator.capturePayment(
+              intentId,
+              attempt.id,
+              undefined,
+              {
+                actor: 'BNPL_SCHEDULER',
+                source: 'CMS_BATCH_SUCCESS',
+              },
+            );
+          } catch (err: any) {
+            // 개별 실패는 로그만
+            this.logger.error(
+              `CAPTURE 실패: intent=${intentId}, attempt=${attempt.id}, ${err.message}`,
+            );
+          }
+        }
+      }
+    });
+
+    this.logger.log(`✅ CMS 성공 처리 완료: batch=${batchId}`);
+  }
+
+  private async processCmsFailure(batchId: string, events: any[], msg: string) {
+    await this.db.db.transaction(async (tx) => {
+      await this.bnpl.updateCmsResponse(
+        batchId,
+        'FAILED',
+        undefined,
+        undefined,
+        tx,
+      );
+
+      // 관련 결제 실패로 전환
+      const intentIds = Array.from(
+        new Set(
+          events.map((e) => e.paymentIntentId).filter(Boolean) as string[],
+        ),
+      );
+
+      if (intentIds.length) {
+        await tx
+          .update(schema.paymentIntents)
+          .set({ status: 'FAILED' })
+          .where(inArray(schema.paymentIntents.id, intentIds));
+
+        await tx
+          .update(schema.paymentAttempts)
+          .set({ status: 'FAILED' })
+          .where(inArray(schema.paymentAttempts.intentId, intentIds));
+      }
+
+      // 이벤트들도 실패 표시
+      await this.bnpl.failEventsByBatch(batchId, tx);
+    });
+
+    this.logger.warn(`❌ CMS 실패 처리 완료: batch=${batchId}, err=${msg}`);
+  }
+
+  private generateBatchTransactionId(): string {
+    // YYYYMMDD + uuidv7 하위 6자리 → 30자 제한 안전
+    const d = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const tail = generateUUIDv7().slice(-6).toUpperCase();
+    return `${d}${tail}`;
+  }
+
+  private async callHmsCmsApi(
+    payload: CmsWithdrawalRequestDto,
+  ): Promise<{ success: boolean; payment?: any }> {
+    try {
+      const resp = await this.hmsApi.withdrawals.request(payload);
+      return {
+        success: resp.payment.result.flag === 'Y',
+        payment: resp.payment,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        payment: {
+          result: { flag: 'N', code: 'API_ERROR', message: e.message },
+        },
+      };
     }
   }
 
-  /**
-   * Invoice의 모든 관련 이벤트를 CAPTURED로 변환
-   */
-  private async captureAllRelatedEvents(invoiceId: string) {
-    // 1. Invoice Items 조회
-    const invoiceItems = await this.dbService.db
-      .select()
-      .from(schema.bnplInvoiceItems)
-      .where(eq(schema.bnplInvoiceItems.invoiceId, invoiceId));
-
-    const eventIds = invoiceItems.map((item) => item.bnplEventId);
-
-    if (eventIds.length === 0) return;
-
-    // 2. BNPL Events를 CAPTURED로 변환
-    await this.dbService.db
-      .update(schema.bnplEvents)
-      .set({ status: 'CAPTURED' })
-      .where(inArray(schema.bnplEvents.id, eventIds));
-
-    // 3. Payment Intents와 Attempts도 CAPTURED로 변환
-    const sessionIds = await this.dbService.db
-      .select({ paymentSessionId: schema.bnplEvents.paymentSessionId })
-      .from(schema.bnplEvents)
-      .where(inArray(schema.bnplEvents.id, eventIds));
-
-    const intentIds = sessionIds.map((s) => s.paymentSessionId);
-
-    if (intentIds.length > 0) {
-      await this.dbService.db
-        .update(schema.paymentIntents)
-        .set({
-          status: 'CAPTURED',
-          capturedAt: new Date(),
-        })
-        .where(inArray(schema.paymentIntents.id, intentIds));
-
-      await this.dbService.db
-        .update(schema.paymentAttempts)
-        .set({ status: 'CAPTURED' })
-        .where(inArray(schema.paymentAttempts.intentId, intentIds));
+  private async checkHmsCmsResult(
+    batchId: string,
+  ): Promise<{ success: boolean; payment?: any }> {
+    try {
+      const resp = await this.hmsApi.withdrawals.get(batchId);
+      return {
+        success: resp.payment.result.flag === 'Y',
+        payment: resp.payment,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        payment: {
+          result: { flag: 'N', code: 'INQUIRY_ERROR', message: e.message },
+          status: 'FAILED',
+        },
+      };
     }
-
-    this.logger.log(
-      `🎯 ${eventIds.length}건의 BNPL 거래를 CAPTURED로 변환 완료`,
-    );
-  }
-
-  /**
-   * Invoice의 모든 관련 이벤트를 FAILED로 변환
-   */
-  private async failAllRelatedEvents(invoiceId: string) {
-    // captureAllRelatedEvents와 동일한 로직이지만 FAILED로 변환
-    const invoiceItems = await this.dbService.db
-      .select()
-      .from(schema.bnplInvoiceItems)
-      .where(eq(schema.bnplInvoiceItems.invoiceId, invoiceId));
-
-    const eventIds = invoiceItems.map((item) => item.bnplEventId);
-
-    if (eventIds.length === 0) return;
-
-    await this.dbService.db
-      .update(schema.bnplEvents)
-      .set({ status: 'FAILED' })
-      .where(inArray(schema.bnplEvents.id, eventIds));
-
-    const sessionIds = await this.dbService.db
-      .select({ paymentSessionId: schema.bnplEvents.paymentSessionId })
-      .from(schema.bnplEvents)
-      .where(inArray(schema.bnplEvents.id, eventIds));
-
-    const intentIds = sessionIds.map((s) => s.paymentSessionId);
-
-    if (intentIds.length > 0) {
-      await this.dbService.db
-        .update(schema.paymentIntents)
-        .set({ status: 'FAILED' })
-        .where(inArray(schema.paymentIntents.id, intentIds));
-
-      await this.dbService.db
-        .update(schema.paymentAttempts)
-        .set({ status: 'FAILED' })
-        .where(inArray(schema.paymentAttempts.intentId, intentIds));
-    }
-
-    this.logger.log(`❌ ${eventIds.length}건의 BNPL 거래를 FAILED로 변환 완료`);
   }
 }

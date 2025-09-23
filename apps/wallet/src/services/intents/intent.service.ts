@@ -67,7 +67,7 @@ export class PaymentIntentService {
    */
   async updateIntentStatus(
     intentId: string,
-    status: schema.PaymentIntentStatus,
+    status: schema.PaymentSessionStatus,
     tx?: WalletExecutor,
   ): Promise<void> {
     const executor = tx || this.db.db;

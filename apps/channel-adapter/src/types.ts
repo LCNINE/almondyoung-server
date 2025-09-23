@@ -143,6 +143,17 @@ export interface BuyerInfo {
   };
 }
 
+// ===== 주문 조회 쿼리 타입 =====
+
+/**
+ * 단일 주문 조회를 위한 표준 쿼리 객체 타입
+ * 내부 시스템은 이 타입을 사용하여 어떤 종류의 조회든 요청할 수 있습니다.
+ */
+export type OrderQuery =
+  | { by: 'channelShipmentId'; id: string } // 쿠팡의 shipmentBoxId
+  | { by: 'channelProductOrderId'; id: string } // 네이버의 productOrderId
+  | { by: 'channelOrderId'; id: string }; // 쿠팡의 orderId, 네이버의 orderId
+
 export interface InternalOrderEvent {
   channelType: 'naver_smartstore' | 'coupang' | 'medusa';
   externalOrderId: string; // 주문번호

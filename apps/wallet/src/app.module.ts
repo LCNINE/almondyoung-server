@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { PaymentController } from './controllers/payment.controller';
+import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
 import { PaymentIntentService } from './services/intents/intent.service';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
@@ -37,6 +38,9 @@ import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
 import { IdempotencyService } from './services/idempotency.service';
 import { CheckoutSessionService } from './services/checkout-session.service';
+import { TaxInvoiceService } from './services/tax-invoice.service';
+import { BnplAccountService } from './services/bnpl-account.service';
+import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 
 @Module({
   imports: [
@@ -57,12 +61,16 @@ import { CheckoutSessionService } from './services/checkout-session.service';
   controllers: [
     // === 신규 아키텍처 ===
     PaymentController,
+    TaxInvoiceController,
   ],
   providers: [
     PaymentService,
     PaymentIntentService,
     PaymentProfileService,
     CheckoutSessionService,
+    TaxInvoiceService,
+    BnplAccountService,
+    BnplBillingScheduler,
 
     // --- 내부 흐름 제어 서비스 ---
     PaymentOrchestratorService,

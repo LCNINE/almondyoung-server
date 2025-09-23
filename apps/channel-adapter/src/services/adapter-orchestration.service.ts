@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EventPublisherService } from '@app/events';
 import {
   ChannelStrategyFactory,
@@ -12,11 +12,12 @@ import {
   NewEventLog,
   NewSyncHistory,
 } from '../types';
-import { InternalOrderEvent } from '../types';
+import { InternalOrderEvent, OrderQuery } from '../types';
 import { ChannelCommand } from '../types';
 import { ChannelAdapterEvents } from '../events/channel-events';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../schema';
 /**
  * 판매채널 어댑터 오케스트레이션 서비스
@@ -47,13 +48,11 @@ export class AdapterOrchestrationService {
   constructor(
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
-    @Optional()
     private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
     private readonly db: DbService<typeof schema>,
   ) {
-    const eventStatus = this.eventPublisher ? '이벤트 발행 + ' : '';
     this.logger.log(
-      `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (${eventStatus}DB 연동)`,
+      `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동)`,
     );
   }
 
@@ -93,26 +92,38 @@ export class AdapterOrchestrationService {
         `✅ [${channel}] ${events.length}건의 ${dataType} 이벤트 동기화 완료 (${duration}ms)`,
       );
 
-      // 🗃️ DB에 동기화 히스토리 기록
-      await this.logSyncHistoryToDb(
-        channel,
-        dataType,
-        { success: true, processedCount: events.length, failedCount: 0 },
-        new Date(startTime),
-        completedAt,
-      );
+      // 🗃️ 트랜잭션으로 동기화 히스토리와 모든 이벤트 로그를 원자적으로 처리
+      await this.db.db.transaction(async (tx) => {
+        // 동기화 히스토리 기록
+        await tx.insert(schema.syncHistories).values({
+          channelId: channel, // 실제 UUID가 필요하지만 임시로 channel 문자열 사용
+          syncType: dataType,
+          status: 'completed',
+          startedAt: new Date(startTime),
+          completedAt,
+          totalCount: events.length,
+          successCount: events.length,
+          failedCount: 0,
+        });
 
-      // 🗃️ 각 이벤트를 DB에 기록
-      for (const event of events) {
-        await this.logEventToDb(
-          channel,
-          `${dataType}_received`,
-          event.externalOrderId,
-          event, // rawData로 전체 이벤트 저장
-          event, // transformedData로도 동일하게 저장 (이미 변환된 상태)
-          event.externalProductOrderId,
+        // 모든 이벤트를 한 번에 기록 (배치 처리)
+        if (events.length > 0) {
+          const eventLogEntries = events.map((event) => ({
+            channelId: channel, // 실제 UUID가 필요하지만 임시로 channel 문자열 사용
+            eventType: `${dataType}_received`,
+            externalOrderId: event.externalOrderId,
+            rawData: event, // rawData로 전체 이벤트 저장
+            transformedData: event, // transformedData로도 동일하게 저장 (이미 변환된 상태)
+            processedAt: completedAt,
+          }));
+
+          await tx.insert(schema.eventLogs).values(eventLogEntries);
+        }
+
+        this.logger.log(
+          `🔒 [${channel}] 트랜잭션 완료: 동기화 히스토리 1건 + 이벤트 로그 ${events.length}건 기록`,
         );
-      }
+      });
 
       await this.syncStatusService.recordSyncComplete(channel, dataType, {
         eventCount: events.length,
@@ -147,19 +158,29 @@ export class AdapterOrchestrationService {
         error.message,
       );
 
-      // 🗃️ DB에 실패 히스토리 기록
-      await this.logSyncHistoryToDb(
-        channel,
-        dataType,
-        {
-          success: false,
-          processedCount: 0,
+      // 🗃️ 트랜잭션으로 실패 히스토리 기록
+      await this.db.db.transaction(async (tx) => {
+        await tx.insert(schema.syncHistories).values({
+          channelId: channel, // 실제 UUID가 필요하지만 임시로 channel 문자열 사용
+          syncType: dataType,
+          status: 'failed',
+          startedAt: new Date(startTime),
+          completedAt,
+          totalCount: 0,
+          successCount: 0,
           failedCount: 1,
-          errors: [{ message: error.message }],
-        },
-        new Date(startTime),
-        completedAt,
-      );
+          errorDetails: {
+            success: false,
+            processedCount: 0,
+            failedCount: 1,
+            errors: [{ message: error.message }],
+          },
+        });
+
+        this.logger.log(
+          `🔒 [${channel}] 실패 트랜잭션 완료: 실패 히스토리 기록`,
+        );
+      });
 
       await this.syncStatusService.recordSyncFailure(channel, dataType, {
         message: error.message,
@@ -509,6 +530,63 @@ export class AdapterOrchestrationService {
     );
 
     return results;
+  }
+
+  /**
+   * 🔍 주문 조회: 표준화된 쿼리 객체를 사용하여 특정 채널에서 주문 정보를 조회
+   *
+   * 🎯 통합 조회 인터페이스: 모든 채널이 findOrders를 구현하여 일관된 조회 경험 제공
+   *
+   * 📋 채널별 구현 방식:
+   * - 쿠팡: 직접 API 호출 (shipmentBoxId, orderId)
+   * - 네이버: API 조합 (orderId → productOrderIds → getOrderDetails)
+   * - 메두사: 직접 API 호출 (orderId)
+   *
+   * @param channel 조회할 채널
+   * @param query 조회 조건을 담은 표준 쿼리 객체
+   * @returns 변환된 내부 주문 이벤트 배열. 결과가 없으면 빈 배열을 반환합니다.
+   *
+   * @example
+   * ```typescript
+   * // 쿠팡 shipmentBoxId로 조회 (직접 API)
+   * const orders = await orchestrator.findOrders('coupang', { by: 'channelShipmentId', id: '642538971006401429' });
+   *
+   * // 네이버 orderId로 조회 (API 조합)
+   * const orders = await orchestrator.findOrders('naver_smartstore', { by: 'channelOrderId', id: '2023010310000001' });
+   * ```
+   */
+  async findOrders(
+    channel: ChannelType,
+    query: OrderQuery,
+  ): Promise<InternalOrderEvent[]> {
+    this.logger.log(
+      `🔍 [${channel}] 주문 조회 시작: ${query.by} = ${query.id}`,
+    );
+
+    try {
+      const strategy = this.factory.getStrategy(channel);
+
+      // 🎯 모든 전략이 findOrders를 구현하므로 바로 호출
+      const orderEvents = await strategy.findOrders(query);
+
+      this.logger.log(
+        `✅ [${channel}] 주문 조회 성공: ${orderEvents.length}건 조회됨 (${query.by}=${query.id})`,
+      );
+
+      // 조회 결과에 대한 상세 로깅
+      if (orderEvents.length > 0) {
+        this.logger.debug(
+          `📋 [${channel}] 조회된 주문 정보: ${orderEvents.map((order) => order.externalOrderId).join(', ')}`,
+        );
+      }
+
+      return orderEvents;
+    } catch (error) {
+      this.logger.error(
+        `❌ [${channel}] 주문 조회 실패: ${query.by} = ${query.id} - ${error.message}`,
+      );
+      throw new Error(`${channel} 채널에서 주문 조회 실패: ${error.message}`);
+    }
   }
 
   /**

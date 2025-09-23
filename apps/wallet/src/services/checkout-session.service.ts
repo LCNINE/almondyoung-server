@@ -35,15 +35,22 @@ export class CheckoutSessionService {
       metadata?: Record<string, any>;
     },
   ) {
-    // ... (intent 조회 로직은 동일)
+    // Intent 존재 여부 확인
+    const intent = await this.intentService.findIntentById(intentId);
+    if (!intent) {
+      throw new PaymentError(
+        'INTENT_NOT_FOUND',
+        `Intent not found: ${intentId}`,
+      );
+    }
+
     const metadata = options.metadata || {};
     const sessionId = `cs_${getTsid().toString()}`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     const paymentUiUrl = `${this.WALLET_UI_BASE_URL}?sessionId=${sessionId}`;
 
-    // 1. 삽입할 데이터를 먼저 객체로 만듭니다.
-    const newSessionData: any = {
-      // 타입 추론을 위해 any 또는 별도 타입 사용
+    // 1. 삽입할 데이터를 준비합니다.
+    const newSessionData = {
       id: sessionId,
       intentId: intentId,
       redirectUrl: paymentUiUrl,
@@ -51,17 +58,11 @@ export class CheckoutSessionService {
       cancelUrl: options.cancelUrl,
       status: 'PENDING' as const,
       expiresAt,
-      metadata: sql`default`,
-      createdAt: sql`default`,
+      metadata: Object.keys(metadata).length > 0 ? metadata : {},
+      // createdAt은 기본값으로 자동 설정되므로 생략
     };
 
-    // 2. metadata 객체에 실제 값이 있을 때만 newSessionData에 추가합니다.
-    if (Object.keys(metadata).length > 0) {
-      newSessionData.metadata = metadata;
-    }
-
-    // 3. 최종적으로 만들어진 객체를 .values()에 전달합니다.
-    // 이제 metadata가 비어있으면 이 객체에 metadata 키 자체가 없게 됩니다.
+    // 3. DB에 삽입합니다.
     await this.db.db.insert(schema.checkoutSessions).values(newSessionData);
 
     this.logger.log(

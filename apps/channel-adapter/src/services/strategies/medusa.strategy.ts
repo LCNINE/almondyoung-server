@@ -7,7 +7,7 @@ import {
   SyncToChannelPayload,
   InternalInventoryData,
 } from '../../types';
-import { InternalOrderEvent } from '../../types';
+import { InternalOrderEvent, OrderQuery } from '../../types';
 import { ChannelCommand } from '../../types';
 import { firstValueFrom } from 'rxjs';
 
@@ -486,6 +486,77 @@ export class MedusaStrategy implements ChannelStrategy {
         ],
         failedCount: 1,
       };
+    }
+  }
+
+  /**
+   * 표준화된 쿼리 객체를 사용하여 주문 정보를 조회합니다.
+   * @param query 조회 조건을 담은 표준 쿼리 객체
+   * @returns 변환된 내부 주문 이벤트 배열. 결과가 없으면 빈 배열을 반환합니다.
+   */
+  async findOrders(query: OrderQuery): Promise<InternalOrderEvent[]> {
+    try {
+      switch (query.by) {
+        case 'channelOrderId':
+          // 메두사 orderId로 단건 조회
+          const order = await this.fetchMedusaOrderById(query.id);
+          return order ? [this.transformMedusaOrderToInternalEvent(order)] : [];
+
+        case 'channelProductOrderId':
+          // 메두사는 주문과 상품주문이 동일하므로 channelOrderId와 같은 처리
+          const productOrder = await this.fetchMedusaOrderById(query.id);
+          return productOrder
+            ? [this.transformMedusaOrderToInternalEvent(productOrder)]
+            : [];
+
+        case 'channelShipmentId':
+          // 메두사는 shipmentId 개념이 없으므로 빈 배열 반환
+          console.warn(
+            `메두사는 'channelShipmentId'를 사용한 조회를 지원하지 않습니다.`,
+          );
+          return [];
+
+        default:
+          console.warn(`지원하지 않는 조회 타입입니다: ${(query as any).by}`);
+          return [];
+      }
+    } catch (error) {
+      console.error(`메두사 주문 조회 실패:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * 메두사에서 특정 orderId로 주문 조회
+   */
+  private async fetchMedusaOrderById(orderId: string): Promise<any | null> {
+    try {
+      const medusaApiUrl =
+        process.env.MEDUSA_API_URL || 'http://localhost:9000';
+      const adminApiKey = process.env.MEDUSA_ADMIN_API_KEY;
+
+      if (!adminApiKey) {
+        throw new Error(
+          'MEDUSA_ADMIN_API_KEY 환경 변수가 설정되지 않았습니다.',
+        );
+      }
+
+      const response = await firstValueFrom(
+        this.http.get(`${medusaApiUrl}/admin/orders/${orderId}`, {
+          headers: {
+            Authorization: `Bearer ${adminApiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+      return response.data?.order || null;
+    } catch (error) {
+      this.logger.error(
+        `메두사 주문 조회 실패 (${orderId}):`,
+        error.response?.data || error.message,
+      );
+      return null;
     }
   }
 }

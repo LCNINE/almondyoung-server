@@ -1,22 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
 import { ChannelStrategy } from './channel-strategy.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
-import { InternalOrderEvent } from '../../types';
+import { InternalOrderEvent, OrderQuery } from '../../types';
 import { ChannelCommand } from '../../types';
-import { firstValueFrom } from 'rxjs';
+import { CoupangApiService } from '../apis/coupang.api.service';
 import {
-  CoupangOrderSheetListResponseSchema,
-  CoupangOrderSheetRequestSchema,
+  CoupangOrderSheet,
+  CoupangDeliveryHistoryResponse,
+  validateCoupangDateRange,
   mapCoupangStatusToInternal,
-  validateDateRange,
-  type CoupangOrderSheetListResponse,
-  type CoupangOrderSheet,
-} from '../../zods/coupang-ordersheet.zod';
+} from '../../zods/coupang.api.zod';
 
 @Injectable()
 export class CoupangStrategy implements ChannelStrategy {
-  constructor(private readonly http: HttpService) {}
+  constructor(private readonly coupangApiService: CoupangApiService) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
     // 쿠팡 웹훅이 있는 경우 payload -> InternalOrderEvent로 변환
@@ -30,18 +27,7 @@ export class CoupangStrategy implements ChannelStrategy {
     }
 
     try {
-      // 1. 환경변수에서 쿠팡 설정 가져오기
-      const vendorId = process.env.COUPANG_VENDOR_ID;
-      const accessKey = process.env.COUPANG_ACCESS_KEY;
-      const secretKey = process.env.COUPANG_SECRET_KEY;
-      const apiEndpoint =
-        process.env.COUPANG_API_ENDPOINT || 'https://api-gateway.coupang.com';
-
-      if (!vendorId || !accessKey || !secretKey) {
-        throw new Error(
-          '쿠팡 API 인증 정보가 설정되지 않았습니다 (COUPANG_VENDOR_ID, COUPANG_ACCESS_KEY, COUPANG_SECRET_KEY)',
-        );
-      }
+      // 1. API 서비스를 통한 조회 (환경변수 체크는 API 서비스에서 처리)
 
       // 2. 조회 기간 설정 (현재는 24시간 전으로 설정)
       // TODO: 실제 구현에서는 Redis나 DB에서 마지막 동기화 시각을 관리해야 함
@@ -56,11 +42,11 @@ export class CoupangStrategy implements ChannelStrategy {
       );
 
       // 3. 날짜 범위 검증
-      if (!validateDateRange(createdAtFrom, createdAtTo)) {
+      if (!validateCoupangDateRange(createdAtFrom, createdAtTo)) {
         throw new Error('조회 기간이 31일을 초과할 수 없습니다');
       }
 
-      // 4. 모든 상태의 발주서를 조회 (상태별로 분리 조회)
+      // 4. 모든 상태의 발주서를 조회 (상태별로 분리 조회) - API 서비스 사용
       const statuses = [
         'ACCEPT',
         'INSTRUCT',
@@ -73,15 +59,12 @@ export class CoupangStrategy implements ChannelStrategy {
       for (const status of statuses) {
         console.log(`📋 ${status} 상태 발주서 조회 중...`);
 
-        const orderSheets = await this.fetchOrderSheetsByStatus(
-          vendorId,
-          accessKey,
-          secretKey,
-          apiEndpoint,
-          createdAtFrom,
-          createdAtTo,
-          status,
-        );
+        const orderSheets =
+          await this.coupangApiService.getAllOrderSheetsByStatus(
+            createdAtFrom,
+            createdAtTo,
+            status,
+          );
 
         allOrderSheets.push(...orderSheets);
         console.log(`✅ ${status} 상태: ${orderSheets.length}건 조회됨`);
@@ -112,6 +95,41 @@ export class CoupangStrategy implements ChannelStrategy {
     } catch (error) {
       console.error('❌ 쿠팡 발주서 동기화 실패:', error);
       throw new Error(`쿠팡 발주서 동기화 실패: ${error.message}`);
+    }
+  }
+
+  /**
+   * 🔍 쿠팡 발주서 단건 조회 (shipmentBoxId 기준) - findOrders에서 사용
+   */
+  private async getSingleOrderSheet(
+    shipmentBoxId: string | number,
+  ): Promise<InternalOrderEvent> {
+    try {
+      console.log(`🔍 쿠팡 발주서 단건 조회 시작: ${shipmentBoxId}`);
+
+      // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
+      const response =
+        await this.coupangApiService.getSingleOrderSheet(shipmentBoxId);
+
+      console.log(`✅ 쿠팡 발주서 단건 조회 성공: ${shipmentBoxId}`);
+
+      // 2. 쿠팡 발주서를 InternalOrderEvent로 변환
+      const internalEvent = this.transformSingleCoupangOrderSheetToInternal(
+        response.data,
+      );
+
+      // 3. 중요한 정보 로깅 (배송지 변경 확인용)
+      console.log(
+        `📍 수취인 정보: ${internalEvent.buyer?.name} (${internalEvent.buyer?.contact})`,
+      );
+      console.log(
+        `📍 배송지: ${internalEvent.buyer?.address?.roadAddress} ${internalEvent.buyer?.address?.detailAddress}`,
+      );
+
+      return internalEvent;
+    } catch (error) {
+      console.error(`❌ 쿠팡 발주서 단건 조회 실패 (${shipmentBoxId}):`, error);
+      throw new Error(`쿠팡 발주서 단건 조회 실패: ${error.message}`);
     }
   }
 
@@ -219,144 +237,111 @@ export class CoupangStrategy implements ChannelStrategy {
   }
 
   /**
-   * 특정 상태의 발주서 목록을 조회하는 헬퍼 메서드
+   * 🔍 쿠팡 발주서 단건 조회 (orderId 기준) - findOrders에서 사용
    */
-  private async fetchOrderSheetsByStatus(
-    vendorId: string,
-    accessKey: string,
-    secretKey: string,
-    apiEndpoint: string,
-    createdAtFrom: string,
-    createdAtTo: string,
-    status: string,
-  ): Promise<CoupangOrderSheet[]> {
-    const allOrderSheets: CoupangOrderSheet[] = [];
-    let nextToken: string | undefined;
+  private async getSingleOrderSheetByOrderId(
+    orderId: string | number,
+  ): Promise<InternalOrderEvent[]> {
+    try {
+      console.log(`🔍 쿠팡 발주서 단건 조회 (orderId) 시작: ${orderId}`);
 
-    do {
-      try {
-        // API 호출 파라미터 구성
-        const params = new URLSearchParams({
-          createdAtFrom: createdAtFrom,
-          createdAtTo: createdAtTo,
-          status,
-          maxPerPage: '50',
-        });
+      // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
+      const response =
+        await this.coupangApiService.getSingleOrderSheetByOrderId(orderId);
 
-        if (nextToken) {
-          params.append('nextToken', nextToken);
-        }
+      console.log(
+        `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data?.length || 0}건)`,
+      );
 
-        const path = `/v2/providers/openapi/apis/api/v5/vendors/${vendorId}/ordersheets`;
-        const queryString = params.toString();
+      // 2. 쿠팡 발주서들을 InternalOrderEvent 배열로 변환
+      const internalEvents = this.transformCoupangOrderSheetsToInternal(
+        response.data,
+        'orders',
+      );
 
-        // 쿠팡 API 인증 헤더 생성 (쿼리 파라미터 포함)
-        const authorization = this.generateCoupangAuthHeader(
-          accessKey,
-          secretKey,
-          'GET',
-          path,
-          queryString,
-        );
-
-        const url = `${apiEndpoint}${path}?${queryString}`;
-
-        console.log(`📡 쿠팡 API 호출: ${url}`);
-
-        const response = await firstValueFrom(
-          this.http.get<CoupangOrderSheetListResponse>(url, {
-            headers: {
-              Authorization: authorization,
-              'Content-Type': 'application/json',
-            },
-          }),
-        );
-
-        // 응답 데이터 검증
-        const validatedResponse = CoupangOrderSheetListResponseSchema.parse(
-          response.data,
-        );
-
-        if (validatedResponse.code !== 200) {
-          throw new Error(
-            `쿠팡 API 오류: ${validatedResponse.code} - ${validatedResponse.message}`,
-          );
-        }
-
-        allOrderSheets.push(...validatedResponse.data);
-        nextToken = validatedResponse.nextToken;
-
+      // 3. 중요한 정보 로깅 (배송지 변경 확인용)
+      if (internalEvents.length > 0) {
+        const firstEvent = internalEvents[0];
         console.log(
-          `📄 페이지 조회 완료: ${validatedResponse.data.length}건, nextToken: ${nextToken || 'none'}`,
+          `📍 수취인 정보: ${firstEvent.buyer?.name} (${firstEvent.buyer?.contact})`,
         );
-      } catch (error) {
-        console.error(
-          `❌ 쿠팡 API 호출 실패 (status: ${status}):`,
-          error.response?.data || error.message,
+        console.log(
+          `📍 배송지: ${firstEvent.buyer?.address?.roadAddress} ${firstEvent.buyer?.address?.detailAddress}`,
         );
-        throw error;
+        console.log(`📦 총 발주서 수: ${internalEvents.length}건`);
       }
-    } while (nextToken);
 
-    return allOrderSheets;
+      return internalEvents;
+    } catch (error) {
+      console.error(
+        `❌ 쿠팡 발주서 단건 조회 (orderId) 실패 (${orderId}):`,
+        error,
+      );
+      throw new Error(`쿠팡 발주서 단건 조회 (orderId) 실패: ${error.message}`);
+    }
   }
 
   /**
-   * 쿠팡 API 인증 헤더 생성 (정확한 HMAC-SHA256 서명)
-   *
-   * 쿠팡 API 서명 규칙:
-   * 1. signedDate + HTTP_METHOD + PATH + QUERY_STRING
-   * 2. 위 문자열을 secret-key로 HMAC-SHA256 해싱
-   * 3. 결과를 hex로 인코딩
-   *
-   * @param accessKey 쿠팡 Access Key
-   * @param secretKey 쿠팡 Secret Key
-   * @param method HTTP 메서드 (GET, POST 등)
-   * @param path API 경로 (/v2/providers/openapi/apis/...)
-   * @param query Query String (? 없이 파라미터만)
+   * 표준화된 쿼리 객체를 사용하여 주문 정보를 조회합니다.
+   * @param query 조회 조건을 담은 표준 쿼리 객체
+   * @returns 변환된 내부 주문 이벤트 배열. 결과가 없으면 빈 배열을 반환합니다.
    */
-  private generateCoupangAuthHeader(
-    accessKey: string,
-    secretKey: string,
-    method: string,
-    path: string,
-    query?: string,
-  ): string {
-    const crypto = require('crypto');
+  async findOrders(query: OrderQuery): Promise<InternalOrderEvent[]> {
+    try {
+      switch (query.by) {
+        case 'channelShipmentId':
+          // 쿠팡 shipmentBoxId로 단건 조회
+          const singleOrder = await this.getSingleOrderSheet(query.id);
+          return singleOrder ? [singleOrder] : [];
 
-    // 1. signed-date 생성 (GMT+0, yyMMddTHHmmssZ 형식)
-    const now = new Date();
-    const signedDate =
-      now
-        .toISOString()
-        .slice(2, 19) // yy-MM-ddTHH:mm:ss
-        .replace(/[-:]/g, '') // yyMMddTHHmmss
-        .replace('T', 'T') + 'Z'; // yyMMddTHHmmssZ
+        case 'channelOrderId':
+          // 쿠팡 orderId로 조회 (여러 발주서 반환 가능)
+          return await this.getSingleOrderSheetByOrderId(query.id);
 
-    // 2. 서명 문자열 구성: signedDate + method + path + query
-    const queryString = query || '';
-    const message = signedDate + method + path + queryString;
+        case 'channelProductOrderId':
+          // 쿠팡은 productOrderId 개념이 없으므로 빈 배열 반환
+          console.warn(
+            `쿠팡은 'channelProductOrderId'를 사용한 조회를 지원하지 않습니다.`,
+          );
+          return [];
 
-    console.log('🔐 쿠팡 API 서명 생성 (정확한 방식):');
-    console.log(`  - Signed Date: ${signedDate}`);
-    console.log(`  - Method: ${method}`);
-    console.log(`  - Path: ${path}`);
-    console.log(`  - Query: ${queryString}`);
-    console.log(`  - Message: "${message}"`);
+        default:
+          console.warn(`지원하지 않는 조회 타입입니다: ${(query as any).by}`);
+          return [];
+      }
+    } catch (error) {
+      console.error(`쿠팡 주문 조회 실패:`, error);
+      return [];
+    }
+  }
 
-    // 3. HMAC-SHA256 서명 생성
-    const signature = crypto
-      .createHmac('sha256', secretKey)
-      .update(message, 'utf8')
-      .digest('hex');
+  /**
+   * 🔍 쿠팡 배송상태 변경 히스토리 조회
+   * @param shipmentBoxId 발주서 ID
+   * @returns 배송상태 변경 히스토리 응답
+   */
+  async getDeliveryHistory(
+    shipmentBoxId: string | number,
+  ): Promise<CoupangDeliveryHistoryResponse> {
+    try {
+      console.log(`📋 쿠팡 배송상태 히스토리 조회 시작: ${shipmentBoxId}`);
 
-    console.log(`  - Signature: ${signature}`);
+      // API 서비스를 통한 배송상태 히스토리 조회
+      const response =
+        await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
 
-    // 4. Authorization 헤더 생성
-    const authHeader = `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${signedDate}, signature=${signature}`;
-    console.log(`  - Authorization: ${authHeader}`);
+      console.log(
+        `✅ 쿠팡 배송상태 히스토리 조회 성공: ${shipmentBoxId} (${response.data?.histories?.length || 0}건)`,
+      );
 
-    return authHeader;
+      return response;
+    } catch (error) {
+      console.error(
+        `❌ 쿠팡 배송상태 히스토리 조회 실패 (${shipmentBoxId}):`,
+        error.message,
+      );
+      throw new Error(`쿠팡 배송상태 히스토리 조회 실패: ${error.message}`);
+    }
   }
 
   /**
@@ -415,5 +400,65 @@ export class CoupangStrategy implements ChannelStrategy {
     }
 
     return events;
+  }
+
+  /**
+   * 쿠팡 발주서 단건을 InternalOrderEvent로 변환
+   *
+   * 단건 조회는 배송지 변경 확인이나 실시간 상태 조회에 주로 사용되므로,
+   * 첫 번째 주문 상품을 기준으로 대표 이벤트를 생성합니다.
+   *
+   * @param orderSheet 쿠팡 발주서 단건 데이터
+   * @returns 변환된 내부 주문 이벤트
+   */
+  private transformSingleCoupangOrderSheetToInternal(
+    orderSheet: CoupangOrderSheet,
+  ): InternalOrderEvent {
+    // 첫 번째 주문 상품을 대표로 사용 (단건 조회에서는 주로 전체 주문 정보가 중요)
+    const firstOrderItem = orderSheet.orderItems[0];
+
+    if (!firstOrderItem) {
+      throw new Error('발주서에 주문 상품이 없습니다');
+    }
+
+    const internalEvent: InternalOrderEvent = {
+      channelType: 'coupang',
+      externalOrderId: orderSheet.orderId.toString(),
+      externalProductOrderId: firstOrderItem.vendorItemId.toString(),
+      status: mapCoupangStatusToInternal(orderSheet.status),
+      lastChangedType: 'SINGLE_ORDER_QUERY', // 단건 조회임을 명시
+      lastChangedAt: orderSheet.orderedAt,
+      paymentDate: orderSheet.paidAt,
+      quantity: firstOrderItem.shippingCount,
+      priceAmount: firstOrderItem.salesPrice.units,
+      createdAt: orderSheet.orderedAt,
+      updatedAt: orderSheet.paidAt,
+
+      // 할인 정보
+      discountAmount: firstOrderItem.discountPrice.units,
+
+      // 🎯 배송지 변경 확인을 위한 수취인 정보 (단건 조회의 핵심)
+      buyer: {
+        name: orderSheet.receiver.name,
+        contact: orderSheet.receiver.safeNumber,
+        address: {
+          postalCode: orderSheet.receiver.postCode,
+          roadAddress: orderSheet.receiver.addr1,
+          detailAddress: orderSheet.receiver.addr2,
+        },
+      },
+
+      // 🚚 배송 정보 (운송장 번호, 배송 상태 확인)
+      dispatch: orderSheet.invoiceNumber
+        ? {
+            deliveryMethod: 'DELIVERY',
+            deliveryCompanyCode: orderSheet.deliveryCompanyName || 'UNKNOWN',
+            trackingNumber: orderSheet.invoiceNumber,
+            dispatchedAt: orderSheet.inTrasitDateTime,
+          }
+        : undefined,
+    };
+
+    return internalEvent;
   }
 }
