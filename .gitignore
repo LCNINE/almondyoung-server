@@ -55,3 +55,122 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .env.dev
+# compiled output
+/dist
+/node_modules
+/build
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Test files and temporary files
+*.test.js
+*.spec.js
+*.test.ts
+*.spec.ts
+test-*.js
+test-*.ts
+*-test.js
+*-test.ts
+*-test.html
+*-test.html
+fcm-token-generator.html
+real-fcm-token-generator.html
+simple-fcm-test.html
+firebase-messaging-sw.js
+generate-fcm-token.js
+create-template-now.js
+create-template.sh
+fix-provider.js
+temp_*.js
+temp_*.ts
+
+# Response files
+*_response.json
+email_response.json
+kakao_response*.json
+nhn_*.json
+
+# Backup files
+*.backup
+*.backup2
+*.backup3
+
+# Test directories
+web-push-test/
+test-*/
+
+# Template data files
+template-data.json
+
+# Image files (test screenshots)
+*.jpg
+*.png
+*.jpeg
+*.gif
+
+# Documentation files (test guides)
+*_TEST_GUIDE.md
+*_TEST_STEP_BY_STEP.md
+*_EXAMPLES.md
+
+# Drizzle ORM migration files
+apps/*/database/drizzle/
+**/drizzle/
+**/meta/
+**/*.sql
+
+# Cursor Rules (personal settings)
+.cursor/
+**/*.mdc
+**/cursor-rules.*
+**/nofication-rules.*

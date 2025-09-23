@@ -1,0 +1,128 @@
+{
+  "members": [
+    {
+      "id": "member_001",
+      "name": "김테스트",
+      "email": "test1@example.com",
+      "phone": "01012345678",
+      "subscriptionType": "monthly",
+      "subscriptionStatus": "active",
+      "billingCycle": 30,
+      "subscriptionAmount": 9900,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "lastBillingDate": "2024-01-15T00:00:00.000Z",
+      "nextBillingDate": "2024-02-15T00:00:00.000Z"
+    },
+    {
+      "id": "member_002",
+      "name": "이구독",
+      "email": "test2@example.com",
+      "phone": "01087654321",
+      "subscriptionType": "yearly",
+      "subscriptionStatus": "active",
+      "billingCycle": 365,
+      "subscriptionAmount": 99000,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "lastBillingDate": "2024-01-01T00:00:00.000Z",
+      "nextBillingDate": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "member_003",
+      "name": "박정기",
+      "email": "test3@example.com",
+      "phone": "01055556666",
+      "subscriptionType": "monthly",
+      "subscriptionStatus": "pending",
+      "billingCycle": 30,
+      "subscriptionAmount": 19900,
+      "createdAt": "2024-01-10T00:00:00.000Z",
+      "lastBillingDate": null,
+      "nextBillingDate": "2024-02-10T00:00:00.000Z"
+    }
+  ],
+  "paymentMethods": [
+    {
+      "id": "pm_card_001",
+      "memberId": "member_001",
+      "methodType": "CARD",
+      "paymentPurpose": "SUBSCRIPTION",
+      "status": "ACTIVE",
+      "cardInfo": {
+        "memberName": "김테스트",
+        "phone": "01012345678",
+        "paymentNumber": "1234567890123456",
+        "payerName": "김테스트",
+        "payerNumber": "9001011234",
+        "validYear": "25",
+        "validMonth": "12",
+        "maskedCardNumber": "1234-****-****-3456"
+      },
+      "hmsMemberId": null,
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "pm_card_002",
+      "memberId": "member_002",
+      "methodType": "CARD",
+      "paymentPurpose": "SUBSCRIPTION",
+      "status": "ACTIVE",
+      "cardInfo": {
+        "memberName": "이구독",
+        "phone": "01087654321",
+        "paymentNumber": "9876543210987654",
+        "payerName": "이구독",
+        "payerNumber": "8505051234",
+        "validYear": "26",
+        "validMonth": "08",
+        "maskedCardNumber": "9876-****-****-7654"
+      },
+      "hmsMemberId": null,
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "pm_card_003",
+      "memberId": "member_003",
+      "methodType": "CARD",
+      "paymentPurpose": "SUBSCRIPTION",
+      "status": "ACTIVE",
+      "cardInfo": {
+        "memberName": "박정기",
+        "phone": "01055556666",
+        "paymentNumber": "5555666677778888",
+        "payerName": "박정기",
+        "payerNumber": "7503031234",
+        "validYear": "27",
+        "validMonth": "03",
+        "maskedCardNumber": "5555-****-****-8888"
+      },
+      "hmsMemberId": null,
+      "createdAt": "2024-01-10T00:00:00.000Z"
+    }
+  ],
+  "subscriptionPlans": [
+    {
+      "id": "plan_basic",
+      "name": "베이직 플랜",
+      "type": "monthly",
+      "amount": 9900,
+      "billingCycle": 30,
+      "description": "기본 멤버십 플랜"
+    },
+    {
+      "id": "plan_premium",
+      "name": "프리미엄 플랜",
+      "type": "monthly",
+      "amount": 19900,
+      "billingCycle": 30,
+      "description": "프리미엄 멤버십 플랜"
+    },
+    {
+      "id": "plan_yearly",
+      "name": "연간 플랜",
+      "type": "yearly",
+      "amount": 99000,
+      "billingCycle": 365,
+      "description": "연간 할인 멤버십 플랜"
+    }
+  ]
+}
