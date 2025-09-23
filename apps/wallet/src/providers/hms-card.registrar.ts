@@ -1,0 +1,87 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ProfileRegistrar } from './payment-provider.interface';
+// 실제 HMS API 클라이언트를 사용한다고 가정합니다.
+import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
+
+@Injectable()
+export class HmsCardRegistrar
+  implements
+    ProfileRegistrar<
+      // Input Type: 프로필 등록에 필요한 정보
+      {
+        userId: string;
+        payerName: string;
+        phone: string;
+        paymentCompany?: string;
+        // ... HmsCardProfileRequest에서 필요했던 다른 필드들
+        memberId: string; // 예시: 외부에서 생성된 ID
+        paymentNumber: string; // 카드번호 등
+        validYear: string;
+        validMonth: string;
+        password?: string;
+        memberName: string;
+      },
+      // Meta Type: 등록 후 반환할 추가 정보
+      {
+        cardBrand?: string;
+        last4?: string;
+      }
+    >
+{
+  private readonly logger = new Logger(HmsCardRegistrar.name);
+  private readonly hmsApi: HmsAPI; // API 클라이언트를 주입받거나 직접 생성합니다.
+
+  constructor() {
+    // API 클라이언트 초기화 로직을 여기로 가져옵니다.
+    // 더 좋은 방법은 API 클라이언트를 별도 Provider로 만들어 주입(Inject)받는 것입니다.
+    this.hmsApi = ApiClientFactory.create({
+      swKey: process.env.SW_KEY || '',
+      custKey: process.env.CUST_KEY || '',
+      isTest: process.env.NODE_ENV !== 'production',
+      useMock: false,
+    }) as HmsAPI;
+  }
+
+  async register(input: any, ctx: { tx: any }) {
+    this.logger.log(`➡️ HMS 카드 프로필 등록 요청: ${input.userId}`);
+
+    try {
+      const resp = await this.hmsApi.paymentProfiles.create({
+        memberId: input.memberId,
+        paymentKind: 'CARD',
+        payerNumber: input.payerNumber,
+        paymentNumber: input.paymentNumber,
+        payerName: input.payerName,
+        // ... 기존 registerProfile에서 사용하던 모든 필드를 input에서 가져와 매핑합니다.
+        phone: input.phone,
+        memberName: input.memberName,
+        validYear: input.validYear,
+        validMonth: input.validMonth,
+        password: input.password,
+      });
+
+      // 인터페이스 계약(return type)에 맞춰 결과를 반환합니다.
+      return {
+        externalId: resp.member.memberId,
+        status: resp.member.result.flag === 'Y' ? 'SUCCESS' : 'FAILED', // API 응답을 우리 시스템 상태로 변환
+        meta: {
+          // API 응답에서 카드 브랜드나 마지막 4자리 같은 유용한 정보를 추출해 meta에 담을 수 있습니다.
+          cardBrand: resp.member.paymentCompany, // 카드 브랜드
+          last4: resp.member.paymentNumber, // 마지막 4자리
+          payerName: resp.member.payerName, // 납부자 이름
+          phone: resp.member.phone, // 전화번호
+          paymentCompany: resp.member.paymentCompany, // 결제 기관
+          memberName: resp.member.memberName, // 회원 이름
+        },
+      };
+    } catch (err: any) {
+      this.logger.error(
+        `❌ HMS 카드 프로필 등록 실패: ${err.message}`,
+        err.stack,
+      );
+      // 실패 시에도 인터페이스에 정의된 에러 형식을 따르는 것이 좋습니다.
+      // 여기서는 간단히 에러를 다시 던져 상위 서비스에서 처리하도록 합니다.
+      throw new Error(`HMS 프로필 등록 실패: ${err.message}`);
+    }
+  }
+}
