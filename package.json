@@ -16,6 +16,24 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
+    "test:user": "jest --config ./apps/user-service/jest.config.js",
+    "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
+    "seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
+    "db:push.user": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
+    "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.876.0",
+    "@aws-sdk/s3-request-presigner": "^3.876.0",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.0.1",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/passport": "^3.0.2",
+    "@fastify/secure-session": "^8.2.0",
+    "@fastify/session": "^11.1.0",
+    "@neondatabase/serverless": "^1.0.1",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/mapped-types": "*",
     "test:payment": "jest --testPathPattern=payment.*spec.ts",
     "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
     "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
@@ -31,9 +49,7 @@
     "test:orchestration:command": "ts-node apps/channel-adapter/test-orchestration.ts command",
     "test:coupang:sync": "ts-node apps/channel-adapter/test-coupang-sync.ts",
     "mock:naver-server": "ts-node apps/channel-adapter/naver-mock-server.ts",
-    "mock:naver-server:bg": "ts-node apps/channel-adapter/naver-mock-server.ts &"
-  },
-  "dependencies": {
+    "mock:naver-server:bg": "ts-node apps/channel-adapter/naver-mock-server.ts &",
     "@fastify/multipart": "^9.0.3",
     "@fastify/static": "^8.2.0",
     "@nestjs/axios": "^4.0.1",
@@ -42,7 +58,15 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/microservices": "^11.1.3",
+    "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@types/passport-kakao": "^1.0.3",
+    "dotenv": "^16.5.0",
+    "nestjs-resend": "^1.0.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "passport-kakao": "^1.0.1",
+    "passport-local": "^1.0.0",
     "@nestjs/platform-fastify": "^11.1.6",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
@@ -63,6 +87,7 @@
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "swagger-ui-express": "^5.0.1",
     "tsid-ts": "^0.0.9",
     "uuid": "^11.1.0",
     "zod": "^3.25.76"
@@ -83,6 +108,7 @@
     "@types/pg": "^8.15.4",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.2",
     "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
@@ -101,5 +127,32 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": ".",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "./coverage",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/apps/",
+      "<rootDir>/libs/"
+    ],
+    "moduleNameMapper": {
+      "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
+      "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
+      "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
+      "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
+    }
   }
 }
