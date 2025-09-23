@@ -1,8 +1,6 @@
 {
   "name": "almondyoung-server",
   "version": "0.0.1",
-  "description": "",
-  "author": "",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -48,7 +46,6 @@
     "@nestjs/platform-fastify": "^11.1.6",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
-    "@types/bcrypt": "^6.0.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
@@ -68,7 +65,6 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "tsid-ts": "^0.0.9",
-    "ulid": "^3.0.1",
     "uuid": "^11.1.0",
     "zod": "^3.25.76"
   },
@@ -106,69 +102,5 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
-  },
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": ".",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": [
-        "ts-jest",
-        {
-          "tsconfig": {
-            "paths": {
-              "@app/db": [
-                "libs/db/src"
-              ],
-              "@app/db/*": [
-                "libs/db/src/*"
-              ],
-              "@app/events": [
-                "libs/events/src"
-              ],
-              "@app/events/*": [
-                "libs/events/src/*"
-              ],
-              "@app/shared": [
-                "libs/shared/src"
-              ],
-              "@app/shared/*": [
-                "libs/shared/src/*"
-              ]
-            }
-          }
-        }
-      ]
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "./coverage",
-    "testEnvironment": "node",
-    "globalSetup": "<rootDir>/apps/wallet/test/global-setup.ts",
-    "roots": [
-      "<rootDir>/apps/",
-      "<rootDir>/libs/"
-    ],
-    "moduleNameMapper": {
-      "^@app/db$": "<rootDir>/libs/db/src",
-      "^@app/db/(.*)$": "<rootDir>/libs/db/src/$1",
-      "^@app/events$": "<rootDir>/libs/events/src",
-      "^@app/events/(.*)$": "<rootDir>/libs/events/src/$1",
-      "^@app/shared$": "<rootDir>/libs/shared/src",
-      "^@app/shared/(.*)$": "<rootDir>/libs/shared/src/$1"
-    }
-  },
-  "itdoc": {
-    "output": "./docs/api",
-    "document": {
-      "baseUrl": "https://api.almondyoung.com",
-      "title": "AlmondYoung BNPL API Documentation",
-      "description": "BNPL(나중결제) 시스템의 API 문서입니다. 결제 프로필 생성, 결제 처리, 환불 등의 기능을 제공합니다."
-    }
   }
 }
