@@ -27,8 +27,8 @@ export class DbModule {
           useClass: DbService,
         },
       ],
-  exports: [DbService],
-      global: false, // 각 마이크로서비스에서 명시적으로 import하도록
+      exports: [DbService],
+      global: true, // 각 마이크로서비스에서 명시적으로 import하도록
     };
   }
 }
