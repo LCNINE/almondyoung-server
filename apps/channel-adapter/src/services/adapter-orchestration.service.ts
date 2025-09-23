@@ -1,19 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { EventPublisherService } from '@app/events';
 import {
   ChannelStrategyFactory,
   ChannelType,
 } from './strategies/channel-strategy.factory';
 import { SyncStatusService } from './sync-status.service';
+import { IdempotencyService } from './idempotency.service';
 import {
   DataType,
   SyncResult,
   SyncToChannelPayload,
   NewEventLog,
   NewSyncHistory,
+  NewProcessedEvent,
 } from '../types';
 import { InternalOrderEvent, OrderQuery } from '../types';
-import { ChannelCommand } from '../types';
+import { ChannelCommand, ChannelQuery } from '../types';
 import { ChannelAdapterEvents } from '../events/channel-events';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
@@ -48,11 +50,12 @@ export class AdapterOrchestrationService {
   constructor(
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
+    private readonly idempotencyService: IdempotencyService,
     private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
     private readonly db: DbService<typeof schema>,
   ) {
     this.logger.log(
-      `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동)`,
+      `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동 + 멱등키 처리)`,
     );
   }
 
@@ -263,11 +266,18 @@ export class AdapterOrchestrationService {
    *
    * @example
    * ```typescript
-   * // 네이버 스마트스토어에서 주문 발송처리
-   * const result = await execute('naver_smartstore', {
-   *   type: 'dispatch.confirm',
-   *   orderId: '2025091550078121',
-   *   productOrderIds: ['2025091565429621'],
+   * // 🎯 표준 비즈니스 명령 - 채널과 무관한 순수 비즈니스 행위만 표현
+   *
+   * // 주문 준비 처리 (네이버: order.confirm, 쿠팡: order.acknowledge)
+   * const prepareResult = await execute('naver_smartstore', {
+   *   type: 'order.prepare',
+   *   orderIds: ['ORDER_2025091550078121', 'ORDER_2025091550078122']
+   * });
+   *
+   * // 발송 처리 (네이버/쿠팡 공통: 표준 송장 정보로 처리)
+   * const shipResult = await execute('coupang', {
+   *   type: 'dispatch.ship',
+   *   orderId: 'ORDER_2025091550078121',
    *   tracking: {
    *     companyCode: 'CJ',
    *     number: '123456789012'
@@ -275,8 +285,53 @@ export class AdapterOrchestrationService {
    *   dispatchedAt: '2023-01-01T15:00:00+09:00'
    * });
    *
+   * // 반품 승인 처리 (네이버/쿠팡 공통: 표준 클레임 ID 사용)
+   * const returnResult = await execute('coupang', {
+   *   type: 'return.approve',
+   *   claimId: 'CLAIM_20250915_001',  // 내부 표준 클레임 ID
+   *   items: [{ orderItemId: 'ITEM_001', quantity: 1 }]
+   * });
+   *
+   * // 회수송장 등록 (표준 클레임 + 배송 정보)
+   * const invoiceResult = await execute('coupang', {
+   *   type: 'return.register_collection_invoice',
+   *   claimId: 'CLAIM_20250915_001',
+   *   collectionType: 'RETURN',
+   *   tracking: {
+   *     companyCode: 'CJGLS',
+   *     number: '1234567890123'
+   *   }
+   * });
+   *
+   * // 교환 상품 입고 확인 (SSOT 원칙 - 표준 claimId 사용)
+   * const exchangeReceiptResult = await execute('coupang', {
+   *   type: 'exchange.confirm_receipt',
+   *   claimId: 'EXCHANGE_20250915_001'  // 내부 표준 교환 ID
+   * });
+   *
+   * // 교환 요청 거부 (표준 거부 사유)
+   * const exchangeRejectResult = await execute('coupang', {
+   *   type: 'exchange.reject',
+   *   claimId: 'EXCHANGE_20250915_002',
+   *   reason: '품절'  // Strategy에서 쿠팡 거부코드로 자동 번역
+   * });
+   *
+   * // 교환 재발송 송장 업로드
+   * const exchangeInvoiceResult = await execute('coupang', {
+   *   type: 'exchange.upload_invoice',
+   *   claimId: 'EXCHANGE_20250915_003',
+   *   tracking: {
+   *     companyCode: 'CJ',
+   *     number: '1234567890123'
+   *   },
+   *   items: [{ itemId: 'ITEM_001', shipmentBoxId: '12345' }]
+   * });
+   *
+   * // ✅ 모든 결과는 동일한 SyncResult 구조
    * if (result.success) {
-   *   console.log('발송처리가 완료되었습니다.');
+   *   console.log(`${result.processedCount}건 처리 완료`);
+   * } else {
+   *   console.error('처리 실패:', result.errors);
    * }
    * ```
    */
@@ -285,10 +340,18 @@ export class AdapterOrchestrationService {
     command: ChannelCommand,
   ): Promise<SyncResult> {
     const startTime = Date.now();
-    this.logger.log(`⚡ [${channel}] 명령 실행: ${command.type}`, {
-      orderId: 'orderId' in command ? command.orderId : undefined,
-      claimId: 'claimId' in command ? command.claimId : undefined,
-    });
+
+    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Strategy에서 처리)
+    const logContext: any = {};
+    if ('orderId' in command) logContext.orderId = command.orderId;
+    if ('orderIds' in command) logContext.orderIds = command.orderIds;
+    if ('claimId' in command) logContext.claimId = command.claimId;
+    if ('tracking' in command) logContext.hasTracking = !!command.tracking;
+
+    this.logger.log(
+      `⚡ [${channel}] 표준 명령 실행: ${command.type}`,
+      logContext,
+    );
 
     try {
       // 1. 채널별 전략 가져오기
@@ -298,14 +361,14 @@ export class AdapterOrchestrationService {
       const result = await strategy.executeCommand(command);
       const duration = Date.now() - startTime;
 
-      // 3. 명령 실행 완료 이벤트 발행
+      // 3. 명령 실행 완료 이벤트 발행 (표준 필드만 사용)
       const targetId = (
         'orderId' in command
           ? command.orderId
-          : 'claimId' in command
-            ? command.claimId
-            : 'productOrderIds' in command
-              ? command.productOrderIds?.[0]
+          : 'orderIds' in command
+            ? command.orderIds?.[0]
+            : 'claimId' in command
+              ? command.claimId
               : 'unknown'
       ) as string;
 
@@ -502,7 +565,7 @@ export class AdapterOrchestrationService {
       error?: string;
     }>
   > {
-    const channels: ChannelType[] = ['naver_smartstore', 'coupang', 'medusa'];
+    const channels: ChannelType[] = ['naver_smartstore', 'coupang']; // 메두사 제외
     const results: Array<any> = [];
 
     this.logger.log(`🌐 전체 채널 ${dataType} 동기화 시작`);
@@ -590,6 +653,106 @@ export class AdapterOrchestrationService {
   }
 
   /**
+   * 🔍 CQRS 패턴: 채널별 조회 명령 실행 (상태 변경 없는 읽기 전용)
+   *
+   * 🎯 SSOT 원칙 적용: 모든 조회 결과는 표준 내부 모델로 번역되어 반환
+   *
+   * @param channel 조회할 채널
+   * @param query 조회 조건을 담은 표준 쿼리 객체
+   * @returns 표준 내부 모델로 번역된 조회 결과
+   *
+   * @example
+   * ```typescript
+   * // 🔍 교환 요청 목록 조회 (표준 내부 모델로 반환)
+   * const exchanges = await orchestrator.executeQuery('coupang', {
+   *   type: 'exchange.requests',
+   *   dateFrom: '2025-01-01T00:00:00',
+   *   dateTo: '2025-01-07T23:59:59',
+   *   status: 'RECEIPT'
+   * });
+   * // 반환: InternalExchangeEvent[] (표준화된 내부 모델)
+   *
+   * // 🔍 반품 철회 이력 조회
+   * const withdrawals = await orchestrator.executeQuery('coupang', {
+   *   type: 'return.withdrawal_history',
+   *   dateFrom: '2025-01-01T00:00:00',
+   *   dateTo: '2025-01-07T23:59:59'
+   * });
+   *
+   * // 🔍 배송 히스토리 조회
+   * const deliveryHistory = await orchestrator.executeQuery('coupang', {
+   *   type: 'delivery.history',
+   *   orderId: 'ORDER_12345'
+   * });
+   * ```
+   */
+  async executeQuery(channel: ChannelType, query: ChannelQuery): Promise<any> {
+    const startTime = Date.now();
+
+    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Strategy에서 처리)
+    const logContext: any = { queryType: query.type };
+    if ('orderId' in query) logContext.orderId = query.orderId;
+    if ('claimId' in query) logContext.claimId = query.claimId;
+    if ('dateFrom' in query) logContext.hasDateRange = true;
+
+    this.logger.log(
+      `🔍 [${channel}] 표준 조회 실행: ${query.type}`,
+      logContext,
+    );
+
+    try {
+      // 1. 채널별 전략 가져오기
+      const strategy = this.factory.getStrategy(channel);
+
+      // 2. 조회 실행 (Strategy에서 표준 내부 모델로 번역하여 반환)
+      const result = await strategy.executeQuery(query);
+      const duration = Date.now() - startTime;
+
+      // 3. 조회 완료 이벤트 발행
+      await this.eventPublisher.publishEvent('query.executed', {
+        channelType: channel,
+        queryType: query.type,
+        resultCount: Array.isArray(result) ? result.length : 1,
+        executionDurationMs: duration,
+        success: true,
+      });
+
+      this.logger.log(
+        `✅ [${channel}] 조회 실행 성공: ${query.type} (${duration}ms)`,
+        {
+          resultCount: Array.isArray(result) ? result.length : 1,
+        },
+      );
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // 실패 이벤트 발행
+      await this.eventPublisher.publishEvent('query.executed', {
+        channelType: channel,
+        queryType: query.type,
+        resultCount: 0,
+        executionDurationMs: duration,
+        success: false,
+        errorMessage: error.message,
+      });
+
+      this.logger.error(
+        `❌ [${channel}] 조회 실행 실패: ${query.type} (${duration}ms)`,
+        error.message,
+      );
+
+      // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new Error(`${channel} 조회 실행 실패: ${error.message}`);
+    }
+  }
+
+  /**
    * 모든 활성 채널에 동일한 명령 실행
    *
    * 예: 내부 시스템에서 상품 가격 변경 시, 연결된 모든 채널에 가격 업데이트 명령 전송
@@ -615,7 +778,7 @@ export class AdapterOrchestrationService {
       error?: string;
     }>
   > {
-    const channels: ChannelType[] = ['naver_smartstore', 'coupang', 'medusa'];
+    const channels: ChannelType[] = ['naver_smartstore', 'coupang']; // 메두사 제외
     const results: Array<any> = [];
 
     this.logger.log(`🌐 전체 채널에 명령 실행 시작: ${command.type}`);
@@ -795,5 +958,212 @@ export class AdapterOrchestrationService {
       medusa: '21234567-89ab-cdef-0123-456789abcdef',
     };
     return channelMapping[channelType];
+  }
+
+  // ===== 멱등키 처리 관련 메서드들 (Consumer에서 사용) =====
+
+  /**
+   * 멱등키 기반 이벤트 처리 여부 확인
+   *
+   * Consumer에서 이벤트 중복 처리를 방지하기 위해 사용합니다.
+   *
+   * @param idempotencyKey 멱등키 (SOURCE:EVENT_TYPE:RESOURCE_ID:VERSION)
+   * @returns 이미 처리된 이벤트인지 여부
+   *
+   * @example
+   * ```typescript
+   * const key = 'WMS:STOCK_CHANGED:SKU-001:1695462345000';
+   * const isProcessed = await orchestrator.isProcessed(key);
+   * if (isProcessed) {
+   *   this.logger.debug('이미 처리된 이벤트입니다.');
+   *   return;
+   * }
+   * ```
+   */
+  async isProcessed(idempotencyKey: string): Promise<boolean> {
+    return this.idempotencyService.isProcessed(idempotencyKey);
+  }
+
+  /**
+   * 이벤트 처리 완료 마킹
+   *
+   * Consumer에서 이벤트 처리 완료 후 중복 처리 방지를 위해 호출합니다.
+   *
+   * @param data 처리된 이벤트 정보
+   * @returns 생성된 레코드 또는 null (이미 존재하는 경우)
+   *
+   * @example
+   * ```typescript
+   * await orchestrator.markProcessed({
+   *   idempotencyKey: 'WMS:STOCK_CHANGED:SKU-001:1695462345000',
+   *   source: 'WMS',
+   *   eventType: 'STOCK_CHANGED',
+   *   resourceId: 'SKU-001',
+   *   eventVersion: '1695462345000'
+   * });
+   * ```
+   */
+  async markProcessed(data: NewProcessedEvent): Promise<void> {
+    await this.idempotencyService.markProcessed(data);
+
+    this.logger.debug(
+      `✅ 이벤트 처리 완료 마킹: ${data.source}:${data.eventType}:${data.resourceId}`,
+    );
+  }
+
+  /**
+   * 이벤트 처리 실패 마킹
+   *
+   * Consumer에서 이벤트 처리 실패 시 재시도 관리를 위해 호출합니다.
+   *
+   * @param idempotencyKey 멱등키
+   * @param errorMessage 에러 메시지
+   * @param incrementRetry 재시도 횟수 증가 여부 (기본값: true)
+   *
+   * @example
+   * ```typescript
+   * await orchestrator.markFailed(
+   *   'WMS:STOCK_CHANGED:SKU-001:1695462345000',
+   *   'Network timeout error',
+   *   true
+   * );
+   * ```
+   */
+  async markFailed(
+    idempotencyKey: string,
+    errorMessage: string,
+    incrementRetry: boolean = true,
+  ): Promise<void> {
+    await this.idempotencyService.markFailed(
+      idempotencyKey,
+      errorMessage,
+      incrementRetry,
+    );
+
+    this.logger.warn(
+      `⚠️ 이벤트 처리 실패 마킹: ${idempotencyKey} - ${errorMessage}`,
+    );
+  }
+
+  /**
+   * 멱등키 생성 유틸리티 (Consumer에서 사용)
+   *
+   * @param source 이벤트 발행 주체 (WMS, OMS, PIM)
+   * @param eventType 이벤트 타입 (STOCK_CHANGED, FULFILLMENT_UPDATED 등)
+   * @param resourceId 리소스 ID (SKU, ORDER_ID 등)
+   * @param eventVersion 이벤트 버전 (timestamp 또는 sequence)
+   * @returns 생성된 멱등키
+   *
+   * @example
+   * ```typescript
+   * const key = orchestrator.generateIdempotencyKey(
+   *   'WMS', 'STOCK_CHANGED', 'SKU-001', '1695462345000'
+   * );
+   * // 결과: 'WMS:STOCK_CHANGED:SKU-001:1695462345000'
+   * ```
+   */
+  generateIdempotencyKey(
+    source: string,
+    eventType: string,
+    resourceId: string,
+    eventVersion: string | number,
+  ): string {
+    return IdempotencyService.generateIdempotencyKey(
+      source,
+      eventType,
+      resourceId,
+      eventVersion,
+    );
+  }
+
+  /**
+   * Consumer에서 모든 채널에 동기화 (Consumer 전용 메서드)
+   *
+   * Consumer에서 내부 이벤트를 모든 채널에 동기화할 때 사용합니다.
+   *
+   * @param channelOrAll 'all' 키워드 또는 채널 타입
+   * @param payload 동기화할 데이터 페이로드
+   * @returns 동기화 결과 (all인 경우 통합 결과)
+   *
+   * @example
+   * ```typescript
+   * // 모든 채널에 재고 동기화
+   * await orchestrator.syncToChannelOrAll('all', {
+   *   dataType: 'inventory',
+   *   payload: { productId: 'SKU-001', stockQuantity: 100 }
+   * });
+   * ```
+   */
+  async syncToChannelOrAll(
+    channelOrAll: ChannelType | 'all',
+    payload: SyncToChannelPayload,
+  ): Promise<SyncResult> {
+    if (channelOrAll === 'all') {
+      return this.syncToAllChannelsInternal(payload);
+    } else {
+      // 기존 단일 채널 동기화 로직 호출
+      return this.syncToChannel(channelOrAll, payload);
+    }
+  }
+
+  /**
+   * 모든 채널에 동일한 데이터 동기화 (내부 메서드)
+   *
+   * @param payload 동기화할 데이터 페이로드
+   * @returns 통합 동기화 결과
+   */
+  private async syncToAllChannelsInternal(
+    payload: SyncToChannelPayload,
+  ): Promise<SyncResult> {
+    const channels: ChannelType[] = ['naver_smartstore', 'coupang']; // 메두사 제외
+    const results: SyncResult[] = [];
+
+    this.logger.log(`🌐 모든 채널 ${payload.dataType} 동기화 시작`);
+
+    // 병렬로 모든 채널에 동기화
+    const syncPromises = channels.map(async (channel) => {
+      try {
+        // 기존 syncToChannel 메서드 호출
+        const result = await this.syncToChannel(channel, payload);
+        results.push(result);
+        return result;
+      } catch (error) {
+        const errorResult: SyncResult = {
+          success: false,
+          processedCount: 0,
+          failedCount: 1,
+          errors: [{ message: error.message }],
+        };
+        results.push(errorResult);
+        return errorResult;
+      }
+    });
+
+    await Promise.all(syncPromises);
+
+    // 결과 통합
+    const totalProcessed = results.reduce(
+      (sum, r) => sum + (r.processedCount || 0),
+      0,
+    );
+    const totalFailed = results.reduce(
+      (sum, r) => sum + (r.failedCount || 0),
+      0,
+    );
+    const allErrors = results.flatMap((r) => r.errors || []);
+    const overallSuccess = results.every((r) => r.success);
+
+    const consolidatedResult: SyncResult = {
+      success: overallSuccess,
+      processedCount: totalProcessed,
+      failedCount: totalFailed,
+      errors: allErrors.length > 0 ? allErrors : undefined,
+    };
+
+    this.logger.log(
+      `🎯 모든 채널 ${payload.dataType} 동기화 완료: ${totalProcessed}건 성공, ${totalFailed}건 실패`,
+    );
+
+    return consolidatedResult;
   }
 }

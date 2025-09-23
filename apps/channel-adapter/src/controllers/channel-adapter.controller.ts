@@ -8,6 +8,7 @@ import {
   Logger,
   HttpException,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,6 +21,7 @@ import { ChannelType } from '../services/strategies/channel-strategy.factory';
 import {
   DataType,
   ChannelCommand,
+  ChannelQuery,
   SyncToChannelPayload,
   OrderQuery,
 } from '../types';
@@ -252,8 +254,62 @@ export class ChannelAdapterController {
   }
 
   @Post('command/:channel')
-  @ApiOperation({ summary: '채널별 특정 명령 실행' })
-  @ApiBody({ type: Object })
+  @ApiOperation({
+    summary: '채널별 특정 명령 실행 (SSOT 원칙)',
+    description: `채널에 무관한 표준 명령을 실행합니다. 모든 채널이 동일한 명령 인터페이스를 사용하며, 각 전략에서 채널별 API로 번역됩니다.
+
+**지원 명령 타입:**
+- **주문 관리**: \`order.prepare\`, \`order.cancel\`
+- **배송 관리**: \`dispatch.ship\`, \`dispatch.update_tracking\`
+- **교환 처리**: \`exchange.confirm_receipt\`, \`exchange.reject\`, \`exchange.upload_invoice\`
+- **반품 처리**: \`return.approve\`, \`return.hold\`, \`return.release_hold\`
+
+**교환 명령 예시:**
+\`\`\`json
+// 교환 상품 입고확인
+{ "type": "exchange.confirm_receipt", "claimId": "EXCHANGE_20250115_001" }
+
+// 교환 요청 거부
+{ "type": "exchange.reject", "claimId": "EXCHANGE_20250115_002", "reason": "품절" }
+
+// 교환 재발송 송장 업로드
+{
+  "type": "exchange.upload_invoice",
+  "claimId": "EXCHANGE_20250115_003",
+  "tracking": { "companyCode": "CJ", "number": "1234567890123" }
+}
+\`\`\``,
+  })
+  @ApiBody({
+    type: Object,
+    description: '실행할 명령 객체 (ChannelCommand)',
+    examples: {
+      exchangeConfirmReceipt: {
+        summary: '교환 상품 입고확인',
+        value: {
+          type: 'exchange.confirm_receipt',
+          claimId: 'EXCHANGE_20250115_001',
+        },
+      },
+      exchangeReject: {
+        summary: '교환 요청 거부',
+        value: {
+          type: 'exchange.reject',
+          claimId: 'EXCHANGE_20250115_002',
+          reason: '품절',
+        },
+      },
+      exchangeUploadInvoice: {
+        summary: '교환 재발송 송장 업로드',
+        value: {
+          type: 'exchange.upload_invoice',
+          claimId: 'EXCHANGE_20250115_003',
+          tracking: { companyCode: 'CJ', number: '1234567890123' },
+          items: [{ itemId: 'ITEM_001', shipmentBoxId: '12345' }],
+        },
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
     description: '명령이 성공적으로 실행되었습니다.',
@@ -461,6 +517,123 @@ export class ChannelAdapterController {
       // 기타 모든 오류는 500으로 처리
       throw new HttpException(
         `${channel} 채널 ${queryType} 조회 중 오류가 발생했습니다.`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 🔍 교환 요청 목록 조회 (SSOT 원칙 + CQRS 패턴)
+   *
+   * 모든 채널에서 동일한 인터페이스로 교환 요청을 조회하고,
+   * 표준 내부 모델 (InternalExchangeEvent[])로 반환합니다.
+   *
+   * @example
+   * GET /adapter/coupang/query/exchange-requests?dateFrom=2025-01-01T00:00:00&dateTo=2025-01-07T23:59:59&status=RECEIPT
+   * GET /adapter/naver_smartstore/query/exchange-requests?dateFrom=2025-01-01T00:00:00&dateTo=2025-01-07T23:59:59
+   */
+  @Get(':channel/query/exchange-requests')
+  @ApiOperation({
+    summary: '교환 요청 목록 조회 (SSOT 원칙)',
+    description: `모든 채널에서 동일한 인터페이스로 교환 요청을 조회합니다. 
+결과는 채널에 무관한 표준 내부 모델 (InternalExchangeEvent[])로 반환됩니다.
+
+**지원 쿼리 파라미터:**
+- \`dateFrom\`, \`dateTo\`: 조회 기간 (필수)
+- \`status\`: 교환 상태 필터 (선택)
+- \`orderId\`: 특정 주문 필터 (선택)
+- \`pageSize\`: 페이지 크기 (기본값: 10)
+
+**SSOT 보장:**
+- 모든 채널의 교환 데이터가 InternalExchangeEvent로 표준화
+- 채널별 복잡한 구조는 각 전략에서 번역하여 숨김
+- 내부 시스템은 채널을 몰라도 일관된 데이터 사용 가능`,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '표준 내부 교환 이벤트 배열 반환 (InternalExchangeEvent[])',
+  })
+  async queryExchangeRequests(
+    @Param('channel') channel: ChannelType,
+    @Query('dateFrom') dateFrom: string,
+    @Query('dateTo') dateTo: string,
+    @Query('status')
+    status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL',
+    @Query('orderId') orderId?: number,
+    @Query('pageSize') pageSize?: number,
+  ) {
+    this.logger.log(`🔍 [${channel}] 교환 요청 목록 조회 API 호출`);
+
+    try {
+      if (!dateFrom || !dateTo) {
+        throw new HttpException(
+          'dateFrom과 dateTo는 필수 파라미터입니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const query: ChannelQuery = {
+        type: 'exchange.requests',
+        dateFrom,
+        dateTo,
+        status,
+        orderId,
+        sizePerPage: pageSize ? parseInt(pageSize.toString()) : 10,
+      };
+
+      const result = await this.channelAdapterService.query(channel, query);
+
+      return {
+        success: true,
+        data: result,
+        message: `${channel} 채널에서 ${result.length}건의 교환 요청을 조회했습니다.`,
+        metadata: {
+          channel,
+          queryType: 'exchange.requests',
+          resultCount: result.length,
+          ssotModel: 'InternalExchangeEvent[]',
+          dateRange: { from: dateFrom, to: dateTo },
+          filters: { status, orderId, pageSize },
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ [${channel}] 교환 요청 목록 조회 실패:`,
+        error.message,
+      );
+
+      // 🎯 BadRequestException은 그대로 전달 (NestJS가 자동 처리)
+      if (error instanceof BadRequestException) {
+        throw error; // CoupangApiService에서 이미 완벽하게 처리됨
+      }
+
+      if (error.message.includes('not found')) {
+        throw new HttpException(
+          `${channel} 채널에서 교환 요청을 찾을 수 없습니다.`,
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      if (error.message.includes('인증') || error.message.includes('auth')) {
+        throw new HttpException(
+          `${channel} 채널 API 인증에 실패했습니다.`,
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      // ⚠️ BadRequestException 이후에만 다른 에러 처리 (중복 방지)
+      if (
+        error.message.includes('Invalid') ||
+        error.message.includes('잘못된')
+      ) {
+        throw new HttpException(
+          `잘못된 요청 파라미터입니다: ${error.message}`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      throw new HttpException(
+        `${channel} 채널 교환 요청 조회 중 오류가 발생했습니다.`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

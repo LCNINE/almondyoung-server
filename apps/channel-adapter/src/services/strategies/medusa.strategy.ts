@@ -8,7 +8,7 @@ import {
   InternalInventoryData,
 } from '../../types';
 import { InternalOrderEvent, OrderQuery } from '../../types';
-import { ChannelCommand } from '../../types';
+import { ChannelCommand, ChannelQuery } from '../../types';
 import { firstValueFrom } from 'rxjs';
 
 /**
@@ -191,14 +191,21 @@ export class MedusaStrategy implements ChannelStrategy {
 
     try {
       switch (command.type) {
-        case 'order.confirm':
+        case 'order.prepare':
+          // 메두사 자사몰: 주문 준비 (기존 order.confirm과 매핑)
           return await this.executeOrderConfirm(command);
 
-        case 'dispatch.confirm':
+        case 'dispatch.ship':
+          // 메두사 자사몰: 발송 처리 (기존 dispatch.confirm과 매핑)
           return await this.executeDispatchConfirm(command);
 
-        case 'cancel.approve':
+        case 'order.cancel':
+          // 메두사 자사몰: 주문 취소 (기존 cancel.approve와 매핑)
           return await this.executeCancelApprove(command);
+
+        case 'return.approve':
+          // 메두사 자사몰: 반품 승인
+          return await this.executeReturnApprove(command);
 
         default:
           this.logger.warn(
@@ -206,7 +213,9 @@ export class MedusaStrategy implements ChannelStrategy {
           );
           return {
             success: false,
-            errors: [{ message: `지원하지 않는 명령 타입: ${command.type}` }],
+            errors: [
+              { message: `메두사에서 지원하지 않는 명령: ${command.type}` },
+            ],
             failedCount: 1,
           };
       }
@@ -221,6 +230,57 @@ export class MedusaStrategy implements ChannelStrategy {
         failedCount: 1,
       };
     }
+  }
+
+  /**
+   * 조회성 작업을 처리 (CQRS 패턴 적용)
+   * 메두사는 자사몰이므로 제한적인 조회만 지원
+   */
+  async executeQuery(query: ChannelQuery): Promise<any> {
+    this.logger.log(`🔍 메두사 조회 실행: ${query.type}`);
+
+    try {
+      switch (query.type) {
+        case 'order.status':
+          // 메두사 자사몰에서 주문 상태 조회
+          return await this.queryOrderStatus(query);
+
+        case 'claim.details':
+          // 메두사 자사몰에서 클레임 상세 조회
+          return await this.queryClaimDetails(query);
+
+        default:
+          throw new Error(`메두사는 ${query.type} 조회를 지원하지 않습니다`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`메두사 조회 실행 실패: ${message}`);
+    }
+  }
+
+  // 간단한 조회 메서드들 (자사몰 전용)
+  private async queryOrderStatus(query: {
+    type: 'order.status';
+    orderId: string;
+  }): Promise<any> {
+    // TODO: 메두사 자사몰 주문 상태 조회 구현
+    this.logger.log(`📋 메두사 주문 상태 조회: ${query.orderId}`);
+    return {
+      status: 'pending',
+      message: '메두사 주문 상태 조회 기능 구현 필요',
+    };
+  }
+
+  private async queryClaimDetails(query: {
+    type: 'claim.details';
+    claimId: string;
+  }): Promise<any> {
+    // TODO: 메두사 자사몰 클레임 상세 조회 구현
+    this.logger.log(`📋 메두사 클레임 상세 조회: ${query.claimId}`);
+    return {
+      status: 'pending',
+      message: '메두사 클레임 상세 조회 기능 구현 필요',
+    };
   }
 
   async transformToInternal(
@@ -484,6 +544,31 @@ export class MedusaStrategy implements ChannelStrategy {
         errors: [
           { id: command.orderId || command.claimId, message: error.message },
         ],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 메두사 자사몰 반품 승인 처리
+   */
+  private async executeReturnApprove(command: any): Promise<SyncResult> {
+    this.logger.log(`✅ 메두사 반품승인: ${command.claimId}`);
+
+    try {
+      const claimId = command.claimId;
+      // TODO: 메두사 자사몰 반품 승인 로직 구현
+      // await this.updateMedusaClaimStatus(claimId, 'approved');
+
+      return {
+        success: true,
+        processedCount: 1,
+        data: { claimId, status: 'return_approved' },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        errors: [{ id: command.claimId, message: error.message }],
         failedCount: 1,
       };
     }

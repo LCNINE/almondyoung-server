@@ -1,11 +1,18 @@
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eventLogs, syncHistories } from './schema';
+import {
+  eventLogs,
+  syncHistories,
+  processedEvents,
+  syncStatuses,
+} from './schema';
 
 // ===== DATABASE SERVICE 타입 =====
 export const channelAdapterSchema = {
   eventLogs,
   syncHistories,
+  processedEvents,
+  syncStatuses,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
@@ -23,6 +30,18 @@ export type NewSyncHistory = InferInsertModel<typeof syncHistories>;
 export type UpdateSyncHistory = Partial<
   Omit<NewSyncHistory, 'id' | 'createdAt'>
 >;
+
+// ===== PROCESSED EVENTS 타입 =====
+export type ProcessedEvent = InferSelectModel<typeof processedEvents>;
+export type NewProcessedEvent = InferInsertModel<typeof processedEvents>;
+export type UpdateProcessedEvent = Partial<
+  Omit<NewProcessedEvent, 'idempotencyKey' | 'createdAt'>
+>;
+
+// ===== SYNC STATUSES 타입 =====
+export type SyncStatus = InferSelectModel<typeof syncStatuses>;
+export type NewSyncStatus = InferInsertModel<typeof syncStatuses>;
+export type UpdateSyncStatus = Partial<Omit<NewSyncStatus, 'id' | 'createdAt'>>;
 
 export type DataType =
   | 'orders'
@@ -154,6 +173,68 @@ export type OrderQuery =
   | { by: 'channelProductOrderId'; id: string } // 네이버의 productOrderId
   | { by: 'channelOrderId'; id: string }; // 쿠팡의 orderId, 네이버의 orderId
 
+// ===================================================================
+// == Consumer 이벤트 타입들 (Kafka 메시지)
+// ===================================================================
+
+/**
+ * WMS에서 발행하는 재고 변경 이벤트
+ */
+export interface StockChangedEvent {
+  sku: string; // 상품 SKU
+  deltaQty: number; // 변경량 (+50, -10 등)
+  reason: 'INBOUND' | 'OUTBOUND' | 'ADJUSTMENT' | 'DAMAGE'; // 변경 사유
+  warehouseId?: string; // 창고 ID (선택사항)
+  eventVersion: number; // 이벤트 버전 (timestamp 또는 sequence)
+  occurredAt: string; // 이벤트 발생 시각 (ISO 8601)
+}
+
+/**
+ * WMS에서 발행하는 이행 상태 업데이트 이벤트
+ */
+export interface FulfillmentUpdatedEvent {
+  orderId: string; // 내부 주문 ID
+  fulfillmentNo: string; // 이행 번호
+  status: 'PREPARING' | 'SHIPPED' | 'DELIVERED' | 'RETURNED'; // 이행 상태
+  trackingNo?: string; // 송장 번호
+  carrier?: string; // 택배사 코드
+  shippedAt?: string; // 출고 시각
+  deliveredAt?: string; // 배송 완료 시각
+  eventVersion: number; // 이벤트 버전
+  occurredAt: string; // 이벤트 발생 시각
+}
+
+/**
+ * PIM에서 발행하는 상품 정보 업데이트 이벤트
+ */
+export interface ProductUpdatedEvent {
+  productId: string; // 상품 ID
+  changes: {
+    name?: string; // 상품명 변경
+    price?: number; // 가격 변경
+    description?: string; // 설명 변경
+    categoryId?: string; // 카테고리 변경
+    status?: 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED'; // 판매 상태 변경
+  };
+  eventVersion: number; // 이벤트 버전
+  occurredAt: string; // 이벤트 발생 시각
+}
+
+/**
+ * 내부 이행 데이터 형식 (WMS → Channel 동기화용)
+ */
+export interface InternalFulfillmentData {
+  orderId: string; // 내부 주문 ID
+  status: string; // 이행 상태
+  trackingInfo?: {
+    companyCode: string; // 택배사 코드
+    trackingNumber: string; // 송장 번호
+  };
+  shippedAt?: string; // 출고 시각
+  deliveredAt?: string; // 배송 완료 시각
+  updatedAt: string; // 업데이트 시각
+}
+
 export interface InternalOrderEvent {
   channelType: 'naver_smartstore' | 'coupang' | 'medusa';
   externalOrderId: string; // 주문번호
@@ -174,40 +255,289 @@ export interface InternalOrderEvent {
   updatedAt?: string; // 외부 기준 업데이트시각
 }
 
-// Command 패턴으로 채널별 액션을 유연하게 처리
+// =================================================================
+// == 표준 내부 교환 이벤트 모델 (SSOT - Single Source of Truth)
+// =================================================================
+
+/**
+ * 채널에 비종속적인 표준 교환 이벤트
+ * 모든 채널의 교환 정보를 이 형태로 번역하여 내부 시스템에서 일관되게 사용
+ *
+ * 🎯 SSOT 원칙: 이 모델이 교환 데이터의 유일한 신뢰 가능한 출처
+ */
+export interface InternalExchangeEvent {
+  eventId: string; // 고유 이벤트 ID
+  eventType:
+    | 'exchange_created'
+    | 'exchange_updated'
+    | 'exchange_completed'
+    | 'exchange_rejected';
+
+  // 핵심 식별자들 (표준화된 내부 ID)
+  claimId: string; // 내부 표준 클레임 ID (쿠팡 exchangeId 등을 번역)
+  orderId: string; // 내부 표준 주문 ID
+
+  // 채널 정보
+  channel: 'naver_smartstore' | 'coupang' | 'medusa';
+  externalClaimId: string; // 외부 채널의 원본 교환 ID
+  externalOrderId: string; // 외부 채널의 원본 주문 ID
+
+  // 교환 상태 (표준화)
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+
+  // 귀책사유 (표준화)
+  faultType: 'SELLER' | 'CUSTOMER' | 'DELIVERY' | 'PRODUCT_DEFECT' | 'OTHER';
+
+  // 요청 정보
+  reason: string; // 교환 사유 (고객이 입력한 원본 텍스트)
+  reasonCode?: string; // 표준화된 사유 코드
+
+  // 교환 상품 정보 (핵심 필드만)
+  exchangeItems: Array<{
+    originalItemId: string; // 원본 주문 상품 ID
+    originalItemName: string;
+    targetItemId?: string; // 교환할 상품 ID (있는 경우)
+    targetItemName?: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
+
+  // 배송 정보
+  deliveryInfo?: {
+    returnAddress?: {
+      customerName: string;
+      address: string;
+      phone: string;
+    };
+    deliveryAddress?: {
+      customerName: string;
+      address: string;
+      phone: string;
+    };
+    collectStatus?: 'PENDING' | 'COLLECTED' | 'COMPLETED';
+    deliveryStatus?: 'PENDING' | 'SHIPPED' | 'DELIVERED';
+  };
+
+  // 타임스탬프
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+
+  // 메타데이터
+  metadata?: {
+    originalPayload?: any; // 원본 외부 데이터 (디버깅용)
+    processingNotes?: string[];
+    channelSpecificData?: Record<string, any>; // 채널별 고유 데이터
+  };
+}
+
+/**
+ * 표준 내부 반품 이벤트 모델 (SSOT)
+ */
+export interface InternalReturnEvent {
+  eventId: string;
+  eventType:
+    | 'return_created'
+    | 'return_updated'
+    | 'return_completed'
+    | 'return_rejected';
+
+  // 핵심 식별자들
+  claimId: string; // 내부 표준 클레임 ID
+  orderId: string; // 내부 표준 주문 ID
+
+  // 채널 정보
+  channel: 'naver_smartstore' | 'coupang' | 'medusa';
+  externalClaimId: string;
+  externalOrderId: string;
+
+  // 반품 상태 (표준화)
+  status: 'PENDING' | 'APPROVED' | 'COLLECTED' | 'COMPLETED' | 'REJECTED';
+
+  // 귀책사유 (표준화)
+  faultType: 'SELLER' | 'CUSTOMER' | 'DELIVERY' | 'PRODUCT_DEFECT' | 'OTHER';
+
+  // 요청 정보
+  reason: string;
+  reasonCode?: string;
+
+  // 반품 상품 정보
+  returnItems: Array<{
+    orderItemId: string;
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+    returnQuantity: number;
+  }>;
+
+  // 회수 정보
+  collectionInfo?: {
+    collectionType: 'CUSTOMER_DIRECT' | 'PICKUP_REQUEST' | 'DROP_OFF';
+    trackingNumber?: string;
+    carrierCode?: string;
+    collectedAt?: string;
+  };
+
+  // 타임스탬프
+  createdAt: string;
+  updatedAt: string;
+
+  // 메타데이터
+  metadata?: {
+    originalPayload?: any;
+    processingNotes?: string[];
+    channelSpecificData?: Record<string, any>;
+  };
+}
+
+// ===================================================================
+// == 표준 비즈니스 명령 (Standard Business Commands)
+// ===================================================================
+// 채널과 무관한 순수 비즈니스 행위만을 표현하는 표준화된 명령 타입
+// 각 Strategy가 이 표준 명령을 채널별 API 호출로 번역하는 책임을 가짐
+
 export type ChannelCommand =
-  | { type: 'order.confirm'; productOrderIds: string[] }
-  | { type: 'cancel.request'; orderId: string; reason?: string }
-  | { type: 'cancel.approve'; orderId: string }
+  // === 주문 관리 (Order Management) ===
   | {
-      type: 'return.request';
+      type: 'order.prepare'; // 주문 준비 (네이버: order.confirm, 쿠팡: order.acknowledge)
+      orderIds: string[]; // 내부 표준 주문 ID들
+    }
+  | {
+      type: 'order.cancel'; // 주문 취소
       orderId: string;
-      items?: Array<{ productOrderId?: string; qty: number }>;
       reason?: string;
     }
-  | { type: 'return.approve'; claimId: string }
-  | { type: 'return.hold'; claimId: string; reason?: string }
-  | { type: 'return.releaseHold'; claimId: string }
-  | { type: 'return.reject'; claimId: string; reason?: string }
-  | { type: 'exchange.pickupCompleted'; claimId: string }
+
+  // === 발송 관리 (Dispatch Management) ===
   | {
-      type: 'exchange.reship';
-      claimId: string;
-      tracking: { companyCode: string; number: string };
-    }
-  | { type: 'exchange.hold'; claimId: string; reason?: string }
-  | { type: 'exchange.releaseHold'; claimId: string }
-  | { type: 'exchange.reject'; claimId: string; reason?: string }
-  | {
-      type: 'dispatch.confirm';
+      type: 'dispatch.ship'; // 발송 처리 (네이버/쿠팡: dispatch.confirm)
       orderId: string;
-      productOrderIds?: string[];
+      items?: Array<{ orderItemId: string; quantity: number }>;
       tracking: { companyCode: string; number: string };
       dispatchedAt?: string;
     }
-  | { type: 'dispatch.delay'; orderId: string; reason?: string }
   | {
-      type: 'dispatch.changeDesiredDate';
+      type: 'dispatch.update_tracking'; // 송장 정보 업데이트 (쿠팡: dispatch.update)
       orderId: string;
-      desiredDate: string;
+      tracking: { companyCode: string; number: string };
+    }
+  | {
+      type: 'dispatch.delay'; // 발송 지연
+      orderId: string;
+      delayedUntil: string;
+      reason: string;
+    }
+
+  // === 반품 관리 (Return Management) ===
+  | {
+      type: 'return.approve'; // 반품 승인 (네이버/쿠팡 공통)
+      claimId: string; // 내부 표준 클레임 ID
+      items?: Array<{ orderItemId: string; quantity: number }>;
+    }
+  | {
+      type: 'return.confirm_receipt'; // 반품 상품 입고 확인
+      claimId: string;
+    }
+  | {
+      type: 'return.process_shipment_stop'; // 출고중지 처리
+      claimId: string;
+      reason?: string;
+    }
+  | {
+      type: 'return.process_already_shipped'; // 이미출고 처리
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+    }
+  | {
+      type: 'return.register_collection_invoice'; // 회수송장 등록
+      claimId: string;
+      collectionType: 'RETURN' | 'EXCHANGE';
+      tracking: { companyCode: string; number: string };
+    }
+  | {
+      type: 'return.hold'; // 반품 보류
+      claimId: string;
+      reason?: string;
+    }
+  | {
+      type: 'return.release_hold'; // 반품 보류 해제
+      claimId: string;
+    }
+  | {
+      type: 'return.reject'; // 반품 거부
+      claimId: string;
+      reason: string;
+    }
+
+  // === 교환 관리 (Exchange Management) ===
+  | {
+      type: 'exchange.confirm_pickup'; // 교환 회수 완료
+      claimId: string;
+    }
+  | {
+      type: 'exchange.reship'; // 교환 재발송
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+    }
+  | {
+      type: 'exchange.confirm_receipt'; // 교환 상품 입고 확인
+      claimId: string;
+    }
+  | {
+      type: 'exchange.reject'; // 교환 거부
+      claimId: string;
+      reason: string;
+    }
+  | {
+      type: 'exchange.upload_invoice'; // 교환 재발송 송장 업로드
+      claimId: string;
+      tracking: { companyCode: string; number: string };
+      items?: Array<{ itemId: string; shipmentBoxId: string }>;
+    }
+  | {
+      type: 'exchange.hold'; // 교환 보류
+      claimId: string;
+      reason?: string;
+    }
+  | {
+      type: 'exchange.release_hold'; // 교환 보류 해제
+      claimId: string;
+    };
+
+// ===================================================================
+// == 조회 명령 (Query Commands) - CQRS 패턴 적용
+// ===================================================================
+// 상태를 변경하지 않는 조회성 작업들을 별도로 분리
+
+export type ChannelQuery =
+  | {
+      type: 'delivery.history'; // 배송 히스토리 조회
+      orderId: string;
+    }
+  | {
+      type: 'return.withdrawal_history'; // 반품 철회 이력 조회
+      dateFrom: string;
+      dateTo: string;
+      pageIndex?: number;
+      sizePerPage?: number;
+    }
+  | {
+      type: 'return.withdrawal_history_by_claims'; // 특정 클레임들의 철회 이력
+      claimIds: string[];
+    }
+  | {
+      type: 'exchange.requests'; // 교환 요청 목록 조회
+      dateFrom: string;
+      dateTo: string;
+      status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL';
+      orderId?: number;
+      pageIndex?: number;
+      sizePerPage?: number;
+    }
+  | {
+      type: 'order.status'; // 주문 상태 조회
+      orderId: string;
+    }
+  | {
+      type: 'claim.details'; // 클레임 상세 정보
+      claimId: string;
     };

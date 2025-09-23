@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ChannelStrategy } from './channel-strategy.interface';
 import {
@@ -8,7 +8,7 @@ import {
   InternalInventoryData,
 } from '../../types';
 import { InternalOrderEvent, OrderQuery } from '../../types';
-import { ChannelCommand } from '../../types';
+import { ChannelCommand, ChannelQuery } from '../../types';
 
 import {
   InternalDispatchCommandSchema,
@@ -295,6 +295,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
               },
             };
           } catch (apiError: any) {
+            // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
+            if (apiError instanceof BadRequestException) {
+              throw apiError;
+            }
+
             this.logger.error(`❌ 네이버 재고 업데이트 API 호출 실패:`, {
               productId: inventoryData.productId,
               error: apiError.response?.data || apiError.message,
@@ -363,16 +368,19 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       const token = await this.naverApi.getAccessToken();
 
       switch (command.type) {
-        case 'order.confirm':
+        case 'order.prepare':
+          // 네이버의 order.confirm과 매핑
           return await this.executeOrderConfirm(token, command);
 
-        case 'dispatch.confirm':
+        case 'dispatch.ship':
+          // 네이버의 dispatch.confirm과 매핑
           return await this.executeDispatchConfirm(token, command);
 
         case 'dispatch.delay':
           return await this.executeDispatchDelay(token, command);
 
-        case 'cancel.approve':
+        case 'order.cancel':
+          // 네이버의 cancel.approve와 매핑
           return await this.executeCancelApprove(token, command);
 
         case 'return.approve':
@@ -381,7 +389,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         default:
           return {
             success: false,
-            errors: [{ message: `지원하지 않는 명령 타입: ${command.type}` }],
+            errors: [
+              { message: `네이버에서 지원하지 않는 명령: ${command.type}` },
+            ],
           };
       }
     } catch (error) {
@@ -391,6 +401,43 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         errors: [{ message: `네이버 명령 실행 실패: ${message}` }],
       };
     }
+  }
+
+  async executeQuery(query: ChannelQuery): Promise<any> {
+    try {
+      switch (query.type) {
+        case 'order.status':
+          // 네이버는 주문 상태 조회 지원
+          return await this.queryOrderStatus(query);
+
+        case 'claim.details':
+          // 네이버는 클레임 상세 조회 지원
+          return await this.queryClaimDetails(query);
+
+        default:
+          throw new Error(`네이버에서 지원하지 않는 조회: ${query.type}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`네이버 조회 실행 실패: ${message}`);
+    }
+  }
+
+  // 간단한 조회 메서드들
+  private async queryOrderStatus(query: {
+    type: 'order.status';
+    orderId: string;
+  }): Promise<any> {
+    // TODO: 네이버 주문 상태 조회 구현
+    throw new Error('구현 필요: 네이버 주문 상태 조회');
+  }
+
+  private async queryClaimDetails(query: {
+    type: 'claim.details';
+    claimId: string;
+  }): Promise<any> {
+    // TODO: 네이버 클레임 상세 조회 구현
+    throw new Error('구현 필요: 네이버 클레임 상세 조회');
   }
 
   /**
@@ -574,6 +621,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         validatedNaverRequest.dispatchProductOrders.length,
       );
     } catch (error) {
+      // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
       console.error(
         '❌ 네이버 발송처리 실패:',
         error.response?.data || error.message,

@@ -1,6 +1,6 @@
 import { InternalOrderEvent, OrderQuery } from '../../types';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
-import { ChannelCommand } from '../../types';
+import { ChannelCommand, ChannelQuery } from '../../types';
 
 export interface ChannelStrategy {
   /**
@@ -22,8 +22,15 @@ export interface ChannelStrategy {
 
   /**
    * 채널별 복잡한 액션(취소/반품/교환/발송 등)을 Command로 통합 처리
+   * 표준 비즈니스 명령을 채널별 API 호출로 번역하는 어댑터의 핵심 역할
    */
   executeCommand(command: ChannelCommand): Promise<SyncResult>;
+
+  /**
+   * 조회성 작업을 처리 (CQRS 패턴 적용)
+   * 상태를 변경하지 않는 조회 작업들을 별도로 분리
+   */
+  executeQuery(query: ChannelQuery): Promise<any>;
 
   /**
    * 표준화된 쿼리 객체를 사용하여 외부 채널에서 주문 정보를 조회합니다.
