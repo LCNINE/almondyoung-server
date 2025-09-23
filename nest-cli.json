@@ -55,6 +55,25 @@
       "compilerOptions": {
         "tsConfigPath": "apps/wms/tsconfig.app.json"
       }
+    },
+    "wallet": {
+      "type": "application",
+      "root": "apps/wallet",
+      "entryFile": "main",
+      "sourceRoot": "apps/wallet/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/wallet/tsconfig.app.json",
+        "assets": ["html/**/*"]
+      }
+    },
+    "channel-adapter": {
+      "type": "application",
+      "root": "apps/channel-adapter",
+      "entryFile": "main",
+      "sourceRoot": "apps/channel-adapter/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/channel-adapter/tsconfig.app.json"
+      }
     }
   }
 }
