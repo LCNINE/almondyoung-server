@@ -1,17 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class ReservationLifecycleService {
   private readonly logger = new Logger(ReservationLifecycleService.name);
 
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
     private readonly unifiedReservation: UnifiedReservationService
   ) {}
 

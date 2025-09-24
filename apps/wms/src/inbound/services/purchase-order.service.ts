@@ -22,7 +22,7 @@ export class PurchaseOrderService {
     private readonly logger = new Logger(PurchaseOrderService.name);
 
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
         private readonly transactionService: TransactionService,
     ) {}
 

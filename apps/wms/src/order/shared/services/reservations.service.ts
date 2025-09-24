@@ -1,12 +1,12 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and } from 'drizzle-orm';
 import { AvailabilityService } from './availability.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
 import { UnifiedReservationService, ReserveStockDto } from '../../../shared/services/unified-reservation.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 interface ReserveFulfilmentOrderLineDto {
   fulfillmentOrderItemId: string;
@@ -22,7 +22,7 @@ export class ReservationsService {
   private readonly RETRY_DELAY_MS = 100;
 
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
     private readonly availability: AvailabilityService,
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly metrics?: MetricsService,

@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 
@@ -35,7 +35,7 @@ export class BarcodeService {
   private readonly logger = new Logger(BarcodeService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
   ) {}
 
   private get db() {
@@ -113,14 +113,16 @@ export class BarcodeService {
       throw new BadRequestException(`SKU not found: ${skuId}`);
     }
 
-    const stock = await this.db.query.stocks.findFirst({
+    // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
+    const stockLedgers = await this.db.query.stockLedgers.findMany({
       where: and(
-        eq(wmsTables.stocks.skuId, skuId),
-        eq(wmsTables.stocks.warehouseId, warehouseId)
+        eq(wmsTables.stockLedgers.skuId, skuId),
+        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+        eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
       )
     });
 
-    const availableQty = stock?.quantity || 0;
+    const availableQty = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
 
     // TODO: Get location from location service
     const locationCode = undefined;
@@ -163,7 +165,6 @@ export class BarcodeService {
     if (!foi) {
       throw new BadRequestException(`Fulfillment order item not found: ${foiId}`);
     }
-
     this.logger.log(`FOI scanned: ${foi.sku.name} for SO ${foi.salesOrderId}`);
 
     return {
@@ -229,7 +230,7 @@ export class BarcodeService {
       status: fo.status,
       totalItems: fo.items.length,
       completedItems,
-      batchId: fo.batchId,
+      batchId: fo.batchId ?? undefined,
       items: fo.items.map(item => ({
         foiId: item.id,
         skuName: item.sku.name,

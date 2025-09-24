@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {
@@ -25,7 +25,7 @@ export class LocationService {
     private readonly logger = new Logger(LocationService.name);
 
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     ) { }
 
     private get db() {

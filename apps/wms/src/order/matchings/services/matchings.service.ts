@@ -1,13 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq } from 'drizzle-orm';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class MatchingsService {
-  constructor(private readonly db: DbService<typeof wmsTables>) {}
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);

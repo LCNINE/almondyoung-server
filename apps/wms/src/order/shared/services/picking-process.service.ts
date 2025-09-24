@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray, sum, sql } from 'drizzle-orm';
 import { BarcodeService, FOIScanResult, SkuScanResult } from '../../../shared/services/barcode.service';
@@ -62,7 +62,7 @@ export class PickingProcessService {
   private readonly logger = new Logger(PickingProcessService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly barcodeService: BarcodeService
   ) {}
 

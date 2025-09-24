@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
@@ -11,14 +11,14 @@ import { OutboxService } from '../../shared/services/outbox.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MatchingsService } from '../../matchings/services/matchings.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class FulfillmentsService {
   private readonly logger = new Logger(FulfillmentsService.name);
 
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
     private readonly availability: AvailabilityService,
     private readonly matchings?: MatchingsService,

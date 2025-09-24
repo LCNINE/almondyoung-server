@@ -1,20 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb, TypedDatabase, DbService } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { OptionEngineService, OptionSchema } from '@app/shared/option-engine/option-engine.service';
 import { InventoryService } from './inventory.service';
 import { PimOrchestrator, PimHttpClient } from '@app/shared';
 import { ConfigService } from '@nestjs/config';
 import { and, eq } from 'drizzle-orm';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class MasterService {
   private readonly logger = new Logger(MasterService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly optionEngine: OptionEngineService,
     private readonly inventoryService: InventoryService,
     private readonly configService: ConfigService,

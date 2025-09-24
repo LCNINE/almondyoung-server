@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ProductSkuMappingService } from './product-sku-mapping.service';
@@ -42,7 +42,7 @@ export class FulfillmentOrderTransactionService {
   private readonly logger = new Logger(FulfillmentOrderTransactionService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly productSkuMappingService: ProductSkuMappingService
   ) {}
 
@@ -396,14 +396,16 @@ export class FulfillmentOrderTransactionService {
   }
 
   private async checkStockAvailability(skuId: string, warehouseId: string, tx: any): Promise<number> {
-    const stock = await tx.query.stocks.findFirst({
+    // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
+    const stockLedgers = await tx.query.stockLedgers.findMany({
       where: and(
-        eq(wmsTables.stocks.skuId, skuId),
-        eq(wmsTables.stocks.warehouseId, warehouseId)
+        eq(wmsTables.stockLedgers.skuId, skuId),
+        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+        eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
       )
     });
 
-    if (!stock) {
+    if (stockLedgers.length === 0) {
       return 0;
     }
 
@@ -415,7 +417,8 @@ export class FulfillmentOrderTransactionService {
       )
     });
 
-    const totalReserved = reservations.reduce((sum, r) => sum + r.qty, 0);
-    return Math.max(0, stock.quantity - totalReserved);
+    const totalOnHand = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
+    const totalReserved = reservations.reduce((sum, r) => sum + r.quantity, 0);
+    return Math.max(0, totalOnHand - totalReserved);
   }
 }

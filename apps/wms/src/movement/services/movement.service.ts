@@ -1,17 +1,17 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
 import { and, eq, inArray } from 'drizzle-orm';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class MovementService {
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly stockEventStore: StockEventStore,
   ) {}
 

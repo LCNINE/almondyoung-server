@@ -1,5 +1,5 @@
 import { WmsTestDatabase } from './wms-test-database';
-import { wmsTables } from '../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { faker } from '@faker-js/faker';
 
 export class WmsTestFactory {

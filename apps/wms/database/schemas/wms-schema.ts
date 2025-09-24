@@ -85,7 +85,7 @@ export const eventTypeEnum = pgEnum('event_type', [
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
-export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released']);
+export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
 export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_transit', 'delivered', 'failed']);
@@ -163,6 +163,15 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
     'labeled',
     'shipped',
     'canceled',
+    // 에러 로그에서 필요한 추가 상태들
+    'pending',
+    'allocated',
+    'picking',
+    'picked',
+    'inspecting',
+    'invoiced',
+    'completed',
+    'forwarded',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', 'third_party_3pl', 'drop_ship']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
@@ -769,6 +778,22 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
     ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
     status: fulfillmentStatusEnum('status').notNull().default('created'),
+
+    // 배치 및 출고 관련 필드들
+    batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
+    fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
+    priority: taskPriorityEnum('priority').default('normal'),
+
+    // 수량 관련 필드들
+    totalItems: integer('total_items').default(0),
+    totalQty: integer('total_qty').default(0),
+    totalReservedQty: integer('total_reserved_qty').default(0),
+
+    // 타임스탬프 필드들
+    allocatedAt: timestamp('allocated_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+
     shippingAddress: json('shipping_address'),
     labelNo: varchar('label_no', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -1236,6 +1261,13 @@ export const productSkuMappingSnapshots = pgTable('product_sku_mapping_snapshots
     sourceVersion: integer('source_version').notNull(),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
     snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
+
+    // 에러 로그에서 필요한 추가 컬럼들
+    variantId: uuid('variant_id').notNull(), // PIM variant ID
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+    quantity: integer('quantity').notNull(),
+    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, t => ({
     idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
@@ -1290,6 +1322,15 @@ export const outboundBatches = pgTable('outbound_batches', {
     pickingMethod: pickingMethodEnum('picking_method').notNull(),
     cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
     assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
+
+    // 에러 로그에서 필요한 추가 컬럼들
+    name: varchar('name', { length: 255 }),
+    totalItems: integer('total_items').default(0),
+    totalQty: integer('total_qty').default(0),
+    scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
 }, t => ({
@@ -1400,8 +1441,12 @@ export const wmsTables = {
     outboundBatches,
     fulfillmentOrderBatches,
     invoices,
+} as const;
 
-    // Views
+/*───────────────────────────
+ * VIEWS ONLY SCHEMA
+ *──────────────────────────*/
+export const wmsViews = {
     stockSummary,
 } as const;
 
@@ -1411,19 +1456,482 @@ export const wmsTables = {
 
 import { relations } from 'drizzle-orm';
 
+// Core Master Data Relations
+export const holdersRelations = relations(holders, ({ many }) => ({
+    skus: many(skus),
+    fulfillmentOrders: many(fulfillmentOrders),
+}));
+
+export const suppliersRelations = relations(suppliers, ({ many }) => ({
+    purchaseOrders: many(purchaseOrders),
+    skuSuppliers: many(skuSuppliers),
+}));
+
+export const categoriesRelations = relations(categories, ({ many }) => ({
+    skuCategories: many(skuCategories),
+}));
+
+export const deliveryProfilesRelations = relations(deliveryProfiles, ({ many }) => ({
+    skus: many(skus),
+}));
+
+// SKU Relations (핵심)
+export const skusRelations = relations(skus, ({ one, many }) => ({
+    holder: one(holders, {
+        fields: [skus.holderId],
+        references: [holders.id],
+    }),
+    deliveryProfile: one(deliveryProfiles, {
+        fields: [skus.deliveryProfileId],
+        references: [deliveryProfiles.id],
+    }),
+    // Many-to-many relations
+    skuSuppliers: many(skuSuppliers),
+    skuCategories: many(skuCategories),
+    skuBarcodes: many(skuBarcodes),
+    inventoryMasterSkuLinks: many(inventoryMasterSkuLinks),
+    // Stock relations
+    stockEvents: many(stockEvents),
+    stockLedgers: many(stockLedgers),
+    stockReservations: many(stockReservations),
+    // Order relations
+    fulfillmentOrderLines: many(fulfillmentOrderLines),
+    fulfillmentOrderItems: many(fulfillmentOrderItems),
+    outboundTaskItems: many(outboundTaskItems),
+    outboundTaskLines: many(outboundTaskLines),
+    // Purchase/Inbound relations
+    purchaseOrderLines: many(purchaseOrderLines),
+    purchaseOrderCart: many(purchaseOrderCart),
+    inboundPlanItems: many(inboundPlanItems),
+    inboundReceiptLines: many(inboundReceiptLines),
+    inboundLists: many(inboundLists),
+    // Movement relations
+    movementJobLines: many(movementJobLines),
+    // Matching relations
+    productVariantSkuLinks: many(productVariantSkuLinks),
+    productOptionMatchings: many(productOptionMatchings),
+    // Mapping relations
+    productSkuMappingItems: many(productSkuMappingItems),
+    productSkuMappingSnapshots: many(productSkuMappingSnapshots),
+}));
+
+export const skuSuppliersRelations = relations(skuSuppliers, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuSuppliers.skuId],
+        references: [skus.id],
+    }),
+    supplier: one(suppliers, {
+        fields: [skuSuppliers.supplierId],
+        references: [suppliers.id],
+    }),
+}));
+
+export const skuCategoriesRelations = relations(skuCategories, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuCategories.skuId],
+        references: [skus.id],
+    }),
+    category: one(categories, {
+        fields: [skuCategories.categoryId],
+        references: [categories.id],
+    }),
+}));
+
+export const skuBarcodesRelations = relations(skuBarcodes, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuBarcodes.skuId],
+        references: [skus.id],
+    }),
+}));
+
+// Inventory Master Relations
+export const inventoryProductMastersRelations = relations(inventoryProductMasters, ({ many }) => ({
+    inventoryMasterSkuLinks: many(inventoryMasterSkuLinks),
+    productMatchings: many(productMatchings),
+}));
+
+export const inventoryMasterSkuLinksRelations = relations(inventoryMasterSkuLinks, ({ one }) => ({
+    master: one(inventoryProductMasters, {
+        fields: [inventoryMasterSkuLinks.masterId],
+        references: [inventoryProductMasters.id],
+    }),
+    sku: one(skus, {
+        fields: [inventoryMasterSkuLinks.skuId],
+        references: [skus.id],
+    }),
+}));
+
+// Warehouse & Location Relations
+export const warehousesRelations = relations(warehouses, ({ many }) => ({
+    locationColumns: many(locationColumns),
+    locations: many(locations),
+    stockEvents: many(stockEvents),
+    stockLedgers: many(stockLedgers),
+    stockReservations: many(stockReservations),
+    fulfillmentOrders: many(fulfillmentOrders),
+    outboundTasks: many(outboundTasks),
+    outboundBatches: many(outboundBatches),
+    movementJobs: many(movementJobs),
+    inboundReceipts: many(inboundReceipts),
+    inboundPlans: many(inboundPlans),
+    inboundPlansAsDestination: many(inboundPlans, {
+        relationName: 'destinationWarehouse',
+    }),
+    purchaseOrdersAsSource: many(purchaseOrders, {
+        relationName: 'sourceWarehouse',
+    }),
+    purchaseOrdersAsDestination: many(purchaseOrders, {
+        relationName: 'destinationWarehouse',
+    }),
+    productSkuMappings: many(productSkuMappings),
+    productSkuMappingSnapshots: many(productSkuMappingSnapshots),
+    settings: many(settings),
+}));
+
+export const locationColumnsRelations = relations(locationColumns, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [locationColumns.warehouseId],
+        references: [warehouses.id],
+    }),
+    locationRacks: many(locationRacks),
+}));
+
+export const locationRacksRelations = relations(locationRacks, ({ one, many }) => ({
+    column: one(locationColumns, {
+        fields: [locationRacks.columnId],
+        references: [locationColumns.id],
+    }),
+    locations: many(locations),
+}));
+
+export const locationsRelations = relations(locations, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [locations.warehouseId],
+        references: [warehouses.id],
+    }),
+    rack: one(locationRacks, {
+        fields: [locations.rackId],
+        references: [locationRacks.id],
+    }),
+    stockEvents: many(stockEvents),
+    stockLedgers: many(stockLedgers),
+    inboundReceipts: many(inboundReceipts),
+    inboundReceiptLines: many(inboundReceiptLines),
+    movementJobLines: many(movementJobLines),
+    outboundTaskLines: many(outboundTaskLines),
+}));
+
+// Stock Relations
+export const stockJournalsRelations = relations(stockJournals, ({ many }) => ({
+    stockEvents: many(stockEvents),
+    movementJobs: many(movementJobs),
+    inboundReceipts: many(inboundReceipts),
+}));
+
+export const stockEventsRelations = relations(stockEvents, ({ one }) => ({
+    journal: one(stockJournals, {
+        fields: [stockEvents.journalId],
+        references: [stockJournals.id],
+    }),
+    sku: one(skus, {
+        fields: [stockEvents.skuId],
+        references: [skus.id],
+    }),
+    fromWarehouse: one(warehouses, {
+        fields: [stockEvents.fromWarehouseId],
+        references: [warehouses.id],
+    }),
+    toWarehouse: one(warehouses, {
+        fields: [stockEvents.toWarehouseId],
+        references: [warehouses.id],
+    }),
+    fromLocation: one(locations, {
+        fields: [stockEvents.fromLocationId],
+        references: [locations.id],
+    }),
+    toLocation: one(locations, {
+        fields: [stockEvents.toLocationId],
+        references: [locations.id],
+    }),
+}));
+
+export const stockLedgersRelations = relations(stockLedgers, ({ one }) => ({
+    sku: one(skus, {
+        fields: [stockLedgers.skuId],
+        references: [skus.id],
+    }),
+    warehouse: one(warehouses, {
+        fields: [stockLedgers.warehouseId],
+        references: [warehouses.id],
+    }),
+    location: one(locations, {
+        fields: [stockLedgers.locationId],
+        references: [locations.id],
+    }),
+}));
+
+export const stockReservationsRelations = relations(stockReservations, ({ one }) => ({
+    sku: one(skus, {
+        fields: [stockReservations.skuId],
+        references: [skus.id],
+    }),
+    warehouse: one(warehouses, {
+        fields: [stockReservations.warehouseId],
+        references: [warehouses.id],
+    }),
+    fulfillmentOrderItem: one(fulfillmentOrderItems, {
+        fields: [stockReservations.fulfillmentOrderItemId],
+        references: [fulfillmentOrderItems.id],
+    }),
+}));
+
+// Product Matching Relations
+export const productMatchingsRelations = relations(productMatchings, ({ one, many }) => ({
+    master: one(inventoryProductMasters, {
+        fields: [productMatchings.masterId],
+        references: [inventoryProductMasters.id],
+    }),
+    productVariantSkuLinks: many(productVariantSkuLinks),
+    productOptionMatchings: many(productOptionMatchings),
+    salesOrderLines: many(salesOrderLines),
+}));
+
+export const productVariantSkuLinksRelations = relations(productVariantSkuLinks, ({ one }) => ({
+    productMatching: one(productMatchings, {
+        fields: [productVariantSkuLinks.productMatchingId],
+        references: [productMatchings.id],
+    }),
+    sku: one(skus, {
+        fields: [productVariantSkuLinks.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const productOptionMatchingsRelations = relations(productOptionMatchings, ({ one }) => ({
+    productMatching: one(productMatchings, {
+        fields: [productOptionMatchings.productMatchingId],
+        references: [productMatchings.id],
+    }),
+    sku: one(skus, {
+        fields: [productOptionMatchings.skuId],
+        references: [skus.id],
+    }),
+}));
+
+// Sales Order Relations
+export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
+    lines: many(salesOrderLines),
+    fulfillmentOrders: many(fulfillmentOrders),
+    orderEvents: many(orderEvents),
+    outboundTaskOrders: many(outboundTaskOrders),
+    returns: many(returns),
+}));
+
+export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => ({
+    salesOrder: one(salesOrders, {
+        fields: [salesOrderLines.salesOrderId],
+        references: [salesOrders.id],
+    }),
+    productMatching: one(productMatchings, {
+        fields: [salesOrderLines.productMatchingId],
+        references: [productMatchings.id],
+    }),
+}));
+
+export const orderEventsRelations = relations(orderEvents, ({ one }) => ({
+    order: one(salesOrders, {
+        fields: [orderEvents.orderId],
+        references: [salesOrders.id],
+    }),
+}));
+
+export const mergeGroupsRelations = relations(mergeGroups, ({ many }) => ({
+    outboundTasks: many(outboundTasks),
+}));
+
+// Fulfillment Order Relations
+export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, many }) => ({
+    salesOrder: one(salesOrders, {
+        fields: [fulfillmentOrders.salesOrderId],
+        references: [salesOrders.id],
+    }),
+    warehouse: one(warehouses, {
+        fields: [fulfillmentOrders.warehouseId],
+        references: [warehouses.id],
+    }),
+    owner: one(holders, {
+        fields: [fulfillmentOrders.ownerId],
+        references: [holders.id],
+    }),
+    batch: one(outboundBatches, {
+        fields: [fulfillmentOrders.batchId],
+        references: [outboundBatches.id],
+    }),
+    lines: many(fulfillmentOrderLines),
+    items: many(fulfillmentOrderItems),
+    shipments: many(shipments),
+    fulfillmentOrderBatches: many(fulfillmentOrderBatches),
+    invoices: many(invoices),
+}));
+
+export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
+    fulfillmentOrder: one(fulfillmentOrders, {
+        fields: [fulfillmentOrderLines.fulfillmentOrderId],
+        references: [fulfillmentOrders.id],
+    }),
+    sku: one(skus, {
+        fields: [fulfillmentOrderLines.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, ({ one, many }) => ({
+    fulfillmentOrder: one(fulfillmentOrders, {
+        fields: [fulfillmentOrderItems.fulfillmentOrderId],
+        references: [fulfillmentOrders.id],
+    }),
+    sku: one(skus, {
+        fields: [fulfillmentOrderItems.skuId],
+        references: [skus.id],
+    }),
+    mappingSnapshot: one(productSkuMappingSnapshots, {
+        fields: [fulfillmentOrderItems.mappingSnapshotId],
+        references: [productSkuMappingSnapshots.id],
+    }),
+    stockReservations: many(stockReservations),
+}));
+
+// Outbound Relations
+export const outboundTasksRelations = relations(outboundTasks, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [outboundTasks.warehouseId],
+        references: [warehouses.id],
+    }),
+    mergeGroup: one(mergeGroups, {
+        fields: [outboundTasks.mergeGroupId],
+        references: [mergeGroups.id],
+    }),
+    outboundTaskOrders: many(outboundTaskOrders),
+    outboundTaskItems: many(outboundTaskItems),
+    outboundTaskLines: many(outboundTaskLines),
+}));
+
+export const outboundTaskOrdersRelations = relations(outboundTaskOrders, ({ one }) => ({
+    task: one(outboundTasks, {
+        fields: [outboundTaskOrders.taskId],
+        references: [outboundTasks.id],
+    }),
+    order: one(salesOrders, {
+        fields: [outboundTaskOrders.orderId],
+        references: [salesOrders.id],
+    }),
+}));
+
+export const outboundTaskItemsRelations = relations(outboundTaskItems, ({ one }) => ({
+    task: one(outboundTasks, {
+        fields: [outboundTaskItems.taskId],
+        references: [outboundTasks.id],
+    }),
+    sku: one(skus, {
+        fields: [outboundTaskItems.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const outboundTaskLinesRelations = relations(outboundTaskLines, ({ one }) => ({
+    task: one(outboundTasks, {
+        fields: [outboundTaskLines.taskId],
+        references: [outboundTasks.id],
+    }),
+    sku: one(skus, {
+        fields: [outboundTaskLines.skuId],
+        references: [skus.id],
+    }),
+    location: one(locations, {
+        fields: [outboundTaskLines.locationId],
+        references: [locations.id],
+    }),
+}));
+
+export const outboundBatchesRelations = relations(outboundBatches, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [outboundBatches.warehouseId],
+        references: [warehouses.id],
+    }),
+    fulfillmentOrders: many(fulfillmentOrders),
+    fulfillmentOrderBatches: many(fulfillmentOrderBatches),
+}));
+
+export const fulfillmentOrderBatchesRelations = relations(fulfillmentOrderBatches, ({ one }) => ({
+    fulfillmentOrder: one(fulfillmentOrders, {
+        fields: [fulfillmentOrderBatches.fulfillmentOrderId],
+        references: [fulfillmentOrders.id],
+    }),
+    batch: one(outboundBatches, {
+        fields: [fulfillmentOrderBatches.batchId],
+        references: [outboundBatches.id],
+    }),
+}));
+
+// Shipment Relations
+export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
+    fulfillmentOrder: one(fulfillmentOrders, {
+        fields: [shipments.fulfillmentOrderId],
+        references: [fulfillmentOrders.id],
+    }),
+    shipmentTracking: many(shipmentTracking),
+    returns: many(returns),
+}));
+
+export const shipmentTrackingRelations = relations(shipmentTracking, ({ one }) => ({
+    shipment: one(shipments, {
+        fields: [shipmentTracking.shipmentId],
+        references: [shipments.id],
+    }),
+}));
+
+export const returnsRelations = relations(returns, ({ one }) => ({
+    order: one(salesOrders, {
+        fields: [returns.orderId],
+        references: [salesOrders.id],
+    }),
+    shipment: one(shipments, {
+        fields: [returns.shipmentId],
+        references: [shipments.id],
+    }),
+}));
+
+// Invoice Relations
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+    fulfillmentOrder: one(fulfillmentOrders, {
+        fields: [invoices.fulfillmentOrderId],
+        references: [fulfillmentOrders.id],
+    }),
+}));
+
+// Purchase Order Relations
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
     lines: many(purchaseOrderLines),
     supplier: one(suppliers, {
         fields: [purchaseOrders.supplierId],
         references: [suppliers.id],
     }),
-    // 이중 입고 계획 관계 추가
+    sourceWarehouse: one(warehouses, {
+        fields: [purchaseOrders.sourceWarehouseId],
+        references: [warehouses.id],
+        relationName: 'sourceWarehouse',
+    }),
+    destinationWarehouse: one(warehouses, {
+        fields: [purchaseOrders.destinationWarehouseId],
+        references: [warehouses.id],
+        relationName: 'destinationWarehouse',
+    }),
     inboundPlans: many(inboundPlans),
 }));
 
 export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
     purchaseOrder: one(purchaseOrders, {
-        fields: [purchaseOrderLines.purchaseOrderId],
+        fields: [purchaseOrderLines.poId],
         references: [purchaseOrders.id],
     }),
     sku: one(skus, {
@@ -1439,8 +1947,44 @@ export const purchaseOrderCartRelations = relations(purchaseOrderCart, ({ one })
     }),
 }));
 
-// 이중 입고 계획 관계 정의
+// Inbound Relations
+export const inboundListsRelations = relations(inboundLists, ({ one }) => ({
+    purchaseOrder: one(purchaseOrders, {
+        fields: [inboundLists.poId],
+        references: [purchaseOrders.id],
+    }),
+    sku: one(skus, {
+        fields: [inboundLists.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const inboundReceiptsRelations = relations(inboundReceipts, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [inboundReceipts.warehouseId],
+        references: [warehouses.id],
+    }),
+    location: one(locations, {
+        fields: [inboundReceipts.locationId],
+        references: [locations.id],
+    }),
+    journal: one(stockJournals, {
+        fields: [inboundReceipts.journalId],
+        references: [stockJournals.id],
+    }),
+    lines: many(inboundReceiptLines),
+}));
+
 export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [inboundPlans.warehouseId],
+        references: [warehouses.id],
+    }),
+    destinationWarehouse: one(warehouses, {
+        fields: [inboundPlans.destinationWarehouseId],
+        references: [warehouses.id],
+        relationName: 'destinationWarehouse',
+    }),
     linkedPurchaseOrder: one(purchaseOrders, {
         fields: [inboundPlans.linkedPurchaseOrderId],
         references: [purchaseOrders.id],
@@ -1451,18 +1995,213 @@ export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => 
     }),
     childPlans: many(inboundPlans),
     items: many(inboundPlanItems),
+}));
+
+export const inboundPlanItemsRelations = relations(inboundPlanItems, ({ one, many }) => ({
+    plan: one(inboundPlans, {
+        fields: [inboundPlanItems.planId],
+        references: [inboundPlans.id],
+    }),
+    sku: one(skus, {
+        fields: [inboundPlanItems.skuId],
+        references: [skus.id],
+    }),
+    receiptLines: many(inboundReceiptLines),
+}));
+
+export const inboundReceiptLinesRelations = relations(inboundReceiptLines, ({ one }) => ({
+    receipt: one(inboundReceipts, {
+        fields: [inboundReceiptLines.receiptId],
+        references: [inboundReceipts.id],
+    }),
+    sku: one(skus, {
+        fields: [inboundReceiptLines.skuId],
+        references: [skus.id],
+    }),
+    originLocation: one(locations, {
+        fields: [inboundReceiptLines.originLocationId],
+        references: [locations.id],
+    }),
+    stockEvent: one(stockEvents, {
+        fields: [inboundReceiptLines.eventId],
+        references: [stockEvents.id],
+    }),
+    planItem: one(inboundPlanItems, {
+        fields: [inboundReceiptLines.planItemId],
+        references: [inboundPlanItems.id],
+    }),
+}));
+
+// Movement Relations
+export const movementJobsRelations = relations(movementJobs, ({ one, many }) => ({
     warehouse: one(warehouses, {
-        fields: [inboundPlans.warehouseId],
+        fields: [movementJobs.warehouseId],
         references: [warehouses.id],
     }),
-    destinationWarehouse: one(warehouses, {
-        fields: [inboundPlans.destinationWarehouseId],
+    journal: one(stockJournals, {
+        fields: [movementJobs.journalId],
+        references: [stockJournals.id],
+    }),
+    lines: many(movementJobLines),
+}));
+
+export const movementJobLinesRelations = relations(movementJobLines, ({ one }) => ({
+    job: one(movementJobs, {
+        fields: [movementJobLines.jobId],
+        references: [movementJobs.id],
+    }),
+    sku: one(skus, {
+        fields: [movementJobLines.skuId],
+        references: [skus.id],
+    }),
+    fromLocation: one(locations, {
+        fields: [movementJobLines.fromLocationId],
+        references: [locations.id],
+    }),
+    toLocation: one(locations, {
+        fields: [movementJobLines.toLocationId],
+        references: [locations.id],
+    }),
+    event: one(stockEvents, {
+        fields: [movementJobLines.eventId],
+        references: [stockEvents.id],
+    }),
+}));
+
+// Product-SKU Mapping Relations
+export const productSkuMappingsRelations = relations(productSkuMappings, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [productSkuMappings.warehouseId],
+        references: [warehouses.id],
+    }),
+    items: many(productSkuMappingItems),
+}));
+
+export const productSkuMappingItemsRelations = relations(productSkuMappingItems, ({ one }) => ({
+    mapping: one(productSkuMappings, {
+        fields: [productSkuMappingItems.mappingId],
+        references: [productSkuMappings.id],
+    }),
+    sku: one(skus, {
+        fields: [productSkuMappingItems.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const productSkuMappingSnapshotsRelations = relations(productSkuMappingSnapshots, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [productSkuMappingSnapshots.warehouseId],
+        references: [warehouses.id],
+    }),
+    sku: one(skus, {
+        fields: [productSkuMappingSnapshots.skuId],
+        references: [skus.id],
+    }),
+    mapping: one(productSkuMappings, {
+        fields: [productSkuMappingSnapshots.mappingId],
+        references: [productSkuMappings.id],
+    }),
+    fulfillmentOrderItems: many(fulfillmentOrderItems),
+}));
+
+// Settings Relations
+export const settingsRelations = relations(settings, ({ one }) => ({
+    warehouse: one(warehouses, {
+        fields: [settings.warehouseId],
         references: [warehouses.id],
     }),
 }));
 
-// Views schema for queries (includes both tables and views)
+
+export const wmsRelations = {
+    // 모든 관계들 - Core Master Data Relations
+    holdersRelations,
+    suppliersRelations,
+    categoriesRelations,
+    deliveryProfilesRelations,
+
+    // SKU Relations
+    skusRelations,
+    skuSuppliersRelations,
+    skuCategoriesRelations,
+    skuBarcodesRelations,
+
+    // Inventory Master Relations
+    inventoryProductMastersRelations,
+    inventoryMasterSkuLinksRelations,
+
+    // Warehouse & Location Relations
+    warehousesRelations,
+    locationColumnsRelations,
+    locationRacksRelations,
+    locationsRelations,
+
+    // Stock Relations
+    stockJournalsRelations,
+    stockEventsRelations,
+    stockLedgersRelations,
+    stockReservationsRelations,
+
+    // Product Matching Relations
+    productMatchingsRelations,
+    productVariantSkuLinksRelations,
+    productOptionMatchingsRelations,
+
+    // Sales Order Relations
+    salesOrdersRelations,
+    salesOrderLinesRelations,
+    orderEventsRelations,
+    mergeGroupsRelations,
+
+    // Fulfillment Order Relations
+    fulfillmentOrdersRelations,
+    fulfillmentOrderLinesRelations,
+    fulfillmentOrderItemsRelations,
+
+    // Outbound Relations
+    outboundTasksRelations,
+    outboundTaskOrdersRelations,
+    outboundTaskItemsRelations,
+    outboundTaskLinesRelations,
+    outboundBatchesRelations,
+    fulfillmentOrderBatchesRelations,
+
+    // Shipment Relations
+    shipmentsRelations,
+    shipmentTrackingRelations,
+    returnsRelations,
+
+    // Invoice Relations
+    invoicesRelations,
+
+    // Purchase Order Relations
+    purchaseOrdersRelations,
+    purchaseOrderLinesRelations,
+    purchaseOrderCartRelations,
+
+    // Inbound Relations
+    inboundListsRelations,
+    inboundReceiptsRelations,
+    inboundPlansRelations,
+    inboundPlanItemsRelations,
+    inboundReceiptLinesRelations,
+
+    // Movement Relations
+    movementJobsRelations,
+    movementJobLinesRelations,
+
+    // Product-SKU Mapping Relations
+    productSkuMappingsRelations,
+    productSkuMappingItemsRelations,
+    productSkuMappingSnapshotsRelations,
+
+    // Settings Relations
+    settingsRelations,
+} as const;
+
+// Complete schema for queries (includes both tables and views)
 export const wmsSchema = {
     ...wmsTables,
-    stockSummary,
+    ...wmsViews,
+    ...wmsRelations,
 } as const;

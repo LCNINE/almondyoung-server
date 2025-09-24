@@ -1,5 +1,5 @@
 import { Rule, CalcArgs, ApplyRuleOptions, StockUpdateData, EventType } from './stock-rule.types';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
 
 

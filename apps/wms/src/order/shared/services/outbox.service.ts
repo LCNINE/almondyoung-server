@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class OutboxService {
-  constructor(private readonly db: DbService<typeof wmsTables>) {}
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   async enqueue(params: { eventType: string; aggregateType: string; aggregateId: string; partitionKey: string; payload: unknown }, tx?: DbTx) {
     const exec = async (trx: DbTx) => {

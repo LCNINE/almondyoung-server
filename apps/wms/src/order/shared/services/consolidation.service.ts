@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { FulfillmentOrderTransactionService } from './fulfillment-order-transaction.service';
@@ -168,7 +168,7 @@ export class ConsolidationService {
   ];
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService
   ) {}
 

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { DbService, TypedDatabase } from '@app/db';
 import { and, eq, sql, gte, lte, desc } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
@@ -11,14 +11,14 @@ import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from
 import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto, InboundPendingListResponse } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class InboundService {
     private readonly logger = new Logger(InboundService.name);
 
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
         private readonly inventoryService: InventoryService,
         private readonly commandService: InventoryCommandService,
         private readonly locationService: LocationService,

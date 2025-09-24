@@ -25,7 +25,7 @@ import { ReservationsService } from './shared/services/reservations.service';
 import { PoliciesService } from './shared/services/policies.service';
 import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
-import { wmsTables } from '../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { EventsModule } from '@app/events';
 import { MatchingsController } from './matchings/controllers/matchings.controller';
 import { MatchingsService } from './matchings/services/matchings.service';

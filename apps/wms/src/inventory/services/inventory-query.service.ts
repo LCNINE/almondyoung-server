@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService, TypedDatabase } from '@app/db';
 import { sql, and, eq, gt } from 'drizzle-orm';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface SkuLocationInfo {
   locationId: string;
@@ -20,7 +20,7 @@ export interface SkuLocationInfo {
 @Injectable()
 export class InventoryQueryService {
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
   private get db() {

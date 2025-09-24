@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 
 /**
@@ -10,7 +10,7 @@ import { StockEventStore } from '../repositories/stock-event.store';
 @Injectable()
 export class InventoryCorrectionService {
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly stockEventStore: StockEventStore,
   ) {}
 

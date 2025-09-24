@@ -1,16 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and, lte, asc } from 'drizzle-orm';
 import { EventPublisherService } from '@app/events';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class OutboxDispatcherService {
   private readonly logger = new Logger(OutboxDispatcherService.name);
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
     private readonly publisher?: EventPublisherService<any>,
   ) {}
 

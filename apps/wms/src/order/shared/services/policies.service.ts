@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { nowSeoul } from '../../../shared/services/time.util';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class PoliciesService {
-  constructor(private readonly db: DbService<typeof wmsTables>) {}
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   async getVariantPolicy(variantId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;

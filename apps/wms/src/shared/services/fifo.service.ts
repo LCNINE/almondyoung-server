@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { eq, and, gt } from 'drizzle-orm';
 
 export interface FifoLocation {
@@ -15,7 +15,7 @@ export interface FifoLocation {
 @Injectable()
 export class FifoService {
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
   ) {}
 
   private get db() {

@@ -3,7 +3,6 @@ import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 import { BarcodeService } from './services/barcode.service';
-import { WeightCalculatorService } from './services/weight-calculator.service';
 import { FifoService } from './services/fifo.service';
 import { TransactionService } from './services/transaction.service';
 import { AuditService } from './services/audit.service';
@@ -28,7 +27,6 @@ import { HealthController } from './controllers/health.controller';
     controllers: [MetricsController, HealthController],
     providers: [
         BarcodeService,
-        WeightCalculatorService,
         FifoService,
         TransactionService,
         AuditService,
@@ -40,7 +38,6 @@ import { HealthController } from './controllers/health.controller';
     ],
     exports: [
         BarcodeService,
-        WeightCalculatorService,
         FifoService,
         TransactionService,
         AuditService,

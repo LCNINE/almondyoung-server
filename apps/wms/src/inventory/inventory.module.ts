@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
-import { wmsTables } from '../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 import { SharedModule } from '../shared/shared.module';
 import { InventoryController } from './controllers/inventory.controller';

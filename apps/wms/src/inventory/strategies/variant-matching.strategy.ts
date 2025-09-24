@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from './matching-strategy.interface';
 import { eq } from 'drizzle-orm';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
 @Injectable()
 export class VariantMatchingStrategy extends MatchingStrategy {

@@ -2,7 +2,7 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
-import { wmsTables } from '../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import * as path from 'path';
 import * as fs from 'fs';
 

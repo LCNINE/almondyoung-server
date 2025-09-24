@@ -1,9 +1,9 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { eq, and, inArray, sum } from 'drizzle-orm';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface ReserveStockDto {
   targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
@@ -47,7 +47,7 @@ export class UnifiedReservationService {
   private readonly logger = new Logger(UnifiedReservationService.name);
 
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {

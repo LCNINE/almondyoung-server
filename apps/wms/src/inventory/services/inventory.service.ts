@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
@@ -17,15 +17,15 @@ import { InventoryQueryService } from './inventory-query.service';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
-type DbOrTx = DbTx | TypedDatabase<typeof wmsTables>;
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
+type DbOrTx = DbTx | TypedDatabase<typeof wmsSchema>;
 
 @Injectable()
 export class InventoryService implements OnModuleInit {
     private readonly logger = new Logger(InventoryService.name);
 
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
         private readonly eventStore: StockEventStore,
         private readonly queryService: InventoryQueryService,
         private readonly commandService: InventoryCommandService,

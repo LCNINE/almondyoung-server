@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 
 @Injectable()
 export class TransactionService {
     constructor(
-        @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+        @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     ) { }
 
     private get db() {
@@ -14,7 +14,7 @@ export class TransactionService {
     }
 
     async runInTransaction<T>(
-        callback: (tx: Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0]) => Promise<T>
+        callback: (tx: Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0]) => Promise<T>
     ): Promise<T> {
         return this.db.transaction(callback);
     }

@@ -1,5 +1,5 @@
 import { DbService } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 
 export interface SkuQuantityMapping {
     skuId: string;
@@ -17,7 +17,7 @@ export interface MatchingContext {
 
 export abstract class MatchingStrategy {
     constructor(
-        protected readonly dbService: DbService<typeof wmsTables>
+        protected readonly dbService: DbService<typeof wmsSchema>
     ) { }
 
     protected get db() {

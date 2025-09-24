@@ -1,17 +1,17 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class InventoryCommandService {
   private readonly logger = new Logger(InventoryCommandService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>,
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly eventStore: StockEventStore,
   ) {}
 

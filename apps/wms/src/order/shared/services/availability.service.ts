@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class AvailabilityService {
-  constructor(private readonly db: DbService<typeof wmsTables>) {}
+  constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   async getAvailableQuantity(skuId: string, warehouseId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase } from '@app/db';
 import { eq, inArray } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
@@ -12,14 +12,14 @@ import { ReservationsService } from '../../shared/services/reservations.service'
 import { AuditService } from '../../../shared/services/audit.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsTables>['transaction']>[0]>[0];
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class SalesOrdersService {
   private readonly logger = new Logger(SalesOrdersService.name);
 
   constructor(
-    private readonly db: DbService<typeof wmsTables>,
+    private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
     private readonly events?: EventPublisherService<any>,
     private readonly outbox?: OutboxService,

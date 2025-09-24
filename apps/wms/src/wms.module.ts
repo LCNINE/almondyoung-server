@@ -7,7 +7,7 @@ import { MovementModule } from './movement/movement.module';
 import { InboundModule } from './inbound/inbound.module';
 import { SharedModule } from './shared/shared.module';
 import { DbModule } from '@app/db';
-import { wmsTables } from '../database/schemas/wms-schema';
+import { wmsSchema } from '../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -17,7 +17,7 @@ import { ConfigModule } from '@nestjs/config';
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
       },
-      schema: wmsTables,
+      schema: wmsSchema,
     }),
     InventoryModule,
     MovementModule,

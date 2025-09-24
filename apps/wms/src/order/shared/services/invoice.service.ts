@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
@@ -44,7 +44,7 @@ export class InvoiceService {
   private readonly deliveryProviders: Map<string, DeliveryProvider>;
 
   constructor(
-    @InjectTypedDb<typeof wmsTables>() private readonly dbService: DbService<typeof wmsTables>
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
   ) {
     this.deliveryProviders = new Map();
     this.deliveryProviders.set('goodsflow', new GoodsflowDeliveryProvider());

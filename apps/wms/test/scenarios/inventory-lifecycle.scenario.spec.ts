@@ -1,6 +1,6 @@
 import { WmsTestDatabase } from '../support/wms-test-database';
 import { WmsTestFactory } from '../support/wms-test-factory';
-import { wmsTables } from '../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { eq, and } from 'drizzle-orm';
 
 describe('Inventory Lifecycle Scenarios', () => {
