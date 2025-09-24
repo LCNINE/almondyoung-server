@@ -147,6 +147,7 @@ export class UsersService {
 
       return users;
     } catch (error) {
+      console.log('error:', error);
       throw new InternalServerErrorException(
         '이메일로 사용자 조회 중 오류가 발생했습니다.',
       );
