@@ -1,116 +1,133 @@
-// apps/notification/src/event-handlers/services/user-service-events.handler.ts
-import { Injectable, Logger } from '@nestjs/common';
-import { EventPattern, Payload } from '@nestjs/microservices';
-import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { Controller, Logger } from '@nestjs/common';
+import { TypedEventPattern } from '@app/events';
+import { UserEvents, UserVerification, UserFindIdPayload, UserResetPasswordPayload } from '@app/shared/events/user.events';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { UserNotificationService } from '../../shared/services/user-notification.service';
+import { NotificationCategory } from '../../shared/enums';
+import { SendNotificationDto } from '../../dispatcher/dto/send-notification.dto';
 
-@Injectable()
+@Controller()
 export class UserServiceEventsHandler {
   private readonly logger = new Logger(UserServiceEventsHandler.name);
 
   constructor(
-    private readonly notificationDispatcher: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly notificationDispatcherService: NotificationDispatcherService,
+    private readonly userNotificationService: UserNotificationService,
   ) {}
 
-  @EventPattern('user.verification')
-  async onUserVerification(@Payload() payload: any) {
-    this.logger.log(`[USER-SERVICE] Received USER_VERIFICATION event for user: ${payload.userId}`);
-    
+  @TypedEventPattern<UserEvents, 'USER_VERIFICATION'>('USER_VERIFICATION')
+  async onUserVerification(payload: UserVerification) {
+    this.logger.log(`Received USER_VERIFICATION event: ${JSON.stringify(payload)}`);
     try {
-      // 이벤트 매핑 서비스를 통해 템플릿 정보 조회
       const eventMapping = await this.eventMappingService.getEventMapping('USER_VERIFICATION');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for USER_VERIFICATION');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for USER_VERIFICATION not found or inactive.`);
         return;
       }
 
-      // 이메일 인증 알림 발송 (정보성 알림이므로 동의 불필요)
-      const result = await this.notificationDispatcher.send({
+      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
         userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
-        eventKey: 'USER_VERIFICATION',
-        payload: {
-          email: payload.email,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
           name: payload.name,
+          email: payload.email,
           verificationToken: payload.verificationToken,
           callbackUrl: payload.callbackUrl,
           redirectTo: payload.redirectTo,
         },
-        correlationId: payload.correlationId,
-        priority: 'HIGH',
-      });
-
-      this.logger.log(`[USER-SERVICE] Email verification notification sent to ${payload.email}`, result);
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched USER_VERIFICATION notification for ${payload.email}`);
     } catch (error) {
-      this.logger.error(`[USER-SERVICE] Failed to send verification notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process USER_VERIFICATION notification: ${error.message}`, error.stack);
     }
   }
 
-  @EventPattern('user.find.id')
-  async onUserFindId(@Payload() payload: any) {
-    this.logger.log(`[USER-SERVICE] Received USER_FIND_ID event for email: ${payload.email}`);
-    
+  @TypedEventPattern<UserEvents, 'USER_FIND_ID'>('USER_FIND_ID')
+  async onUserFindId(payload: UserFindIdPayload) {
+    this.logger.log(`Received USER_FIND_ID event: ${JSON.stringify(payload)}`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('USER_FIND_ID');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for USER_FIND_ID');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for USER_FIND_ID not found or inactive.`);
         return;
       }
 
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId || 'unknown',
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+      const userProfile = await this.userNotificationService.getUserProfileByEmail(payload.email);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for email: ${payload.email}`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: userProfile.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
-        eventKey: 'USER_FIND_ID',
-        payload: {
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
           email: payload.email,
           loginId: payload.loginId,
         },
-        correlationId: payload.correlationId,
-        priority: 'HIGH',
-      });
-
-      this.logger.log(`[USER-SERVICE] ID find notification sent to ${payload.email}`, result);
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched USER_FIND_ID notification for ${payload.email}`);
     } catch (error) {
-      this.logger.error(`[USER-SERVICE] Failed to send ID find notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process USER_FIND_ID notification: ${error.message}`, error.stack);
     }
   }
 
-  @EventPattern('user.reset.password')
-  async onUserResetPassword(@Payload() payload: any) {
-    this.logger.log(`[USER-SERVICE] Received USER_RESET_PASSWORD event for email: ${payload.email}`);
-    
+  @TypedEventPattern<UserEvents, 'USER_RESET_PASSWORD'>('USER_RESET_PASSWORD')
+  async onUserResetPassword(payload: UserResetPasswordPayload) {
+    this.logger.log(`Received USER_RESET_PASSWORD event: ${JSON.stringify(payload)}`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('USER_RESET_PASSWORD');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for USER_RESET_PASSWORD');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for USER_RESET_PASSWORD not found or inactive.`);
         return;
       }
 
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId || 'unknown',
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+      const userProfile = await this.userNotificationService.getUserProfileByEmail(payload.email);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for email: ${payload.email}`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: userProfile.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
         templateKey: eventMapping.templateKey,
-        eventKey: 'USER_RESET_PASSWORD',
-        payload: {
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
           email: payload.email,
           verificationToken: payload.verificationToken,
         },
-        correlationId: payload.correlationId,
-        priority: 'HIGH',
-      });
-
-      this.logger.log(`[USER-SERVICE] Password reset notification sent to ${payload.email}`, result);
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched USER_RESET_PASSWORD notification for ${payload.email}`);
     } catch (error) {
-      this.logger.error(`[USER-SERVICE] Failed to send password reset notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process USER_RESET_PASSWORD notification: ${error.message}`, error.stack);
     }
   }
 }
