@@ -1,112 +1,97 @@
-// apps/notification/src/event-handlers/services/medusa-events.handler.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
 import { TypedEventPattern } from '@app/events';
-import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { MedusaEvents, OrderCreatedPayload, PaymentCompletedPayload } from '@app/shared/events/medusa.events';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { UserNotificationService } from '../../shared/services/user-notification.service';
+import { NotificationCategory } from '../../shared/enums';
+import { SendNotificationDto } from '../../dispatcher/dto/send-notification.dto';
 
-// Medusa 이벤트 타입 정의 (예시)
-interface OrderCreatedPayload {
-  orderId: string;
-  userId: string;
-  email: string;
-  name: string;
-  orderNumber: string;
-  total: number;
-  timestamp: string;
-  correlationId: string;
-  source: string;
-}
-
-interface PaymentCompletedPayload {
-  orderId: string;
-  userId: string;
-  email: string;
-  name: string;
-  paymentId: string;
-  amount: number;
-  timestamp: string;
-  correlationId: string;
-  source: string;
-}
-
-@Injectable()
+@Controller()
 export class MedusaEventsHandler {
   private readonly logger = new Logger(MedusaEventsHandler.name);
 
   constructor(
-    private readonly notificationDispatcher: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly notificationDispatcherService: NotificationDispatcherService,
+    private readonly userNotificationService: UserNotificationService,
   ) {}
 
-  @TypedEventPattern<any, 'ORDER_CREATED'>('ORDER_CREATED')
+  @TypedEventPattern<MedusaEvents, 'ORDER_CREATED'>('ORDER_CREATED')
   async onOrderCreated(payload: OrderCreatedPayload) {
-    this.logger.log(`[MEDUSA] Received ORDER_CREATED event for order: ${payload.orderId}`);
-    
+    this.logger.log(`Received ORDER_CREATED event: ${JSON.stringify(payload)}`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('ORDER_CREATED');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for ORDER_CREATED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for ORDER_CREATED not found or inactive.`);
         return;
       }
 
-      // 주문 생성 알림 발송 (정보성 알림이므로 동의 불필요)
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'TRANSACTIONAL',
-        templateKey: eventMapping.templateKey,
-        eventKey: 'ORDER_CREATED',
-        payload: {
-          orderId: payload.orderId,
-          orderNumber: payload.orderNumber,
-          total: payload.total,
-          email: payload.email,
-          name: payload.name,
-        },
-        correlationId: payload.correlationId,
-        priority: 'NORMAL',
-      });
+      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
+        return;
+      }
 
-      this.logger.log(`[MEDUSA] Order created notification sent to ${payload.email}`, result);
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          orderId: payload.orderId,
+          totalAmount: payload.totalAmount,
+          currency: payload.currency,
+          customerEmail: userProfile.email,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched ORDER_CREATED notification for ${userProfile.email}`);
     } catch (error) {
-      this.logger.error(`[MEDUSA] Failed to send order created notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process ORDER_CREATED notification: ${error.message}`, error.stack);
     }
   }
 
-  @TypedEventPattern<any, 'PAYMENT_COMPLETED'>('PAYMENT_COMPLETED')
+  @TypedEventPattern<MedusaEvents, 'PAYMENT_COMPLETED'>('PAYMENT_COMPLETED')
   async onPaymentCompleted(payload: PaymentCompletedPayload) {
-    this.logger.log(`[MEDUSA] Received PAYMENT_COMPLETED event for order: ${payload.orderId}`);
-    
+    this.logger.log(`Received PAYMENT_COMPLETED event: ${JSON.stringify(payload)}`);
     try {
       const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_COMPLETED');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for PAYMENT_COMPLETED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for PAYMENT_COMPLETED not found or inactive.`);
         return;
       }
 
-      // 결제 완료 알림 발송 (정보성 알림이므로 동의 불필요)
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'TRANSACTIONAL',
-        templateKey: eventMapping.templateKey,
-        eventKey: 'PAYMENT_COMPLETED',
-        payload: {
-          orderId: payload.orderId,
-          paymentId: payload.paymentId,
-          amount: payload.amount,
-          email: payload.email,
-          name: payload.name,
-        },
-        correlationId: payload.correlationId,
-        priority: 'NORMAL',
-      });
+      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
+        return;
+      }
 
-      this.logger.log(`[MEDUSA] Payment completed notification sent to ${payload.email}`, result);
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          orderId: payload.orderId,
+          paymentAmount: payload.paymentAmount,
+          currency: payload.currency,
+          customerEmail: userProfile.email,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched PAYMENT_COMPLETED notification for ${userProfile.email}`);
     } catch (error) {
-      this.logger.error(`[MEDUSA] Failed to send payment completed notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process PAYMENT_COMPLETED notification: ${error.message}`, error.stack);
     }
   }
 }

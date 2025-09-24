@@ -1,29 +1,20 @@
-// apps/notification/src/bulk/dto/create-bulk-notification.dto.ts
-import { IsString, IsArray, IsEnum, IsOptional, IsObject, ValidateNested, IsDateString, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsArray,
+  ValidateNested,
+  IsOptional,
+  IsEnum,
+  IsObject,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { NotificationCategory, NotificationPriority, Channel } from '../../shared/enums';
+import {
+  Channel,
+  NotificationCategory,
+  NotificationPriority,
+} from '../../shared/enums'; // Adjust path as needed
 
-export class AudienceCriteria {
-  @IsOptional()
-  @IsString()
-  membershipType?: 'general' | 'premium';
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  shopCategories?: string[];
-
-  @IsOptional()
-  @IsBoolean()
-  isMarketingEnabled?: boolean;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  userIds?: string[];
-}
-
-export class BulkAudience {
+class AudienceDto {
   @IsEnum(['ALL_USERS', 'SELECTED_USERS', 'FILTERED_USERS'])
   kind: 'ALL_USERS' | 'SELECTED_USERS' | 'FILTERED_USERS';
 
@@ -33,17 +24,17 @@ export class BulkAudience {
   userIds?: string[];
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => AudienceCriteria)
-  criteria?: AudienceCriteria;
+  @IsObject()
+  criteria?: Record<string, any>; // e.g., { membershipType: 'premium', shopCategories: ['fashion'] }
 }
 
-export class ChannelContent {
+class ContentDto {
   @IsOptional()
   @IsString()
   subject?: string;
 
   @IsString()
+  @IsNotEmpty()
   body: string;
 
   @IsOptional()
@@ -51,30 +42,9 @@ export class ChannelContent {
   metadata?: Record<string, any>;
 }
 
-export class BulkContent {
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ChannelContent)
-  EMAIL?: ChannelContent;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ChannelContent)
-  SMS?: ChannelContent;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ChannelContent)
-  KAKAO?: ChannelContent;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ChannelContent)
-  PUSH?: ChannelContent;
-}
-
 export class CreateBulkNotificationDto {
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsOptional()
@@ -90,19 +60,20 @@ export class CreateBulkNotificationDto {
 
   @IsOptional()
   @IsString()
-  templateKey?: string;
+  templateKey?: string; // If using a predefined template
 
-  @ValidateNested()
-  @Type(() => BulkContent)
-  content: BulkContent;
-
-  @ValidateNested()
-  @Type(() => BulkAudience)
-  audience: BulkAudience;
+  @IsObject()
+  @ValidateNested({ each: true })
+  @Type(() => ContentDto)
+  content: { [key in Channel]?: ContentDto }; // Direct content for each channel
 
   @IsOptional()
-  @IsDateString()
-  sendAt?: string;
+  @IsString()
+  sendAt?: string; // ISO date string for scheduling
+
+  @ValidateNested()
+  @Type(() => AudienceDto)
+  audience: AudienceDto;
 
   @IsEnum(NotificationPriority)
   priority: NotificationPriority;
