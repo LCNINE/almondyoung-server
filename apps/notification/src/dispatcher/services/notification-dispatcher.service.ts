@@ -54,6 +54,26 @@ export class NotificationDispatcherService {
         return [];
     }
 
+    async processEvent(eventData: any): Promise<{ success: boolean; message: string }> {
+        this.logger.log('Processing event', { eventData });
+        
+        try {
+            // 이벤트 처리 로직 구현
+            // 실제로는 이벤트 타입에 따라 다른 처리 로직을 수행
+            
+            return {
+                success: true,
+                message: 'Event processed successfully'
+            };
+        } catch (error) {
+            this.logger.error('Failed to process event', error);
+            return {
+                success: false,
+                message: 'Failed to process event'
+            };
+        }
+    }
+
     private getPriorityValue(priority: string): number {
         const priorityMap = {
             'URGENT': 1,

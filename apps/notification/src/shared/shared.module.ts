@@ -19,6 +19,7 @@ import { TemplateRendererService } from './services/template-renderer.service';
 import { UserNotificationService } from './services/user-notification.service';
 import { UserSyncService } from './services/user-sync.service';
 import { WebhookService } from './services/webhook.service';
+import { UserServiceApiService } from './services/user-service-api.service';
 
 @Module({
     imports: [
@@ -34,7 +35,6 @@ import { WebhookService } from './services/webhook.service';
         EventController,
         LogController,
         MetricsController,
-        
         WebhookController,
     ],
     providers: [
@@ -46,6 +46,7 @@ import { WebhookService } from './services/webhook.service';
         UserNotificationService,
         UserSyncService,
         WebhookService,
+        UserServiceApiService,
     ],
     exports: [
         // 다른 모듈에서 필요한 서비스만 export
@@ -56,6 +57,7 @@ import { WebhookService } from './services/webhook.service';
         UserNotificationService,
         UserSyncService,
         WebhookService,
+        UserServiceApiService,
     ],
 })
 export class SharedModule { }
