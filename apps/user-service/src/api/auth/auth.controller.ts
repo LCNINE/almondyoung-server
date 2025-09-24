@@ -1,3 +1,4 @@
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
 import {
   Body,
   ConflictException,
@@ -35,6 +36,7 @@ import { LocalSignUpDto } from './dto/sign-up.dto';
 @ApiTags('Auth')
 @ApiBearerAuth('access-token')
 @Controller('auth')
+@UseGuards(AuthorizationGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -82,6 +84,7 @@ export class AuthController {
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(['user:modify'])
   async restoreToken(
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,

@@ -20,17 +20,19 @@ import { UpdateShopInfoDto } from './dto/update-shop-info';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { User } from 'apps/user-service/database/drizzle/schema';
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
 
 @ApiTags('Shop')
 @ApiBearerAuth('access-token')
 @Controller('shop')
+@UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
   @ApiOperation({ summary: '상점 정보 조회' })
   @ApiResponse({ status: 200, description: '상점 정보 조회 성공' })
   @Get('info')
-  @UseGuards(JwtAuthGuard)
+  @RequireScopes(['user:read'])
   findOneByUserId(@CurrentUser() user: User) {
     return this.shopService.findOneByUserId(user.id);
   }
@@ -38,15 +40,16 @@ export class ShopController {
   @ApiOperation({ summary: '상점 정보 생성' })
   @ApiResponse({ status: 201, description: '상점 정보 생성 성공' })
   @Post('info')
-  @UseGuards(JwtAuthGuard)
+  @RequireScopes(['user:modify'])
   create(@Body() createShopDto: CreateShopInfoDto, @CurrentUser() user: User) {
+    console.log('createShopDto:', createShopDto);
     return this.shopService.create(createShopDto, user);
   }
 
   @ApiOperation({ summary: '상점 정보 수정' })
   @ApiResponse({ status: 200, description: '상점 정보 수정 성공' })
   @Patch(':id/info')
-  @UseGuards(JwtAuthGuard)
+  @RequireScopes(['user:modify'])
   update(
     @Param('id') id: string,
     @Body() updateShopDto: UpdateShopInfoDto,
