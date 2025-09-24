@@ -1166,4 +1166,339 @@ export class AdapterOrchestrationService {
 
     return consolidatedResult;
   }
+
+  // ===== WMS 연동 메서드 (CTO SoT 원칙) =====
+
+  /**
+   * 채널 주문을 WMS에 전달하고 이벤트 로그 기록
+   *
+   * CTO SoT 원칙에 따라 어댑터가 SoT인 판매채널 주문을 WMS에 동기 요청으로 전달합니다.
+   * 성공/실패 여부와 관계없이 이벤트 로그를 기록하여 추적 가능성을 보장합니다.
+   *
+   * @param channel 채널 타입
+   * @param orderEvent 주문 이벤트
+   * @returns WMS에서 생성된 판매주문 정보
+   *
+   * @example
+   * ```typescript
+   * // 쿠팡 주문을 WMS에 전달
+   * const wmsOrder = await orchestrator.createOrderInWms('coupang', coupangOrderEvent);
+   * ```
+   */
+  async createOrderInWms(channel: ChannelType, orderEvent: InternalOrderEvent) {
+    const startTime = Date.now();
+    const operationId = `CREATE_ORDER_WMS:${channel}:${orderEvent.externalOrderId}`;
+
+    this.logger.log(
+      `🏭 [${channel}→WMS] 주문 생성 오케스트레이션 시작: ${orderEvent.externalOrderId}`,
+      {
+        channelType: orderEvent.channelType,
+        buyerName: orderEvent.buyer?.name,
+        operationId,
+      },
+    );
+
+    try {
+      // 1. 채널별 전략을 통해 WMS에 주문 생성
+      const strategy = this.factory.getStrategy(channel);
+      const wmsOrder = await strategy.createOrderInWms(orderEvent);
+
+      const duration = Date.now() - startTime;
+
+      // 2. 성공 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_created_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: orderEvent,
+        transformedData: wmsOrder,
+        status: 'processed',
+        processedAt: new Date(),
+      });
+
+      this.logger.log(
+        `✅ [${channel}→WMS] 주문 생성 오케스트레이션 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: orderEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+          operationId,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // 3. 실패 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_create_failed_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: orderEvent,
+        transformedData: null,
+        status: 'failed',
+        errorMessage: error.message,
+        processedAt: new Date(),
+      });
+
+      this.logger.error(
+        `❌ [${channel}→WMS] 주문 생성 오케스트레이션 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          buyerName: orderEvent.buyer?.name,
+          operationId,
+        },
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * 채널 주문 취소를 WMS에 전달하고 이벤트 로그 기록
+   *
+   * @param channel 채널 타입
+   * @param orderEvent 주문 취소 이벤트
+   * @param reason 취소 사유
+   * @returns 취소된 WMS 주문 정보
+   */
+  async cancelOrderInWms(
+    channel: ChannelType,
+    orderEvent: InternalOrderEvent,
+    reason?: string,
+  ) {
+    const startTime = Date.now();
+    const operationId = `CANCEL_ORDER_WMS:${channel}:${orderEvent.externalOrderId}`;
+
+    this.logger.log(
+      `❌ [${channel}→WMS] 주문 취소 오케스트레이션 시작: ${orderEvent.externalOrderId}`,
+      {
+        reason: reason || orderEvent.reason,
+        operationId,
+      },
+    );
+
+    try {
+      // 1. 채널별 전략을 통해 WMS에 주문 취소
+      const strategy = this.factory.getStrategy(channel);
+      const wmsOrder = await strategy.cancelOrderInWms(orderEvent, reason);
+
+      const duration = Date.now() - startTime;
+
+      // 2. 성공 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_cancelled_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: { ...orderEvent, cancelReason: reason },
+        transformedData: wmsOrder,
+        status: 'processed',
+        processedAt: new Date(),
+      });
+
+      this.logger.log(
+        `✅ [${channel}→WMS] 주문 취소 오케스트레이션 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: orderEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+          operationId,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // 3. 실패 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_cancel_failed_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: { ...orderEvent, cancelReason: reason },
+        transformedData: null,
+        status: 'failed',
+        errorMessage: error.message,
+        processedAt: new Date(),
+      });
+
+      this.logger.error(
+        `❌ [${channel}→WMS] 주문 취소 오케스트레이션 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          reason: reason || orderEvent.reason,
+          operationId,
+        },
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * 채널 교환 요청을 WMS에 전달하고 이벤트 로그 기록
+   *
+   * CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다"
+   *
+   * @param channel 채널 타입
+   * @param exchangeEvent 교환 요청 이벤트
+   * @returns 교환 처리된 WMS 주문 정보
+   */
+  async processExchangeInWms(
+    channel: ChannelType,
+    exchangeEvent: InternalOrderEvent,
+  ) {
+    const startTime = Date.now();
+    const operationId = `EXCHANGE_ORDER_WMS:${channel}:${exchangeEvent.externalOrderId}`;
+
+    this.logger.log(
+      `🔄 [${channel}→WMS] 교환 요청 오케스트레이션 시작: ${exchangeEvent.externalOrderId}`,
+      {
+        exchangeType: exchangeEvent.claimInfo?.claimType,
+        reason: exchangeEvent.reason,
+        operationId,
+      },
+    );
+
+    try {
+      // 1. 채널별 전략을 통해 WMS에 교환 처리
+      const strategy = this.factory.getStrategy(channel);
+      const wmsOrder = await strategy.processExchangeInWms(exchangeEvent);
+
+      const duration = Date.now() - startTime;
+
+      // 2. 성공 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'exchange_processed_in_wms',
+        externalOrderId: exchangeEvent.externalOrderId,
+        externalClaimId: exchangeEvent.claimInfo?.claimId,
+        rawData: exchangeEvent,
+        transformedData: wmsOrder,
+        status: 'processed',
+        processedAt: new Date(),
+      });
+
+      this.logger.log(
+        `✅ [${channel}→WMS] 교환 요청 오케스트레이션 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: exchangeEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          exchangeType: exchangeEvent.claimInfo?.claimType,
+          operationId,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // 3. 실패 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'exchange_failed_in_wms',
+        externalOrderId: exchangeEvent.externalOrderId,
+        externalClaimId: exchangeEvent.claimInfo?.claimId,
+        rawData: exchangeEvent,
+        transformedData: null,
+        status: 'failed',
+        errorMessage: error.message,
+        processedAt: new Date(),
+      });
+
+      this.logger.error(
+        `❌ [${channel}→WMS] 교환 요청 오케스트레이션 실패: ${exchangeEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          exchangeType: exchangeEvent.claimInfo?.claimType,
+          operationId,
+        },
+      );
+
+      throw error;
+    }
+  }
+
+  /**
+   * 채널 주문 상태 업데이트를 WMS에 반영하고 이벤트 로그 기록
+   *
+   * @param channel 채널 타입
+   * @param orderEvent 주문 상태 변경 이벤트
+   * @returns 업데이트된 WMS 주문 정보
+   */
+  async updateOrderInWms(channel: ChannelType, orderEvent: InternalOrderEvent) {
+    const startTime = Date.now();
+    const operationId = `UPDATE_ORDER_WMS:${channel}:${orderEvent.externalOrderId}`;
+
+    this.logger.log(
+      `🔄 [${channel}→WMS] 주문 상태 업데이트 오케스트레이션 시작: ${orderEvent.externalOrderId}`,
+      {
+        status: orderEvent.status,
+        operationId,
+      },
+    );
+
+    try {
+      // 1. 채널별 전략을 통해 WMS에 주문 상태 업데이트
+      const strategy = this.factory.getStrategy(channel);
+      const wmsOrder = await strategy.updateOrderInWms(orderEvent);
+
+      const duration = Date.now() - startTime;
+
+      // 2. 성공 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_updated_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: orderEvent,
+        transformedData: wmsOrder,
+        status: 'processed',
+        processedAt: new Date(),
+      });
+
+      this.logger.log(
+        `✅ [${channel}→WMS] 주문 상태 업데이트 오케스트레이션 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: orderEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          newStatus: orderEvent.status,
+          operationId,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // 3. 실패 이벤트 로그 기록
+      await this.db.db.insert(schema.eventLogs).values({
+        channelId: channel,
+        eventType: 'order_update_failed_in_wms',
+        externalOrderId: orderEvent.externalOrderId,
+        externalClaimId: null,
+        rawData: orderEvent,
+        transformedData: null,
+        status: 'failed',
+        errorMessage: error.message,
+        processedAt: new Date(),
+      });
+
+      this.logger.error(
+        `❌ [${channel}→WMS] 주문 상태 업데이트 오케스트레이션 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          status: orderEvent.status,
+          operationId,
+        },
+      );
+
+      throw error;
+    }
+  }
 }

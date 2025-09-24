@@ -360,34 +360,28 @@ export class FulfillmentEventConsumer {
 
     await Promise.all(syncPromises);
 
-    // 동기화 결과 요약
+    // ✅ 필수 채널 목록 (env 기반)
+    const required = (
+      process.env.ADAPTER_REQUIRED_CHANNELS ?? 'coupang,naver_smartstore'
+    )
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // ✅ 필수 채널이 모두 성공했는지 판단
+    const ok = required.every((req) =>
+      syncResults.some((r) => r.channel === req && r.success === true),
+    );
+
     const successCount = syncResults.filter((r) => r.success).length;
     const totalCount = syncResults.length;
 
-    if (successCount === totalCount) {
-      this.logger.log(
-        `🎯 [WMS] 전체 채널 이행 상태 동기화 완료: ${event.orderId} (${successCount}/${totalCount} 성공)`,
-      );
-      return true; // 모든 채널 동기화 성공
-    } else if (successCount > 0) {
-      const failedChannels = syncResults
-        .filter((r) => !r.success)
-        .map((r) => r.channel)
-        .join(', ');
+    this.logger.debug(
+      `🔍 [WMS] 채널별 이행 상태 동기화 결과: ${successCount}/${totalCount} 성공 (필수:${required.join(',')})`,
+      syncResults,
+    );
 
-      this.logger.warn(
-        `⚠️ [WMS] 일부 채널 이행 상태 동기화 실패하지만 부분 성공: ${event.orderId} (${successCount}/${totalCount} 성공)`,
-        { failedChannels },
-      );
-
-      // 부분 성공도 멱등키 처리 (1개 이상 성공 시)
-      return true;
-    } else {
-      this.logger.error(
-        `❌ [WMS] 전체 채널 이행 상태 동기화 실패: ${event.orderId} (${successCount}/${totalCount} 성공)`,
-      );
-      return false; // 전체 실패만 멱등키 처리하지 않음
-    }
+    return ok;
   }
 
   /**

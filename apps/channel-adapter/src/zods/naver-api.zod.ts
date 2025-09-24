@@ -7,7 +7,7 @@ export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.string().datetime(),
+    timestamp: z.iso.date(),
     traceId: z.string(),
     data: dataSchema,
   });
@@ -17,7 +17,7 @@ export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.string().datetime(),
+    timestamp: z.iso.date(),
     traceId: z.string(),
     data: dataSchema.optional(),
   });
@@ -217,7 +217,7 @@ export type ChangeHopeDeliveryBody = z.infer<
 
 // 지연발송 Body (빠진 것 추가)
 export const DelayDispatchBodySchema = z.object({
-  dispatchDueDate: z.string().datetime(),
+  dispatchDueDate: z.iso.date(),
   delayedDispatchReason: z.string().min(1),
   dispatchDelayedDetailedReason: z.string().min(1),
 });
@@ -227,8 +227,8 @@ export type DelayDispatchBody = z.infer<typeof DelayDispatchBodySchema>;
 const DiscountMethodSchema = z.object({
   value: z.number().int(),
   unitType: z.enum(['PERCENT', 'WON', 'YEN', 'COUNT']),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
 });
 const OptionCombinationStockSchema = z.object({
   id: z.number().int(),
@@ -260,8 +260,8 @@ export type UpdateOptionStockBody = z.infer<typeof UpdateOptionStockBodySchema>;
 // == 조회 파라미터 스키마
 // =================================================================
 export const QueryProductOrdersParamsSchema = z.object({
-  from: z.string().datetime(),
-  to: z.string().datetime().optional(),
+  from: z.iso.date(),
+  to: z.iso.date().optional(),
   rangeType: z.enum(NAVER_RANGE_TYPES),
   productOrderStatuses: z
     .array(z.enum(NAVER_PRODUCT_ORDER_STATUSES))
@@ -354,8 +354,8 @@ export interface ProductOrderInfo {
 // 판매 상태 변경 Body
 export const ChangeSaleStatusBodySchema = z.object({
   statusType: z.enum(NAVER_SALE_STATUS_TYPES),
-  saleStartDate: z.string().datetime().optional(),
-  saleEndDate: z.string().datetime().optional(),
+  saleStartDate: z.iso.date().optional(),
+  saleEndDate: z.iso.date().optional(),
   stockQuantity: z.number().int().max(99999999).optional(),
 });
 export type ChangeSaleStatusBody = z.infer<typeof ChangeSaleStatusBodySchema>;

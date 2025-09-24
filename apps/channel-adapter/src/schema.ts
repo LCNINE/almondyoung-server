@@ -1,3 +1,4 @@
+// 스키마 상단 import에 index 추가
 import {
   pgTable,
   uuid,
@@ -7,7 +8,9 @@ import {
   integer,
   text,
   uniqueIndex,
+  index, // ← index 추가
 } from 'drizzle-orm/pg-core';
+
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid'; // uuid v7 지원 라이브러리 사용
 
@@ -95,16 +98,20 @@ export const processedEvents = pgTable(
     updatedAt: timestamp('updated_at').default(sql`now()`),
   },
   (table) => [
-    uniqueIndex('idx_processed_source_event').on(
+    // 이 4키로 유니크 보장하고 싶다면 유지해도 됨 (비즈니스 키)
+    uniqueIndex('uq_processed_source_event').on(
       table.source,
       table.eventType,
       table.resourceId,
       table.eventVersion,
     ),
-    uniqueIndex('idx_processed_status').on(table.status),
-    uniqueIndex('idx_processed_created').on(table.createdAt),
+    // ❌ 기존: uniqueIndex('idx_processed_status')...
+    // ✅ 수정: 검색용 일반 인덱스
+    index('idx_processed_status').on(table.status),
+    index('idx_processed_created').on(table.createdAt),
   ],
 );
+
 // 🔹 채널별 동기화 상태 영속화 테이블
 export const syncStatuses = pgTable(
   'sync_statuses',
@@ -112,6 +119,7 @@ export const syncStatuses = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => generateUUIDv7()),
+    // ← channelId 타입을 event_logs와 통일 권장 (uuid 쓸지 varchar 쓸지 결정)
     channelId: varchar('channel_id', { length: 50 }).notNull(),
     dataType: varchar('data_type', { length: 50 }).notNull(),
     status: varchar('status', { length: 20 }).notNull(),
@@ -130,7 +138,8 @@ export const syncStatuses = pgTable(
       table.channelId,
       table.dataType,
     ),
-    uniqueIndex('idx_sync_status_status').on(table.status),
-    uniqueIndex('idx_sync_status_last_sync').on(table.lastSyncAt),
+    // ❌ uniqueIndex → ✅ index
+    index('idx_sync_status_status').on(table.status),
+    index('idx_sync_status_last_sync').on(table.lastSyncAt),
   ],
 );

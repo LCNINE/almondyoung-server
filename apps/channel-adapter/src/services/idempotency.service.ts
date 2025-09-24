@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, lt, desc } from 'drizzle-orm';
 import * as schema from '../schema';
 import { NewProcessedEvent, ProcessedEvent } from '../types';
 
@@ -77,8 +77,11 @@ export class IdempotencyService {
           ...data,
           status: 'PROCESSED',
           retryCount: 0,
+          errorMessage: null,
+          lastRetryAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
-        .onConflictDoNothing() // 중복 시 무시
         .returning();
 
       if (inserted) {
@@ -88,15 +91,14 @@ export class IdempotencyService {
         this.logger.debug(`🔄 이미 마킹된 이벤트: ${data.idempotencyKey}`);
         return null;
       }
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(
-        `❌ 이벤트 처리 마킹 실패: ${data.idempotencyKey}`,
-        error.message,
+        `❌ 이벤트 처리 마킹 실패: ${data.idempotencyKey}\n` +
+          `Failed query: ${error?.query ?? ''}\nparams: ${error?.params ?? ''}`,
       );
       throw new Error(`이벤트 처리 마킹 실패: ${error.message}`);
     }
   }
-
   /**
    * 이벤트 처리 실패 마킹 (재시도 가능)
    *
@@ -108,48 +110,49 @@ export class IdempotencyService {
   async markFailed(
     idempotencyKey: string,
     errorMessage: string,
-    incrementRetry: boolean = true,
-  ): Promise<ProcessedEvent | null> {
+    incrementRetry = true,
+  ) {
     try {
-      const updateData: any = {
-        status: 'FAILED',
-        errorMessage,
-        updatedAt: new Date(),
-      };
+      let nextRetryCount: number | undefined;
 
       if (incrementRetry) {
-        updateData.retryCount =
-          (
-            await this.db.db
-              .select({ retryCount: schema.processedEvents.retryCount })
-              .from(schema.processedEvents)
-              .where(eq(schema.processedEvents.idempotencyKey, idempotencyKey))
-              .limit(1)
-          )[0]?.retryCount || 0 + 1;
-        updateData.lastRetryAt = new Date();
+        const [{ retryCount } = { retryCount: 0 }] = await this.db.db
+          .select({ retryCount: schema.processedEvents.retryCount })
+          .from(schema.processedEvents)
+          .where(eq(schema.processedEvents.idempotencyKey, idempotencyKey))
+          .limit(1);
+
+        nextRetryCount = (retryCount ?? 0) + 1; // ✅
       }
 
       const [updated] = await this.db.db
         .update(schema.processedEvents)
-        .set(updateData)
+        .set({
+          status: 'FAILED',
+          errorMessage,
+          ...(incrementRetry
+            ? {
+                retryCount: nextRetryCount,
+                lastRetryAt: new Date(),
+              }
+            : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.processedEvents.idempotencyKey, idempotencyKey))
         .returning();
 
       if (updated) {
         this.logger.warn(
-          `⚠️ 이벤트 처리 실패 마킹: ${idempotencyKey} (재시도: ${updated.retryCount})`,
+          `⚠️ 실패 마킹: ${idempotencyKey} (재시도: ${updated.retryCount})`,
         );
         return updated;
       } else {
-        this.logger.warn(
-          `🔍 실패 마킹할 이벤트를 찾을 수 없음: ${idempotencyKey}`,
-        );
+        this.logger.warn(`🔍 실패 마킹 대상 없음: ${idempotencyKey}`);
         return null;
       }
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(
-        `❌ 이벤트 실패 마킹 실패: ${idempotencyKey}`,
-        error.message,
+        `❌ 실패 마킹 실패: ${idempotencyKey}\n${error?.message}`,
       );
       throw new Error(`이벤트 실패 마킹 실패: ${error.message}`);
     }
@@ -223,7 +226,7 @@ export class IdempotencyService {
         .where(and(...whereConditions));
 
       const results = await query
-        .orderBy(schema.processedEvents.createdAt)
+        .orderBy(desc(schema.processedEvents.createdAt))
         .limit(limit);
 
       this.logger.debug(
@@ -231,7 +234,7 @@ export class IdempotencyService {
       );
       return results;
     } catch (error) {
-      this.logger.error(`❌ 처리된 이벤트 조회 실패: ${source}`, error.message);
+      this.logger.error(`❌ 처리된 이벤트 조회 실패: ${source}`, error.stack);
       throw new Error(`처리된 이벤트 조회 실패: ${error.message}`);
     }
   }
@@ -251,10 +254,11 @@ export class IdempotencyService {
       const results = await this.db.db
         .select()
         .from(schema.processedEvents)
+
         .where(
           and(
             eq(schema.processedEvents.status, 'FAILED'),
-            // retryCount < maxRetryCount 조건 추가 필요 (Drizzle ORM syntax)
+            lt(schema.processedEvents.retryCount, maxRetryCount),
           ),
         )
         .orderBy(schema.processedEvents.lastRetryAt)

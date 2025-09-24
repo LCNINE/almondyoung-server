@@ -5,6 +5,7 @@ import {
   Body,
   Query,
   Param,
+  Delete,
   Logger,
   HttpException,
   HttpStatus,
@@ -27,6 +28,7 @@ import {
 } from '../types';
 import { ChannelAdapterService } from '../services/channel-adapter.service';
 import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
+import { DlqMonitoringService } from '../services/dlq-monitoring.service';
 
 /**
  * 채널 어댑터 HTTP API 컨트롤러 (CTO 스타일 적용)
@@ -45,6 +47,7 @@ export class ChannelAdapterController {
   constructor(
     private readonly channelAdapterService: ChannelAdapterService,
     private readonly orchestrationService: AdapterOrchestrationService,
+    private readonly dlqMonitoringService: DlqMonitoringService,
   ) {}
 
   @Get('health')
@@ -669,6 +672,355 @@ export class ChannelAdapterController {
         return 'Direct API calls (orderId)';
       default:
         return 'Standard findOrders implementation';
+    }
+  }
+
+  // ===== WMS 연동 엔드포인트 (CTO SoT 원칙) =====
+
+  @Post('wms/orders')
+  @ApiOperation({
+    summary: '채널 주문을 WMS에 전달',
+    description:
+      'CTO SoT 원칙에 따라 어댑터가 SoT인 판매채널 주문을 WMS에 동기 요청으로 전달합니다.',
+  })
+  @ApiBody({
+    description: '채널 주문 이벤트',
+    schema: {
+      type: 'object',
+      required: ['channel', 'orderEvent'],
+      properties: {
+        channel: {
+          type: 'string',
+          enum: ['naver_smartstore', 'coupang', 'medusa'],
+        },
+        orderEvent: {
+          type: 'object',
+          description: '채널별 주문 이벤트 데이터',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'WMS 주문 생성 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 500, description: 'WMS 연동 실패' })
+  async createOrderInWms(
+    @Body() body: { channel: ChannelType; orderEvent: any },
+  ) {
+    try {
+      const { channel, orderEvent } = body;
+
+      if (!channel || !orderEvent) {
+        throw new HttpException(
+          '채널(channel)과 주문 이벤트(orderEvent)는 필수입니다.',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.log(
+        `🏭 [${channel}→WMS] 주문 생성 요청: ${orderEvent.externalOrderId}`,
+      );
+
+      const wmsOrder = await this.orchestrationService.createOrderInWms(
+        channel,
+        orderEvent,
+      );
+
+      this.logger.log(`✅ [${channel}→WMS] 주문 생성 성공: ${wmsOrder.id}`);
+
+      return {
+        success: true,
+        wmsOrder,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ [WMS] 주문 생성 실패`, error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          '주문을 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (
+        error.message?.includes('already processed') ||
+        error.message?.includes('invalid') ||
+        error.message?.includes('required')
+      ) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+
+      throw new HttpException(
+        'WMS 주문 생성 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('wms/orders/cancel')
+  @ApiOperation({
+    summary: '채널 주문 취소를 WMS에 전달',
+    description:
+      '채널에서 취소 요청이 들어왔을 때 WMS에 취소 요청을 전달합니다.',
+  })
+  @ApiBody({
+    description: '주문 취소 요청',
+    schema: {
+      type: 'object',
+      required: ['channel', 'orderEvent'],
+      properties: {
+        channel: {
+          type: 'string',
+          enum: ['naver_smartstore', 'coupang', 'medusa'],
+        },
+        orderEvent: { type: 'object', description: '주문 취소 이벤트 데이터' },
+        reason: { type: 'string', description: '취소 사유 (선택사항)' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'WMS 주문 취소 성공' })
+  async cancelOrderInWms(
+    @Body() body: { channel: ChannelType; orderEvent: any; reason?: string },
+  ) {
+    try {
+      const { channel, orderEvent, reason } = body;
+
+      this.logger.log(
+        `❌ [${channel}→WMS] 주문 취소 요청: ${orderEvent.externalOrderId}`,
+      );
+
+      const wmsOrder = await this.orchestrationService.cancelOrderInWms(
+        channel,
+        orderEvent,
+        reason,
+      );
+
+      this.logger.log(`✅ [${channel}→WMS] 주문 취소 성공: ${wmsOrder.id}`);
+
+      return {
+        success: true,
+        wmsOrder,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ [WMS] 주문 취소 실패`, error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          '취소할 주문을 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (
+        error.message?.includes('already processed') ||
+        error.message?.includes('cannot cancel')
+      ) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+
+      throw new HttpException(
+        'WMS 주문 취소 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('wms/orders/exchange')
+  @ApiOperation({
+    summary: '채널 교환 요청을 WMS에 전달',
+    description:
+      'CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다". 기존 주문을 수정하는 방식으로 처리합니다.',
+  })
+  @ApiBody({
+    description: '교환 요청',
+    schema: {
+      type: 'object',
+      required: ['channel', 'exchangeEvent'],
+      properties: {
+        channel: {
+          type: 'string',
+          enum: ['naver_smartstore', 'coupang', 'medusa'],
+        },
+        exchangeEvent: {
+          type: 'object',
+          description: '교환 요청 이벤트 데이터',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'WMS 교환 처리 성공' })
+  async processExchangeInWms(
+    @Body() body: { channel: ChannelType; exchangeEvent: any },
+  ) {
+    try {
+      const { channel, exchangeEvent } = body;
+
+      this.logger.log(
+        `🔄 [${channel}→WMS] 교환 요청: ${exchangeEvent.externalOrderId}`,
+      );
+
+      const wmsOrder = await this.orchestrationService.processExchangeInWms(
+        channel,
+        exchangeEvent,
+      );
+
+      this.logger.log(`✅ [${channel}→WMS] 교환 처리 성공: ${wmsOrder.id}`);
+
+      return {
+        success: true,
+        wmsOrder,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ [WMS] 교환 처리 실패`, error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          '교환할 주문을 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      if (
+        error.message?.includes('invalid exchange') ||
+        error.message?.includes('cannot exchange')
+      ) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+
+      throw new HttpException(
+        'WMS 교환 처리 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('wms/dlq/status')
+  @ApiOperation({
+    summary: 'DLQ 현황 조회',
+    description: 'WMS 연동 실패로 DLQ에 적재된 요청들의 현황을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: 'DLQ 현황 조회 성공' })
+  async getDlqStatus() {
+    try {
+      this.logger.log('📊 DLQ 현황 조회 요청');
+
+      // 실제 DlqMonitoringService를 통해 DLQ 현황 조회
+      const dlqStatus = await this.dlqMonitoringService.getDlqStatus();
+
+      this.logger.log('✅ DLQ 현황 조회 성공', {
+        totalCount: dlqStatus.summary.totalCount,
+        criticalCount: dlqStatus.summary.criticalCount,
+      });
+
+      return {
+        success: true,
+        dlqStatus,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('❌ DLQ 현황 조회 실패', error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          'DLQ 데이터를 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      throw new HttpException(
+        'DLQ 현황 조회 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('wms/dlq/:dlqId/retry')
+  @ApiOperation({
+    summary: 'DLQ 항목 재처리',
+    description: '실패한 DLQ 항목을 수동으로 재처리합니다.',
+  })
+  @ApiResponse({ status: 200, description: 'DLQ 재처리 성공' })
+  @ApiResponse({ status: 404, description: 'DLQ 항목을 찾을 수 없음' })
+  async retryDlqEntry(@Param('dlqId') dlqId: string) {
+    try {
+      this.logger.log(`🔄 DLQ 재처리 요청: ${dlqId}`);
+
+      const success = await this.dlqMonitoringService.retryDlqEntry(dlqId);
+
+      if (success) {
+        this.logger.log(`✅ DLQ 재처리 성공: ${dlqId}`);
+        return {
+          success: true,
+          message: 'DLQ 항목이 성공적으로 재처리되었습니다.',
+          dlqId,
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        this.logger.warn(`⚠️ DLQ 재처리 실패: ${dlqId}`);
+        return {
+          success: false,
+          message: 'DLQ 항목 재처리에 실패했습니다.',
+          dlqId,
+          timestamp: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      this.logger.error(`❌ DLQ 재처리 오류: ${dlqId}`, error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          'DLQ 항목을 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      throw new HttpException(
+        'DLQ 재처리 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Delete('wms/dlq/:dlqId')
+  @ApiOperation({
+    summary: 'DLQ 항목 수동 제거',
+    description: '실패한 DLQ 항목을 수동으로 제거합니다. (관리자 기능)',
+  })
+  @ApiResponse({ status: 200, description: 'DLQ 항목 제거 성공' })
+  @ApiResponse({ status: 404, description: 'DLQ 항목을 찾을 수 없음' })
+  async removeDlqEntry(
+    @Param('dlqId') dlqId: string,
+    @Body() body: { reason?: string } = {},
+  ) {
+    try {
+      const reason = body.reason || '관리자 수동 제거';
+
+      this.logger.log(`🗑️ DLQ 항목 제거 요청: ${dlqId}`, { reason });
+
+      await this.dlqMonitoringService.removeDlqEntry(dlqId, reason);
+
+      this.logger.log(`✅ DLQ 항목 제거 성공: ${dlqId}`);
+
+      return {
+        success: true,
+        message: 'DLQ 항목이 성공적으로 제거되었습니다.',
+        dlqId,
+        reason,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ DLQ 항목 제거 오류: ${dlqId}`, error.stack);
+
+      if (error.message?.includes('not found')) {
+        throw new HttpException(
+          'DLQ 항목을 찾을 수 없습니다.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      throw new HttpException(
+        'DLQ 항목 제거 중 오류가 발생했습니다.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

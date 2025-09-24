@@ -168,9 +168,7 @@ export class CoupangApiService {
         );
       }
 
-      this.logger.log(
-        `✅ 발주서 목록 조회 성공: ${response.data.data?.length || 0}건`,
-      );
+      this.logger.log(`✅ 발주서 목록 조회 성공: ${response.data || 0}건`);
       return response.data;
     } catch (error) {
       this.logger.error('❌ 쿠팡 발주서 목록 조회 실패:', error);
@@ -272,7 +270,7 @@ export class CoupangApiService {
       }
 
       this.logger.log(
-        `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data.data?.length || 0}건)`,
+        `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data || 0}건)`,
       );
       return response.data;
     } catch (error) {
@@ -380,21 +378,9 @@ export class CoupangApiService {
 
       // 응답 검증
       const parsedRes = response.data;
-      if (!parsedRes.success) {
-        const flattenedErrors = parsedRes.error.flatten();
-        this.logger.error(
-          '쿠팡 상품준비중 처리 응답 검증 실패:',
-          flattenedErrors,
-        );
-        throw new BadRequestException({
-          message: '쿠팡 API 상품준비중 처리 응답 형식이 예상과 다릅니다.',
-          errors: flattenedErrors.fieldErrors,
-          issues: formatZodIssues(parsedRes.error.issues), // ✅ 여기서만 호출
-        });
-      }
 
       this.logger.log(
-        `✅ 상품준비중 처리 성공 (전체 상태 코드=${parsedRes.data.data.responseCode})`,
+        `✅ 상품준비중 처리 성공 (전체 상태 코드=${parsedRes.data.responseCode})`,
       );
       return parsedRes.data;
     } catch (error) {
@@ -453,25 +439,19 @@ export class CoupangApiService {
 
       // 응답 검증
       const parsedRes = response.data;
-      if (!parsedRes.success) {
-        const flattenedErrors = parsedRes.error.flatten();
-        this.logger.error(
-          '쿠팡 송장 업로드 처리 응답 검증 실패:',
-          flattenedErrors,
-        );
-        throw new BadRequestException({
-          message: '쿠팡 API 송장 업로드 처리 응답 형식이 예상과 다릅니다.',
-          errors: flattenedErrors.fieldErrors,
-          issues: formatZodIssues(parsedRes.error.issues), // ✅ 여기서만 호출
-        });
-      }
 
       this.logger.log(
-        `✅ 송장 업로드 처리 성공 (전체 상태 코드=${parsedRes.data.data.responseCode})`,
+        `✅ 송장 업로드 처리 성공 (전체 상태 코드=${parsedRes.data.responseCode})`,
       );
       return parsedRes.data;
     } catch (error) {
-      this.logger.error('❌ 쿠팡 송장 업로드 처리 실패', error);
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 송장 업로드 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 송장 업로드 처리 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 송장 업로드 처리 실패: ${error.message}`);
     }
   }
@@ -536,6 +516,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 송장 업데이트 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 송장 업데이트 처리 실패: ${error.message}`);
+      }
       this.logger.error('❌ 쿠팡 송장 업데이트 처리 실패', error);
       throw new Error(`쿠팡 송장 업데이트 처리 실패: ${error.message}`);
     }
@@ -603,6 +590,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 출고중지완료 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 출고중지완료 처리 실패: ${error.message}`);
+      }
       this.logger.error('❌ 쿠팡 출고중지완료 처리 실패', error);
       throw new Error(`쿠팡 출고중지완료 처리 실패: ${error.message}`);
     }
@@ -672,6 +666,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 이미출고처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 이미출고처리 실패: ${error.message}`);
+      }
       this.logger.error('❌ 쿠팡 이미출고처리 실패', error);
       throw new Error(`쿠팡 이미출고처리 실패: ${error.message}`);
     }
@@ -721,10 +722,15 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 배송상태 히스토리 조회 실패 (${shipmentBoxId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 배송상태 히스토리 조회 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ 쿠팡 배송상태 히스토리 조회 실패: ${error.message}`,
+        );
+      }
       throw new Error(`쿠팡 배송상태 히스토리 조회 실패: ${error.message}`);
     }
   }
@@ -839,10 +845,14 @@ export class CoupangApiService {
       this.logger.log(`✅ 쿠팡 반품/취소 단건 조회 성공: ${receiptId}`);
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 반품/취소 단건 조회 실패 (${receiptId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 반품/취소 단건 조회 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
+      }
+
       throw new Error(`쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
     }
   }
@@ -902,10 +912,16 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 반품상품 입고확인 처리 실패 (${receiptId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 반품상품 입고확인 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ 쿠팡 반품상품 입고확인 처리 실패: ${error.message}`,
+        );
+      }
+
       throw new Error(`쿠팡 반품상품 입고확인 처리 실패: ${error.message}`);
     }
   }
@@ -964,10 +980,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 반품요청 승인 처리 실패 (${receiptId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 반품요청 승인 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 반품요청 승인 처리 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 반품요청 승인 처리 실패: ${error.message}`);
     }
   }
@@ -1033,7 +1052,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(`❌ 쿠팡 반품 철회 이력 조회 실패:`, error);
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 반품 철회 이력 조회 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 반품 철회 이력 조회 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 반품 철회 이력 조회 실패: ${error.message}`);
     }
   }
@@ -1098,7 +1123,15 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(`❌ 쿠팡 반품 철회 이력(ID) 조회 실패:`, error);
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 반품 철회 이력(ID) 조회 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ 쿠팡 반품 철회 이력(ID) 조회 실패: ${error.message}`,
+        );
+      }
       throw new Error(`쿠팡 반품 철회 이력(ID) 조회 실패: ${error.message}`);
     }
   }
@@ -1162,10 +1195,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 회수송장 등록 실패 (receiptId=${payload.receiptId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 회수송장 등록 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 회수송장 등록 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 회수송장 등록 실패: ${error.message}`);
     }
   }
@@ -1238,7 +1274,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(`❌ 쿠팡 교환요청 목록 조회 실패:`, error);
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 교환요청 목록 조회 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 교환요청 목록 조회 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 교환요청 목록 조회 실패: ${error.message}`);
     }
   }
@@ -1301,10 +1343,15 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 교환상품 입고확인 처리 실패 (exchangeId=${exchangeId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 교환상품 입고확인 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ 쿠팡 교환상품 입고확인 처리 실패: ${error.message}`,
+        );
+      }
       throw new Error(`쿠팡 교환상품 입고확인 처리 실패: ${error.message}`);
     }
   }
@@ -1362,10 +1409,13 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 교환요청 거부 처리 실패 (exchangeId=${exchangeId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 교환요청 거부 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 교환요청 거부 처리 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 교환요청 거부 처리 실패: ${error.message}`);
     }
   }
@@ -1429,10 +1479,15 @@ export class CoupangApiService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 교환상품 송장업로드 처리 실패 (exchangeId=${exchangeId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 교환상품 송장업로드 처리 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ 쿠팡 교환상품 송장업로드 처리 실패: ${error.message}`,
+        );
+      }
       throw new Error(`쿠팡 교환상품 송장업로드 처리 실패: ${error.message}`);
     }
   }
@@ -1477,10 +1532,13 @@ export class CoupangApiService {
       this.logger.log(`👍 재고 변경 완료: ${vendorItemId} -> ${quantity}개`);
       return response.data;
     } catch (error) {
-      this.logger.error(
-        `❌ 쿠팡 재고 변경 실패 (vendorItemId=${vendorItemId}):`,
-        error,
-      );
+      if (error.response) {
+        this.logger.error(
+          `❌ 쿠팡 재고 변경 실패: ${error.response.status} - ${error.response.data?.error?.message || error.message}`,
+        );
+      } else {
+        this.logger.error(`❌ 쿠팡 재고 변경 실패: ${error.message}`);
+      }
       throw new Error(`쿠팡 재고 변경 실패: ${error.message}`);
     }
   }
@@ -1494,13 +1552,13 @@ export class CoupangApiService {
 
   /**
    * 환경변수에서 쿠팡 API 설정을 가져옵니다
-   * @returns 쿠팡 API 설정 정보
+   * @returns 쿠팡 API 설정 정보 이게 쿠팡 공식문서 통해 만든것
    */
   private getApiConfig(): CoupangApiConfig {
     const vendorId = process.env.COUPANG_VENDOR_ID;
     const accessKey = process.env.COUPANG_ACCESS_KEY;
     const secretKey = process.env.COUPANG_SECRET_KEY;
-    const apiEndpoint = this.apiBaseUrl; // 이미 환경에 맞게 설정된 URL 사용
+    const apiEndpoint = this.apiBaseUrl;
 
     if (!vendorId || !accessKey || !secretKey) {
       throw new Error('쿠팡 API 인증 정보가 설정되지 않았습니다');
@@ -1510,35 +1568,28 @@ export class CoupangApiService {
   }
 
   /**
-   * 쿠팡 API 인증 헤더를 생성합니다
-   * @param accessKey 액세스 키
-   * @param secretKey 시크릿 키
-   * @param method HTTP 메서드
-   * @param path API 경로
-   * @param queryString 쿼리 스트링 (선택사항)
-   * @returns Authorization 헤더 값
+   * 쿠팡 API 인증 헤더 생성 (쿠팡 공식 Node 예제 기반)
    */
   private generateAuthHeader(
     accessKey: string,
     secretKey: string,
     method: string,
     path: string,
-    queryString?: string,
+    queryString: string = '',
   ): string {
-    try {
-      const datetime = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-      const message = datetime + method + path + (queryString || '');
+    const datetime =
+      new Date()
+        .toISOString()
+        .slice(2, 19)
+        .replace(/:/g, '')
+        .replace(/-/g, '') + 'Z';
 
-      // HMAC-SHA256 서명 생성
-      const signature = crypto
-        .createHmac('sha256', secretKey)
-        .update(message)
-        .digest('hex');
+    const message = datetime + method + path + queryString;
+    const signature = crypto
+      .createHmac('sha256', secretKey)
+      .update(message)
+      .digest('hex');
 
-      return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
-    } catch (error) {
-      this.logger.error('❌ 쿠팡 API 인증 헤더 생성 실패:', error);
-      throw new Error(`쿠팡 API 인증 헤더 생성 실패: ${error.message}`);
-    }
+    return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
   }
 }

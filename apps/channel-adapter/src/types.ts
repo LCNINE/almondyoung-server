@@ -253,6 +253,11 @@ export interface InternalOrderEvent {
   completedClaims?: ClaimInfo[]; // 완료된 클레임들
   createdAt?: string; // 외부 기준 생성시각
   updatedAt?: string; // 외부 기준 업데이트시각
+
+  // WMS 연동을 위한 추가 속성들
+  reason?: string; // 취소/교환/환불 사유
+  claimInfo?: ClaimInfo; // 교환/환불 정보 (currentClaim과 동일하지만 명시적)
+  productName?: string; // 상품명 (WMS 전달용)
 }
 
 // =================================================================

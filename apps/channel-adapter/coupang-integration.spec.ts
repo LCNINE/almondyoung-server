@@ -55,7 +55,9 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
     // 🔧 환경변수 설정 (adapter-mock 서버 사용)
     process.env.NAVER_USE_MOCK_SERVER = 'true';
     process.env.COUPANG_USE_MOCK_SERVER = 'true';
-    process.env.ADAPTER_MOCK_BASE_URL = 'http://localhost:3001';
+    process.env.ADAPTER_MOCK_BASE_URL = 'http://localhost:3002';
+    // ✅ 테스트에서는 쿠팡만 필수 채널로 설정
+    process.env.ADAPTER_REQUIRED_CHANNELS = 'coupang';
 
     // 🏗 실제 AdapterModule 전체 로드 (Mock 없음)
     app = await Test.createTestingModule({

@@ -16,11 +16,14 @@ import { z } from 'zod';
 /**
  * 쿠팡 API 공통 응답 구조를 생성하는 제네릭 헬퍼 함수
  */
-function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+export function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(
+  dataSchema: T,
+) {
   return z.object({
-    code: z.number(), // 응답 코드 (e.g., 200)
-    message: z.string(), // 응답 메시지 (e.g., "OK")
-    data: dataSchema, // 제네릭으로 받은 실제 데이터
+    code: z.number(), // e.g. 200
+    message: z.string(), // e.g. "OK"
+    data: dataSchema, // 실제 데이터
+    nextToken: z.string().optional(), // 일부 API에서만 내려옴
   });
 }
 
@@ -120,16 +123,16 @@ export const OrderItemSchema = z.object({
 export const CoupangOrderSheetSchema = z.object({
   shipmentBoxId: z.number(), // 배송번호 (묶음배송번호)
   orderId: z.number(), // 주문번호
-  orderedAt: z.string().datetime(), // 주문일시
-  paidAt: z.string().datetime(), // 결제일시
+  orderedAt: z.iso.date(), // 주문일시
+  paidAt: z.iso.date(), // 결제일시
   status: CoupangOrderStatusSchema, // 발주서 상태
   orderer: OrdererSchema, // 주문자 정보
   receiver: ReceiverSchema, // 수취인 정보
   orderItems: z.array(OrderItemSchema), // 주문 상품 목록
   deliveryCompanyName: z.string().optional(), // 택배사
   invoiceNumber: z.string().optional(), // 운송장번호
-  inTrasitDateTime: z.string().datetime().optional(), // 출고일(발송일)
-  deliveredDate: z.string().datetime().optional(), // 배송완료일
+  inTrasitDateTime: z.iso.date().optional(), // 출고일(발송일)
+  deliveredDate: z.iso.date().optional(), // 배송완료일
 });
 
 export const CoupangOrderSheetListResponseSchema = z.object({
@@ -262,33 +265,30 @@ export const GetReturnRequestsParamsSchema = z
     // --- 단일 필드 검증 (에러 메시지를 직접 지정) ---
     searchType: z
       .literal('timeFrame', {
-        invalid_type_error: "searchType은 'timeFrame' 값만 가능합니다.",
+        error: () => "searchType은 'timeFrame' 값만 가능합니다.",
       })
       .optional(),
-
     createdAtFrom: z
       .string({
-        invalid_type_error: 'createdAtFrom은 문자열이어야 합니다.',
+        error: () => 'createdAtFrom은 문자열이어야 합니다.',
       })
       .optional(),
 
     createdAtTo: z
       .string({
-        invalid_type_error: 'createdAtTo는 문자열이어야 합니다.',
+        error: () => 'createdAtTo는 문자열이어야 합니다.',
       })
       .optional(),
 
     status: z
       .enum(['RU', 'UC', 'CC', 'PR'], {
-        invalid_type_error:
-          "status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다.",
+        error: () => "status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다.",
       })
       .optional(),
 
     cancelType: z
       .enum(['RETURN', 'CANCEL'], {
-        invalid_type_error:
-          "cancelType은 'RETURN', 'CANCEL' 중 하나여야 합니다.",
+        error: () => "cancelType은 'RETURN', 'CANCEL' 중 하나여야 합니다.",
       })
       .optional()
       .default('RETURN'),
@@ -297,7 +297,7 @@ export const GetReturnRequestsParamsSchema = z
 
     maxPerPage: z
       .number({
-        invalid_type_error: 'maxPerPage는 숫자여야 합니다.',
+        error: () => 'maxPerPage는 숫자여야 합니다.',
       })
       .int()
       .optional()
@@ -305,7 +305,7 @@ export const GetReturnRequestsParamsSchema = z
 
     orderId: z
       .number({
-        invalid_type_error: 'orderId는 숫자여야 합니다.',
+        error: () => 'orderId는 숫자여야 합니다.',
       })
       .int()
       .optional(),
