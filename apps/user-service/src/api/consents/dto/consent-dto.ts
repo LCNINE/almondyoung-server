@@ -44,29 +44,10 @@ export class CreateConsentDto implements IConsent {
   thirdPartySharing: boolean;
 
   @ApiProperty({
-    description: '이메일 수신 동의',
+    description: '마케팅 수신 동의 (모든 채널)',
     example: false,
-    required: false,
-    default: false,
+    required: true,
   })
   @IsBoolean()
-  emailConsent?: boolean;
-
-  @ApiProperty({
-    description: 'SMS 수신 동의',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsBoolean()
-  smsConsent?: boolean;
-
-  @ApiProperty({
-    description: '앱 푸시 알림 수신 동의',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsBoolean()
-  pushConsent?: boolean;
+  marketingConsent: boolean;
 }

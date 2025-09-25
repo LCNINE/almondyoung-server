@@ -36,7 +36,7 @@ const timestampColumns = {
 };
 
 /**
- *  유저 동의 항목 테이블
+ *  유저 동의 항목 테이블 - 마케팅 수신 동의 통합
  */
 export const userConsents = pgTable('user_consents', {
   id: serial('id').primaryKey(),
@@ -52,10 +52,8 @@ export const userConsents = pgTable('user_consents', {
     .default(false), // 전자금융거래 이용약관 동의
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
-  // 선택 동의 항목들
-  emailConsent: boolean('email_consent').default(false), // 이메일 수신 동의
-  smsConsent: boolean('sms_consent').default(false), // SMS 수신 동의
-  pushConsent: boolean('push_consent').default(false), // 앱 푸시 알림 수신 동의
+  // 마케팅 수신 동의 (통합)
+  marketingConsent: boolean('marketing_consent').notNull().default(false), // 마케팅 수신 동의 (모든 채널)
   consentedAt: timestamp('consented_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -99,155 +97,137 @@ export const userRoleAssignments = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     roleId: uuid('role_id')
-      .references(() => roles.roleId, { onDelete: 'cascade' })
-      .notNull(),
+      .notNull()
+      .references(() => roles.roleId, { onDelete: 'cascade' }),
     assignedAt: timestamp('assigned_at').defaultNow().notNull(),
-    expiresAt: timestamp('expires_at'),
+    assignedBy: uuid('assigned_by').references(() => users.id),
     ...timestampColumns,
   },
   (table) => ({
-    userRoleUniqueIdx: unique().on(table.userId, table.roleId),
+    userRoleUnique: unique('user_role_unique').on(table.userId, table.roleId),
   }),
 );
 
-// 역할-스코프 할당 테이블
-export const roleScopes = pgTable('role_scopes', {
+// 역할-스코프 연결 테이블
+export const roleScopeMappings = pgTable(
+  'role_scope_mappings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => roles.roleId, { onDelete: 'cascade' }),
+    scopeId: uuid('scope_id')
+      .notNull()
+      .references(() => scopes.scopeId, { onDelete: 'cascade' }),
+    ...timestampColumns,
+  },
+  (table) => ({
+    roleScopeUnique: unique('role_scope_unique').on(table.roleId, table.scopeId),
+  }),
+);
+
+// 사용자 세션 테이블
+export const userSessions = pgTable('user_sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
-  roleId: uuid('role_id')
-    .references(() => roles.roleId, { onDelete: 'cascade' })
-    .notNull(),
-  scopeId: uuid('scope_id')
-    .references(() => scopes.scopeId, { onDelete: 'cascade' })
-    .notNull(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 500 }).notNull().unique(),
+  type: tokenTypeEnum('type').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  isRevoked: boolean('is_revoked').default(false).notNull(),
   ...timestampColumns,
 });
 
-export const tokens = pgTable(
-  'tokens',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
-    value: text('value').notNull(),
-    type: tokenTypeEnum('type').notNull(),
-    scopes: varchar('scopes', { length: 65535 }).notNull(),
-    issuedAt: timestamp('issued_at').defaultNow().notNull(),
-    expiresAt: timestamp('expires_at').notNull(),
-    isRevoked: boolean('is_revoked').default(false),
-    ...timestampColumns,
-  },
-  (table) => ({
-    userTypeIdx: unique().on(table.userId, table.type),
-  }),
-);
+// 소셜 로그인 연동 테이블
+export const userProviders = pgTable('user_providers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  provider: providerTypeEnum('provider').notNull(),
+  providerId: varchar('provider_id', { length: 255 }).notNull(),
+  providerData: jsonb('provider_data'),
+  ...timestampColumns,
+}, (table) => ({
+  providerUnique: unique('provider_unique').on(table.provider, table.providerId),
+}));
 
-// User_profile
-export const profiles = pgTable('profiles', {
+// 사용자 주소 테이블
+export const userAddresses = pgTable('user_addresses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  isDefault: boolean('is_default').default(false).notNull(),
+  recipientName: varchar('recipient_name', { length: 100 }).notNull(),
+  recipientPhone: varchar('recipient_phone', { length: 20 }).notNull(),
+  postalCode: varchar('postal_code', { length: 10 }).notNull(),
+  address: text('address').notNull(),
+  detailAddress: text('detail_address'),
+  deliveryInstructions: text('delivery_instructions'),
+  ...timestampColumns,
+});
+
+// 사업자 등록 정보 테이블
+export const businessLicenses = pgTable('business_licenses', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' })
     .unique(),
-  phoneNumber: varchar('phone_number', { length: 20 }),
-  address: jsonb('address'),
-  birthDate: timestamp('birth_date'),
-  profileImageUrl: varchar('profile_image_url', { length: 1024 }),
+  businessNumber: varchar('business_number', { length: 20 }).notNull().unique(),
+  businessName: varchar('business_name', { length: 255 }).notNull(),
+  businessType: varchar('business_type', { length: 100 }),
+  businessCategory: varchar('business_category', { length: 100 }),
+  representativeName: varchar('representative_name', { length: 100 }).notNull(),
+  businessAddress: text('business_address').notNull(),
+  businessPhone: varchar('business_phone', { length: 20 }),
+  isVerified: boolean('is_verified').default(false).notNull(),
+  verifiedAt: timestamp('verified_at'),
+  verifiedBy: uuid('verified_by').references(() => users.id),
   ...timestampColumns,
 });
 
-export const profilesRelations = relations(profiles, ({ one }) => ({
-  user: one(users, {
-    fields: [profiles.userId],
-    references: [users.id],
-  }),
+// 최근 본 상품 테이블
+export const recentViews = pgTable('recent_views', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  productId: varchar('product_id', { length: 100 }).notNull(),
+  viewedAt: timestamp('viewed_at').defaultNow().notNull(),
+  ...timestampColumns,
+}, (table) => ({
+  userProductUnique: unique('user_product_unique').on(table.userId, table.productId),
 }));
 
-// 소셜 로그인 제공자별 사용자 식별 정보 테이블
-export const userIdentities = pgTable(
-  'user_identities',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
-    provider: providerTypeEnum('provider').notNull(),
-    providerId: varchar('provider_id', { length: 255 }).notNull(),
-    providerData: jsonb('provider_data'),
-    ...timestampColumns,
-  },
-  (table) => ({
-    // 각 사용자는 provider 당 하나의 identity만 가질 수 있음
-    providerUserIdx: unique().on(table.userId, table.provider),
-    // 각 provider의 providerId는 unique해야 함
-    providerIdIdx: unique().on(table.provider, table.providerId),
-  }),
-);
+// 위시리스트 테이블
+export const wishlists = pgTable('wishlists', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  productId: varchar('product_id', { length: 100 }).notNull(),
+  addedAt: timestamp('added_at').defaultNow().notNull(),
+  ...timestampColumns,
+}, (table) => ({
+  userWishlistUnique: unique('user_wishlist_unique').on(table.userId, table.productId),
+}));
 
 // Relations
-export const usersRelations = relations(users, ({ many, one }) => ({
-  tokens: many(tokens),
-  userRoles: many(userRoleAssignments),
-  profile: one(profiles, {
-    fields: [users.id],
-    references: [profiles.userId],
-  }),
-  identities: many(userIdentities),
-  consents: one(userConsents, {
-    fields: [users.id],
-    references: [userConsents.userId],
-  }),
-}));
-
-export const tokensRelations = relations(tokens, ({ one }) => ({
-  user: one(users, {
-    fields: [tokens.userId],
-    references: [users.id],
-  }),
-}));
-
-export const rolesRelations = relations(roles, ({ many }) => ({
-  userRoles: many(userRoleAssignments),
-  roleScopes: many(roleScopes),
-}));
-
-export const scopesRelations = relations(scopes, ({ many }) => ({
-  roleScopes: many(roleScopes),
-}));
-
-export const userRoleAssignmentsRelations = relations(
-  userRoleAssignments,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [userRoleAssignments.userId],
-      references: [users.id],
-    }),
-    role: one(roles, {
-      fields: [userRoleAssignments.roleId],
-      references: [roles.roleId],
-    }),
-  }),
-);
-
-export const roleScopesRelations = relations(roleScopes, ({ one }) => ({
-  role: one(roles, {
-    fields: [roleScopes.roleId],
-    references: [roles.roleId],
-  }),
-  scope: one(scopes, {
-    fields: [roleScopes.scopeId],
-    references: [scopes.scopeId],
-  }),
-}));
-
-export const userIdentitiesRelations = relations(userIdentities, ({ one }) => ({
-  user: one(users, {
-    fields: [userIdentities.userId],
-    references: [users.id],
-  }),
+export const usersRelations = relations(users, ({ one, many }) => ({
+  consent: one(userConsents),
+  roleAssignments: many(userRoleAssignments),
+  sessions: many(userSessions),
+  providers: many(userProviders),
+  addresses: many(userAddresses),
+  businessLicense: one(businessLicenses),
+  recentViews: many(recentViews),
+  wishlists: many(wishlists),
 }));
 
 export const userConsentsRelations = relations(userConsents, ({ one }) => ({
@@ -257,209 +237,120 @@ export const userConsentsRelations = relations(userConsents, ({ one }) => ({
   }),
 }));
 
-export const userSchema = { users };
-export type UserSchema = typeof userSchema;
+export const rolesRelations = relations(roles, ({ many }) => ({
+  userAssignments: many(userRoleAssignments),
+  scopeMappings: many(roleScopeMappings),
+}));
 
-export type User = typeof users.$inferSelect;
-export type UserWithoutPassword = Omit<User, 'password'>;
+export const scopesRelations = relations(scopes, ({ many }) => ({
+  roleMappings: many(roleScopeMappings),
+}));
 
-/***
- * shope schema
- */
-export const shopTypeEnum = pgEnum('shop_type', ['solo', 'small', 'large']);
-
-export const shops = pgTable('shops', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' })
-    .unique(),
-  isOperating: boolean('is_operating').notNull().default(false), // 현재 운영 중 여부
-  yearsOperating: integer('years_operating'), // 운영 연수
-  shopType: shopTypeEnum('shop_type'), // 매장 유형 (shopTypeEnum 정의된 값 중 하나)
-  categories: jsonb('categories').notNull(), // 취급 카테고리 (JSON 배열 형태로 저장, 예: [미용재료, 화장품])
-  targetCustomers: jsonb('target_customers'), // 주요 고객층 (JSON, 예: ["헤어샵", "네일샵"])
-  openDays: jsonb('open_days'), // 영업 요일 정보 (JSON, 예: { mon: true, tue: false })
-  ...timestampColumns,
-});
-
-export type Shop = typeof shops.$inferSelect;
-
-export type ShopType = (typeof shopTypeEnum.enumValues)[number];
-export const SHOP_TYPES = shopTypeEnum.enumValues;
-
-/***
- * wishlist (찜하기)
- */
-export const wishlist = pgTable(
-  'wishlist',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
-    productId: varchar('product_id', { length: 255 }).notNull(),
-    ...timestampColumns,
-  },
-  (table) => ({
-    userProductUniqueIdx: unique().on(table.userId, table.productId),
-  }),
-);
-
-export const userWishlistRelations = relations(wishlist, ({ one }) => ({
+export const userRoleAssignmentsRelations = relations(userRoleAssignments, ({ one }) => ({
   user: one(users, {
-    fields: [wishlist.userId],
+    fields: [userRoleAssignments.userId],
     references: [users.id],
   }),
+  role: one(roles, {
+    fields: [userRoleAssignments.roleId],
+    references: [roles.roleId],
+  }),
 }));
 
-export type Wishlist = typeof wishlist.$inferSelect;
-
-/***
- * recent views (최근 본 상품)
- */
-export const userRecentViews = pgTable(
-  'recent_views',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
-    productId: varchar('product_id', { length: 255 }).notNull(),
-
-    ...timestampColumns,
-  },
-  (table) => ({
-    userProductUniqueIdx: unique().on(table.userId, table.productId),
+export const roleScopeMappingsRelations = relations(roleScopeMappings, ({ one }) => ({
+  role: one(roles, {
+    fields: [roleScopeMappings.roleId],
+    references: [roles.roleId],
   }),
-);
-
-export const userRecentViewsRelations = relations(
-  userRecentViews,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [userRecentViews.userId],
-      references: [users.id],
-    }),
+  scope: one(scopes, {
+    fields: [roleScopeMappings.scopeId],
+    references: [scopes.scopeId],
   }),
-);
-
-export type RecentView = typeof userRecentViews.$inferSelect;
-
-//  business_licenses (사업자등록번호)
-export const statusEnum = pgEnum('status', [
-  'under_review', // 검토중
-  'approved', // 승인됨
-  'rejected', // 거절됨
-]);
-
-/**
- * 첨부파일을 업로드하면 사업자 번호, 사업자 대표이름은 입력 X,
- * 첨부파일을 업로드하지 않으면 사업자 번호, 사업자 대표이름은 입력필수.
- */
-export const businessLicenses = pgTable(
-  'business_licenses',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    shopId: uuid('shop_id').references(() => shops.id, { onDelete: 'cascade' }),
-    businessNumber: varchar('business_number', { length: 10 }),
-    representativeName: varchar('representative_name', { length: 100 }), // 대표자명
-    status: statusEnum('status').notNull().default('under_review'),
-    reviewComment: text('review_comment'), // 검토 코멘트
-    verifiedAt: timestamp('verified_at'),
-    verificationFile: varchar('verification_file', { length: 1024 }), // 증빙 검증 파일 url
-    // 부가 정보 저장 가능
-    metadata: jsonb('metadata'),
-    ...timestampColumns,
-  },
-  (table) => ({
-    businessNumberUniqueIdx: unique().on(table.businessNumber),
-    userUniqueIdx: unique().on(table.userId), // 사용자당 하나의 사업자 등록만 허용
-    shopUniqueIdx: unique().on(table.shopId), // 상점당 하나의 사업자 등록만 허용
-    verificationOrFullInfo: check(
-      'business_licenses_verification_or_full_info',
-      sql`${table.verificationFile} is not null OR (${table.businessNumber} is not null AND ${table.representativeName} is not null)`,
-    ),
-  }),
-);
-
-export const businessLicensesRelations = relations(
-  businessLicenses,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [businessLicenses.userId],
-      references: [users.id],
-    }),
-    shop: one(shops, {
-      fields: [businessLicenses.shopId],
-      references: [shops.id],
-    }),
-  }),
-);
-
-export const shopsRelations = relations(shops, ({ many }) => ({
-  businessLicenses: many(businessLicenses),
 }));
 
-export type BusinessLicense = typeof businessLicenses.$inferSelect;
-
-// ==================== 블랙리스트 테이블 ====================
-
-/**
- * 블랙리스트 관리 테이블
- * 레코드가 존재하면서 deletedAt이 nulll이면  = 블랙리스트
- * 레코드가 없거나 deletedAt이 null이 아니면 = 정상 고객
- */
-export const blacklists = pgTable('blacklists', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' })
-    .unique(),
-  // 사유
-  reason: text('reason').notNull(),
-  // 내부 메모 (CS팀용)
-  internalNote: text('internal_note'),
-  // 등록 정보
-  createdBy: uuid('created_by').references(() => users.id), // 등록한 관리자 ID
-  createdAt: timestamp('created_at')
-    .default(sql`now()`)
-    .notNull(),
-  updatedAt: timestamp('updated_at')
-    .default(sql`now()`)
-    .notNull(),
-  deletedAt: timestamp('deleted_at'),
-  deletedBy: uuid('deleted_by').references(() => users.id), // 블랙리스트 해제한 관리자 ID
-});
-
-export const blacklistsRelations = relations(blacklists, ({ one }) => ({
+export const userSessionsRelations = relations(userSessions, ({ one }) => ({
   user: one(users, {
-    fields: [blacklists.userId],
-    references: [users.id],
-  }),
-  createdByUser: one(users, {
-    fields: [blacklists.createdBy],
+    fields: [userSessions.userId],
     references: [users.id],
   }),
 }));
 
-export const userServiceSchema = {
+export const userProvidersRelations = relations(userProviders, ({ one }) => ({
+  user: one(users, {
+    fields: [userProviders.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userAddressesRelations = relations(userAddresses, ({ one }) => ({
+  user: one(users, {
+    fields: [userAddresses.userId],
+    references: [users.id],
+  }),
+}));
+
+export const businessLicensesRelations = relations(businessLicenses, ({ one }) => ({
+  user: one(users, {
+    fields: [businessLicenses.userId],
+    references: [users.id],
+  }),
+}));
+
+export const recentViewsRelations = relations(recentViews, ({ one }) => ({
+  user: one(users, {
+    fields: [recentViews.userId],
+    references: [users.id],
+  }),
+}));
+
+export const wishlistsRelations = relations(wishlists, ({ one }) => ({
+  user: one(users, {
+    fields: [wishlists.userId],
+    references: [users.id],
+  }),
+}));
+
+// Export schema
+export const userSchema = {
   users,
-  roles,
-  scopes,
-  userRoleAssignments,
-  roleScopes,
-  userIdentities,
-  businessLicenses,
-  shops,
   userConsents,
-  tokens,
-  tokenTypeEnum,
-  profiles,
-  blacklists,
+  scopes,
+  roles,
+  userRoleAssignments,
+  roleScopeMappings,
+  userSessions,
+  userProviders,
+  userAddresses,
+  businessLicenses,
+  recentViews,
+  wishlists,
 };
 
-export type UserServiceSchema = typeof userServiceSchema;
+// Export types
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type UserConsent = typeof userConsents.$inferSelect;
+export type NewUserConsent = typeof userConsents.$inferInsert;
+export type Scope = typeof scopes.$inferSelect;
+export type NewScope = typeof scopes.$inferInsert;
+export type Role = typeof roles.$inferSelect;
+export type NewRole = typeof roles.$inferInsert;
+export type UserRoleAssignment = typeof userRoleAssignments.$inferSelect;
+export type NewUserRoleAssignment = typeof userRoleAssignments.$inferInsert;
+export type RoleScopeMapping = typeof roleScopeMappings.$inferSelect;
+export type NewRoleScopeMapping = typeof roleScopeMappings.$inferInsert;
+export type UserSession = typeof userSessions.$inferSelect;
+export type NewUserSession = typeof userSessions.$inferInsert;
+export type UserProvider = typeof userProviders.$inferSelect;
+export type NewUserProvider = typeof userProviders.$inferInsert;
+export type UserAddress = typeof userAddresses.$inferSelect;
+export type NewUserAddress = typeof userAddresses.$inferInsert;
+export type BusinessLicense = typeof businessLicenses.$inferSelect;
+export type NewBusinessLicense = typeof businessLicenses.$inferInsert;
+export type RecentView = typeof recentViews.$inferSelect;
+export type NewRecentView = typeof recentViews.$inferInsert;
+export type Wishlist = typeof wishlists.$inferSelect;
+export type NewWishlist = typeof wishlists.$inferInsert;
+
+// UserServiceSchema type
+export type UserServiceSchema = typeof userSchema;

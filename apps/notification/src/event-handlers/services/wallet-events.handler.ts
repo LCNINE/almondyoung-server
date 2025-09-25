@@ -1,112 +1,97 @@
-// apps/notification/src/event-handlers/services/wallet-events.handler.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
 import { TypedEventPattern } from '@app/events';
-import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { WalletEvents, WalletTopupSuccessPayload, WalletWithdrawalRequestedPayload } from '@app/shared/events/wallet.events';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
+import { UserNotificationService } from '../../shared/services/user-notification.service';
+import { NotificationCategory } from '../../shared/enums';
+import { SendNotificationDto } from '../../dispatcher/dto/send-notification.dto';
 
-// Wallet 이벤트 타입 정의 (예시)
-interface PaymentRefundCompletedPayload {
-  refundId: string;
-  userId: string;
-  email: string;
-  name: string;
-  amount: number;
-  reason: string;
-  timestamp: string;
-  correlationId: string;
-  source: string;
-}
-
-interface BnplBillingCreatedPayload {
-  billingId: string;
-  userId: string;
-  email: string;
-  name: string;
-  amount: number;
-  dueDate: string;
-  timestamp: string;
-  correlationId: string;
-  source: string;
-}
-
-@Injectable()
+@Controller()
 export class WalletEventsHandler {
   private readonly logger = new Logger(WalletEventsHandler.name);
 
   constructor(
-    private readonly notificationDispatcher: NotificationDispatcherService,
     private readonly eventMappingService: EventMappingService,
+    private readonly notificationDispatcherService: NotificationDispatcherService,
+    private readonly userNotificationService: UserNotificationService,
   ) {}
 
-  @TypedEventPattern<any, 'PAYMENT_REFUND_COMPLETED'>('PAYMENT_REFUND_COMPLETED')
-  async onPaymentRefundCompleted(payload: PaymentRefundCompletedPayload) {
-    this.logger.log(`[WALLET] Received PAYMENT_REFUND_COMPLETED event for refund: ${payload.refundId}`);
-    
+  @TypedEventPattern<WalletEvents, 'WALLET_TOPUP_SUCCESS'>('WALLET_TOPUP_SUCCESS')
+  async onWalletTopupSuccess(payload: WalletTopupSuccessPayload) {
+    this.logger.log(`Received WALLET_TOPUP_SUCCESS event: ${JSON.stringify(payload)}`);
     try {
-      const eventMapping = await this.eventMappingService.getEventMapping('PAYMENT_REFUND_COMPLETED');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for PAYMENT_REFUND_COMPLETED');
+      const eventMapping = await this.eventMappingService.getEventMapping('WALLET_TOPUP_SUCCESS');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for WALLET_TOPUP_SUCCESS not found or inactive.`);
         return;
       }
 
-      // 환불 완료 알림 발송 (정보성 알림이므로 동의 불필요)
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'TRANSACTIONAL',
-        templateKey: eventMapping.templateKey,
-        eventKey: 'PAYMENT_REFUND_COMPLETED',
-        payload: {
-          refundId: payload.refundId,
-          amount: payload.amount,
-          reason: payload.reason,
-          email: payload.email,
-          name: payload.name,
-        },
-        correlationId: payload.correlationId,
-        priority: 'NORMAL',
-      });
+      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
+        return;
+      }
 
-      this.logger.log(`[WALLET] Payment refund completed notification sent to ${payload.email}`, result);
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          amount: payload.amount,
+          currency: payload.currency,
+          transactionId: payload.transactionId,
+          customerEmail: userProfile.email,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched WALLET_TOPUP_SUCCESS notification for ${userProfile.email}`);
     } catch (error) {
-      this.logger.error(`[WALLET] Failed to send payment refund completed notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process WALLET_TOPUP_SUCCESS notification: ${error.message}`, error.stack);
     }
   }
 
-  @TypedEventPattern<any, 'BNPL_BILLING_CREATED'>('BNPL_BILLING_CREATED')
-  async onBnplBillingCreated(payload: BnplBillingCreatedPayload) {
-    this.logger.log(`[WALLET] Received BNPL_BILLING_CREATED event for billing: ${payload.billingId}`);
-    
+  @TypedEventPattern<WalletEvents, 'WALLET_WITHDRAWAL_REQUESTED'>('WALLET_WITHDRAWAL_REQUESTED')
+  async onWalletWithdrawalRequested(payload: WalletWithdrawalRequestedPayload) {
+    this.logger.log(`Received WALLET_WITHDRAWAL_REQUESTED event: ${JSON.stringify(payload)}`);
     try {
-      const eventMapping = await this.eventMappingService.getEventMapping('BNPL_BILLING_CREATED');
-      
-      if (!eventMapping) {
-        this.logger.warn('No event mapping found for BNPL_BILLING_CREATED');
+      const eventMapping = await this.eventMappingService.getEventMapping('WALLET_WITHDRAWAL_REQUESTED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for WALLET_WITHDRAWAL_REQUESTED not found or inactive.`);
         return;
       }
 
-      // BNPL 청구서 생성 알림 발송 (정보성 알림이므로 동의 불필요)
-      const result = await this.notificationDispatcher.send({
-        userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'TRANSACTIONAL',
-        templateKey: eventMapping.templateKey,
-        eventKey: 'BNPL_BILLING_CREATED',
-        payload: {
-          billingId: payload.billingId,
-          amount: payload.amount,
-          dueDate: payload.dueDate,
-          email: payload.email,
-          name: payload.name,
-        },
-        correlationId: payload.correlationId,
-        priority: 'NORMAL',
-      });
+      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
+      if (!userProfile || !userProfile.email) {
+        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
+        return;
+      }
 
-      this.logger.log(`[WALLET] BNPL billing created notification sent to ${payload.email}`, result);
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: payload.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          amount: payload.amount,
+          currency: payload.currency,
+          withdrawalId: payload.withdrawalId,
+          customerEmail: userProfile.email,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`Dispatched WALLET_WITHDRAWAL_REQUESTED notification for ${userProfile.email}`);
     } catch (error) {
-      this.logger.error(`[WALLET] Failed to send BNPL billing created notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to process WALLET_WITHDRAWAL_REQUESTED notification: ${error.message}`, error.stack);
     }
   }
 }
