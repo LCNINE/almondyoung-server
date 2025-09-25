@@ -1,7 +1,7 @@
 // apps/notification/src/shared/services/user-notification.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { notificationTables } from '../../../database/schemas/notification-schema';
+import { notificationTables, userNotificationSettings, UserNotificationSetting, NewUserNotificationSetting, PushSettings, GeneralSettings } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
 import { eq, inArray } from 'drizzle-orm';
 import {

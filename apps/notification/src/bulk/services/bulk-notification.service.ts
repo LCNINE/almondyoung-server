@@ -21,6 +21,17 @@ export class BulkNotificationService {
   ): Promise<{ campaignId: string; status: string }> {
     this.logger.log(`Initiating bulk notification campaign creation: ${dto.name}`);
 
+    // Get templateId if templateKey is provided
+    let templateId: string | undefined;
+    if (dto.templateKey) {
+      const template = await this.db.db
+        .select()
+        .from(notificationTables.templates)
+        .where(eq(notificationTables.templates.templateKey, dto.templateKey))
+        .limit(1);
+      templateId = template[0]?.templateId;
+    }
+
     // 1. Create Campaign Record
     const [campaign] = await this.db.db
       .insert(notificationTables.notificationCampaigns)
@@ -29,7 +40,7 @@ export class BulkNotificationService {
         description: dto.description,
         category: dto.category,
         channels: dto.channels,
-        templateId: dto.templateKey ? (await this.db.db.query.templates.findFirst({ where: eq(notificationTables.templates.templateKey, dto.templateKey) }))?.templateId : undefined,
+        templateId: templateId,
         content: dto.content,
         sendAt: dto.sendAt ? new Date(dto.sendAt) : new Date(),
         priority: dto.priority,

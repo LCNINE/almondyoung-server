@@ -3,7 +3,6 @@ import {
     Controller,
     Post,
     Get,
-    Put,
     Body,
     Param,
     Query,
@@ -11,14 +10,11 @@ import {
 } from '@nestjs/common';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { SendNotificationDto } from '../dto/send-notification.dto';
-import { UserNotificationService } from '../../shared/services/user-notification.service';
-import { CreateUserNotificationSettingsDto, UpdateUserNotificationSettingsDto } from '../../shared/dto/user-notification-settings.dto';
 
 @Controller('api/v1/notifications')
 export class NotificationController {
     constructor(
         private readonly dispatcherService: NotificationDispatcherService,
-        private readonly userNotificationService: UserNotificationService,
     ) { }
 
     @Post('send')
@@ -37,36 +33,6 @@ export class NotificationController {
         @Query('limit') limit?: number,
     ) {
         return this.dispatcherService.getUserNotifications(userId, limit || 50);
-    }
-
-    // 사용자 알림 설정 관련 엔드포인트
-    @Get('users/:userId/settings')
-    async getUserNotificationSettings(@Param('userId') userId: string) {
-        const settings = await this.userNotificationService.getUserNotificationSettings(userId);
-
-        return {
-            userId,
-            isMarketingEnabled: settings?.isMarketingEnabled ?? false,
-            preferredLanguage: settings?.preferredLanguage ?? 'ko',
-            pushSettings: settings?.pushSettings || {},
-            settings: settings?.settings || {},
-        };
-    }
-
-    @Post('users/:userId/settings')
-    async createUserNotificationSettings(
-        @Param('userId') userId: string,
-        @Body(ValidationPipe) dto: CreateUserNotificationSettingsDto,
-    ) {
-        return this.userNotificationService.createNotificationSettings(userId, dto);
-    }
-
-    @Put('users/:userId/settings')
-    async updateUserNotificationSettings(
-        @Param('userId') userId: string,
-        @Body(ValidationPipe) dto: UpdateUserNotificationSettingsDto,
-    ) {
-        return this.userNotificationService.updateNotificationSettings(userId, dto);
     }
 
     // 이벤트 기반 개별 발송 엔드포인트

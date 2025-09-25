@@ -1,9 +1,10 @@
 // apps/notification/src/event-handlers/user-event.handler.ts
 import { Controller, Logger } from '@nestjs/common';
 import { TypedEventPattern } from '@app/events';
-import { UserEvents, UserVerification, UserFindIdPayload, UserResetPasswordPayload } from '@app/shared/events/user.events';
+import { UserEvents, UserVerification, UserFindIdPayload, UserResetPasswordPayload } from '../events/user.events';
 import { NotificationDispatcherService } from '../dispatcher/services/notification-dispatcher.service';
 import { EventMappingService } from '../shared/services/event-mapping.service';
+import { Channel, NotificationCategory, NotificationPriority } from '../shared/enums';
 
 @Controller()
 export class UserEventHandler {
@@ -30,8 +31,8 @@ export class UserEventHandler {
       // 이메일 인증 알림 발송
       const result = await this.notificationDispatcher.send({
         userId: payload.userId,
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+        channels: [Channel.EMAIL],
+        category: NotificationCategory.SYSTEM,
         templateKey: eventMapping.templateKey,
         eventKey: 'USER_VERIFICATION',
         payload: {
@@ -42,7 +43,7 @@ export class UserEventHandler {
           redirectTo: payload.redirectTo,
         },
         correlationId: payload.correlationId,
-        priority: 'HIGH',
+        priority: NotificationPriority.HIGH,
       });
 
       this.logger.log(`Email verification notification sent to ${payload.email}`, result);
@@ -65,8 +66,8 @@ export class UserEventHandler {
 
       const result = await this.notificationDispatcher.send({
         userId: payload.userId || 'unknown',
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+        channels: [Channel.EMAIL],
+        category: NotificationCategory.SYSTEM,
         templateKey: eventMapping.templateKey,
         eventKey: 'USER_FIND_ID',
         payload: {
@@ -74,7 +75,7 @@ export class UserEventHandler {
           loginId: payload.loginId,
         },
         correlationId: payload.correlationId,
-        priority: 'HIGH',
+        priority: NotificationPriority.HIGH,
       });
 
       this.logger.log(`ID find notification sent to ${payload.email}`, result);
@@ -97,8 +98,8 @@ export class UserEventHandler {
 
       const result = await this.notificationDispatcher.send({
         userId: payload.userId || 'unknown',
-        channels: ['EMAIL'],
-        category: 'SYSTEM',
+        channels: [Channel.EMAIL],
+        category: NotificationCategory.SYSTEM,
         templateKey: eventMapping.templateKey,
         eventKey: 'USER_RESET_PASSWORD',
         payload: {
@@ -106,7 +107,7 @@ export class UserEventHandler {
           verificationToken: payload.verificationToken,
         },
         correlationId: payload.correlationId,
-        priority: 'HIGH',
+        priority: NotificationPriority.HIGH,
       });
 
       this.logger.log(`Password reset notification sent to ${payload.email}`, result);

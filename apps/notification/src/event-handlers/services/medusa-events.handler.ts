@@ -1,9 +1,8 @@
 import { Controller, Logger } from '@nestjs/common';
 import { TypedEventPattern } from '@app/events';
-import { MedusaEvents, OrderCreatedPayload, PaymentCompletedPayload } from '@app/shared/events/medusa.events';
+import { MedusaEvents, OrderCreatedPayload, PaymentCompletedPayload } from '../../events/medusa.events';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
-import { UserNotificationService } from '../../shared/services/user-notification.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../../dispatcher/dto/send-notification.dto';
 
@@ -14,7 +13,6 @@ export class MedusaEventsHandler {
   constructor(
     private readonly eventMappingService: EventMappingService,
     private readonly notificationDispatcherService: NotificationDispatcherService,
-    private readonly userNotificationService: UserNotificationService,
   ) {}
 
   @TypedEventPattern<MedusaEvents, 'ORDER_CREATED'>('ORDER_CREATED')
@@ -27,12 +25,7 @@ export class MedusaEventsHandler {
         return;
       }
 
-      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
-      if (!userProfile || !userProfile.email) {
-        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
-        return;
-      }
-
+      // 이벤트 payload에서 user 정보를 직접 사용
       const sendDto: SendNotificationDto = {
         userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
@@ -46,11 +39,11 @@ export class MedusaEventsHandler {
           orderId: payload.orderId,
           totalAmount: payload.totalAmount,
           currency: payload.currency,
-          customerEmail: userProfile.email,
+          customerEmail: payload.customerEmail || payload.userId,
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`Dispatched ORDER_CREATED notification for ${userProfile.email}`);
+      this.logger.log(`Dispatched ORDER_CREATED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`Failed to process ORDER_CREATED notification: ${error.message}`, error.stack);
     }
@@ -66,12 +59,7 @@ export class MedusaEventsHandler {
         return;
       }
 
-      const userProfile = await this.userNotificationService.getUserProfile(payload.userId);
-      if (!userProfile || !userProfile.email) {
-        this.logger.warn(`User profile or email not found for userId: ${payload.userId}`);
-        return;
-      }
-
+      // 이벤트 payload에서 user 정보를 직접 사용
       const sendDto: SendNotificationDto = {
         userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
@@ -85,11 +73,11 @@ export class MedusaEventsHandler {
           orderId: payload.orderId,
           paymentAmount: payload.paymentAmount,
           currency: payload.currency,
-          customerEmail: userProfile.email,
+          customerEmail: payload.customerEmail || payload.userId,
         },
       };
       await this.notificationDispatcherService.send(sendDto);
-      this.logger.log(`Dispatched PAYMENT_COMPLETED notification for ${userProfile.email}`);
+      this.logger.log(`Dispatched PAYMENT_COMPLETED notification for ${payload.userId}`);
     } catch (error) {
       this.logger.error(`Failed to process PAYMENT_COMPLETED notification: ${error.message}`, error.stack);
     }
