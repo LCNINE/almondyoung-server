@@ -41,7 +41,9 @@ export interface KafkaEnvironmentConfig {
 }
 
 // 환경 변수를 KafkaConfig로 변환하는 헬퍼
-export function createKafkaConfigFromEnv(env: KafkaEnvironmentConfig): KafkaConfig {
+export function createKafkaConfigFromEnv(
+  env: KafkaEnvironmentConfig,
+): KafkaConfig {
   return {
     clientId: env.KAFKA_CLIENT_ID,
     brokers: env.KAFKA_BROKERS.split(','),
@@ -51,4 +53,4 @@ export function createKafkaConfigFromEnv(env: KafkaEnvironmentConfig): KafkaConf
       initialRetryTime: 300,
     },
   };
-} 
+}
