@@ -20,7 +20,20 @@ export class PlanService {
   /**
    * Retrieves all active subscription plans with their tier information.
    */
-  async getAllPlans(): Promise<any[]> {
+  async getAllPlans(): Promise<
+    {
+      id: string;
+      tierId: string;
+      tierCode: string;
+      priorityLevel: number;
+      price: number;
+      durationDays: number;
+      currency: string;
+      trialDays: number;
+      createdAt: string;
+      updatedAt: string;
+    }[]
+  > {
     // [확인 필요] 응답 타입 정의 필요
     const plans = await this.dbService.db
       .select({
@@ -41,7 +54,7 @@ export class PlanService {
       price: plan.price,
       durationDays: plan.durationDays,
       currency: plan.currency,
-      trialDays: plan.trialDays,
+      trialDays: plan.trialDays || 0,
       createdAt: plan.createdAt.toISOString(),
       updatedAt: plan.updatedAt.toISOString(),
     }));

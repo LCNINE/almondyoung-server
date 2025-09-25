@@ -139,15 +139,15 @@ describeAPI(
 );
 describeAPI(
   HttpMethod.GET,
-  '/tiers',
+  '/plans',
   {
-    summary: '모든 티어 조회',
-    tag: 'Tier Management',
-    description: '모든 구독 티어를 조회합니다',
+    summary: '모든 활성 플랜 목록 조회 API',
+    tag: 'Plan',
+    description: '모든 활성 구독 플랜과 티어 정보를 조회합니다.',
   },
   global.__APP__,
   (apiDoc) => {
-    itDoc('모든 티어 조회 성공', async () => {
+    itDoc('모든 활성 플랜 목록 조회 성공', async () => {
       await apiDoc
         .test()
         .prettyPrint()
@@ -155,16 +155,23 @@ describeAPI(
         .res()
         .status(HttpStatus.OK)
         .body({
-          success: field('성공 여부', true),
-          data: field('티어 목록', [
-            {
-              id: field('티어 ID', (val) => val),
-              code: field('티어 코드', (val) => val),
-              priorityLevel: field('우선순위 레벨', 1),
-              createdAt: field('생성 시간', (val) => val),
-              updatedAt: field('수정 시간', (val) => val),
-            },
-          ]),
+          success: field('성공 여부', true), // 여기서 data가 전체 배열 → 콜백으로 검사
+
+          data: field('플랜 목록', (val: any) => {
+            return val;
+          }),
+          count: field('플랜 개수', (val: any) => {
+            if (typeof val !== 'number')
+              throw new Error('count must be number');
+            return val;
+          }),
+          meta: field('메타 정보', (val: any) => {
+            if (typeof val.retrievedAt !== 'string')
+              throw new Error('retrievedAt must be string');
+            if (typeof val.source !== 'string')
+              throw new Error('source must be string');
+            return val;
+          }),
         });
     });
   },
