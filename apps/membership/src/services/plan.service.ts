@@ -7,10 +7,8 @@ import type {
   UpdateTierInput,
   CreatePlanInput,
   UpdatePlanInput,
-  PlanDetailsResponse,
-  TierBenefits,
-  TierListResponse,
   Plan,
+  Tier,
 } from '../shared/schemas'; // index.ts를 통해 import
 
 @Injectable()
@@ -20,22 +18,8 @@ export class PlanService {
   /**
    * Retrieves all active subscription plans with their tier information.
    */
-  async getAllPlans(): Promise<
-    {
-      id: string;
-      tierId: string;
-      tierCode: string;
-      priorityLevel: number;
-      price: number;
-      durationDays: number;
-      currency: string;
-      trialDays: number;
-      createdAt: string;
-      updatedAt: string;
-    }[]
-  > {
-    // [확인 필요] 응답 타입 정의 필요
-    const plans = await this.dbService.db
+  async getAllPlans() {
+    return await this.dbService.db
       .select({
         plan: schema.plan,
         tier: schema.tiers,
@@ -44,26 +28,12 @@ export class PlanService {
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(eq(schema.plan.isActive, true))
       .orderBy(schema.tiers.priorityLevel);
-
-    return plans.map(({ plan, tier }) => ({
-      id: plan.id,
-      tierId: tier.id,
-      tierCode: tier.code,
-      // tierName: tier.name, // [확인 필요] 'tiers' 테이블에 'name' 필드가 없습니다.
-      priorityLevel: tier.priorityLevel,
-      price: plan.price,
-      durationDays: plan.durationDays,
-      currency: plan.currency,
-      trialDays: plan.trialDays || 0,
-      createdAt: plan.createdAt.toISOString(),
-      updatedAt: plan.updatedAt.toISOString(),
-    }));
   }
 
   /**
    * Retrieves detailed information for a specific subscription plan.
    */
-  async getPlanDetails(planId: string): Promise<PlanDetailsResponse> {
+  async getPlanDetails(planId: string) {
     const result = await this.dbService.db
       .select({
         plan: schema.plan,
@@ -78,42 +48,17 @@ export class PlanService {
       throw new Error('Plan not found');
     }
 
-    const { plan, tier } = result[0];
-
-    return {
-      id: plan.id,
-      tier: {
-        id: tier.id,
-        code: tier.code,
-        priorityLevel: tier.priorityLevel,
-        createdAt: tier.createdAt.toISOString(),
-        updatedAt: tier.updatedAt.toISOString(),
-      },
-      price: plan.price,
-      durationDays: plan.durationDays,
-      currency: plan.currency,
-      trialDays: plan.trialDays, // 복구
-      createdAt: plan.createdAt.toISOString(),
-      updatedAt: plan.updatedAt.toISOString(),
-    };
+    return result[0];
   }
 
   /**
-   * Retrieves all subscription tiers ordered by rank.
+   * Retrieves all subscription tiers ordered by priority level.
    */
-  async getAllTiers(): Promise<TierListResponse> {
-    const tiers = await this.dbService.db
+  async getAllTiers(): Promise<Tier[]> {
+    return await this.dbService.db
       .select()
       .from(schema.tiers)
-      .orderBy(schema.tiers.priorityLevel); // priorityLevel -> rank
-
-    return tiers.map((tier) => ({
-      id: tier.id,
-      code: tier.code,
-      priorityLevel: tier.priorityLevel, // priorityLevel -> rank
-      createdAt: tier.createdAt.toISOString(),
-      updatedAt: tier.updatedAt.toISOString(),
-    }));
+      .orderBy(schema.tiers.priorityLevel);
   }
 
   /**
@@ -130,48 +75,24 @@ export class PlanService {
   }
 
   /**
-   * Retrieves tier benefits including plans and benefit information.
+   * Retrieves tier with its associated plans.
    */
-  async getTierBenefits(tierId: string): Promise<TierBenefits> {
-    const tierResult = await this.dbService.db
+  async getTierWithPlans(tierId: string) {
+    const tier = await this.dbService.db
       .select()
       .from(schema.tiers)
       .where(eq(schema.tiers.id, tierId))
       .limit(1);
 
-    if (!tierResult.length) {
+    if (!tier.length) {
       throw new Error('Tier not found');
     }
-    const tier = tierResult[0];
+
     const plans = await this.getPlansByTier(tierId);
 
-    // [확인 필요] TierBenefits 타입의 필드를 새 스키마에 맞게 조정
     return {
-      tier: {
-        id: tier.id,
-        code: tier.code,
-        priorityLevel: tier.priorityLevel,
-        createdAt: tier.createdAt.toISOString(),
-        updatedAt: tier.updatedAt.toISOString(),
-      },
-      plans: plans.map((p) => ({
-        ...p,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
-      })),
-      // 예시 데이터도 새 스키마에 맞게 수정
-      benefits: [
-        {
-          type: 'storage',
-          description: `스토리지 혜택`, // 'tier.name' 사용 불가
-          value: tier.priorityLevel * 10 + 'GB',
-        },
-        {
-          type: 'support',
-          description: `지원 혜택`, // 'tier.name' 사용 불가
-          value: tier.priorityLevel > 2 ? '24/7 지원' : '업무시간 지원',
-        },
-      ],
+      tier: tier[0],
+      plans,
     };
   }
 

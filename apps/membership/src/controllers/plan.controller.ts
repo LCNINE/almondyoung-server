@@ -7,7 +7,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { PlanService } from './plan.service';
+import { PlanService } from '../services/plan.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { z } from 'zod';
 
@@ -274,13 +274,14 @@ export class PlanController {
       // Zod로 tierId 유효성 검증
       const validatedTierId = this.validateParam(tierId, uuidSchema, 'tierId');
 
-      const benefits = await this.planService.getTierBenefits(validatedTierId);
+      const tierWithPlans =
+        await this.planService.getTierWithPlans(validatedTierId);
 
       this.logger.log(`✅ 티어별 혜택 조회 성공: ${tierId}`);
 
       return {
         success: true,
-        data: benefits,
+        data: tierWithPlans,
         meta: {
           tierId,
           retrievedAt: new Date().toISOString(),

@@ -2,10 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { eq, and, lte, isNull, or } from 'drizzle-orm';
-import * as schema from '../shared/schemas/entities/schema';
+import * as schema from '../../shared/schemas/entities/schema';
 import { PaymentClientService } from './payment-client.service';
-import { EntitlementService } from '../subscription/entitlement.service';
-import { PlanService } from '../plan/plan.service';
+import { EntitlementService } from '../entitlement.service';
+import { PlanService } from '../plan.service';
 import { addDays, format } from 'date-fns';
 
 export interface BillingResult {
@@ -169,7 +169,7 @@ export class RecurringBillingService {
         const paymentIntent = await this.paymentClient.createPaymentIntent({
           customerId: contract.userId, // Wallet v4: customerId 사용
           type: 'MEMBERSHIP_FEE', // Wallet v4: 실제 사용하는 타입
-          amount: plan.price,
+          amount: plan.plan.price,
           metadata: {
             contractId: contract.id,
             planId: contract.planId,

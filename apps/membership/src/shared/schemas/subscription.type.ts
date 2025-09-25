@@ -60,13 +60,5 @@ type TierForApiResponse = Omit<Tier, 'createdAt' | 'updatedAt'> & {
   updatedAt: string;
 };
 
-export type UserEntitlementResponse = {
-  contract: Pick<SubscriptionContract, 'id' | 'nextBillingDate' | 'isVoided'>;
-  entitlement: Pick<
-    SubscriptionEntitlement,
-    'id' | 'startsAt' | 'endsAt' | 'isCurrent' | 'pausedAt'
-  >;
-  plan: PlanInfo;
-  tier: TierForApiResponse;
-  isPaused: boolean;
-};
+// UserEntitlementResponse 타입 제거됨
+// 이제 Drizzle 쿼리 결과를 직접 사용합니다.

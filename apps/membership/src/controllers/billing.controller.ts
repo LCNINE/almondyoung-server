@@ -9,10 +9,10 @@ import {
   Query,
 } from '@nestjs/common';
 import {
-  RecurringBillingService,
   BillingResult,
-} from './recurring-billing.service';
-import { PaymentClientService } from './payment-client.service';
+  RecurringBillingService,
+} from '../services/billing/recurring-billing.service';
+import { PaymentClientService } from '../services/billing/payment-client.service';
 import { DevAuthGuard } from '../auth/dev-auth.guard';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';

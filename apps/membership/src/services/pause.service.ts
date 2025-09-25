@@ -100,11 +100,7 @@ export class PauseService {
         pausedAt: now,
       });
 
-      return {
-        pauseEventId: pauseEvent.id,
-        pausedAt: now,
-        adjustmentDays: pauseDurationDays,
-      };
+      return pauseEvent;
     });
   }
 
@@ -170,11 +166,7 @@ export class PauseService {
         })
         .returning();
 
-      return {
-        resumeEventId: resumeEvent.id,
-        resumedAt: now,
-        newEndsAt: new Date(entitlement.endsAt),
-      };
+      return resumeEvent;
     });
   }
 

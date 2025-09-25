@@ -1,11 +1,11 @@
 // policy.guard.ts
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PolicyValidationService } from './policy-validation.service';
+import { PolicyValidationService } from '../policy-validation.service';
 import { POLICY_ACTION_KEY } from './policy.decorator';
-import { PolicyValidationContext } from '../shared/schemas/policy.type';
+import { PolicyValidationContext } from '../../shared/schemas/policy.type';
 import { DbService } from '@app/db';
-import * as schema from '../shared/schemas/entities/schema';
+import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, gte, sql, desc } from 'drizzle-orm';
 import { FastifyRequest } from 'fastify';
 

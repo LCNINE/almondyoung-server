@@ -14,7 +14,7 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import { AdminOperationsService } from './admin-operations.service';
+import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
@@ -260,91 +260,6 @@ export class AdminOperationsController {
   }
 
   // ===================================================================
-  // Policy Management
-  // ===================================================================
-
-  @Post('policies')
-  @HttpCode(HttpStatus.CREATED)
-  async createPolicy(
-    @Body(new ZodValidationPipe(CreatePolicyRequestSchema))
-    dto: CreatePolicyRequest,
-  ) {
-    try {
-      this.logger.log(`정책 생성 요청: ${dto.ruleType}`);
-
-      const result = await this.adminOperationsService.createPolicy(dto);
-
-      this.logger.log(`✅ 정책 생성 성공: ${dto.ruleType}`);
-
-      return {
-        success: true,
-        data: result,
-        meta: {
-          action: 'create_policy',
-          ruleType: dto.ruleType,
-          processedAt: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '정책 생성', dto.ruleType);
-    }
-  }
-
-  @Put('policies/:policyId')
-  async updatePolicy(
-    @Param('policyId') policyId: string,
-    @Body(new ZodValidationPipe(UpdatePolicyRequestSchema))
-    dto: UpdatePolicyRequest,
-  ) {
-    try {
-      this.logger.log(`정책 수정 요청: ${policyId}`);
-
-      const result = await this.adminOperationsService.updatePolicy(
-        policyId,
-        dto,
-      );
-
-      this.logger.log(`✅ 정책 수정 성공: ${policyId}`);
-
-      return {
-        success: true,
-        data: result,
-        meta: {
-          action: 'update_policy',
-          policyId,
-          processedAt: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '정책 수정', policyId);
-    }
-  }
-
-  @Delete('policies/:policyId')
-  async deactivatePolicy(@Param('policyId') policyId: string) {
-    try {
-      this.logger.log(`정책 비활성화 요청: ${policyId}`);
-
-      const result =
-        await this.adminOperationsService.deactivatePolicy(policyId);
-
-      this.logger.log(`✅ 정책 비활성화 성공: ${policyId}`);
-
-      return {
-        success: true,
-        data: result,
-        meta: {
-          action: 'deactivate_policy',
-          policyId,
-          processedAt: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '정책 비활성화', policyId);
-    }
-  }
-
-  // ===================================================================
   // Entitlement Management - 구독 권한 관리
   // ===================================================================
 
@@ -388,16 +303,20 @@ export class AdminOperationsController {
     try {
       this.logger.log(`사용자 일시정지 이력 조회 요청: ${userId}`);
 
-      const result =
+      const pauseHistory =
         await this.adminOperationsService.getUserPauseHistory(userId);
 
       this.logger.log(
-        `✅ 사용자 일시정지 이력 조회 성공: ${userId} → ${result.totalPauses}건`,
+        `✅ 사용자 일시정지 이력 조회 성공: ${userId} → ${pauseHistory.length}건`,
       );
 
       return {
         success: true,
-        data: result,
+        data: {
+          userId,
+          pauseHistory,
+          totalPauses: pauseHistory.length,
+        },
         meta: {
           action: 'get_user_pause_history',
           userId,

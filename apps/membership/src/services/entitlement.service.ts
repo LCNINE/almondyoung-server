@@ -4,11 +4,8 @@ import { eq, and, inArray } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
 import { EntitlementNotFoundException } from '../shared/exceptions/subscription.exceptions';
 import { addDays } from 'date-fns';
-import type {
-  UserEntitlementResponse,
-  SubscriptionEntitlement,
-} from '../shared/schemas';
-import { PlanService } from '../plan/plan.service';
+import type { SubscriptionEntitlement } from '../shared/schemas';
+import { PlanService } from './plan.service';
 import { DrizzleTransaction } from '../shared/schemas/types';
 
 @Injectable()
@@ -16,7 +13,7 @@ export class EntitlementService {
   constructor(
     private readonly dbService: DbService<typeof schema>,
     private readonly planService: PlanService, // Tier 정보 조회를 위해 주입
-  ) { }
+  ) {}
 
   /**
    * 새로운 사용자 권한을 생성합니다.
@@ -56,48 +53,38 @@ export class EntitlementService {
     return newEntitlement;
   }
 
-  async getUserEntitlement(
-    userId: string,
-  ): Promise<UserEntitlementResponse | null> {
-    const result = await this.dbService.db
-      .select()
+  async getUserEntitlement(userId: string) {
+    return await this.dbService.db
+      .select({
+        entitlement: schema.subscriptionEntitlement,
+        contract: schema.subscriptionContracts,
+        plan: schema.plan,
+        tier: schema.tiers,
+      })
       .from(schema.subscriptionEntitlement)
+      .innerJoin(
+        schema.subscriptionContracts,
+        and(
+          eq(
+            schema.subscriptionEntitlement.userId,
+            schema.subscriptionContracts.userId,
+          ),
+          eq(schema.subscriptionContracts.isVoided, false),
+        ),
+      )
+      .innerJoin(
+        schema.plan,
+        eq(schema.subscriptionContracts.planId, schema.plan.id),
+      )
+      .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
       .where(
         and(
           eq(schema.subscriptionEntitlement.userId, userId),
           eq(schema.subscriptionEntitlement.isCurrent, true),
         ),
       )
-      .limit(1);
-
-    if (!result.length) {
-      return null;
-    }
-
-    const entitlement = result[0];
-
-    // Entitlement에 연결된 Contract와 Plan 정보 조회
-    // 실제 프로덕션에서는 이 로직이 SubscriptionService에 있을 수 있습니다.
-    const contract =
-      await this.dbService.db.query.subscriptionContracts.findFirst({
-        where: and(
-          eq(schema.subscriptionContracts.userId, userId),
-          eq(schema.subscriptionContracts.isVoided, false),
-        ),
-      });
-
-    if (!contract) return null; // 비정상 상태
-
-    const planDetails = await this.planService.getPlanDetails(contract.planId);
-    if (!planDetails) return null; // 비정상 상태
-
-    return {
-      contract,
-      entitlement,
-      plan: planDetails,
-      tier: planDetails.tier,
-      isPaused: !!entitlement.pausedAt,
-    };
+      .limit(1)
+      .then((results) => (results.length > 0 ? results[0] : null));
   }
 
   /**
@@ -158,12 +145,7 @@ export class EntitlementService {
     days: number,
     reason: string,
     adminId: string,
-  ): Promise<{
-    previousEndsAt: string;
-    newEndsAt: string;
-    adjustedDays: number;
-    action: 'extended' | 'reduced';
-  }> {
+  ) {
     return await this.dbService.db.transaction(async (tx) => {
       const [activeEntitlement] = await tx
         .select()
@@ -186,12 +168,17 @@ export class EntitlementService {
 
       // 차감으로 인해 종료일이 오늘보다 이전이 되는 경우 방지
       if (newEndDate < today && days < 0) {
-        const maxReducibleDays = Math.floor((currentEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        throw new Error(`최대 ${maxReducibleDays}일까지만 차감할 수 있습니다. 현재 구독이 즉시 만료됩니다.`);
+        const maxReducibleDays = Math.floor(
+          (currentEndDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+        );
+        throw new Error(
+          `최대 ${maxReducibleDays}일까지만 차감할 수 있습니다. 현재 구독이 즉시 만료됩니다.`,
+        );
       }
 
       const action = days > 0 ? 'extended' : 'reduced';
-      const eventType = days > 0 ? 'ENTITLEMENT_EXTENDED' : 'ENTITLEMENT_REDUCED';
+      const eventType =
+        days > 0 ? 'ENTITLEMENT_EXTENDED' : 'ENTITLEMENT_REDUCED';
 
       // 이벤트 배치 생성
       const [eventBatch] = await tx
@@ -214,7 +201,7 @@ export class EntitlementService {
         .where(eq(schema.subscriptionEntitlement.id, activeEntitlement.id));
 
       // 새로운 entitlement 생성 (조정된 기간으로)
-      await tx
+      const [newEntitlement] = await tx
         .insert(schema.subscriptionEntitlement)
         .values({
           userId,
@@ -223,14 +210,10 @@ export class EntitlementService {
           endsAt: newEndDate.toISOString().split('T')[0], // 조정된 종료일
           isCurrent: true,
           sourceBatchId: eventBatch.id,
-        });
+        })
+        .returning();
 
-      return {
-        previousEndsAt: activeEntitlement.endsAt,
-        newEndsAt: newEndDate.toISOString().split('T')[0],
-        adjustedDays: days,
-        action,
-      };
+      return newEntitlement;
     });
   }
 
@@ -246,7 +229,12 @@ export class EntitlementService {
     reason: string,
     adminId?: string,
   ): Promise<void> {
-    await this.adjustEntitlement(userId, additionalDays, reason, adminId || 'system');
+    await this.adjustEntitlement(
+      userId,
+      additionalDays,
+      reason,
+      adminId || 'system',
+    );
   }
 
   /**

@@ -9,9 +9,8 @@ import * as schema from '../shared/schemas/entities/schema';
 import { DbService } from '@app/db';
 import { eq, desc } from 'drizzle-orm';
 import { addDays } from 'date-fns';
-import { PlanService } from '../plan/plan.service';
+import { PlanService } from './plan.service';
 import { EntitlementService } from './entitlement.service';
-import { UserEntitlementResponse } from '../shared/schemas';
 import { PostgresJsTransaction } from 'drizzle-orm/postgres-js';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
 
@@ -34,9 +33,7 @@ export class SubscriptionService {
    * 사용자의 현재 구독 및 권한 상세 정보를 조회합니다.
    * @param userId - 사용자 ID
    */
-  async getCurrentSubscriptionDetails(
-    userId: string,
-  ): Promise<UserEntitlementResponse | null> {
+  async getCurrentSubscriptionDetails(userId: string) {
     return this.entitlementService.getUserEntitlement(userId);
   }
 
@@ -64,9 +61,9 @@ export class SubscriptionService {
         const startsAt = now;
         const endsAt = addDays(
           startsAt,
-          plan.durationDays + (plan.trialDays || 0),
+          plan.plan.durationDays + (plan.plan.trialDays || 0),
         );
-        const nextBillingDate = addDays(startsAt, plan.trialDays || 0);
+        const nextBillingDate = addDays(startsAt, plan.plan.trialDays || 0);
 
         // 1. 이벤트 배치 생성
         const [batch] = await tx
@@ -137,7 +134,7 @@ export class SubscriptionService {
         const now = new Date();
         // TODO: 남은 기간에 대한 크레딧 계산 로직 추가 가능
         // 여기서는 즉시 새 플랜의 전체 기간으로 갱신하는 것으로 가정
-        const newEndsAt = addDays(now, newPlan.durationDays);
+        const newEndsAt = addDays(now, newPlan.plan.durationDays);
 
         // 1. 업그레이드 이벤트 배치 생성
         const [batch] = await tx

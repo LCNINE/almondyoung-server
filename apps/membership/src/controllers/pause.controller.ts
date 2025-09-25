@@ -11,12 +11,12 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import { PauseService } from './pause.service';
+import { PauseService } from '../services/pause.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
-import { PolicyGuard } from '../policy-management/policy.guard';
-import { CheckPolicies } from '../policy-management/policy.decorator';
+import { PolicyGuard } from '../services/policy/policy.guard';
+import { CheckPolicies } from '../services/policy/policy.decorator';
 import {
   PauseSubscriptionRequestSchema,
   PauseSubscriptionRequest,

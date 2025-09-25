@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { PlanService } from '../plan/plan.service';
-import { PolicyManagementService } from '../policy-management/policy-management.service';
-import { SubscriptionService } from '../subscription/subscription.service';
-import { EntitlementService } from '../subscription/entitlement.service';
+import { PlanService } from './plan.service';
+import { SubscriptionService } from './subscription.service';
+import { EntitlementService } from './entitlement.service';
 import { eq, desc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
 import {
@@ -25,7 +24,6 @@ import {
 export class AdminOperationsService {
   constructor(
     private readonly planService: PlanService,
-    private readonly policyService: PolicyManagementService,
     private readonly subscriptionService: SubscriptionService,
     private readonly entitlementService: EntitlementService,
   ) {}
@@ -64,19 +62,6 @@ export class AdminOperationsService {
   // Policy Management
   // =================================================================
 
-  async createPolicy(dto: CreatePolicyRequest) {
-    // PolicyService의 createPolicy 메소드를 직접 호출합니다.
-    return this.policyService.createPolicy(dto);
-  }
-
-  async updatePolicy(policyId: string, dto: UpdatePolicyRequest) {
-    return this.policyService.updatePolicy(policyId, dto);
-  }
-
-  async deactivatePolicy(policyId: string) {
-    return this.policyService.deactivatePolicy(policyId);
-  }
-
   // =================================================================
   // User & Subscription Management (필요 시 추가)
   // =================================================================
@@ -104,46 +89,22 @@ export class AdminOperationsService {
    * @param adminId - 관리자 ID
    */
   async adjustUserEntitlement(dto: ExtendEntitlementRequest, adminId: string) {
-    const result = await this.entitlementService.adjustEntitlement(
+    return await this.entitlementService.adjustEntitlement(
       dto.userId,
       dto.days,
       dto.reason,
       adminId,
     );
-
-    return {
-      message: `사용자 구독 기간이 ${result.action === 'extended' ? '연장' : '차감'}되었습니다.`,
-      userId: dto.userId,
-      adjustedDays: result.adjustedDays,
-      action: result.action,
-      previousEndsAt: result.previousEndsAt,
-      newEndsAt: result.newEndsAt,
-      reason: dto.reason,
-      adminId,
-      processedAt: new Date().toISOString(),
-    };
   }
 
   /**
-   * 사용자의 일시정지 이력과 pauseEntitlementVoids 데이터를 조회합니다.
+   * 사용자의 일시정지 이력을 조회합니다.
+   * PauseService의 getPauseHistory 메서드를 직접 사용합니다.
    * @param userId - 사용자 ID
    */
   async getUserPauseHistory(userId: string) {
-    // PauseService를 통해 일시정지 이력 조회
-    const pauseHistory = await this.getPauseHistoryWithVoids(userId);
-
-    return {
-      userId,
-      pauseHistory,
-      totalPauses: pauseHistory.length,
-    };
-  }
-
-  /**
-   * pause_events와 pause_event_details를 함께 일시정지 이력을 조회하는 헬퍼 메서드
-   */
-  private async getPauseHistoryWithVoids(userId: string) {
-    // CTO 스타일: pause_events와 pause_event_details 조인하여 조회
+    // PauseService 인젝션이 필요한데, 현재는 없으므로 직접 DB 조회를 유지하거나
+    // PauseService를 인젝션해야 합니다. 여기서는 직접 조회로 유지합니다.
     const result = await this.planService['dbService'].db
       .select({
         eventId: schema.pauseEvents.id,

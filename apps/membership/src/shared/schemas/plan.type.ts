@@ -27,50 +27,6 @@ export type PlanInfo = Pick<
   'id' | 'price' | 'durationDays' | 'currency' | 'trialDays'
 >;
 
-// Plan Details 응답용 타입 (API 응답에서 사용)
-export type PlanDetailsResponse = {
-  id: string;
-  tier: {
-    id: string;
-    code: string;
-
-    priorityLevel: number;
-    createdAt: string;
-    updatedAt: string;
-  };
-  price: number;
-  durationDays: number;
-  currency: string;
-  trialDays: number | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-// Tier List 응답용 타입
-export type TierListResponse = Array<{
-  id: string;
-  code: string;
-
-  priorityLevel: number;
-  createdAt: string;
-  updatedAt: string;
-}>;
-
-// Tier Benefits 응답용 타입
-export type TierBenefits = {
-  tier: TierInfo & {
-    createdAt: string;
-    updatedAt: string;
-  };
-  plans: Array<
-    Pick<Plan, 'id' | 'price' | 'durationDays' | 'currency' | 'trialDays'> & {
-      createdAt: string;
-      updatedAt: string;
-    }
-  >;
-  benefits: Array<{
-    type: string;
-    description: string;
-    value: string;
-  }>;
-};
+// 더 이상 복잡한 Response 타입들을 정의하지 않습니다.
+// Controller에서 필요한 데이터 가공은 직접 수행하거나,
+// Drizzle에서 제공하는 기본 타입들을 그대로 사용합니다.

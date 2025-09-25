@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 // import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
-import { SubscriptionService } from './subscription.service';
+import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
   CreateSubscriptionRequestSchema,
@@ -24,8 +24,8 @@ import {
   CancelSubscriptionRequest,
 } from '../shared/schemas';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { PolicyGuard } from '../policy-management/policy.guard';
-import { CheckPolicies } from '../policy-management/policy.decorator';
+import { PolicyGuard } from '../services/policy/policy.guard';
+import { CheckPolicies } from '../services/policy/policy.decorator';
 import { FastifyRequest } from 'fastify';
 /**
  * 구독 관리 컨트롤러
