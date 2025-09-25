@@ -79,24 +79,26 @@ export class PolicyGuard implements CanActivate {
 
         const pauseCountResult = await this.dbService.db
           .select({ count: sql<number>`count(*)` })
-          .from(schema.pausePeriods)
+          .from(schema.pauseEvents)
           .where(
             and(
-              eq(schema.pausePeriods.userId, userId),
-              gte(schema.pausePeriods.createdAt, yearStart),
+              eq(schema.pauseEvents.userId, userId),
+              eq(schema.pauseEvents.eventType, 'START'),
+              gte(schema.pauseEvents.createdAt, yearStart),
             ),
           );
 
         baseContext.pauseCount = pauseCountResult[0]?.count || 0;
 
-        // 마지막 일시정지 종료일 조회
-        const lastPause = await this.dbService.db.query.pausePeriods.findFirst({
-          where: eq(schema.pausePeriods.userId, userId),
-          orderBy: [desc(schema.pausePeriods.endsAt)],
-        });
+        // 마지막 일시정지 종료일 조회 (pauseEventDetails에서)
+        const lastPauseDetail =
+          await this.dbService.db.query.pauseEventDetails.findFirst({
+            where: eq(schema.pauseEventDetails.userId, userId),
+            orderBy: [desc(schema.pauseEventDetails.endsAt)],
+          });
 
-        if (lastPause?.endsAt) {
-          baseContext.lastPauseEndDate = lastPause.endsAt;
+        if (lastPauseDetail?.endsAt) {
+          baseContext.lastPauseEndDate = lastPauseDetail.endsAt;
         }
 
         // body에서 날짜 정보 추가

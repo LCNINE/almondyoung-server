@@ -18,10 +18,12 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
-    "test:membership:e2e": "jest --config ./apps/membership/test/jest-e2e.json",
+    "test:membership:itdoc": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
     "test:membership:e2e:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
     "test:membership:e2e:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
     "test:membership:e2e:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
+    "docs:generate": "npm run test:membership:itdoc && npx itdoc",
+    "docs:serve": "npx itdoc serve",
     "db:seed": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts"
   },
@@ -44,12 +46,13 @@
     "drizzle-orm": "^0.44.2",
     "drizzle-seed": "^0.3.1",
     "kafkajs": "^2.2.4",
+    "nestjs-zod": "^5.0.1",
     "pg": "^8.16.2",
     "postgres": "^3.4.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "uuid": "^11.1.0",
-    "zod": "^4.0.14"
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -69,6 +72,7 @@
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
+    "itdoc": "^0.4.1",
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
@@ -105,6 +109,14 @@
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
+    }
+  },
+  "itdoc": {
+    "output": "docs/api",
+    "document": {
+      "title": "Membership System API Documentation",
+      "description": "Auto-generated API documentation for the Membership System based on test cases",
+      "version": "1.0.0"
     }
   }
 }

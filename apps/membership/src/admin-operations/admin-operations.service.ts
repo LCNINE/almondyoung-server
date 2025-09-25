@@ -131,7 +131,7 @@ export class AdminOperationsService {
   async getUserPauseHistory(userId: string) {
     // PauseService를 통해 일시정지 이력 조회
     const pauseHistory = await this.getPauseHistoryWithVoids(userId);
-    
+
     return {
       userId,
       pauseHistory,
@@ -140,30 +140,32 @@ export class AdminOperationsService {
   }
 
   /**
-   * pauseEntitlementVoids와 함께 일시정지 이력을 조회하는 헬퍼 메서드
+   * pause_events와 pause_event_details를 함께 일시정지 이력을 조회하는 헬퍼 메서드
    */
   private async getPauseHistoryWithVoids(userId: string) {
-    // 직접 DB 쿼리로 pauseEntitlementVoids 데이터 포함하여 조회
+    // CTO 스타일: pause_events와 pause_event_details 조인하여 조회
     const result = await this.planService['dbService'].db
       .select({
-        pauseId: schema.pausePeriods.id,
-        startsAt: schema.pausePeriods.startsAt,
-        endsAt: schema.pausePeriods.endsAt,
-        reason: schema.pausePeriods.reason,
-        createdAt: schema.pausePeriods.createdAt,
-        // pauseEntitlementVoids 데이터
-        voidId: schema.pauseEntitlementVoids.id,
-        originalEndsAt: schema.pauseEntitlementVoids.originalEndsAt,
-        adjustedEndsAt: schema.pauseEntitlementVoids.adjustedEndsAt,
-        entitlementId: schema.pauseEntitlementVoids.entitlementId,
+        eventId: schema.pauseEvents.id,
+        eventType: schema.pauseEvents.eventType,
+        effectiveAt: schema.pauseEvents.effectiveAt,
+        reason: schema.pauseEvents.reason,
+        createdAt: schema.pauseEvents.createdAt,
+        entitlementId: schema.pauseEvents.entitlementId,
+        // pause_event_details 데이터
+        detailId: schema.pauseEventDetails.id,
+        adjustmentDays: schema.pauseEventDetails.adjustmentDays,
+        startsAt: schema.pauseEventDetails.startsAt,
+        endsAt: schema.pauseEventDetails.endsAt,
+        originalDetailId: schema.pauseEventDetails.originalDetailId,
       })
-      .from(schema.pausePeriods)
+      .from(schema.pauseEvents)
       .leftJoin(
-        schema.pauseEntitlementVoids,
-        eq(schema.pausePeriods.id, schema.pauseEntitlementVoids.pauseId)
+        schema.pauseEventDetails,
+        eq(schema.pauseEvents.id, schema.pauseEventDetails.pauseEventId),
       )
-      .where(eq(schema.pausePeriods.userId, userId))
-      .orderBy(desc(schema.pausePeriods.createdAt));
+      .where(eq(schema.pauseEvents.userId, userId))
+      .orderBy(desc(schema.pauseEvents.createdAt));
 
     return result;
   }

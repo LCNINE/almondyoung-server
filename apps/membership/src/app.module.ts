@@ -17,7 +17,7 @@ import { PolicyManagementModule } from './policy-management/policy-management.mo
 import { DbModule } from '@app/db';
 import * as schema from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
-import { EventsModule } from '@app/events';
+
 import { DevAuthModule } from './auth/dev-auth-module';
 
 @Module({
@@ -33,7 +33,7 @@ import { DevAuthModule } from './auth/dev-auth-module';
     PauseModule,
     BillingModule,
     PolicyManagementModule,
-    EventsModule,
+
     DbModule.forRoot({
       config: {
         connectionString:

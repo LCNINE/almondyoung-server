@@ -9,6 +9,7 @@ import {
   pgEnum,
   jsonb,
   varchar,
+  index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -168,36 +169,62 @@ export const eventBatches = pgTable('event_batches', {
 });
 
 /**
- * Pause periods - 일시정지 기간으로 명확화
+ * Pause events - 일시정지 이벤트 (CTO 스타일)
  */
-export const pausePeriods = pgTable('pause_periods', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: varchar('user_id').notNull(), // users 테이블 참조
-  startsAt: date('starts_at').notNull(),
-  endsAt: date('ends_at').notNull(),
-  reason: text('reason'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const pauseEvents = pgTable(
+  'pause_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(), // 유저 FK
+    entitlementId: uuid('entitlement_id').references(
+      () => subscriptionEntitlement.id,
+    ), // 권한 FK
+    eventType: text('event_type').notNull(), // START, EXTEND, CANCEL 등
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(), // 적용일
+    previousEventId: uuid('previous_event_id').references(() => pauseEvents.id), // 연장·취소 시 원본 이벤트
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_pause_events_user').on(table.userId),
+    index('idx_pause_events_entitlement').on(table.entitlementId),
+    // 유저별 같은 날짜에 중복 이벤트를 막기 위한 유니크 제약(필요시)
+    // uniqueIndex('uniq_pause_user_date').on(table.userId, table.effectiveAt),
+  ],
+);
 
 /**
- * Pause entitlement voids - 일시정지로 인한 권한 무효화
+ * Pause event details - 일시정지 이벤트 상세 (권한 조정 추적)
  */
-export const pauseEntitlementVoids = pgTable('pause_entitlement_voids', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  pauseId: uuid('pause_id')
-    .notNull()
-    .references(() => pausePeriods.id),
-  entitlementId: uuid('entitlement_id')
-    .notNull()
-    .references(() => subscriptionEntitlement.id),
-  originalEndsAt: date('original_ends_at').notNull(),
-  adjustedEndsAt: date('adjusted_ends_at').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const pauseEventDetails = pgTable(
+  'pause_event_details',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    pauseEventId: uuid('pause_event_id')
+      .notNull()
+      .references(() => pauseEvents.id),
+    userId: varchar('user_id').notNull(), // 성능 위해 중복 저장
+    entitlementId: uuid('entitlement_id')
+      .notNull()
+      .references(() => subscriptionEntitlement.id),
+    adjustmentDays: integer('adjustment_days').notNull(), // 몇 일 조정했는지
+    originalDetailId: uuid('original_detail_id') // 원본 detail 추적(취소/연장)
+      .references(() => pauseEventDetails.id),
+    startsAt: date('starts_at').notNull(), // 일시정지 시작일
+    endsAt: date('ends_at').notNull(), // 일시정지 종료일
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_pause_event_details_user').on(table.userId),
+    index('idx_pause_event_details_entitlement').on(table.entitlementId),
+    index('idx_pause_event_details_original').on(table.originalDetailId),
+    index('idx_pause_event_details_pause_event').on(table.pauseEventId),
+  ],
+);
 
 // =================================================================
 // Drizzle ORM Relations (선택 사항이지만, 쿼리 시 유용)
@@ -223,7 +250,7 @@ export const planRelations = relations(plan, ({ one, many }) => ({
 
 export const subscriptionContractsRelations = relations(
   subscriptionContracts,
-  ({ one }) => ({
+  ({ one, many }) => ({
     plan: one(plan, {
       fields: [subscriptionContracts.planId],
       references: [plan.id],
@@ -233,6 +260,7 @@ export const subscriptionContractsRelations = relations(
       fields: [subscriptionContracts.id],
       references: [membershipDunningQueue.contractId],
     }),
+    billingEvents: many(billingEvents),
   }),
 );
 
@@ -251,7 +279,7 @@ export const subscriptionEntitlementRelations = relations(
       fields: [subscriptionEntitlement.closedBatchId],
       references: [eventBatches.id],
     }),
-    pauseVoids: many(pauseEntitlementVoids),
+    pauseEventDetails: many(pauseEventDetails),
   }),
 );
 
@@ -264,20 +292,32 @@ export const eventBatchesRelations = relations(eventBatches, ({ many }) => ({
   }),
 }));
 
-export const pausePeriodsRelations = relations(pausePeriods, ({ many }) => ({
-  entitlementVoids: many(pauseEntitlementVoids),
+export const pauseEventsRelations = relations(pauseEvents, ({ one, many }) => ({
+  entitlement: one(subscriptionEntitlement, {
+    fields: [pauseEvents.entitlementId],
+    references: [subscriptionEntitlement.id],
+  }),
+  previousEvent: one(pauseEvents, {
+    fields: [pauseEvents.previousEventId],
+    references: [pauseEvents.id],
+  }),
+  eventDetails: many(pauseEventDetails),
 }));
 
-export const pauseEntitlementVoidsRelations = relations(
-  pauseEntitlementVoids,
+export const pauseEventDetailsRelations = relations(
+  pauseEventDetails,
   ({ one }) => ({
-    pause: one(pausePeriods, {
-      fields: [pauseEntitlementVoids.pauseId],
-      references: [pausePeriods.id],
+    pauseEvent: one(pauseEvents, {
+      fields: [pauseEventDetails.pauseEventId],
+      references: [pauseEvents.id],
     }),
     entitlement: one(subscriptionEntitlement, {
-      fields: [pauseEntitlementVoids.entitlementId],
+      fields: [pauseEventDetails.entitlementId],
       references: [subscriptionEntitlement.id],
+    }),
+    originalDetail: one(pauseEventDetails, {
+      fields: [pauseEventDetails.originalDetailId],
+      references: [pauseEventDetails.id],
     }),
   }),
 );
@@ -287,7 +327,7 @@ export const pauseEntitlementVoidsRelations = relations(
 // =================================================================
 
 /**
- * Dunning 큐 - 결제 실패 시 재시도 스케줄 관리 (멤버십 도메인 전용)
+ * Dunning 큐 - 결제 실패 시 재시도 스케줄 관리
  */
 export const membershipDunningQueue = pgTable('membership_dunning_queue', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -307,6 +347,28 @@ export const membershipDunningQueue = pgTable('membership_dunning_queue', {
     .notNull(),
 });
 
+/**
+ * 결제 이벤트 테이블
+ */
+export const billingEvents = pgTable(
+  'billing_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => subscriptionContracts.id),
+    eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL
+    attemptNo: integer('attempt_no'),
+    amount: integer('amount'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('idx_billing_events_contract').on(table.contractId)],
+);
+
 // Dunning Queue Relations
 export const membershipDunningQueueRelations = relations(
   membershipDunningQueue,
@@ -317,6 +379,14 @@ export const membershipDunningQueueRelations = relations(
     }),
   }),
 );
+
+// Billing Events Relations
+export const billingEventsRelations = relations(billingEvents, ({ one }) => ({
+  contract: one(subscriptionContracts, {
+    fields: [billingEvents.contractId],
+    references: [subscriptionContracts.id],
+  }),
+}));
 
 // 구독정책
 

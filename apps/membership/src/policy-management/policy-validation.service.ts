@@ -2,13 +2,22 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
-import { PolicyViolationException } from '../shared/exceptions/subscription.exceptions';
 import type { Policy, PolicyValidationContext } from '../shared/schemas';
+import {
+  MembershipPolicy,
+  MembershipAction,
+  MembershipPolicyContext,
+  TierCode,
+} from './membership-policy-table';
 
 // PolicyValidationContext 타입 정의 (실제 사용되는 필드들 포함)
 
 /**
- * 정책 검증만 담당하는 서비스
+ * 정책 검증 서비스 - 하이브리드 접근법
+ *
+ * 1. 기본 정책: 테이블 기반 (빠른 성능, 타입 안전)
+ * 2. 동적 정책: DB 기반 (런타임 변경 가능)
+ *
  * 비즈니스 로직 실행 전 정책 위반 여부를 검사
  */
 @Injectable()
@@ -16,12 +25,52 @@ export class PolicyValidationService {
   constructor(private readonly dbService: DbService<typeof schema>) {}
 
   /**
-   * 주어진 액션과 컨텍스트에 대해 정책을 검증합니다.
-   * 위반 시 PolicyViolationException을 던집니다.
+   * 하이브리드 정책 검증
+   * 1. 먼저 테이블 기반 정책 검증 (빠름)
+   * 2. 그 다음 DB 기반 정책 검증 (동적)
+   *
    * @param action - 검증할 액션 (예: 'PAUSE_SUBSCRIPTION')
    * @param context - 검증에 필요한 데이터
    */
   async validate(
+    action: string,
+    context: PolicyValidationContext,
+  ): Promise<void> {
+    // 1. 테이블 기반 정책 검증 (우선)
+    await this.validateTableBasedPolicies(action, context);
+
+    // 2. DB 기반 정책 검증 (추가/오버라이드)
+    await this.validateDatabasePolicies(action, context);
+  }
+
+  /**
+   * 테이블 기반 정책 검증
+   */
+  private async validateTableBasedPolicies(
+    action: string,
+    context: PolicyValidationContext,
+  ): Promise<void> {
+    // 액션을 MembershipAction enum으로 변환
+    const membershipAction = this.convertToMembershipAction(action);
+    if (!membershipAction) {
+      return; // 지원하지 않는 액션은 스킵
+    }
+
+    // PolicyValidationContext를 MembershipPolicyContext로 변환
+    const membershipContext = this.convertToMembershipContext(context);
+
+    // 테이블 기반 정책 검증 실행
+    try {
+      MembershipPolicy.validateAndThrow(membershipAction, membershipContext);
+    } catch (error) {
+      throw new Error(error.message); // CTO 스타일: 단순 Error 던지기
+    }
+  }
+
+  /**
+   * 기존 DB 기반 정책 검증 (레거시 호환)
+   */
+  private async validateDatabasePolicies(
     action: string,
     context: PolicyValidationContext,
   ): Promise<void> {
@@ -32,10 +81,9 @@ export class PolicyValidationService {
       const result = this.evaluateRule(policy, action, context);
       if (!result.isValid) {
         // 첫 번째 위반 발견 시 즉시 예외 발생
-        throw new PolicyViolationException(result.message as string);
+        throw new Error(result.message as string); // CTO 스타일: 단순 Error
       }
     }
-    // 모든 정책을 통과하면 정상 종료
   }
 
   /**
@@ -50,14 +98,71 @@ export class PolicyValidationService {
       await this.validate(action, context);
       return { allowed: true };
     } catch (error) {
-      if (error instanceof PolicyViolationException) {
-        return {
-          allowed: false,
-          reason: error.message,
-        };
-      }
-      throw error; // 다른 에러는 그대로 전파
+      return {
+        allowed: false,
+        reason: error.message,
+      };
     }
+  }
+
+  /**
+   * 문자열 액션을 MembershipAction enum으로 변환
+   */
+  private convertToMembershipAction(action: string): MembershipAction | null {
+    const actionMap: Record<string, MembershipAction> = {
+      PAUSE_SUBSCRIPTION: MembershipAction.PAUSE_SUBSCRIPTION,
+      RESUME_SUBSCRIPTION: MembershipAction.RESUME_SUBSCRIPTION,
+      CHANGE_PLAN: MembershipAction.CHANGE_PLAN,
+      CANCEL_SUBSCRIPTION: MembershipAction.CANCEL_SUBSCRIPTION,
+      UPGRADE_PLAN: MembershipAction.UPGRADE_PLAN,
+      DOWNGRADE_PLAN: MembershipAction.DOWNGRADE_PLAN,
+    };
+
+    return actionMap[action] || null;
+  }
+
+  /**
+   * PolicyValidationContext를 MembershipPolicyContext로 변환
+   */
+  private convertToMembershipContext(
+    context: PolicyValidationContext,
+  ): MembershipPolicyContext {
+    // 티어 코드 변환 로직 (실제 구현에서는 DB 조회 필요할 수 있음)
+    const tierCodeMap: Record<string, TierCode> = {
+      basic: TierCode.BASIC,
+      premium: TierCode.PREMIUM,
+      enterprise: TierCode.ENTERPRISE,
+    };
+
+    return {
+      userId: context.userId || '',
+      tierId: context.tierId,
+      tierCode: context.tierId
+        ? tierCodeMap[context.tierId.toLowerCase()]
+        : undefined,
+      pauseCount: context.pauseCount,
+      pauseStartDate: this.convertToDateString(context.pauseStartDate),
+      pauseEndDate: this.convertToDateString(context.pauseEndDate),
+      lastPauseEndDate: this.convertToDateString(context.lastPauseEndDate),
+      lastPlanChangeDate: this.convertToDateString(context.lastPlanChangeDate),
+      subscriptionStartDate: this.convertToDateString(
+        context.subscriptionStartDate,
+      ),
+      isDowngrade: context.isDowngrade,
+      currentPlanPrice: context.currentPlanPrice,
+      targetPlanPrice: context.targetPlanPrice,
+    };
+  }
+
+  /**
+   * Date 또는 string을 string으로 변환하는 헬퍼 메서드
+   */
+  private convertToDateString(
+    date: string | Date | undefined,
+  ): string | undefined {
+    if (!date) return undefined;
+    if (typeof date === 'string') return date;
+    return date.toISOString();
   }
 
   /**
@@ -256,5 +361,43 @@ export class PolicyValidationService {
       globalPolicies,
       tierPolicies,
     };
+  }
+
+  /**
+   * 테이블 기반 정책만으로 빠른 검증 (DB 쿼리 없음)
+   */
+  async validateTableOnly(
+    action: string,
+    context: PolicyValidationContext,
+  ): Promise<{ allowed: boolean; reason?: string; code?: string }> {
+    const membershipAction = this.convertToMembershipAction(action);
+    if (!membershipAction) {
+      return { allowed: true }; // 지원하지 않는 액션은 허용
+    }
+
+    const membershipContext = this.convertToMembershipContext(context);
+    return MembershipPolicy.canPerformAction(
+      membershipAction,
+      membershipContext,
+    );
+  }
+
+  /**
+   * 테이블 기반 정책 규칙 정보 조회
+   */
+  getTableBasedPolicies(
+    action: string,
+  ): { name: string; description: string }[] {
+    const membershipAction = this.convertToMembershipAction(action);
+    if (!membershipAction) {
+      return [];
+    }
+
+    return MembershipPolicy.getActionPolicies(membershipAction).map(
+      (policy) => ({
+        name: policy.name,
+        description: policy.description,
+      }),
+    );
   }
 }

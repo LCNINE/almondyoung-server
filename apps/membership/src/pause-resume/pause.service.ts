@@ -2,10 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
-import {
-  EntitlementNotFoundException,
-  BadRequestException,
-} from '../shared/exceptions/subscription.exceptions';
 import { addDays, differenceInDays } from 'date-fns';
 import { DrizzleTransaction } from '../shared/schemas/types';
 
@@ -38,7 +34,7 @@ export class PauseService {
       });
 
       if (!entitlement) {
-        throw new EntitlementNotFoundException();
+        throw new Error('Active subscription not found');
       }
 
       const now = new Date();
@@ -54,33 +50,34 @@ export class PauseService {
 
       // 3. 일시정지 기간 계산
       const pauseDurationDays = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
       );
-      
+
       // 4. 기존 entitlement의 종료일에 일시정지 기간만큼 연장
       const originalEndsAt = new Date(entitlement.endsAt);
       const adjustedEndsAt = addDays(originalEndsAt, pauseDurationDays);
 
-      // 5. 일시정지 기간(pausePeriods) 레코드를 생성합니다.
-      const [pausePeriod] = await tx
-        .insert(schema.pausePeriods)
+      // 5. pause_events 레코드 생성 (CTO 스타일)
+      const [pauseEvent] = await tx
+        .insert(schema.pauseEvents)
         .values({
           userId,
-          startsAt: startDate.toISOString().split('T')[0],
-          endsAt: endDate.toISOString().split('T')[0],
+          entitlementId: entitlement.id,
+          eventType: 'START',
+          effectiveAt: now,
           reason,
         })
         .returning();
 
-      // 6. pauseEntitlementVoids에 기록 (원래 종료일과 조정된 종료일 추적)
-      await tx
-        .insert(schema.pauseEntitlementVoids)
-        .values({
-          pauseId: pausePeriod.id,
-          entitlementId: entitlement.id,
-          originalEndsAt: originalEndsAt.toISOString().split('T')[0],
-          adjustedEndsAt: adjustedEndsAt.toISOString().split('T')[0],
-        });
+      // 6. pause_event_details 레코드 생성 (권한 조정 추적)
+      await tx.insert(schema.pauseEventDetails).values({
+        pauseEventId: pauseEvent.id,
+        userId,
+        entitlementId: entitlement.id,
+        adjustmentDays: pauseDurationDays,
+        startsAt: startDate.toISOString().split('T')[0],
+        endsAt: endDate.toISOString().split('T')[0],
+      });
 
       // 7. 기존 entitlement 닫기
       await tx
@@ -93,21 +90,20 @@ export class PauseService {
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
       // 8. 새로운 entitlement 생성 (일시정지 상태 + 연장된 종료일)
-      await tx
-        .insert(schema.subscriptionEntitlement)
-        .values({
-          userId,
-          tierId: entitlement.tierId,
-          startsAt: entitlement.startsAt,
-          endsAt: adjustedEndsAt.toISOString().split('T')[0],
-          isCurrent: true,
-          sourceBatchId: eventBatch.id,
-          pausedAt: now,
-        });
+      await tx.insert(schema.subscriptionEntitlement).values({
+        userId,
+        tierId: entitlement.tierId,
+        startsAt: entitlement.startsAt,
+        endsAt: adjustedEndsAt.toISOString().split('T')[0],
+        isCurrent: true,
+        sourceBatchId: eventBatch.id,
+        pausedAt: now,
+      });
 
       return {
-        pauseId: pausePeriod.id,
+        pauseEventId: pauseEvent.id,
         pausedAt: now,
+        adjustmentDays: pauseDurationDays,
       };
     });
   }
@@ -127,7 +123,7 @@ export class PauseService {
       });
 
       if (!entitlement || !entitlement.pausedAt) {
-        throw new BadRequestException('일시정지 상태인 구독이 없습니다.');
+        throw new Error('No paused subscription found');
       }
 
       const now = new Date();
@@ -152,22 +148,30 @@ export class PauseService {
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
       // 4. 새로운 entitlement 생성 (일시정지 해제)
-      await tx
-        .insert(schema.subscriptionEntitlement)
+      await tx.insert(schema.subscriptionEntitlement).values({
+        userId,
+        tierId: entitlement.tierId,
+        startsAt: entitlement.startsAt,
+        endsAt: entitlement.endsAt, // 종료일은 이미 일시정지 시 연장됨
+        isCurrent: true,
+        sourceBatchId: eventBatch.id,
+        pausedAt: null, // 일시정지 해제
+      });
+
+      // 7. pause_events에 RESUME 이벤트 기록
+      const [resumeEvent] = await tx
+        .insert(schema.pauseEvents)
         .values({
           userId,
-          tierId: entitlement.tierId,
-          startsAt: entitlement.startsAt,
-          endsAt: entitlement.endsAt, // 종료일은 이미 일시정지 시 연장됨
-          isCurrent: true,
-          sourceBatchId: eventBatch.id,
-          pausedAt: null, // 일시정지 해제
-        });
-
-      // 참고: pausePeriods 테이블의 상태를 'ENDED'로 업데이트하는 로직이 필요하다면
-      // 스키마에 status 컬럼을 추가하고 여기서 업데이트해야 합니다.
+          entitlementId: entitlement.id,
+          eventType: 'RESUME',
+          effectiveAt: now,
+          reason: 'User resumed subscription',
+        })
+        .returning();
 
       return {
+        resumeEventId: resumeEvent.id,
         resumedAt: now,
         newEndsAt: new Date(entitlement.endsAt),
       };
@@ -180,10 +184,28 @@ export class PauseService {
    * @returns 사용자의 일시정지 기록 배열
    */
   async getPauseHistory(userId: string) {
-    const history = await this.dbService.db.query.pausePeriods.findMany({
-      where: eq(schema.pausePeriods.userId, userId),
-      orderBy: [desc(schema.pausePeriods.createdAt)],
-    });
+    // pause_events와 pause_event_details를 조인하여 전체 이력 조회
+    const history = await this.dbService.db
+      .select({
+        eventId: schema.pauseEvents.id,
+        eventType: schema.pauseEvents.eventType,
+        effectiveAt: schema.pauseEvents.effectiveAt,
+        reason: schema.pauseEvents.reason,
+        createdAt: schema.pauseEvents.createdAt,
+        // details 정보
+        detailId: schema.pauseEventDetails.id,
+        adjustmentDays: schema.pauseEventDetails.adjustmentDays,
+        startsAt: schema.pauseEventDetails.startsAt,
+        endsAt: schema.pauseEventDetails.endsAt,
+      })
+      .from(schema.pauseEvents)
+      .leftJoin(
+        schema.pauseEventDetails,
+        eq(schema.pauseEvents.id, schema.pauseEventDetails.pauseEventId),
+      )
+      .where(eq(schema.pauseEvents.userId, userId))
+      .orderBy(desc(schema.pauseEvents.createdAt));
+
     return history;
   }
 }

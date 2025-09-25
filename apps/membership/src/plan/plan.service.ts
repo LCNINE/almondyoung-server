@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, desc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema'; // 새로운 스키마 import
-import { PlanNotFoundException } from '../shared/exceptions/subscription.exceptions';
 import type {
   CreateTierInput,
   UpdateTierInput,
@@ -63,7 +62,7 @@ export class PlanService {
       .limit(1);
 
     if (!result.length) {
-      throw new PlanNotFoundException();
+      throw new Error('Plan not found');
     }
 
     const { plan, tier } = result[0];
@@ -98,7 +97,6 @@ export class PlanService {
     return tiers.map((tier) => ({
       id: tier.id,
       code: tier.code,
-      // name: tier.name, // [확인 필요] 'name' 필드 없음
       priorityLevel: tier.priorityLevel, // priorityLevel -> rank
       createdAt: tier.createdAt.toISOString(),
       updatedAt: tier.updatedAt.toISOString(),
@@ -129,7 +127,7 @@ export class PlanService {
       .limit(1);
 
     if (!tierResult.length) {
-      throw new PlanNotFoundException(); // 혹은 TierNotFoundException
+      throw new Error('Tier not found');
     }
     const tier = tierResult[0];
     const plans = await this.getPlansByTier(tierId);
@@ -179,9 +177,7 @@ export class PlanService {
         .limit(1);
 
       if (existingCode) {
-        throw new Error(
-          `티어 코드 '${createTierInput.code}'가 이미 존재합니다.`,
-        );
+        throw new Error(`Tier code already exists: ${createTierInput.code}`);
       }
 
       // 2. 동일한 랭크를 가진 티어가 이미 존재하는지 확인합니다.
@@ -193,7 +189,7 @@ export class PlanService {
 
       if (existingRank) {
         throw new Error(
-          `랭크 ${createTierInput.priorityLevel}이(가) 이미 존재합니다.`,
+          `Priority level already exists: ${createTierInput.priorityLevel}`,
         );
       }
 
@@ -231,7 +227,7 @@ export class PlanService {
         .limit(1);
 
       if (!existingTier) {
-        throw new PlanNotFoundException();
+        throw new Error('Tier not found');
       }
 
       // 2. 랭크를 변경하는 경우, 해당 랭크가 이미 사용 중인지 확인합니다.
@@ -247,7 +243,7 @@ export class PlanService {
 
         if (existingRank) {
           throw new Error(
-            `랭크 ${updateTierInput.priorityLevel}이(가) 이미 존재합니다.`,
+            `Priority level already exists: ${updateTierInput.priorityLevel}`,
           );
         }
       }
@@ -283,7 +279,7 @@ export class PlanService {
         .from(schema.tiers)
         .where(eq(schema.tiers.id, createPlanInput.tierId))
         .limit(1);
-      if (!tier) throw new PlanNotFoundException();
+      if (!tier) throw new Error('Tier not found');
 
       // createPlanInput에 trialDays가 포함되어 있으므로 그대로 사용
       const [newPlan] = await tx
@@ -319,7 +315,7 @@ export class PlanService {
         .limit(1);
 
       if (!existingPlan) {
-        throw new PlanNotFoundException();
+        throw new Error('Plan not found');
       }
 
       // 2. 플랜 데이터를 업데이트합니다.
@@ -371,7 +367,7 @@ export class PlanService {
         .limit(1);
 
       if (!existingPlan) {
-        throw new PlanNotFoundException();
+        throw new Error('Plan not found');
       }
 
       // 2. 플랜을 비활성화(soft delete) 처리합니다.
