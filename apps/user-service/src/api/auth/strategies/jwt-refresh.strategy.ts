@@ -26,7 +26,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
   async validate(req: FastifyRequest, payload: { sub: string }) {
     const refreshToken = req.cookies?.refreshToken;
     if (!refreshToken) {
-      throw new UnauthorizedException('Unauthorized');
+      throw new UnauthorizedException('refresh token이 없습니다.');
     }
 
     await this.authService.findValidToken(payload.sub, refreshToken);

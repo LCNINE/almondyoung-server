@@ -52,10 +52,7 @@ export const userConsents = pgTable('user_consents', {
     .default(false), // 전자금융거래 이용약관 동의
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
-  // 선택 동의 항목들
-  emailConsent: boolean('email_consent').default(false), // 이메일 수신 동의
-  smsConsent: boolean('sms_consent').default(false), // SMS 수신 동의
-  pushConsent: boolean('push_consent').default(false), // 앱 푸시 알림 수신 동의
+  marketingConsent: boolean('marketing_consent').notNull().default(false), // 마케팅 동의
   consentedAt: timestamp('consented_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
