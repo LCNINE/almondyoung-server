@@ -5,7 +5,7 @@ import { notificationEvents, notificationTables } from '../../../database/schema
 import { eq } from 'drizzle-orm';
 import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../dto/event.dto';
 
-interface NotificationEvent {
+export interface NotificationEvent {
     eventId: string;
     eventKey: string;
     name: string;

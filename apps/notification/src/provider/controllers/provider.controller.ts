@@ -14,6 +14,8 @@ import {
     NotFoundException,
     Headers,
 } from '@nestjs/common';
+
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
@@ -28,6 +30,8 @@ import {
 } from '../dto';
 import { ProviderManagerService } from '../services/provider-manager.service';
 import { ProviderStatus } from '../enums/provider-status.enum';
+
+@ApiTags('providers')
 
 @Controller('api/v1/providers')
 export class ProviderController {

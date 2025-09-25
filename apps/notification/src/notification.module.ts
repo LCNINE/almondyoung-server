@@ -11,11 +11,7 @@ import { DispatcherModule } from './dispatcher/dispatcher.module';
 import { ProviderModule } from './provider/provider.module';
 import { TemplateModule } from './template/template.module';
 import { BulkModule } from './bulk/bulk.module';
-
-// Event handlers
-import { UserServiceEventsHandler } from './event-handlers/services/user-service-events.handler';
-import { MedusaEventsHandler } from './event-handlers/services/medusa-events.handler';
-import { WalletEventsHandler } from './event-handlers/services/wallet-events.handler';
+import { EventHandlersModule } from './event-handlers/event-handlers.module';
 
 @Module({
   imports: [
@@ -41,16 +37,7 @@ import { WalletEventsHandler } from './event-handlers/services/wallet-events.han
     ProviderModule,
     TemplateModule,
     BulkModule,
-  ],
-  controllers: [
-    UserServiceEventsHandler,
-    MedusaEventsHandler,
-    WalletEventsHandler,
-  ],
-  providers: [
-    UserServiceEventsHandler,
-    MedusaEventsHandler,
-    WalletEventsHandler,
+    EventHandlersModule,
   ],
 })
 export class NotificationModule {}
