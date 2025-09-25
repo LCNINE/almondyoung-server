@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
-import { IdempotencyService } from '../services/idempotency.service';
 import { StockChangedEvent } from '../types';
 import { RetryPolicy } from '../decorators/retry-policy.decorator';
 
@@ -8,10 +7,7 @@ import { RetryPolicy } from '../decorators/retry-policy.decorator';
 export class StockEventConsumer {
   private readonly logger = new Logger(StockEventConsumer.name);
 
-  constructor(
-    private readonly orchestrator: AdapterOrchestrationService,
-    private readonly idempotencyService: IdempotencyService,
-  ) {
+  constructor(private readonly orchestrator: AdapterOrchestrationService) {
     this.logger.log('📦 WMS 재고 이벤트 Consumer 초기화 완료');
   }
 
@@ -23,24 +19,12 @@ export class StockEventConsumer {
   async handleStockChanged(event: StockChangedEvent): Promise<void> {
     const startTime = Date.now();
 
-    const idempotencyKey = IdempotencyService.generateIdempotencyKey(
-      'WMS',
-      'STOCK_CHANGED',
-      event.sku,
-      event.eventVersion.toString(),
-    );
-
     this.logger.log(`📦 [WMS] 이벤트 수신: ${event.sku}`, {
-      idempotencyKey,
       eventVersion: event.eventVersion,
     });
 
     try {
       // 1. 멱등키 체크
-      if (await this.idempotencyService.isProcessed(idempotencyKey)) {
-        this.logger.debug(`🔒 이미 처리된 이벤트: ${idempotencyKey}`);
-        return;
-      }
 
       // 2. 현재 재고 계산
       const currentStock = await this.calculateCurrentStock(event);
@@ -51,35 +35,13 @@ export class StockEventConsumer {
         currentStock,
       );
 
-      // 4. 모든 채널 성공 시에만 멱등키 처리
-      if (syncSuccess) {
-        await this.idempotencyService.markProcessed({
-          idempotencyKey,
-          source: 'WMS',
-          eventType: 'STOCK_CHANGED',
-          resourceId: event.sku,
-          eventVersion: event.eventVersion.toString(),
-        });
-        this.logger.debug(`🔒 멱등키 처리 완료: ${idempotencyKey}`);
-      } else {
-        throw new Error(`재고 동기화 실패: ${event.sku}`);
-      }
-
       this.logger.log(`✅ 처리 완료: ${event.sku}`, {
-        idempotencyKey,
         duration: Date.now() - startTime,
       });
     } catch (error) {
       this.logger.error(`❌ 처리 실패: ${event.sku}`, {
-        idempotencyKey,
         error: error.message,
       });
-
-      await this.idempotencyService.markFailed(
-        idempotencyKey,
-        error.message,
-        true,
-      );
 
       throw error; // RetryPolicy 데코레이터가 재시도
     }

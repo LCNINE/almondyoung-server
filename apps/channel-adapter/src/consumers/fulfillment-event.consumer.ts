@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
-import { IdempotencyService } from '../services/idempotency.service';
 import { FulfillmentUpdatedEvent } from '../types';
 import { RetryPolicy } from '../decorators/retry-policy.decorator';
 
@@ -29,10 +28,7 @@ import { RetryPolicy } from '../decorators/retry-policy.decorator';
 export class FulfillmentEventConsumer {
   private readonly logger = new Logger(FulfillmentEventConsumer.name);
 
-  constructor(
-    private readonly orchestrator: AdapterOrchestrationService,
-    private readonly idempotencyService: IdempotencyService,
-  ) {
+  constructor(private readonly orchestrator: AdapterOrchestrationService) {
     this.logger.log('🚚 WMS 이행 이벤트 Consumer 초기화 완료');
   }
 
@@ -66,18 +62,9 @@ export class FulfillmentEventConsumer {
   ): Promise<void> {
     const startTime = Date.now();
 
-    // 멱등키 생성 (SOURCE:EVENT_TYPE:RESOURCE_ID:VERSION)
-    const idempotencyKey = IdempotencyService.generateIdempotencyKey(
-      'WMS',
-      'FULFILLMENT_UPDATED',
-      event.orderId,
-      event.eventVersion.toString(),
-    );
-
     this.logger.log(
       `🚚 [WMS] 이행 상태 업데이트 이벤트 수신: ${event.orderId} → ${event.status}`,
       {
-        idempotencyKey,
         fulfillmentNo: event.fulfillmentNo,
         trackingNo: event.trackingNo,
         carrier: event.carrier,
@@ -86,12 +73,6 @@ export class FulfillmentEventConsumer {
     );
 
     try {
-      // 1. 멱등키 체크
-      if (await this.orchestrator.isProcessed(idempotencyKey)) {
-        this.logger.debug(`🔒 이미 처리된 이행 이벤트: ${idempotencyKey}`);
-        return;
-      }
-
       // 2. 이행 정보 검증 및 변환
       const fulfillmentData = this.transformToInternalFormat(event);
 
@@ -105,23 +86,11 @@ export class FulfillmentEventConsumer {
       );
 
       // 5. 동기화 성공한 경우에만 멱등키 처리 완료 마킹
-      if (syncSuccess) {
-        await this.orchestrator.markProcessed({
-          idempotencyKey,
-          source: 'WMS',
-          eventType: 'FULFILLMENT_UPDATED',
-          resourceId: event.orderId,
-          eventVersion: event.eventVersion.toString(),
-        });
-      } else {
-        throw new Error(`이행 상태 동기화 실패: ${event.orderId}`);
-      }
 
       const duration = Date.now() - startTime;
       this.logger.log(
         `✅ [WMS] 이행 상태 업데이트 처리 완료: ${event.orderId} (${duration}ms)`,
         {
-          idempotencyKey,
           status: event.status,
           fulfillmentNo: event.fulfillmentNo,
         },
@@ -132,7 +101,6 @@ export class FulfillmentEventConsumer {
       this.logger.error(
         `❌ [WMS] 이행 상태 업데이트 처리 실패: ${event.orderId} (${duration}ms)`,
         {
-          idempotencyKey,
           error: error.message,
           status: event.status,
           fulfillmentNo: event.fulfillmentNo,
@@ -140,7 +108,6 @@ export class FulfillmentEventConsumer {
       );
 
       // 실패 마킹 (재시도 횟수 증가)
-      await this.orchestrator.markFailed(idempotencyKey, error.message, true);
 
       throw error; // RetryPolicy 데코레이터가 재시도 처리
     }

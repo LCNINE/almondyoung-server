@@ -5,7 +5,6 @@ import {
   ChannelType,
 } from './strategies/channel-strategy.factory';
 import { SyncStatusService } from './sync-status.service';
-import { IdempotencyService } from './idempotency.service';
 import {
   DataType,
   SyncResult,
@@ -50,7 +49,6 @@ export class AdapterOrchestrationService {
   constructor(
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
-    private readonly idempotencyService: IdempotencyService,
     private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
     private readonly db: DbService<typeof schema>,
   ) {
@@ -980,9 +978,6 @@ export class AdapterOrchestrationService {
    * }
    * ```
    */
-  async isProcessed(idempotencyKey: string): Promise<boolean> {
-    return this.idempotencyService.isProcessed(idempotencyKey);
-  }
 
   /**
    * 이벤트 처리 완료 마킹
@@ -1003,13 +998,6 @@ export class AdapterOrchestrationService {
    * });
    * ```
    */
-  async markProcessed(data: NewProcessedEvent): Promise<void> {
-    await this.idempotencyService.markProcessed(data);
-
-    this.logger.debug(
-      `✅ 이벤트 처리 완료 마킹: ${data.source}:${data.eventType}:${data.resourceId}`,
-    );
-  }
 
   /**
    * 이벤트 처리 실패 마킹
@@ -1029,21 +1017,6 @@ export class AdapterOrchestrationService {
    * );
    * ```
    */
-  async markFailed(
-    idempotencyKey: string,
-    errorMessage: string,
-    incrementRetry: boolean = true,
-  ): Promise<void> {
-    await this.idempotencyService.markFailed(
-      idempotencyKey,
-      errorMessage,
-      incrementRetry,
-    );
-
-    this.logger.warn(
-      `⚠️ 이벤트 처리 실패 마킹: ${idempotencyKey} - ${errorMessage}`,
-    );
-  }
 
   /**
    * 멱등키 생성 유틸리티 (Consumer에서 사용)
@@ -1062,19 +1035,6 @@ export class AdapterOrchestrationService {
    * // 결과: 'WMS:STOCK_CHANGED:SKU-001:1695462345000'
    * ```
    */
-  generateIdempotencyKey(
-    source: string,
-    eventType: string,
-    resourceId: string,
-    eventVersion: string | number,
-  ): string {
-    return IdempotencyService.generateIdempotencyKey(
-      source,
-      eventType,
-      resourceId,
-      eventVersion,
-    );
-  }
 
   /**
    * Consumer에서 모든 채널에 동기화 (Consumer 전용 메서드)
@@ -1130,7 +1090,6 @@ export class AdapterOrchestrationService {
       } catch (error) {
         const errorResult: SyncResult = {
           success: false,
-          processedCount: 0,
           failedCount: 1,
           errors: [{ message: error.message }],
         };

@@ -85,7 +85,7 @@ export const syncHistories = pgTable(
 export const processedEvents = pgTable(
   'processed_events',
   {
-    idempotencyKey: varchar('idempotency_key', { length: 255 }).primaryKey(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }),
     source: varchar('source', { length: 50 }).notNull(),
     eventType: varchar('event_type', { length: 50 }).notNull(),
     resourceId: varchar('resource_id', { length: 100 }).notNull(),
@@ -109,6 +109,39 @@ export const processedEvents = pgTable(
     // ✅ 수정: 검색용 일반 인덱스
     index('idx_processed_status').on(table.status),
     index('idx_processed_created').on(table.createdAt),
+  ],
+);
+
+// 🔹 채널-WMS 주문 매핑 테이블
+// WMS는 CTO 구현체라 수정 불가, 어댑터에서 매핑 관리 필요
+export const wmsOrderMappings = pgTable(
+  'wms_order_mappings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => generateUUIDv7()),
+
+    // 채널 정보
+    salesChannel: varchar('sales_channel', { length: 50 }).notNull(), // 'coupang', 'naver', 'medusa'
+    channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
+
+    // WMS 정보
+    wmsOrderId: uuid('wms_order_id').notNull(), // WMS에서 반환받은 UUID
+    wmsStatus: varchar('wms_status', { length: 50 }), // WMS 주문 상태 (캐시용)
+
+    // 메타데이터
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    // 채널+주문ID 조합으로 유니크 (WMS와 동일한 제약조건)
+    uniqueIndex('uq_wms_mapping_channel_order').on(
+      table.salesChannel,
+      table.channelOrderId,
+    ),
+    // WMS UUID로 역방향 조회용
+    index('idx_wms_mapping_wms_id').on(table.wmsOrderId),
+    index('idx_wms_mapping_created').on(table.createdAt),
   ],
 );
 

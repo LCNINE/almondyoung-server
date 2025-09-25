@@ -78,6 +78,7 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.5.0",
     "form-data": "^4.0.4",
+    "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",
     "kafkajs": "^2.2.4",
     "nestjs-resend": "^1.0.3",
     "nestjs-zod": "^5.0.1",
@@ -95,8 +96,7 @@
     "tsid-ts": "^0.0.9",
     "twilio": "^5.9.0",
     "uuid": "^11.1.0",
-    "zod": "^4.1.11",
-    "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main"
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

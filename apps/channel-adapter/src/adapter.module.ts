@@ -11,7 +11,6 @@ import { CoupangStrategy } from './services/strategies/coupang.strategy';
 import { ChannelStrategyFactory } from './services/strategies/channel-strategy.factory';
 import { AdapterOrchestrationService } from './services/adapter-orchestration.service';
 import { SyncStatusService } from './services/sync-status.service';
-import { IdempotencyService } from './services/idempotency.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
@@ -61,7 +60,6 @@ import { ConfigModule } from '@nestjs/config';
     ChannelAdapterService,
     AdapterOrchestrationService,
     SyncStatusService,
-    IdempotencyService,
     ChannelStrategyFactory,
     NaverSmartstoreStrategy,
     CoupangStrategy,
