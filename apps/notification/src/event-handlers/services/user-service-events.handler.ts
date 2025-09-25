@@ -1,7 +1,7 @@
 import { Controller, Logger } from '@nestjs/common';
 import { TypedEventPattern } from '@app/events';
 import { UserEvents, UserVerification, UserFindIdPayload, UserResetPasswordPayload } from '../../events/user.events';
-import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { EventMappingService } from '../services/event-mapping.service';
 import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../../dispatcher/dto/send-notification.dto';
