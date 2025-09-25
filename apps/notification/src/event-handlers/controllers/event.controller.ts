@@ -1,4 +1,4 @@
-// apps/notification/src/shared/controllers/event.controller.ts
+// apps/notification/src/event-handlers/controllers/event.controller.ts
 import {
     Controller,
     Get,
@@ -8,7 +8,7 @@ import {
     Param,
     ValidationPipe,
 } from '@nestjs/common';
-import { EventMappingService } from '../services/event-mapping.service';
+import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../dto/event.dto';
 
 @Controller('api/v1/events')

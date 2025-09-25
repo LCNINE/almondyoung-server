@@ -3,7 +3,7 @@ import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { notificationTables } from '../database/schemas/notification-schema';
+import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
 
 // Core modules
 import { SharedModule } from './shared/shared.module';
@@ -29,7 +29,7 @@ import { WalletEventsHandler } from './event-handlers/services/wallet-events.han
         password: process.env.REDIS_PASSWORD,
       },
     }),
-    DbModule.forRoot({
+    DbModule.forRoot<NotificationSchema>({
       config: {
         connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
       },

@@ -1,7 +1,7 @@
 import { Processor, Process } from '@nestjs/bull';
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { Job } from 'bull';
-import { DbService } from '@app/db';
+import { DbService, InjectTypedDb } from '@app/db';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { eq } from 'drizzle-orm';
 import { UserIntegrationService } from '../../shared/services/user-integration.service';
@@ -14,7 +14,7 @@ export class BulkNotificationProcessor {
   private readonly logger = new Logger(BulkNotificationProcessor.name);
 
   constructor(
-    private readonly db: DbService,
+    @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>,
     private readonly userIntegrationService: UserIntegrationService,
     private readonly notificationDispatcherService: NotificationDispatcherService,
   ) {}
