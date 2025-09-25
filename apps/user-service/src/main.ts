@@ -89,6 +89,7 @@ async function bootstrap() {
     cookieName: 'sessionId',
     saveUninitialized: false,
     cookie: {
+      sameSite: 'none',
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       maxAge: 1000 * 60 * 60 * 24,
@@ -100,15 +101,21 @@ async function bootstrap() {
       process.env.NODE_ENV === 'production'
         ? corsOrigins
         : [
+            'http://localhost:8000',
             'http://localhost:3000',
             'http://localhost:9000',
             'http://127.0.0.1:3000',
           ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Cookie',
+      'Set-Cookie',
+    ],
     exposedHeaders: ['Set-Cookie'],
-    maxAge: 86400, // 24시간
   });
 
   app.useGlobalInterceptors(new ResponseInterceptor());
