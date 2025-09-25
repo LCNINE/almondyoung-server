@@ -1,4 +1,3 @@
-import { NotificationEvent } from '../services/event-mapping.service';
 // apps/notification/src/event-handlers/controllers/event.controller.ts
 import {
     Controller,
@@ -10,8 +9,8 @@ import {
     ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { EventMappingService } from '../services/event-mapping.service';
-import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../dto/event.dto';
+import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../shared/dto/event.dto'
 
 @ApiTags('event-handlers')
 @Controller('api/v1/events')
@@ -37,7 +36,7 @@ export class EventController {
         description: '시스템에 등록된 모든 이벤트 매핑 정보를 조회합니다.' 
     })
     @ApiResponse({ status: 200, description: '이벤트 목록 조회 성공' })
-    async getAllEvents(): Promise<NotificationEvent[]> {
+    async getAllEvents() {
         return this.eventMappingService.getAllEvents();
     }
 
@@ -49,7 +48,7 @@ export class EventController {
     @ApiParam({ name: 'eventKey', description: '이벤트 키', type: 'string' })
     @ApiResponse({ status: 200, description: '이벤트 조회 성공' })
     @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-    async findOne(@Param('eventKey') eventKey: string): Promise<NotificationEvent> {
+    async findOne(@Param('eventKey') eventKey: string) {
         return this.eventMappingService.getEventByKey(eventKey);
     }
 
@@ -62,7 +61,7 @@ export class EventController {
     @ApiResponse({ status: 201, description: '이벤트 생성 성공' })
     @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
     @ApiResponse({ status: 409, description: '이미 존재하는 이벤트 키' })
-    async createEvent(@Body(ValidationPipe) dto: CreateEventDto): Promise<NotificationEvent> {
+    async createEvent(@Body(ValidationPipe) dto: CreateEventDto) {
         return this.eventMappingService.createEvent(dto);
     }
 
@@ -79,7 +78,7 @@ export class EventController {
     async updateEvent(
         @Param('eventKey') eventKey: string,
         @Body(ValidationPipe) dto: UpdateEventDto,
-    ): Promise<NotificationEvent> {
+    ) {
         return this.eventMappingService.updateEvent(eventKey, dto);
     }
 }
