@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const CreateFulfillmentOrderSchema = z.object({
   warehouseId: z.string().uuid(),
-  fulfillmentMode: z.enum(['in_house', 'third_party', 'direct_ship']),
+  fulfillmentMode: z.enum(['in_house', '3pl', 'drop_ship']),
   priority: z.enum(['normal', 'high', 'urgent']).default('normal'),
   items: z.array(z.object({
     salesOrderId: z.string(),

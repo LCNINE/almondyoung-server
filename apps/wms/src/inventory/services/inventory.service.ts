@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql, asc } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { CreateSkuDto, SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
@@ -17,8 +17,6 @@ import { InventoryQueryService } from './inventory-query.service';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
-type DbOrTx = DbTx | TypedDatabase<typeof wmsSchema>;
 
 @Injectable()
 export class InventoryService implements OnModuleInit {
@@ -84,18 +82,18 @@ export class InventoryService implements OnModuleInit {
         }, tx);
     }
 
-    async updateSku(skuId: string, updateSkuDto: UpdateSkuDto): Promise<SkuResponseDto> {
-        return this.db.transaction(async (tx) => {
+    async updateSku(skuId: string, updateSkuDto: UpdateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
+        return this.inTx(async (trx) => {
             const { supplierIds, categoryIds, ...updateData } = updateSkuDto;
 
-            await this._updateSkuInternal(skuId, updateData, tx);
+            await this._updateSkuInternal(skuId, updateData, trx);
 
             if (supplierIds !== undefined) {
-                await tx.delete(wmsTables.skuSuppliers)
+                await trx.delete(wmsTables.skuSuppliers)
                     .where(eq(wmsTables.skuSuppliers.skuId, skuId));
 
                 if (supplierIds.length > 0) {
-                    await tx.insert(wmsTables.skuSuppliers).values(
+                    await trx.insert(wmsTables.skuSuppliers).values(
                         supplierIds.map(supplierId => ({
                             skuId,
                             supplierId,
@@ -105,11 +103,11 @@ export class InventoryService implements OnModuleInit {
             }
 
             if (categoryIds !== undefined) {
-                await tx.delete(wmsTables.skuCategories)
+                await trx.delete(wmsTables.skuCategories)
                     .where(eq(wmsTables.skuCategories.skuId, skuId));
 
                 if (categoryIds.length > 0) {
-                    await tx.insert(wmsTables.skuCategories).values(
+                    await trx.insert(wmsTables.skuCategories).values(
                         categoryIds.map(categoryId => ({
                             skuId,
                             categoryId,
@@ -118,30 +116,36 @@ export class InventoryService implements OnModuleInit {
                 }
             }
 
-            return this.getSkuById(skuId, tx);
-        });
+            return this.getSkuById(skuId, trx);
+        }, tx);
     }
 
-    async deleteSku(skuId: string): Promise<void> {
+    async deleteSku(skuId: string, tx?: DbTx): Promise<void> {
         if (!skuId || typeof skuId !== 'string') {
             throw new BadRequestException('Valid SKU ID is required');
         }
 
         try {
             // 1. SKU 존재 확인
-            const sku = await this.db.query.skus.findFirst({
-                where: eq(wmsTables.skus.id, skuId)
-            });
+            const sku = await this.inTx(async (trx) => {
+                const [row] = await trx
+                    .select()
+                    .from(wmsTables.skus)
+                    .where(eq(wmsTables.skus.id, skuId))
+                    .limit(1);
+                return row;
+            }, tx);
 
             if (!sku) {
                 throw new NotFoundException(`SKU with ID ${skuId} not found`);
             }
 
             // 2. 활성 재고 확인
-            const [stockAgg] = await this.db
+            const [stockAgg] = await this.inTx(async (trx) => trx
                 .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
                 .from(wmsTables.stockLedgers)
-                .where(eq(wmsTables.stockLedgers.skuId, skuId));
+                .where(eq(wmsTables.stockLedgers.skuId, skuId))
+            , tx);
 
             const totalStock = stockAgg?.qty ?? 0;
             if (totalStock > 0) {
@@ -152,9 +156,11 @@ export class InventoryService implements OnModuleInit {
             }
 
             // 3. 상품 매칭 사용 확인
-            const matchings = await this.db.query.productVariantSkuLinks.findMany({
-                where: eq(wmsTables.productVariantSkuLinks.skuId, skuId),
-            });
+            const matchings = await this.inTx(async (trx) => trx
+                .select({ productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId })
+                .from(wmsTables.productVariantSkuLinks)
+                .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId))
+            , tx);
 
             if (matchings.length > 0) {
                 const matchingIds = matchings.map(m => m.productMatchingId).join(', ');
@@ -165,12 +171,14 @@ export class InventoryService implements OnModuleInit {
             }
 
             // 4. 예약 확인
-            const reservations = await this.db.query.stockReservations.findMany({
-                where: and(
+            const reservations = await this.inTx(async (trx) => trx
+                .select({ id: wmsTables.stockReservations.id })
+                .from(wmsTables.stockReservations)
+                .where(and(
                     eq(wmsTables.stockReservations.skuId, skuId),
                     eq(wmsTables.stockReservations.status, 'confirmed')
-                )
-            });
+                ))
+            , tx);
 
             if (reservations.length > 0) {
                 throw new ConflictException(
@@ -180,9 +188,9 @@ export class InventoryService implements OnModuleInit {
             }
 
             // 5. 삭제 실행
-            const deleteResult = await this.db.delete(wmsTables.skus)
+            const deleteResult = await this.inTx(async (trx) => trx.delete(wmsTables.skus)
                 .where(eq(wmsTables.skus.id, skuId))
-                .returning();
+                .returning(), tx);
 
             if (deleteResult.length === 0) {
                 throw new ConflictException(`Failed to delete SKU ${skuId}. It may have been deleted by another process.`);
@@ -196,35 +204,43 @@ export class InventoryService implements OnModuleInit {
         }
     }
 
-    async getSkuById(skuId: string, tx?: DbOrTx): Promise<SkuResponseDto> {
-        const db = tx || this.db;
-        const sku = await db.query.skus.findFirst({
-            where: eq(wmsTables.skus.id, skuId),
-        });
+    async getSkuById(skuId: string, tx?: DbTx): Promise<SkuResponseDto> {
+        const sku = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.skus)
+                .where(eq(wmsTables.skus.id, skuId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!sku) {
             throw new NotFoundException(`SKU with ID ${skuId} not found`);
         }
 
-        const barcodes = await db.query.skuBarcodes.findMany({
-            where: eq(wmsTables.skuBarcodes.skuId, skuId),
-        });
+        const barcodes = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsTables.skuBarcodes)
+            .where(eq(wmsTables.skuBarcodes.skuId, skuId))
+        , tx);
 
-        const suppliers = await db
+        const suppliers = await this.inTx(async (trx) => trx
             .select({
                 name: wmsTables.suppliers.name,
             })
             .from(wmsTables.skuSuppliers)
             .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
-            .where(eq(wmsTables.skuSuppliers.skuId, skuId));
+            .where(eq(wmsTables.skuSuppliers.skuId, skuId))
+        , tx);
 
-        const categories = await db
+        const categories = await this.inTx(async (trx) => trx
             .select({
                 name: wmsTables.categories.name,
             })
             .from(wmsTables.skuCategories)
             .innerJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id))
-            .where(eq(wmsTables.skuCategories.skuId, skuId));
+            .where(eq(wmsTables.skuCategories.skuId, skuId))
+        , tx);
 
         return {
             id: sku.id,
@@ -254,40 +270,42 @@ export class InventoryService implements OnModuleInit {
         name?: string;
         supplierName?: string;
         inventoryManagement?: boolean;
-    }): Promise<SkuResponseDto[]> {
-        const baseQuery = this.db.select({
-            sku: wmsTables.skus,
-            barcode: wmsTables.skuBarcodes,
-            supplier: wmsTables.suppliers,
-            category: wmsTables.categories,
-        })
-            .from(wmsTables.skus)
-            .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
-            .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skus.id, wmsTables.skuSuppliers.skuId))
-            .leftJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
-            .leftJoin(wmsTables.skuCategories, eq(wmsTables.skus.id, wmsTables.skuCategories.skuId))
-            .leftJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id));
+    }, tx?: DbTx): Promise<SkuResponseDto[]> {
+        const results = await this.inTx(async (trx) => {
+            const baseQuery = trx.select({
+                sku: wmsTables.skus,
+                barcode: wmsTables.skuBarcodes,
+                supplier: wmsTables.suppliers,
+                category: wmsTables.categories,
+            })
+                .from(wmsTables.skus)
+                .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
+                .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skus.id, wmsTables.skuSuppliers.skuId))
+                .leftJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
+                .leftJoin(wmsTables.skuCategories, eq(wmsTables.skus.id, wmsTables.skuCategories.skuId))
+                .leftJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id));
 
-        const conditions: any[] = [];
+            const conditions: any[] = [];
 
-        if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
-        if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
-        if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
+            if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
+            if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
+            if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
 
-        if (query.barcode) {
-            const barcodeCondition = or(
-                eq(wmsTables.skus.defaultBarcode, query.barcode),
-                eq(wmsTables.skuBarcodes.barcode, query.barcode),
-            );
-            if (barcodeCondition) conditions.push(barcodeCondition);
-        }
+            if (query.barcode) {
+                const barcodeCondition = or(
+                    eq(wmsTables.skus.defaultBarcode, query.barcode),
+                    eq(wmsTables.skuBarcodes.barcode, query.barcode),
+                );
+                if (barcodeCondition) conditions.push(barcodeCondition);
+            }
 
-        if (query.supplierName) {
-            conditions.push(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
-        }
+            if (query.supplierName) {
+                conditions.push(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
+            }
 
-        const finalQuery = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
-        const results = await finalQuery;
+            const finalQuery = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
+            return finalQuery;
+        }, tx);
 
         const aggregatedSkus = results.reduce((acc, row) => {
             const sku = row.sku;
@@ -336,42 +354,52 @@ export class InventoryService implements OnModuleInit {
         }));
     }
 
-    async addBarcode(skuId: string, addBarcodeDto: AddBarcodeDto): Promise<void> {
+    async addBarcode(skuId: string, addBarcodeDto: AddBarcodeDto, tx?: DbTx): Promise<void> {
         const sku = await this.findSkuById(skuId);
         if (!sku) {
             throw new NotFoundException(`SKU with ID ${skuId} not found`);
         }
 
-        const existingBarcode = await this.db.query.skuBarcodes.findFirst({
-            where: eq(wmsTables.skuBarcodes.barcode, addBarcodeDto.barcode),
-        });
+        const existingBarcode = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.skuBarcodes)
+                .where(eq(wmsTables.skuBarcodes.barcode, addBarcodeDto.barcode))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (existingBarcode) {
             throw new ConflictException(`Barcode ${addBarcodeDto.barcode} already exists`);
         }
 
-        await this.db.insert(wmsTables.skuBarcodes).values({
+        await this.inTx(async (trx) => trx.insert(wmsTables.skuBarcodes).values({
             skuId,
             barcode: addBarcodeDto.barcode,
             barcodeType: addBarcodeDto.barcodeType || 'standard',
             packingUnit: addBarcodeDto.packingUnit,
-        });
+        }), tx);
 
         this.logger.log(`Barcode ${addBarcodeDto.barcode} added to SKU ${skuId}`);
     }
 
-    async removeBarcode(skuId: string, barcodeId: string): Promise<void> {
+    async removeBarcode(skuId: string, barcodeId: string, tx?: DbTx): Promise<void> {
         const sku = await this.findSkuById(skuId);
         if (!sku) {
             throw new NotFoundException(`SKU with ID ${skuId} not found`);
         }
 
-        const barcode = await this.db.query.skuBarcodes.findFirst({
-            where: and(
-                eq(wmsTables.skuBarcodes.id, barcodeId),
-                eq(wmsTables.skuBarcodes.skuId, skuId)
-            ),
-        });
+        const barcode = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.skuBarcodes)
+                .where(and(
+                    eq(wmsTables.skuBarcodes.id, barcodeId),
+                    eq(wmsTables.skuBarcodes.skuId, skuId)
+                ))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!barcode) {
             throw new NotFoundException(`Barcode with ID ${barcodeId} not found for SKU ${skuId}`);
@@ -381,8 +409,8 @@ export class InventoryService implements OnModuleInit {
             throw new BadRequestException('Cannot remove default barcode');
         }
 
-        await this.db.delete(wmsTables.skuBarcodes)
-            .where(eq(wmsTables.skuBarcodes.id, barcodeId));
+        await this.inTx(async (trx) => trx.delete(wmsTables.skuBarcodes)
+            .where(eq(wmsTables.skuBarcodes.id, barcodeId)), tx);
 
         this.logger.log(`Barcode ${barcodeId} removed from SKU ${skuId}`);
     }
@@ -392,13 +420,13 @@ export class InventoryService implements OnModuleInit {
     // 재고 관리 도메인
     // ****************************************************************
 
-    async getCurrentStock(query: GetStockQueryDto) {
+    async getCurrentStock(query: GetStockQueryDto, tx?: DbTx) {
         const { skuId, warehouseId, locationId, asOfTimestamp } = query;
         if (asOfTimestamp) {
             throw new BadRequestException('asOfTimestamp 기반 조회는 아직 지원되지 않습니다.');
         }
 
-        const rows = await this.db
+        const rows = await this.inTx(async (trx) => trx
             .select({
                 skuId: wmsTables.stockLedgers.skuId,
                 warehouseId: wmsTables.stockLedgers.warehouseId,
@@ -411,20 +439,22 @@ export class InventoryService implements OnModuleInit {
                 skuId ? eq(wmsTables.stockLedgers.skuId, skuId) : undefined,
                 warehouseId ? eq(wmsTables.stockLedgers.warehouseId, warehouseId) : undefined,
                 locationId ? eq(wmsTables.stockLedgers.locationId, locationId) : undefined,
-            ));
+            )), tx);
 
         return rows;
     }
 
-    async getTotalStockBySku(skuId: string): Promise<{
+    async getTotalStockBySku(skuId: string, tx?: DbTx): Promise<{
         skuId: string;
         totalRealQuantity: number;
         totalReservedQuantity: number;
         totalAvailableQuantity: number;
     }> {
-        const summaries = await this.db.query.stockSummary.findMany({
-            where: eq(wmsTables.stockSummary.skuId, skuId),
-        });
+        const summaries = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsSchema.stockSummary)
+            .where(eq(wmsSchema.stockSummary.skuId, skuId))
+        , tx);
 
         const total = summaries.reduce(
             (acc, summary) => ({
@@ -443,15 +473,20 @@ export class InventoryService implements OnModuleInit {
         };
     }
 
-    async getStockBySkuAndWarehouse(skuId: string, warehouseId: string) {
-        const summary = await this.db.query.stockSummary.findFirst({
-            where: and(
-                eq(wmsTables.stockSummary.skuId, skuId),
-                eq(wmsTables.stockSummary.warehouseId, warehouseId)
-            ),
-        });
+    async getStockBySkuAndWarehouse(skuId: string, warehouseId: string, tx?: DbTx) {
+        const summary = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsSchema.stockSummary)
+                .where(and(
+                    eq(wmsSchema.stockSummary.skuId, skuId),
+                    eq(wmsSchema.stockSummary.warehouseId, warehouseId)
+                ))
+                .limit(1);
+            return row;
+        }, tx);
 
-        const details = await this.db
+        const details = await this.inTx(async (trx) => trx
             .select({
                 locationId: wmsTables.stockLedgers.locationId,
                 stockState: wmsTables.stockLedgers.stockState,
@@ -461,7 +496,7 @@ export class InventoryService implements OnModuleInit {
             .where(and(
                 eq(wmsTables.stockLedgers.skuId, skuId),
                 eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-            ));
+            )), tx);
 
         return {
             summary: summary ? {
@@ -483,18 +518,16 @@ export class InventoryService implements OnModuleInit {
         return this.eventStore.getEventHistory(skuId, warehouseId, startDate, endDate);
     }
 
-    async getQuickStockSummary(skuId?: string, warehouseId?: string) {
+    async getQuickStockSummary(skuId?: string, warehouseId?: string, tx?: DbTx) {
         const conditions: any[] = [];
-        if (skuId) conditions.push(eq(wmsTables.stockSummary.skuId, skuId));
-        if (warehouseId) conditions.push(eq(wmsTables.stockSummary.warehouseId, warehouseId));
+        if (skuId) conditions.push(eq(wmsSchema.stockSummary.skuId, skuId));
+        if (warehouseId) conditions.push(eq(wmsSchema.stockSummary.warehouseId, warehouseId));
 
-        const summaries = await this.db.query.stockSummary.findMany({
-            where: conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined,
-            with: {
-                sku: true,
-                warehouse: true,
-            },
-        });
+        const summaries = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsSchema.stockSummary)
+            .where(conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined)
+        , tx);
 
         return summaries;
     }
@@ -503,20 +536,24 @@ export class InventoryService implements OnModuleInit {
         throw new BadRequestException('stockId 기반 수동 조정은 더 이상 지원하지 않습니다.');
     }
 
-    async getSkuStockSummary(skuId: string): Promise<SkuStockSummaryDto> {
+    async getSkuStockSummary(skuId: string, tx?: DbTx): Promise<SkuStockSummaryDto> {
         const sku = await this.findSkuById(skuId);
         if (!sku) {
             throw new NotFoundException(`SKU with ID ${skuId} not found`);
         }
 
-        const summaries = await this.db.query.stockSummary.findMany({
-            where: eq(wmsTables.stockSummary.skuId, skuId),
-        });
+        const summaries = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsSchema.stockSummary)
+            .where(eq(wmsSchema.stockSummary.skuId, skuId))
+        , tx);
 
         const warehouseIds = summaries.map(summary => summary.warehouseId);
-        const warehouses = await this.db.query.warehouses.findMany({
-            where: sql`${wmsTables.warehouses.id} = ANY(${warehouseIds})`,
-        });
+        const warehouses = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsTables.warehouses)
+            .where(sql`${wmsTables.warehouses.id} = ANY(${warehouseIds})`)
+        , tx);
 
         const warehouseMap = new Map(warehouses.map(warehouse => [warehouse.id, warehouse]));
 
@@ -561,12 +598,12 @@ export class InventoryService implements OnModuleInit {
     // 창고 관리 도메인
     // ****************************************************************
 
-    async createWarehouse(createWarehouseDto: CreateWarehouseDto) {
-        const [newWarehouse] = await this.db.insert(wmsTables.warehouses).values({
+    async createWarehouse(createWarehouseDto: CreateWarehouseDto, tx?: DbTx) {
+        const [newWarehouse] = await this.inTx(async (trx) => trx.insert(wmsTables.warehouses).values({
             name: createWarehouseDto.name,
             type: createWarehouseDto.type || 'domestic',
             location: createWarehouseDto.location,
-        }).returning();
+        }).returning(), tx);
 
         this.logger.log(`새 창고 생성: ${newWarehouse.name} (ID: ${newWarehouse.id})`);
         // 창고 생성 직후 시스템 로케이션 보장
@@ -574,16 +611,23 @@ export class InventoryService implements OnModuleInit {
         return newWarehouse;
     }
 
-    async findAllWarehouses() {
-        return this.db.query.warehouses.findMany({
-            orderBy: (warehouses, { asc }) => [asc(warehouses.name)],
-        });
+    async findAllWarehouses(tx?: DbTx) {
+        return this.inTx(async (trx) => trx
+            .select()
+            .from(wmsTables.warehouses)
+            .orderBy(asc(wmsTables.warehouses.name))
+        , tx);
     }
 
-    async findOneWarehouse(id: string) {
-        const warehouse = await this.db.query.warehouses.findFirst({
-            where: eq(wmsTables.warehouses.id, id),
-        });
+    async findOneWarehouse(id: string, tx?: DbTx) {
+        const warehouse = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.warehouses)
+                .where(eq(wmsTables.warehouses.id, id))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!warehouse) {
             throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
@@ -592,14 +636,14 @@ export class InventoryService implements OnModuleInit {
         return warehouse;
     }
 
-    async updateWarehouse(id: string, updateWarehouseDto: UpdateWarehouseDto) {
-        const [updatedWarehouse] = await this.db.update(wmsTables.warehouses)
+    async updateWarehouse(id: string, updateWarehouseDto: UpdateWarehouseDto, tx?: DbTx) {
+        const [updatedWarehouse] = await this.inTx(async (trx) => trx.update(wmsTables.warehouses)
             .set({
                 ...updateWarehouseDto,
                 updatedAt: new Date(),
             })
             .where(eq(wmsTables.warehouses.id, id))
-            .returning();
+            .returning(), tx).then(r => r);
 
         if (!updatedWarehouse) {
             throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
@@ -609,7 +653,7 @@ export class InventoryService implements OnModuleInit {
         return updatedWarehouse;
     }
 
-    async removeWarehouse(id: string) {
+    async removeWarehouse(id: string, tx?: DbTx) {
         if (id === WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE.id ||
             id === WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE.id) {
             throw new Error('기본 창고는 삭제할 수 없습니다.');
@@ -620,9 +664,9 @@ export class InventoryService implements OnModuleInit {
             throw new Error('사용 중인 창고는 삭제할 수 없습니다.');
         }
 
-        const [deletedWarehouse] = await this.db.delete(wmsTables.warehouses)
+        const [deletedWarehouse] = await this.inTx(async (trx) => trx.delete(wmsTables.warehouses)
             .where(eq(wmsTables.warehouses.id, id))
-            .returning();
+            .returning(), tx).then(r => r);
 
         if (!deletedWarehouse) {
             throw new NotFoundException(`창고를 찾을 수 없습니다: ${id}`);
@@ -657,8 +701,8 @@ export class InventoryService implements OnModuleInit {
     // Helper Methods
     // ****************************************************************
 
-    async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode' | 'supplierIds' | 'categoryIds'>, tx?: DbOrTx) {
-        const db = tx || this.db;
+    async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode' | 'supplierIds' | 'categoryIds'>, tx: DbTx) {
+        const db = tx;
         // preStockSellable 제거
         const skuCode = this._generateSkuCode();
 
@@ -690,8 +734,8 @@ export class InventoryService implements OnModuleInit {
         return newSku;
     }
 
-    async _updateSkuInternal(skuId: string, data: Partial<Omit<UpdateSkuDto, 'code' | 'defaultBarcode'>>, tx?: DbTx) {
-        const db = tx || this.db;
+    async _updateSkuInternal(skuId: string, data: Partial<Omit<UpdateSkuDto, 'code' | 'defaultBarcode'>>, tx: DbTx) {
+        const db = tx;
         const updateData: Partial<typeof wmsTables.skus.$inferInsert> = {
             name: data.name,
             deliveryProfileId: data.deliveryProfileId,
@@ -714,11 +758,15 @@ export class InventoryService implements OnModuleInit {
 
 
 
-    async findSkuById(skuId: string, tx?: DbOrTx) {
-        const db = tx || this.db;
-        return db.query.skus.findFirst({
-            where: eq(wmsTables.skus.id, skuId)
-        });
+    async findSkuById(skuId: string, tx?: DbTx) {
+        return this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.skus)
+                .where(eq(wmsTables.skus.id, skuId))
+                .limit(1);
+            return row;
+        }, tx);
     }
 
     getDefaultWarehouseIdByType(type: WarehouseType): string {
@@ -747,11 +795,11 @@ export class InventoryService implements OnModuleInit {
         return `${prefix}${numericPart}${alphaPart}`;
     }
 
-    private async _generateAndSetDefaultBarcode(skuId: string, db: DbOrTx): Promise<string> {
+    private async _generateAndSetDefaultBarcode(skuId: string, db: DbTx): Promise<string> {
         const generatedBarcode = `SKU_B_${skuId.substring(0, 8).toUpperCase()}_${Date.now()}`;
 
         const [newSkuBarcode] = await db.insert(wmsTables.skuBarcodes).values({
-            where: eq(wmsTables.stockSummary.skuId, skuId),
+            skuId,
             barcode: generatedBarcode,
             barcodeType: 'standard',
         }).returning();
@@ -785,16 +833,23 @@ export class InventoryService implements OnModuleInit {
             ];
 
             for (const warehouseData of defaultWarehouses) {
-                const existingWarehouse = await this.db.query.warehouses.findFirst({
-                    where: eq(wmsTables.warehouses.id, warehouseData.id),
+                const existingWarehouse = await this.inTx(async (trx) => {
+                    const [row] = await trx
+                        .select()
+                        .from(wmsTables.warehouses)
+                        .where(eq(wmsTables.warehouses.id, warehouseData.id))
+                        .limit(1);
+                    return row;
                 });
 
                 if (!existingWarehouse) {
-                    await this.db.insert(wmsTables.warehouses).values({
-                        id: warehouseData.id,
-                        name: warehouseData.name,
-                        type: warehouseData.type,
-                        location: warehouseData.location,
+                    await this.inTx(async (trx) => {
+                        await trx.insert(wmsTables.warehouses).values({
+                            id: warehouseData.id,
+                            name: warehouseData.name,
+                            type: warehouseData.type,
+                            location: warehouseData.location,
+                        });
                     });
                     this.logger.log(`기본 창고 생성: ${warehouseData.name}`);
                 }

@@ -155,7 +155,7 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
     'ORDER_CANCELLED'    // 주문 취소
 ]);
 
-export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'express']);
+export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
     'created',
     'reserving',
@@ -173,7 +173,7 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
     'completed',
     'forwarded',
 ]);
-export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', 'third_party_3pl', 'drop_ship']);
+export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
 // FOI 기반 확장 enums
@@ -221,8 +221,8 @@ export const suppliers = pgTable('suppliers', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
     contactInfo: json('contact_info'), // 연락처, 주소 등
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -236,8 +236,8 @@ export const movementJobs = pgTable('movement_jobs', {
     journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
     actorId: uuid('actor_id'),
     memo: varchar('memo', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxMovementJobsWhTime: index('idx_movement_jobs_wh_time').on(t.warehouseId, t.occurredAt),
 }));
@@ -251,7 +251,7 @@ export const movementJobLines = pgTable('movement_job_lines', {
     toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
     eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
     memo: varchar('memo', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxMovementLinesJob: index('idx_movement_lines_job').on(t.jobId),
     idxMovementLinesSku: index('idx_movement_lines_sku').on(t.skuId),
@@ -278,8 +278,8 @@ export const holders = pgTable('holders', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
     isOurAsset: boolean('is_our_asset').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const skus = pgTable('skus', {
@@ -292,8 +292,8 @@ export const skus = pgTable('skus', {
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const skuSuppliers = pgTable('sku_suppliers', {
@@ -303,7 +303,7 @@ export const skuSuppliers = pgTable('sku_suppliers', {
     supplierId: uuid('supplier_id')
         .references(() => suppliers.id, { onDelete: 'cascade' })
         .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.skuId, t.supplierId),
 }));
@@ -314,23 +314,23 @@ export const skuBarcodes = pgTable('sku_barcodes', {
     barcode: varchar('barcode', { length: 64 }).notNull().unique(), // 실제 바코드 값
     barcodeType: barcodeTypeEnum('barcode_type').notNull(),
     packingUnit: varchar('packing_unit', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const categories = pgTable('categories', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const skuCategories = pgTable('sku_categories', {
     id: uuid('id').primaryKey().defaultRandom(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
     categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Inventory Product Masters: 상위 재고상품 설계 단위(옵션 스키마/정책 보유)
@@ -342,8 +342,8 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
     optionSchema: json('option_schema'),
     defaultPolicy: json('default_policy'),
     status: inventoryMasterStatusEnum('status').notNull().default('active'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uqMasterCode: unique().on(t.masterCode),
 }));
@@ -354,7 +354,7 @@ export const inventoryMasterSkuLinks = pgTable('inventory_master_sku_links', {
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
     optionKey: jsonb('option_key'),
     isPrimary: boolean('is_primary').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.masterId, t.skuId),
     uqMasterOption: unique().on(t.masterId, t.optionKey),
@@ -365,18 +365,18 @@ export const deliveryProfiles = pgTable('delivery_profiles', {
     name: varchar('name', { length: 128 }).notNull(),
     sourceType: sourceTypeEnum('source_type').notNull(),
     avgDeliveryDays: integer('avg_delivery_days'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // warehouses 테이블에 type 필드 추가
 export const warehouses = pgTable('warehouses', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 128 }).notNull(),
-    type: warehouseTypeEnum('type').default('domestic'), // 창고 타입 추가
+    type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
     location: varchar('location', { length: 256 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -387,9 +387,9 @@ export const locationColumns = pgTable('location_columns', {
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
     columnName: varchar('column_name', { length: 10 }).notNull(),
     displayOrder: integer('display_order'),
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uqWarehouseColumn: unique().on(t.warehouseId, t.columnName),
     idxColumnsWarehouseName: index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName),
@@ -399,15 +399,15 @@ export const locationRacks = pgTable('location_racks', {
     id: uuid('id').primaryKey().defaultRandom(),
     columnId: uuid('column_id').references(() => locationColumns.id, { onDelete: 'cascade' }).notNull(),
     rackNumber: integer('rack_number').notNull(),
-    defaultBinStart: integer('default_bin_start').default(1),
-    defaultBinEnd: integer('default_bin_end').default(20),
-    autoGenerateBins: boolean('auto_generate_bins').default(true),
+    defaultBinStart: integer('default_bin_start').notNull().default(1),
+    defaultBinEnd: integer('default_bin_end').notNull().default(20),
+    autoGenerateBins: boolean('auto_generate_bins').notNull().default(true),
     physicalWidth: integer('physical_width'),
     physicalHeight: integer('physical_height'),
     notes: text('notes'),
-    isActive: boolean('is_active').default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uqColumnRack: unique().on(t.columnId, t.rackNumber),
     idxRacksColumnNumber: index('idx_racks_column_number').on(t.columnId, t.rackNumber),
@@ -424,13 +424,13 @@ export const locations = pgTable('locations', {
     capacityLimit: integer('capacity_limit'),
     fifoRank: integer('fifo_rank'),
     isExpirySeparated: boolean('is_expiry_separated'),
-    isActive: boolean('is_active').default(true),
+    isActive: boolean('is_active').notNull().default(true),
     notes: text('notes'),
     // 시스템 로케이션 보호 필드
     isSystem: boolean('is_system').notNull().default(false),
     systemRole: systemLocationRoleEnum('system_role'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uqWarehouseCode: unique().on(t.warehouseId, t.code),
     uqWarehouseSystemRole: unique().on(t.warehouseId, t.systemRole),
@@ -639,8 +639,8 @@ export const productMatchings = pgTable('product_matchings', {
 
     // isGift 제거 (사은품 속성은 판매주문 라인 등 상위로 이동)
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
     idxMasterId: index('idx_product_matchings_master_id').on(t.masterId),
@@ -655,7 +655,7 @@ export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
     quantity: integer('quantity').notNull().default(1), // 구성 수량 (세트 상품용)
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
 }));
@@ -671,7 +671,7 @@ export const productOptionMatchings = pgTable('product_option_matchings', {
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uniqueOptionMatching: unique().on(t.productMatchingId, t.optionName, t.optionValue),
 }));
@@ -697,7 +697,7 @@ export const salesOrders = pgTable('sales_orders', {
 
     // 금액 정보
     totalAmount: integer('total_amount'), // 총 주문 금액
-    shippingFee: integer('shipping_fee').default(0), // 배송비
+    shippingFee: integer('shipping_fee').notNull().default(0), // 배송비
 
     // 합배송 정보
     mergeGroupId: varchar('merge_group_id', { length: 64 }), // 합배송 그룹 ID
@@ -708,8 +708,8 @@ export const salesOrders = pgTable('sales_orders', {
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     processedAt: timestamp('processed_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
 }));
@@ -735,8 +735,8 @@ export const salesOrderLines = pgTable('sales_order_lines', {
 
     deductedAt: timestamp('deducted_at', { withTimezone: true }), // 재고 차감 시간
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 주문 이벤트 로그 테이블 추가
@@ -748,9 +748,9 @@ export const orderEvents = pgTable('order_events', {
         .notNull(),
     eventType: eventTypeOrderEnum('event_type').notNull(),
     payload: json('payload').notNull(), // 이벤트 데이터
-    processedAt: timestamp('processed_at', { withTimezone: true }).defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 합배송 그룹 테이블 추가
@@ -758,11 +758,11 @@ export const mergeGroups = pgTable('merge_groups', {
     id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
     customerEmail: varchar('customer_email', { length: 255 }).notNull(),
     shippingAddressHash: varchar('shipping_address_hash', { length: 64 }).notNull(),
-    totalShippingFee: integer('total_shipping_fee').default(0),
-    orderCount: integer('order_count').default(0),
+    totalShippingFee: integer('total_shipping_fee').notNull().default(0),
+    orderCount: integer('order_count').notNull().default(0),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -782,12 +782,12 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
     // 배치 및 출고 관련 필드들
     batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
     fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
-    priority: taskPriorityEnum('priority').default('normal'),
+    priority: taskPriorityEnum('priority').notNull().default('normal'),
 
     // 수량 관련 필드들
-    totalItems: integer('total_items').default(0),
-    totalQty: integer('total_qty').default(0),
-    totalReservedQty: integer('total_reserved_qty').default(0),
+    totalItems: integer('total_items').notNull().default(0),
+    totalQty: integer('total_qty').notNull().default(0),
+    totalReservedQty: integer('total_reserved_qty').notNull().default(0),
 
     // 타임스탬프 필드들
     allocatedAt: timestamp('allocated_at', { withTimezone: true }),
@@ -796,8 +796,8 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
 
     shippingAddress: json('shipping_address'),
     labelNo: varchar('label_no', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
@@ -811,15 +811,15 @@ export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
     pickedQty: integer('picked_qty').notNull().default(0),
     shippedQty: integer('shipped_qty').notNull().default(0),
     status: varchar('status', { length: 32 }).notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
-    reservationId: uuid('reservation_id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey().defaultRandom(),
 
     // 통합 예약 대상 정보
     targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
@@ -838,8 +838,8 @@ export const stockReservations = pgTable('stock_reservations', {
     // 예약 메타 정보
     timeoutAt: timestamp('timeout_at', { withTimezone: true }),
     reason: text('reason'), // 예약 사유
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     // 인덱스 추가
     targetIdx: index('stock_reservations_target_idx').on(t.targetType, t.targetId),
@@ -858,16 +858,16 @@ export const outboundTasks = pgTable('outbound_tasks', {
     status: taskStatusEnum('status').notNull().default('created'),
     priority: taskPriorityEnum('priority').notNull().default('normal'),
 
-    totalItems: integer('total_items').default(0), // 총 품목 수
-    totalQuantity: integer('total_quantity').default(0), // 총 수량
+    totalItems: integer('total_items').notNull().default(0), // 총 품목 수
+    totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
 
     assignedTo: uuid('assigned_to'), // 작업자 ID
-    requiresGiftWrap: boolean('requires_gift_wrap').default(false), // 선물포장 필요
-    temperatureControlled: boolean('temperature_controlled').default(false), // 온도 제어 필요
+    requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
+    temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
 
     unavailableReason: unavailableReasonEnum('unavailable_reason'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 바구니와 주문 연결 테이블 추가
@@ -879,7 +879,7 @@ export const outboundTaskOrders = pgTable('outbound_task_orders', {
         .references(() => salesOrders.id, { onDelete: 'cascade' })
         .notNull(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.taskId, t.orderId),
 }));
@@ -895,7 +895,7 @@ export const outboundTaskItems = pgTable('outbound_task_items', {
     quantityPicking: integer('quantity_picking').notNull().default(0),
     quantityPicked: integer('quantity_picked').notNull().default(0),
 
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.taskId, t.skuId),
 }));
@@ -907,7 +907,7 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
     quantity: integer('quantity').notNull(),
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
     scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -920,8 +920,8 @@ export const shipments = pgTable('shipments', {
     eta: timestamp('eta', { withTimezone: true }),
     splitStatus: boolean('split_status').notNull().default(false),
     fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
-    lastUpdated: timestamp('last_updated', { withTimezone: true }).defaultNow(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const shipmentTracking = pgTable('shipment_tracking', {
@@ -929,7 +929,7 @@ export const shipmentTracking = pgTable('shipment_tracking', {
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'cascade' }).notNull(),
     status: shipmentStatusEnum('status').notNull(),
     location: varchar('location', { length: 255 }),
-    timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow(),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -944,7 +944,7 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
     effectiveFrom: timestamp('effective_from', { withTimezone: true }),
     effectiveTo: timestamp('effective_to', { withTimezone: true }),
     updatedBy: uuid('updated_by'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -958,8 +958,8 @@ export const returns = pgTable('returns', {
     qcReason: varchar('qc_reason', { length: 255 }),
     restockQuantity: integer('restock_quantity'),
     disposeQuantity: integer('dispose_quantity'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -970,8 +970,8 @@ export const settings = pgTable('settings', {
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
     key: settingKeyEnum('key').notNull(),
     value: text('value').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const holidays = pgTable('holidays', {
@@ -980,8 +980,8 @@ export const holidays = pgTable('holidays', {
     name: varchar('name', { length: 128 }).notNull(),
     isCustom: boolean('is_custom').notNull().default(false),
     source: varchar('source', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -996,10 +996,10 @@ export const outboxEvents = pgTable('outbox_events', {
     payload: json('payload').notNull(),
     status: outboxStatusEnum('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     publishedAt: timestamp('published_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
 }));
@@ -1023,8 +1023,8 @@ export const purchaseOrders = pgTable('purchase_orders', {
         .notNull(), // 최종 목적지 창고 (보통 부천)
     requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const purchaseOrderLines = pgTable('purchase_order_lines', {
@@ -1032,7 +1032,7 @@ export const purchaseOrderLines = pgTable('purchase_order_lines', {
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     quantity: integer('quantity').notNull(),
     unitPrice: integer('unit_price'), // 단가 추가
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.poId, t.skuId),
 }));
@@ -1046,8 +1046,8 @@ export const purchaseOrderCart = pgTable('purchase_order_cart', {
     quantity: integer('quantity').notNull(),
     type: poTypeEnum('type').notNull(),
     supplierInfo: json('supplier_info'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -1060,8 +1060,8 @@ export const inboundLists = pgTable('inbound_lists', {
     quantity: integer('quantity').notNull(),
     barcode: varchar('barcode', { length: 64 }),
     status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -1076,8 +1076,8 @@ export const inboundReceipts = pgTable('inbound_receipts', {
     status: inboundReceiptStatusEnum('status').notNull().default('posted'),
     totalQuantity: integer('total_quantity').notNull().default(0),
     journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxInboundReceiptsWhTime: index('idx_inbound_receipts_wh_time').on(t.warehouseId, t.occurredAt),
 }));
@@ -1101,8 +1101,8 @@ export const inboundPlans = pgTable('inbound_plans', {
     requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
     status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxInboundPlansWhDate: index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
     idxInboundPlansDestination: index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
@@ -1119,8 +1119,8 @@ export const inboundPlanItems = pgTable('inbound_plan_items', {
     expectedQty: integer('expected_qty').notNull(),
     receivedQty: integer('received_qty').notNull().default(0),
     status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
     idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
@@ -1140,8 +1140,8 @@ export const inboundReceiptLines = pgTable('inbound_receipt_lines', {
     putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
     // optional link to plan item
     planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxInboundLinesReceipt: index('idx_inbound_lines_receipt').on(t.receiptId),
     idxInboundLinesSku: index('idx_inbound_lines_sku').on(t.skuId),
@@ -1233,10 +1233,10 @@ export const productSkuMappings = pgTable('product_sku_mappings', {
     id: uuid('id').primaryKey().defaultRandom(),
     productId: varchar('product_id', { length: 255 }).notNull(), // PIM의 판매상품 ID
     version: integer('version').notNull().default(1),
-    effectiveFrom: timestamp('effective_from', { withTimezone: true }).defaultNow(),
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
     isActive: boolean('is_active').notNull().default(true),
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxProductWarehouse: index('idx_product_sku_mappings_product_warehouse').on(t.productId, t.warehouseId),
     idxActiveVersion: index('idx_product_sku_mappings_active').on(t.productId, t.warehouseId, t.isActive),
@@ -1245,11 +1245,13 @@ export const productSkuMappings = pgTable('product_sku_mappings', {
 export const productSkuMappingItems = pgTable('product_sku_mapping_items', {
     id: uuid('id').primaryKey().defaultRandom(),
     mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'cascade' }).notNull(),
+    variantId: uuid('variant_id').notNull(),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
     qtyPerProduct: integer('qty_per_product').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxMapping: index('idx_product_sku_mapping_items_mapping').on(t.mappingId),
+    uqMappingVariant: index('uq_product_sku_mapping_items_mapping_variant').on(t.mappingId, t.variantId),
 }));
 
 /**
@@ -1268,7 +1270,7 @@ export const productSkuMappingSnapshots = pgTable('product_sku_mapping_snapshots
     quantity: integer('quantity').notNull(),
     mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
 }));
@@ -1302,8 +1304,8 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
     pickedQty: integer('picked_qty').notNull().default(0),
     shippedQty: integer('shipped_qty').notNull().default(0),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
     idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
@@ -1325,13 +1327,13 @@ export const outboundBatches = pgTable('outbound_batches', {
 
     // 에러 로그에서 필요한 추가 컬럼들
     name: varchar('name', { length: 255 }),
-    totalItems: integer('total_items').default(0),
-    totalQty: integer('total_qty').default(0),
+    totalItems: integer('total_items').notNull().default(0),
+    totalQty: integer('total_qty').notNull().default(0),
     scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     canceledAt: timestamp('canceled_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
 }, t => ({
     idxWarehouseStatus: index('idx_outbound_batches_warehouse_status').on(t.warehouseId, t.status),
@@ -1345,7 +1347,7 @@ export const fulfillmentOrderBatches = pgTable('fulfillment_order_batches', {
     batchId: uuid('batch_id')
         .references(() => outboundBatches.id, { onDelete: 'cascade' })
         .notNull(),
-    assignedAt: timestamp('assigned_at', { withTimezone: true }).defaultNow(),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
     removedAt: timestamp('removed_at', { withTimezone: true }),
     removeReason: varchar('remove_reason', { length: 255 }),
 }, t => ({
@@ -1367,10 +1369,10 @@ export const invoices = pgTable('invoices', {
     issueMethod: invoiceMethodEnum('issue_method').notNull(),
     goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
     status: invoiceStatusEnum('status').notNull().default('issued'),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
     printedAt: timestamp('printed_at', { withTimezone: true }),
     shippedAt: timestamp('shipped_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
     idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
@@ -1455,6 +1457,7 @@ export const wmsViews = {
  *──────────────────────────*/
 
 import { relations } from 'drizzle-orm';
+import { TypedDatabase } from '@app/db/types';
 
 // Core Master Data Relations
 export const holdersRelations = relations(holders, ({ many }) => ({
@@ -2205,3 +2208,5 @@ export const wmsSchema = {
     ...wmsViews,
     ...wmsRelations,
 } as const;
+
+export type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];

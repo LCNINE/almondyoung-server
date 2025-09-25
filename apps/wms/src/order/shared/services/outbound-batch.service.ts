@@ -2,7 +2,9 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, inArray, isNull, desc } from 'drizzle-orm';
+import { and, eq, inArray, isNull, desc, lt } from 'drizzle-orm';
+
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface CreateOutboundBatchDto {
   warehouseId: string;
@@ -66,59 +68,71 @@ export class OutboundBatchService {
     return this.dbService.db;
   }
 
-  async createBatch(dto: CreateOutboundBatchDto): Promise<string> {
-    const { warehouseId, pickingMethod, name, scheduledPickingAt } = dto;
-
-    const batchName = name || `배치-${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-
-    const [batch] = await this.db.insert(wmsTables.outboundBatches)
-      .values({
-        name: batchName,
-        warehouseId,
-        pickingMethod,
-        status: 'created',
-        totalItems: 0,
-        totalQty: 0,
-        scheduledPickingAt
-      })
-      .returning();
-
-    this.logger.log(`Created outbound batch ${batch.id} with picking method: ${pickingMethod}`);
-    return batch.id;
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async addFulfillmentOrdersToBatch(batchId: string, fulfillmentOrderIds: string[]): Promise<void> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+  async createBatch(dto: CreateOutboundBatchDto, tx?: DbTx): Promise<string> {
+    const { warehouseId, pickingMethod, name, scheduledPickingAt } = dto;
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+    return this.inTx(async (trx) => {
+      const batchName = name || `배치-${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+      const batchNumber = `OB-${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
 
-    if (batch.status !== 'created') {
-      throw new ConflictException(`Cannot add FOs to batch in status: ${batch.status}`);
-    }
+      const [batch] = await trx.insert(wmsTables.outboundBatches)
+        .values({
+          name: batchName,
+          batchNumber,
+          warehouseId,
+          pickingMethod,
+          status: 'created',
+          totalItems: 0,
+          totalQty: 0,
+          scheduledPickingAt
+        })
+        .returning();
 
-    const fulfillmentOrders = await this.db.query.fulfillmentOrders.findMany({
-      where: and(
-        inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
-        eq(wmsTables.fulfillmentOrders.status, 'pending'),
-        isNull(wmsTables.fulfillmentOrders.batchId)
-      )
-    });
+      this.logger.log(`Created outbound batch ${batch.id} with picking method: ${pickingMethod}`);
+      return batch.id;
+    }, tx);
+  }
 
-    if (fulfillmentOrders.length !== fulfillmentOrderIds.length) {
-      throw new BadRequestException('Some fulfillment orders are not available for batching');
-    }
+  async addFulfillmentOrdersToBatch(batchId: string, fulfillmentOrderIds: string[], tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status, totalItems: wmsTables.outboundBatches.totalItems, totalQty: wmsTables.outboundBatches.totalQty })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
 
-    const directShipFOs = fulfillmentOrders.filter(fo => fo.fulfillmentMode === 'direct_ship');
-    if (directShipFOs.length > 0) {
-      throw new BadRequestException(`Direct ship FOs cannot be added to batches: ${directShipFOs.map(fo => fo.id).join(', ')}`);
-    }
+      const batch = batchRows[0];
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.fulfillmentOrders)
+      if (batch.status !== 'created') {
+        throw new ConflictException(`Cannot add FOs to batch in status: ${batch.status}`);
+      }
+
+      const fulfillmentOrders = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status, batchId: wmsTables.fulfillmentOrders.batchId, fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode, totalItems: wmsTables.fulfillmentOrders.totalItems, totalQty: wmsTables.fulfillmentOrders.totalQty })
+        .from(wmsTables.fulfillmentOrders)
+        .where(and(
+          inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
+          eq(wmsTables.fulfillmentOrders.status, 'pending'),
+          isNull(wmsTables.fulfillmentOrders.batchId)
+        ));
+
+      if (fulfillmentOrders.length !== fulfillmentOrderIds.length) {
+        throw new BadRequestException('Some fulfillment orders are not available for batching');
+      }
+
+      const directShipFOs = fulfillmentOrders.filter(fo => fo.fulfillmentMode === 'drop_ship');
+      if (directShipFOs.length > 0) {
+        throw new BadRequestException(`Direct ship FOs cannot be added to batches: ${directShipFOs.map(fo => fo.id).join(', ')}`);
+      }
+
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'allocated',
           batchId,
@@ -126,46 +140,52 @@ export class OutboundBatchService {
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
-      const totalItems = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalItems, 0);
-      const totalQty = fulfillmentOrders.reduce((sum, fo) => sum + fo.totalQty, 0);
+      const totalItems = fulfillmentOrders.reduce((sum, fo) => sum + (fo.totalItems ?? 0), 0);
+      const totalQty = fulfillmentOrders.reduce((sum, fo) => sum + (fo.totalQty ?? 0), 0);
 
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
-          totalItems: batch.totalItems + totalItems,
-          totalQty: batch.totalQty + totalQty
+          totalItems: (batch.totalItems ?? 0) + totalItems,
+          totalQty: (batch.totalQty ?? 0) + totalQty
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
       this.logger.log(`Added ${fulfillmentOrderIds.length} FOs to batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  async removeFulfillmentOrderFromBatch(batchId: string, fulfillmentOrderId: string): Promise<void> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+  async removeFulfillmentOrderFromBatch(batchId: string, fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status, totalItems: wmsTables.outboundBatches.totalItems, totalQty: wmsTables.outboundBatches.totalQty })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
 
-    if (batch.status === 'completed' || batch.status === 'canceled') {
-      throw new ConflictException(`Cannot remove FO from batch in status: ${batch.status}`);
-    }
+      if (batch.status === 'completed' || batch.status === 'canceled') {
+        throw new ConflictException(`Cannot remove FO from batch in status: ${batch.status}`);
+      }
 
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: and(
-        eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-        eq(wmsTables.fulfillmentOrders.batchId, batchId)
-      )
-    });
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, totalItems: wmsTables.fulfillmentOrders.totalItems, totalQty: wmsTables.fulfillmentOrders.totalQty })
+        .from(wmsTables.fulfillmentOrders)
+        .where(and(
+          eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
+          eq(wmsTables.fulfillmentOrders.batchId, batchId)
+        ))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`FO ${fulfillmentOrderId} not found in batch ${batchId}`);
-    }
+      if (!fulfillmentOrder) {
+        throw new NotFoundException(`FO ${fulfillmentOrderId} not found in batch ${batchId}`);
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'pending',
           batchId: null,
@@ -173,109 +193,122 @@ export class OutboundBatchService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
-          totalItems: batch.totalItems - fulfillmentOrder.totalItems,
-          totalQty: batch.totalQty - fulfillmentOrder.totalQty
+          totalItems: (batch.totalItems ?? 0) - (fulfillmentOrder.totalItems ?? 0),
+          totalQty: (batch.totalQty ?? 0) - (fulfillmentOrder.totalQty ?? 0)
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
       this.logger.log(`Removed FO ${fulfillmentOrderId} from batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  async startPicking(batchId: string): Promise<void> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+  async startPicking(batchId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status, totalItems: wmsTables.outboundBatches.totalItems })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
 
-    if (batch.status !== 'created') {
-      throw new ConflictException(`Cannot start picking for batch in status: ${batch.status}`);
-    }
+      if (batch.status !== 'created') {
+        throw new ConflictException(`Cannot start picking for batch in status: ${batch.status}`);
+      }
 
-    if (batch.totalItems === 0) {
-      throw new BadRequestException('Cannot start picking for empty batch');
-    }
+      if (batch.totalItems === 0) {
+        throw new BadRequestException('Cannot start picking for empty batch');
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
           status: 'picking',
           startedAt: new Date()
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({ status: 'picking' })
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
       this.logger.log(`Started picking for batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  async completeBatch(batchId: string): Promise<void> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId),
-      with: {
-        fulfillmentOrders: {
-          with: {
-            items: true
-          }
-        }
+  async completeBatch(batchId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
+
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
       }
-    });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      if (batch.status !== 'picking') {
+        throw new ConflictException(`Cannot complete batch in status: ${batch.status}`);
+      }
 
-    if (batch.status !== 'picking') {
-      throw new ConflictException(`Cannot complete batch in status: ${batch.status}`);
-    }
+      const incompleteCountRows = await trx
+        .select({ id: wmsTables.fulfillmentOrderItems.id })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(
+          and(
+            eq(wmsTables.fulfillmentOrders.batchId, batchId),
+            lt(wmsTables.fulfillmentOrderItems.pickedQty, wmsTables.fulfillmentOrderItems.qty)
+          )
+        );
 
-    const incompleteItems = batch.fulfillmentOrders
-      .flatMap(fo => fo.items)
-      .filter(item => item.pickedQty < item.qty);
+      const incompleteItemsCount = incompleteCountRows.length;
+      if (incompleteItemsCount > 0) {
+        throw new ConflictException(`Cannot complete batch with ${incompleteItemsCount} incomplete items`);
+      }
 
-    if (incompleteItems.length > 0) {
-      throw new ConflictException(`Cannot complete batch with ${incompleteItems.length} incomplete items`);
-    }
-
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
           status: 'completed',
           completedAt: new Date()
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({ status: 'picked' })
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
       this.logger.log(`Completed batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  async cancelBatch(batchId: string): Promise<void> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+  async cancelBatch(batchId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
 
-    if (batch.status === 'completed') {
-      throw new ConflictException('Cannot cancel completed batch');
-    }
+      if (batch.status === 'completed') {
+        throw new ConflictException('Cannot cancel completed batch');
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'pending',
           batchId: null,
@@ -283,7 +316,7 @@ export class OutboundBatchService {
         })
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
           status: 'canceled',
           canceledAt: new Date()
@@ -291,111 +324,144 @@ export class OutboundBatchService {
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
       this.logger.log(`Canceled batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  async getBatchDetail(batchId: string): Promise<OutboundBatchDetail> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId),
-      with: {
-        fulfillmentOrders: {
-          with: {
-            items: {
-              with: {
-                sku: true
-              }
-            }
-          }
-        }
+  async getBatchDetail(batchId: string, tx?: DbTx): Promise<OutboundBatchDetail> {
+    return this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({
+          id: wmsTables.outboundBatches.id,
+          name: wmsTables.outboundBatches.name,
+          warehouseId: wmsTables.outboundBatches.warehouseId,
+          pickingMethod: wmsTables.outboundBatches.pickingMethod,
+          status: wmsTables.outboundBatches.status,
+          totalItems: wmsTables.outboundBatches.totalItems,
+          totalQty: wmsTables.outboundBatches.totalQty,
+          scheduledPickingAt: wmsTables.outboundBatches.scheduledPickingAt,
+          startedAt: wmsTables.outboundBatches.startedAt,
+          completedAt: wmsTables.outboundBatches.completedAt
+        })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+
+      const batch = batchRows[0];
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
       }
-    });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      const fos = await trx
+        .select({
+          id: wmsTables.fulfillmentOrders.id,
+          status: wmsTables.fulfillmentOrders.status,
+          priority: wmsTables.fulfillmentOrders.priority,
+          totalItems: wmsTables.fulfillmentOrders.totalItems,
+          totalQty: wmsTables.fulfillmentOrders.totalQty
+        })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
-    return {
-      id: batch.id,
-      name: batch.name,
-      warehouseId: batch.warehouseId,
-      pickingMethod: batch.pickingMethod,
-      status: batch.status,
-      totalItems: batch.totalItems,
-      totalQty: batch.totalQty,
-      scheduledPickingAt: batch.scheduledPickingAt,
-      startedAt: batch.startedAt,
-      completedAt: batch.completedAt,
-      fulfillmentOrders: batch.fulfillmentOrders.map(fo => ({
-        id: fo.id,
-        status: fo.status,
-        priority: fo.priority,
-        totalItems: fo.totalItems,
-        totalQty: fo.totalQty,
-        items: fo.items.map(item => ({
-          id: item.id,
-          salesOrderId: item.salesOrderId,
-          salesOrderLineId: item.salesOrderLineId,
-          skuId: item.skuId,
-          qty: item.qty,
-          pickedQty: item.pickedQty
+      const foIds = fos.map(fo => fo.id);
+      const items = foIds.length === 0 ? [] : await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
+
+      return {
+        id: batch.id,
+        name: batch.name ?? "",
+        warehouseId: batch.warehouseId,
+        pickingMethod: batch.pickingMethod,
+        status: batch.status,
+        totalItems: batch.totalItems ?? 0,
+        totalQty: batch.totalQty ?? 0,
+        scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
+        startedAt: batch.startedAt ?? undefined,
+        completedAt: batch.completedAt ?? undefined,
+        fulfillmentOrders: fos.map(fo => ({
+          id: fo.id,
+          status: fo.status,
+          priority: fo.priority ?? 'normal',
+          totalItems: fo.totalItems ?? 0,
+          totalQty: fo.totalQty ?? 0,
+          items: items.filter(i => i.fulfillmentOrderId === fo.id).map(i => ({
+            id: i.id,
+            salesOrderId: i.salesOrderId,
+            salesOrderLineId: i.salesOrderLineId,
+            skuId: i.skuId,
+            qty: i.qty,
+            pickedQty: i.pickedQty
+          }))
         }))
-      }))
-    };
+      };
+    }, tx);
   }
 
-  async generatePickingList(batchId: string): Promise<PickingListItem[]> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId),
-      with: {
-        fulfillmentOrders: {
-          with: {
-            items: {
-              with: {
-                sku: true
-              }
-            }
-          }
-        }
+  async generatePickingList(batchId: string, tx?: DbTx): Promise<PickingListItem[]> {
+    return this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
       }
-    });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      const rows = await trx
+        .select({
+          foiId: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          skuName: wmsTables.skus.name
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(wmsTables.fulfillmentOrders, eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId))
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
-    const skuMap = new Map<string, PickingListItem>();
-
-    for (const fo of batch.fulfillmentOrders) {
-      for (const item of fo.items) {
-        const skuId = item.skuId;
-
-        if (!skuMap.has(skuId)) {
-          skuMap.set(skuId, {
-            skuId,
-            skuName: item.sku.name,
-            locationCode: undefined, // TODO: Get from location service
+      const skuMap = new Map<string, PickingListItem>();
+      for (const row of rows) {
+        if (!skuMap.has(row.skuId)) {
+          skuMap.set(row.skuId, {
+            skuId: row.skuId,
+            skuName: row.skuName,
+            locationCode: undefined,
             totalQty: 0,
             fulfillmentOrderItems: []
           });
         }
-
-        const skuItem = skuMap.get(skuId)!;
-        skuItem.totalQty += item.qty;
+        const skuItem = skuMap.get(row.skuId)!;
+        skuItem.totalQty += row.qty;
         skuItem.fulfillmentOrderItems.push({
-          foiId: item.id,
-          fulfillmentOrderId: fo.id,
-          salesOrderId: item.salesOrderId,
-          salesOrderLineId: item.salesOrderLineId,
-          qty: item.qty,
-          pickedQty: item.pickedQty
+          foiId: row.foiId,
+          fulfillmentOrderId: row.fulfillmentOrderId,
+          salesOrderId: row.salesOrderId,
+          salesOrderLineId: row.salesOrderLineId,
+          qty: row.qty,
+          pickedQty: row.pickedQty
         });
       }
-    }
 
-    return Array.from(skuMap.values()).sort((a, b) => a.skuName.localeCompare(b.skuName));
+      return Array.from(skuMap.values()).sort((a, b) => a.skuName.localeCompare(b.skuName));
+    }, tx);
   }
 
-  async getAvailableFulfillmentOrders(warehouseId: string): Promise<Array<{
+  async getAvailableFulfillmentOrders(warehouseId: string, tx?: DbTx): Promise<Array<{
     id: string;
     priority: string;
     fulfillmentMode: string;
@@ -403,28 +469,38 @@ export class OutboundBatchService {
     totalQty: number;
     createdAt: Date;
   }>> {
-    const fulfillmentOrders = await this.db.query.fulfillmentOrders.findMany({
-      where: and(
-        eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
-        eq(wmsTables.fulfillmentOrders.status, 'pending'),
-        isNull(wmsTables.fulfillmentOrders.batchId)
-      ),
-      orderBy: [desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt)]
-    });
+    return this.inTx(async (trx) => {
+      const fulfillmentOrders = await trx
+        .select({
+          id: wmsTables.fulfillmentOrders.id,
+          priority: wmsTables.fulfillmentOrders.priority,
+          fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
+          totalItems: wmsTables.fulfillmentOrders.totalItems,
+          totalQty: wmsTables.fulfillmentOrders.totalQty,
+          createdAt: wmsTables.fulfillmentOrders.createdAt
+        })
+        .from(wmsTables.fulfillmentOrders)
+        .where(and(
+          eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
+          eq(wmsTables.fulfillmentOrders.status, 'pending'),
+          isNull(wmsTables.fulfillmentOrders.batchId)
+        ))
+        .orderBy(desc(wmsTables.fulfillmentOrders.priority), desc(wmsTables.fulfillmentOrders.createdAt));
 
-    return fulfillmentOrders
-      .filter(fo => fo.fulfillmentMode !== 'direct_ship')
-      .map(fo => ({
-        id: fo.id,
-        priority: fo.priority,
-        fulfillmentMode: fo.fulfillmentMode,
-        totalItems: fo.totalItems,
-        totalQty: fo.totalQty,
-        createdAt: fo.createdAt!
-      }));
+      return fulfillmentOrders
+        .filter(fo => fo.fulfillmentMode !== 'drop_ship')
+        .map(fo => ({
+          id: fo.id,
+          priority: fo.priority ?? 'normal',
+          fulfillmentMode: fo.fulfillmentMode ?? 'in_house',
+          totalItems: fo.totalItems ?? 0,
+          totalQty: fo.totalQty ?? 0,
+          createdAt: fo.createdAt!
+        }));
+    }, tx);
   }
 
-  async getBatches(warehouseId?: string): Promise<Array<{
+  async getBatches(warehouseId?: string, tx?: DbTx): Promise<Array<{
     id: string;
     name: string;
     warehouseId: string;
@@ -435,21 +511,50 @@ export class OutboundBatchService {
     scheduledPickingAt?: Date;
     createdAt: Date;
   }>> {
-    const batches = await this.db.query.outboundBatches.findMany({
-      where: warehouseId ? eq(wmsTables.outboundBatches.warehouseId, warehouseId) : undefined,
-      orderBy: desc(wmsTables.outboundBatches.createdAt)
-    });
+    return this.inTx(async (trx) => {
+      const batches = await (warehouseId
+        ? trx
+            .select({
+              id: wmsTables.outboundBatches.id,
+              name: wmsTables.outboundBatches.name,
+              warehouseId: wmsTables.outboundBatches.warehouseId,
+              pickingMethod: wmsTables.outboundBatches.pickingMethod,
+              status: wmsTables.outboundBatches.status,
+              totalItems: wmsTables.outboundBatches.totalItems,
+              totalQty: wmsTables.outboundBatches.totalQty,
+              scheduledPickingAt: wmsTables.outboundBatches.scheduledPickingAt,
+              createdAt: wmsTables.outboundBatches.createdAt
+            })
+            .from(wmsTables.outboundBatches)
+            .where(eq(wmsTables.outboundBatches.warehouseId, warehouseId))
+            .orderBy(desc(wmsTables.outboundBatches.createdAt))
+        : trx
+            .select({
+              id: wmsTables.outboundBatches.id,
+              name: wmsTables.outboundBatches.name,
+              warehouseId: wmsTables.outboundBatches.warehouseId,
+              pickingMethod: wmsTables.outboundBatches.pickingMethod,
+              status: wmsTables.outboundBatches.status,
+              totalItems: wmsTables.outboundBatches.totalItems,
+              totalQty: wmsTables.outboundBatches.totalQty,
+              scheduledPickingAt: wmsTables.outboundBatches.scheduledPickingAt,
+              createdAt: wmsTables.outboundBatches.createdAt
+            })
+            .from(wmsTables.outboundBatches)
+            .orderBy(desc(wmsTables.outboundBatches.createdAt))
+      );
 
-    return batches.map(batch => ({
-      id: batch.id,
-      name: batch.name,
-      warehouseId: batch.warehouseId,
-      pickingMethod: batch.pickingMethod,
-      status: batch.status,
-      totalItems: batch.totalItems,
-      totalQty: batch.totalQty,
-      scheduledPickingAt: batch.scheduledPickingAt,
-      createdAt: batch.createdAt!
-    }));
+      return batches.map(batch => ({
+        id: batch.id,
+        name: batch.name ?? '',
+        warehouseId: batch.warehouseId,
+        pickingMethod: batch.pickingMethod,
+        status: batch.status,
+        totalItems: batch.totalItems ?? 0,
+        totalQty: batch.totalQty ?? 0,
+        scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
+        createdAt: batch.createdAt!
+      }));
+    }, tx);
   }
 }

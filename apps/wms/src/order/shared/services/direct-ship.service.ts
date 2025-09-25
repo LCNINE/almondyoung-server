@@ -78,7 +78,7 @@ export class DirectShipService {
     status?: 'pending' | 'forwarded' | 'completed' | 'canceled';
     warehouseId?: string;
   }): Promise<DirectShipOrder[]> {
-    let whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship')];
+    let whereConditions = [eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')];
 
     if (filters?.companyName) {
       whereConditions.push(eq(wmsTables.fulfillmentOrders.ownerId, filters.companyName));
@@ -146,7 +146,7 @@ export class DirectShipService {
     const fulfillmentOrders = await this.db.query.fulfillmentOrders.findMany({
       where: and(
         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
-        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
         eq(wmsTables.fulfillmentOrders.status, 'pending')
       )
     });
@@ -177,7 +177,7 @@ export class DirectShipService {
     const fulfillmentOrders = await this.db.query.fulfillmentOrders.findMany({
       where: and(
         inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
-        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'direct_ship'),
+        eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
         eq(wmsTables.fulfillmentOrders.status, 'forwarded')
       )
     });

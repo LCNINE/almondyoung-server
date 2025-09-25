@@ -31,7 +31,7 @@ export class FulfillmentsService {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-  private async determineModeFromSalesOrder(trx: DbTx, salesOrderId: string): Promise<'in_house' | 'third_party_3pl' | 'drop_ship' | 'mixed'> {
+  private async determineModeFromSalesOrder(trx: DbTx, salesOrderId: string): Promise<'in_house' | '3pl' | 'drop_ship' | 'mixed'> {
     const lines = await trx.query.salesOrderLines.findMany({ where: (l, { eq }) => eq(l.salesOrderId, salesOrderId) });
     if (lines.length === 0) return 'in_house';
     const modes = new Set<string>();
@@ -42,7 +42,7 @@ export class FulfillmentsService {
     }
     if (modes.size > 1) return 'mixed';
     const [only] = Array.from(modes);
-    return (only as any) as 'in_house' | 'third_party_3pl' | 'drop_ship';
+    return (only as any) as 'in_house' | '3pl' | 'drop_ship';
   }
 
   private async isDropShipFo(trx: DbTx, fo: { salesOrderId: string | null }): Promise<boolean> {
@@ -132,11 +132,11 @@ export class FulfillmentsService {
           );
       } else if (dto.salesOrderId && this.matchings) {
         // SO 기반 자동 구성: SO 라인 매칭을 통해 SKU 라인 생성
-        const mode = await this.determineModeFromSalesOrder(trx, dto.salesOrderId);
+      const mode = await this.determineModeFromSalesOrder(trx, dto.salesOrderId);
         if (mode === 'mixed') {
           throw new (await import('@nestjs/common')).BadRequestException('MIXED_FULFILLMENT_MODE_NOT_SUPPORTED');
         }
-        if (mode === 'third_party_3pl' && !dto.ownerId) {
+        if (mode === '3pl' && !dto.ownerId) {
           throw new (await import('@nestjs/common')).BadRequestException('OWNER_REQUIRED_FOR_3PL');
         }
         const soLines = await trx.query.salesOrderLines.findMany({ where: (l, { eq }) => eq(l.salesOrderId, dto.salesOrderId) });

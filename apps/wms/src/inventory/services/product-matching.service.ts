@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
 import { InventoryService } from './inventory.service';
 import { StockEventService } from './stock-event.service';
 import { ResolveMatchingDto } from '../dto/product-matching/resolve-matching.dto';
@@ -50,6 +50,10 @@ export class ProductMatchingService {
         return this.dbService.db;
     }
 
+    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+        return tx ? fn(tx) : this.db.transaction(fn);
+    }
+
     private getStrategy(strategyType: string): MatchingStrategy {
         const strategy = this.strategies.get(strategyType);
         if (!strategy) {
@@ -58,91 +62,94 @@ export class ProductMatchingService {
         return strategy;
     }
 
-    async handleManualMatchingRequest(payload: PimProductPayload) {
+    async handleManualMatchingRequest(payload: PimProductPayload, tx?: DbTx) {
         if (!payload || !payload.productId || !Array.isArray(payload.variants)) {
             throw new BadRequestException('Invalid payload: productId and variants array are required');
         }
 
         this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
-        const results: Array<{ variantId: string; status: 'created' | 'exists' | 'error'; error?: string }> = [];
+        return this.inTx(async (trx) => {
+            const results: Array<{ variantId: string; status: 'created' | 'exists' | 'error'; error?: string }> = [];
 
-        for (const variant of payload.variants) {
-            try {
-                if (!variant.id) {
-                    this.logger.error(`Variant missing ID in product ${payload.productId}`);
-                    results.push({ variantId: 'unknown', status: 'error', error: 'Variant ID is required' });
-                    continue;
+            for (const variant of payload.variants) {
+                try {
+                    if (!variant.id) {
+                        this.logger.error(`Variant missing ID in product ${payload.productId}`);
+                        results.push({ variantId: 'unknown', status: 'error', error: 'Variant ID is required' });
+                        continue;
+                    }
+
+                    const [existingMatching] = await trx
+                        .select()
+                        .from(wmsTables.productMatchings)
+                        .where(eq(wmsTables.productMatchings.variantId, variant.id))
+                        .limit(1);
+
+                    if (existingMatching) {
+                        this.logger.warn(`Product matching already exists for variant ${variant.id}, skipping creation.`);
+                        results.push({ variantId: variant.id, status: 'exists' });
+                        continue;
+                    }
+
+                    const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
+                        variantId: variant.id,
+                        status: 'pending',
+                        priority: 'high',
+                        strategy: null,
+                        isResolved: false,
+                    }).returning();
+
+                    if (!newProductMatching) {
+                        throw new Error(`Product matching entry creation failed for variant ${variant.id}`);
+                    }
+
+                    this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
+                    results.push({ variantId: variant.id, status: 'created' });
+
+                } catch (error) {
+                    this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
+                    results.push({
+                        variantId: variant.id,
+                        status: 'error',
+                        error: error instanceof Error ? error.message : 'Unknown error'
+                    });
                 }
-
-                const existingMatching = await this.db.query.productMatchings.findFirst({
-                    where: eq(wmsTables.productMatchings.variantId, variant.id),
-                });
-
-                if (existingMatching) {
-                    this.logger.warn(`Product matching already exists for variant ${variant.id}, skipping creation.`);
-                    results.push({ variantId: variant.id, status: 'exists' });
-                    continue;
-                }
-
-                const [newProductMatching] = await this.db.insert(wmsTables.productMatchings).values({
-                    variantId: variant.id,
-                    status: 'pending',
-                    priority: 'high',
-                    strategy: null,
-                    isResolved: false,
-                }).returning();
-
-                if (!newProductMatching) {
-                    throw new Error(`Product matching entry creation failed for variant ${variant.id}`);
-                }
-
-                this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
-                results.push({ variantId: variant.id, status: 'created' });
-
-            } catch (error) {
-                this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
-                results.push({
-                    variantId: variant.id,
-                    status: 'error',
-                    error: error instanceof Error ? error.message : 'Unknown error'
-                });
             }
-        }
 
-        const successCount = results.filter(r => r.status === 'created').length;
-        const errorCount = results.filter(r => r.status === 'error').length;
+            const successCount = results.filter(r => r.status === 'created').length;
+            const errorCount = results.filter(r => r.status === 'error').length;
 
-        if (errorCount > 0) {
-            this.logger.warn(`Manual matching request completed with ${errorCount} errors out of ${payload.variants.length} variants`);
-        }
+            if (errorCount > 0) {
+                this.logger.warn(`Manual matching request completed with ${errorCount} errors out of ${payload.variants.length} variants`);
+            }
 
-        this.logger.log(`Manual matching request completed: ${successCount} created, ${errorCount} errors`);
-        return results;
+            this.logger.log(`Manual matching request completed: ${successCount} created, ${errorCount} errors`);
+            return results;
+        }, tx);
     }
 
-    async handleAutomaticMatchingRequest(payload: PimProductPayload) {
+    async handleAutomaticMatchingRequest(payload: PimProductPayload, tx?: DbTx) {
         this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
+        return this.inTx(async (trx) => {
+            for (const variant of payload.variants) {
+                if (!variant.inventoryManagement) {
+                    await trx.insert(wmsTables.productMatchings).values({
+                        variantId: variant.id,
+                        status: 'ignored',
+                        priority: 'normal',
+                        strategy: 'void',
+                        isResolved: true,
+                        // 디지털 상품의 재고 정책
+                        inventoryManagement: false,
+                        preStockSellable: true,
+                        alwaysSellableZeroStock: false,
+                    }).onConflictDoNothing();
+                    this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
+                    continue;
+                }
 
-        for (const variant of payload.variants) {
-            if (!variant.inventoryManagement) {
-                await this.db.insert(wmsTables.productMatchings).values({
-                    variantId: variant.id,
-                    status: 'ignored',
-                    priority: 'normal',
-                    strategy: 'void',
-                    isResolved: true,
-                    // 디지털 상품의 재고 정책
-                    inventoryManagement: false,
-                    preStockSellable: true,
-                    alwaysSellableZeroStock: false,
-                }).onConflictDoNothing();
-                this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
-                continue;
-            }
-
-            await this.db.transaction(async (tx) => {
-                const [newProductMatching] = await tx.insert(wmsTables.productMatchings).values({
+                const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
                     variantId: variant.id,
                     status: 'matched',
                     priority: 'normal',
@@ -171,7 +178,7 @@ export class ProductMatchingService {
                         quantity: 0,
                         stockType: 'physical',
                         reason: `auto_matching_for_variant_${variant.id}`,
-                    }, tx);
+                    }, trx);
 
                     mappings.push({
                         skuId: newStock.skuId,
@@ -183,25 +190,27 @@ export class ProductMatchingService {
                     variantId: variant.id,
                     productMatchingId: newProductMatching.id
                 };
-                await strategy.create(context, mappings, tx);
+                await strategy.create(context, mappings, trx);
 
                 this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`);
-            });
-        }
+            }
+        }, tx);
     }
 
-    async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored') {
-        const matchings = await this.db.query.productMatchings.findMany({
-            where: status ? eq(wmsTables.productMatchings.status, status) : undefined,
-            orderBy: (matchings, { asc }) => [asc(matchings.createdAt)],
-            with: {
-                links: {
-                    with: {
-                        sku: true
-                    }
-                }
+    async getMatchingPendings(status?: 'pending' | 'matched' | 'ignored', tx?: DbTx) {
+        const matchings = await this.inTx(async (trx) => {
+            if (status) {
+                return trx
+                    .select()
+                    .from(wmsTables.productMatchings)
+                    .where(eq(wmsTables.productMatchings.status, status))
+                    .orderBy(asc(wmsTables.productMatchings.createdAt));
             }
-        });
+            return trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .orderBy(asc(wmsTables.productMatchings.createdAt));
+        }, tx);
 
         const matchingsWithDetails = await Promise.all(matchings.map(async (matching) => {
             if (matching.strategy && matching.status === 'matched') {
@@ -228,22 +237,27 @@ export class ProductMatchingService {
         return matchingsWithDetails;
     }
 
-    async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto) {
+    async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto, tx?: DbTx) {
         const { skuIds, skuMappings, ignore, strategy = 'variant', stockPolicy, isGift = false } = resolveDto;
 
-        const productMatching = await this.db.query.productMatchings.findFirst({
-            where: and(
-                eq(wmsTables.productMatchings.id, matchingId),
-                eq(wmsTables.productMatchings.isResolved, false)
-            ),
-        });
+        const productMatching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(and(
+                    eq(wmsTables.productMatchings.id, matchingId),
+                    eq(wmsTables.productMatchings.isResolved, false)
+                ))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!productMatching) {
             throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
         }
 
         if (ignore) {
-            const [updatedMatching] = await this.db.update(wmsTables.productMatchings).set({
+            const [updatedMatching] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings).set({
                 status: 'ignored',
                 strategy: 'void',
                 isResolved: true,
@@ -252,13 +266,12 @@ export class ProductMatchingService {
                 preStockSellable: true,
                 alwaysSellableZeroStock: false,
                 updatedAt: new Date(),
-            }).where(eq(wmsTables.productMatchings.id, matchingId)).returning();
+            }).where(eq(wmsTables.productMatchings.id, matchingId)).returning(), tx).then(r => r);
             this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
             return updatedMatching;
 
         } else if ((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0)) {
-
-            return this.db.transaction(async (tx) => {
+            return this.inTx(async (trx) => {
                 let mappings: SkuQuantityMapping[];
 
                 if (skuMappings && skuMappings.length > 0) {
@@ -286,7 +299,7 @@ export class ProductMatchingService {
                     throw new BadRequestException('Invalid SKU mappings for the selected strategy');
                 }
 
-                await matchingStrategy.create(context, mappings, tx);
+                await matchingStrategy.create(context, mappings, trx);
 
                 // 재고 정책 설정 (기본값 또는 제공된 값)
                 const finalStockPolicy = {
@@ -295,7 +308,7 @@ export class ProductMatchingService {
                     alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
                 };
 
-                const [updatedMatching] = await tx.update(wmsTables.productMatchings).set({
+                const [updatedMatching] = await trx.update(wmsTables.productMatchings).set({
                     status: 'matched',
                     strategy: strategy,
                     isResolved: true,
@@ -311,14 +324,14 @@ export class ProductMatchingService {
                     `Stock Policy: ${JSON.stringify(finalStockPolicy)}`
                 );
                 return updatedMatching;
-            });
+            }, tx);
         } else {
             throw new BadRequestException('매칭할 SKU 정보를 제공하거나, 무시 옵션을 선택해야 합니다.');
         }
     }
 
-    async setMatchingPriority(matchingId: string, priority: 'normal' | 'high') {
-        const [updatedMatching] = await this.db.update(wmsTables.productMatchings)
+    async setMatchingPriority(matchingId: string, priority: 'normal' | 'high', tx?: DbTx) {
+        const [updatedMatching] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings)
             .set({
                 priority: priority,
                 updatedAt: new Date(),
@@ -327,7 +340,7 @@ export class ProductMatchingService {
                 eq(wmsTables.productMatchings.id, matchingId),
                 eq(wmsTables.productMatchings.isResolved, false)
             ))
-            .returning();
+            .returning(), tx).then(r => r);
 
         if (!updatedMatching) {
             throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
@@ -337,12 +350,17 @@ export class ProductMatchingService {
         return updatedMatching;
     }
 
-    async handleVariantDeletion(variantId: string) {
+    async handleVariantDeletion(variantId: string, tx?: DbTx) {
         this.logger.log(`Handling variant deletion for variantId: ${variantId}`);
 
-        const productMatching = await this.db.query.productMatchings.findFirst({
-            where: eq(wmsTables.productMatchings.variantId, variantId),
-        });
+        const productMatching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(eq(wmsTables.productMatchings.variantId, variantId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!productMatching) {
             this.logger.warn(`No product matching found for variantId: ${variantId}, nothing to delete.`);
@@ -350,25 +368,25 @@ export class ProductMatchingService {
         }
 
         if (productMatching.status === 'matched' && productMatching.strategy) {
-            await this.db.transaction(async (tx) => {
+            await this.inTx(async (trx) => {
                 if (!productMatching.strategy) {
                     throw new BadRequestException('strategy 값이 null입니다.');
                 }
-                const strategy = this.getStrategy(productMatching.strategy as string);
+                const strategy = this.getStrategy(productMatching.strategy);
                 const context: MatchingContext = {
                     variantId: productMatching.variantId,
                     productMatchingId: productMatching.id
                 };
-                await strategy.delete(context, tx);
+                await strategy.delete(context, trx);
 
-                await tx.delete(wmsTables.productMatchings)
+                await trx.delete(wmsTables.productMatchings)
                     .where(eq(wmsTables.productMatchings.id, productMatching.id));
 
                 this.logger.log(`Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`);
-            });
+            }, tx);
         } else {
-            await this.db.delete(wmsTables.productMatchings)
-                .where(eq(wmsTables.productMatchings.id, productMatching.id));
+            await this.inTx(async (trx) => trx.delete(wmsTables.productMatchings)
+                .where(eq(wmsTables.productMatchings.id, productMatching.id)), tx);
 
             this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
         }
@@ -378,12 +396,12 @@ export class ProductMatchingService {
         name: string;
         inventoryManagement: boolean;
         alwaysSellableZeroStock?: boolean;
-    }) {
-        return this.db.transaction(async (tx) => {
+    }, tx?: DbTx) {
+        return this.inTx(async (trx) => {
             const newSku = await this.inventoryService._createSkuInternal({
                 name: skuData.name,
                 source: SkuCreationSource.MANUAL_MATCHING,
-            }, tx);
+            }, trx);
 
             if (skuData.inventoryManagement) {
                 const warehouseId = this.inventoryService.getDefaultWarehouseId();
@@ -395,17 +413,22 @@ export class ProductMatchingService {
                     quantity: 0,
                     stockType: 'physical',
                     reason: `manual_matching_for_variant_${variantId}`,
-                }, tx);
+                }, trx);
             }
 
             return newSku;
-        });
+        }, tx);
     }
 
-    async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant' | 'option') {
-        const productMatching = await this.db.query.productMatchings.findFirst({
-            where: eq(wmsTables.productMatchings.id, matchingId)
-        });
+    async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant' | 'option', tx?: DbTx) {
+        const productMatching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(eq(wmsTables.productMatchings.id, matchingId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!productMatching) {
             throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
@@ -415,17 +438,17 @@ export class ProductMatchingService {
             throw new BadRequestException('Can only change strategy for matched products');
         }
 
-        await this.db.transaction(async (tx) => {
+        await this.inTx(async (trx) => {
             if (productMatching.strategy) {
                 const oldStrategy = this.getStrategy(productMatching.strategy);
                 const context: MatchingContext = {
                     variantId: productMatching.variantId,
                     productMatchingId: productMatching.id
                 };
-                await oldStrategy.delete(context, tx);
+                await oldStrategy.delete(context, trx);
             }
 
-            await tx.update(wmsTables.productMatchings)
+            await trx.update(wmsTables.productMatchings)
                 .set({
                     strategy: newStrategy,
                     updatedAt: new Date()
@@ -433,7 +456,7 @@ export class ProductMatchingService {
                 .where(eq(wmsTables.productMatchings.id, matchingId));
 
             this.logger.log(`Changed matching strategy for ${matchingId} from ${productMatching.strategy} to ${newStrategy}`);
-        });
+        }, tx);
     }
 
     async resolveOptionMatching(
@@ -443,17 +466,22 @@ export class ProductMatchingService {
             optionValue: string;
             skuId: string;
         }>
-    ) {
-        const productMatching = await this.db.query.productMatchings.findFirst({
-            where: eq(wmsTables.productMatchings.id, matchingId)
-        });
+    , tx?: DbTx) {
+        const productMatching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(eq(wmsTables.productMatchings.id, matchingId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!productMatching) {
             throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
         }
 
-        return this.db.transaction(async (tx) => {
-            const strategy = this.getStrategy('option') as OptionMatchingStrategy;
+        return this.inTx(async (trx) => {
+            const strategy = this.getStrategy('option');
 
             for (const optionMapping of optionMappings) {
                 const context: MatchingContext = {
@@ -470,10 +498,10 @@ export class ProductMatchingService {
                     quantity: 1
                 }];
 
-                await strategy.update(context, mappings, tx);
+                await strategy.update(context, mappings, trx);
             }
 
-            const [updatedMatching] = await tx.update(wmsTables.productMatchings)
+            const [updatedMatching] = await trx.update(wmsTables.productMatchings)
                 .set({
                     status: 'matched',
                     strategy: 'option',
@@ -485,19 +513,24 @@ export class ProductMatchingService {
 
             this.logger.log(`Option matching resolved for ${matchingId} with ${optionMappings.length} option mappings`);
             return updatedMatching;
-        });
+        }, tx);
     }
 
     async getSkusForVariant(
         variantId: string,
         selectedOptions?: Array<{ optionName: string; optionValue: string }>
-    ): Promise<SkuQuantityMapping[]> {
-        const productMatching = await this.db.query.productMatchings.findFirst({
-            where: and(
-                eq(wmsTables.productMatchings.variantId, variantId),
-                eq(wmsTables.productMatchings.status, 'matched')
-            )
-        });
+    , tx?: DbTx): Promise<SkuQuantityMapping[]> {
+        const productMatching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(and(
+                    eq(wmsTables.productMatchings.variantId, variantId),
+                    eq(wmsTables.productMatchings.status, 'matched')
+                ))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!productMatching || !productMatching.strategy) {
             throw new NotFoundException(`No matched product found for variant ${variantId}`);
@@ -513,14 +546,19 @@ export class ProductMatchingService {
         return strategy.lookup(context);
     }
 
-    async getStockPolicyForVariant(variantId: string): Promise<{
+    async getStockPolicyForVariant(variantId: string, tx?: DbTx): Promise<{
         inventoryManagement: boolean;
         preStockSellable: boolean;
         alwaysSellableZeroStock: boolean;
     } | null> {
-        const matching = await this.db.query.productMatchings.findFirst({
-            where: eq(wmsTables.productMatchings.variantId, variantId)
-        });
+        const matching = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.productMatchings)
+                .where(eq(wmsTables.productMatchings.variantId, variantId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!matching) {
             return null;
@@ -540,14 +578,14 @@ export class ProductMatchingService {
             preStockSellable?: boolean;
             alwaysSellableZeroStock?: boolean;
         }
-    ) {
-        const [updated] = await this.db.update(wmsTables.productMatchings)
+    , tx?: DbTx) {
+        const [updated] = await this.inTx(async (trx) => trx.update(wmsTables.productMatchings)
             .set({
                 ...stockPolicy,
                 updatedAt: new Date(),
             })
             .where(eq(wmsTables.productMatchings.id, matchingId))
-            .returning();
+            .returning(), tx).then(r => r);
 
         if (!updated) {
             throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);

@@ -1,10 +1,12 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
 import { GoodsflowDeliveryProvider } from './goodsflow-delivery.provider';
+
+// type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface IssueInvoiceRequest {
   fulfillmentOrderId: string;
@@ -54,48 +56,57 @@ export class InvoiceService {
     return this.dbService.db;
   }
 
-  async issueInvoice(request: IssueInvoiceRequest): Promise<string> {
+  // WMS 트랜잭션 전달 규칙의 공통 타입 별칭 및 inTx 헬퍼 적용
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
+  async issueInvoice(request: IssueInvoiceRequest, tx?: DbTx): Promise<string> {
     const { fulfillmentOrderId, issueMethod = 'goodsflow' } = request;
 
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: {
-          with: {
-            sku: true
-          }
-        }
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
+
+      if (!fulfillmentOrder) {
+        throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      const foiRows = await trx
+        .select({
+          foiId: wmsTables.fulfillmentOrderItems.id,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          productName: wmsTables.skus.name,
+          quantity: wmsTables.fulfillmentOrderItems.qty
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-    // Get price information from sales order lines
-    const salesOrderLineIds = fulfillmentOrder.items.map(item => item.salesOrderLineId);
-    const salesOrderLines = await this.db.query.salesOrderLines.findMany({
-      where: inArray(wmsTables.salesOrderLines.id, salesOrderLineIds)
-    });
+      const salesOrderLineIds = foiRows.map(row => row.salesOrderLineId);
+      const salesOrderLines = salesOrderLineIds.length === 0 ? [] : await trx
+        .select({ id: wmsTables.salesOrderLines.id, unitPrice: wmsTables.salesOrderLines.unitPrice })
+        .from(wmsTables.salesOrderLines)
+        .where(inArray(wmsTables.salesOrderLines.id, salesOrderLineIds));
 
-    // Create price lookup map
-    const priceMap = new Map(
-      salesOrderLines.map(line => [line.id, line.unitPrice])
-    );
+      const priceMap = new Map(salesOrderLines.map(line => [line.id, line.unitPrice]));
 
-    if (fulfillmentOrder.status !== 'picked') {
-      throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
-    }
+      if (fulfillmentOrder.status !== 'picked') {
+        throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
+      }
 
-    const existingInvoice = await this.db.query.invoices.findFirst({
-      where: eq(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderId)
-    });
+      const existingInvoice = await trx.query.invoices.findFirst({
+        where: eq(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderId)
+      });
 
-    if (existingInvoice) {
-      throw new ConflictException(`Invoice already exists for FO ${fulfillmentOrderId}`);
-    }
+      if (existingInvoice) {
+        throw new ConflictException(`Invoice already exists for FO ${fulfillmentOrderId}`);
+      }
 
-    return this.db.transaction(async (tx) => {
       let invoiceNumber: string;
       let goodsflowServiceId: string | undefined;
 
@@ -106,7 +117,7 @@ export class InvoiceService {
         }
 
         const deliveryRequest: DeliveryRequest = {
-          centerCode: '', // Will be set from config
+          centerCode: '',
           recipientName: request.recipientName,
           recipientAddress: request.recipientAddress,
           recipientPhone: request.recipientPhone,
@@ -114,10 +125,10 @@ export class InvoiceService {
           senderName: request.senderName,
           senderPhone: request.senderPhone,
           deliveryMessage: request.deliveryMessage,
-          items: fulfillmentOrder.items.map(item => ({
-            productName: item.sku.name,
-            quantity: item.qty,
-            price: priceMap.get(item.salesOrderLineId) || 0
+          items: foiRows.map(row => ({
+            productName: row.productName,
+            quantity: row.quantity,
+            price: priceMap.get(row.salesOrderLineId) || 0
           }))
         };
 
@@ -129,7 +140,7 @@ export class InvoiceService {
         invoiceNumber = this.generateInvoiceNumber();
       }
 
-      const [invoice] = await tx.insert(wmsTables.invoices)
+      const [invoice] = await trx.insert(wmsTables.invoices)
         .values({
           fulfillmentOrderId,
           invoiceNumber,
@@ -141,82 +152,101 @@ export class InvoiceService {
         })
         .returning();
 
-
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'invoiced',
-          invoicedAt: new Date()
+          status: 'invoiced'
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
       this.logger.log(`Issued invoice ${invoiceNumber} for FO ${fulfillmentOrderId} via ${issueMethod}`);
       return invoice.id;
-    });
+    }, tx);
   }
 
-  async printInvoices(invoiceIds: string[]): Promise<{ printUri?: string }> {
-    const invoices = await this.db.query.invoices.findMany({
-      where: inArray(wmsTables.invoices.id, invoiceIds)
-    });
+  async printInvoices(invoiceIds: string[], tx?: DbTx): Promise<{ printUri?: string }> {
+    return this.inTx(async (trx) => {
+      const invoices = await trx
+        .select({
+          id: wmsTables.invoices.id,
+          issueMethod: wmsTables.invoices.issueMethod,
+          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+        })
+        .from(wmsTables.invoices)
+        .where(inArray(wmsTables.invoices.id, invoiceIds));
 
-    if (invoices.length !== invoiceIds.length) {
-      throw new NotFoundException('Some invoices not found');
-    }
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundException('Some invoices not found');
+      }
 
-    const goodsflowInvoices = invoices.filter(inv => inv.issueMethod === 'goodsflow' && inv.goodsflowServiceId);
+      const goodsflowInvoices = invoices.filter(inv => inv.issueMethod === 'goodsflow' && inv.goodsflowServiceId);
 
-    if (goodsflowInvoices.length === 0) {
-      throw new BadRequestException('No Goodsflow invoices to print');
-    }
+      if (goodsflowInvoices.length === 0) {
+        throw new BadRequestException('No Goodsflow invoices to print');
+      }
 
-    const provider = this.deliveryProviders.get('goodsflow');
-    if (!provider) {
-      throw new BadRequestException('Goodsflow provider not configured');
-    }
+      const provider = this.deliveryProviders.get('goodsflow');
+      if (!provider) {
+        throw new BadRequestException('Goodsflow provider not configured');
+      }
 
-    const serviceIds = goodsflowInvoices.map(inv => inv.goodsflowServiceId!);
-    const printResponse = await provider.generatePrintUri(serviceIds);
+      const serviceIds = goodsflowInvoices.map(inv => inv.goodsflowServiceId!);
+      const printResponse = await provider.generatePrintUri(serviceIds);
 
-    await this.db.update(wmsTables.invoices)
-      .set({
-        status: 'printed',
-        printedAt: new Date()
-      })
-      .where(inArray(wmsTables.invoices.id, goodsflowInvoices.map(inv => inv.id)));
+      await trx.update(wmsTables.invoices)
+        .set({
+          status: 'printed',
+          printedAt: new Date()
+        })
+        .where(inArray(wmsTables.invoices.id, goodsflowInvoices.map(inv => inv.id)));
 
-    this.logger.log(`Generated print URI for ${goodsflowInvoices.length} invoices`);
+      this.logger.log(`Generated print URI for ${goodsflowInvoices.length} invoices`);
 
-    return {
-      printUri: printResponse.printUri
-    };
+      return {
+        printUri: printResponse.printUri
+      };
+    }, tx);
   }
 
-  async markAsShipped(invoiceId: string): Promise<void> {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(wmsTables.invoices.id, invoiceId)
-    });
+  async markAsShipped(invoiceId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const invoice = await trx
+        .select({
+          id: wmsTables.invoices.id,
+          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+          invoiceNumber: wmsTables.invoices.invoiceNumber,
+          carrierCode: wmsTables.invoices.carrierCode,
+          issueMethod: wmsTables.invoices.issueMethod,
+          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          status: wmsTables.invoices.status,
+          issuedAt: wmsTables.invoices.issuedAt,
+          printedAt: wmsTables.invoices.printedAt,
+          shippedAt: wmsTables.invoices.shippedAt,
+        })
+        .from(wmsTables.invoices)
+        .where(eq(wmsTables.invoices.id, invoiceId))
+        .limit(1)
+        .then(rows => rows[0]);
 
-    if (!invoice) {
-      throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    }
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
+      }
 
-    if (invoice.status === 'shipped') {
-      return; // Already shipped
-    }
+      if (invoice.status === 'shipped') {
+        return; // Already shipped
+      }
 
-    if (invoice.status !== 'printed') {
-      throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
-    }
+      if (invoice.status !== 'printed') {
+        throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.invoices)
+      await trx.update(wmsTables.invoices)
         .set({
           status: 'shipped',
           shippedAt: new Date()
         })
         .where(eq(wmsTables.invoices.id, invoiceId));
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'shipped',
           shippedAt: new Date()
@@ -224,103 +254,125 @@ export class InvoiceService {
         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
 
       this.logger.log(`Marked invoice ${invoiceId} as shipped`);
-    });
+    }, tx);
   }
 
-  async cancelInvoice(invoiceId: string): Promise<void> {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(wmsTables.invoices.id, invoiceId)
-    });
+  async cancelInvoice(invoiceId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const invoice = await trx
+        .select({
+          id: wmsTables.invoices.id,
+          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+          invoiceNumber: wmsTables.invoices.invoiceNumber,
+          carrierCode: wmsTables.invoices.carrierCode,
+          issueMethod: wmsTables.invoices.issueMethod,
+          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          status: wmsTables.invoices.status,
+          issuedAt: wmsTables.invoices.issuedAt,
+          printedAt: wmsTables.invoices.printedAt,
+          shippedAt: wmsTables.invoices.shippedAt,
+        })
+        .from(wmsTables.invoices)
+        .where(eq(wmsTables.invoices.id, invoiceId))
+        .limit(1)
+        .then(rows => rows[0]);
 
-    if (!invoice) {
-      throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    }
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
+      }
 
-    if (invoice.status === 'shipped') {
-      throw new ConflictException('Cannot cancel shipped invoice');
-    }
+      if (invoice.status === 'shipped') {
+        throw new ConflictException('Cannot cancel shipped invoice');
+      }
 
-    if (invoice.issueMethod === 'goodsflow' && invoice.goodsflowServiceId) {
-      const provider = this.deliveryProviders.get('goodsflow');
-      if (provider) {
-        try {
-          await provider.cancelInvoice(invoice.goodsflowServiceId);
-        } catch (error) {
-          this.logger.warn(`Failed to cancel Goodsflow invoice ${invoice.goodsflowServiceId}:`, error);
+      if (invoice.issueMethod === 'goodsflow' && invoice.goodsflowServiceId) {
+        const provider = this.deliveryProviders.get('goodsflow');
+        if (provider) {
+          try {
+            await provider.cancelInvoice(invoice.goodsflowServiceId);
+          } catch (error) {
+            this.logger.warn(`Failed to cancel Goodsflow invoice ${invoice.goodsflowServiceId}:`, error);
+          }
         }
       }
-    }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.invoices)
+      await trx.update(wmsTables.invoices)
         .set({
-          status: 'canceled',
-          canceledAt: new Date()
+          status: 'canceled'
         })
         .where(eq(wmsTables.invoices.id, invoiceId));
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'picked' // Revert to picked status
+          status: 'picked'
         })
         .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
 
       this.logger.log(`Canceled invoice ${invoiceId}`);
-    });
+    }, tx);
   }
 
-  async getInvoiceDetail(invoiceId: string): Promise<InvoiceDetail> {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(wmsTables.invoices.id, invoiceId),
-      with: {
-        items: true
+  async getInvoiceDetail(invoiceId: string, tx?: DbTx): Promise<InvoiceDetail> {
+    return this.inTx(async (trx) => {
+      const invoice = await trx
+        .select({
+          id: wmsTables.invoices.id,
+          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+          invoiceNumber: wmsTables.invoices.invoiceNumber,
+          carrierCode: wmsTables.invoices.carrierCode,
+          issueMethod: wmsTables.invoices.issueMethod,
+          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          status: wmsTables.invoices.status,
+          issuedAt: wmsTables.invoices.issuedAt,
+          printedAt: wmsTables.invoices.printedAt,
+          shippedAt: wmsTables.invoices.shippedAt,
+        })
+        .from(wmsTables.invoices)
+        .where(eq(wmsTables.invoices.id, invoiceId))
+        .limit(1)
+        .then(rows => rows[0]);
+
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
       }
-    });
 
-    if (!invoice) {
-      throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    }
-
-    return {
-      id: invoice.id,
-      fulfillmentOrderId: invoice.fulfillmentOrderId,
-      invoiceNumber: invoice.invoiceNumber,
-      carrierCode: invoice.carrierCode,
-      issueMethod: invoice.issueMethod,
-      goodsflowServiceId: invoice.goodsflowServiceId,
-      status: invoice.status,
-      issuedAt: invoice.issuedAt,
-      printedAt: invoice.printedAt,
-      shippedAt: invoice.shippedAt,
-      items: invoice.items.map(item => ({
-        id: item.id,
-        foiId: item.foiId,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice
-      }))
-    };
+      return {
+        id: invoice.id,
+        fulfillmentOrderId: invoice.fulfillmentOrderId,
+        invoiceNumber: invoice.invoiceNumber,
+        carrierCode: invoice.carrierCode ?? undefined,
+        issueMethod: invoice.issueMethod,
+        goodsflowServiceId: invoice.goodsflowServiceId ?? undefined,
+        status: invoice.status,
+        issuedAt: invoice.issuedAt ?? undefined,
+        printedAt: invoice.printedAt ?? undefined,
+        shippedAt: invoice.shippedAt ?? undefined,
+        items: []
+      };
+    }, tx);
   }
 
-  async trackInvoice(invoiceId: string) {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(wmsTables.invoices.id, invoiceId)
-    });
+  async trackInvoice(invoiceId: string, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      const invoice = await trx.query.invoices.findFirst({
+        where: eq(wmsTables.invoices.id, invoiceId)
+      });
 
-    if (!invoice) {
-      throw new NotFoundException(`Invoice ${invoiceId} not found`);
-    }
+      if (!invoice) {
+        throw new NotFoundException(`Invoice ${invoiceId} not found`);
+      }
 
-    if (invoice.issueMethod !== 'goodsflow' || !invoice.goodsflowServiceId) {
-      throw new BadRequestException('Tracking is only available for Goodsflow invoices');
-    }
+      if (invoice.issueMethod !== 'goodsflow' || !invoice.goodsflowServiceId) {
+        throw new BadRequestException('Tracking is only available for Goodsflow invoices');
+      }
 
-    const provider = this.deliveryProviders.get('goodsflow');
-    if (!provider) {
-      throw new BadRequestException('Goodsflow provider not configured');
-    }
+      const provider = this.deliveryProviders.get('goodsflow');
+      if (!provider) {
+        throw new BadRequestException('Goodsflow provider not configured');
+      }
 
-    return provider.trackDelivery(invoice.goodsflowServiceId);
+      return provider.trackDelivery(invoice.goodsflowServiceId);
+    }, tx);
   }
 
   private generateInvoiceNumber(): string {

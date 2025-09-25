@@ -90,7 +90,7 @@ export class ReservationLifecycleService {
 
     // 2. 각 예약 해제
     for (const reservation of reservations) {
-      await this.unifiedReservation.releaseReservation(reservation.reservationId, tx);
+      await this.unifiedReservation.releaseReservation(reservation.id, tx);
     }
 
     // 3. FO 예약 수량 초기화 (기존 호환성)
@@ -124,7 +124,7 @@ export class ReservationLifecycleService {
 
     // 2. 각 예약 해제
     for (const reservation of reservations) {
-      await this.unifiedReservation.releaseReservation(reservation.reservationId, tx);
+      await this.unifiedReservation.releaseReservation(reservation.id, tx);
     }
 
     this.logger.log(`Released ${reservations.length} Movement task reservations. Reason: ${reason}`);
@@ -134,28 +134,41 @@ export class ReservationLifecycleService {
    * 부분 출고 처리 - 출고된 수량만큼 예약 해제
    */
   private async handlePartialShipment(fulfillmentOrderId: string, tx: DbTx): Promise<void> {
-    // 1. FO 아이템별 출고 현황 조회
-    const fulfillmentOrderItems = await tx.query.fulfillmentOrderItems.findMany({
-      where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId),
-      with: {
-        fulfillmentOrderLines: true // 실제 출고된 수량 정보
-      }
-    });
+    // 1. FO 아이템별 출고 현황 조회 (Core Query)
+    const fulfillmentOrderItems = await tx
+      .select()
+      .from(wmsTables.fulfillmentOrderItems)
+      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
+
+    // 해당 아이템들의 라인들을 한번에 조회해 메모리에서 그룹핑
+    const foiIds = fulfillmentOrderItems.map(i => i.id);
+    const fulfillmentOrderLines = foiIds.length > 0
+      ? await tx
+          .select()
+          .from(wmsTables.fulfillmentOrderLines)
+          .where(inArray(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, [fulfillmentOrderId]))
+      : [];
+
+    const linesByFoItemId = new Map<string, { shippedQty: number }[]>();
+    for (const l of fulfillmentOrderLines) {
+      const arr = linesByFoItemId.get(l.id) || [];
+      arr.push({ shippedQty: (l as any).shippedQty || 0 });
+      linesByFoItemId.set(l.id, arr);
+    }
 
     for (const item of fulfillmentOrderItems) {
-      const totalShipped = item.fulfillmentOrderLines?.reduce(
-        (sum, line) => sum + (line.shippedQty || 0),
-        0
-      ) || 0;
+      const relatedLines = linesByFoItemId.get(item.id) || [];
+      const totalShipped = relatedLines.reduce((sum, line) => sum + (line.shippedQty || 0), 0);
 
       if (totalShipped > 0) {
         // 2. 해당 아이템의 예약 조회
-        const reservations = await tx.query.stockReservations.findMany({
-          where: and(
+        const reservations = await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(and(
             eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.id),
             eq(wmsTables.stockReservations.status, 'confirmed')
-          )
-        });
+          ));
 
         // 3. 출고된 수량만큼 예약 해제 (FIFO 방식)
         let remainingToRelease = totalShipped;
@@ -167,7 +180,7 @@ export class ReservationLifecycleService {
 
           if (releaseQuantity === reservation.quantity) {
             // 전체 예약 해제
-            await this.unifiedReservation.releaseReservation(reservation.reservationId, tx);
+            await this.unifiedReservation.releaseReservation(reservation.id, tx);
           } else {
             // 부분 예약 해제 - 수량 조정
             await tx
@@ -176,7 +189,7 @@ export class ReservationLifecycleService {
                 quantity: reservation.quantity - releaseQuantity,
                 updatedAt: new Date()
               })
-              .where(eq(wmsTables.stockReservations.reservationId, reservation.reservationId));
+              .where(eq(wmsTables.stockReservations.id, reservation.id));
           }
 
           remainingToRelease -= releaseQuantity;
@@ -210,10 +223,10 @@ export class ReservationLifecycleService {
 
       for (const reservation of expiredReservations) {
         try {
-          await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+          await this.unifiedReservation.releaseReservation(reservation.id, trx);
           releasedCount++;
         } catch (error) {
-          this.logger.warn(`Failed to release expired reservation ${reservation.reservationId}: ${error.message}`);
+          this.logger.warn(`Failed to release expired reservation ${reservation.id}: ${error.message}`);
         }
       }
 
@@ -275,7 +288,7 @@ export class ReservationLifecycleService {
             // 4. 원본 예약 수량 차감
             if (splitReservationQty === reservation.quantity) {
               // 전체 예약을 새 FO로 이동
-              await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+              await this.unifiedReservation.releaseReservation(reservation.id, trx);
             } else {
               // 부분 이동: 원본 예약 수량 감소
               await trx
@@ -284,7 +297,7 @@ export class ReservationLifecycleService {
                   quantity: reservation.quantity - splitReservationQty,
                   updatedAt: new Date()
                 })
-                .where(eq(wmsTables.stockReservations.reservationId, reservation.reservationId));
+                .where(eq(wmsTables.stockReservations.id, reservation.id));
             }
 
             remainingToSplit -= splitReservationQty;
@@ -321,12 +334,12 @@ export class ReservationLifecycleService {
             skuId: reservation.skuId,
             warehouseId: reservation.warehouseId,
             quantity: reservation.quantity,
-            fulfillmentOrderItemId: reservation.fulfillmentOrderItemId,
+            fulfillmentOrderItemId: reservation.fulfillmentOrderItemId || undefined,
             reason: `Merged from FO ${sourceFoId}`
           }, trx);
 
           // 3. 원본 예약 해제
-          await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+          await this.unifiedReservation.releaseReservation(reservation.id, trx);
         }
 
         this.logger.log(`Merged reservations from FO ${sourceFoId} → ${targetFoId}`);
@@ -373,7 +386,7 @@ export class ReservationLifecycleService {
 
         // 3. 원본 예약 처리
         if (transferReservationQty === reservation.quantity) {
-          await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+          await this.unifiedReservation.releaseReservation(reservation.id, trx);
         } else {
           await trx
             .update(wmsTables.stockReservations)
@@ -381,7 +394,7 @@ export class ReservationLifecycleService {
               quantity: reservation.quantity - transferReservationQty,
               updatedAt: new Date()
             })
-            .where(eq(wmsTables.stockReservations.reservationId, reservation.reservationId));
+            .where(eq(wmsTables.stockReservations.id, reservation.id));
         }
 
         remainingToTransfer -= transferReservationQty;
@@ -438,7 +451,7 @@ export class ReservationLifecycleService {
           const releaseQuantity = Math.min(reservation.quantity, remainingToRelease);
 
           if (releaseQuantity === reservation.quantity) {
-            await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+            await this.unifiedReservation.releaseReservation(reservation.id, trx);
           } else {
             await trx
               .update(wmsTables.stockReservations)
@@ -446,7 +459,7 @@ export class ReservationLifecycleService {
                 quantity: reservation.quantity - releaseQuantity,
                 updatedAt: new Date()
               })
-              .where(eq(wmsTables.stockReservations.reservationId, reservation.reservationId));
+              .where(eq(wmsTables.stockReservations.id, reservation.id));
           }
 
           remainingToRelease -= releaseQuantity;

@@ -1,13 +1,13 @@
 import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ProductSkuMappingService } from './product-sku-mapping.service';
 
 export interface CreateFulfillmentOrderDto {
   warehouseId: string;
-  fulfillmentMode: 'in_house' | 'third_party' | 'direct_ship';
+  fulfillmentMode: 'in_house' | '3pl' | 'drop_ship';
   priority: 'normal' | 'high' | 'urgent';
   items: Array<{
     salesOrderId: string;
@@ -50,17 +50,21 @@ export class FulfillmentOrderTransactionService {
     return this.dbService.db;
   }
 
-  async createFulfillmentOrder(dto: CreateFulfillmentOrderDto): Promise<FulfillmentOrderResult> {
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
+  async createFulfillmentOrder(dto: CreateFulfillmentOrderDto, tx?: DbTx): Promise<FulfillmentOrderResult> {
     const { warehouseId, fulfillmentMode, priority, items } = dto;
 
     if (!items || items.length === 0) {
       throw new BadRequestException('FO items cannot be empty');
     }
 
-    await this.validateItems(items, warehouseId);
+    return this.inTx(async (trx) => {
+      await this.validateItems(items, warehouseId, trx);
 
-    return this.db.transaction(async (tx) => {
-      const [fulfillmentOrder] = await tx.insert(wmsTables.fulfillmentOrders)
+      const [fulfillmentOrder] = await trx.insert(wmsTables.fulfillmentOrders)
         .values({
           warehouseId,
           fulfillmentMode,
@@ -76,7 +80,8 @@ export class FulfillmentOrderTransactionService {
 
       for (const item of items) {
         const mappingSnapshot = await this.productSkuMappingService.getMappingSnapshot(
-          await this.getActiveMappingId(item.productId, warehouseId, tx)
+          await this.getActiveMappingId(item.productId, warehouseId, trx),
+          trx
         );
 
         const variantMapping = mappingSnapshot.mappings.find(m => m.variantId === item.variantId);
@@ -86,14 +91,14 @@ export class FulfillmentOrderTransactionService {
 
         const requiredSkuQty = item.qty * variantMapping.quantity;
 
-        const availableStock = await this.checkStockAvailability(variantMapping.skuId, warehouseId, tx);
+        const availableStock = await this.checkStockAvailability(variantMapping.skuId, warehouseId, trx);
         if (availableStock < requiredSkuQty) {
           throw new ConflictException(
             `Insufficient stock for SKU ${variantMapping.skuId}. Required: ${requiredSkuQty}, Available: ${availableStock}`
           );
         }
 
-        const [foItem] = await tx.insert(wmsTables.fulfillmentOrderItems)
+        const [foItem] = await trx.insert(wmsTables.fulfillmentOrderItems)
           .values({
             fulfillmentOrderId: fulfillmentOrder.id,
             salesOrderId: item.salesOrderId,
@@ -107,18 +112,19 @@ export class FulfillmentOrderTransactionService {
           })
           .returning();
 
-        const [reservation] = await tx.insert(wmsTables.stockReservations)
+        const [reservation] = await trx.insert(wmsTables.stockReservations)
           .values({
+            targetType: 'FULFILLMENT_ORDER',
+            targetId: fulfillmentOrder.id,
+            fulfillmentOrderItemId: foItem.id,
             skuId: variantMapping.skuId,
             warehouseId,
-            fulfillmentOrderItemId: foItem.id,
-            qty: requiredSkuQty,
-            reservationType: 'sales',
+            quantity: requiredSkuQty,
             status: 'active'
           })
           .returning();
 
-        await tx.update(wmsTables.fulfillmentOrderItems)
+        await trx.update(wmsTables.fulfillmentOrderItems)
           .set({ reservedQty: requiredSkuQty })
           .where(eq(wmsTables.fulfillmentOrderItems.id, foItem.id));
 
@@ -140,7 +146,7 @@ export class FulfillmentOrderTransactionService {
         });
       }
 
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'pending',
           totalReservedQty: reservations.reduce((sum, r) => sum + r.qty, 0)
@@ -156,28 +162,28 @@ export class FulfillmentOrderTransactionService {
         items: foItems,
         reservations
       };
-    });
+    }, tx);
   }
 
-  async cancelFulfillmentOrder(fulfillmentOrderId: string): Promise<void> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: true
+  async cancelFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
+
+      if (!fulfillmentOrder) {
+        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (fulfillmentOrder.status === 'completed' || fulfillmentOrder.status === 'shipped') {
+        throw new ConflictException(`Cannot cancel FO in status: ${fulfillmentOrder.status}`);
+      }
 
-    if (fulfillmentOrder.status === 'completed' || fulfillmentOrder.status === 'shipped') {
-      throw new ConflictException(`Cannot cancel FO in status: ${fulfillmentOrder.status}`);
-    }
-
-    await this.db.transaction(async (tx) => {
       // 1. FO 상태 업데이트
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'canceled',
           canceledAt: new Date(),
@@ -197,35 +203,38 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'canceled',
-        tx
+        trx
       );
 
       this.logger.log(`Canceled FO ${fulfillmentOrderId} and released reservations via lifecycle service`);
-    });
+    }, tx);
   }
 
   /**
    * FO 완료 처리 - 예약 자동 해제
    */
-  async completeFulfillmentOrder(fulfillmentOrderId: string): Promise<void> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId)
-    });
+  async completeFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
 
-    if (!fulfillmentOrder) {
-      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (!fulfillmentOrder) {
+        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+      }
 
-    if (fulfillmentOrder.status === 'completed') {
-      return; // 이미 완료됨
-    }
+      if (fulfillmentOrder.status === 'completed') {
+        return; // 이미 완료됨
+      }
 
-    await this.db.transaction(async (tx) => {
       // 1. FO 상태 업데이트
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'completed',
-          completedAt: new Date(),
+          updatedAt: new Date(),
           totalReservedQty: 0
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
@@ -241,28 +250,31 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'completed',
-        tx
+        trx
       );
 
       this.logger.log(`Completed FO ${fulfillmentOrderId} and released reservations`);
-    });
+    }, tx);
   }
 
   /**
    * FO 출고 처리 - 예약 자동 해제
    */
-  async shipFulfillmentOrder(fulfillmentOrderId: string): Promise<void> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId)
-    });
+  async shipFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
 
-    if (!fulfillmentOrder) {
-      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (!fulfillmentOrder) {
+        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+      }
 
-    await this.db.transaction(async (tx) => {
       // 1. FO 상태 업데이트
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'shipped',
           shippedAt: new Date(),
@@ -281,53 +293,66 @@ export class FulfillmentOrderTransactionService {
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'shipped',
-        tx
+        trx
       );
 
       this.logger.log(`Shipped FO ${fulfillmentOrderId} and released reservations`);
-    });
+    }, tx);
   }
 
-  async updateFulfillmentOrderPriority(fulfillmentOrderId: string, priority: 'normal' | 'high' | 'urgent'): Promise<void> {
-    const [updated] = await this.db.update(wmsTables.fulfillmentOrders)
-      .set({ priority, updatedAt: new Date() })
-      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
-      .returning();
+  async updateFulfillmentOrderPriority(fulfillmentOrderId: string, priority: 'normal' | 'high' | 'urgent', tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const [updated] = await trx.update(wmsTables.fulfillmentOrders)
+        .set({ priority, updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .returning();
 
-    if (!updated) {
-      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (!updated) {
+        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+      }
 
-    this.logger.log(`Updated FO ${fulfillmentOrderId} priority to ${priority}`);
+      this.logger.log(`Updated FO ${fulfillmentOrderId} priority to ${priority}`);
+    }, tx);
   }
 
-  async allocateToOutboundBatch(fulfillmentOrderId: string, batchId: string): Promise<void> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId)
-    });
+  async allocateToOutboundBatch(fulfillmentOrderId: string, batchId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrders.id,
+          status: wmsTables.fulfillmentOrders.status,
+          totalItems: wmsTables.fulfillmentOrders.totalItems,
+          totalQty: wmsTables.fulfillmentOrders.totalQty,
+        })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      const fulfillmentOrder = foRows[0];
 
-    if (!fulfillmentOrder) {
-      throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (!fulfillmentOrder) {
+        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
+      }
 
-    if (fulfillmentOrder.status !== 'pending') {
-      throw new ConflictException(`FO must be in pending status. Current: ${fulfillmentOrder.status}`);
-    }
+      if (fulfillmentOrder.status !== 'pending') {
+        throw new ConflictException(`FO must be in pending status. Current: ${fulfillmentOrder.status}`);
+      }
 
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const batch = batchRows[0];
 
-    if (!batch) {
-      throw new BadRequestException(`Outbound batch ${batchId} not found`);
-    }
+      if (!batch) {
+        throw new BadRequestException(`Outbound batch ${batchId} not found`);
+      }
 
-    if (batch.status !== 'created') {
-      throw new ConflictException(`Batch must be in created status. Current: ${batch.status}`);
-    }
+      if (batch.status !== 'created') {
+        throw new ConflictException(`Batch must be in created status. Current: ${batch.status}`);
+      }
 
-    await this.db.transaction(async (tx) => {
-      await tx.update(wmsTables.fulfillmentOrders)
+      await trx.update(wmsTables.fulfillmentOrders)
         .set({
           status: 'allocated',
           batchId,
@@ -335,23 +360,25 @@ export class FulfillmentOrderTransactionService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      const currentBatchItems = await tx.query.outboundBatches.findFirst({
-        where: eq(wmsTables.outboundBatches.id, batchId),
-        columns: { totalItems: true, totalQty: true }
-      });
+      const currentBatchItemsRows = await trx
+        .select({ totalItems: wmsTables.outboundBatches.totalItems, totalQty: wmsTables.outboundBatches.totalQty })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+      const currentBatchItems = currentBatchItemsRows[0];
 
-      await tx.update(wmsTables.outboundBatches)
+      await trx.update(wmsTables.outboundBatches)
         .set({
-          totalItems: (currentBatchItems?.totalItems || 0) + fulfillmentOrder.totalItems,
-          totalQty: (currentBatchItems?.totalQty || 0) + fulfillmentOrder.totalQty
+          totalItems: (currentBatchItems?.totalItems || 0) + (fulfillmentOrder.totalItems ?? 0),
+          totalQty: (currentBatchItems?.totalQty || 0) + (fulfillmentOrder.totalQty ?? 0)
         })
         .where(eq(wmsTables.outboundBatches.id, batchId));
 
       this.logger.log(`Allocated FO ${fulfillmentOrderId} to batch ${batchId}`);
-    });
+    }, tx);
   }
 
-  private async validateItems(items: CreateFulfillmentOrderDto['items'], warehouseId: string): Promise<void> {
+  private async validateItems(items: CreateFulfillmentOrderDto['items'], warehouseId: string, tx: DbTx): Promise<void> {
     const uniqueItems = new Map<string, number>();
 
     for (const item of items) {
@@ -367,7 +394,7 @@ export class FulfillmentOrderTransactionService {
         throw new BadRequestException(`Invalid quantity for item ${key}: ${item.qty}`);
       }
 
-      const mapping = await this.productSkuMappingService.getActiveMapping(item.productId, warehouseId);
+      const mapping = await this.productSkuMappingService.getActiveMapping(item.productId, warehouseId, tx);
       if (!mapping) {
         throw new BadRequestException(`No active mapping found for product ${item.productId} in warehouse ${warehouseId}`);
       }
@@ -379,7 +406,7 @@ export class FulfillmentOrderTransactionService {
     }
   }
 
-  private async getActiveMappingId(productId: string, warehouseId: string, tx: any): Promise<string> {
+  private async getActiveMappingId(productId: string, warehouseId: string, tx: DbTx): Promise<string> {
     const mapping = await tx.query.productSkuMappings.findFirst({
       where: and(
         eq(wmsTables.productSkuMappings.productId, productId),
@@ -395,7 +422,7 @@ export class FulfillmentOrderTransactionService {
     return mapping.id;
   }
 
-  private async checkStockAvailability(skuId: string, warehouseId: string, tx: any): Promise<number> {
+  private async checkStockAvailability(skuId: string, warehouseId: string, tx: DbTx): Promise<number> {
     // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
     const stockLedgers = await tx.query.stockLedgers.findMany({
       where: and(

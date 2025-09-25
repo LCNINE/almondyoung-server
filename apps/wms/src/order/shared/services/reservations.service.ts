@@ -18,14 +18,11 @@ interface ReserveFulfilmentOrderLineDto {
 @Injectable()
 export class ReservationsService {
   private readonly logger = new Logger(ReservationsService.name);
-  private readonly MAX_RETRY_ATTEMPTS = 3;
-  private readonly RETRY_DELAY_MS = 100;
 
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly availability: AvailabilityService,
     private readonly unifiedReservation: UnifiedReservationService,
-    private readonly metrics?: MetricsService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -42,14 +39,16 @@ export class ReservationsService {
    */
   async reserveWithOptimisticLocking(dto: ReserveFulfilmentOrderLineDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      // 1. FO 정보 조회
-      const fulfillmentOrderItem = await trx.query.fulfillmentOrderItems.findFirst({
-        where: eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId),
-        with: {
-          fulfillmentOrder: true
-        }
-      });
+      // 1. FO 정보 조회 (Core Query)
+      const foiRows = await trx
+        .select({
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId))
+        .limit(1);
 
+      const fulfillmentOrderItem = foiRows[0];
       if (!fulfillmentOrderItem) {
         throw new BadRequestException(`Fulfillment order item ${dto.fulfillmentOrderItemId} not found`);
       }
@@ -57,7 +56,7 @@ export class ReservationsService {
       // 2. 통합 예약 시스템 사용
       const reservation = await this.unifiedReservation.reserveStock({
         targetType: 'FULFILLMENT_ORDER',
-        targetId: fulfillmentOrderItem.fulfillmentOrder.id,
+        targetId: fulfillmentOrderItem.fulfillmentOrderId,
         skuId: dto.skuId,
         warehouseId: dto.warehouseId,
         quantity: dto.quantity,
@@ -77,7 +76,7 @@ export class ReservationsService {
       this.logger.log(`Reserved ${dto.quantity} units for FO item ${dto.fulfillmentOrderItemId}`);
 
       return {
-        reservationId: reservation.reservationId,
+        reservationId: reservation.id,
         quantity: reservation.quantity
       };
     }, tx);
@@ -101,7 +100,7 @@ export class ReservationsService {
       }
 
       // 2. 통합 예약 시스템으로 해제
-      await this.unifiedReservation.releaseReservation(reservation.reservationId, trx);
+      await this.unifiedReservation.releaseReservation(reservation.id, trx);
 
       // 3. FO Line 예약 수량 업데이트 (기존 호환성)
       await trx
@@ -139,12 +138,15 @@ export class ReservationsService {
       }
 
       // 2. 대상 FO 정보 조회
-      const toFulfillmentOrderItem = await trx.query.fulfillmentOrderItems.findFirst({
-        where: eq(wmsTables.fulfillmentOrderItems.id, toFulfillmentOrderItemId),
-        with: {
-          fulfillmentOrder: true
-        }
-      });
+      const toFoRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.id, toFulfillmentOrderItemId))
+        .limit(1);
+      const toFulfillmentOrderItem = toFoRows[0];
 
       if (!toFulfillmentOrderItem) {
         throw new BadRequestException(`Target fulfillment order item ${toFulfillmentOrderItemId} not found`);
@@ -152,9 +154,9 @@ export class ReservationsService {
 
       // 3. 통합 예약 시스템으로 이전
       const newReservation = await this.unifiedReservation.transferReservation(
-        fromReservation.reservationId,
+        fromReservation.id,
         'FULFILLMENT_ORDER',
-        toFulfillmentOrderItem.fulfillmentOrder.id,
+        toFulfillmentOrderItem.fulfillmentOrderId,
         trx
       );
 
@@ -165,7 +167,7 @@ export class ReservationsService {
           fulfillmentOrderItemId: toFulfillmentOrderItemId,
           updatedAt: new Date()
         })
-        .where(eq(wmsTables.stockReservations.reservationId, newReservation.reservationId));
+        .where(eq(wmsTables.stockReservations.id, newReservation.id));
 
       // 5. FO Line 예약 수량 업데이트
       const transferQuantity = quantity || fromReservation.quantity;
@@ -191,7 +193,7 @@ export class ReservationsService {
       );
 
       return {
-        newReservationId: newReservation.reservationId,
+        newReservationId: newReservation.id,
         quantity: transferQuantity
       };
     }, tx);

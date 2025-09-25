@@ -41,7 +41,7 @@ checkBulkAvailability(items: SkuQuantityRequest[]): Promise<BulkAvailabilityResu
 createReservation(foId: string, items: ReservationItem[]): Promise<ReservationResult>
 
 // 예약 해제
-releaseReservation(reservationId: string): Promise<void>
+releaseReservation(id: string): Promise<void>
 
 // FO간 예약 이관 (합배송/분할용)
 transferReservation(fromFoId: string, toFoId: string, items: TransferItem[]): Promise<void>

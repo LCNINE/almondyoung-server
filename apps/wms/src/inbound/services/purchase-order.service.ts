@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { eq, and, inArray, sql, asc, desc } from 'drizzle-orm';
 import {
     CreatePurchaseOrderDto,
     UpdatePurchaseOrderStatusDto,
@@ -30,18 +30,22 @@ export class PurchaseOrderService {
         return this.dbService.db;
     }
 
+    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+        return tx ? fn(tx) : this.db.transaction(fn);
+    }
+
     /**
      * 발주 생성
      */
-    async createPurchaseOrder(createDto: CreatePurchaseOrderDto): Promise<PurchaseOrderResponse> {
-        return this.transactionService.runInTransaction(async (tx) => {
+    async createPurchaseOrder(createDto: CreatePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderResponse> {
+        return this.inTx(async (trx) => {
             // 임시: 창고 라우팅 로직 (나중에 DTO로 받도록 개선)
-            const sourceWarehouseId = await this.getSourceWarehouseId(createDto.type);
-            const destinationWarehouseId = await this.getDestinationWarehouseId(createDto.type);
+            const sourceWarehouseId = await this.getSourceWarehouseId(createDto.type, trx);
+            const destinationWarehouseId = await this.getDestinationWarehouseId(createDto.type, trx);
             const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
 
             // 발주 헤더 생성
-            const [purchaseOrder] = await tx
+            const [purchaseOrder] = await trx
                 .insert(wmsTables.purchaseOrders)
                 .values({
                     type: createDto.type,
@@ -55,7 +59,7 @@ export class PurchaseOrderService {
                 .returning();
 
             // 발주 라인 생성
-            const purchaseOrderLines = await tx
+            const purchaseOrderLines = await trx
                 .insert(wmsTables.purchaseOrderLines)
                 .values(
                     createDto.lines.map(line => ({
@@ -69,22 +73,25 @@ export class PurchaseOrderService {
 
             this.logger.log(`Created purchase order ${purchaseOrder.id} with ${purchaseOrderLines.length} lines`);
 
-            return this.getPurchaseOrderById(purchaseOrder.id);
-        });
+            return this.getPurchaseOrderById(purchaseOrder.id, trx);
+        }, tx);
     }
 
     /**
      * 장바구니에서 발주 생성
      */
-    async createPurchaseOrderFromCart(createDto: CreatePurchaseOrderFromCartDto): Promise<PurchaseOrderResponse> {
-        return this.transactionService.runInTransaction(async (tx) => {
+    async createPurchaseOrderFromCart(createDto: CreatePurchaseOrderFromCartDto, tx?: DbTx): Promise<PurchaseOrderResponse> {
+        return this.inTx(async (trx) => {
             // 장바구니 아이템 조회
-            const cartItems = await tx.query.purchaseOrderCart.findMany({
-                where: inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds),
-                with: {
-                    sku: true,
-                },
-            });
+            const cartItems = await trx
+                .select({
+                    id: wmsTables.purchaseOrderCart.id,
+                    skuId: wmsTables.purchaseOrderCart.skuId,
+                    quantity: wmsTables.purchaseOrderCart.quantity,
+                    type: wmsTables.purchaseOrderCart.type,
+                })
+                .from(wmsTables.purchaseOrderCart)
+                .where(inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds));
 
             if (cartItems.length !== createDto.cartItemIds.length) {
                 throw new BadRequestException('Some cart items not found');
@@ -97,7 +104,7 @@ export class PurchaseOrderService {
             }
 
             // 발주 생성
-            const [purchaseOrder] = await tx
+            const [purchaseOrder] = await trx
                 .insert(wmsTables.purchaseOrders)
                 .values({
                     type: types[0],
@@ -108,7 +115,7 @@ export class PurchaseOrderService {
                 .returning();
 
             // 발주 라인 생성
-            await tx
+            await trx
                 .insert(wmsTables.purchaseOrderLines)
                 .values(
                     cartItems.map(item => ({
@@ -120,14 +127,14 @@ export class PurchaseOrderService {
                 );
 
             // 장바구니에서 아이템 제거
-            await tx
+            await trx
                 .delete(wmsTables.purchaseOrderCart)
                 .where(inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds));
 
             this.logger.log(`Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items`);
 
-            return this.getPurchaseOrderById(purchaseOrder.id);
-        });
+            return this.getPurchaseOrderById(purchaseOrder.id, trx);
+        }, tx);
     }
 
     /**
@@ -136,17 +143,19 @@ export class PurchaseOrderService {
     async updatePurchaseOrderStatus(
         poId: string,
         updateDto: UpdatePurchaseOrderStatusDto
-    ): Promise<PurchaseOrderResponse> {
-        return this.transactionService.runInTransaction(async (tx) => {
-            const existingPO = await tx.query.purchaseOrders.findFirst({
-                where: eq(wmsTables.purchaseOrders.id, poId),
-            });
+    , tx?: DbTx): Promise<PurchaseOrderResponse> {
+        return this.inTx(async (trx) => {
+            const [existingPO] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
 
             if (!existingPO) {
                 throw new NotFoundException(`Purchase order with ID ${poId} not found`);
             }
 
-            await tx
+            await trx
                 .update(wmsTables.purchaseOrders)
                 .set({
                     status: updateDto.status,
@@ -157,29 +166,24 @@ export class PurchaseOrderService {
 
             // 상태가 confirmed로 변경되면 inbound plans 생성
             if (updateDto.status === PurchaseOrderStatus.CONFIRMED) {
-                await this.createInboundPlanFromPO(tx, poId);
+                await this.createInboundPlanFromPO(trx, poId);
             }
 
             this.logger.log(`Updated purchase order ${poId} status to ${updateDto.status}`);
 
-            return this.getPurchaseOrderById(poId);
-        });
+            return this.getPurchaseOrderById(poId, trx);
+        }, tx);
     }
 
     /**
      * 발주에서 입고 계획 생성 (이중 입고 계획 지원)
      */
-    private async createInboundPlanFromPO(tx: any, poId: string): Promise<void> {
-        const purchaseOrder = await tx.query.purchaseOrders.findFirst({
-            where: eq(wmsTables.purchaseOrders.id, poId),
-            with: {
-                lines: {
-                    with: {
-                        sku: true,
-                    },
-                },
-            },
-        });
+    private async createInboundPlanFromPO(tx: DbTx, poId: string): Promise<void> {
+        const [purchaseOrder] = await tx
+            .select()
+            .from(wmsTables.purchaseOrders)
+            .where(eq(wmsTables.purchaseOrders.id, poId))
+            .limit(1);
 
         if (!purchaseOrder) {
             throw new NotFoundException(`Purchase order ${poId} not found`);
@@ -222,7 +226,15 @@ export class PurchaseOrderService {
                 .returning();
 
             // 3. 동일한 아이템을 양쪽 계획에 추가
-            const sourceItems = purchaseOrder.lines.map(line => ({
+            const poLines = await tx
+                .select({
+                    skuId: wmsTables.purchaseOrderLines.skuId,
+                    quantity: wmsTables.purchaseOrderLines.quantity,
+                })
+                .from(wmsTables.purchaseOrderLines)
+                .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+
+            const sourceItems = poLines.map(line => ({
                 planId: sourcePlan.id,
                 skuId: line.skuId,
                 expectedQty: line.quantity,
@@ -230,7 +242,7 @@ export class PurchaseOrderService {
                 status: 'pending' as const,
             }));
 
-            const destinationItems = purchaseOrder.lines.map(line => ({
+            const destinationItems = poLines.map(line => ({
                 planId: destinationPlan.id,
                 skuId: line.skuId,
                 expectedQty: line.quantity,
@@ -261,10 +273,18 @@ export class PurchaseOrderService {
                 .returning();
 
             // 기존 아이템 생성 로직
+            const poLines = await tx
+                .select({
+                    skuId: wmsTables.purchaseOrderLines.skuId,
+                    quantity: wmsTables.purchaseOrderLines.quantity,
+                })
+                .from(wmsTables.purchaseOrderLines)
+                .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+
             await tx
                 .insert(wmsTables.inboundPlanItems)
                 .values(
-                    purchaseOrder.lines.map(line => ({
+                    poLines.map(line => ({
                         planId: plan.id,
                         skuId: line.skuId,
                         expectedQty: line.quantity,
@@ -280,8 +300,8 @@ export class PurchaseOrderService {
     /**
      * 발주 유형에 따른 입고 창고 ID 반환 (source)
      */
-    private async getSourceWarehouseId(type: PurchaseOrderType): Promise<string> {
-        const warehouses = await this.db.query.warehouses.findMany();
+    private async getSourceWarehouseId(type: PurchaseOrderType, tx: DbTx): Promise<string> {
+        const warehouses = await tx.select().from(wmsTables.warehouses);
         if (warehouses.length === 0) {
             throw new BadRequestException('No warehouse found');
         }
@@ -301,8 +321,8 @@ export class PurchaseOrderService {
     /**
      * 발주 유형에 따른 최종 목적지 창고 ID 반환 (destination)
      */
-    private async getDestinationWarehouseId(type: PurchaseOrderType): Promise<string> {
-        const warehouses = await this.db.query.warehouses.findMany();
+    private async getDestinationWarehouseId(type: PurchaseOrderType, tx: DbTx): Promise<string> {
+        const warehouses = await tx.select().from(wmsTables.warehouses);
         if (warehouses.length === 0) {
             throw new BadRequestException('No warehouse found');
         }
@@ -316,49 +336,67 @@ export class PurchaseOrderService {
      * 기존 호환성을 위한 메서드 (deprecated)
      */
     private async getDefaultWarehouseId(type: PurchaseOrderType): Promise<string> {
-        return this.getSourceWarehouseId(type);
+        return this.inTx((trx) => this.getSourceWarehouseId(type, trx));
     }
 
     /**
      * 발주 조회
      */
-    async getPurchaseOrderById(poId: string): Promise<PurchaseOrderResponse> {
-        const purchaseOrder = await this.db.query.purchaseOrders.findFirst({
-            where: eq(wmsTables.purchaseOrders.id, poId),
-            with: {
-                lines: {
-                    with: {
-                        sku: true,
-                    },
-                },
-                supplier: true,
-            },
-        });
+    async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
+        const po = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
+            return row;
+        }, tx);
 
-        if (!purchaseOrder) {
+        if (!po) {
             throw new NotFoundException(`Purchase order with ID ${poId} not found`);
         }
+        const lines = await this.inTx(async (trx) => trx
+            .select({
+                skuId: wmsTables.purchaseOrderLines.skuId,
+                quantity: wmsTables.purchaseOrderLines.quantity,
+                unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+                skuName: wmsTables.skus.name,
+                skuBarcode: wmsTables.skus.defaultBarcode,
+            })
+            .from(wmsTables.purchaseOrderLines)
+            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
+            .where(eq(wmsTables.purchaseOrderLines.poId, poId))
+        , tx);
+
+        const supplier = po.supplierId ? await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
+                .from(wmsTables.suppliers)
+                .where(eq(wmsTables.suppliers.id, po.supplierId))
+                .limit(1);
+            return row;
+        }, tx) : undefined;
 
         return {
-            id: purchaseOrder.id,
-            type: purchaseOrder.type as PurchaseOrderType,
-            supplierId: purchaseOrder.supplierId,
-            expectedArrival: purchaseOrder.expectedArrival,
-            status: purchaseOrder.status as PurchaseOrderStatus,
-            createdAt: purchaseOrder.createdAt!,
-            updatedAt: purchaseOrder.updatedAt!,
-            lines: purchaseOrder.lines?.map(line => ({
+            id: po.id,
+            type: po.type as PurchaseOrderType,
+            supplierId: po.supplierId,
+            expectedArrival: po.expectedArrival,
+            status: po.status as PurchaseOrderStatus,
+            createdAt: po.createdAt!,
+            updatedAt: po.updatedAt!,
+            lines: lines.map(line => ({
                 skuId: line.skuId,
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 sku: {
-                    name: line.sku?.name || '',
-                    barcode: line.sku?.barcode || '',
+                    name: line.skuName ?? '',
+                    barcode: line.skuBarcode ?? '',
                 },
-            })) || [],
-            supplier: purchaseOrder.supplier ? {
-                name: purchaseOrder.supplier.name || '',
-                contactInfo: purchaseOrder.supplier.contactInfo || '',
+            })),
+            supplier: supplier ? {
+                name: supplier.name ?? '',
+                contactInfo: supplier.contactInfo ?? '',
             } : undefined,
         };
     }
@@ -371,7 +409,7 @@ export class PurchaseOrderService {
         type?: PurchaseOrderType,
         limit = 50,
         offset = 0
-    ): Promise<PurchaseOrderResponse[]> {
+    , tx?: DbTx): Promise<PurchaseOrderResponse[]> {
         const conditions: any[] = [];
 
         if (status) {
@@ -382,22 +420,39 @@ export class PurchaseOrderService {
             conditions.push(eq(wmsTables.purchaseOrders.type, type));
         }
 
-        const purchaseOrders = await this.db.query.purchaseOrders.findMany({
-            where: conditions.length > 0 ? and(...conditions) : undefined,
-            with: {
-                lines: {
-                    with: {
-                        sku: true,
-                    },
-                },
-                supplier: true,
-            },
-            limit,
-            offset,
-            orderBy: (po, { desc }) => [desc(po.createdAt)],
-        });
+        const purchaseOrders = await this.inTx(async (trx) => trx
+            .select()
+            .from(wmsTables.purchaseOrders)
+            .where(conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined)
+            .orderBy(desc(wmsTables.purchaseOrders.createdAt))
+            .limit(limit)
+            .offset(offset)
+        , tx);
+        const results = [] as PurchaseOrderResponse[];
+        for (const po of purchaseOrders) {
+            const lines = await this.inTx(async (trx) => trx
+                .select({
+                    skuId: wmsTables.purchaseOrderLines.skuId,
+                    quantity: wmsTables.purchaseOrderLines.quantity,
+                    unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+                    skuName: wmsTables.skus.name,
+                    skuBarcode: wmsTables.skus.defaultBarcode,
+                })
+                .from(wmsTables.purchaseOrderLines)
+                .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
+                .where(eq(wmsTables.purchaseOrderLines.poId, po.id))
+            , tx);
 
-        return purchaseOrders.map(po => ({
+            const supplier = po.supplierId ? await this.inTx(async (trx) => {
+                const [row] = await trx
+                    .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
+                    .from(wmsTables.suppliers)
+                    .where(eq(wmsTables.suppliers.id, po.supplierId))
+                    .limit(1);
+                return row;
+            }, tx) : undefined;
+
+            results.push({
             id: po.id,
             type: po.type as PurchaseOrderType,
             supplierId: po.supplierId,
@@ -405,20 +460,22 @@ export class PurchaseOrderService {
             status: po.status as PurchaseOrderStatus,
             createdAt: po.createdAt!,
             updatedAt: po.updatedAt!,
-            lines: po.lines?.map(line => ({
-                skuId: line.skuId,
-                quantity: line.quantity,
-                unitPrice: line.unitPrice,
-                sku: {
-                    name: line.sku?.name || '',
-                    barcode: line.sku?.barcode || '',
-                },
-            })) || [],
-            supplier: po.supplier ? {
-                name: po.supplier.name || '',
-                contactInfo: po.supplier.contactInfo || '',
-            } : undefined,
-        }));
+                lines: lines.map(line => ({
+                    skuId: line.skuId,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    sku: {
+                        name: line.skuName ?? '',
+                        barcode: line.skuBarcode ?? '',
+                    },
+                })),
+                supplier: supplier ? {
+                    name: supplier.name ?? '',
+                    contactInfo: supplier.contactInfo ?? '',
+                } : undefined,
+            });
+        }
+        return results;
     }
 
     // ========== 발주대기리스트 (Cart) 관리 ==========
@@ -426,30 +483,35 @@ export class PurchaseOrderService {
     /**
      * 장바구니에 아이템 추가
      */
-    async addToCart(addDto: AddToCartDto): Promise<CartItemResponse> {
+    async addToCart(addDto: AddToCartDto, tx?: DbTx): Promise<CartItemResponse> {
         // 이미 장바구니에 있는지 확인
-        const existingItem = await this.db.query.purchaseOrderCart.findFirst({
-            where: and(
-                eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
-                eq(wmsTables.purchaseOrderCart.type, addDto.type)
-            ),
-        });
+        const existingItem = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.purchaseOrderCart)
+                .where(and(
+                    eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
+                    eq(wmsTables.purchaseOrderCart.type, addDto.type)
+                ))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (existingItem) {
             // 기존 아이템 수량 업데이트
-            await this.db
+            await this.inTx(async (trx) => trx
                 .update(wmsTables.purchaseOrderCart)
                 .set({
                     quantity: existingItem.quantity + addDto.quantity,
                     supplierInfo: addDto.supplierInfo || existingItem.supplierInfo,
                     updatedAt: new Date(),
                 })
-                .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id));
-
-            return this.getCartItemById(existingItem.id);
+                .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id))
+            , tx);
+            return this.getCartItemById(existingItem.id, tx);
         } else {
             // 새 아이템 추가
-            const [cartItem] = await this.db
+            const [cartItem] = await this.inTx(async (trx) => trx
                 .insert(wmsTables.purchaseOrderCart)
                 .values({
                     skuId: addDto.skuId,
@@ -457,44 +519,49 @@ export class PurchaseOrderService {
                     type: addDto.type,
                     supplierInfo: addDto.supplierInfo,
                 })
-                .returning();
+                .returning(), tx);
 
-            return this.getCartItemById(cartItem.id);
+            return this.getCartItemById(cartItem.id, tx);
         }
     }
 
     /**
      * 장바구니 아이템 수정
      */
-    async updateCartItem(itemId: string, updateDto: UpdateCartItemDto): Promise<CartItemResponse> {
-        const existingItem = await this.db.query.purchaseOrderCart.findFirst({
-            where: eq(wmsTables.purchaseOrderCart.id, itemId),
-        });
+    async updateCartItem(itemId: string, updateDto: UpdateCartItemDto, tx?: DbTx): Promise<CartItemResponse> {
+        const existingItem = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select()
+                .from(wmsTables.purchaseOrderCart)
+                .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!existingItem) {
             throw new NotFoundException(`Cart item with ID ${itemId} not found`);
         }
 
-        await this.db
+        await this.inTx(async (trx) => trx
             .update(wmsTables.purchaseOrderCart)
             .set({
                 quantity: updateDto.quantity,
                 supplierInfo: updateDto.supplierInfo ?? existingItem.supplierInfo,
                 updatedAt: new Date(),
             })
-            .where(eq(wmsTables.purchaseOrderCart.id, itemId));
-
-        return this.getCartItemById(itemId);
+            .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+        , tx);
+        return this.getCartItemById(itemId, tx);
     }
 
     /**
      * 장바구니에서 아이템 제거
      */
-    async removeFromCart(itemId: string): Promise<void> {
-        const result = await this.db
+    async removeFromCart(itemId: string, tx?: DbTx): Promise<void> {
+        const result = await this.inTx(async (trx) => trx
             .delete(wmsTables.purchaseOrderCart)
             .where(eq(wmsTables.purchaseOrderCart.id, itemId))
-            .returning();
+            .returning(), tx);
 
         if (result.length === 0) {
             throw new NotFoundException(`Cart item with ID ${itemId} not found`);
@@ -506,14 +573,24 @@ export class PurchaseOrderService {
     /**
      * 장바구니 조회
      */
-    async getCartItems(type?: PurchaseOrderType): Promise<CartItemResponse[]> {
-        const cartItems = await this.db.query.purchaseOrderCart.findMany({
-            where: type ? eq(wmsTables.purchaseOrderCart.type, type) : undefined,
-            with: {
-                sku: true,
-            },
-            orderBy: (cart, { desc }) => [desc(cart.createdAt)],
-        });
+    async getCartItems(type?: PurchaseOrderType, tx?: DbTx): Promise<CartItemResponse[]> {
+        const cartItems = await this.inTx(async (trx) => trx
+            .select({
+                id: wmsTables.purchaseOrderCart.id,
+                skuId: wmsTables.purchaseOrderCart.skuId,
+                quantity: wmsTables.purchaseOrderCart.quantity,
+                type: wmsTables.purchaseOrderCart.type,
+                supplierInfo: wmsTables.purchaseOrderCart.supplierInfo,
+                createdAt: wmsTables.purchaseOrderCart.createdAt,
+                updatedAt: wmsTables.purchaseOrderCart.updatedAt,
+                skuName: wmsTables.skus.name,
+                skuBarcode: wmsTables.skus.defaultBarcode,
+            })
+            .from(wmsTables.purchaseOrderCart)
+            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
+            .where(type ? eq(wmsTables.purchaseOrderCart.type, type) : undefined)
+            .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
+        , tx);
 
         return cartItems.map(item => ({
             id: item.id,
@@ -524,8 +601,8 @@ export class PurchaseOrderService {
             createdAt: item.createdAt!,
             updatedAt: item.updatedAt!,
             sku: {
-                name: item.sku?.name || '',
-                barcode: item.sku?.barcode || '',
+                name: item.skuName ?? '',
+                barcode: item.skuBarcode ?? '',
             },
         }));
     }
@@ -533,13 +610,26 @@ export class PurchaseOrderService {
     /**
      * 장바구니 아이템 조회
      */
-    private async getCartItemById(itemId: string): Promise<CartItemResponse> {
-        const item = await this.db.query.purchaseOrderCart.findFirst({
-            where: eq(wmsTables.purchaseOrderCart.id, itemId),
-            with: {
-                sku: true,
-            },
-        });
+    private async getCartItemById(itemId: string, tx?: DbTx): Promise<CartItemResponse> {
+        const item = await this.inTx(async (trx) => {
+            const [row] = await trx
+                .select({
+                    id: wmsTables.purchaseOrderCart.id,
+                    skuId: wmsTables.purchaseOrderCart.skuId,
+                    quantity: wmsTables.purchaseOrderCart.quantity,
+                    type: wmsTables.purchaseOrderCart.type,
+                    supplierInfo: wmsTables.purchaseOrderCart.supplierInfo,
+                    createdAt: wmsTables.purchaseOrderCart.createdAt,
+                    updatedAt: wmsTables.purchaseOrderCart.updatedAt,
+                    skuName: wmsTables.skus.name,
+                    skuBarcode: wmsTables.skus.defaultBarcode,
+                })
+                .from(wmsTables.purchaseOrderCart)
+                .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
+                .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+                .limit(1);
+            return row;
+        }, tx);
 
         if (!item) {
             throw new NotFoundException(`Cart item with ID ${itemId} not found`);
@@ -554,8 +644,8 @@ export class PurchaseOrderService {
             createdAt: item.createdAt!,
             updatedAt: item.updatedAt!,
             sku: {
-                name: item.sku.name,
-                barcode: item.sku.barcode,
+                name: item.skuName ?? '',
+                barcode: item.skuBarcode ?? '',
             },
         };
     }
@@ -563,10 +653,17 @@ export class PurchaseOrderService {
     /**
      * 장바구니 비우기
      */
-    async clearCart(type?: PurchaseOrderType): Promise<void> {
-        await this.db
-            .delete(wmsTables.purchaseOrderCart)
-            .where(type ? eq(wmsTables.purchaseOrderCart.type, type) : undefined);
+    async clearCart(type?: PurchaseOrderType, tx?: DbTx): Promise<void> {
+        if (type) {
+            await this.inTx(async (trx) => trx
+                .delete(wmsTables.purchaseOrderCart)
+                .where(eq(wmsTables.purchaseOrderCart.type, type))
+            , tx);
+        } else {
+            await this.inTx(async (trx) => trx
+                .delete(wmsTables.purchaseOrderCart)
+            , tx);
+        }
 
         this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''}`);
     }
@@ -577,7 +674,7 @@ export class PurchaseOrderService {
      * 재주문 제안 조회
      * 안전재고 미만으로 떨어진 상품 목록
      */
-    async getReorderSuggestions(warehouseId?: string): Promise<StockReorderSuggestion[]> {
+    async getReorderSuggestions(warehouseId?: string, tx?: DbTx): Promise<StockReorderSuggestion[]> {
         // stockSummary view에서 안전재고 미만 상품 조회
         // 현재는 단순히 availableQty < 10인 상품을 반환 (향후 안전재고 설정 기능 추가 시 개선)
 
@@ -599,7 +696,7 @@ export class PurchaseOrderService {
             LIMIT 100
         `;
 
-        const results = await this.db.execute(query);
+        const results = await this.inTx(async (trx) => trx.execute(query), tx);
 
         return (results as any[]).map(row => ({
             skuId: row.sku_id,

@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray, desc } from 'drizzle-orm';
 
@@ -69,73 +69,94 @@ export class InspectionService {
     return this.dbService.db;
   }
 
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
   async startInspectionSession(request: {
     fulfillmentOrderId: string;
     type: 'individual' | 'batch';
     inspectorUserId: string;
-  }): Promise<InspectionSession> {
+  }, tx?: DbTx): Promise<InspectionSession> {
     const { fulfillmentOrderId, type, inspectorUserId } = request;
 
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: {
-          with: {
-            sku: true
-          }
-        }
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrders.id,
+          status: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+
+      const fo = foRows[0];
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (fo.status !== 'picked') {
+        throw new ConflictException(`Cannot start inspection for FO in status: ${fo.status}`);
+      }
 
-    if (fulfillmentOrder.status !== 'picked') {
-      throw new ConflictException(`Cannot start inspection for FO in status: ${fulfillmentOrder.status}`);
-    }
+      const itemRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuName: wmsTables.skus.name,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.skus,
+          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-    const sessionId = `INS-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const items: InspectionItem[] = itemRows.map(row => ({
+        foiId: row.id,
+        salesOrderId: row.salesOrderId,
+        salesOrderLineId: row.salesOrderLineId,
+        skuId: row.skuId,
+        skuName: row.skuName ?? '',
+        requiredQty: row.qty,
+        pickedQty: row.pickedQty,
+        inspectedQty: 0,
+        approvedQty: 0,
+        rejectedQty: 0,
+        status: 'pending',
+        issues: [],
+        lastInspectedAt: undefined
+      }));
 
-    const items: InspectionItem[] = fulfillmentOrder.items.map(item => ({
-      foiId: item.id,
-      salesOrderId: item.salesOrderId,
-      salesOrderLineId: item.salesOrderLineId,
-      skuId: item.skuId,
-      skuName: item.sku.name,
-      requiredQty: item.qty,
-      pickedQty: item.pickedQty,
-      inspectedQty: 0,
-      approvedQty: 0,
-      rejectedQty: 0,
-      status: 'pending',
-      issues: [],
-      lastInspectedAt: undefined
-    }));
+      const sessionId = `INS-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const session: InspectionSession = {
+        id: sessionId,
+        fulfillmentOrderId,
+        type,
+        status: 'active',
+        inspectorUserId,
+        totalItems: items.length,
+        inspectedItems: 0,
+        completedItems: 0,
+        issues: 0,
+        startedAt: new Date(),
+        items
+      };
 
-    const session: InspectionSession = {
-      id: sessionId,
-      fulfillmentOrderId,
-      type,
-      status: 'active',
-      inspectorUserId,
-      totalItems: items.length,
-      inspectedItems: 0,
-      completedItems: 0,
-      issues: 0,
-      startedAt: new Date(),
-      items
-    };
+      await trx.update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'inspecting',
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-    await this.db.update(wmsTables.fulfillmentOrders)
-      .set({
-        status: 'inspecting',
-        inspectionStartedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-
-    this.logger.log(`Started ${type} inspection session ${sessionId} for FO ${fulfillmentOrderId}`);
-    return session;
+      this.logger.log(`Started ${type} inspection session ${sessionId} for FO ${fulfillmentOrderId}`);
+      return session;
+    }, tx);
   }
 
   async inspectItem(request: {
@@ -152,151 +173,180 @@ export class InspectionService {
       photos?: string[];
     }>;
     inspectorUserId: string;
-  }): Promise<InspectionItem> {
+  }, tx?: DbTx): Promise<InspectionItem> {
     const { sessionId, foiId, inspectedQty, approvedQty, rejectedQty = 0, issues = [], inspectorUserId } = request;
 
     if (inspectedQty !== approvedQty + rejectedQty) {
       throw new BadRequestException('Inspected quantity must equal approved + rejected quantities');
     }
 
-    // TODO: In a real implementation, this would be stored in a separate inspection_sessions table
-    // For now, we'll work directly with FOI data
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuName: wmsTables.skus.name,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          foStatus: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .innerJoin(
+          wmsTables.skus,
+          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
 
-    const foi = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        sku: true,
-        fulfillmentOrder: true
+      const foi = rows[0];
+      if (!foi) {
+        throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
       }
-    });
 
-    if (!foi) {
-      throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
-    }
+      if (foi.foStatus !== 'inspecting') {
+        throw new ConflictException(`Cannot inspect item for FO in status: ${foi.foStatus}`);
+      }
 
-    if (foi.fulfillmentOrder.status !== 'inspecting') {
-      throw new ConflictException(`Cannot inspect item for FO in status: ${foi.fulfillmentOrder.status}`);
-    }
+      if (inspectedQty > foi.pickedQty) {
+        throw new BadRequestException(`Cannot inspect more than picked quantity: ${foi.pickedQty}`);
+      }
 
-    if (inspectedQty > foi.pickedQty) {
-      throw new BadRequestException(`Cannot inspect more than picked quantity: ${foi.pickedQty}`);
-    }
+      let status: InspectionItem['status'];
+      if (rejectedQty > 0) {
+        status = approvedQty > 0 ? 'partial' : 'rejected';
+      } else {
+        status = 'approved';
+      }
 
-    let status: InspectionItem['status'];
-    if (rejectedQty > 0) {
-      status = approvedQty > 0 ? 'partial' : 'rejected';
-    } else {
-      status = 'approved';
-    }
+      await trx.update(wmsTables.fulfillmentOrderItems)
+        .set({
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-    // Update FOI with inspection results
-    await this.db.update(wmsTables.fulfillmentOrderItems)
-      .set({
-        // Add inspection fields to schema later
-        updatedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
+      const inspectionIssues: InspectionIssue[] = issues.map(issue => ({
+        id: `ISS-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        foiId,
+        type: issue.type,
+        severity: issue.severity,
+        description: issue.description,
+        qty: issue.qty,
+        inspectorUserId,
+        reportedAt: new Date(),
+        photos: issue.photos
+      }));
 
-    const inspectionIssues: InspectionIssue[] = issues.map(issue => ({
-      id: `ISS-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      foiId,
-      type: issue.type,
-      severity: issue.severity,
-      description: issue.description,
-      qty: issue.qty,
-      inspectorUserId,
-      reportedAt: new Date(),
-      photos: issue.photos
-    }));
+      this.logger.log(`Inspected FOI ${foiId}: ${approvedQty} approved, ${rejectedQty} rejected, ${inspectionIssues.length} issues`);
 
-    this.logger.log(`Inspected FOI ${foiId}: ${approvedQty} approved, ${rejectedQty} rejected, ${inspectionIssues.length} issues`);
-
-    return {
-      foiId,
-      salesOrderId: foi.salesOrderId,
-      salesOrderLineId: foi.salesOrderLineId,
-      skuId: foi.skuId,
-      skuName: foi.sku.name,
-      requiredQty: foi.qty,
-      pickedQty: foi.pickedQty,
-      inspectedQty,
-      approvedQty,
-      rejectedQty,
-      status,
-      issues: inspectionIssues,
-      lastInspectedAt: new Date()
-    };
+      return {
+        foiId,
+        salesOrderId: foi.salesOrderId,
+        salesOrderLineId: foi.salesOrderLineId,
+        skuId: foi.skuId,
+        skuName: foi.skuName ?? '',
+        requiredQty: foi.qty,
+        pickedQty: foi.pickedQty,
+        inspectedQty,
+        approvedQty,
+        rejectedQty,
+        status,
+        issues: inspectionIssues,
+        lastInspectedAt: new Date()
+      };
+    }, tx);
   }
 
-  async completeInspectionSession(sessionId: string, inspectorUserId: string): Promise<void> {
+  async completeInspectionSession(sessionId: string, inspectorUserId: string, tx?: DbTx): Promise<void> {
     // TODO: In a real implementation, validate that all items are inspected
     // For now, we'll assume the session is valid
 
     this.logger.log(`Completed inspection session ${sessionId} by ${inspectorUserId}`);
   }
 
-  async forceShipment(request: ForceShipmentRequest): Promise<void> {
+  async forceShipment(request: ForceShipmentRequest, tx?: DbTx): Promise<void> {
     const { foiId, reason, authorizedBy, forceQty, note } = request;
 
-    const foi = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        fulfillmentOrder: true
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          foStatus: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
+
+      const foi = rows[0];
+      if (!foi) {
+        throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
       }
-    });
 
-    if (!foi) {
-      throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
-    }
+      if (foi.foStatus !== 'inspecting') {
+        throw new ConflictException(`Cannot force shipment for FO in status: ${foi.foStatus}`);
+      }
 
-    if (foi.fulfillmentOrder.status !== 'inspecting') {
-      throw new ConflictException(`Cannot force shipment for FO in status: ${foi.fulfillmentOrder.status}`);
-    }
+      if (forceQty > foi.qty) {
+        throw new BadRequestException(`Force quantity ${forceQty} exceeds required quantity ${foi.qty}`);
+      }
 
-    if (forceQty > foi.qty) {
-      throw new BadRequestException(`Force quantity ${forceQty} exceeds required quantity ${foi.qty}`);
-    }
+      await trx.update(wmsTables.fulfillmentOrderItems)
+        .set({
+          shippedQty: forceQty,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-    await this.db.update(wmsTables.fulfillmentOrderItems)
-      .set({
-        shippedQty: forceQty,
-        updatedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
-
-    this.logger.warn(
-      `FORCED SHIPMENT: FOI ${foiId} - Qty: ${forceQty}, Reason: ${reason}, Authorized by: ${authorizedBy}` +
-      (note ? `, Note: ${note}` : '')
-    );
+      this.logger.warn(
+        `FORCED SHIPMENT: FOI ${foiId} - Qty: ${forceQty}, Reason: ${reason}, Authorized by: ${authorizedBy}` +
+        (note ? `, Note: ${note}` : '')
+      );
+    }, tx);
   }
 
-  async resetInspection(foiId: string, inspectorUserId: string): Promise<void> {
-    const foi = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        fulfillmentOrder: true
+  async resetInspection(foiId: string, inspectorUserId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          foStatus: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
+
+      const foi = rows[0];
+      if (!foi) {
+        throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
       }
-    });
 
-    if (!foi) {
-      throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
-    }
+      if (foi.foStatus !== 'inspecting') {
+        throw new ConflictException(`Cannot reset inspection for FO in status: ${foi.foStatus}`);
+      }
 
-    if (foi.fulfillmentOrder.status !== 'inspecting') {
-      throw new ConflictException(`Cannot reset inspection for FO in status: ${foi.fulfillmentOrder.status}`);
-    }
+      await trx.update(wmsTables.fulfillmentOrderItems)
+        .set({
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-    // Reset inspection data
-    await this.db.update(wmsTables.fulfillmentOrderItems)
-      .set({
-        updatedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
-
-    this.logger.log(`Reset inspection for FOI ${foiId} by ${inspectorUserId}`);
+      this.logger.log(`Reset inspection for FOI ${foiId} by ${inspectorUserId}`);
+    }, tx);
   }
 
-  async getInspectionHistory(foiId: string): Promise<Array<{
+  async getInspectionHistory(foiId: string, tx?: DbTx): Promise<Array<{
     inspectorUserId: string;
     inspectedQty: number;
     approvedQty: number;
@@ -314,7 +364,7 @@ export class InspectionService {
     dateFrom?: Date;
     dateTo?: Date;
     inspectorUserId?: string;
-  }): Promise<{
+  }, tx?: DbTx): Promise<{
     totalInspections: number;
     approvalRate: number;
     rejectionRate: number;
@@ -343,38 +393,42 @@ export class InspectionService {
     };
   }
 
-  async bulkApprove(foiIds: string[], inspectorUserId: string): Promise<number> {
-    const fois = await this.db.query.fulfillmentOrderItems.findMany({
-      where: inArray(wmsTables.fulfillmentOrderItems.id, foiIds),
-      with: {
-        fulfillmentOrder: true
+  async bulkApprove(foiIds: string[], inspectorUserId: string, tx?: DbTx): Promise<number> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          foStatus: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds));
+
+      const validFois = rows.filter(r => r.foStatus === 'inspecting' && r.pickedQty > 0);
+
+      if (validFois.length === 0) {
+        throw new BadRequestException('No valid items found for bulk approval');
       }
-    });
 
-    const validFois = fois.filter(foi =>
-      foi.fulfillmentOrder.status === 'inspecting' && foi.pickedQty > 0
-    );
-
-    if (validFois.length === 0) {
-      throw new BadRequestException('No valid items found for bulk approval');
-    }
-
-    await this.db.transaction(async (tx) => {
       for (const foi of validFois) {
-        await tx.update(wmsTables.fulfillmentOrderItems)
+        await trx.update(wmsTables.fulfillmentOrderItems)
           .set({
-            shippedQty: foi.pickedQty, // Approve all picked quantity
+            shippedQty: foi.pickedQty,
             updatedAt: new Date()
           })
           .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
       }
-    });
 
-    this.logger.log(`Bulk approved ${validFois.length} items by ${inspectorUserId}`);
-    return validFois.length;
+      this.logger.log(`Bulk approved ${validFois.length} items by ${inspectorUserId}`);
+      return validFois.length;
+    }, tx);
   }
 
-  async getInspectionSummary(fulfillmentOrderId: string): Promise<{
+  async getInspectionSummary(fulfillmentOrderId: string, tx?: DbTx): Promise<{
     totalItems: number;
     pendingItems: number;
     inspectedItems: number;
@@ -384,32 +438,39 @@ export class InspectionService {
     totalIssues: number;
     canComplete: boolean;
   }> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: true
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+
+      const fo = foRows[0];
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      const itemRows = await trx
+        .select({
+          shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-    // TODO: Calculate actual inspection status from inspection data
-    // For now, return basic counts
-    const totalItems = fulfillmentOrder.items.length;
-    const approvedItems = fulfillmentOrder.items.filter(item => item.shippedQty > 0).length;
-    const pendingItems = totalItems - approvedItems;
+      const totalItems = itemRows.length;
+      const approvedItems = itemRows.filter(r => (r.shippedQty ?? 0) > 0).length;
+      const pendingItems = totalItems - approvedItems;
 
-    return {
-      totalItems,
-      pendingItems,
-      inspectedItems: approvedItems,
-      approvedItems,
-      rejectedItems: 0,
-      partialItems: 0,
-      totalIssues: 0,
-      canComplete: pendingItems === 0
-    };
+      return {
+        totalItems,
+        pendingItems,
+        inspectedItems: approvedItems,
+        approvedItems,
+        rejectedItems: 0,
+        partialItems: 0,
+        totalIssues: 0,
+        canComplete: pendingItems === 0
+      };
+    }, tx);
   }
 }

@@ -43,7 +43,7 @@
 #### stockReservations 테이블 구조
 ```sql
 stockReservations:
-  reservationId       -- 예약 고유 ID
+  id       -- 예약 고유 ID
   targetType          -- 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
   targetId             -- FO ID 또는 Movement Task ID
   skuId                -- 예약된 SKU
@@ -93,7 +93,7 @@ reserveStock(dto: {
 }): Promise<Reservation>
 
 // 예약 해제
-releaseReservation(reservationId: string): Promise<void>
+releaseReservation(id: string): Promise<void>
 
 // 예약 이전 (FO간, Task간)
 transferReservation(fromReservationId: string, toTargetId: string): Promise<void>

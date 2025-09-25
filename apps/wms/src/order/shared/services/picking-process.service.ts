@@ -5,6 +5,8 @@ import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray, sum, sql } from 'drizzle-orm';
 import { BarcodeService, FOIScanResult, SkuScanResult } from '../../../shared/services/barcode.service';
 
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
+
 export interface PickingOperation {
   batchId: string;
   skuId: string;
@@ -70,31 +72,44 @@ export class PickingProcessService {
     return this.dbService.db;
   }
 
-  async getPickingOperations(batchId: string): Promise<PickingOperation[]> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId),
-      with: {
-        fulfillmentOrders: {
-          with: {
-            items: {
-              with: {
-                sku: true
-              }
-            }
-          }
-        }
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
+  async getPickingOperations(batchId: string, tx?: DbTx): Promise<PickingOperation[]> {
+    return this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+
+      const batch = batchRows[0];
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
       }
-    });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      const itemRows = await trx
+        .select({
+          foId: wmsTables.fulfillmentOrders.id,
+          itemId: wmsTables.fulfillmentOrderItems.id,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
-    const skuOperations = new Map<string, PickingOperation>();
+      const skuOperations = new Map<string, PickingOperation>();
 
-    for (const fo of batch.fulfillmentOrders) {
-      for (const item of fo.items) {
-        const skuId = item.skuId;
+      for (const row of itemRows) {
+        const skuId = row.skuId;
 
         if (!skuOperations.has(skuId)) {
           skuOperations.set(skuId, {
@@ -109,73 +124,73 @@ export class PickingProcessService {
         }
 
         const operation = skuOperations.get(skuId)!;
-        operation.totalQty += item.qty;
-        operation.pickedQty += item.pickedQty;
+        operation.totalQty += row.qty;
+        operation.pickedQty += row.pickedQty;
         operation.remainingQty = operation.totalQty - operation.pickedQty;
 
         operation.foiDetails.push({
-          foiId: item.id,
-          fulfillmentOrderId: fo.id,
-          salesOrderId: item.salesOrderId,
-          salesOrderLineId: item.salesOrderLineId,
-          requiredQty: item.qty,
-          pickedQty: item.pickedQty,
-          remainingQty: item.qty - item.pickedQty
+          foiId: row.itemId,
+          fulfillmentOrderId: row.foId,
+          salesOrderId: row.salesOrderId,
+          salesOrderLineId: row.salesOrderLineId,
+          requiredQty: row.qty,
+          pickedQty: row.pickedQty,
+          remainingQty: row.qty - row.pickedQty
         });
       }
-    }
 
-    return Array.from(skuOperations.values())
-      .sort((a, b) => (a.locationCode || '').localeCompare(b.locationCode || ''));
+      return Array.from(skuOperations.values())
+        .sort((a, b) => (a.locationCode || '').localeCompare(b.locationCode || ''));
+    }, tx);
   }
 
-  async pickItem(request: PickItemRequest): Promise<void> {
+  async pickItem(request: PickItemRequest, tx?: DbTx): Promise<void> {
     const { batchId, skuId, pickedQty, locationCode, pickerUserId } = request;
 
     if (pickedQty <= 0) {
       throw new BadRequestException('Picked quantity must be positive');
     }
 
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId)
-    });
+    await this.inTx(async (trx) => {
+      const batch = await trx.query.outboundBatches.findFirst({
+        where: eq(wmsTables.outboundBatches.id, batchId)
+      });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
 
-    if (batch.status !== 'picking') {
-      throw new ConflictException(`Cannot pick items from batch in status: ${batch.status}`);
-    }
+      if (batch.status !== 'picking') {
+        throw new ConflictException(`Cannot pick items from batch in status: ${batch.status}`);
+      }
 
-    const fulfillmentOrderItems = await this.db.query.fulfillmentOrderItems.findMany({
-      where: and(
-        eq(wmsTables.fulfillmentOrderItems.skuId, skuId),
-        inArray(
-          wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-          this.db.select({ id: wmsTables.fulfillmentOrders.id })
-            .from(wmsTables.fulfillmentOrders)
-            .where(eq(wmsTables.fulfillmentOrders.batchId, batchId))
-        )
-      ),
-      orderBy: wmsTables.fulfillmentOrderItems.createdAt
-    });
+      const fulfillmentOrderItems = await trx.query.fulfillmentOrderItems.findMany({
+        where: and(
+          eq(wmsTables.fulfillmentOrderItems.skuId, skuId),
+          inArray(
+            wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+            trx.select({ id: wmsTables.fulfillmentOrders.id })
+              .from(wmsTables.fulfillmentOrders)
+              .where(eq(wmsTables.fulfillmentOrders.batchId, batchId))
+          )
+        ),
+        orderBy: wmsTables.fulfillmentOrderItems.createdAt
+      });
 
-    if (fulfillmentOrderItems.length === 0) {
-      throw new NotFoundException(`No items found for SKU ${skuId} in batch ${batchId}`);
-    }
+      if (fulfillmentOrderItems.length === 0) {
+        throw new NotFoundException(`No items found for SKU ${skuId} in batch ${batchId}`);
+      }
 
-    const totalRequired = fulfillmentOrderItems.reduce((sum, item) => sum + item.qty, 0);
-    const totalPicked = fulfillmentOrderItems.reduce((sum, item) => sum + item.pickedQty, 0);
-    const totalRemaining = totalRequired - totalPicked;
+      const totalRequired = fulfillmentOrderItems.reduce((sum, item) => sum + item.qty, 0);
+      const totalPicked = fulfillmentOrderItems.reduce((sum, item) => sum + item.pickedQty, 0);
+      const totalRemaining = totalRequired - totalPicked;
 
-    if (pickedQty > totalRemaining) {
-      throw new BadRequestException(
-        `Picked quantity ${pickedQty} exceeds remaining quantity ${totalRemaining} for SKU ${skuId}`
-      );
-    }
+      if (pickedQty > totalRemaining) {
+        throw new BadRequestException(
+          `Picked quantity ${pickedQty} exceeds remaining quantity ${totalRemaining} for SKU ${skuId}`
+        );
+      }
 
-    await this.db.transaction(async (tx) => {
       let remainingToDistribute = pickedQty;
 
       for (const item of fulfillmentOrderItems) {
@@ -184,9 +199,9 @@ export class PickingProcessService {
         const itemRemaining = item.qty - item.pickedQty;
         if (itemRemaining <= 0) continue;
 
-        const toPickForItem = Math.min(remainingToDistribute, itemRemaining);
+          const toPickForItem = Math.min(remainingToDistribute, itemRemaining);
 
-        await tx.update(wmsTables.fulfillmentOrderItems)
+        await trx.update(wmsTables.fulfillmentOrderItems)
           .set({
             pickedQty: item.pickedQty + toPickForItem,
             updatedAt: new Date()
@@ -205,189 +220,228 @@ export class PickingProcessService {
         (pickerUserId ? ` by user ${pickerUserId}` : '') +
         (locationCode ? ` from location ${locationCode}` : '')
       );
-    });
+    }, tx);
   }
 
-  async getPickingProgress(batchId: string): Promise<PickingProgress> {
-    const batch = await this.db.query.outboundBatches.findFirst({
-      where: eq(wmsTables.outboundBatches.id, batchId),
-      with: {
-        fulfillmentOrders: {
-          with: {
-            items: true
-          }
+  async getPickingProgress(batchId: string, tx?: DbTx): Promise<PickingProgress> {
+    return this.inTx(async (trx) => {
+      const batchRows = await trx
+        .select({ id: wmsTables.outboundBatches.id })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, batchId))
+        .limit(1);
+
+      const batch = batchRows[0];
+      if (!batch) {
+        throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
+
+      const items = await trx
+        .select({
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
+
+      const skuGroups = new Map<string, { total: number; picked: number }>();
+
+      for (const item of items) {
+        if (!skuGroups.has(item.skuId)) {
+          skuGroups.set(item.skuId, { total: 0, picked: 0 });
         }
+        const group = skuGroups.get(item.skuId)!;
+        group.total += item.qty;
+        group.picked += item.pickedQty;
       }
-    });
 
-    if (!batch) {
-      throw new NotFoundException(`Outbound batch ${batchId} not found`);
-    }
+      const completedSkus = Array.from(skuGroups.values()).filter(group => group.picked >= group.total).length;
+      const totalItems = items.reduce((sum, item) => sum + item.qty, 0);
+      const pickedItems = items.reduce((sum, item) => sum + item.pickedQty, 0);
 
-    const allItems = batch.fulfillmentOrders.flatMap(fo => fo.items);
-    const skuGroups = new Map<string, { total: number; picked: number }>();
-
-    for (const item of allItems) {
-      if (!skuGroups.has(item.skuId)) {
-        skuGroups.set(item.skuId, { total: 0, picked: 0 });
-      }
-      const group = skuGroups.get(item.skuId)!;
-      group.total += item.qty;
-      group.picked += item.pickedQty;
-    }
-
-    const completedSkus = Array.from(skuGroups.values()).filter(group => group.picked >= group.total).length;
-    const totalItems = allItems.reduce((sum, item) => sum + item.qty, 0);
-    const pickedItems = allItems.reduce((sum, item) => sum + item.pickedQty, 0);
-
-    return {
-      batchId,
-      totalSkus: skuGroups.size,
-      completedSkus,
-      totalItems,
-      pickedItems,
-      remainingItems: totalItems - pickedItems,
-      completionPercentage: totalItems > 0 ? Math.round((pickedItems / totalItems) * 100) : 0
-    };
+      return {
+        batchId,
+        totalSkus: skuGroups.size,
+        completedSkus,
+        totalItems,
+        pickedItems,
+        remainingItems: totalItems - pickedItems,
+        completionPercentage: totalItems > 0 ? Math.round((pickedItems / totalItems) * 100) : 0
+      };
+    }, tx);
   }
 
-  async startIndividualPicking(fulfillmentOrderId: string): Promise<IndividualPickingSession> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: {
-          with: {
-            sku: true
-          }
-        }
+  async startIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<IndividualPickingSession> {
+    return this.inTx(async (trx) => {
+      const foRows = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+
+      const fo = foRows[0];
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      if (fo.status !== 'allocated' && fo.status !== 'picking') {
+        throw new ConflictException(`Cannot start individual picking for FO in status: ${fo.status}`);
+      }
 
-    if (fulfillmentOrder.status !== 'allocated' && fulfillmentOrder.status !== 'picking') {
-      throw new ConflictException(`Cannot start individual picking for FO in status: ${fulfillmentOrder.status}`);
-    }
+      if (fo.status === 'allocated') {
+        await trx.update(wmsTables.fulfillmentOrders)
+          .set({ status: 'picking' })
+          .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+      }
 
-    if (fulfillmentOrder.status === 'allocated') {
-      await this.db.update(wmsTables.fulfillmentOrders)
-        .set({ status: 'picking' })
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-    }
+      const itemRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          skuName: wmsTables.skus.name,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.skus,
+          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-    const completedItems = fulfillmentOrder.items.filter(item => item.pickedQty >= item.qty).length;
+      const completedItems = itemRows.filter(i => i.pickedQty >= i.qty).length;
 
-    return {
-      fulfillmentOrderId,
-      items: fulfillmentOrder.items.map(item => ({
-        foiId: item.id,
-        skuId: item.skuId,
-        skuName: item.sku.name,
-        requiredQty: item.qty,
-        pickedQty: item.pickedQty,
-        locationCode: undefined, // TODO: Get from location service
-        isCompleted: item.pickedQty >= item.qty
-      })),
-      totalItems: fulfillmentOrder.items.length,
-      completedItems,
-      completionPercentage: fulfillmentOrder.items.length > 0
-        ? Math.round((completedItems / fulfillmentOrder.items.length) * 100)
-        : 0
-    };
+      return {
+        fulfillmentOrderId,
+        items: itemRows.map(item => ({
+          foiId: item.id,
+          skuId: item.skuId,
+          skuName: item.skuName,
+          requiredQty: item.qty,
+          pickedQty: item.pickedQty,
+          locationCode: undefined, // TODO: Get from location service
+          isCompleted: item.pickedQty >= item.qty
+        })),
+        totalItems: itemRows.length,
+        completedItems,
+        completionPercentage: itemRows.length > 0
+          ? Math.round((completedItems / itemRows.length) * 100)
+          : 0
+      };
+    }, tx);
   }
 
-  async pickIndividualItem(foiId: string, pickedQty: number): Promise<void> {
+  async pickIndividualItem(foiId: string, pickedQty: number, tx?: DbTx): Promise<void> {
     if (pickedQty <= 0) {
       throw new BadRequestException('Picked quantity must be positive');
     }
 
-    const item = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        fulfillmentOrder: true
+    await this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          foStatus: wmsTables.fulfillmentOrders.status,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
+
+      const item = rows[0];
+      if (!item) {
+        throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
       }
-    });
 
-    if (!item) {
-      throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
-    }
+      if (item.foStatus !== 'picking') {
+        throw new ConflictException(`Cannot pick from FO in status: ${item.foStatus}`);
+      }
 
-    if (item.fulfillmentOrder.status !== 'picking') {
-      throw new ConflictException(`Cannot pick from FO in status: ${item.fulfillmentOrder.status}`);
-    }
+      const newPickedQty = item.pickedQty + pickedQty;
+      if (newPickedQty > item.qty) {
+        throw new BadRequestException(
+          `Picked quantity ${newPickedQty} exceeds required quantity ${item.qty} for item ${foiId}`
+        );
+      }
 
-    const newPickedQty = item.pickedQty + pickedQty;
-    if (newPickedQty > item.qty) {
-      throw new BadRequestException(
-        `Picked quantity ${newPickedQty} exceeds required quantity ${item.qty} for item ${foiId}`
-      );
-    }
+      await trx.update(wmsTables.fulfillmentOrderItems)
+        .set({
+          pickedQty: newPickedQty,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-    await this.db.update(wmsTables.fulfillmentOrderItems)
-      .set({
-        pickedQty: newPickedQty,
-        updatedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
-
-    this.logger.log(`Individual pick: FOI ${foiId} picked ${pickedQty}, total: ${newPickedQty}/${item.qty}`);
+      this.logger.log(`Individual pick: FOI ${foiId} picked ${pickedQty}, total: ${newPickedQty}/${item.qty}`);
+    }, tx);
   }
 
-  async completeIndividualPicking(fulfillmentOrderId: string): Promise<void> {
-    const fulfillmentOrder = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
-      with: {
-        items: true
+  async completeIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const items = await trx
+        .select({ qty: wmsTables.fulfillmentOrderItems.qty, pickedQty: wmsTables.fulfillmentOrderItems.pickedQty })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
+
+      if (!items || items.length === 0) {
+        throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
-    });
 
-    if (!fulfillmentOrder) {
-      throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-    }
+      const incompleteItems = items.filter(item => item.pickedQty < item.qty);
+      if (incompleteItems.length > 0) {
+        throw new ConflictException(
+          `Cannot complete picking with ${incompleteItems.length} incomplete items`
+        );
+      }
 
-    const incompleteItems = fulfillmentOrder.items.filter(item => item.pickedQty < item.qty);
-    if (incompleteItems.length > 0) {
-      throw new ConflictException(
-        `Cannot complete picking with ${incompleteItems.length} incomplete items`
-      );
-    }
+      await trx.update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'picked',
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-    await this.db.update(wmsTables.fulfillmentOrders)
-      .set({
-        status: 'picked',
-        pickedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-
-    this.logger.log(`Completed individual picking for FO ${fulfillmentOrderId}`);
+      this.logger.log(`Completed individual picking for FO ${fulfillmentOrderId}`);
+    }, tx);
   }
 
-  async resetPickingForItem(foiId: string): Promise<void> {
-    const item = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        fulfillmentOrder: true
+  async resetPickingForItem(foiId: string, tx?: DbTx): Promise<void> {
+    await this.inTx(async (trx) => {
+      const rows = await trx
+        .select({ foStatus: wmsTables.fulfillmentOrders.status })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
+
+      const item = rows[0];
+      if (!item) {
+        throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
       }
-    });
 
-    if (!item) {
-      throw new NotFoundException(`Fulfillment order item ${foiId} not found`);
-    }
+      if (item.foStatus !== 'picking') {
+        throw new ConflictException(`Cannot reset picking for FO in status: ${item.foStatus}`);
+      }
 
-    if (item.fulfillmentOrder.status !== 'picking') {
-      throw new ConflictException(`Cannot reset picking for FO in status: ${item.fulfillmentOrder.status}`);
-    }
+      await trx.update(wmsTables.fulfillmentOrderItems)
+        .set({
+          pickedQty: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
 
-    await this.db.update(wmsTables.fulfillmentOrderItems)
-      .set({
-        pickedQty: 0,
-        updatedAt: new Date()
-      })
-      .where(eq(wmsTables.fulfillmentOrderItems.id, foiId));
-
-    this.logger.log(`Reset picking for FOI ${foiId}`);
+      this.logger.log(`Reset picking for FOI ${foiId}`);
+    }, tx);
   }
 
   // 바코드 스캔 통합 메서드들
@@ -397,114 +451,120 @@ export class PickingProcessService {
     fulfillmentOrderId?: string;
     warehouseId: string;
     pickerUserId?: string;
-  }): Promise<{
+  }, tx?: DbTx): Promise<{
     type: string;
     data: any;
     actions: string[];
   }> {
-    const parsed = this.barcodeService.parseBarcode(barcode);
+    return this.inTx(async (trx) => {
+      const parsed = this.barcodeService.parseBarcode(barcode);
 
-    switch (parsed.type) {
-      case 'sku':
-        const skuResult = await this.barcodeService.scanSku(barcode, context.warehouseId);
-        return this.handleSkuScan(skuResult, context);
+      switch (parsed.type) {
+        case 'sku':
+          const skuResult = await this.barcodeService.scanSku(barcode, context.warehouseId, trx);
+          return this.handleSkuScan(skuResult, context, trx);
 
-      case 'fulfillment_order_item':
-        const foiResult = await this.barcodeService.scanFulfillmentOrderItem(barcode);
-        return this.handleFOIScan(foiResult, context);
+        case 'fulfillment_order_item':
+          const foiResult = await this.barcodeService.scanFulfillmentOrderItem(barcode, trx);
+          return this.handleFOIScan(foiResult, context, trx);
 
-      case 'fulfillment_order':
-        const foResult = await this.barcodeService.scanFulfillmentOrder(barcode);
-        return this.handleFOScan(foResult, context);
+        case 'fulfillment_order':
+          const foResult = await this.barcodeService.scanFulfillmentOrder(barcode, trx);
+          return this.handleFOScan(foResult, context, trx);
 
-      case 'location':
-        return this.handleLocationScan(parsed.id, context);
+        case 'location':
+          return this.handleLocationScan(parsed.id, context, trx);
 
-      default:
-        throw new BadRequestException(`Unknown barcode type: ${parsed.type}`);
-    }
+        default:
+          throw new BadRequestException(`Unknown barcode type: ${parsed.type}`);
+      }
+    }, tx);
   }
 
-  private async handleSkuScan(skuResult: SkuScanResult, context: any): Promise<{
+  private async handleSkuScan(skuResult: SkuScanResult, context: any, tx?: DbTx): Promise<{
     type: string;
     data: any;
     actions: string[];
   }> {
-    const { skuId, skuName, availableQty } = skuResult;
-    const { batchId, warehouseId } = context;
+    return this.inTx(async (trx) => {
+      const { skuId, skuName, availableQty } = skuResult;
+      const { batchId, warehouseId } = context;
 
-    if (!batchId) {
+      if (!batchId) {
+        return {
+          type: 'sku_info',
+          data: skuResult,
+          actions: ['view_stock', 'search_in_batches']
+        };
+      }
+
+      // 배치에서 해당 SKU 피킹 작업 찾기
+      const operations = await this.getPickingOperations(batchId, trx);
+      const skuOperation = operations.find(op => op.skuId === skuId);
+
+      if (!skuOperation) {
+        return {
+          type: 'sku_not_in_batch',
+          data: { ...skuResult, batchId },
+          actions: ['view_stock']
+        };
+      }
+
       return {
-        type: 'sku_info',
-        data: skuResult,
-        actions: ['view_stock', 'search_in_batches']
+        type: 'sku_pick_ready',
+        data: {
+          ...skuResult,
+          batchId,
+          operation: skuOperation
+        },
+        actions: ['pick_quantity', 'view_foi_details']
       };
-    }
-
-    // 배치에서 해당 SKU 피킹 작업 찾기
-    const operations = await this.getPickingOperations(batchId);
-    const skuOperation = operations.find(op => op.skuId === skuId);
-
-    if (!skuOperation) {
-      return {
-        type: 'sku_not_in_batch',
-        data: { ...skuResult, batchId },
-        actions: ['view_stock']
-      };
-    }
-
-    return {
-      type: 'sku_pick_ready',
-      data: {
-        ...skuResult,
-        batchId,
-        operation: skuOperation
-      },
-      actions: ['pick_quantity', 'view_foi_details']
-    };
+    }, tx);
   }
 
-  private async handleFOIScan(foiResult: FOIScanResult, context: any): Promise<{
+  private async handleFOIScan(foiResult: FOIScanResult, context: any, tx?: DbTx): Promise<{
     type: string;
     data: any;
     actions: string[];
   }> {
-    const { foiId, fulfillmentOrderId, remainingQty, batchId } = foiResult;
+    return this.inTx(async (trx) => {
+      const { foiId, fulfillmentOrderId, remainingQty, batchId } = foiResult;
 
-    if (remainingQty <= 0) {
+      if (remainingQty <= 0) {
+        return {
+          type: 'foi_completed',
+          data: foiResult,
+          actions: ['view_details']
+        };
+      }
+
+      const actions = ['pick_quantity', 'view_details'];
+
+      if (context.fulfillmentOrderId && context.fulfillmentOrderId !== fulfillmentOrderId) {
+        return {
+          type: 'foi_wrong_order',
+          data: foiResult,
+          actions: ['view_details']
+        };
+      }
+
+      if (context.batchId && batchId !== context.batchId) {
+        return {
+          type: 'foi_wrong_batch',
+          data: foiResult,
+          actions: ['view_details']
+        };
+      }
+
       return {
-        type: 'foi_completed',
+        type: 'foi_pick_ready',
         data: foiResult,
-        actions: ['view_details']
+        actions
       };
-    }
-
-    const actions = ['pick_quantity', 'view_details'];
-
-    if (context.fulfillmentOrderId && context.fulfillmentOrderId !== fulfillmentOrderId) {
-      return {
-        type: 'foi_wrong_order',
-        data: foiResult,
-        actions: ['view_details']
-      };
-    }
-
-    if (context.batchId && batchId !== context.batchId) {
-      return {
-        type: 'foi_wrong_batch',
-        data: foiResult,
-        actions: ['view_details']
-      };
-    }
-
-    return {
-      type: 'foi_pick_ready',
-      data: foiResult,
-      actions
-    };
+    }, tx);
   }
 
-  private async handleFOScan(foResult: any, context: any): Promise<{
+  private async handleFOScan(foResult: any, context: any, tx?: DbTx): Promise<{
     type: string;
     data: any;
     actions: string[];
@@ -534,26 +594,28 @@ export class PickingProcessService {
     };
   }
 
-  private async handleLocationScan(locationCode: string, context: any): Promise<{
+  private async handleLocationScan(locationCode: string, context: any, tx?: DbTx): Promise<{
     type: string;
     data: any;
     actions: string[];
   }> {
-    const isValid = await this.barcodeService.validateLocationAccess(locationCode, context.warehouseId);
+    return this.inTx(async (trx) => {
+      const isValid = await this.barcodeService.validateLocationAccess(locationCode, context.warehouseId, trx);
 
-    if (!isValid) {
+      if (!isValid) {
+        return {
+          type: 'location_access_denied',
+          data: { locationCode },
+          actions: []
+        };
+      }
+
       return {
-        type: 'location_access_denied',
+        type: 'location_accessed',
         data: { locationCode },
-        actions: []
+        actions: ['view_location_stock', 'scan_next_item']
       };
-    }
-
-    return {
-      type: 'location_accessed',
-      data: { locationCode },
-      actions: ['view_location_stock', 'scan_next_item']
-    };
+    }, tx);
   }
 
   async pickByBarcodeScan(
@@ -565,43 +627,46 @@ export class PickingProcessService {
       warehouseId: string;
       pickerUserId?: string;
       locationCode?: string;
-    }
+    },
+    tx?: DbTx
   ): Promise<{
     success: boolean;
     message: string;
     data?: any;
   }> {
-    const parsed = this.barcodeService.parseBarcode(barcode);
+    return this.inTx(async (trx) => {
+      const parsed = this.barcodeService.parseBarcode(barcode);
 
-    if (parsed.type === 'sku' && context.batchId) {
-      // 토탈피킹: SKU 바코드로 배치 피킹
-      await this.pickItem({
-        batchId: context.batchId,
-        skuId: parsed.id,
-        pickedQty,
-        locationCode: context.locationCode,
-        pickerUserId: context.pickerUserId
-      });
+      if (parsed.type === 'sku' && context.batchId) {
+        // 토탈피킹: SKU 바코드로 배치 피킹
+        await this.pickItem({
+          batchId: context.batchId,
+          skuId: parsed.id,
+          pickedQty,
+          locationCode: context.locationCode,
+          pickerUserId: context.pickerUserId
+        }, trx);
 
-      return {
-        success: true,
-        message: `Picked ${pickedQty} units of SKU in batch`,
-        data: { skuId: parsed.id, pickedQty }
-      };
+        return {
+          success: true,
+          message: `Picked ${pickedQty} units of SKU in batch`,
+          data: { skuId: parsed.id, pickedQty }
+        };
 
-    } else if (parsed.type === 'fulfillment_order_item') {
-      // 개별피킹: FOI 바코드로 직접 피킹
-      await this.pickIndividualItem(parsed.id, pickedQty);
+      } else if (parsed.type === 'fulfillment_order_item') {
+        // 개별피킹: FOI 바코드로 직접 피킹
+        await this.pickIndividualItem(parsed.id, pickedQty, trx);
 
-      return {
-        success: true,
-        message: `Picked ${pickedQty} units for specific order item`,
-        data: { foiId: parsed.id, pickedQty }
-      };
+        return {
+          success: true,
+          message: `Picked ${pickedQty} units for specific order item`,
+          data: { foiId: parsed.id, pickedQty }
+        };
 
-    } else {
-      throw new BadRequestException(`Invalid barcode for picking: ${barcode}`);
-    }
+      } else {
+        throw new BadRequestException(`Invalid barcode for picking: ${barcode}`);
+      }
+    }, tx);
   }
 
   async getBarcodeForPicking(request: {

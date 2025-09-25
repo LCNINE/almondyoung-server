@@ -17,16 +17,16 @@ export interface ReserveStockDto {
 }
 
 export interface Reservation {
-  reservationId: string;
+  id: string;
   targetType: string;
   targetId: string;
   skuId: string;
   warehouseId: string;
   quantity: number;
   status: string;
-  fulfillmentOrderItemId?: string;
-  timeoutAt?: Date;
-  reason?: string;
+  fulfillmentOrderItemId: string | null;
+  timeoutAt: Date | null;
+  reason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,14 +86,14 @@ export class UnifiedReservationService {
 
       this.logger.log(`Reserved ${dto.quantity} units of SKU ${dto.skuId} for ${dto.targetType}:${dto.targetId}`);
 
-      return reservation as Reservation;
+      return reservation satisfies Reservation;
     }, tx);
   }
 
   /**
    * 예약 해제
    */
-  async releaseReservation(reservationId: string, tx?: DbTx): Promise<void> {
+  async releaseReservation(id: string, tx?: DbTx): Promise<void> {
     return this.inTx(async (trx) => {
       const [updated] = await trx
         .update(wmsTables.stockReservations)
@@ -101,14 +101,14 @@ export class UnifiedReservationService {
           status: 'released',
           updatedAt: new Date()
         })
-        .where(eq(wmsTables.stockReservations.reservationId, reservationId))
+        .where(eq(wmsTables.stockReservations.id, id))
         .returning();
 
       if (!updated) {
-        throw new BadRequestException(`Reservation ${reservationId} not found`);
+        throw new BadRequestException(`Reservation ${id} not found`);
       }
 
-      this.logger.log(`Released reservation ${reservationId}`);
+      this.logger.log(`Released reservation ${id}`);
     }, tx);
   }
 
@@ -127,7 +127,7 @@ export class UnifiedReservationService {
 
       // 기존 예약 정보 조회
       const oldReservation = await trx.query.stockReservations.findFirst({
-        where: eq(wmsTables.stockReservations.reservationId, fromReservationId)
+        where: eq(wmsTables.stockReservations.id, fromReservationId)
       });
 
       if (!oldReservation) {
@@ -171,7 +171,7 @@ export class UnifiedReservationService {
       )
     });
 
-    return reservations as Reservation[];
+    return reservations satisfies Reservation[];
   }
 
   /**
@@ -197,7 +197,7 @@ export class UnifiedReservationService {
       where: and(...conditions)
     });
 
-    return reservations as Reservation[];
+    return reservations satisfies Reservation[];
   }
 
   /**

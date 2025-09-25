@@ -30,6 +30,8 @@ export interface FOIScanResult {
   batchId?: string;
 }
 
+type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
+
 @Injectable()
 export class BarcodeService {
   private readonly logger = new Logger(BarcodeService.name);
@@ -40,6 +42,10 @@ export class BarcodeService {
 
   private get db() {
     return this.dbService.db;
+  }
+
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+    return tx ? fn(tx) : this.db.transaction(fn);
   }
 
   parseBarcode(barcode: string): BarcodeParseResult {
@@ -92,96 +98,114 @@ export class BarcodeService {
     };
   }
 
-  async scanSku(barcode: string, warehouseId: string): Promise<SkuScanResult> {
-    const parsed = this.parseBarcode(barcode);
+  async scanSku(barcode: string, warehouseId: string, tx?: DbTx): Promise<SkuScanResult> {
+    return this.inTx(async (trx) => {
+      const parsed = this.parseBarcode(barcode);
 
-    let skuId: string;
-    if (parsed.type === 'sku') {
-      skuId = parsed.id;
-    } else if (parsed.type === 'unknown') {
-      // UUID인 경우 SKU ID로 간주
-      skuId = parsed.id;
-    } else {
-      throw new BadRequestException(`Invalid SKU barcode: ${barcode}`);
-    }
-
-    const sku = await this.db.query.skus.findFirst({
-      where: eq(wmsTables.skus.id, skuId)
-    });
-
-    if (!sku) {
-      throw new BadRequestException(`SKU not found: ${skuId}`);
-    }
-
-    // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
-    const stockLedgers = await this.db.query.stockLedgers.findMany({
-      where: and(
-        eq(wmsTables.stockLedgers.skuId, skuId),
-        eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
-      )
-    });
-
-    const availableQty = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
-
-    // TODO: Get location from location service
-    const locationCode = undefined;
-
-    this.logger.log(`SKU scanned: ${sku.name} (${availableQty} available)`);
-
-    return {
-      skuId: sku.id,
-      skuName: sku.name,
-      availableQty,
-      locationCode
-    };
-  }
-
-  async scanFulfillmentOrderItem(barcode: string): Promise<FOIScanResult> {
-    const parsed = this.parseBarcode(barcode);
-
-    let foiId: string;
-    if (parsed.type === 'fulfillment_order_item') {
-      foiId = parsed.id;
-    } else if (parsed.type === 'unknown') {
-      // UUID인 경우 FOI ID로 간주
-      foiId = parsed.id;
-    } else {
-      throw new BadRequestException(`Invalid FOI barcode: ${barcode}`);
-    }
-
-    const foi = await this.db.query.fulfillmentOrderItems.findFirst({
-      where: eq(wmsTables.fulfillmentOrderItems.id, foiId),
-      with: {
-        sku: true,
-        fulfillmentOrder: {
-          with: {
-            batch: true
-          }
-        }
+      let skuId: string;
+      if (parsed.type === 'sku') {
+        skuId = parsed.id;
+      } else if (parsed.type === 'unknown') {
+        // UUID인 경우 SKU ID로 간주
+        skuId = parsed.id;
+      } else {
+        throw new BadRequestException(`Invalid SKU barcode: ${barcode}`);
       }
-    });
 
-    if (!foi) {
-      throw new BadRequestException(`Fulfillment order item not found: ${foiId}`);
-    }
-    this.logger.log(`FOI scanned: ${foi.sku.name} for SO ${foi.salesOrderId}`);
+      const sku = await trx.query.skus.findFirst({
+        where: eq(wmsTables.skus.id, skuId)
+      });
 
-    return {
-      foiId: foi.id,
-      fulfillmentOrderId: foi.fulfillmentOrderId,
-      salesOrderId: foi.salesOrderId,
-      salesOrderLineId: foi.salesOrderLineId,
-      skuId: foi.skuId,
-      skuName: foi.sku.name,
-      requiredQty: foi.qty,
-      pickedQty: foi.pickedQty,
-      remainingQty: foi.qty - foi.pickedQty,
-      batchId: foi.fulfillmentOrder.batchId
-    };
+      if (!sku) {
+        throw new BadRequestException(`SKU not found: ${skuId}`);
+      }
+
+      // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
+      const stockLedgers = await trx.query.stockLedgers.findMany({
+        where: and(
+          eq(wmsTables.stockLedgers.skuId, skuId),
+          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND')
+        )
+      });
+
+      const availableQty = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
+
+      // TODO: Get location from location service
+      const locationCode = undefined;
+
+      this.logger.log(`SKU scanned: ${sku.name} (${availableQty} available)`);
+
+      return {
+        skuId: sku.id,
+        skuName: sku.name,
+        availableQty,
+        locationCode
+      };
+    }, tx);
   }
 
-  async scanFulfillmentOrder(barcode: string): Promise<{
+  async scanFulfillmentOrderItem(barcode: string, tx?: DbTx): Promise<FOIScanResult> {
+    return this.inTx(async (trx) => {
+      const parsed = this.parseBarcode(barcode);
+
+      let foiId: string;
+      if (parsed.type === 'fulfillment_order_item') {
+        foiId = parsed.id;
+      } else if (parsed.type === 'unknown') {
+        // UUID인 경우 FOI ID로 간주
+        foiId = parsed.id;
+      } else {
+        throw new BadRequestException(`Invalid FOI barcode: ${barcode}`);
+      }
+
+      const rows = await trx
+        .select({
+          foiId: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuName: wmsTables.skus.name,
+          requiredQty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          batchId: wmsTables.fulfillmentOrders.batchId,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.skus,
+          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
+        )
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foiId))
+        .limit(1);
+
+      const row = rows[0];
+      if (!row) {
+        throw new BadRequestException(`Fulfillment order item not found: ${foiId}`);
+      }
+
+      this.logger.log(`FOI scanned: ${row.skuName} for SO ${row.salesOrderId}`);
+
+      return {
+        foiId: row.foiId,
+        fulfillmentOrderId: row.fulfillmentOrderId,
+        salesOrderId: row.salesOrderId,
+        salesOrderLineId: row.salesOrderLineId,
+        skuId: row.skuId,
+        skuName: row.skuName,
+        requiredQty: row.requiredQty,
+        pickedQty: row.pickedQty,
+        remainingQty: row.requiredQty - row.pickedQty,
+        batchId: row.batchId ?? undefined,
+      };
+    }, tx);
+  }
+
+  async scanFulfillmentOrder(barcode: string, tx?: DbTx): Promise<{
     fulfillmentOrderId: string;
     status: string;
     totalItems: number;
@@ -195,50 +219,68 @@ export class BarcodeService {
       isCompleted: boolean;
     }>;
   }> {
-    const parsed = this.parseBarcode(barcode);
+    return this.inTx(async (trx) => {
+      const parsed = this.parseBarcode(barcode);
 
-    let foId: string;
-    if (parsed.type === 'fulfillment_order') {
-      foId = parsed.id;
-    } else if (parsed.type === 'unknown') {
-      foId = parsed.id;
-    } else {
-      throw new BadRequestException(`Invalid FO barcode: ${barcode}`);
-    }
-
-    const fo = await this.db.query.fulfillmentOrders.findFirst({
-      where: eq(wmsTables.fulfillmentOrders.id, foId),
-      with: {
-        items: {
-          with: {
-            sku: true
-          }
-        }
+      let foId: string;
+      if (parsed.type === 'fulfillment_order') {
+        foId = parsed.id;
+      } else if (parsed.type === 'unknown') {
+        foId = parsed.id;
+      } else {
+        throw new BadRequestException(`Invalid FO barcode: ${barcode}`);
       }
-    });
 
-    if (!fo) {
-      throw new BadRequestException(`Fulfillment order not found: ${foId}`);
-    }
+      // FO 기본 정보 조회
+      const foRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrders.id,
+          status: wmsTables.fulfillmentOrders.status,
+          batchId: wmsTables.fulfillmentOrders.batchId,
+        })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, foId))
+        .limit(1);
 
-    const completedItems = fo.items.filter(item => item.pickedQty >= item.qty).length;
+      const fo = foRows[0];
+      if (!fo) {
+        throw new BadRequestException(`Fulfillment order not found: ${foId}`);
+      }
 
-    this.logger.log(`FO scanned: ${fo.id} (${completedItems}/${fo.items.length} items completed)`);
+      // 아이템 + SKU 이름 조인 조회
+      const itemRows = await trx
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          skuName: wmsTables.skus.name,
+        })
+        .from(wmsTables.fulfillmentOrderItems)
+        .innerJoin(
+          wmsTables.skus,
+          eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId)
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
 
-    return {
-      fulfillmentOrderId: fo.id,
-      status: fo.status,
-      totalItems: fo.items.length,
-      completedItems,
-      batchId: fo.batchId ?? undefined,
-      items: fo.items.map(item => ({
-        foiId: item.id,
-        skuName: item.sku.name,
-        requiredQty: item.qty,
-        pickedQty: item.pickedQty,
-        isCompleted: item.pickedQty >= item.qty
-      }))
-    };
+      const completedItems = itemRows.filter(r => r.pickedQty >= r.qty).length;
+
+      this.logger.log(`FO scanned: ${fo.id} (${completedItems}/${itemRows.length} items completed)`);
+
+      return {
+        fulfillmentOrderId: fo.id,
+        status: fo.status,
+        totalItems: itemRows.length,
+        completedItems,
+        batchId: fo.batchId ?? undefined,
+        items: itemRows.map(r => ({
+          foiId: r.id,
+          skuName: r.skuName,
+          requiredQty: r.qty,
+          pickedQty: r.pickedQty,
+          isCompleted: r.pickedQty >= r.qty,
+        })),
+      };
+    }, tx);
   }
 
   generateSkuBarcode(skuId: string): string {
@@ -257,10 +299,12 @@ export class BarcodeService {
     return `FOI-${foiId}`;
   }
 
-  async validateLocationAccess(locationCode: string, warehouseId: string): Promise<boolean> {
-    // TODO: Implement location validation
-    // For now, just log and return true
-    this.logger.log(`Location access validated: ${locationCode} in warehouse ${warehouseId}`);
-    return true;
+  async validateLocationAccess(locationCode: string, warehouseId: string, tx?: DbTx): Promise<boolean> {
+    return this.inTx(async (trx) => {
+      // TODO: Implement location validation
+      // For now, just log and return true
+      this.logger.log(`Location access validated: ${locationCode} in warehouse ${warehouseId}`);
+      return true;
+    }, tx);
   }
 }
