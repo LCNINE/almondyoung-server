@@ -24,16 +24,12 @@ import {
   CreatePlanRequest,
   UpdatePlanRequest,
   DeactivatePlanRequest,
-  CreatePolicyRequest,
-  UpdatePolicyRequest,
   ExtendEntitlementRequest,
   CreateTierRequestSchema,
   UpdateTierRequestSchema,
   CreatePlanRequestSchema,
   UpdatePlanRequestSchema,
   DeactivatePlanRequestSchema,
-  CreatePolicyRequestSchema,
-  UpdatePolicyRequestSchema,
   ExtendEntitlementRequestSchema,
 } from '../shared/schemas';
 import { FastifyRequest } from 'fastify';
