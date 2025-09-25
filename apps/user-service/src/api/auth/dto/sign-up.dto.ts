@@ -56,109 +56,137 @@ export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
   thirdPartySharing: boolean;
 
   @ApiProperty({
-    description: '이메일 수신 동의',
+    description: '마케팅 수신 동의 (모든 채널)',
     example: false,
-    required: false,
-    default: false,
+    required: true,
   })
   @IsBoolean()
-  emailConsent?: boolean;
+  marketingConsent: boolean;
 
-  @ApiProperty({
-    description: 'SMS 수신 동의',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsBoolean()
-  smsConsent?: boolean;
-
-  @ApiProperty({
-    description: '앱 푸시 알림 수신 동의',
-    example: false,
-    required: false,
-    default: false,
-  })
-  @IsBoolean()
-  pushConsent?: boolean;
   @ApiProperty({
     description: '이메일',
     example: 'user@example.com',
-    minLength: 6,
-    maxLength: 50,
+    required: true,
   })
-  @IsString({ message: '이메일은 문자열이어야 합니다.' })
-  @MinLength(6, { message: '이메일은 최소 6자 이상이어야 합니다.' })
-  @MaxLength(50, { message: '이메일은 최대 50자 이하여야 합니다.' })
-  @Matches(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, {
-    message: '이메일 형식이 아닙니다.',
-  })
+  @IsString()
+  @IsNotEmpty()
   email: string;
 
   @ApiProperty({
-    description: '사용자 이름',
-    example: '홍길동',
-    minLength: 2,
-    maxLength: 8,
+    description: '로그인 ID',
+    example: 'user123',
+    required: true,
   })
-  @IsString({ message: '이름은 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: '이름은 필수 입력 항목입니다.' })
-  @MinLength(2, { message: '이름은 최소 2자 이상이어야 합니다.' })
-  @MaxLength(8, { message: '이름은 최대 8자 이하여야 합니다.' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(3, 50)
+  loginId: string;
+
+  @ApiProperty({
+    description: '사용자명',
+    example: '홍길동',
+    required: true,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 50)
   username: string;
 
   @ApiProperty({
     description: '닉네임',
-    example: '홍길동',
-    minLength: 2,
-    maxLength: 8,
+    example: '닉네임',
+    required: true,
   })
-  @IsString({ message: '닉네임은 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
-  @MinLength(2, { message: '닉네임은 최소 2자 이상이어야 합니다.' })
-  @MaxLength(8, { message: '닉네임은 최대 8자 이하여야 합니다.' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 20)
   nickname: string;
-}
-
-// 일반 회원가입 DTO (비밀번호 필수)
-export class LocalSignUpDto extends BaseSignUpDto {
-  @ApiProperty({
-    description: '로그인 ID',
-    example: 'user123',
-    minLength: 4,
-    maxLength: 20,
-  })
-  @IsString({ message: 'ID는 문자열이어야 합니다.' })
-  @Length(4, 20, { message: 'ID는 최소 4자 이상, 최대 20자 이하여야 합니다.' })
-  @Matches(/^[a-z0-9]+$/, {
-    message: 'ID는 영문 소문자와 숫자만 사용할 수 있습니다.',
-  })
-  loginId: string;
 
   @ApiProperty({
     description: '비밀번호',
-    example: 'password123',
-    minLength: 8,
-    maxLength: 20,
+    example: 'password123!',
+    required: true,
   })
-  @IsString({ message: '비밀번호는 문자열이어야 합니다.' })
-  @MinLength(8, { message: '비밀번호는 최소 8자 이상이어야 합니다.' })
-  @MaxLength(20, { message: '비밀번호는 최대 20자 이하여야 합니다.' })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(100)
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
+    message: '비밀번호는 대문자, 소문자, 숫자, 특수문자를 포함해야 합니다.',
+  })
   password: string;
 }
 
-// 소셜 로그인용 DTO (비밀번호 옵션)
-export class SignUpDto extends BaseSignUpDto {
+// 일반 회원가입 DTO
+export class UserSignUpDto extends BaseSignUpDto {}
+
+// 도매회원 가입 DTO
+export class WholesaleSignUpDto extends BaseSignUpDto {
   @ApiProperty({
-    description: '비밀번호 (선택)',
-    example: 'password123',
-    minLength: 8,
-    maxLength: 20,
+    description: '사업자등록번호',
+    example: '123-45-67890',
+    required: true,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{3}-\d{2}-\d{5}$/, {
+    message: '사업자등록번호는 000-00-00000 형식이어야 합니다.',
+  })
+  businessNumber: string;
+
+  @ApiProperty({
+    description: '사업자명',
+    example: '알몬드영 주식회사',
+    required: true,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 100)
+  businessName: string;
+
+  @ApiProperty({
+    description: '사업자 유형',
+    example: '주식회사',
     required: false,
   })
+  @IsString()
   @IsOptional()
-  @IsString({ message: '비밀번호는 문자열이어야 합니다.' })
-  @MinLength(8, { message: '비밀번호는 최소 8자 이상이어야 합니다.' })
-  @MaxLength(20, { message: '비밀번호는 최대 20자 이하여야 합니다.' })
-  password?: string;
+  businessType?: string;
+
+  @ApiProperty({
+    description: '사업자 업종',
+    example: '도소매업',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  businessCategory?: string;
+
+  @ApiProperty({
+    description: '대표자명',
+    example: '홍길동',
+    required: true,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 50)
+  representativeName: string;
+
+  @ApiProperty({
+    description: '사업장 주소',
+    example: '서울특별시 강남구 테헤란로 123',
+    required: true,
+  })
+  @IsString()
+  @IsNotEmpty()
+  businessAddress: string;
+
+  @ApiProperty({
+    description: '사업장 전화번호',
+    example: '02-1234-5678',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  businessPhone?: string;
 }
