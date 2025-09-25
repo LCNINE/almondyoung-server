@@ -65,7 +65,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirectTo?: string,
   ) {
-    return this.authService.signIn(signInDto, res, redirectTo);
+    return await this.authService.signIn(signInDto, res, redirectTo);
   }
 
   @ApiOperation({ summary: '로그아웃' })

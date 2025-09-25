@@ -102,9 +102,7 @@ export class AuthService {
       electronicTransaction,
       privacyPolicy,
       thirdPartySharing,
-      emailConsent,
-      smsConsent,
-      pushConsent,
+      marketingConsent,
     } = signUpDto;
     try {
       // 이메일로 기존 사용자 조회
@@ -213,9 +211,7 @@ export class AuthService {
           electronicTransaction,
           privacyPolicy,
           thirdPartySharing,
-          emailConsent,
-          smsConsent,
-          pushConsent,
+          marketingConsent,
         });
 
         const expiresIn =
@@ -725,11 +721,14 @@ export class AuthService {
           }
         : {
             sameSite: 'lax' as const,
-            secure: process.env.NODE_ENV === 'production',
+            secure: false,
           }),
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
+
+    // 설정 후 확인
+    console.log('쿠키 설정 후 헤더!!!:', reply.getHeaders());
 
     return { accessToken };
   }
@@ -782,17 +781,18 @@ export class AuthService {
     // 쿠키 설정
     const cookieOptions = {
       path: '/',
-      maxAge: this.parseExpiresIn(expiresIn),
+      httpOnly: true,
       ...(process.env.NODE_ENV === 'production'
         ? {
             domain: process.env.CORS_ORIGIN_DOMAIN,
             sameSite: 'none' as const,
             secure: true,
-            httpOnly: true,
           }
-        : {}),
+        : {
+            sameSite: 'lax' as const,
+            secure: false,
+          }),
     };
-
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
     return { refreshToken };
@@ -876,7 +876,7 @@ export class AuthService {
       existingToken.expiresAt <= new Date() ||
       existingToken.isRevoked
     ) {
-      throw new UnauthorizedException('Unauthorized');
+      throw new UnauthorizedException('리프레시 토큰이 유효하지 않습니다.');
     }
 
     return;
@@ -884,10 +884,6 @@ export class AuthService {
 
   async changePassword(password: string, user: User) {
     const existingUser = await this.usersService.findUserById(user.id);
-
-    if (existingUser?.id !== user.id) {
-      throw new UnauthorizedException('Unauthorized');
-    }
 
     try {
       const saltOrRounds = 10;
