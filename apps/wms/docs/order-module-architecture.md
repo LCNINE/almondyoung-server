@@ -79,7 +79,6 @@ Order 모듈 내에서 공유되는 비즈니스 서비스들
 
 ##### 재고 및 가용성 관리
 - **AvailabilityService**: 가용재고 확인 및 계산
-- **ReservationsService**: 재고 예약 생성/해제/이관
 - **ReservationLifecycleService**: 예약 생명주기 관리
 
 ##### 주문 처리

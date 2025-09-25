@@ -1,18 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
-import { TypedDatabase } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { eq, inArray } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
 import { OutboxService } from '../../shared/services/outbox.service';
 import { EventPublisherService } from '@app/events';
-import { ReservationsService } from '../../shared/services/reservations.service';
+import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class SalesOrdersService {
@@ -21,10 +18,10 @@ export class SalesOrdersService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
-    private readonly events?: EventPublisherService<any>,
-    private readonly outbox?: OutboxService,
-    private readonly fulfillments?: FulfillmentsService,
-    private readonly reservations?: ReservationsService,
+    private readonly events: EventPublisherService<any>,
+    private readonly outbox: OutboxService,
+    private readonly fulfillments: FulfillmentsService,
+    private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly audit?: AuditService,
     private readonly metrics?: MetricsService,
   ) {}
@@ -191,25 +188,17 @@ export class SalesOrdersService {
             continue; // 이미 취소된 FO는 스킵
           }
 
-          // FO 라인들 조회
-          const foLines = await trx.query.fulfillmentOrderLines.findMany({
-            where: eq(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, fo.id)
-          });
-
-          // 각 FOL의 예약 해제
-          for (const fol of foLines) {
-            if (fol.reservedQty > 0 && this.reservations) {
-              try {
-                await this.reservations.unreserve({
-                  fulfillmentOrderLineId: fol.id,
-                  quantity: fol.reservedQty
-                }, trx);
-                this.logger.log(`Released ${fol.reservedQty} reserved qty for FOL ${fol.id}`);
-              } catch (error) {
-                this.logger.error(`Failed to release reservation for FOL ${fol.id}:`, error);
-                // 예약 해제 실패는 로그만 남기고 계속 진행
-              }
-            }
+          // 라이프사이클 서비스로 FO 예약 일괄 해제 위임
+          try {
+            await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
+              fo.id,
+              fo.status,
+              'canceled',
+              trx,
+            );
+          } catch (error) {
+            this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
+            // 예약 해제 실패는 로그만 남기고 계속 진행
           }
 
           // FO 상태를 취소로 업데이트
@@ -236,7 +225,7 @@ export class SalesOrdersService {
           this.logger.error('Failed to publish CANCELLED event:', eventError);
         }
 
-        await this.outbox?.enqueue({
+        await this.outbox.enqueue({
           eventType: ORDER_EVENTS.CANCELLED,
           aggregateType: 'order',
           aggregateId: id,

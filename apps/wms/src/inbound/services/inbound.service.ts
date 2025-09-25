@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
-import { DbService, TypedDatabase } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { and, eq, sql, gte, lte, desc } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { InventoryCommandService } from '../../inventory/services/inventory-command.service';
@@ -10,8 +10,6 @@ import { StockEventStore } from '../../inventory/repositories/stock-event.store'
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto, InboundPendingListResponse } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class InboundService {

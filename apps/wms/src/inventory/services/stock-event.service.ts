@@ -1,15 +1,13 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
-import { TypedDatabase, DbService } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import { CreateStockEntryDto } from '../../inbound/dto/create-stock-entry.dto';
 import { SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { InventoryService } from './inventory.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class StockEventService {

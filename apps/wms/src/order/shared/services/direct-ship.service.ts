@@ -113,9 +113,9 @@ export class DirectShipService {
       priority: fo.priority,
       totalItems: fo.totalItems,
       totalQty: fo.totalQty,
-      createdAt: fo.createdAt!,
-      forwardedAt: fo.allocatedAt,
-      completedAt: fo.shippedAt,
+      createdAt: fo.createdAt,
+      forwardedAt: fo.allocatedAt ?? undefined,
+      completedAt: fo.shippedAt ?? undefined,
       items: fo.items.map(item => ({
         foiId: item.id,
         salesOrderLineId: item.salesOrderLineId,

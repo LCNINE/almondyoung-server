@@ -1,9 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
-import { DbService, TypedDatabase } from '@app/db';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { eq, and, inArray, sum } from 'drizzle-orm';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface ReserveStockDto {
   targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';

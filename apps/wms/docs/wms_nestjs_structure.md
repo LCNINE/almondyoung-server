@@ -63,7 +63,6 @@
 - **PoliciesService**: 주문정책 관리
 - **ProductSkuMappingService**: 상품-SKU 매핑 관리
 - **ReservationLifecycleService**: 예약 생명주기 관리
-- **ReservationsService**: 재고 예약 관리
 
 #### Providers
 - **GoodsflowDeliveryProvider**: 굿스플로 택배 연동

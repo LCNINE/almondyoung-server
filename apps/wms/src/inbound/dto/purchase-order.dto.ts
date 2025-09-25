@@ -34,15 +34,18 @@ export class CreatePurchaseOrderDto {
     @IsEnum(PurchaseOrderType)
     type: PurchaseOrderType;
 
-    @ApiPropertyOptional({ description: '공급업체 ID' })
-    @IsOptional()
+    @ApiProperty({ description: '공급업체 ID' })
     @IsUUID()
-    supplierId?: string;
+    supplierId: string;
 
     @ApiPropertyOptional({ description: '입고 예정일' })
     @IsOptional()
     @IsDateString()
     expectedArrival?: string;
+
+    @ApiProperty({ description: '목적지 창고 ID', format: 'uuid' })
+    @IsUUID()
+    destinationWarehouseId: string;
 
     @ApiProperty({ type: [CreatePurchaseOrderLineDto], description: '발주 상품 목록' })
     @IsArray()
@@ -98,15 +101,18 @@ export class CreatePurchaseOrderFromCartDto {
     @IsUUID(4, { each: true })
     cartItemIds: string[];
 
-    @ApiPropertyOptional({ description: '공급업체 ID' })
-    @IsOptional()
+    @ApiProperty({ description: '공급업체 ID' })
     @IsUUID()
-    supplierId?: string;
+    supplierId: string;
 
     @ApiPropertyOptional({ description: '입고 예정일' })
     @IsOptional()
     @IsDateString()
     expectedArrival?: string;
+
+    @ApiProperty({ description: '목적지 창고 ID', format: 'uuid' })
+    @IsUUID()
+    destinationWarehouseId: string;
 }
 
 export interface PurchaseOrderResponse {

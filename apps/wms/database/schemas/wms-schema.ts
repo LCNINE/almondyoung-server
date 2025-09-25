@@ -221,6 +221,9 @@ export const suppliers = pgTable('suppliers', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
     contactInfo: json('contact_info'), // 연락처, 주소 등
+    defaultWarehouseId: uuid('default_warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

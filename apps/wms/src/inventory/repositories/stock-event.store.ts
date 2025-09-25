@@ -1,12 +1,10 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsSchema, wmsTables } from '../../../database/schemas/wms-schema';
-import { DbService, TypedDatabase } from '@app/db';
+import { wmsSchema, wmsTables, DbTx } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 
-// 트랜잭션 실행자 타입
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 // TransitionType alias for strong typing
 type TransitionType = typeof wmsTables.stockEvents.$inferInsert['transitionType'];

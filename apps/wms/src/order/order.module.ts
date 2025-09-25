@@ -21,7 +21,7 @@ import { InspectionService } from './shared/services/inspection.service';
 import { ConsolidationService } from './shared/services/consolidation.service';
 import { GoodsflowDeliveryProvider } from './shared/services/goodsflow-delivery.provider';
 import { BarcodeService } from '../shared/services/barcode.service';
-import { ReservationsService } from './shared/services/reservations.service';
+import { FulfillmentReservationsFacade } from './shared/services/fulfillment-reservations.facade';
 import { PoliciesService } from './shared/services/policies.service';
 import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
@@ -51,7 +51,7 @@ import { SharedModule } from '../shared/shared.module';
     }),
   ],
   controllers: [SalesOrdersController, FulfillmentsController, FulfillmentOrderController, ProductSkuMappingController, OutboundBatchController, InvoiceController, PickingController, DirectShipController, InspectionController, LocationOptimizationController, ConsolidationController, MatchingsController],
-  providers: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, DirectShipService, InspectionService, ConsolidationService, GoodsflowDeliveryProvider, BarcodeService, ReservationsService, PoliciesService, AvailabilityService, MatchingsService, OutboxService, OutboxDispatcherService],
+  providers: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, DirectShipService, InspectionService, ConsolidationService, GoodsflowDeliveryProvider, BarcodeService, FulfillmentReservationsFacade, PoliciesService, AvailabilityService, MatchingsService, OutboxService, OutboxDispatcherService],
   exports: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, MatchingsService, OutboxService, OutboxDispatcherService],
 })
 export class OrderModule {}

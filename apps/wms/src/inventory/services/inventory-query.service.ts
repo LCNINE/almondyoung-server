@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { DbService, TypedDatabase } from '@app/db';
+import { DbService } from '@app/db';
 import { sql, and, eq, gt } from 'drizzle-orm';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface SkuLocationInfo {
   locationId: string;

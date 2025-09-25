@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Param, Query, UsePipes } from '@nestjs/common';
 import { FulfillmentsService } from '../services/fulfillments.service';
-import { ReservationsService } from '../../shared/services/reservations.service';
+import { FulfillmentReservationsFacade } from '../../shared/services/fulfillment-reservations.facade';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 
@@ -21,7 +21,7 @@ const TransferSchema = z.object({ fromFulfillmentOrderLineId: z.string(), toFulf
 export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,
-    private readonly reservations: ReservationsService,
+    private readonly reservations: FulfillmentReservationsFacade,
   ) {}
 
   @Post()

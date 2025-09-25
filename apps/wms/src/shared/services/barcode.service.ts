@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
-import { TypedDatabase, DbService } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 
 export interface BarcodeParseResult {
@@ -30,7 +30,6 @@ export interface FOIScanResult {
   batchId?: string;
 }
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class BarcodeService {

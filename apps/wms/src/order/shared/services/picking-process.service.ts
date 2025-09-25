@@ -1,11 +1,9 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
-import { TypedDatabase, DbService } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { and, eq, inArray, sum, sql } from 'drizzle-orm';
 import { BarcodeService, FOIScanResult, SkuScanResult } from '../../../shared/services/barcode.service';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface PickingOperation {
   batchId: string;

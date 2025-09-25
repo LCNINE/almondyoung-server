@@ -1,11 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema, auditEventTypeEnum, auditSeverityEnum } from '../../../database/schemas/wms-schema';
-import { TypedDatabase, DbService } from '@app/db';
+import { wmsTables, wmsSchema, auditEventTypeEnum, auditSeverityEnum, DbTx } from '../../../database/schemas/wms-schema';
+import { DbService } from '@app/db';
 import { nowSeoul } from './time.util';
 import { eq, gte, lte, desc, and } from 'drizzle-orm';
-
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface AuditContext {
   userId?: string;

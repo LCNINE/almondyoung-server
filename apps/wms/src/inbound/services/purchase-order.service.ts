@@ -40,8 +40,8 @@ export class PurchaseOrderService {
     async createPurchaseOrder(createDto: CreatePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderResponse> {
         return this.inTx(async (trx) => {
             // 임시: 창고 라우팅 로직 (나중에 DTO로 받도록 개선)
-            const sourceWarehouseId = await this.getSourceWarehouseId(createDto.type, trx);
-            const destinationWarehouseId = await this.getDestinationWarehouseId(createDto.type, trx);
+            const destinationWarehouseId = createDto.destinationWarehouseId;
+            const sourceWarehouseId = await this.getSupplierDefaultWarehouseId(createDto.supplierId, trx);
             const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
 
             // 발주 헤더 생성
@@ -104,6 +104,10 @@ export class PurchaseOrderService {
             }
 
             // 발주 생성
+            const destinationWarehouseId = createDto.destinationWarehouseId;
+            const sourceWarehouseId = await this.getSupplierDefaultWarehouseId(createDto.supplierId, trx);
+            const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
+
             const [purchaseOrder] = await trx
                 .insert(wmsTables.purchaseOrders)
                 .values({
@@ -111,6 +115,9 @@ export class PurchaseOrderService {
                     supplierId: createDto.supplierId,
                     expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
                     status: 'created',
+                    sourceWarehouseId,
+                    destinationWarehouseId,
+                    requiresTransfer,
                 })
                 .returning();
 
@@ -289,7 +296,7 @@ export class PurchaseOrderService {
                         skuId: line.skuId,
                         expectedQty: line.quantity,
                         receivedQty: 0,
-                        status: 'pending',
+                        status: 'pending' as const,
                     }))
                 );
 
@@ -300,105 +307,77 @@ export class PurchaseOrderService {
     /**
      * 발주 유형에 따른 입고 창고 ID 반환 (source)
      */
-    private async getSourceWarehouseId(type: PurchaseOrderType, tx: DbTx): Promise<string> {
-        const warehouses = await tx.select().from(wmsTables.warehouses);
-        if (warehouses.length === 0) {
-            throw new BadRequestException('No warehouse found');
+    private async getSupplierDefaultWarehouseId(supplierId: string, tx: DbTx): Promise<string> {
+        const [supplier] = await tx
+            .select({ defaultWarehouseId: wmsTables.suppliers.defaultWarehouseId })
+            .from(wmsTables.suppliers)
+            .where(eq(wmsTables.suppliers.id, supplierId))
+            .limit(1);
+        if (!supplier || !supplier.defaultWarehouseId) {
+            throw new BadRequestException('Supplier default warehouse not configured');
         }
-
-        // 임시 라우팅 로직 (향후 설정 테이블로 관리)
-        if (type === 'domestic') {
-            // 국내 → 부천 창고 직송
-            const domestic = warehouses.find(w => w.type === 'domestic');
-            return domestic?.id || warehouses[0].id;
-        } else {
-            // 해외 → 중국 창고 경유
-            const overseas = warehouses.find(w => w.type === 'overseas');
-            return overseas?.id || warehouses[0].id;
-        }
-    }
-
-    /**
-     * 발주 유형에 따른 최종 목적지 창고 ID 반환 (destination)
-     */
-    private async getDestinationWarehouseId(type: PurchaseOrderType, tx: DbTx): Promise<string> {
-        const warehouses = await tx.select().from(wmsTables.warehouses);
-        if (warehouses.length === 0) {
-            throw new BadRequestException('No warehouse found');
-        }
-
-        // 현재는 모든 물건이 부천 창고가 최종 목적지
-        const domestic = warehouses.find(w => w.type === 'domestic');
-        return domestic?.id || warehouses[0].id;
-    }
-
-    /**
-     * 기존 호환성을 위한 메서드 (deprecated)
-     */
-    private async getDefaultWarehouseId(type: PurchaseOrderType): Promise<string> {
-        return this.inTx((trx) => this.getSourceWarehouseId(type, trx));
+        return supplier.defaultWarehouseId;
     }
 
     /**
      * 발주 조회
      */
     async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
-        const po = await this.inTx(async (trx) => {
-            const [row] = await trx
+        return this.inTx(async (trx) => {
+            const [po] = await trx
                 .select()
                 .from(wmsTables.purchaseOrders)
                 .where(eq(wmsTables.purchaseOrders.id, poId))
                 .limit(1);
-            return row;
-        }, tx);
 
-        if (!po) {
-            throw new NotFoundException(`Purchase order with ID ${poId} not found`);
-        }
-        const lines = await this.inTx(async (trx) => trx
-            .select({
-                skuId: wmsTables.purchaseOrderLines.skuId,
-                quantity: wmsTables.purchaseOrderLines.quantity,
-                unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-                skuName: wmsTables.skus.name,
-                skuBarcode: wmsTables.skus.defaultBarcode,
-            })
-            .from(wmsTables.purchaseOrderLines)
-            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-            .where(eq(wmsTables.purchaseOrderLines.poId, poId))
-        , tx);
+            if (!po) {
+                throw new NotFoundException(`Purchase order with ID ${poId} not found`);
+            }
 
-        const supplier = po.supplierId ? await this.inTx(async (trx) => {
-            const [row] = await trx
+            const lines = await trx
+                .select({
+                    skuId: wmsTables.purchaseOrderLines.skuId,
+                    quantity: wmsTables.purchaseOrderLines.quantity,
+                    unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+                    skuName: wmsTables.skus.name,
+                    skuBarcode: wmsTables.skus.defaultBarcode,
+                })
+                .from(wmsTables.purchaseOrderLines)
+                .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
+                .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+
+            const supplier = po.supplierId ? (() => trx
                 .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
                 .from(wmsTables.suppliers)
                 .where(eq(wmsTables.suppliers.id, po.supplierId))
-                .limit(1);
-            return row;
-        }, tx) : undefined;
+                .limit(1)
+                .then(rows => rows[0]))() : undefined;
 
-        return {
-            id: po.id,
-            type: po.type as PurchaseOrderType,
-            supplierId: po.supplierId,
-            expectedArrival: po.expectedArrival,
-            status: po.status as PurchaseOrderStatus,
-            createdAt: po.createdAt!,
-            updatedAt: po.updatedAt!,
-            lines: lines.map(line => ({
-                skuId: line.skuId,
-                quantity: line.quantity,
-                unitPrice: line.unitPrice,
-                sku: {
-                    name: line.skuName ?? '',
-                    barcode: line.skuBarcode ?? '',
-                },
-            })),
-            supplier: supplier ? {
-                name: supplier.name ?? '',
-                contactInfo: supplier.contactInfo ?? '',
-            } : undefined,
-        };
+            const supplierRow = await supplier;
+
+            return {
+                id: po.id,
+                type: po.type as PurchaseOrderType,
+                supplierId: po.supplierId,
+                expectedArrival: po.expectedArrival,
+                status: po.status as PurchaseOrderStatus,
+                createdAt: po.createdAt!,
+                updatedAt: po.updatedAt!,
+                lines: lines.map(line => ({
+                    skuId: line.skuId,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    sku: {
+                        name: line.skuName ?? '삭제된 상품',
+                        barcode: line.skuBarcode ?? '',
+                    },
+                })),
+                supplier: supplierRow ? {
+                    name: supplierRow.name ?? '공급사 없음',
+                    contactInfo: supplierRow.contactInfo ?? '공급사 없음',
+                } : undefined,
+            };
+        }, tx);
     }
 
     /**
@@ -447,7 +426,7 @@ export class PurchaseOrderService {
                 const [row] = await trx
                     .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
                     .from(wmsTables.suppliers)
-                    .where(eq(wmsTables.suppliers.id, po.supplierId))
+                    .where(eq(wmsTables.suppliers.id, po.supplierId!))
                     .limit(1);
                 return row;
             }, tx) : undefined;

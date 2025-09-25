@@ -1,7 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
-import { TypedDatabase } from '@app/db';
+import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { AvailabilityService } from '../../shared/services/availability.service';
@@ -11,7 +10,6 @@ import { OutboxService } from '../../shared/services/outbox.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MatchingsService } from '../../matchings/services/matchings.service';
 
-type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 @Injectable()
 export class FulfillmentsService {
@@ -365,8 +363,6 @@ export class FulfillmentsService {
       return this.getOne(id, trx);
     }, tx);
   }
-
-  // 예약 관련 로직은 ReservationsService로 위임됨
 
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
