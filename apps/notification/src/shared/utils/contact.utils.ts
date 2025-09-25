@@ -1,6 +1,15 @@
 // apps/notification/src/shared/utils/contact.utils.ts
 import { Channel } from '../enums';
-import { UserProfile } from '../../../database/schemas/notification-schema';
+
+// User-service에서 가져오는 user profile 타입
+export interface UserProfile {
+  userId: string;
+  email?: string;
+  phoneNumber?: string;
+  pushToken?: string;
+  name?: string;
+  [key: string]: any;
+}
 
 export const getContactForChannel = (
     userProfile: UserProfile,
@@ -8,12 +17,12 @@ export const getContactForChannel = (
 ): string | null => {
     switch (channel) {
         case Channel.EMAIL:
-            return userProfile.email;
+            return userProfile.email || null;
         case Channel.SMS:
         case Channel.KAKAO:
-            return userProfile.phoneNumber;
+            return userProfile.phoneNumber || null;
         case Channel.PUSH:
-            return userProfile.pushToken;
+            return userProfile.pushToken || null;
         default:
             return null;
     }

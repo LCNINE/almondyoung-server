@@ -1,4 +1,4 @@
-// apps/notification/database/schemas/notification-schema-fixed.ts
+// apps/notification/database/schemas/notification-schema.ts
 import { pgTable, pgEnum, uuid, varchar, text, jsonb, timestamp, integer, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -14,7 +14,7 @@ export const notificationStatusEnum = pgEnum('notification_status', [
     'RETRYING'
 ]);
 export const providerStatusEnum = pgEnum('provider_status', ['ACTIVE', 'INACTIVE', 'ERROR']);
-export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SCHEDULED', 'PROCESSING', 'COMPLETED', 'CANCELLED']);
+export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SCHEDULED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'FAILED']);
 export const targetTypeEnum = pgEnum('target_type', ['all', 'filter', 'excel', 'search']);
 export const devicePlatformEnum = pgEnum('device_platform', ['ios', 'android', 'web']);
 
@@ -127,6 +127,7 @@ export const campaignTargetGroups = pgTable('campaign_target_groups', {
     userList: jsonb('user_list'),
     userCount: integer('user_count').default(0),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     campaignIdx: index('idx_campaign_target').on(table.campaignId),
 }));
@@ -402,3 +403,6 @@ export type FcmToken = typeof fcmTokens.$inferSelect;
 export type NewFcmToken = typeof fcmTokens.$inferInsert;
 export type FcmTopicSubscription = typeof fcmTopicSubscriptions.$inferSelect;
 export type NewFcmTopicSubscription = typeof fcmTopicSubscriptions.$inferInsert;
+
+// Export schema type for DbService
+export type NotificationSchema = typeof notificationTables;

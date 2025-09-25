@@ -3,7 +3,6 @@ import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { NotificationDispatcherService } from '../../dispatcher/services/notification-dispatcher.service';
-import { UserServiceApiService } from '../../shared/services/user-service-api.service';
 import { NotificationCategory, Channel } from '../../shared/enums';
 
 @Processor('bulk-notification')
@@ -12,7 +11,6 @@ export class BulkProcessor {
 
   constructor(
     private readonly notificationDispatcher: NotificationDispatcherService,
-    private readonly userServiceApi: UserServiceApiService,
   ) {}
 
   @Process('process-bulk-notification')
@@ -22,14 +20,13 @@ export class BulkProcessor {
     content: any;
     category: NotificationCategory;
     priority: string;
+    recipients: Array<{ userId: string; email?: string; phoneNumber?: string; name?: string }>;
   }>) {
-    const { campaignId, channels, content, category, priority } = job.data;
+    const { campaignId, channels, content, category, priority, recipients } = job.data;
     
     this.logger.log(`Processing bulk notification campaign: ${campaignId}`);
 
     try {
-      // 1. 캠페인 수신자 목록 조회
-      const recipients = await this.getCampaignRecipients(campaignId);
       this.logger.log(`Found ${recipients.length} recipients for campaign ${campaignId}`);
 
       // 2. 각 수신자별로 알림 발송
@@ -55,18 +52,8 @@ export class BulkProcessor {
     }
   }
 
-  private async getCampaignRecipients(campaignId: string): Promise<any[]> {
-    // 실제 구현에서는 DB에서 수신자 목록을 조회
-    // 여기서는 간단한 예시
-    return [
-      { userId: 'user-001', email: 'hyunji.bea@lcnine.kr' },
-      { userId: 'user-002', email: 'jungsik.jeong@lcnine.kr' },
-      { userId: 'user-003', email: 'jihun.go@lcnine.kr' },
-    ];
-  }
-
   private async sendNotificationToRecipient(
-    recipient: any,
+    recipient: { userId: string; email?: string; phoneNumber?: string; name?: string },
     channels: Channel[],
     content: any,
     category: NotificationCategory,
@@ -85,7 +72,7 @@ export class BulkProcessor {
           userId: recipient.userId,
           channels: [channel],
           category,
-          templateKey: null, // 대량 발송은 템플릿 없이 직접 컨텐츠 사용
+          templateKey: undefined, // 대량 발송은 템플릿 없이 직접 컨텐츠 사용
           eventKey: `BULK_CAMPAIGN_${Date.now()}`,
           payload: {
             recipient,
@@ -94,8 +81,9 @@ export class BulkProcessor {
           correlationId: `bulk-${Date.now()}-${recipient.userId}`,
           priority: priority as any,
           variables: {
-            name: recipient.email?.split('@')[0] || recipient.userId,
+            name: recipient.name || recipient.email?.split('@')[0] || recipient.userId,
             email: recipient.email,
+            phoneNumber: recipient.phoneNumber,
           },
         });
 

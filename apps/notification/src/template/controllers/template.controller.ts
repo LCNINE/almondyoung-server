@@ -8,54 +8,54 @@ export class TemplateController {
 
     // 구체적인 라우트들을 먼저 정의
     @Get("kakao/list")
-    async getKakaoTemplateList() {
+    async getKakaoTemplateList(): Promise<any> {
         return this.templateService.getKakaoTemplateList();
     }
 
     @Get("sms/list")
-    async getSmsTemplates() {
+    async getSmsTemplates(): Promise<any> {
         return this.templateService.getSmsTemplates();
     }
 
     // 기본 CRUD 엔드포인트들
     @Get()
-    async findAll(@Query(new ValidationPipe({ transform: true })) filterDto: TemplateFilterDto) {
+    async findAll(@Query(new ValidationPipe({ transform: true })) filterDto: TemplateFilterDto): Promise<any[]> {
         return this.templateService.findAllTemplates(filterDto);
     }
 
     @Post()
-    async create(@Body(ValidationPipe) createTemplateDto: CreateTemplateDto) {
+    async create(@Body(ValidationPipe) createTemplateDto: CreateTemplateDto): Promise<any> {
         return this.templateService.createTemplate(createTemplateDto);
     }
 
     // 파라미터 라우트들은 마지막에 정의
     @Post("register-kakao/:key")
-    async registerKakaoTemplate(@Param("key") templateKey: string, @Body() templateData: any) {
+    async registerKakaoTemplate(@Param("key") templateKey: string, @Body() templateData: any): Promise<any> {
         return this.templateService.registerKakaoTemplate(templateKey, templateData);
     }
 
     @Post("register-sms/:key")
-    async registerSmsTemplate(@Param("key") templateKey: string) {
+    async registerSmsTemplate(@Param("key") templateKey: string): Promise<any> {
         return this.templateService.registerSmsTemplate(templateKey);
     }
 
     @Get("by-id/:id")
-    async findOne(@Param("id") id: string) {
+    async findOne(@Param("id") id: string): Promise<any> {
         return this.templateService.findTemplateById(id);
     }
 
     @Put("by-id/:id")
-    async update(@Param("id") id: string, @Body() updateTemplateDto: UpdateTemplateDto) {
+    async update(@Param("id") id: string, @Body() updateTemplateDto: UpdateTemplateDto): Promise<any> {
         return this.templateService.updateTemplate(id, updateTemplateDto);
     }
 
     @Delete("by-id/:id")
-    async remove(@Param("id") id: string) {
+    async remove(@Param("id") id: string): Promise<any> {
         return this.templateService.deleteTemplate(id);
     }
 
     @Post("preview/:id")
-    async previewTemplate(@Param("id") id: string, @Body(ValidationPipe) previewDto: PreviewTemplateDto) {
+    async previewTemplate(@Param("id") id: string, @Body(ValidationPipe) previewDto: PreviewTemplateDto): Promise<any> {
         return this.templateService.previewTemplate(id, "EMAIL", previewDto);
     }
 
@@ -64,7 +64,7 @@ export class TemplateController {
         @Param("key") templateKey: string,
         @Param("channel") channel: string,
         @Body() testDto: any
-    ) {
+    ): Promise<any> {
         return this.templateService.previewTemplate(templateKey, channel, testDto);
     }
 }
