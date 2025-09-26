@@ -15,7 +15,7 @@ export class ShopInfoDto {
   yearsOperating: number | null;
 
   @ApiProperty({ description: '상점 유형', enum: ['solo', 'small', 'large'] })
-  shopType: 'solo' | 'small' | 'large';
+  shopType?: 'solo' | 'small' | 'large' | null;
 
   @ApiProperty({ description: '카테고리 정보' })
   categories: unknown;

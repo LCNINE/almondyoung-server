@@ -4,6 +4,7 @@ import { UserEvents } from '@app/shared/events/user.events';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -101,9 +102,7 @@ export class AuthService {
       electronicTransaction,
       privacyPolicy,
       thirdPartySharing,
-      emailConsent,
-      smsConsent,
-      pushConsent,
+      marketingConsent,
     } = signUpDto;
     try {
       // 이메일로 기존 사용자 조회
@@ -212,9 +211,7 @@ export class AuthService {
           electronicTransaction,
           privacyPolicy,
           thirdPartySharing,
-          emailConsent,
-          smsConsent,
-          pushConsent,
+          marketingConsent,
         });
 
         const expiresIn =
@@ -395,21 +392,20 @@ export class AuthService {
     redirectTo?: string,
   ): Promise<void | { accessToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
-    if (!user) throw new UnauthorizedException('존재하지 않는 사용자입니다');
+    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
     if (user.deletedAt) {
-      throw new UnauthorizedException(
+      throw new ForbiddenException(
         '휴면 처리된 사용자입니다. 관리자에게 문의해주세요.',
       );
     }
 
     if (!user.isEmailVerified) {
-      throw new UnauthorizedException('이메일 인증이 필요합니다.');
+      throw new ForbiddenException('이메일 인증이 필요한 사용자입니다.');
     }
 
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
-    if (!isAuth)
-      throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
+    if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
     await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
     const { accessToken } = await this.getAccessToken(user, reply);
@@ -682,6 +678,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       scopes,
+      email: user.email,
     };
 
     const expiresIn =
@@ -725,7 +722,7 @@ export class AuthService {
           }
         : {
             sameSite: 'lax' as const,
-            secure: process.env.NODE_ENV === 'production',
+            secure: false,
           }),
     };
 
@@ -782,17 +779,18 @@ export class AuthService {
     // 쿠키 설정
     const cookieOptions = {
       path: '/',
-      maxAge: this.parseExpiresIn(expiresIn),
+      httpOnly: true,
       ...(process.env.NODE_ENV === 'production'
         ? {
             domain: process.env.CORS_ORIGIN_DOMAIN,
             sameSite: 'none' as const,
             secure: true,
-            httpOnly: true,
           }
-        : {}),
+        : {
+            sameSite: 'lax' as const,
+            secure: false,
+          }),
     };
-
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
     return { refreshToken };
@@ -876,7 +874,7 @@ export class AuthService {
       existingToken.expiresAt <= new Date() ||
       existingToken.isRevoked
     ) {
-      throw new UnauthorizedException('Unauthorized');
+      throw new UnauthorizedException('리프레시 토큰이 유효하지 않습니다.');
     }
 
     return;
@@ -884,10 +882,6 @@ export class AuthService {
 
   async changePassword(password: string, user: User) {
     const existingUser = await this.usersService.findUserById(user.id);
-
-    if (existingUser?.id !== user.id) {
-      throw new UnauthorizedException('Unauthorized');
-    }
 
     try {
       const saltOrRounds = 10;

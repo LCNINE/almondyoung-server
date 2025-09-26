@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment Result - V2</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .success {
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 10px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>🎉 결제 결과 페이지 (V2)</h2>
+      <pre id="log"></pre>
+
+      <h3>📊 BNPL 수동 Capture (테스트용)</h3>
+      <p>
+        BNPL 결제는 스케줄러가 자동 처리하지만, 테스트를 위해 수동 capture도
+        가능합니다:
+      </p>
+      <label
+        >Authorization ID: <input id="authId" placeholder="auth_xxxx"
+      /></label>
+      <button onclick="manualCapture()">수동 Capture</button>
+    </div>
+
+    <script>
+      const API_BASE = 'http://localhost:5000';
+      const log = (m) => {
+        document.getElementById('log').textContent += m + '\n';
+        console.log(m);
+      };
+
+      (async () => {
+        const params = new URLSearchParams(location.search);
+        const paymentId = params.get('paymentId');
+        const sessionId = params.get('sessionId');
+        const status = params.get('status');
+
+        log('📋 결제 파라미터:');
+        log(`  paymentId: ${paymentId}`);
+        log(`  sessionId: ${sessionId}`);
+        log(`  status: ${status}`);
+
+        if (status === 'completed') {
+          log('✅ 결제가 성공적으로 완료되었습니다!');
+          log('');
+          log('💡 참고사항:');
+          log('- 즉시결제(카드): 이미 완료됨');
+          log('- 후불결제(BNPL): 승인만 완료, 스케줄러가 자동 출금 예정');
+          log('- 포인트: 즉시 차감 완료');
+        } else {
+          log('❌ 결제 상태를 확인할 수 없습니다.');
+        }
+
+        // V2 API에서는 capture가 자동으로 처리되므로 별도 작업 불필요
+        // BNPL은 스케줄러가 자동으로 capture 진행
+      })();
+
+      // 테스트용 수동 capture 함수
+      async function manualCapture() {
+        const authId = document.getElementById('authId').value.trim();
+        if (!authId) {
+          alert('Authorization ID를 입력하세요');
+          return;
+        }
+
+        try {
+          log(`🔄 수동 BNPL Capture 시도: ${authId}`);
+          const resp = await fetch(
+            `${API_BASE}/v2/payments/deferred/${authId}/capture`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Idempotency-Key': 'idem_manual_capture_' + Date.now(),
+              },
+              body: JSON.stringify({
+                metadata: { ui: 'redirect-v2', manual: true },
+              }),
+            },
+          );
+          const data = await resp.json();
+          log('Capture response:\n' + JSON.stringify(data, null, 2));
+          if (resp.ok) {
+            log('✅ 수동 Capture 성공!');
+            alert('Capture 성공!');
+          } else {
+            log('❌ Capture 실패: ' + data.message);
+            alert('Capture 실패: ' + data.message);
+          }
+        } catch (e) {
+          log('💥 에러: ' + e);
+          alert('Error: ' + e);
+        }
+      }
+    </script>
+  </body>
+</html>
