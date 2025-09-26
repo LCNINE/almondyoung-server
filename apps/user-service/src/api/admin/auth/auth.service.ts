@@ -20,8 +20,7 @@ export class AuthService {
   async createAccount(createAccountDto: CreateAccountDto, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    const { name, loginId, password, roleId, phone_number, email } =
-      createAccountDto;
+    const { loginId, password, roleId, phone_number, email } = createAccountDto;
 
     let existingUser;
     existingUser = await this.usersService.findUserByLoginId(loginId);
@@ -48,8 +47,15 @@ export class AuthService {
   ) {
     const client = this.getClient(tx);
 
-    const { name, loginId, password, roleId, phone_number, email, nickname } =
-      createAccountDto;
+    const {
+      loginId,
+      password,
+      roleId,
+      phone_number,
+      email,
+      username,
+      nickname,
+    } = createAccountDto;
 
     const saltOrRounds = 10;
     const hash = await bcrypt.hash(password, saltOrRounds);
@@ -58,7 +64,7 @@ export class AuthService {
     const [user] = await tx
       .insert(schema.users)
       .values({
-        username: name,
+        username,
         nickname,
         loginId,
         password: hash,
