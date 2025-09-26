@@ -15,7 +15,7 @@ import {
 } from '../types';
 import { InternalOrderEvent, OrderQuery } from '../types';
 import { ChannelCommand, ChannelQuery } from '../types';
-import { ChannelAdapterEvents } from '../events/channel-events';
+import { ChannelAdapterEvents } from '@app/shared/events/adapter.events';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';

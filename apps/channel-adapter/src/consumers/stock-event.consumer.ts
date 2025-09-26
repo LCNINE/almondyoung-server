@@ -14,7 +14,7 @@ export class StockEventConsumer {
   @RetryPolicy({
     maxRetries: 3,
     backoffMs: [1000, 5000, 30000],
-    dlqTopic: 'channel-adapter.stock.dlq',
+    dlqTopic: 'stock.dlq',
   })
   async handleStockChanged(event: StockChangedEvent): Promise<void> {
     const startTime = Date.now();
@@ -98,7 +98,7 @@ export class StockEventConsumer {
   getHealthStatus() {
     return {
       consumer: 'StockEventConsumer',
-      topic: 'wms.stock.changed',
+      topic: 'stock.changed',
       status: 'active',
       lastProcessedAt: new Date().toISOString(),
     };

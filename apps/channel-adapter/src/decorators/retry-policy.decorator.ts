@@ -172,7 +172,7 @@ export const CHANNEL_RETRY_POLICIES = {
   NAVER: {
     maxRetries: 3,
     backoffMs: [2000, 10000, 60000] as const, // ✅ readonly 배열 허용
-    dlqTopic: 'channel-adapter.naver.dlq',
+    dlqTopic: 'naver.dlq',
     retryableErrorPatterns: [
       /rate.*limit/i,
       /too.*many.*requests/i,
@@ -188,7 +188,7 @@ export const CHANNEL_RETRY_POLICIES = {
   COUPANG: {
     maxRetries: 5,
     backoffMs: [1000, 3000, 10000, 30000, 120000] as const,
-    dlqTopic: 'channel-adapter.coupang.dlq',
+    dlqTopic: 'coupang.dlq',
     retryableErrorPatterns: [
       /rate.*limit/i,
       /quota.*exceeded/i,

@@ -17,10 +17,7 @@ import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NaverCommerceApiService } from './services/apis/naver-commerce.api.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import {
-  CHANNEL_ADAPTER_EVENTS,
-  ChannelAdapterEvents,
-} from './events/channel-events';
+import { CHANNEL_ADAPTER_EVENTS } from '@app/shared/events/adapter.events';
 import * as schema from './schema';
 import { CoupangApiService } from './services/apis/coupang.api.service';
 import { WmsApiService } from './services/apis/wms.api.service';
