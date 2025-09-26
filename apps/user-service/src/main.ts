@@ -15,6 +15,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
+import { writeFileSync } from 'fs';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -57,6 +58,12 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
+
+  // Swagger JSON 파일로 저장
+  writeFileSync(
+    'apps/user-service/swagger-spec.json',
+    JSON.stringify(document),
+  );
 
   // Passport와 Fastify 호환성을 위한 훅 추가
   app

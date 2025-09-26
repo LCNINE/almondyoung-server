@@ -33,7 +33,7 @@ export class CreateShopInfoDto {
   })
   @IsEnum(SHOP_TYPES, { message: '유효하지 않은 샵 타입입니다.' })
   @IsOptional()
-  shopType?: ShopType | null;
+  shopType?: ShopType | undefined;
 
   @ApiProperty({
     description: '상점 카테고리 목록',
