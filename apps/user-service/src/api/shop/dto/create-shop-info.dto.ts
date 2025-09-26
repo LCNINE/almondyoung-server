@@ -32,7 +32,8 @@ export class CreateShopInfoDto {
     example: 'retail',
   })
   @IsEnum(SHOP_TYPES, { message: '유효하지 않은 샵 타입입니다.' })
-  shopType: ShopType;
+  @IsOptional()
+  shopType?: ShopType | undefined;
 
   @ApiProperty({
     description: '상점 카테고리 목록',

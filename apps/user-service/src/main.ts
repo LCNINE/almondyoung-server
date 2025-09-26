@@ -15,6 +15,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
+import { writeFileSync } from 'fs';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -58,6 +59,12 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Swagger JSON 파일로 저장
+  writeFileSync(
+    'apps/user-service/swagger-spec.json',
+    JSON.stringify(document),
+  );
+
   // Passport와 Fastify 호환성을 위한 훅 추가
   app
     .getHttpAdapter()
@@ -89,6 +96,7 @@ async function bootstrap() {
     cookieName: 'sessionId',
     saveUninitialized: false,
     cookie: {
+      sameSite: 'none',
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       maxAge: 1000 * 60 * 60 * 24,
@@ -100,15 +108,21 @@ async function bootstrap() {
       process.env.NODE_ENV === 'production'
         ? corsOrigins
         : [
+            'http://localhost:8000',
             'http://localhost:3000',
             'http://localhost:9000',
             'http://127.0.0.1:3000',
           ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Cookie',
+      'Set-Cookie',
+    ],
     exposedHeaders: ['Set-Cookie'],
-    maxAge: 86400, // 24시간
   });
 
   app.useGlobalInterceptors(new ResponseInterceptor());
