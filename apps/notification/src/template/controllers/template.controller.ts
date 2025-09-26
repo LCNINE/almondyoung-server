@@ -29,7 +29,7 @@ export class TemplateController {
     }
 
     // 파라미터 라우트들은 마지막에 정의
-        @Post("register-kakao/:key")
+    @Post("register-kakao/:key")
     async registerKakaoTemplate(@Param("key") templateKey: string, @Body() templateData: any) {
         return this.templateService.registerKakaoTemplate(templateKey, templateData);
     }
@@ -56,11 +56,11 @@ export class TemplateController {
 
     @Post("preview/:id")
     async previewTemplate(@Param("id") id: string, @Body(ValidationPipe) previewDto: PreviewTemplateDto) {
-        return this.templateService.previewTemplate(id, previewDto);
+        return this.templateService.previewTemplate(id, "EMAIL", previewDto);
     }
 
     @Post(":key/test/:channel")
-    async previewTemplate(
+    async testTemplateWithChannel(
         @Param("key") templateKey: string,
         @Param("channel") channel: string,
         @Body() testDto: any
