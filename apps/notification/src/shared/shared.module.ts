@@ -1,4 +1,3 @@
-// apps/notification/src/shared/shared.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
@@ -19,6 +18,7 @@ import { TemplateRendererService } from './services/template-renderer.service';
 import { UserNotificationService } from './services/user-notification.service';
 import { UserSyncService } from './services/user-sync.service';
 import { WebhookService } from './services/webhook.service';
+import { UserIntegrationService } from './services/user-integration.service'; // Added
 
 @Module({
     imports: [
@@ -34,7 +34,6 @@ import { WebhookService } from './services/webhook.service';
         EventController,
         LogController,
         MetricsController,
-        
         WebhookController,
     ],
     providers: [
@@ -46,9 +45,9 @@ import { WebhookService } from './services/webhook.service';
         UserNotificationService,
         UserSyncService,
         WebhookService,
+        UserIntegrationService, // Added
     ],
     exports: [
-        // 다른 모듈에서 필요한 서비스만 export
         AlertService,
         EventMappingService,
         NotificationLoggerService,
@@ -56,6 +55,7 @@ import { WebhookService } from './services/webhook.service';
         UserNotificationService,
         UserSyncService,
         WebhookService,
+        UserIntegrationService, // Added
     ],
 })
 export class SharedModule { }

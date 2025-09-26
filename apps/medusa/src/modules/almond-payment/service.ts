@@ -1,382 +1,478 @@
-import {
+import { AbstractPaymentProvider } from '@medusajs/framework/utils';
+import type {
+  InitiatePaymentInput,
+  InitiatePaymentOutput,
   AuthorizePaymentInput,
   AuthorizePaymentOutput,
-  CancelPaymentInput,
-  CancelPaymentOutput,
   CapturePaymentInput,
   CapturePaymentOutput,
+  CancelPaymentInput,
+  CancelPaymentOutput,
   DeletePaymentInput,
   DeletePaymentOutput,
   GetPaymentStatusInput,
   GetPaymentStatusOutput,
-  InitiatePaymentInput,
-  InitiatePaymentOutput,
-  ProviderWebhookPayload,
   RefundPaymentInput,
   RefundPaymentOutput,
   RetrievePaymentInput,
   RetrievePaymentOutput,
   UpdatePaymentInput,
   UpdatePaymentOutput,
+} from '@medusajs/framework/types';
+
+import type {
+  ProviderWebhookPayload,
   WebhookActionResult,
 } from '@medusajs/framework/types';
-import {
-  AbstractPaymentProvider,
-  PaymentSessionStatus,
-} from '@medusajs/framework/utils';
-import { createApiHeaders } from './types';
-
-// --- Helper Functions and Types ---
-
-type AlmondPaymentSession = {
-  id: string;
-  status:
-    | 'PENDING'
-    | 'AUTHORIZED'
-    | 'CAPTURED'
-    | 'FAILED'
-    | 'CANCELLED'
-    | 'REFUNDED';
-  payment_url: string;
-  expires_at: string;
-  requires_authentication?: boolean;
-  authentication_url?: string;
+import { PaymentActions } from '@medusajs/framework/utils';
+/**
+ * 구성 옵션
+ */
+type CaptureMode = 'AUTO' | 'MANUAL'; // AUTO: 즉시결제(토스 등), MANUAL: BNPL(승인만)
+type Options = {
+  baseUrl: string;
+  apiKey?: string;
+  defaultIntentType?: string; // zod enum 값과 일치해야 함 (예: "PURCHASE")
+  defaultReturnUrl?: string;
+  defaultCancelUrl?: string;
+  defaultCaptureMode?: CaptureMode; // 기본값: "MANUAL" 추천(BNPL)
+  webhookSecret?: string; // (추후) 웹훅 서명 검증용
 };
 
-type AlmondApiError = {
-  error: {
-    type: string;
-    message: string;
+/**
+ * Medusa에 저장되는 세션/페이먼트 데이터(최소 필드)
+ */
+type SessionData = {
+  wallet: {
+    intentId: string;
+    checkoutSessionId?: string;
+    redirectUrl?: string;
+    amount?: number;
+    currency?: string;
+    captureMode?: CaptureMode;
+    instrument?: string;
   };
 };
 
-const RETRY_CONFIG = {
-  maxRetries: 3,
-  baseDelay: 500,
+type PaymentData = {
+  wallet: {
+    intentId: string;
+    attemptId?: string;
+    transactionId?: string;
+    providerStatus?: string;
+    capturedAt?: string;
+    captureMode?: CaptureMode;
+    refunds?: Array<{ id: string; amount: number; createdAt: string }>;
+  };
 };
 
-async function executeWithRetry<T>(apiCall: () => Promise<T>): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    try {
-      return await apiCall();
-    } catch (error) {
-      attempt++;
-      if (
-        (error instanceof TypeError ||
-          (error.cause && error.cause.code === 'ECONNRESET')) &&
-        attempt <= RETRY_CONFIG.maxRetries
-      ) {
-        const delay =
-          RETRY_CONFIG.baseDelay *
-          Math.pow(2, attempt - 1) *
-          (0.5 + Math.random() * 0.5);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-      throw error;
-    }
+/** ---- 유틸 ---- */
+const toNumber = (v: unknown): number => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    if (!Number.isFinite(n))
+      throw new Error(`amount is not a finite number: ${v}`);
+    return n;
   }
-}
-
-// --- Payment Provider Implementation ---
-
-type ModuleOptions = {
-  apiKey: string;
+  // BigNumber 등일 수 있으므로 valueOf/ toString 고려
+  // @ts-ignore
+  if (v && typeof v.valueOf === 'function') {
+    const n = Number(v.valueOf());
+    if (!Number.isFinite(n))
+      throw new Error(`amount is not a finite number: ${String(v)}`);
+    return n;
+  }
+  throw new Error(`Unsupported amount type: ${typeof v}`);
 };
 
-class AlmondPaymentProviderService extends AbstractPaymentProvider {
-  getWebhookActionAndData(
-    data: ProviderWebhookPayload['payload'],
-  ): Promise<WebhookActionResult> {
-    throw new Error('Method not implemented.');
-  }
+class AlmondPaymentProvider extends AbstractPaymentProvider<Options> {
   static identifier = 'almond-payment';
 
-  protected readonly logger_: any;
-  protected options_: ModuleOptions;
-  private readonly pollingInterval = 2000;
+  /** utils의 StripeBase처럼 내부에 보관 */
+  protected options_: Options;
+  protected container_: any;
 
-  constructor(container: { logger: any }, options: ModuleOptions) {
+  constructor(container: any, options: Options) {
+    // @ts-ignore
     super(container, options);
-    this.options_ = options || {
-      apiKey:
-        process.env.ALMOND_PAYMENT_API_ENDPOINT || 'http://localhost:9001',
-    };
-    this.logger_ = container.logger;
+    this.container_ = container;
+    this.options_ = options;
   }
 
+  /** StripeBase 호환 getter (this.options 사용 가능하게) */
+  get options(): Options {
+    return this.options_;
+  }
+
+  /** 공통 fetch 래퍼 */
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    idemKey?: string,
+  ): Promise<T> {
+    const url = `${this.options.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(this.options.apiKey
+        ? { Authorization: `Bearer ${this.options.apiKey}` }
+        : {}),
+      ...(idemKey ? { 'Idempotency-Key': idemKey } : {}),
+      ...(init.headers as Record<string, string> | undefined),
+    };
+    const res = await fetch(url, { ...init, headers });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `${init.method ?? 'GET'} ${path} failed: ${res.status} ${text}`,
+      );
+    }
+    // 비어있는 바디일 수도 있음
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      // @ts-ignore
+      return undefined;
+    }
+    return (await res.json()) as T;
+  }
+
+  /** ========== 1) initiate: 외부 intent + (웹일 경우) checkout session 생성 → { id, data } ========== */
   async initiatePayment({
-    amount,
     currency_code,
+    amount,
     data,
     context,
   }: InitiatePaymentInput): Promise<InitiatePaymentOutput> {
-    try {
-      const payload = {
-        amount: amount,
-        currency: currency_code,
-        metadata: {
-          customer_id: context?.customer?.id,
-          email: context?.customer?.email,
-          billing_address: context?.customer?.billing_address,
-        },
-        expires_in_minutes: 30,
-      };
+    const idemKey = context?.idempotency_key;
+    console.log('initiatePayment', context, data);
 
-      // 실제 API 호출 코드 (주석 처리)
-
-      const response = await executeWithRetry(async () => {
-        const res = await fetch(`${this.options_.apiKey}/payment-sessions`, {
-          method: 'POST',
-          headers: createApiHeaders(context),
-          body: JSON.stringify(payload),
-        });
-
-        if (res.status >= 400 && res.status < 500) {
-          const errorData: AlmondApiError = await res.json();
-          throw new Error(
-            `[AlmondPayment] Payment session creation failed (HTTP ${res.status}): ${errorData.error.message}`,
-          );
-        }
-
-        if (!res.ok) {
-          throw new Error(`[AlmondPayment] Server error (HTTP ${res.status})`);
-        }
-
-        return res;
-      });
-
-      const paymentSession: AlmondPaymentSession = await response.json();
-
-      return {
-        id: paymentSession.id,
-        data: {
-          payment_session_id: paymentSession.id,
-          payment_url: paymentSession.payment_url,
-          expires_at: paymentSession.expires_at,
-          currency_code: currency_code,
-          should_poll: true,
-          poll_interval: this.pollingInterval,
-        },
-      };
-    } catch (error) {
-      this.logger_.error('Failed to initiate payment:', error);
-      throw error;
+    // intentType
+    const intentType =
+      (data as any)?.intentType || this.options.defaultIntentType;
+    if (!intentType) {
+      throw new Error(
+        'initiatePayment: intentType is required (data.intentType or options.defaultIntentType)',
+      );
     }
+
+    // customerId: context.customer.id -> 우리 월렛의 DTO 요구사항에 맞춰 전달
+    const customerId =
+      (context as any)?.customer?.id ||
+      (context as any)?.account_holder?.data?.id ||
+      (data as any)?.customerId;
+    if (!customerId) {
+      throw new Error('initiatePayment: customerId is required');
+    }
+
+    const amountNum = toNumber(amount);
+    const currency = currency_code ?? 'KRW';
+
+    // (A) INTENT 생성: POST /v2/payments/intents
+    const intent = await this.request<{ id: string }>(
+      `/v2/payments/intents`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          customerId,
+          amount: amountNum,
+          type: String(intentType),
+        }),
+      },
+      idemKey,
+    );
+
+    // (B) CHECKOUT SESSION (웹 체크아웃일 때): POST /v2/payments/checkout/sessions
+    const returnUrl =
+      (context as any)?.return_url ||
+      this.options.defaultReturnUrl ||
+      'https://example.com/payment/return';
+    const cancelUrl =
+      (context as any)?.cancel_url ||
+      this.options.defaultCancelUrl ||
+      'https://example.com/payment/cancel';
+
+    const session = await this.request<{
+      sessionId: string;
+      paymentUrl: string;
+      intentId: string;
+    }>(`/v2/payments/checkout/sessions`, {
+      method: 'POST',
+      body: JSON.stringify({
+        intentId: intent.id,
+        returnUrl,
+        cancelUrl,
+      }),
+    });
+
+    const captureMode: CaptureMode =
+      ((data as any)?.captureMode as CaptureMode) ||
+      this.options.defaultCaptureMode ||
+      'MANUAL';
+
+    const sessionData: SessionData = {
+      wallet: {
+        intentId: intent.id,
+        checkoutSessionId: session.sessionId, // 문서 키 사용
+        redirectUrl: session.paymentUrl, // 문서 키 사용
+        amount: amountNum,
+        currency,
+        captureMode,
+        instrument: (data as any)?.instrument,
+      },
+    };
+
+    return {
+      id: intent.id,
+      data: sessionData,
+    };
   }
 
-  async getPaymentStatus({
-    data,
-  }: GetPaymentStatusInput): Promise<GetPaymentStatusOutput> {
-    const sessionId = data?.payment_session_id as string;
-    if (!sessionId) {
-      throw new Error('Payment session ID not found in data.');
-    }
-
-    try {
-      const response = await fetch(
-        `${this.options_.apiKey}/payment-sessions/${sessionId}`,
-      );
-
-      if (!response.ok) {
-        this.logger_.warn(
-          `Failed to fetch payment status for ${sessionId}. Status: ${response.status}`,
-        );
-        return { status: PaymentSessionStatus.ERROR, data };
-      }
-
-      const session: AlmondPaymentSession = await response.json();
-      const statusMap: Record<
-        AlmondPaymentSession['status'],
-        PaymentSessionStatus
-      > = {
-        PENDING: PaymentSessionStatus.PENDING,
-        AUTHORIZED: PaymentSessionStatus.AUTHORIZED,
-        CAPTURED: PaymentSessionStatus.CAPTURED,
-        FAILED: PaymentSessionStatus.ERROR,
-        CANCELLED: PaymentSessionStatus.CANCELED,
-        REFUNDED: PaymentSessionStatus.CANCELED,
-      };
-
-      return {
-        status: statusMap[session.status] || PaymentSessionStatus.PENDING,
-        data: {
-          ...data,
-          requires_action: session.requires_authentication,
-          authentication_url: session.authentication_url,
-        },
-      };
-    } catch (error) {
-      this.logger_.error(
-        `Error getting payment status for ${sessionId}:`,
-        error,
-      );
-      return { status: PaymentSessionStatus.ERROR, data };
-    }
-  }
-
+  /** ========== 2) authorize: 모든 결제 수단에서 승인만 처리. 항상 "authorized" 반환. ========== */
   async authorizePayment(
     input: AuthorizePaymentInput,
   ): Promise<AuthorizePaymentOutput> {
-    return this.getPaymentStatus(input);
-  }
+    const s = (input.data as SessionData | undefined)?.wallet;
+    if (!s?.intentId)
+      throw new Error('authorizePayment: missing intentId in session data');
 
-  /*
-    이 코드는 관리자가 결제 캡쳐를 수동으로 진행 할 때 사용
-  */
-  async capturePayment({
-    data,
-    context,
-  }: CapturePaymentInput): Promise<CapturePaymentOutput> {
-    // payment_session_id
-    const sessionId = data?.id as string;
+    const idemKey = input.context?.idempotency_key;
 
-    try {
-      // 먼저 현재 상태 확인
-      const statusResponse = await fetch(
-        `${this.options_.apiKey}/payment-sessions/${sessionId}`,
+    const paymentKey =
+      (input.context as any)?.paymentKey || (input.context as any)?.payment_key;
+    const providerType =
+      (input.context as any)?.providerType ||
+      (input.context as any)?.provider_type;
+
+    let result: any = null;
+
+    if (paymentKey) {
+      // 토스 결제 - 승인만 처리
+      result = await this.request<any>(
+        `/v2/payments/intents/${s.intentId}/authorize`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ provider: 'TOSS', paymentKey }),
+        },
+        idemKey,
       );
-      if (statusResponse.ok) {
-        const currentSession: AlmondPaymentSession =
-          await statusResponse.json();
+    } else if (providerType) {
+      // BNPL/서버 간 결제 - 승인만 처리
+      const profileId =
+        (input.context as any)?.profileId || (input.context as any)?.profile_id;
+      const instrumentRef =
+        (input.context as any)?.instrumentRef ||
+        (input.context as any)?.instrument_ref;
 
-        // 이미 캡처된 경우 추가 처리 없이 반환
-        if (currentSession.status === 'CAPTURED') {
-          this.logger_.info(`Payment session ${sessionId} is already captured`);
-          return { data: { ...data, status: 'CAPTURED' } };
-        }
-      }
-
-      const response = await executeWithRetry(async () => {
-        const res = await fetch(
-          `${this.options_.apiKey}/payment-sessions/${sessionId}/capture`,
-          {
-            method: 'POST',
-            headers: createApiHeaders(context),
-          },
-        );
-
-        // 이미 캡처된 경우 성공으로 처리
-        if (res.status === 400) {
-          const errorData = await res.json();
-          if (errorData.message?.includes('already captured')) {
-            return {
-              ok: true,
-              json: () => Promise.resolve({ status: 'CAPTURED' }),
-            };
-          }
-        }
-
-        if (!res.ok)
-          throw new Error(`Capture failed with status ${res.status}`);
-        return res;
-      });
-
-      const session: AlmondPaymentSession = await response.json();
-      return { data: { ...data, ...session } };
-    } catch (error) {
-      this.logger_.error(`Failed to capture payment for ${sessionId}:`, error);
-
-      // 캡처 실패 시 현재 상태 다시 확인
-      try {
-        const statusResponse = await fetch(
-          `${this.options_.apiKey}/payment-sessions/${sessionId}`,
-        );
-        if (statusResponse.ok) {
-          const currentSession: AlmondPaymentSession =
-            await statusResponse.json();
-          if (currentSession.status === 'CAPTURED') {
-            this.logger_.info(
-              `Payment session ${sessionId} was captured despite API error`,
-            );
-            return { data: { ...data, status: 'CAPTURED' } };
-          }
-        }
-      } catch (statusError) {
-        this.logger_.warn(
-          `Failed to check status after capture error:`,
-          statusError,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  async refundPayment({
-    amount,
-    data,
-    context,
-  }: RefundPaymentInput): Promise<RefundPaymentOutput> {
-    const sessionId = data?.payment_session_id as string;
-    const currencyCode = data?.currency_code as string;
-
-    try {
-      const response = await executeWithRetry(async () => {
-        const res = await fetch(
-          `${this.options_.apiKey}/payment-sessions/${sessionId}/refund`,
-          {
-            method: 'POST',
-            headers: createApiHeaders(context),
-            body: JSON.stringify({
-              amount: amount,
-              currency: currencyCode,
-            }),
-          },
-        );
-        if (!res.ok) throw new Error(`Refund failed with status ${res.status}`);
-        return res;
-      });
-
-      const result = await response.json();
-      return { data: { ...data, refund_id: result.refund_id } };
-    } catch (error) {
-      this.logger_.error(`Failed to refund payment for ${sessionId}:`, error);
-      throw error;
-    }
-  }
-
-  async cancelPayment({
-    data,
-    context,
-  }: CancelPaymentInput): Promise<CancelPaymentOutput> {
-    const sessionId = data?.payment_session_id as string;
-    if (!sessionId) return { data };
-
-    try {
-      await executeWithRetry(async () => {
-        const res = await fetch(
-          `${this.options_.apiKey}/payment-sessions/${sessionId}/cancel`,
-          {
-            method: 'POST',
-            headers: createApiHeaders(context),
-          },
-        );
-        if (!res.ok) throw new Error(`Cancel failed with status ${res.status}`);
-        return res;
-      });
-    } catch (error) {
-      this.logger_.error(`Failed to cancel payment for ${sessionId}:`, error);
+      result = await this.request<any>(
+        `/v2/payments/intents/${s.intentId}/authorize`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ providerType, profileId, instrumentRef }),
+        },
+        idemKey,
+      );
+    } else {
+      throw new Error(
+        'authorizePayment: paymentKey or providerType is required',
+      );
     }
 
-    return { data };
+    const paymentData: PaymentData = {
+      wallet: {
+        intentId: s.intentId,
+        attemptId: result?.attemptId,
+        transactionId: result?.transactionId,
+        providerStatus: 'AUTHORIZED', // 승인만 처리하므로 항상 AUTHORIZED
+        captureMode: s.captureMode,
+      },
+    };
+
+    // 주문 생성 트리거는 항상 authorized (변경 없음)
+    return { status: 'authorized', data: paymentData };
   }
 
+  /** ========== 3) capture: 모든 결제 수단에서 실제 capture 처리 ========== */
+  async capturePayment(
+    input: CapturePaymentInput,
+  ): Promise<CapturePaymentOutput> {
+    const pd = input.data as PaymentData | undefined;
+    if (!pd?.wallet?.intentId) {
+      throw new Error('capturePayment: missing intentId in payment data');
+    }
+
+    const idemKey = input.context?.idempotency_key;
+    const amount = toNumber(input.data?.amount || 0);
+
+    // Wallet 서버의 capture API 호출
+    const result = await this.request<any>(
+      `/v2/payments/intents/${pd.wallet.intentId}/capture`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          amount,
+          attemptId: pd.wallet.attemptId,
+        }),
+      },
+      idemKey,
+    );
+
+    const updatedPaymentData: PaymentData = {
+      wallet: {
+        ...pd.wallet,
+        providerStatus: 'CAPTURED',
+        capturedAt: result?.capturedAt || new Date().toISOString(),
+      },
+    };
+
+    return { data: updatedPaymentData };
+  }
+
+  /** ========== 4) 취소 ==========
+   * 월렛에 /v2/payment-intents/:id/cancel 이 생기면 여기서 호출로 교체
+   */
+  async cancelPayment(input: CancelPaymentInput): Promise<CancelPaymentOutput> {
+    return { data: input.data as any };
+  }
+
+  /** ========== 5) 삭제(=취소와 동일 처리) ========== */
   async deletePayment(input: DeletePaymentInput): Promise<DeletePaymentOutput> {
-    return {};
+    return this.cancelPayment(input as any);
   }
 
+  /** ========== 6) 상태 조회 ==========
+   * 월렛에 status 조회 엔드포인트가 없으니 session data의 추론/보수값으로 반환
+   */
+  async getPaymentStatus(
+    input: GetPaymentStatusInput,
+  ): Promise<GetPaymentStatusOutput> {
+    const pd = input?.data as PaymentData | undefined;
+    const status =
+      pd?.wallet?.providerStatus === 'SUCCEEDED'
+        ? 'captured'
+        : pd?.wallet?.providerStatus === 'AUTHORIZED'
+          ? 'authorized'
+          : 'pending';
+    // @ts-ignore - Medusa의 GetPaymentStatusOutput 형태와 호환되도록 최소값만
+    return { data: input.data as any, status };
+  }
+
+  /** ========== 7) 환불 ==========
+   * 월렛에 /v2/payment-refunds 생기면 호출 추가
+   */
+  async refundPayment(input: RefundPaymentInput): Promise<RefundPaymentOutput> {
+    // TODO: 월렛 환불 API 연결
+    return { data: input.data as any };
+  }
+
+  /** ========== 8) 조회 ==========
+   * 월렛에 retrieve API가 생기면 연결
+   */
   async retrievePayment(
     input: RetrievePaymentInput,
   ): Promise<RetrievePaymentOutput> {
-    const status = await this.getPaymentStatus(input);
-    return { data: status.data };
+    return { data: input.data as any };
   }
 
+  /** ========== 9) 업데이트 ==========
+   * 금액/통화 변경 시 월렛 PATCH가 필요하면 여기에 연결
+   */
   async updatePayment(input: UpdatePaymentInput): Promise<UpdatePaymentOutput> {
-    return { data: input.data };
+    return { data: input.data as any, status: 'pending' as any };
+  }
+
+  /** ========== 10) 웹훅 ==========
+   * 현재 네 문서에 명확한 스키마가 없으므로 any로 두고 매핑만 제공 (추후 HMAC 검증 추가)
+   */
+  // 아래 헬퍼는 다양한 키 이름을 허용해 session_id/amount를 뽑아줍니다.
+  private extractWebhookActionData = (raw: Record<string, any>) => {
+    // session_id 후보들 (너희 월렛 웹훅 스펙에 맞춰 추가/수정 가능)
+    const sessionId =
+      raw.session_id ??
+      raw.sessionId ??
+      raw.checkout_session_id ??
+      raw.checkoutSessionId ??
+      raw.payment_session_id ??
+      raw.metadata?.session_id ??
+      raw.session?.id ??
+      raw.intentId ?? // 최후수단
+      raw.intent_id;
+
+    if (!sessionId) {
+      throw new Error('Webhook payload missing `session_id` (or equivalent).');
+    }
+
+    // amount 후보들
+    const amountRaw =
+      raw.amount ??
+      raw.amount_authorized ??
+      raw.amount_received ??
+      raw.amount_captured ??
+      raw.capturedAmount ??
+      raw.total ??
+      raw.value ??
+      raw.data?.amount;
+
+    const toNumber = (v: any) => {
+      if (v == null) return 0;
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
+      if (typeof v?.valueOf === 'function') {
+        const n = Number(v.valueOf());
+        if (Number.isFinite(n)) return n;
+      }
+      return 0;
+    };
+
+    return {
+      session_id: String(sessionId),
+      amount: toNumber(amountRaw), // BigNumberInput 호환(number OK)
+    };
+  };
+
+  async getWebhookActionAndData(
+    webhookData: ProviderWebhookPayload['payload'],
+  ): Promise<WebhookActionResult> {
+    // 보통 너희 월렛이 보낸 JSON 본문
+    const body = webhookData.data as Record<string, any>;
+    const evt = body?.type ?? body?.event ?? body?.event_type ?? '';
+
+    // 공통 데이터 추출 (Medusa가 요구)
+    const actionData = this.extractWebhookActionData(body);
+
+    switch (evt) {
+      case 'payment.authorized':
+        return {
+          action: PaymentActions.AUTHORIZED,
+          data: actionData,
+        };
+      case 'payment.captured':
+      case 'payment.settled':
+        return {
+          action: PaymentActions.SUCCESSFUL, // 캡처 완료
+          data: actionData,
+        };
+      case 'payment.canceled':
+        return {
+          action: PaymentActions.CANCELED,
+          data: actionData,
+        };
+      case 'payment.failed':
+        return {
+          action: PaymentActions.FAILED,
+          data: actionData,
+        };
+      // 필요 시 여기서 다른 이벤트도 매핑 추가
+      default:
+        // NOT_SUPPORTED는 data가 꼭 필요하진 않지만, 타입 문제 피하려면 넣어도 OK
+        return {
+          action: PaymentActions.NOT_SUPPORTED,
+          data: actionData,
+        };
+    }
   }
 }
 
-export default AlmondPaymentProviderService;
+export default AlmondPaymentProvider;
