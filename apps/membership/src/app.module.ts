@@ -18,6 +18,7 @@ import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
 import { PlanController } from './controllers/plan.controller';
+import { PauseController } from './controllers/pause.controller';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PlanController } from './controllers/plan.controller';
     AdminOperationsController,
     SubscriptionController,
     PlanController,
+    PauseController,
   ],
   providers: [
     PlanService,

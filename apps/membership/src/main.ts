@@ -1,9 +1,13 @@
+// apps/membership/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
+import { join } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 /**
  * 애플리케이션 부트스트랩 함수
@@ -39,6 +43,31 @@ async function bootstrap(): Promise<void> {
   });
 
   // Swagger는 개발 환경에서만 활성화
+  if (isDev) {
+    // Swagger 설정 (기존 setupSwagger 대신 직접 작성)
+    const config = new DocumentBuilder()
+      .setTitle('Membership Service API')
+      .setDescription('Membership management API')
+      .setVersion('1.0.0')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+
+    // apps/membership/swagger-spec.json에 저장
+    const swaggerJsonPath = join(process.cwd(), 'apps', 'membership', 'swagger-spec.json');
+    mkdirSync(join(process.cwd(), 'apps', 'membership'), { recursive: true });
+    writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
+    console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+
+    // Swagger UI
+    SwaggerModule.setup('/api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        tagsSorter: 'alpha',
+        operationsSorter: 'alpha',
+      },
+    });
+  }
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port, '0.0.0.0');

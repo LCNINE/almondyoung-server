@@ -7,8 +7,17 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { PlanService } from '../services/plan.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
+import {
+  PlansListResponseDto,
+  PlanDetailsResponseDto,
+  TiersListResponseDto,
+  TierPlansResponseDto,
+  TierBenefitsResponseDto,
+  ErrorResponseDto,
+} from '../shared/dto/response.dto';
 import { z } from 'zod';
 
 // Zod 스키마 정의 (컨트롤러 내부에 위치)
@@ -17,6 +26,7 @@ const uuidSchema = z.uuid('유효하지 않은 UUID 형식입니다');
 /**
  * 플랜 및 티어 관리 컨트롤러
  */
+@ApiTags('plans')
 @Controller()
 @UseFilters(SubscriptionExceptionFilter)
 export class PlanController {
@@ -46,6 +56,20 @@ export class PlanController {
    * 모든 활성 플랜 목록 조회
    */
   @Get('plans')
+  @ApiOperation({ 
+    summary: '모든 활성 플랜 목록 조회',
+    description: '활성화된 모든 구독 플랜을 티어 정보와 함께 조회합니다.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '플랜 목록 조회 성공',
+    type: PlansListResponseDto
+  })
+  @ApiResponse({ 
+    status: 500, 
+    description: '서버 오류',
+    type: ErrorResponseDto
+  })
   async getAllPlans() {
     try {
       this.logger.log('모든 활성 플랜 목록 조회 요청');
@@ -99,6 +123,30 @@ export class PlanController {
    * 특정 플랜 상세 조회
    */
   @Get('plans/:planId')
+  @ApiOperation({ 
+    summary: '특정 플랜 상세 조회',
+    description: '플랜 ID로 특정 플랜의 상세 정보를 티어 정보와 함께 조회합니다.'
+  })
+  @ApiParam({ 
+    name: 'planId', 
+    description: '플랜 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '플랜 상세 조회 성공',
+    type: PlanDetailsResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 플랜 ID',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '플랜을 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async getPlanDetails(@Param('planId') planId: string) {
     try {
       this.logger.log(`플랜 상세 조회 요청: ${planId}`);
@@ -155,6 +203,20 @@ export class PlanController {
    * 모든 티어 목록 조회
    */
   @Get('tiers')
+  @ApiOperation({ 
+    summary: '모든 티어 목록 조회',
+    description: '우선순위 순으로 정렬된 모든 구독 티어를 조회합니다.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '티어 목록 조회 성공',
+    type: TiersListResponseDto
+  })
+  @ApiResponse({ 
+    status: 500, 
+    description: '서버 오류',
+    type: ErrorResponseDto
+  })
   async getAllTiers() {
     try {
       this.logger.log('모든 티어 목록 조회 요청');
@@ -208,6 +270,30 @@ export class PlanController {
    * 특정 티어의 모든 플랜 조회
    */
   @Get('tiers/:tierId/plans')
+  @ApiOperation({ 
+    summary: '특정 티어의 모든 플랜 조회',
+    description: '티어 ID로 해당 티어에 속한 모든 활성 플랜을 조회합니다.'
+  })
+  @ApiParam({ 
+    name: 'tierId', 
+    description: '티어 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '티어별 플랜 조회 성공',
+    type: TierPlansResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 티어 ID',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '티어를 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async getPlansByTier(@Param('tierId') tierId: string) {
     try {
       this.logger.log(`티어별 플랜 조회 요청: ${tierId}`);
@@ -267,6 +353,30 @@ export class PlanController {
    * 티어별 혜택 조회
    */
   @Get('tiers/:tierId/benefits')
+  @ApiOperation({ 
+    summary: '티어별 혜택 조회',
+    description: '티어 정보와 해당 티어의 모든 플랜을 함께 조회합니다.'
+  })
+  @ApiParam({ 
+    name: 'tierId', 
+    description: '티어 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '티어별 혜택 조회 성공',
+    type: TierBenefitsResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 티어 ID',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '티어를 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async getTierBenefits(@Param('tierId') tierId: string) {
     try {
       this.logger.log(`티어별 혜택 조회 요청: ${tierId}`);

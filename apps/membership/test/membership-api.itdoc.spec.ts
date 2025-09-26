@@ -393,7 +393,7 @@ describeAPI(
 
 describeAPI(
   HttpMethod.POST,
-  '/subscriptions/pause',
+  '/pause',
   {
     summary: '구독 일시정지',
     tag: 'Pause Management',
@@ -450,7 +450,7 @@ describeAPI(
 
 describeAPI(
   HttpMethod.POST,
-  '/subscriptions/resume',
+  '/pause/resume',
   {
     summary: '구독 재개',
     tag: 'Pause Management',

@@ -14,6 +14,15 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiSecurity,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
@@ -32,11 +41,31 @@ import {
   DeactivatePlanRequestSchema,
   ExtendEntitlementRequestSchema,
 } from '../shared/schemas';
+
+import {
+  AdminTierResponseDto,
+  AdminPlanResponseDto,
+  AdminUserPauseHistoryResponseDto,
+  AdminEntitlementResponseDto,
+  AdminBillingTestResponseDto,
+  ErrorResponseDto,
+} from '../shared/dto/response.dto';
+import {
+  CreateTierRequestDto,
+  UpdateTierRequestDto,
+  CreatePlanRequestDto,
+  UpdatePlanRequestDto,
+  DeactivatePlanRequestDto,
+  ExtendEntitlementRequestDto,
+} from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 /**
  * 관리자 운영 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
  */
+@ApiTags('admin')
+@ApiBearerAuth('JWT-auth')
+@ApiSecurity('dev-user-id')
 @Controller('admin')
 @UseGuards(DevAuthGuard) // 모든 API에 관리자 인증 가드 적용
 @UseFilters(SubscriptionExceptionFilter)
@@ -92,6 +121,21 @@ export class AdminOperationsController {
 
   @Post('tiers')
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ 
+    summary: '새 티어 생성',
+    description: '새로운 구독 티어를 생성합니다.'
+  })
+  @ApiBody({ type: CreateTierRequestDto })
+  @ApiResponse({ 
+    status: 201, 
+    description: '티어 생성 성공',
+    type: AdminTierResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
   async createTier(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CreateTierRequestSchema))
@@ -121,6 +165,31 @@ export class AdminOperationsController {
   }
 
   @Put('tiers/:tierId')
+  @ApiOperation({ 
+    summary: '티어 정보 수정',
+    description: '기존 티어의 정보를 수정합니다.'
+  })
+  @ApiParam({ 
+    name: 'tierId', 
+    description: '티어 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiBody({ type: UpdateTierRequestDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: '티어 수정 성공',
+    type: AdminTierResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '티어를 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async updateTier(
     @Req() req: FastifyRequest,
     @Param('tierId') tierId: string,
@@ -156,6 +225,26 @@ export class AdminOperationsController {
 
   @Post('plans')
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ 
+    summary: '새 플랜 생성',
+    description: '특정 티어에 새로운 구독 플랜을 생성합니다.'
+  })
+  @ApiBody({ type: CreatePlanRequestDto })
+  @ApiResponse({ 
+    status: 201, 
+    description: '플랜 생성 성공',
+    type: AdminPlanResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '티어를 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async createPlan(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CreatePlanRequestSchema))
@@ -187,6 +276,31 @@ export class AdminOperationsController {
   }
 
   @Put('plans/:planId')
+  @ApiOperation({ 
+    summary: '플랜 정보 수정',
+    description: '기존 플랜의 정보를 수정합니다.'
+  })
+  @ApiParam({ 
+    name: 'planId', 
+    description: '플랜 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiBody({ type: UpdatePlanRequestDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: '플랜 수정 성공',
+    type: AdminPlanResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '플랜을 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async updatePlan(
     @Req() req: FastifyRequest,
     @Param('planId') planId: string,
@@ -221,6 +335,31 @@ export class AdminOperationsController {
   }
 
   @Delete('plans/:planId')
+  @ApiOperation({ 
+    summary: '플랜 비활성화',
+    description: '기존 플랜을 비활성화합니다.'
+  })
+  @ApiParam({ 
+    name: 'planId', 
+    description: '플랜 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiBody({ type: DeactivatePlanRequestDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: '플랜 비활성화 성공',
+    type: AdminPlanResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '플랜을 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async deactivatePlan(
     @Req() req: FastifyRequest,
     @Param('planId') planId: string,
@@ -261,6 +400,26 @@ export class AdminOperationsController {
 
   @Post('entitlements/adjust')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: '사용자 구독 기간 조정',
+    description: '사용자의 구독 기간을 연장하거나 단축합니다.'
+  })
+  @ApiBody({ type: ExtendEntitlementRequestDto })
+  @ApiResponse({ 
+    status: 200, 
+    description: '구독 기간 조정 성공',
+    type: AdminEntitlementResponseDto
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '사용자 구독을 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async adjustUserEntitlement(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(ExtendEntitlementRequestSchema))
@@ -295,6 +454,25 @@ export class AdminOperationsController {
   }
 
   @Get('users/:userId/pause-history')
+  @ApiOperation({ 
+    summary: '사용자 일시정지 이력 조회',
+    description: '특정 사용자의 모든 일시정지 이력을 조회합니다.'
+  })
+  @ApiParam({ 
+    name: 'userId', 
+    description: '사용자 UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '일시정지 이력 조회 성공',
+    type: AdminUserPauseHistoryResponseDto
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: '사용자를 찾을 수 없음',
+    type: ErrorResponseDto
+  })
   async getUserPauseHistory(@Param('userId') userId: string) {
     try {
       this.logger.log(`사용자 일시정지 이력 조회 요청: ${userId}`);
@@ -329,6 +507,15 @@ export class AdminOperationsController {
   // =================================================================
 
   @Post('billing/process-due')
+  @ApiOperation({ 
+    summary: '정기결제 처리 테스트',
+    description: '정기결제 스케줄러 상태를 확인합니다. (개발용)'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: '정기결제 처리 테스트 성공',
+    type: AdminBillingTestResponseDto
+  })
   async processDueBillings() {
     try {
       this.logger.log('정기결제 처리 테스트 요청');
