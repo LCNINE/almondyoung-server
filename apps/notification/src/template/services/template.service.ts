@@ -76,6 +76,11 @@ export class TemplateService {
         throw new NotFoundException(`Template with key ${key} not found`);
     }
 
+    async findTemplateByKey(key: string): Promise<Template> {
+        // 간단한 구현
+        throw new NotFoundException(`Template with key ${key} not found`);
+    }
+
     async updateTemplate(id: string, updateTemplateDto: UpdateTemplateDto): Promise<Template> {
         // 간단한 구현
         throw new NotFoundException(`Template with ID ${id} not found`);
@@ -86,13 +91,6 @@ export class TemplateService {
         throw new NotFoundException(`Template with ID ${id} not found`);
     }
 
-    async previewTemplate(templateKey: string, previewDto: PreviewTemplateDto): Promise<any> {
-        // 간단한 구현
-        return {
-            templateKey,
-            renderedContents: {},
-        };
-    }
 
     // 기본 템플릿 메서드들
     async getChannelTemplateContent(template: Template, channel: string, language: string): Promise<string> {
@@ -114,5 +112,24 @@ export class TemplateService {
 
     async registerKakaoTemplate(templateKey: string, templateData: any): Promise<any> {
         return { success: true, templateKey };
+    }
+
+    async registerSmsTemplate(templateKey: string): Promise<any> {
+        return { success: true, templateKey };
+    }
+
+    async previewTemplate(templateKey: string, channel: string, testData?: any): Promise<any> {
+        const template = await this.findTemplateByKey(templateKey);
+        if (!template) {
+            throw new NotFoundException(`Template with key ${templateKey} not found`);
+        }
+
+        // 간단한 미리보기 구현
+        return {
+            templateKey,
+            channel,
+            preview: template.contents[channel] || {},
+            testData: testData || {}
+        };
     }
 }
