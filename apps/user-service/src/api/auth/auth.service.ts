@@ -678,6 +678,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       scopes,
+      email: user.email,
     };
 
     const expiresIn =
@@ -726,9 +727,6 @@ export class AuthService {
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
-
-    // 설정 후 확인
-    console.log('쿠키 설정 후 헤더!!!:', reply.getHeaders());
 
     return { accessToken };
   }
