@@ -392,6 +392,7 @@ export class AuthService {
     redirectTo?: string,
   ): Promise<void | { accessToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
+
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
     if (user.deletedAt) {

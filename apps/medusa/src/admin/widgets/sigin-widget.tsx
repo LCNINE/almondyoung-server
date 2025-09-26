@@ -62,7 +62,7 @@ const SigninWidget = () => {
 
       const userResponse = await fetch(`${USER_SERVICE_URL}/users/me`, {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Cookie: `accessToken=${accessToken}`,
         },
         credentials: 'include',
       });
