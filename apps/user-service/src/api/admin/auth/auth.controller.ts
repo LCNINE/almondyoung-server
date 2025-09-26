@@ -1,4 +1,4 @@
-import { AuthorizationGuard } from '@app/roles';
+import { AuthorizationGuard, RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -19,6 +19,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post()
+  @RequireScopes(['master', 'admin:users:modify'])
   async createAccount(@Body() createAccountDto: CreateAccountDto) {
     try {
       return this.authService.createAccount(createAccountDto);
