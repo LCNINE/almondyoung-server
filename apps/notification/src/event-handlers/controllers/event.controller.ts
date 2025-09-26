@@ -9,8 +9,8 @@ import {
     ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { EventMappingService } from '../../shared/services/event-mapping.service';
-import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../shared/dto/event.dto'
+import { EventMappingService } from '../../event-handlers/services/event-mapping.service';
+import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../event-handlers/dto/event.dto';
 
 @ApiTags('event-handlers')
 @Controller('api/v1/events')
