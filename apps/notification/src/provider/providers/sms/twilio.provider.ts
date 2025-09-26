@@ -1,7 +1,7 @@
 // apps/notification/src/provider/providers/sms/twilio.provider.ts
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as twilio from 'twilio';
+import twilio = require('twilio');
 import { MessageInstance } from 'twilio/lib/rest/api/v2010/account/message';
 import {
     NotificationProvider,

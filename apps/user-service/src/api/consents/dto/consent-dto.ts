@@ -44,8 +44,8 @@ export class CreateConsentDto implements IConsent {
   thirdPartySharing: boolean;
 
   @ApiProperty({
-    description: '마케팅 동의',
-    example: true,
+    description: '마케팅 수신 동의 (모든 채널)',
+    example: false,
     required: true,
   })
   @IsBoolean()
