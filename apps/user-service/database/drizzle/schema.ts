@@ -52,10 +52,7 @@ export const userConsents = pgTable('user_consents', {
     .default(false), // 전자금융거래 이용약관 동의
   privacyPolicy: boolean('privacy_policy').notNull().default(false), // 개인정보 수집 및 이용 동의
   thirdPartySharing: boolean('third_party_sharing').notNull().default(false), // 개인정보 제3자 제공 동의
-  // 선택 동의 항목들
-  emailConsent: boolean('email_consent').default(false), // 이메일 수신 동의
-  smsConsent: boolean('sms_consent').default(false), // SMS 수신 동의
-  pushConsent: boolean('push_consent').default(false), // 앱 푸시 알림 수신 동의
+  marketingConsent: boolean('marketing_consent').notNull().default(false), // 마케팅 동의
   consentedAt: timestamp('consented_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -274,12 +271,12 @@ export const shops = pgTable('shops', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' })
     .unique(),
-  isOperating: boolean('is_operating').notNull().default(false),
-  yearsOperating: integer('years_operating'),
-  shopType: shopTypeEnum('shop_type').notNull(),
-  categories: jsonb('categories').notNull(),
-  targetCustomers: jsonb('target_customers'),
-  openDays: jsonb('open_days'),
+  isOperating: boolean('is_operating').notNull().default(false), // 현재 운영 중 여부
+  yearsOperating: integer('years_operating'), // 운영 연수
+  shopType: shopTypeEnum('shop_type'), // 매장 유형 (shopTypeEnum 정의된 값 중 하나)
+  categories: jsonb('categories').notNull(), // 취급 카테고리 (JSON 배열 형태로 저장, 예: [미용재료, 화장품])
+  targetCustomers: jsonb('target_customers'), // 주요 고객층 (JSON, 예: ["헤어샵", "네일샵"])
+  openDays: jsonb('open_days'), // 영업 요일 정보 (JSON, 예: { mon: true, tue: false })
   ...timestampColumns,
 });
 
