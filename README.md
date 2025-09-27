@@ -84,6 +84,30 @@ GET    /policies/applicable   # 적용 가능한 정책 조회
 ```
 
 자세한 정책 관리 가이드는 [POLICY_TYPES.md](apps/membership/POLICY_TYPES.md)를 참조하세요.
+이 프로젝트는 [Nest](https://github.com/nestjs/nest) 프레임워크를 기반으로 구축된 **통합 물류 관리 시스템**입니다.
+
+### 🏗️ 프로젝트 구조
+
+```
+almondyoung-server/
+├── apps/
+│   ├── wms/              # 창고 관리 시스템 (WMS)
+│   ├── pim/              # 상품 정보 관리 시스템 (PIM)  
+│   └── almondyoung-server/ # 메인 서버 애플리케이션
+├── libs/
+│   ├── shared/           # 공통 라이브러리
+│   ├── events/           # 이벤트 처리
+│   └── db/               # 데이터베이스 연동
+└── docs/                 # 📚 프로젝트 문서
+    └── warehouse-layout-system.md  # 창고 레이아웃 시스템 설계 문서
+```
+
+### 📚 Documentation
+
+주요 설계 문서들이 `docs/` 폴더에 정리되어 있습니다:
+
+- **[창고 레이아웃 시스템 MVP](./docs/warehouse-layout-mvp.md)**: ⭐ **현재 개발 중** - 2D GUI 기반 창고 레이아웃 관리 시스템 (단순 버전)
+- **[창고 레이아웃 시스템 Full](./docs/warehouse-layout-system.md)**: 고급 기능이 포함된 완전한 시스템 설계 (향후 확장)
 
 ## Project setup
 

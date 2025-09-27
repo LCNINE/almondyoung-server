@@ -1,8 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import {
-  EventPublisherService,
   EVENT_PUBLISHER_CLIENT,
+  EventPublisherService,
 } from './event-publisher.service';
 import { EventDefinition, KafkaConfig } from './types';
 
