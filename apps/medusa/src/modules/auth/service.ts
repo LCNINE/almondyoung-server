@@ -1,4 +1,5 @@
 import { USER_SCOPES } from '@libs/roles/src';
+import { jwtVerify } from '@medusa/utils/jwt-verify';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -9,7 +10,6 @@ import {
   MedusaError,
 } from '@medusajs/framework/utils';
 import CustomUserModuleService from '@modules/custom-user/service';
-import { Console } from 'console';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
@@ -89,31 +89,31 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
-      const user =
-        await this.userCustomModule.getUserDetailsByToken(almond_token);
-
-      if (!user) {
+      if (
+        process.env.NODE_ENV !== 'production' &&
+        !process.env.JWT_VERIFICATION_TOKEN_SECRET
+      ) {
         return {
           success: false,
-          error: 'Invalid credentials',
+          error: 'JWT_VERIFICATION_TOKEN_SECRET is not defined',
         };
       }
 
-      // authIdentityProviderService를 사용하여 인증 정보 조회
-      const authIdentity = await authIdentityProviderService.retrieve({
-        entity_id: user.email,
-      });
-
-      const userRoles = await this.userCustomModule.getUserRoles(
-        user.id,
+      const payload = jwtVerify(
         almond_token,
+        process.env.JWT_VERIFICATION_TOKEN_SECRET!,
       );
 
+      // authIdentityProviderService를 사용하여 인증 정보 조회
+      const authIdentity = await authIdentityProviderService.retrieve({
+        entity_id: payload.email,
+      });
+
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
-      const actorType = userRoles.roles?.some(
+      const actorType = payload.scopes?.some(
         (role) =>
-          role.role.name === USER_SCOPES.MASTER.key ||
-          role.role.name === USER_SCOPES.ADMIN.ACCESS.key,
+          role === USER_SCOPES.MASTER.key ||
+          role === USER_SCOPES.ADMIN.ACCESS.key,
       )
         ? 'user'
         : 'customer';
@@ -126,16 +126,16 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             actor_type: actorType,
             user_id: authIdentity?.app_metadata?.user_id,
             customer_id: authIdentity?.app_metadata?.customer_id,
-            email: user.email,
-            role: userRoles.roles[0].role.name,
+            email: payload.email,
+            scopes: payload.scopes,
           },
           provider_identities: [
             {
               id: authIdentity.id,
               provider: 'my-auth',
-              entity_id: user.email,
+              entity_id: payload.email,
               provider_metadata: {
-                roles: userRoles.roles[0].role.name || [],
+                scopes: payload.scopes,
               },
             },
           ],

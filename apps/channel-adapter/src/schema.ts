@@ -1,3 +1,4 @@
+// 스키마 상단 import에 index 추가
 import {
   pgTable,
   uuid,
@@ -6,15 +7,23 @@ import {
   timestamp,
   integer,
   text,
+  uniqueIndex,
+  index, // ← index 추가
 } from 'drizzle-orm/pg-core';
+
 import { sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid'; // uuid v7 지원 라이브러리 사용
+
+export function generateUUIDv7(): string {
+  return uuidv7();
+}
 
 export const eventLogs = pgTable(
   'event_logs',
   {
     id: uuid('id')
       .primaryKey()
-      .default(sql`uuid_v7()`),
+      .$defaultFn(() => generateUUIDv7()),
 
     channelId: uuid('channel_id').notNull(),
 
@@ -48,9 +57,9 @@ export const eventLogs = pgTable(
 export const syncHistories = pgTable(
   'sync_histories',
   {
-    id: uuid('id')
+    id: varchar('id', { length: 36 })
       .primaryKey()
-      .default(sql`uuid_v7()`),
+      .$defaultFn(() => generateUUIDv7()),
     channelId: uuid('channel_id').notNull(),
 
     syncType: varchar('sync_type', { length: 50 }).notNull(), // products, inventory, orders...
@@ -70,5 +79,100 @@ export const syncHistories = pgTable(
     sql`CREATE INDEX idx_sync_histories_channel ON sync_histories (channel_id)`,
     sql`CREATE INDEX idx_sync_histories_type ON sync_histories (sync_type)`,
     sql`CREATE INDEX idx_sync_histories_status ON sync_histories (status)`,
+  ],
+);
+
+export const processedEvents = pgTable(
+  'processed_events',
+  {
+    idempotencyKey: varchar('idempotency_key', { length: 255 }),
+    source: varchar('source', { length: 50 }).notNull(),
+    eventType: varchar('event_type', { length: 50 }).notNull(),
+    resourceId: varchar('resource_id', { length: 100 }).notNull(),
+    eventVersion: varchar('event_version', { length: 50 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('PROCESSED'),
+    errorMessage: text('error_message'),
+    retryCount: integer('retry_count').default(0),
+    lastRetryAt: timestamp('last_retry_at'),
+    createdAt: timestamp('created_at').default(sql`now()`),
+    updatedAt: timestamp('updated_at').default(sql`now()`),
+  },
+  (table) => [
+    // 이 4키로 유니크 보장하고 싶다면 유지해도 됨 (비즈니스 키)
+    uniqueIndex('uq_processed_source_event').on(
+      table.source,
+      table.eventType,
+      table.resourceId,
+      table.eventVersion,
+    ),
+    // ❌ 기존: uniqueIndex('idx_processed_status')...
+    // ✅ 수정: 검색용 일반 인덱스
+    index('idx_processed_status').on(table.status),
+    index('idx_processed_created').on(table.createdAt),
+  ],
+);
+
+// 🔹 채널-WMS 주문 매핑 테이블
+// WMS는 CTO 구현체라 수정 불가, 어댑터에서 매핑 관리 필요
+export const wmsOrderMappings = pgTable(
+  'wms_order_mappings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => generateUUIDv7()),
+
+    // 채널 정보
+    salesChannel: varchar('sales_channel', { length: 50 }).notNull(), // 'coupang', 'naver', 'medusa'
+    channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
+
+    // WMS 정보
+    wmsOrderId: uuid('wms_order_id').notNull(), // WMS에서 반환받은 UUID
+    wmsStatus: varchar('wms_status', { length: 50 }), // WMS 주문 상태 (캐시용)
+
+    // 메타데이터
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    // 채널+주문ID 조합으로 유니크 (WMS와 동일한 제약조건)
+    uniqueIndex('uq_wms_mapping_channel_order').on(
+      table.salesChannel,
+      table.channelOrderId,
+    ),
+    // WMS UUID로 역방향 조회용
+    index('idx_wms_mapping_wms_id').on(table.wmsOrderId),
+    index('idx_wms_mapping_created').on(table.createdAt),
+  ],
+);
+
+// 🔹 채널별 동기화 상태 영속화 테이블
+export const syncStatuses = pgTable(
+  'sync_statuses',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => generateUUIDv7()),
+    // ← channelId 타입을 event_logs와 통일 권장 (uuid 쓸지 varchar 쓸지 결정)
+    channelId: varchar('channel_id', { length: 50 }).notNull(),
+    dataType: varchar('data_type', { length: 50 }).notNull(),
+    status: varchar('status', { length: 20 }).notNull(),
+    lastSyncAt: timestamp('last_sync_at'),
+    lastEventCount: integer('last_event_count').default(0),
+    totalSyncs: integer('total_syncs').default(0),
+    successfulSyncs: integer('successful_syncs').default(0),
+    failedSyncs: integer('failed_syncs').default(0),
+    avgProcessingTimeMs: integer('avg_processing_time_ms').default(0),
+    lastErrorMessage: text('last_error_message'),
+    updatedAt: timestamp('updated_at').default(sql`now()`),
+    createdAt: timestamp('created_at').default(sql`now()`),
+  },
+  (table) => [
+    uniqueIndex('uq_sync_status_channel_data').on(
+      table.channelId,
+      table.dataType,
+    ),
+    // ❌ uniqueIndex → ✅ index
+    index('idx_sync_status_status').on(table.status),
+    index('idx_sync_status_last_sync').on(table.lastSyncAt),
   ],
 );

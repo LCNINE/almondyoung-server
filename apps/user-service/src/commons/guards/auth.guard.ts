@@ -39,7 +39,7 @@ export class PublicPrivateGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('토큰이 없습니다.');
     }
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
@@ -49,13 +49,12 @@ export class PublicPrivateGuard implements CanActivate {
       // so that we can access it in our route handlers
       request['user'] = payload;
     } catch {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('토큰이 유효하지 않습니다.');
     }
     return true;
   }
 
   private extractTokenFromHeader(request: FastifyRequest): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+    return request.cookies.accessToken;
   }
 }

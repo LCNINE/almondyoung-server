@@ -33,6 +33,8 @@ import { HmsCardRegistrar } from './providers/hms-card.registrar';
 import { HmsBnplRegistrar } from './providers/hms-bnpl.registrar';
 import { HmsCardChargeProvider } from './providers/hms-card.charge';
 import { HmsBnplChargeProvider } from './providers/hms-bnpl.charge';
+import { HmsBnplCashReceiptProvider } from './providers/hms-bnpl.cash-receipt';
+import { HmsBnplTaxInvoiceProvider } from './providers/hms-bnpl.tax-invoice';
 import { TossChargeProvider } from './providers/toss.charge';
 import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
@@ -88,6 +90,8 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
     HmsBnplRegistrar,
     HmsCardChargeProvider,
     HmsBnplChargeProvider,
+    HmsBnplCashReceiptProvider,
+    HmsBnplTaxInvoiceProvider,
     TossChargeProvider,
     HmsCardRefundProvider,
     TossRefundProvider,
