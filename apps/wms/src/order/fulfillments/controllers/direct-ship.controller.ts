@@ -1,5 +1,13 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UsePipes, Res } from '@nestjs/common';
 import { Response } from 'express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 import { DirectShipService } from '../../shared/services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -19,6 +27,7 @@ const ExportOrdersSchema = z.object({
   format: z.enum(['csv', 'xlsx']).default('csv')
 });
 
+@ApiTags('Direct Ship')
 @Controller('wms/direct-ship')
 export class DirectShipController {
   constructor(
@@ -26,16 +35,25 @@ export class DirectShipController {
   ) {}
 
   @Get('dashboard')
+  @ApiOperation({ summary: '직송 대시보드', description: '직송 주문 대시보드 정보를 조회합니다.' })
+  @ApiResponse({ status: 200, description: '대시보드 조회 성공' })
   async getDashboard() {
     return this.directShipService.getDashboard();
   }
 
   @Get('companies')
+  @ApiOperation({ summary: '직송 회사 목록', description: '직송 서비스를 제공하는 회사 목록을 조회합니다.' })
+  @ApiResponse({ status: 200, description: '회사 목록 조회 성공' })
   async getCompanyList() {
     return this.directShipService.getCompanyList();
   }
 
   @Get('orders')
+  @ApiOperation({ summary: '직송 주문 목록', description: '직송 주문 목록을 필터링과 함께 조회합니다.' })
+  @ApiQuery({ name: 'companyName', required: false, description: '회사명 필터' })
+  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'forwarded', 'completed', 'canceled'], description: '주문 상태 필터' })
+  @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID 필터' })
+  @ApiResponse({ status: 200, description: '직송 주문 목록 조회 성공' })
   async getDirectShipOrders(
     @Query('companyName') companyName?: string,
     @Query('status') status?: 'pending' | 'forwarded' | 'completed' | 'canceled',
@@ -62,6 +80,17 @@ export class DirectShipController {
   }
 
   @Post('orders/forward')
+  @ApiOperation({ summary: '주문 전달', description: '직송 주문을 해당 회사로 전달합니다.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        fulfillmentOrderIds: { type: 'array', items: { type: 'string' }, description: '주문처리 ID 목록' },
+        companyName: { type: 'string', description: '전달할 회사명' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: '주문 전달 성공' })
   @UsePipes(new ZodValidationPipe(ForwardOrdersSchema))
   async forwardOrders(@Body() dto: z.infer<typeof ForwardOrdersSchema>) {
     await this.directShipService.forwardOrdersToCompany(dto.fulfillmentOrderIds, dto.companyName);
@@ -71,6 +100,17 @@ export class DirectShipController {
   }
 
   @Put('orders/complete')
+  @ApiOperation({ summary: '주문 완료 처리', description: '직송 주문을 완료 상태로 변경합니다.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        fulfillmentOrderIds: { type: 'array', items: { type: 'string' }, description: '주문처리 ID 목록' },
+        completedBy: { type: 'string', description: '완료 처리자' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: '주문 완료 처리 성공' })
   @UsePipes(new ZodValidationPipe(CompleteOrdersSchema))
   async completeOrders(@Body() dto: z.infer<typeof CompleteOrdersSchema>) {
     await this.directShipService.markOrdersAsCompleted(dto.fulfillmentOrderIds, dto.completedBy);
@@ -80,11 +120,25 @@ export class DirectShipController {
   }
 
   @Get('export/:companyName')
+  @ApiOperation({ summary: '주문 데이터 내보내기', description: '특정 회사의 주문 데이터를 내보냅니다.' })
+  @ApiParam({ name: 'companyName', description: '회사명' })
+  @ApiResponse({ status: 200, description: '주문 데이터 내보내기 성공' })
   async exportOrdersData(@Param('companyName') companyName: string) {
     return this.directShipService.exportOrdersForCompany(companyName);
   }
 
   @Post('export/file')
+  @ApiOperation({ summary: '주문 파일 내보내기', description: '주문 데이터를 CSV 또는 Excel 파일로 내보냅니다.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        companyName: { type: 'string', description: '회사명' },
+        format: { type: 'string', enum: ['csv', 'xlsx'], description: '파일 형식' }
+      }
+    }
+  })
+  @ApiResponse({ status: 200, description: '파일 내보내기 성공' })
   @UsePipes(new ZodValidationPipe(ExportOrdersSchema))
   async exportOrdersFile(
     @Body() dto: z.infer<typeof ExportOrdersSchema>,

@@ -1,4 +1,12 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UsePipes } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -23,6 +31,7 @@ const CreateSalesOrderSchema = z.object({
   })).min(1),
 });
 
+@ApiTags('Sales Orders')
 @Controller('wms/sales-orders')
 export class SalesOrdersController {
   constructor(private readonly service: SalesOrdersService) {}

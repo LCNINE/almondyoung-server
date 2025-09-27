@@ -30,7 +30,10 @@
     "start:wms:prod": "node dist/apps/wms/main.js",
     "db:generate:pim": "cd apps/pim && drizzle-kit generate",
     "db:migrate:pim": "cd apps/pim && drizzle-kit migrate",
-    "db:push:pim": "cd apps/pim && drizzle-kit push"
+    "db:push:pim": "cd apps/pim && drizzle-kit push",
+    "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
+    "docs:wms": "npm run docs:generate wms",
+    "docs:pim": "npm run docs:generate pim"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

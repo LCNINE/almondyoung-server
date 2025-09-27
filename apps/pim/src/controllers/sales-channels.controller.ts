@@ -1,12 +1,26 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 import { SalesChannelsService } from '../services/sales-channels.service';
 import { SalesChannel, NewSalesChannel, UpdateSalesChannel } from '../types';
 
+@ApiTags('Sales Channels')
 @Controller('channels')
 export class SalesChannelsController {
   constructor(private readonly salesChannelsService: SalesChannelsService) {}
 
   @Post()
+  @ApiOperation({ summary: '판매 채널 생성', description: '새로운 판매 채널(온라인 쇼핑몰, 오프라인 매장 등)을 생성합니다.' })
+  @ApiBody({ type: NewSalesChannel, description: '판매 채널 생성 정보' })
+  @ApiResponse({ status: 201, description: '판매 채널 생성 성공', type: SalesChannel })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (type, name 필수)' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async createChannel(@Body() createDto: NewSalesChannel): Promise<SalesChannel> {
     try {
       if (!createDto.type || !createDto.name) {
@@ -23,6 +37,14 @@ export class SalesChannelsController {
   }
 
   @Get()
+  @ApiOperation({ summary: '판매 채널 목록 조회', description: '판매 채널 목록을 필터링 및 페이지네이션과 함께 조회합니다.' })
+  @ApiQuery({ name: 'isActive', required: false, type: String, description: '활성 상태 필터 (true/false)' })
+  @ApiQuery({ name: 'type', required: false, type: String, description: '채널 타입 필터' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: '검색 키워드' })
+  @ApiQuery({ name: 'page', required: false, type: String, description: '페이지 번호' })
+  @ApiQuery({ name: 'limit', required: false, type: String, description: '페이지 당 아이템 수' })
+  @ApiResponse({ status: 200, description: '판매 채널 목록 조회 성공' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannels(@Query() query: {
     isActive?: string;
     type?: string;
@@ -51,6 +73,9 @@ export class SalesChannelsController {
   }
 
   @Get('active')
+  @ApiOperation({ summary: '활성 판매 채널 조회', description: '활성 상태인 판매 채널만 조회합니다.' })
+  @ApiResponse({ status: 200, description: '활성 판매 채널 조회 성공', type: [SalesChannel] })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async getActiveChannels(): Promise<SalesChannel[]> {
     try {
       return await this.salesChannelsService.getActiveChannels();
@@ -60,6 +85,12 @@ export class SalesChannelsController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: '판매 채널 상세 조회', description: '특정 판매 채널의 상세 정보를 조회합니다.' })
+  @ApiParam({ name: 'id', description: '판매 채널 ID' })
+  @ApiResponse({ status: 200, description: '판매 채널 상세 조회 성공', type: SalesChannel })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannelById(@Param('id') id: string): Promise<SalesChannel> {
     try {
       const channel = await this.salesChannelsService.getChannelById(id);
@@ -81,8 +112,15 @@ export class SalesChannelsController {
   }
 
   @Put(':id')
+  @ApiOperation({ summary: '판매 채널 수정', description: '기존 판매 채널 정보를 수정합니다.' })
+  @ApiParam({ name: 'id', description: '판매 채널 ID' })
+  @ApiBody({ type: UpdateSalesChannel, description: '수정할 판매 채널 정보' })
+  @ApiResponse({ status: 200, description: '판매 채널 수정 성공', type: SalesChannel })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async updateChannel(
-    @Param('id') id: string, 
+    @Param('id') id: string,
     @Body() updateDto: UpdateSalesChannel
   ): Promise<SalesChannel> {
     try {
@@ -99,6 +137,13 @@ export class SalesChannelsController {
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: '판매 채널 삭제', description: '판매 채널을 삭제합니다.' })
+  @ApiParam({ name: 'id', description: '삭제할 판매 채널 ID' })
+  @ApiResponse({ status: 200, description: '판매 채널 삭제 성공' })
+  @ApiResponse({ status: 400, description: '삭제 요구사항 불충족' })
+  @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
+  @ApiResponse({ status: 409, description: '사용 중인 채널로 삭제할 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async deleteChannel(@Param('id') id: string): Promise<void> {
     try {
       await this.salesChannelsService.deleteChannel(id);
@@ -117,8 +162,24 @@ export class SalesChannelsController {
   }
 
   @Put(':id/status')
+  @ApiOperation({ summary: '판매 채널 상태 설정', description: '판매 채널의 활성/비활성 상태를 설정합니다.' })
+  @ApiParam({ name: 'id', description: '판매 채널 ID' })
+  @ApiBody({
+    description: '상태 설정 데이터',
+    schema: {
+      type: 'object',
+      properties: {
+        isActive: { type: 'boolean', description: '활성 여부' }
+      },
+      required: ['isActive']
+    }
+  })
+  @ApiResponse({ status: 200, description: '판매 채널 상태 설정 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (isActive 필수)' })
+  @ApiResponse({ status: 404, description: '판매 채널을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async setChannelActive(
-    @Param('id') id: string, 
+    @Param('id') id: string,
     @Body() statusDto: { isActive: boolean }
   ): Promise<void> {
     try {
@@ -139,6 +200,12 @@ export class SalesChannelsController {
   }
 
   @Get('type/:type')
+  @ApiOperation({ summary: '타입별 판매 채널 조회', description: '특정 타입의 판매 채널을 조회합니다.' })
+  @ApiParam({ name: 'type', description: '판매 채널 타입' })
+  @ApiResponse({ status: 200, description: '타입별 판매 채널 조회 성공', type: SalesChannel })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 404, description: '해당 타입의 판매 채널을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannelByType(@Param('type') type: string): Promise<SalesChannel> {
     try {
       const channel = await this.salesChannelsService.getChannelByType(type);
@@ -160,6 +227,21 @@ export class SalesChannelsController {
   }
 
   @Post('validate')
+  @ApiOperation({ summary: '판매 채널 설정 검증', description: '판매 채널의 설정 정보가 유효한지 검증합니다.' })
+  @ApiBody({
+    description: '검증할 채널 설정 데이터',
+    schema: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: '채널 타입' },
+        config: { description: '채널 설정 데이터' }
+      },
+      required: ['type']
+    }
+  })
+  @ApiResponse({ status: 200, description: '채널 설정 검증 완료', schema: { type: 'object', properties: { isValid: { type: 'boolean' }, errors: { type: 'array', items: { type: 'string' } } } } })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터 (type 필수)' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
   async validateChannelConfig(@Body() configDto: { type: string; config: any }): Promise<{
     isValid: boolean;
     errors: string[];
