@@ -8,7 +8,7 @@ import {
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SyncStatusService } from '../services/sync-status.service';
 import { DataType } from '../types';
 import { ChannelType } from '../services/strategies/channel-strategy.factory';

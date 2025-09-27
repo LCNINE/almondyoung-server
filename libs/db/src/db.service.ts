@@ -1,7 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+// src/common/db/db.service.ts
+import { Injectable, Inject, OnApplicationShutdown, OnModuleDestroy } from '@nestjs/common';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-
-const postgres = require('postgres');
+import * as postgres from 'postgres';
+import { DrizzleSchema } from './types';
 
 export const DB_CONNECTION = 'DB_CONNECTION';
 export const DB_SCHEMA = 'DB_SCHEMA';
@@ -13,9 +14,10 @@ export interface DbConfig {
 
 @Injectable()
 export class DbService<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-> {
+  TSchema extends DrizzleSchema = Record<string, never>,
+> implements OnModuleDestroy, OnApplicationShutdown {
   private _db: PostgresJsDatabase<TSchema>;
+  private _client: postgres.Sql | null = null;
 
   constructor(
     @Inject(DB_CONNECTION) private readonly config: DbConfig,
@@ -27,11 +29,29 @@ export class DbService<
   private initializeConnection(): void {
     // postgres.js는 Connection String을 직접 받을 수 있습니다.
     const client = postgres(this.config.connectionString);
-
+    this._client = client;
     this._db = drizzle(client, { schema: this.schema });
   }
 
   get db(): PostgresJsDatabase<TSchema> {
     return this._db;
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.close();
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.close();
+  }
+
+  private async close(): Promise<void> {
+    try {
+      await (this._client as any)?.end?.();
+    } catch {
+      // ignore
+    } finally {
+      this._client = null;
+    }
   }
 }

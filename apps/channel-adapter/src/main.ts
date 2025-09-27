@@ -1,4 +1,4 @@
-// main.ts
+// apps/channel-adapter/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -8,6 +8,8 @@ import {
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AdapterModule,
@@ -28,8 +30,26 @@ async function bootstrap() {
     .addServer('http://localhost:3003', '개발 서버')
     .build();
 
+  // OpenAPI 스펙 생성
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
+
+  // Swagger JSON 파일 apps/channel-adapter/swagger-spec.json에 저장
+  const swaggerJsonPath = join(
+    process.cwd(),
+    'apps',
+    'channel-adapter',
+    'swagger-spec.json',
+  );
+
+  mkdirSync(join(process.cwd(), 'apps', 'channel-adapter'), {
+    recursive: true,
+  });
+
+  writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
+  console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+
+  // Swagger UI (서버에서 바로 확인 가능)
+  SwaggerModule.setup('/docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: 'alpha',
@@ -37,13 +57,16 @@ async function bootstrap() {
     },
   });
 
+  // 파일 업로드 등 Fastify 설정
   await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: false, // 🔧 false로 변경해서 전통적인 방식 사용
+    attachFieldsToBody: false,
     limits: {
       fileSize: 1024 * 1024 * 10,
       files: 1,
     },
   });
+
+  // CORS 허용
   app.enableCors({
     origin: [
       'http://127.0.0.1:5500',
@@ -51,19 +74,16 @@ async function bootstrap() {
       'http://localhost:8080',
       'http://localhost:9000',
       'http://localhost:8000',
-    ], // Live Server 주소 허용
+    ],
     credentials: true,
   });
 
-  // 정적 파일 서빙 설정 (HTML 파일들)
-  // 프로젝트 루트의 html 폴더를 가리킴 (폴더명 변경 대응)
+  // 정적 파일 서빙 설정
   const htmlPath = join(process.cwd(), 'html');
-
   await app.register(require('@fastify/static'), {
     root: htmlPath,
     prefix: '/html/',
   });
-
   console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
   await app.listen(3003);

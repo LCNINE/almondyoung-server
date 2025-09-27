@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as bcrypt from 'bcrypt';
@@ -20,7 +20,22 @@ import {
   RequestCancelBody,
   RequestReturnBody,
   UpdateOptionStockBody,
+  // 🎯 Zod 스키마들 import
+  ExchangeRedeliveryBodySchema,
+  HoldExchangeBodySchema,
+  RejectExchangeBodySchema,
+  HoldReturnBodySchema,
+  RejectReturnBodySchema,
+  RequestReturnBodySchema,
+  RequestCancelBodySchema,
+  DelayDispatchBodySchema,
+  ChangeHopeDeliveryBodySchema,
+  DispatchProductOrderSchema,
+  QueryProductOrdersParamsSchema,
+  ChangeSaleStatusBodySchema,
+  UpdateOptionStockBodySchema,
 } from '../../zods/naver-api.zod';
+import { formatZodIssues } from '../../shared/utils';
 // =================================================================
 // == 1. 타입 정의 (Type Definitions)
 // =================================================================
@@ -64,9 +79,25 @@ interface NaverTokenResponse {
 @Injectable()
 export class NaverCommerceApiService {
   private readonly logger = new Logger(NaverCommerceApiService.name);
-  private readonly apiBaseUrl = process.env.NAVER_API_ENDPOINT || '';
+  private readonly apiBaseUrl = this.getApiBaseUrl();
 
   constructor(private readonly http: HttpService) {}
+
+  /**
+   * API Base URL을 환경에 따라 결정합니다
+   */
+  private getApiBaseUrl(): string {
+    // Mock 서버 사용 시
+    if (process.env.NAVER_USE_MOCK_SERVER === 'true') {
+      const mockUrl =
+        process.env.ADAPTER_MOCK_BASE_URL || 'http://localhost:3001';
+      this.logger.log(`🔧 네이버 Mock 서버 사용: ${mockUrl}`);
+      return `${mockUrl}/naver`;
+    }
+
+    // 실제 네이버 API 사용
+    return process.env.NAVER_API_ENDPOINT || '';
+  }
 
   // == 교환 (Exchange)
   // =================================================================
@@ -106,9 +137,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: ExchangeRedeliveryBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = ExchangeRedeliveryBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 교환 재배송 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '교환 재배송 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/exchange/dispatch`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -128,9 +174,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: HoldExchangeBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = HoldExchangeBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 교환 보류 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '교환 보류 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/exchange/holdback`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -168,9 +229,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: RejectExchangeBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = RejectExchangeBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 교환 거부 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '교환 거부 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/exchange/reject`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -214,9 +290,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: HoldReturnBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = HoldReturnBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 반품 보류 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '반품 보류 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/return/holdback`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -254,9 +345,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: RejectReturnBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = RejectReturnBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 반품 거부 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '반품 거부 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/return/reject`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -275,9 +381,21 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: RequestReturnBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = RequestReturnBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error('❌ 반품 요청 파라미터 검증 실패:', flattenedErrors);
+      throw new BadRequestException({
+        message: '반품 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/return/request`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -318,11 +436,28 @@ export class NaverCommerceApiService {
     token: string,
     dispatchProductOrders: DispatchProductOrder[],
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가 (배열 요소별 검증)
+    const parsedOrders = z
+      .array(DispatchProductOrderSchema)
+      .safeParse(dispatchProductOrders);
+    if (!parsedOrders.success) {
+      const flattenedErrors = parsedOrders.error.flatten();
+      this.logger.error(
+        '❌ 발송 처리 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '발송 처리 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedOrders.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/dispatch`;
     const response = await firstValueFrom(
       this.http.post<NaverClaimProcessResponse>(
         url,
-        { dispatchProductOrders },
+        { dispatchProductOrders: parsedOrders.data },
         { headers: { Authorization: `Bearer ${token}` } },
       ),
     );
@@ -340,9 +475,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: DelayDispatchBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = DelayDispatchBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 발송 지연 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '발송 지연 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/delay`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -360,9 +510,24 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: ChangeHopeDeliveryBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = ChangeHopeDeliveryBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 배송 희망일 변경 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '배송 희망일 변경 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/hope-delivery/change`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -486,9 +651,21 @@ export class NaverCommerceApiService {
     productOrderId: string,
     body: RequestCancelBody,
   ): Promise<NaverClaimProcessResponse> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = RequestCancelBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error('❌ 취소 요청 파라미터 검증 실패:', flattenedErrors);
+      throw new BadRequestException({
+        message: '취소 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/${productOrderId}/claim/cancel/request`;
     const response = await firstValueFrom(
-      this.http.post<NaverClaimProcessResponse>(url, body, {
+      this.http.post<NaverClaimProcessResponse>(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -506,10 +683,25 @@ export class NaverCommerceApiService {
     originProductNo: number,
     body: ChangeSaleStatusBody,
   ): Promise<any> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = ChangeSaleStatusBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 판매 상태 변경 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '판매 상태 변경 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     // TODO: 이 API의 실제 성공 응답 타입을 확인하고 any 대신 구체적인 타입 적용 필요
     const url = `${this.apiBaseUrl}/products/origin-products/${originProductNo}/change-status`;
     const response = await firstValueFrom(
-      this.http.put(url, body, {
+      this.http.put(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );
@@ -528,10 +720,25 @@ export class NaverCommerceApiService {
     originProductNo: number,
     body: UpdateOptionStockBody,
   ): Promise<any> {
+    // 🎯 Zod 검증 추가
+    const parsedBody = UpdateOptionStockBodySchema.safeParse(body);
+    if (!parsedBody.success) {
+      const flattenedErrors = parsedBody.error.flatten();
+      this.logger.error(
+        '❌ 옵션 재고 업데이트 요청 파라미터 검증 실패:',
+        flattenedErrors,
+      );
+      throw new BadRequestException({
+        message: '옵션 재고 업데이트 요청 입력값 유효성 검사에 실패했습니다.',
+        errors: flattenedErrors.fieldErrors,
+        issues: formatZodIssues(parsedBody.error.issues),
+      });
+    }
+
     // TODO: 이 API의 실제 성공 응답 타입을 확인하고 any 대신 구체적인 타입 적용 필요
     const url = `${this.apiBaseUrl}/products/origin-products/${originProductNo}/option-stock`;
     const response = await firstValueFrom(
-      this.http.put(url, body, {
+      this.http.put(url, parsedBody.data, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     );

@@ -11,7 +11,12 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     private usersService: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (req) => {
+          return req?.cookies?.accessToken;
+        },
+      ]),
       secretOrKey: configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET')!,
       ignoreExpiration: false,
     });
@@ -21,7 +26,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     const user = await this.usersService.findUserById(payload.sub);
 
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
     }
 
     // JWT payload 정보 반환

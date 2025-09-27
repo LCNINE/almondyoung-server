@@ -7,7 +7,7 @@ import {
   SyncResult,
   SyncToChannelPayload,
 } from '../types';
-import { ChannelCommand } from '../types';
+import { ChannelCommand, ChannelQuery } from '../types';
 
 /**
  * 판매채널 어댑터 메인 서비스
@@ -125,6 +125,43 @@ export class ChannelAdapterService {
   ): Promise<SyncResult> {
     this.logger.log(`⚡ [${channel}] 명령 실행 요청: ${cmd.type}`);
     return this.orchestrator.execute(channel, cmd);
+  }
+
+  /**
+   * 특정 채널에 대한 조회 실행 (CQRS 패턴)
+   *
+   * @param channel - 대상 판매채널
+   * @param query - 실행할 조회 객체
+   * @returns 표준 내부 모델로 번역된 조회 결과
+   *
+   * @example
+   * ```typescript
+   * // 쿠팡 교환 요청 목록 조회 (표준 내부 모델로 반환)
+   * const exchanges = await channelAdapter.query('coupang', {
+   *   type: 'exchange.requests',
+   *   dateFrom: '2025-01-01T00:00:00',
+   *   dateTo: '2025-01-07T23:59:59',
+   *   status: 'RECEIPT'
+   * });
+   * // 반환: InternalExchangeEvent[] (SSOT 원칙)
+   *
+   * // 반품 철회 이력 조회
+   * const withdrawals = await channelAdapter.query('coupang', {
+   *   type: 'return.withdrawal_history',
+   *   dateFrom: '2025-01-01T00:00:00',
+   *   dateTo: '2025-01-07T23:59:59'
+   * });
+   *
+   * // 배송 히스토리 조회
+   * const deliveryHistory = await channelAdapter.query('coupang', {
+   *   type: 'delivery.history',
+   *   orderId: 'ORDER_12345'
+   * });
+   * ```
+   */
+  async query(channel: ChannelType, query: ChannelQuery): Promise<any> {
+    this.logger.log(`🔍 [${channel}] 조회 실행 요청: ${query.type}`);
+    return this.orchestrator.executeQuery(channel, query);
   }
 
   /**
