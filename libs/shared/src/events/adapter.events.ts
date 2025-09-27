@@ -1,7 +1,7 @@
-import { BaseEventPayload, EventDefinition } from '@app/events';
-import { InternalOrderEvent } from '../types';
-
 // ===== 채널 어댑터 이벤트 페이로드 타입들 =====
+
+import { BaseEventPayload, EventDefinition } from '@app/events';
+import { InternalOrderEvent } from 'apps/channel-adapter/src/types';
 
 /** 주문 동기화 완료 이벤트 페이로드 */
 export interface OrderSyncCompletedPayload extends BaseEventPayload {
@@ -76,6 +76,7 @@ export interface ChannelAdapterEvents extends Record<string, EventDefinition> {
   'channel.status.changed': EventDefinition<ChannelStatusChangedPayload>;
 }
 
+// 실제 이벤트 토픽과 페이로드를 매핑하는 객체
 // 실제 이벤트 토픽과 페이로드를 매핑하는 객체
 export const CHANNEL_ADAPTER_EVENTS: ChannelAdapterEvents = {
   'order.sync.completed': {

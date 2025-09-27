@@ -38,6 +38,10 @@ export const walletSchema = {
   taxInvoices: schema.taxInvoices,
   taxInvoiceEvents: schema.taxInvoiceEvents,
   taxInvoiceEventsDetails: schema.taxInvoiceEventsDetails,
+
+  // Cash Receipt System
+  cashReceiptEvents: schema.cashReceiptEvents,
+  cashReceiptEventDetails: schema.cashReceiptEventDetails,
 };
 
 export type WalletSchema = typeof walletSchema;
@@ -214,4 +218,34 @@ export type UpdateTaxInvoiceEventsDetail = Partial<
 export type TaxInvoiceWithDetails = TaxInvoice & {
   details: TaxInvoiceEventsDetail;
   events?: TaxInvoiceEvent[];
+};
+
+// ===============================
+// Cash Receipt 타입들
+// ===============================
+export type CashReceiptEvent = InferSelectModel<
+  typeof schema.cashReceiptEvents
+>;
+export type NewCashReceiptEvent = InferInsertModel<
+  typeof schema.cashReceiptEvents
+>;
+export type UpdateCashReceiptEvent = Partial<
+  Omit<NewCashReceiptEvent, 'id' | 'createdAt'>
+>;
+
+export type CashReceiptEventDetail = InferSelectModel<
+  typeof schema.cashReceiptEventDetails
+>;
+export type NewCashReceiptEventDetail = InferInsertModel<
+  typeof schema.cashReceiptEventDetails
+>;
+export type UpdateCashReceiptEventDetail = Partial<
+  Omit<NewCashReceiptEventDetail, 'id' | 'createdAt'>
+>;
+
+/**
+ * 현금영수증 이벤트와 상세 정보를 조인한 결과 타입
+ */
+export type CashReceiptEventWithDetails = CashReceiptEvent & {
+  details: CashReceiptEventDetail;
 };

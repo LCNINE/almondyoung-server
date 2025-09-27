@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventPublisherService } from '@app/events';
-import { ChannelAdapterEvents } from '../events/channel-events';
+import { ChannelAdapterEvents } from '@app/shared/events/adapter.events';
 import { BaseEventPayload } from '@app/events';
 
 /**
