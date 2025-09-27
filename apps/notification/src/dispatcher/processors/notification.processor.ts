@@ -9,14 +9,13 @@ import { eq, and, lte } from 'drizzle-orm';
 import {
     notifications,
     notificationLogs,
-    userProfiles,
 } from '../../../database/schemas/notification-schema';
 import { ProviderManagerService } from '../../provider/services/provider-manager.service';
 import { NotificationLoggerService } from '../../shared/services/notification-logger.service';
 import { AlertService } from '../../shared/services/alert.service';
 import { Channel, NotificationStatus, NotificationPriority } from '../../shared/enums';
 import { NOTIFICATION_CONSTANTS } from '../../shared/constants';
-import { getContactForChannel } from '../../shared/utils/contact.utils';
+import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
 
 @Processor('notification')
@@ -69,13 +68,14 @@ export class NotificationProcessor {
                 })
                 .where(eq(notifications.notificationId, notificationId));
 
-            const userProfile = await this.db.query.userProfiles.findFirst({
-                where: eq(userProfiles.userId, notification.userId),
-            });
-
-            if (!userProfile) {
-                throw new Error(`User profile ${notification.userId} not found`);
-            }
+            // payload에서 사용자 정보 추출 (프론트엔드에서 전달받은 정보)
+            const userProfile: UserProfile = notification.payload?.userProfile || {
+                userId: notification.userId,
+                email: notification.payload?.email,
+                phoneNumber: notification.payload?.phoneNumber,
+                pushToken: notification.payload?.pushToken,
+                name: notification.payload?.name,
+            };
 
             const contact = getContactForChannel(userProfile, notification.channel as Channel);
             if (!contact) {
