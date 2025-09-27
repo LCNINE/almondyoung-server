@@ -20,6 +20,15 @@
         "tsConfigPath": "apps/almondyoung-server/tsconfig.app.json"
       }
     },
+    "notification": {
+      "type": "application",
+      "root": "apps/notification",
+      "entryFile": "main",
+      "sourceRoot": "apps/notification/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notification/tsconfig.app.json"
+      }
+    },
     "db": {
       "type": "library",
       "root": "libs/db",
@@ -29,6 +38,24 @@
         "tsConfigPath": "libs/db/tsconfig.lib.json"
       }
     },
+    "pim": {
+      "type": "application",
+      "root": "apps/pim",
+      "entryFile": "main",
+      "sourceRoot": "apps/pim/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/pim/tsconfig.app.json"
+      }
+    },
+    "roles": {
+      "type": "library",
+      "root": "libs/roles",
+      "entryFile": "index",
+      "sourceRoot": "libs/roles/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/roles/tsconfig.lib.json"
+      }
+    },
     "shared": {
       "type": "library",
       "root": "libs/shared",
@@ -36,6 +63,15 @@
       "sourceRoot": "libs/shared/src",
       "compilerOptions": {
         "tsConfigPath": "libs/shared/tsconfig.lib.json"
+      }
+    },
+    "user-service": {
+      "type": "application",
+      "root": "apps/user-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/user-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/user-service/tsconfig.app.json"
       }
     },
     "wms": {
