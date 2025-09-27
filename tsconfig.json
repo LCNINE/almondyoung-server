@@ -20,10 +20,12 @@
     "paths": {
       "@app/db": ["libs/db/src"],
       "@app/db/*": ["libs/db/src/*"],
-      "@app/shared": ["libs/shared/src"],
-      "@app/shared/*": ["libs/shared/src/*"],
       "@app/events": ["libs/events/src"],
-      "@app/events/*": ["libs/events/src/*"]
+      "@app/events/*": ["libs/events/src/*"],
+      "@app/roles": ["libs/roles/src"],
+      "@app/roles/*": ["libs/roles/src/*"],
+      "@app/shared": ["libs/shared/src"],
+      "@app/shared/*": ["libs/shared/src/*"]
     }
   }
 }

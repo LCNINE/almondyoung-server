@@ -1,11 +1,14 @@
-import { Table } from 'drizzle-orm';
+import { Relations, Table, View } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 export type DrizzleTable = Table<any>;
+export type DrizzleRelations = Relations<any>;
+export type DrizzleView = View<any>;
 
-export type DrizzleSchema = Record<string, DrizzleTable>;
+export type DrizzleSchema = Record<string, DrizzleTable | DrizzleRelations | DrizzleView>;
 
-export type TypedDatabase<TSchema extends DrizzleSchema> = PostgresJsDatabase<TSchema>;
+export type TypedDatabase<TSchema extends DrizzleSchema> =
+  PostgresJsDatabase<TSchema>;
 
 export type TableNames<TSchema extends DrizzleSchema> = keyof TSchema & string;
 
@@ -30,4 +33,4 @@ export function createDbConfigFromEnv(env: DbEnvironmentConfig) {
     username: env.DB_USER,
     password: env.DB_PASSWORD,
   };
-} 
+}
