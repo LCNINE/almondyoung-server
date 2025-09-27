@@ -15,7 +15,7 @@ import {
 import * as schema from '../../shared/database/schema';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { getTsid } from 'tsid-ts';
-import { CreateHmsCardProfileSchema } from '../../controllers/payment.controller';
+import { CreateHmsCardProfileSchema } from '../../controllers/payment.controller.zod';
 import z from 'zod';
 
 import { HmsBnplRegisterInput } from '../../providers/hms-bnpl.registrar';

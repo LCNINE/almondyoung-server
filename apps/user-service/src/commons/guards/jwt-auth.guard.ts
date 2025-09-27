@@ -31,7 +31,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
   handleRequest<TUser = UserPayload>(err: any, user: TUser): TUser {
     if (err || !user) {
-      throw err || new UnauthorizedException();
+      throw err || new UnauthorizedException('사용자를 찾을 수 없습니다.');
     }
     return user;
   }

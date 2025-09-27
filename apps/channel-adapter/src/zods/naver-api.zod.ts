@@ -1,37 +1,31 @@
 import { z } from 'zod';
 
 // =================================================================
-// == 네이버 API 공통 응답 구조 (제네릭 헬퍼)
+// == 공통 응답 스키마 생성 헬퍼
 // =================================================================
-
-// 네이버 API 공통 응답 구조 생성 헬퍼 (타입 체크용)
 export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.string().datetime(), // 응답 타임스탬프
-    traceId: z.string(), // 추적 ID
-    data: dataSchema, // 실제 데이터
+    timestamp: z.iso.date(),
+    traceId: z.string(),
+    data: dataSchema,
   });
 }
 
-// 네이버 API 공통 응답 구조 (data가 optional인 경우)
 export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.string().datetime(), // 응답 타임스탬프
-    traceId: z.string(), // 추적 ID
-    data: dataSchema.optional(), // 실제 데이터 (선택적)
+    timestamp: z.iso.date(),
+    traceId: z.string(),
+    data: dataSchema.optional(),
   });
 }
 
-// -----------------------------------------------------------------
-// -- 교환 관련 타입 (Exchange Types)
-// -----------------------------------------------------------------
-
-/** 교환 재배송 처리 요청 시 Body 데이터 타입 */
-// 네이버 API에서 허용하는 배송 방법 코드 목록 (이미 정의되어 있다면 생략)
+// =================================================================
+// == 공통 코드 정의
+// =================================================================
 const NAVER_DELIVERY_METHODS = [
   'DELIVERY',
   'GDFW_ISSUE_SVC',
@@ -46,225 +40,6 @@ const NAVER_DELIVERY_METHODS = [
   'UNKNOWN',
 ] as const;
 
-// 네이버 API에서 허용하는 택배사 코드 목록 (새로 추가)
-const NAVER_DELIVERY_COMPANIES = [
-  'CJGLS',
-  'HYUNDAI',
-  'HANJIN',
-  'KGB',
-  'EPOST',
-  'MTINTER',
-  '1004HOME',
-  'TWOFASTEXPRESS',
-  'ACE',
-  'ACIEXPRESS',
-  'ADCAIR',
-  'AIRWAY',
-  'APEX',
-  'ARAMEX',
-  'ARGO',
-  'AIRBOYExpress',
-  'KOREXG',
-  'CUPARCEL',
-  'CWAYEXPRESS',
-  'DHL',
-  'DHLDE',
-  'DHLGLOBALMAIL',
-  'DPD',
-  'ECMSEspress',
-  'EFS',
-  'EMS',
-  'EZUSA',
-  'EUROPARCEL',
-  'FEDEX',
-  'GOP',
-  'GOS',
-  'GPSLOGIX',
-  'GSFRESH',
-  'GSIEXPRESS',
-  'GSMNTON',
-  'GSPOSTBOX',
-  'CVSNET',
-  'GS더프레시',
-  'GSTHEFRESH',
-  'GTSLOGIS',
-  'HYBRID',
-  'HI',
-  'IK',
-  'KGLNET',
-  'KT',
-  'LGEL',
-  'LTL',
-  'NDEXKOREA',
-  'SBGLS',
-  'SFEX',
-  'SLX',
-  'SSG',
-  'TNT',
-  'LOGISPARTNER',
-  'UPS',
-  'USPS',
-  'WIZWA',
-  'YJSWORLD',
-  'YJS',
-  'YUNDA',
-  'IPARCEL',
-  'KY',
-  'KUNYOUNG',
-  'KDEXP',
-  'KIN',
-  'KORYO',
-  'GDSP',
-  'KOKUSAI',
-  'GOODTOLUCK',
-  'NAEUN',
-  'NOGOK',
-  'NONGHYUP',
-  'HANAROMART',
-  'DAELIM',
-  'DAESIN',
-  'DAEWOON',
-  'THEBAO',
-  'DODOFLEX',
-  'DONGGANG',
-  'DONGJIN',
-  'CHAINLOGIS',
-  'DRABBIT',
-  'JMNP',
-  'ONEDAYLOGIS',
-  'LINEEXP',
-  'ROADSUNEXPRESS',
-  'LOGISVALLEY',
-  'POOLATHOME',
-  'LOTOS',
-  'HLCGLOBAL',
-  'LOTTECHILSUNG',
-  'MDLOGIS',
-  'DASONG',
-  'BABABA',
-  'BANPOOM',
-  'VALEX',
-  'SHIPNERGY',
-  'PANTOS',
-  'VROONG',
-  'BRIDGE',
-  'EKDP',
-  'SELC',
-  'SEORIM',
-  'SWGEXP',
-  'SUNGHUN',
-  'SEBANG',
-  'SMARTLOGIS',
-  'SPARKLE',
-  'SPASYS1',
-  'CRLX',
-  'ANYTRACK',
-  'ABOUTPET',
-  'ESTHER',
-  'VENDORPIA',
-  'ACTCORE',
-  'HKHOLDINGS',
-  'NTLPS',
-  'TODAYPICKUP',
-  'RUSH',
-  'ALLIN',
-  'ALLTAKOREA',
-  'WIDETECH',
-  'YONGMA',
-  'DCOMMERCE',
-  'WEVILL',
-  'HONAM',
-  'WOORIHB',
-  'WOOJIN',
-  'REGISTPOST',
-  'WOONGJI',
-  'WARPEX',
-  'WINION',
-  'WIHTYOU',
-  'WEMOVE',
-  'UFREIGHT',
-  'EUNHA',
-  'INNOS',
-  'EMARTEVERYDAY',
-  'ESTLA',
-  'ETOMARS',
-  'GENERALPOST',
-  'ILSHIN',
-  'ILYANG',
-  'GNETWORK',
-  'ZENIEL',
-  'JLOGIST',
-  'GENIEGO',
-  'GDAKOREA',
-  'GHSPEED',
-  'JIKGUMOON',
-  'CHUNIL',
-  'CHOROC',
-  'CHOROCMAEUL',
-  'COSHIP',
-  'KJT',
-  'QRUN',
-  'CUBEFLOW',
-  'QXPRESS',
-  'HEREWEGO',
-  'TOMATO',
-  'TODAY',
-  'TSG',
-  'TEAMFRESH',
-  'PATEK',
-  'XINPATEK',
-  'PANASIA',
-  'PANSTAR',
-  'FOREVER',
-  'PULMUONE',
-  'FREDIT',
-  'FRESHMATES',
-  'FRESH',
-  'PINGPONG',
-  'HOWSER',
-  'HIVECITY',
-  'HANDALUM',
-  'HANDEX',
-  'HANMI',
-  'HANSSEM',
-  'HANWOORI',
-  'HPL',
-  'HDEXP',
-  'HERWUZUG',
-  'GLOVIS',
-  'HOMEINNO',
-  'HOMEPICKTODAY',
-  'HOMEPICK',
-  'HOMEPLUSDELIVERY',
-  'HOMEPLUSEXPRESS',
-  'CARGOPLEASE',
-  'HWATONG',
-  'CH1',
-  'LETUS',
-  'LETUS3PL',
-  'CASA',
-  'GCS',
-  'GKGLOBAL',
-  'BRCH',
-  'DNDN',
-  'GONELO',
-  'JCLS',
-  'JWTNL',
-  'GS25',
-  'CU',
-] as const;
-
-/** '교환 재배송 처리' API의 요청 본문(Body)에 대한 Zod 스키마 */
-export const ExchangeRedeliveryBodySchema = z.object({
-  reDeliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
-  reDeliveryCompany: z.enum(NAVER_DELIVERY_COMPANIES),
-  reDeliveryTrackingNumber: z.string().min(1, '재배송 송장 번호는 필수입니다.'),
-});
-export type ExchangeRedeliveryBody = z.infer<
-  typeof ExchangeRedeliveryBodySchema
->;
-
-// 네이버 API에서 허용하는 보류 유형 코드 목록 (이미 정의되어 있다면 생략)
 const NAVER_HOLDBACK_REASONS = [
   'RETURN_DELIVERYFEE',
   'EXTRAFEEE',
@@ -282,41 +57,6 @@ const NAVER_HOLDBACK_REASONS = [
   'ETC2',
 ] as const;
 
-/** '교환 보류' API의 요청 본문(Body)에 대한 Zod 스키마 */
-export const HoldExchangeBodySchema = z.object({
-  holdbackClassType: z.enum(NAVER_HOLDBACK_REASONS),
-  holdbackExchangeDetailReason: z
-    .string()
-    .min(1, '보류 상세 사유는 필수입니다.'),
-  extraExchangeFeeAmount: z.number().optional(),
-});
-export type HoldExchangeBody = z.infer<typeof HoldExchangeBodySchema>;
-
-/** 교환 거부(철회) 처리 요청 시 Body 데이터 타입 */
-export const RejectExchangeBodySchema = z.object({
-  rejectExchangeReason: z.string().min(1, '교환 거부 사유는 필수입니다.'),
-});
-export type RejectExchangeBody = z.infer<typeof RejectExchangeBodySchema>;
-
-// -----------------------------------------------------------------
-// -- 반품 관련 타입 (Return Types)
-// -----------------------------------------------------------------
-
-/** 반품 보류 처리 요청 시 Body 데이터 타입 */
-
-/** '반품 보류' API의 요청 본문(Body)에 대한 Zod 스키마 */
-export const HoldReturnBodySchema = z.object({
-  holdbackClassType: z.enum(NAVER_HOLDBACK_REASONS),
-  holdbackReturnDetailReason: z.string().min(1, '보류 상세 사유는 필수입니다.'),
-  extraReturnFeeAmount: z.number().optional(),
-});
-export type HoldReturnBody = z.infer<typeof HoldReturnBodySchema>;
-
-/** 반품 거부(철회) 처리 요청 시 Body 데이터 타입 */
-export const RejectReturnBodySchema = z.object({
-  rejectReturnReason: z.string().min(1, '반품 거부 사유는 필수입니다.'),
-});
-export type RejectReturnBody = z.infer<typeof RejectReturnBodySchema>;
 const NAVER_RETURN_REASONS = [
   'INTENT_CHANGED',
   'COLOR_AND_SIZE',
@@ -331,172 +71,27 @@ const NAVER_RETURN_REASONS = [
   'WRONG_OPTION',
 ] as const;
 
-/** '반품 요청' API의 요청 본문(Body)에 대한 Zod 스키마 */
-export const RequestReturnBodySchema = z.object({
-  returnReason: z.enum(NAVER_RETURN_REASONS),
-  collectDeliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
-  collectDeliveryCompany: z.string().optional(),
-  collectTrackingNumber: z.string().optional(),
-  returnQuantity: z
-    .number()
-    .int('반품 수량은 정수여야 합니다.')
-    .positive('반품 수량은 0보다 커야 합니다.')
-    .optional(),
-});
-export type RequestReturnBody = z.infer<typeof RequestReturnBodySchema>;
+const NAVER_CANCEL_REASONS = [
+  'INTENT_CHANGED',
+  'COLOR_AND_SIZE',
+  'WRONG_ORDER',
+  'PRODUCT_UNSATISFIED',
+  'DELAYED_DELIVERY',
+  'SOLD_OUT',
+  'INCORRECT_INFO',
+] as const;
 
-// -----------------------------------------------------------------
-// -- 발주/발송 관련 타입 (Order/Dispatch Types)
-// -----------------------------------------------------------------
-
-/** 발송 처리 요청 시 개별 주문의 데이터 타입 */
-/** '발송 처리' API의 개별 주문 객체에 대한 Zod 스키마 */
-export const DispatchProductOrderSchema = z.object({
-  productOrderId: z.string().min(1, '상품 주문 번호는 필수입니다.'),
-  deliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
-  deliveryCompanyCode: z.enum(NAVER_DELIVERY_COMPANIES),
-  trackingNumber: z.string().min(1, '송장 번호는 필수입니다.'),
-  dispatchDate: z.string().datetime('발송일은 ISO 8601 형식이어야 합니다.'),
-});
-export type DispatchProductOrder = z.infer<typeof DispatchProductOrderSchema>;
-/** 발송 지연 처리 요청 시 Body 데이터 타입 */
-export interface DelayDispatchBody {
-  dispatchDueDate: string;
-  delayedDispatchReason: string;
-  dispatchDelayedDetailedReason: string;
-}
-
-/** 배송 희망일 변경 처리 요청 시 Body 데이터 타입에 대한 Zod 스키마 */
-export const ChangeHopeDeliveryBodySchema = z.object({
-  hopeDeliveryYmd: z
-    .string()
-    .regex(/^\d{8}$/, '배송희망일은 yyyymmdd 형식이어야 합니다.'),
-  hopeDeliveryHm: z
-    .string()
-    .regex(/^\d{4}$/, '배송희망시간은 HHmm 형식이어야 합니다.')
-    .optional(),
-  region: z
-    .string()
-    .min(1)
-    .max(30, '지역은 1~30자 사이여야 합니다.')
-    .optional(),
-  changeReason: z
-    .string()
-    .min(1, '변경 사유는 필수입니다.')
-    .max(300, '변경 사유는 최대 300자입니다.'),
-});
-export type ChangeHopeDeliveryBody = z.infer<
-  typeof ChangeHopeDeliveryBodySchema
->;
-
-// -----------------------------------------------------------------
-// -- 주문 조회 관련 타입 (Order Lookup Types)
-// -----------------------------------------------------------------
-
-/** 변경 상품 주문 정보 구조체 */
-export interface ChangedProductOrder {
-  orderId: string;
-  productOrderId: string;
-  lastChangedType: string;
-  paymentDate: string;
-  lastChangedDate: string;
-  productOrderStatus: string;
-  claimType?: string;
-  claimStatus?: string;
-  receiverAddressChanged: boolean;
-}
-
-// 변경된 주문 목록 조회 응답 데이터 스키마 (타입 체크용)
-const NaverLastChangedStatusesDataSchema = z.object({
-  lastChangeStatuses: z.array(
-    z.object({
-      orderId: z.string(),
-      productOrderId: z.string(),
-      lastChangedType: z.string(),
-      paymentDate: z.string(),
-      lastChangedDate: z.string(),
-      productOrderStatus: z.string(),
-      claimType: z.string().optional(),
-      claimStatus: z.string().optional(),
-      receiverAddressChanged: z.boolean(),
-    }),
-  ),
-  more: z
-    .object({
-      moreFrom: z.string(),
-      moreSequence: z.string(),
-    })
-    .optional(),
-});
-
-/** 변경된 주문 목록 조회 API의 전체 응답 스키마 (제네릭 헬퍼 사용) */
-export const NaverLastChangedStatusResponseSchema =
-  createNaverApiResponseSchema(NaverLastChangedStatusesDataSchema);
-
-/** 변경된 주문 목록 조회 API의 전체 응답 타입 */
-export type NaverLastChangedStatusResponse = z.infer<
-  typeof NaverLastChangedStatusResponseSchema
->;
-
-/** 상품 주문 상세 정보 하위 객체 (Placeholder) */
-interface NaverOrderDetails {
-  /* 주문 공통 상세 정보 */
-}
-interface NaverProductOrderDetails {
-  /* 상품 주문 상세 정보 */
-}
-interface NaverClaimDetails {
-  /* 클레임(취소/반품/교환) 상세 정보 */
-}
-interface NaverDeliveryDetails {
-  /* 배송 상세 정보 */
-}
-
-/** 상품 주문 상세 정보 구조체 (API 응답 데이터 배열의 개별 요소) */
-export interface ProductOrderInfo {
-  order: NaverOrderDetails;
-  productOrder: NaverProductOrderDetails;
-  cancel?: NaverClaimDetails;
-  return?: NaverClaimDetails;
-  exchange?: NaverClaimDetails;
-  beforeClaim: object;
-  currentClaim: NaverClaimDetails;
-  completedClaims: NaverClaimDetails[];
-  delivery: NaverDeliveryDetails;
-}
-
-// 상품 주문 상세 내역 조회 API 응답 스키마 (타입 체크용)
-export const NaverProductOrderDetailsResponseSchema =
-  createNaverApiResponseSchema(
-    z.array(
-      z.object({
-        order: z.any(), // 주문 공통 상세 정보
-        productOrder: z.any(), // 상품 주문 상세 정보
-        cancel: z.any().optional(), // 취소 상세 정보
-        return: z.any().optional(), // 반품 상세 정보
-        exchange: z.any().optional(), // 교환 상세 정보
-        beforeClaim: z.object({}), // 클레임 이전 정보
-        currentClaim: z.any(), // 현재 클레임 정보
-        completedClaims: z.array(z.any()), // 완료된 클레임 목록
-        delivery: z.any(), // 배송 상세 정보
-      }),
-    ),
-  );
-
-/** 상품 주문 상세 내역 조회 API의 전체 응답 타입 */
-export type NaverProductOrderDetailsResponse = z.infer<
-  typeof NaverProductOrderDetailsResponseSchema
->;
-
-// 주문 번호로 상품 주문 번호 목록 조회 API 응답 스키마 (타입 체크용)
-export const NaverProductOrderIdsResponseSchema = createNaverApiResponseSchema(
-  z.array(z.string()),
-);
-
-/** 주문 번호로 상품 주문 번호 목록 조회 API의 전체 응답 타입 */
-export type NaverProductOrderIdsResponse = z.infer<
-  typeof NaverProductOrderIdsResponseSchema
->;
+const NAVER_SALE_STATUS_TYPES = [
+  'WAIT',
+  'SALE',
+  'OUTOFSTOCK',
+  'UNADMISSION',
+  'REJECTION',
+  'SUSPENSION',
+  'CLOSE',
+  'PROHIBITION',
+  'DELETE',
+] as const;
 
 const NAVER_RANGE_TYPES = [
   'PAYED_DATETIME',
@@ -509,6 +104,7 @@ const NAVER_RANGE_TYPES = [
   'GIFT_RECEIVED_DATETIME',
   'HOPE_DELIVERY_INFO_CHANGED_DATETIME',
 ] as const;
+
 const NAVER_PRODUCT_ORDER_STATUSES = [
   'PAYMENT_WAITING',
   'PAYED',
@@ -520,6 +116,7 @@ const NAVER_PRODUCT_ORDER_STATUSES = [
   'RETURNED',
   'CANCELED_BY_NOPAYMENT',
 ] as const;
+
 const NAVER_CLAIM_STATUSES = [
   'CANCEL_REQUEST',
   'CANCELING',
@@ -541,15 +138,130 @@ const NAVER_CLAIM_STATUSES = [
   'ADMIN_CANCEL_DONE',
   'ADMIN_CANCEL_REJECT',
 ] as const;
+
 const NAVER_PLACE_ORDER_STATUS_TYPES = ['NOT_YET', 'OK', 'CANCEL'] as const;
 
-/** 조건형 상품 주문 상세 내역 조회 시 Query Parameter에 대한 Zod 스키마 */
-export const QueryProductOrdersParamsSchema = z.object({
-  from: z.string().datetime('조회 시작일시는 ISO 8601 형식이어야 합니다.'),
-  to: z
+// =================================================================
+// == 요청 Body 스키마
+// =================================================================
+export const ExchangeRedeliveryBodySchema = z.object({
+  reDeliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
+  reDeliveryCompany: z.string().min(1),
+  reDeliveryTrackingNumber: z.string().min(1),
+});
+export type ExchangeRedeliveryBody = z.infer<
+  typeof ExchangeRedeliveryBodySchema
+>;
+
+export const HoldExchangeBodySchema = z.object({
+  holdbackClassType: z.enum(NAVER_HOLDBACK_REASONS),
+  holdbackExchangeDetailReason: z.string().min(1),
+  extraExchangeFeeAmount: z.number().optional(),
+});
+export type HoldExchangeBody = z.infer<typeof HoldExchangeBodySchema>;
+
+export const RejectExchangeBodySchema = z.object({
+  rejectExchangeReason: z.string().min(1),
+});
+export type RejectExchangeBody = z.infer<typeof RejectExchangeBodySchema>;
+
+export const HoldReturnBodySchema = z.object({
+  holdbackClassType: z.enum(NAVER_HOLDBACK_REASONS),
+  holdbackReturnDetailReason: z.string().min(1),
+  extraReturnFeeAmount: z.number().optional(),
+});
+export type HoldReturnBody = z.infer<typeof HoldReturnBodySchema>;
+
+export const RejectReturnBodySchema = z.object({
+  rejectReturnReason: z.string().min(1),
+});
+export type RejectReturnBody = z.infer<typeof RejectReturnBodySchema>;
+
+export const RequestReturnBodySchema = z.object({
+  returnReason: z.enum(NAVER_RETURN_REASONS),
+  collectDeliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
+  collectDeliveryCompany: z.string().optional(),
+  collectTrackingNumber: z.string().optional(),
+  returnQuantity: z.number().int().positive().optional(),
+});
+export type RequestReturnBody = z.infer<typeof RequestReturnBodySchema>;
+
+export const RequestCancelBodySchema = z.object({
+  cancelReason: z.enum(NAVER_CANCEL_REASONS),
+  cancelDetailedReason: z.string().max(500).optional(),
+  cancelQuantity: z.number().int().positive().optional(),
+});
+export type RequestCancelBody = z.infer<typeof RequestCancelBodySchema>;
+
+export const DispatchProductOrderSchema = z.object({
+  productOrderId: z.string().min(1),
+  deliveryMethod: z.enum(NAVER_DELIVERY_METHODS),
+  deliveryCompanyCode: z.string().min(1),
+  trackingNumber: z.string().min(1),
+  dispatchDate: z.string().datetime(),
+});
+export type DispatchProductOrder = z.infer<typeof DispatchProductOrderSchema>;
+
+export const ChangeHopeDeliveryBodySchema = z.object({
+  hopeDeliveryYmd: z.string().regex(/^\d{8}$/),
+  hopeDeliveryHm: z
     .string()
-    .datetime('조회 종료일시는 ISO 8601 형식이어야 합니다.')
+    .regex(/^\d{4}$/)
     .optional(),
+  region: z.string().min(1).max(30).optional(),
+  changeReason: z.string().min(1).max(300),
+});
+export type ChangeHopeDeliveryBody = z.infer<
+  typeof ChangeHopeDeliveryBodySchema
+>;
+
+// 지연발송 Body (빠진 것 추가)
+export const DelayDispatchBodySchema = z.object({
+  dispatchDueDate: z.iso.date(),
+  delayedDispatchReason: z.string().min(1),
+  dispatchDelayedDetailedReason: z.string().min(1),
+});
+export type DelayDispatchBody = z.infer<typeof DelayDispatchBodySchema>;
+
+// 옵션재고 변경 스키마/타입 (빠진 것 추가)
+const DiscountMethodSchema = z.object({
+  value: z.number().int(),
+  unitType: z.enum(['PERCENT', 'WON', 'YEN', 'COUNT']),
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
+});
+const OptionCombinationStockSchema = z.object({
+  id: z.number().int(),
+  stockQuantity: z.number().int(),
+  price: z.number().int().optional(),
+  usable: z.boolean().optional(),
+});
+const OptionStandardStockSchema = z.object({
+  id: z.number().int(),
+  stockQuantity: z.number().int(),
+  usable: z.boolean().optional(),
+});
+export const UpdateOptionStockBodySchema = z.object({
+  productSalePrice: z.object({
+    salePrice: z.number().int(),
+  }),
+  immediateDiscountPolicy: z.object({
+    discountMethod: DiscountMethodSchema,
+  }),
+  optionInfo: z.object({
+    optionCombinations: z.array(OptionCombinationStockSchema).optional(),
+    optionStandards: z.array(OptionStandardStockSchema).optional(),
+    useStockManagement: z.boolean(),
+  }),
+});
+export type UpdateOptionStockBody = z.infer<typeof UpdateOptionStockBodySchema>;
+
+// =================================================================
+// == 조회 파라미터 스키마
+// =================================================================
+export const QueryProductOrdersParamsSchema = z.object({
+  from: z.iso.date(),
+  to: z.iso.date().optional(),
   rangeType: z.enum(NAVER_RANGE_TYPES),
   productOrderStatuses: z
     .array(z.enum(NAVER_PRODUCT_ORDER_STATUSES))
@@ -565,98 +277,85 @@ export type QueryProductOrdersParams = z.infer<
   typeof QueryProductOrdersParamsSchema
 >;
 
-// -----------------------------------------------------------------
-// -- 취소 관련 타입 (Cancel Types)
-// -----------------------------------------------------------------
+// =================================================================
+// == 응답 스키마/타입 (빠진 것 추가)
+// =================================================================
 
-const NAVER_CANCEL_REASONS = [
-  'INTENT_CHANGED',
-  'COLOR_AND_SIZE',
-  'WRONG_ORDER',
-  'PRODUCT_UNSATISFIED',
-  'DELAYED_DELIVERY',
-  'SOLD_OUT',
-  'INCORRECT_INFO',
-] as const;
-
-/** 취소 요청 처리 시 Body 데이터 타입에 대한 Zod 스키마 */
-export const RequestCancelBodySchema = z.object({
-  cancelReason: z.enum(NAVER_CANCEL_REASONS),
-  cancelDetailedReason: z
-    .string()
-    .max(500, '상세 사유는 500자를 초과할 수 없습니다.')
+// 변경된 주문 목록 조회 응답
+const NaverLastChangedStatusesDataSchema = z.object({
+  lastChangeStatuses: z.array(
+    z.object({
+      orderId: z.string(),
+      productOrderId: z.string(),
+      lastChangedType: z.string(),
+      paymentDate: z.string(),
+      lastChangedDate: z.string(),
+      productOrderStatus: z.string(),
+      claimType: z.string().optional(),
+      claimStatus: z.string().optional(),
+      receiverAddressChanged: z.boolean(),
+    }),
+  ),
+  more: z
+    .object({
+      moreFrom: z.string(),
+      moreSequence: z.string(),
+    })
     .optional(),
-  cancelQuantity: z.number().int().positive().optional(),
 });
-export type RequestCancelBody = z.infer<typeof RequestCancelBodySchema>;
+export const NaverLastChangedStatusResponseSchema =
+  createNaverApiResponseSchema(NaverLastChangedStatusesDataSchema);
+export type NaverLastChangedStatusResponse = z.infer<
+  typeof NaverLastChangedStatusResponseSchema
+>;
 
-// 네이버 API에서 허용하는 상품 판매 상태 코드 목록
-const NAVER_SALE_STATUS_TYPES = [
-  'WAIT',
-  'SALE',
-  'OUTOFSTOCK',
-  'UNADMISSION',
-  'REJECTION',
-  'SUSPENSION',
-  'CLOSE',
-  'PROHIBITION',
-  'DELETE',
-] as const;
+// 상품 주문 상세 내역 응답
+export const NaverProductOrderDetailsResponseSchema =
+  createNaverApiResponseSchema(
+    z.array(
+      z.object({
+        order: z.any(),
+        productOrder: z.any(),
+        cancel: z.any().optional(),
+        return: z.any().optional(),
+        exchange: z.any().optional(),
+        beforeClaim: z.object({}),
+        currentClaim: z.any(),
+        completedClaims: z.array(z.any()),
+        delivery: z.any(),
+      }),
+    ),
+  );
+export type NaverProductOrderDetailsResponse = z.infer<
+  typeof NaverProductOrderDetailsResponseSchema
+>;
 
-/** '판매 상태 변경' API의 요청 본문(Body)에 대한 Zod 스키마 */
+// 주문번호로 상품 주문번호 목록 응답
+export const NaverProductOrderIdsResponseSchema = createNaverApiResponseSchema(
+  z.array(z.string()),
+);
+export type NaverProductOrderIdsResponse = z.infer<
+  typeof NaverProductOrderIdsResponseSchema
+>;
 
-/** 할인 혜택 객체에 대한 Zod 스키마 */
-const DiscountMethodSchema = z.object({
-  value: z.number().int('할인 값은 정수여야 합니다.'),
-  unitType: z.enum(['PERCENT', 'WON', 'YEN', 'COUNT']),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
-});
+// 상품 주문 상세 구조체 타입 (빠진 것 추가)
+export interface ProductOrderInfo {
+  order: any;
+  productOrder: any;
+  cancel?: any;
+  return?: any;
+  exchange?: any;
+  beforeClaim: object;
+  currentClaim: any;
+  completedClaims: any[];
+  delivery: any;
+}
 
-/** 조합형 옵션의 재고 정보 Zod 스키마 */
-const OptionCombinationStockSchema = z.object({
-  id: z.number().int('옵션 ID는 정수여야 합니다.'),
-  stockQuantity: z.number().int('재고 수량은 정수여야 합니다.'),
-  // 가격, 사용 여부 등은 재고 동기화 시 필수가 아닐 수 있으므로 optional 처리
-  price: z.number().int().optional(),
-  usable: z.boolean().optional(),
-});
-
-/** 표준형 옵션의 재고 정보 Zod 스키마 */
-const OptionStandardStockSchema = z.object({
-  id: z.number().int('옵션 ID는 정수여야 합니다.'),
-  stockQuantity: z.number().int('재고 수량은 정수여야 합니다.'),
-  usable: z.boolean().optional(),
-});
-
-/** '상품 옵션 재고 변경' API의 요청 본문(Body)에 대한 최종 Zod 스키마 */
-export const UpdateOptionStockBodySchema = z.object({
-  // C_URL_ 예시에 따라 필수로 포함
-  productSalePrice: z.object({
-    salePrice: z.number().int('판매가는 정수여야 합니다.'),
-  }),
-
-  // C_URL_ 예시에 따라 필수로 포함
-  immediateDiscountPolicy: z.object({
-    discountMethod: DiscountMethodSchema,
-  }),
-
-  // 문서에 명시된 필수 필드
-  optionInfo: z.object({
-    optionCombinations: z.array(OptionCombinationStockSchema).optional(),
-    optionStandards: z.array(OptionStandardStockSchema).optional(),
-    useStockManagement: z.boolean(),
-  }),
-});
-
-/** '판매 상태 변경' API의 요청 본문(Body)에 대한 Zod 스키마 */
+// 판매 상태 변경 Body
 export const ChangeSaleStatusBodySchema = z.object({
   statusType: z.enum(NAVER_SALE_STATUS_TYPES),
-  saleStartDate: z.string().datetime().optional(),
-  saleEndDate: z.string().datetime().optional(),
+  saleStartDate: z.iso.date().optional(),
+  saleEndDate: z.iso.date().optional(),
   stockQuantity: z.number().int().max(99999999).optional(),
 });
 export type ChangeSaleStatusBody = z.infer<typeof ChangeSaleStatusBodySchema>;
-
-// Zod 스키마로부터 TypeScript 타입 자동 생성
-export type UpdateOptionStockBody = z.infer<typeof UpdateOptionStockBodySchema>;
