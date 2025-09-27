@@ -16,11 +16,14 @@ import { z } from 'zod';
 /**
  * 쿠팡 API 공통 응답 구조를 생성하는 제네릭 헬퍼 함수
  */
-function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+export function createCoupangApiResponseSchema<T extends z.ZodTypeAny>(
+  dataSchema: T,
+) {
   return z.object({
-    code: z.number(), // 응답 코드 (e.g., 200)
-    message: z.string(), // 응답 메시지 (e.g., "OK")
-    data: dataSchema, // 제네릭으로 받은 실제 데이터
+    code: z.number(), // e.g. 200
+    message: z.string(), // e.g. "OK"
+    data: dataSchema, // 실제 데이터
+    nextToken: z.string().optional(), // 일부 API에서만 내려옴
   });
 }
 
@@ -76,16 +79,22 @@ export const CoupangOrderStatusSchema = z.enum([
   'FINAL_DELIVERY',
   'NONE_TRACKING',
 ]);
+export const CoupangUpdateStockResponseSchema = z.object({
+  code: z.enum(['SUCCESS', 'ERROR']),
+  message: z.string(),
+});
 
+// == 상품/재고 관련 스키마 (Product/Stock)
 // =================================================================
-// == 2. 발주서/주문 관련 스키마 (Order Sheets / Orders)
-// =================================================================
-
 export const OrdererSchema = z.object({
   name: z.string(), // 주문자 이름
   safeNumber: z.string(), // 주문자 연락처 (안심번호)
   ordererNumber: z.string().nullable(), // 주문자 연락처 (실제번호)
 });
+// =================================================================
+// == 2. 발주서/주문 관련 스키마 (Order Sheets / Orders)
+// =================================================================
+// =================================================================
 
 export const ReceiverSchema = z.object({
   name: z.string(), // 수취인 이름
@@ -114,16 +123,16 @@ export const OrderItemSchema = z.object({
 export const CoupangOrderSheetSchema = z.object({
   shipmentBoxId: z.number(), // 배송번호 (묶음배송번호)
   orderId: z.number(), // 주문번호
-  orderedAt: z.string().datetime(), // 주문일시
-  paidAt: z.string().datetime(), // 결제일시
+  orderedAt: z.iso.date(), // 주문일시
+  paidAt: z.iso.date(), // 결제일시
   status: CoupangOrderStatusSchema, // 발주서 상태
   orderer: OrdererSchema, // 주문자 정보
   receiver: ReceiverSchema, // 수취인 정보
   orderItems: z.array(OrderItemSchema), // 주문 상품 목록
   deliveryCompanyName: z.string().optional(), // 택배사
   invoiceNumber: z.string().optional(), // 운송장번호
-  inTrasitDateTime: z.string().datetime().optional(), // 출고일(발송일)
-  deliveredDate: z.string().datetime().optional(), // 배송완료일
+  inTrasitDateTime: z.iso.date().optional(), // 출고일(발송일)
+  deliveredDate: z.iso.date().optional(), // 배송완료일
 });
 
 export const CoupangOrderSheetListResponseSchema = z.object({
@@ -256,33 +265,30 @@ export const GetReturnRequestsParamsSchema = z
     // --- 단일 필드 검증 (에러 메시지를 직접 지정) ---
     searchType: z
       .literal('timeFrame', {
-        invalid_type_error: "searchType은 'timeFrame' 값만 가능합니다.",
+        error: () => "searchType은 'timeFrame' 값만 가능합니다.",
       })
       .optional(),
-
     createdAtFrom: z
       .string({
-        invalid_type_error: 'createdAtFrom은 문자열이어야 합니다.',
+        error: () => 'createdAtFrom은 문자열이어야 합니다.',
       })
       .optional(),
 
     createdAtTo: z
       .string({
-        invalid_type_error: 'createdAtTo는 문자열이어야 합니다.',
+        error: () => 'createdAtTo는 문자열이어야 합니다.',
       })
       .optional(),
 
     status: z
       .enum(['RU', 'UC', 'CC', 'PR'], {
-        invalid_type_error:
-          "status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다.",
+        error: () => "status는 'RU', 'UC', 'CC', 'PR' 중 하나여야 합니다.",
       })
       .optional(),
 
     cancelType: z
       .enum(['RETURN', 'CANCEL'], {
-        invalid_type_error:
-          "cancelType은 'RETURN', 'CANCEL' 중 하나여야 합니다.",
+        error: () => "cancelType은 'RETURN', 'CANCEL' 중 하나여야 합니다.",
       })
       .optional()
       .default('RETURN'),
@@ -291,7 +297,7 @@ export const GetReturnRequestsParamsSchema = z
 
     maxPerPage: z
       .number({
-        invalid_type_error: 'maxPerPage는 숫자여야 합니다.',
+        error: () => 'maxPerPage는 숫자여야 합니다.',
       })
       .int()
       .optional()
@@ -299,7 +305,7 @@ export const GetReturnRequestsParamsSchema = z
 
     orderId: z
       .number({
-        invalid_type_error: 'orderId는 숫자여야 합니다.',
+        error: () => 'orderId는 숫자여야 합니다.',
       })
       .int()
       .optional(),
@@ -363,6 +369,119 @@ export const GetReturnRequestsParamsSchema = z
       path: ['createdAtTo'],
     },
   );
+
+export const CoupangConfirmReturnReceiptRequestSchema = z.object({
+  vendorId: z.string().min(1), // 판매자 ID
+  receiptId: z.number().int().positive(), // 접수번호
+});
+
+export const CoupangConfirmReturnReceiptResponseSchema =
+  createCoupangApiResponseSchema(
+    z.object({
+      resultCode: z.enum(['SUCCESS', 'FAIL']),
+      resultMessage: z.string(),
+    }),
+  );
+
+// =================================================================
+// == [추가] 반품요청 승인 처리 스키마
+// =================================================================
+export const CoupangApproveReturnRequestSchema = z.object({
+  vendorId: z.string().min(1), // 판매자 ID
+  receiptId: z.number().int().positive(), // 접수번호
+  cancelCount: z.number().int().positive(), // 반품접수수량
+});
+
+// 이 API는 data 필드 없이 code, message만 반환합니다.
+export const CoupangApproveReturnResponseSchema = z.object({
+  code: z.string(), // 성공 시 "200"
+  message: z.string(),
+});
+
+// =================================================================
+// == [추가] 반품 철회 이력 조회 스키마
+// =================================================================
+export const GetReturnWithdrawalHistoryParamsSchema = z
+  .object({
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+      message: 'dateFrom은 yyyy-MM-dd 형식이어야 합니다.',
+    }),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+      message: 'dateTo는 yyyy-MM-dd 형식이어야 합니다.',
+    }),
+    pageIndex: z.number().int().positive().optional().default(1),
+    sizePerPage: z.number().int().positive().max(100).optional().default(10),
+  })
+  .refine(
+    (data) => {
+      const from = new Date(data.dateFrom);
+      const to = new Date(data.dateTo);
+      const diffTime = Math.abs(to.getTime() - from.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // 시작일과 종료일 포함
+      return diffDays <= 7;
+    },
+    {
+      message: '최대 조회 기간은 7일입니다.',
+      path: ['dateTo'],
+    },
+  );
+
+export const CoupangReturnWithdrawalItemSchema = z.object({
+  cancelId: z.number(),
+  orderId: z.number(),
+  vendorId: z.string(),
+  refundDeliveryDuty: z.enum(['COM', 'CUS', 'COU']),
+  createdAt: z.string(),
+  vendorItemIds: z.array(z.number()),
+});
+
+export const GetReturnWithdrawalHistoryResponseSchema = z.object({
+  code: z.number(),
+  message: z.string(),
+  data: z.array(CoupangReturnWithdrawalItemSchema),
+  nextPageIndex: z.string(), // 마지막 페이지일 경우 빈 값("")
+});
+
+// =================================================================
+// == [추가] 반품 철회 이력 접수번호로 조회 스키마
+// =================================================================
+export const GetReturnWithdrawalHistoryByIdsRequestSchema = z.object({
+  cancelIds: z
+    .array(z.number().int().positive())
+    .min(1, { message: 'cancelIds는 최소 1개 이상이어야 합니다.' })
+    .max(50, { message: 'cancelIds는 최대 50개까지 조회 가능합니다.' }),
+});
+
+// data 필드의 아이템은 기간별 조회와 동일하므로 CoupangReturnWithdrawalItemSchema를 재사용합니다.
+export const GetReturnWithdrawalHistoryByIdsResponseSchema = z.object({
+  code: z.number(),
+  message: z.string(),
+  data: z.array(CoupangReturnWithdrawalItemSchema),
+});
+
+// =================================================================
+// == [추가] 회수송장 등록 스키마
+// =================================================================
+export const CoupangRegisterReturnInvoiceRequestSchema = z.object({
+  returnExchangeDeliveryType: z.enum(['RETURN', 'EXCHANGE']),
+  receiptId: z.number().int().positive(),
+  deliveryCompanyCode: CoupangDeliveryCompanyCodeSchema,
+  invoiceNumber: z.string().min(1),
+  regNumber: z.string().optional(), // 택배사 회수번호 (선택)
+});
+
+export const CoupangRegisterReturnInvoiceDataSchema = z.object({
+  deliveryCompanyCode: z.string(),
+  invoiceNumber: z.string(),
+  invoiceNumberId: z.number(),
+  receiptId: z.number(),
+  regNumber: z.string(),
+  returnDeliveryId: z.number(),
+  returnExchangeDeliveryType: z.enum(['RETURN', 'EXCHANGE']),
+});
+
+export const CoupangRegisterReturnInvoiceResponseSchema =
+  createCoupangApiResponseSchema(CoupangRegisterReturnInvoiceDataSchema);
 
 export const GetReturnRequestsResponseSchema = createCoupangApiResponseSchema(
   z.array(CoupangReturnReceiptSchema),
@@ -449,6 +568,83 @@ export const CoupangCompletedShipmentResponseSchema =
     }),
   );
 
+// [추가] 반품상품 입고확인 처리 타입
+export type CoupangConfirmReturnReceiptRequest = z.infer<
+  typeof CoupangConfirmReturnReceiptRequestSchema
+>;
+export type CoupangConfirmReturnReceiptResponse = z.infer<
+  typeof CoupangConfirmReturnReceiptResponseSchema
+>;
+
+// [추가] 반품요청 승인 처리 타입
+export type CoupangApproveReturnRequest = z.infer<
+  typeof CoupangApproveReturnRequestSchema
+>;
+export type CoupangApproveReturnResponse = z.infer<
+  typeof CoupangApproveReturnResponseSchema
+>;
+
+// [추가] 반품 철회 이력 조회 타입
+export type GetReturnWithdrawalHistoryParams = z.infer<
+  typeof GetReturnWithdrawalHistoryParamsSchema
+>;
+export type CoupangReturnWithdrawalItem = z.infer<
+  typeof CoupangReturnWithdrawalItemSchema
+>;
+export type GetReturnWithdrawalHistoryResponse = z.infer<
+  typeof GetReturnWithdrawalHistoryResponseSchema
+>;
+
+// [추가] 반품 철회 이력 접수번호로 조회 타입
+export type GetReturnWithdrawalHistoryByIdsRequest = z.infer<
+  typeof GetReturnWithdrawalHistoryByIdsRequestSchema
+>;
+export type GetReturnWithdrawalHistoryByIdsResponse = z.infer<
+  typeof GetReturnWithdrawalHistoryByIdsResponseSchema
+>;
+
+// [추가] 회수송장 등록 타입
+export type CoupangRegisterReturnInvoiceRequest = z.infer<
+  typeof CoupangRegisterReturnInvoiceRequestSchema
+>;
+export type CoupangRegisterReturnInvoiceResponse = z.infer<
+  typeof CoupangRegisterReturnInvoiceResponseSchema
+>;
+
+// [추가] 교환요청 목록 조회 타입
+export type GetExchangeRequestsParams = z.infer<
+  typeof GetExchangeRequestsParamsSchema
+>;
+export type CoupangExchangeRequest = z.infer<
+  typeof CoupangExchangeRequestSchema
+>;
+export type GetExchangeRequestsResponse = z.infer<
+  typeof GetExchangeRequestsResponseSchema
+>;
+
+// [추가] 교환요청 상품 입고확인 처리 타입
+export type CoupangConfirmExchangeReceiptRequest = z.infer<
+  typeof CoupangConfirmExchangeReceiptRequestSchema
+>;
+export type CoupangConfirmExchangeReceiptResponse = z.infer<
+  typeof CoupangConfirmExchangeReceiptResponseSchema
+>;
+
+// [추가] 교환요청 거부 처리 타입
+export type CoupangRejectExchangeRequest = z.infer<
+  typeof CoupangRejectExchangeRequestSchema
+>;
+export type CoupangRejectExchangeResponse = z.infer<
+  typeof CoupangRejectExchangeResponseSchema
+>;
+
+// [추가] 교환상품 송장 업로드 처리 타입
+export type CoupangUploadExchangeInvoiceRequest = z.infer<
+  typeof CoupangUploadExchangeInvoiceRequestSchema
+>;
+export type CoupangUploadExchangeInvoiceResponse = z.infer<
+  typeof CoupangUploadExchangeInvoiceResponseSchema
+>;
 // =================================================================
 // == 5. 배송 히스토리 스키마 (Delivery History)
 // =================================================================
@@ -569,6 +765,9 @@ export type CoupangDeliveryHistoryItem = z.infer<
 >;
 export type CoupangDeliveryHistoryResponse = z.infer<
   typeof CoupangDeliveryHistoryResponseSchema
+>; // ===== 상품/재고 타입 =====
+export type CoupangUpdateStockResponse = z.infer<
+  typeof CoupangUpdateStockResponseSchema
 >;
 
 // =================================================================
@@ -614,3 +813,282 @@ export function validateCoupangDateRange(
 
   return diffDays <= 31;
 }
+
+// =================================================================
+// == [추가] 교환요청 목록 조회 스키마
+// =================================================================
+export const GetExchangeRequestsParamsSchema = z
+  .object({
+    createdAtFrom: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/, {
+        message:
+          'createdAtFrom은 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
+      })
+      // 필요하면 transform 제거
+      .transform((val) => val),
+    createdAtTo: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?$/, {
+        message:
+          'createdAtTo는 yyyy-MM-dd 또는 yyyy-MM-ddTHH:mm:ss 형식이어야 합니다.',
+      })
+      .transform((val) => val),
+    status: z
+      .enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL'])
+      .optional(),
+    orderId: z
+      .union([z.string().regex(/^\d+$/).transform(Number), z.number()])
+      .optional(),
+    nextToken: z.string().optional(),
+    maxPerPage: z
+      .union([z.number(), z.string().transform(Number)])
+      .pipe(z.number().int().positive())
+      .optional()
+      .default(10),
+  })
+  .refine(
+    (data) => {
+      const from = new Date(data.createdAtFrom);
+      const to = new Date(data.createdAtTo);
+      const diffTime = Math.abs(to.getTime() - from.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 7;
+    },
+    {
+      message: '최대 조회 기간은 7일입니다.',
+      path: ['createdAtTo'],
+    },
+  );
+
+// --- 교환요청 응답을 위한 중첩 스키마들 ---
+
+export const ExchangeAddressDtoSchema = z.object({
+  exchangeAddressId: z.number(),
+  returnCustomerName: z.string(),
+  returnAddressZipCode: z.string(),
+  returnAddress: z.string(),
+  returnAddressDetail: z.string(),
+  returnPhone: z.string(),
+  returnMobile: z.string(),
+  returnMemo: z.string(),
+  deliveryCustomerName: z.string(),
+  deliveryAddressZipCode: z.string(),
+  deliveryAddress: z.string(),
+  deliveryAddressDetail: z.string(),
+  deliveryPhone: z.string(),
+  deliveryMobile: z.string(),
+  deliveryMemo: z.string(),
+  createdAt: z.string(),
+  modifiedAt: z.string(),
+});
+
+export const InvoiceVendorItemDtoSchema = z.object({
+  vendorItemId: z.number(),
+  quantity: z.number(),
+  hasAdditionalItem: z.boolean(),
+  promiseDeliveryDate: z.string(),
+  estimatedShippingDate: z.string(),
+});
+
+export const DeliveryInvoiceDtoSchema = z.object({
+  invoiceNumber: z.string(),
+  estimatedDeliveryDate: z.string(),
+  deliveredDate: z.string(),
+  statusModifiedAt: z.string(),
+  invoiceNumberUploadDate: z.string(),
+  statusCode: z.string(),
+  deliverCode: z.string(),
+  isMainShipmentInvoice: z.boolean(),
+  parcelType: z.string(),
+  invoiceVendorItemDtos: z.array(InvoiceVendorItemDtoSchema),
+});
+
+export const DeliveryInvoiceGroupDtoSchema = z.object({
+  shipmentBoxId: z.number(),
+  boxPrice: z.number(),
+  orderId: z.number(),
+  orderType: z.string(),
+  customerType: z.string(),
+  bundleType: z.string(),
+  extraMessage: z.string(),
+  shippingDeliveryType: z.string(),
+  deliveryInvoiceDtos: z.array(DeliveryInvoiceDtoSchema),
+});
+
+export const ReturnDeliveryItemDtoSchema = z.object({
+  vendorItemId: z.number(),
+  statusCode: z.string(),
+  returnCount: z.number(),
+  releaseStatus: z.string(),
+  paymentReturnDeliveryMapId: z.number(),
+  paymentItemId: z.number(),
+  modifiedBy: z.string(),
+  modifiedAt: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  count: z.number(),
+  confirmType: z.string(),
+  collectStatus: z.string(),
+});
+
+export const ReturnDeliveryDestinationDtoSchema = z.object({
+  vendorZipCode: z.string(),
+  vendorPhone: z.string(),
+  vendorName: z.string(),
+  vendorMobile: z.string(),
+  vendorAddressDetail: z.string(),
+  vendorAddress: z.string(),
+  safetyNumberStatus: z.string(),
+  safetyNumberId: z.number(),
+  safetyNumber: z.string(),
+  returnDeliveryId: z.number(),
+  returnCenterCode: z.string(),
+  receiptId: z.number(),
+  orderedByMobile: z.string(),
+  orderId: z.number(),
+  message: z.string(),
+  customerZipCode: z.string(),
+  customerPhone: z.string(),
+  customerName: z.string(),
+  customerMobile: z.string(),
+  customerAddressDetail: z.string(),
+  customerAddress: z.string(),
+});
+
+export const ReturnDeliveryDtoForExchangeSchema = z.object({
+  deliveryCompanyCode: z.string(),
+  deliveryInvoiceNo: z.string(),
+});
+
+export const CollectInformationsDtoSchema = z.object({
+  returnType: z.string(),
+  expectedReturnDate: z.string(),
+  returndeliveryItemDtos: z.array(ReturnDeliveryItemDtoSchema),
+  returndeliveryDestinationDto: ReturnDeliveryDestinationDtoSchema,
+  returnDeliveryDtos: ReturnDeliveryDtoForExchangeSchema,
+});
+
+export const ExchangeItemDtoSchema = z.object({
+  exchangeItemId: z.number(),
+  orderItemId: z.number(),
+  orderItemUnitPrice: z.number(),
+  orderItemName: z.string(),
+  orderPackageId: z.number(),
+  orderPackageName: z.string(),
+  targetItemId: z.number(),
+  targetItemUnitPrice: z.number(),
+  targetItemName: z.string(),
+  targetPackageId: z.number(),
+  targetPackageName: z.string(),
+  quantity: z.number(),
+  orderItemDeliveryComplete: z.boolean(),
+  orderItemReturnComplete: z.boolean(),
+  targetItemDeliveryComplete: z.boolean(),
+  createdAt: z.string(),
+  modifiedAt: z.string(),
+  originalShipmentBoxId: z.number(),
+});
+
+// --- 교환요청 목록의 각 아이템에 대한 메인 스키마 ---
+export const CoupangExchangeRequestSchema = z.object({
+  exchangeId: z.number(),
+  orderId: z.number(),
+  vendorId: z.string(),
+  orderDeliveryStatusCode: z.string(),
+  exchangeStatus: z.string(),
+  referType: z.string(),
+  faultType: z.string(),
+  exchangeAmount: z.string(),
+  reason: z.string().nullable(),
+  reasonCode: z.string(),
+  reasonCodeText: z.string(),
+  reasonEtcDetail: z.string(),
+  cancelReason: z.string(),
+  createdByType: z.string(),
+  createdAt: z.string(),
+  modifiedByType: z.string(),
+  modifiedAt: z.string(),
+  exchangeItemDtoV1s: z.array(ExchangeItemDtoSchema),
+  exchangeAddressDtoV1: ExchangeAddressDtoSchema,
+  deliveryInvoiceGroupDtos: z.array(DeliveryInvoiceGroupDtoSchema),
+  deliveryStatus: z.string(),
+  collectStatus: z.string(),
+  collectCompleteDate: z.string(),
+  collectInformationsDto: CollectInformationsDtoSchema,
+  successable: z.boolean(),
+  orderDeliveryStatusLabel: z.string(),
+  exchangeStatusLabel: z.string(),
+  referTypeLabel: z.string(),
+  faultTypeLabel: z.string(),
+  createdByTypeLabel: z.string(),
+  rejectable: z.boolean(),
+  modifiedByTypeLabel: z.string(),
+  deliveryInvoiceModifiable: z.boolean(),
+});
+
+// --- 최종 API 응답 스키마 ---
+export const GetExchangeRequestsResponseSchema = z.object({
+  code: z.number(),
+  message: z.string(),
+  data: z.array(CoupangExchangeRequestSchema),
+  nextToken: z.string().optional(),
+});
+
+// =================================================================
+// == [추가] 교환요청 상품 입고확인 처리 스키마
+// =================================================================
+export const CoupangConfirmExchangeReceiptRequestSchema = z.object({
+  exchangeId: z.number().int().positive(),
+  vendorId: z.string().min(1),
+});
+
+export const CoupangConfirmExchangeReceiptResponseSchema = z.object({
+  code: z.string(), // "200"
+  message: z.string(), // "SUCCESS"
+});
+
+// =================================================================
+// == [추가] 교환요청 거부 처리 스키마
+// =================================================================
+export const CoupangRejectExchangeRequestSchema = z.object({
+  // API 예시에는 string으로 되어 있어 union 타입으로 처리
+  exchangeId: z.union([z.number().int().positive(), z.string()]),
+  vendorId: z.string().min(1),
+  exchangeRejectCode: z.enum(['SOLDOUT', 'WITHDRAW']),
+});
+
+export const CoupangRejectExchangeResponseSchema = z.object({
+  code: z.string(), // "200"
+  message: z.string(), // "SUCCESS"
+  data: z.object({
+    resultCode: z.string(), // "SUCCESS" or "FAIL"
+    resultMessage: z.string(),
+  }),
+});
+
+// =================================================================
+// == [추가] 교환상품 송장 업로드 처리 스키마
+// =================================================================
+export const CoupangUploadExchangeInvoiceItemSchema = z.object({
+  // API 예시에는 string으로 되어 있어 union 타입으로 처리
+  exchangeId: z.union([z.number().int().positive(), z.string()]),
+  vendorId: z.string().min(1),
+  shipmentBoxId: z.union([z.number().int().positive(), z.string()]),
+  goodsDeliveryCode: CoupangDeliveryCompanyCodeSchema,
+  invoiceNumber: z.string().min(1),
+});
+
+// 요청 Body가 배열 형태임
+export const CoupangUploadExchangeInvoiceRequestSchema = z.array(
+  CoupangUploadExchangeInvoiceItemSchema,
+);
+
+export const CoupangUploadExchangeInvoiceResponseSchema = z.object({
+  code: z.string(), // "200"
+  message: z.string(), // "SUCCESS"
+  data: z.object({
+    resultCode: z.string(), // "SUCCESS" or "FAIL"
+    resultMessage: z.string(),
+  }),
+});
