@@ -1,9 +1,14 @@
 import { DynamicModule, Global, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { EVENT_PUBLISHER_CLIENT, EventPublisherService } from './event-publisher.service';
+import {
+  EVENT_PUBLISHER_CLIENT,
+  EventPublisherService,
+} from './event-publisher.service';
 import { EventDefinition, KafkaConfig } from './types';
 
-export interface EventsModuleOptions<TEvents extends Record<string, EventDefinition>> {
+export interface EventsModuleOptions<
+  TEvents extends Record<string, EventDefinition>,
+> {
   kafka: KafkaConfig;
   events: TEvents;
   serviceName?: string;
@@ -29,7 +34,8 @@ export class EventsModule {
                 retry: options.kafka.retry,
               },
               consumer: {
-                groupId: options.kafka.groupId || `${options.kafka.clientId}-consumer`,
+                groupId:
+                  options.kafka.groupId || `${options.kafka.clientId}-consumer`,
               },
             },
           },
@@ -57,4 +63,4 @@ export class EventsModule {
   ): DynamicModule {
     return this.forRoot(options);
   }
-} 
+}

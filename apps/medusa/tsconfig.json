@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "esModuleInterop": true,
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
+    "declaration": false,
+    "sourceMap": false,
+    "inlineSourceMap": true,
+    "outDir": "./.medusa/server",
+    "rootDir": "../../",
+    "jsx": "react-jsx",
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "checkJs": false,
+    "strictNullChecks": true,
+    "baseUrl": ".",
+    "paths": {
+      "@medusa/*": ["src/*"],
+      "@medusa": ["src"],
+      "@modules/*": ["src/modules/*"],
+      "@api/*": ["src/api/*"],
+      "@workflows/*": ["src/workflows/*"],
+      "@subscribers/*": ["src/subscribers/*"],
+      "@loaders/*": ["src/loaders/*"],
+      "@types/*": ["src/types/*"],
+      "@utils/*": ["src/utils/*"],
+      "@scripts/*": ["src/scripts/*"],
+      "@admin/*": ["src/admin/*"],
+      "@libs/*": ["../../libs/*"]
+    }
+  },
+  "ts-node": {
+    "swc": true
+  },
+  "include": ["src/**/*", "../../libs/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

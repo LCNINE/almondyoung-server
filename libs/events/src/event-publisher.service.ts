@@ -45,7 +45,7 @@ export class EventPublisherService<
   ): Promise<void> {
     try {
       const topic = String(eventKey);
-      
+
       const enrichedPayload = {
         ...payload,
         timestamp: new Date().toISOString(),
@@ -97,7 +97,7 @@ export class EventPublisherService<
   ): Promise<TResponse> {
     try {
       const topic = String(eventKey);
-      
+
       const enrichedPayload = {
         ...payload,
         timestamp: new Date().toISOString(),
