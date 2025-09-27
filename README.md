@@ -23,6 +23,67 @@
 
 ## Description
 
+AlmondYoung 멤버십 구독 관리 시스템 - NestJS 기반의 마이크로서비스 아키텍처
+
+### 주요 기능
+
+- **멤버십 구독 관리**: 사용자 구독 생성, 업그레이드, 다운그레이드, 취소
+- **일시정지 시스템**: 구독 일시정지 및 재개 기능
+- **정책 관리**: 구독 관련 비즈니스 규칙 및 제약사항 관리
+- **권한 관리**: 티어별 사용자 권한 및 혜택 관리
+- **이벤트 기반 아키텍처**: 구독 변경 이벤트 발행 및 처리
+
+### 아키텍처
+
+```
+apps/
+├── membership/          # 멤버십 관리 서비스
+│   ├── src/
+│   │   ├── admin-operations/    # 관리자 기능
+│   │   ├── audit-logs/         # 감사 로그
+│   │   ├── pause-resume/       # 일시정지/재개
+│   │   ├── plan/              # 플랜 관리
+│   │   ├── policy-management/ # 정책 관리 ⭐
+│   │   ├── rights/            # 권한 관리
+│   │   ├── subscription/      # 구독 관리
+│   │   └── shared/           # 공통 모듈
+├── wms/                # 창고 관리 시스템
+└── almondyoung-server/ # 메인 서버
+
+libs/
+├── db/                 # 데이터베이스 모듈
+├── events/            # 이벤트 발행 모듈
+└── shared/           # 공통 라이브러리
+```
+
+### 정책 관리 시스템
+
+정책 관리 시스템은 구독 관련 비즈니스 규칙을 동적으로 관리할 수 있는 핵심 기능입니다.
+
+#### 지원되는 정책 타입
+
+- **일시정지 관련**: `MAX_PAUSES_PER_YEAR`, `MIN_PAUSE_DURATION_DAYS`, `PAUSE_COOLDOWN_DAYS`
+- **플랜 변경 관련**: `PLAN_CHANGE_COOLDOWN_DAYS`, `ALLOWED_PLAN_CHANGES`
+- **티어별 제한**: `TIER_SPECIFIC_LIMITS`, `VIP_USER_BENEFITS`
+- **특별 기간**: `PROMOTIONAL_PERIODS`, `SEASONAL_RESTRICTIONS`
+
+#### API 엔드포인트
+
+```typescript
+// 정책 관리
+GET    /policies              # 정책 목록 조회
+GET    /policies/:id          # 특정 정책 조회
+POST   /policies              # 새 정책 생성
+PUT    /policies/:id          # 정책 수정
+DELETE /policies/:id          # 정책 비활성화
+
+// 정책 검증
+POST   /policies/validate     # 정책 검증
+POST   /policies/bulk-validate # 대량 정책 검증
+GET    /policies/applicable   # 적용 가능한 정책 조회
+```
+
+자세한 정책 관리 가이드는 [POLICY_TYPES.md](apps/membership/POLICY_TYPES.md)를 참조하세요.
 이 프로젝트는 [Nest](https://github.com/nestjs/nest) 프레임워크를 기반으로 구축된 **통합 물류 관리 시스템**입니다.
 
 ### 🏗️ 프로젝트 구조

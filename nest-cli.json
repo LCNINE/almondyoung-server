@@ -83,6 +83,15 @@
         "tsConfigPath": "apps/wms/tsconfig.app.json"
       }
     },
+    "membership": {
+      "type": "application",
+      "root": "apps/membership",
+      "entryFile": "main",
+      "sourceRoot": "apps/membership/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/membership/tsconfig.app.json"
+      }
+    },
     "wallet": {
       "type": "application",
       "root": "apps/wallet",

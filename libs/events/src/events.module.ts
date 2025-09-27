@@ -1,4 +1,4 @@
-import { DynamicModule, Global, Module } from '@nestjs/common';
+import { DynamicModule, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import {
   EVENT_PUBLISHER_CLIENT,
@@ -14,7 +14,6 @@ export interface EventsModuleOptions<
   serviceName?: string;
 }
 
-@Global()
 @Module({})
 export class EventsModule {
   static forRoot<TEvents extends Record<string, EventDefinition>>(
