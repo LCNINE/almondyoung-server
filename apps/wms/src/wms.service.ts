@@ -1,3 +1,4 @@
+// apps/wms/src/wms.service.ts
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
