@@ -1,11 +1,11 @@
 // apps/notification/src/shared/services/event-mapping.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DbService } from '@app/db';
-import { notificationEvents } from '../../database/schemas/notification-schema';
+import { DbService, InjectTypedDb } from '@app/db';
+import { notificationEvents, notificationTables } from '../../../database/schemas/notification-schema';
 import { eq } from 'drizzle-orm';
 import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../dto/event.dto';
 
-interface NotificationEvent {
+export interface NotificationEvent {
     eventId: string;
     eventKey: string;
     name: string;
@@ -34,7 +34,9 @@ interface NewNotificationEvent {
 
 @Injectable()
 export class EventMappingService {
-    constructor(private readonly db: DbService) {}
+    constructor(
+        @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>
+    ) {}
 
     async createEvent(dto: CreateEventDto): Promise<NotificationEvent> {
         const [newEvent] = await this.db.db

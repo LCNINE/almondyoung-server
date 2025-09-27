@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 
-interface Notification {
+export interface Notification {
     notificationId: string;
     userId: string;
     category: string;

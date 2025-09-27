@@ -57,6 +57,7 @@
     "test:bnpl:itdoc": "jest --testPathPattern=bnpl-api.itdoc.spec.ts --verbose",
     "test:orchestration:webhook": "ts-node apps/channel-adapter/test-orchestration.ts webhook",
     "test:orchestration:command": "ts-node apps/channel-adapter/test-orchestration.ts command",
+    "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "test:coupang:sync": "ts-node apps/channel-adapter/test-coupang-sync.ts",
     "mock:naver-server": "ts-node apps/channel-adapter/naver-mock-server.ts",
     "mock:naver-server:bg": "ts-node apps/channel-adapter/naver-mock-server.ts &"
