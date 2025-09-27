@@ -5,6 +5,8 @@ import { HmsCardChargeProvider } from './hms-card.charge';
 import { HmsCardRefundProvider } from './hms-card.refund';
 import { HmsBnplRegistrar } from './hms-bnpl.registrar';
 import { HmsBnplChargeProvider } from './hms-bnpl.charge';
+import { HmsBnplCashReceiptProvider } from './hms-bnpl.cash-receipt';
+import { HmsBnplTaxInvoiceProvider } from './hms-bnpl.tax-invoice';
 import { TossChargeProvider } from './toss.charge';
 
 @Injectable()
@@ -19,6 +21,8 @@ export class ProviderRegistry {
     // HMS BNPL 전문가 그룹
     private readonly hmsBnplRegistrar: HmsBnplRegistrar,
     private readonly hmsBnplCharge: HmsBnplChargeProvider,
+    private readonly hmsBnplCashReceipt: HmsBnplCashReceiptProvider,
+    private readonly hmsBnplTaxInvoice: HmsBnplTaxInvoiceProvider,
     // (BNPL 환불/취소 프로바이더가 있다면 여기에 추가)
 
     // Toss 전문가 그룹
@@ -39,6 +43,8 @@ export class ProviderRegistry {
           charge: this.hmsCardCharge,
           refund: this.hmsCardRefund, // 환불/취소 기능 장착
           cancel: this.hmsCardRefund, // 동일 클래스가 CancelPort도 구현
+          cashReceipt: null, // HMS CARD는 현금영수증 미지원
+          taxInvoice: null, // HMS CARD는 세금계산서 미지원 (범용 TaxInvoiceService 사용)
         };
 
       case ProviderType.HMS_BNPL:
@@ -49,6 +55,8 @@ export class ProviderRegistry {
           charge: this.hmsBnplCharge,
           refund: null, // BNPL이 환불을 지원하지 않는다면 null
           cancel: null, // BNPL이 취소를 지원하지 않는다면 null
+          cashReceipt: this.hmsBnplCashReceipt, // 현금영수증 발급
+          taxInvoice: this.hmsBnplTaxInvoice, // 세금계산서 생성
         };
 
       case ProviderType.TOSS:
@@ -59,12 +67,20 @@ export class ProviderRegistry {
           charge: this.tossCharge,
           refund: null, // 아직 구현하지 않았다면 null
           cancel: null, // 아직 구현하지 않았다면 null
+          cashReceipt: null, // TOSS는 현금영수증 미지원
+          taxInvoice: null, // TOSS는 세금계산서 미지원 (범용 TaxInvoiceService 사용)
         };
 
       case ProviderType.POINTS:
         // POINTS에 대한 능력들을 조립해서 반환합니다.
         return {
           id: ProviderType.POINTS,
+          profile: null, // 포인트는 프로필 등록 불필요
+          charge: null, // 포인트 차감은 별도 서비스에서 처리
+          refund: null, // 포인트 환불은 별도 서비스에서 처리
+          cancel: null, // 포인트 취소는 별도 서비스에서 처리
+          cashReceipt: null, // 포인트는 현금영수증 미지원
+          taxInvoice: null, // 포인트는 세금계산서 미지원
         };
 
       default:

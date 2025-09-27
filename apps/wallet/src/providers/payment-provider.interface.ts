@@ -65,6 +65,53 @@ export interface CancelResult {
   raw?: unknown;
 }
 
+// 현금영수증 관련 인터페이스
+export interface CashReceiptRequest {
+  userId: string;
+  paymentIntentId: string;
+  totalAmount: number;
+  customerType: 'INDIVIDUAL' | 'BUSINESS'; // 개인사업자 vs 법인
+  customerBusinessNumber?: string; // 사업자번호 (법인일 때 필수)
+  customerName: string;
+  customerPhone?: string;
+  purpose: 'INCOME_DEDUCTION' | 'BUSINESS_EXPENSE'; // 소득공제 vs 사업비
+}
+
+export interface CashReceiptResult {
+  success: boolean;
+  receiptId?: string; // HMS에서 반환하는 현금영수증 ID
+  approvalNumber?: string; // 승인번호
+  receiptDate?: string; // 발급일자
+  code?: string;
+  message?: string;
+  raw?: unknown;
+}
+
+// 세금계산서 관련 인터페이스 (기존 TaxInvoiceService 활용)
+export interface TaxInvoiceRequest {
+  userId: string;
+  paymentIntentId: string;
+  paymentAttemptId?: string;
+  externalOrderId: string;
+  totalAmount: number;
+  supplyAmount: number;
+  taxAmount: number;
+  customerName: string;
+  customerBusinessNumber?: string;
+  supplyDate: string;
+  issueDate: string;
+  invoiceSnapshot: any; // 기존 TaxInvoiceService 스키마 활용
+}
+
+export interface TaxInvoiceResult {
+  success: boolean;
+  invoiceId?: string;
+  status?: string; // PENDING, EXPORTED, ISSUED, ERROR
+  code?: string;
+  message?: string;
+  raw?: unknown;
+}
+
 // Provider별 최종 Payload (코어 Resolver가 조립)
 export type HmsCardPayload = { memberId: string; amount: number };
 export type HmsBnplPayload = {
@@ -111,6 +158,18 @@ export interface CancelPort {
   cancel(request: CancelRequest): Promise<CancelResult>;
 }
 
+// 현금영수증 발급 포트
+export interface CashReceiptPort {
+  issue(request: CashReceiptRequest): Promise<CashReceiptResult>;
+  // TODO: 향후 취소 기능 추가 예정
+  // cancel?(receiptId: string, reason: string): Promise<CashReceiptResult>;
+}
+
+// 세금계산서 생성 포트 (기존 TaxInvoiceService 활용)
+export interface TaxInvoicePort {
+  create(request: TaxInvoiceRequest): Promise<TaxInvoiceResult>;
+}
+
 // 프로필 등록/검증/해지 포트(결제프로필 전용)
 export interface ProfileRegistrar<TInput = any, TMeta = any> {
   register(
@@ -136,6 +195,8 @@ export type ProviderHandle = {
   charge?: ChargePort | null;
   refund?: RefundPort | null;
   cancel?: CancelPort | null;
+  cashReceipt?: CashReceiptPort | null; // 현금영수증 발급
+  taxInvoice?: TaxInvoicePort | null; // 세금계산서 생성
 };
 
 export class PaymentError extends Error {

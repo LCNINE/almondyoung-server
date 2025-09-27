@@ -62,7 +62,7 @@ export const CreateTaxInvoiceSchema = z.object({
       name: z.string().min(1),
       ceoName: z.string().optional(),
       address: z.string().optional(),
-      email: z.string().email().optional(),
+      email: z.email().optional(),
     }),
     items: z
       .array(
@@ -136,7 +136,7 @@ const taxInvoiceRowSchema = z.object({
   supplierName: z.string().min(1, '공급자 상호(법인명)가 필요합니다.'),
   supplierCeoName: z.string().min(1, '공급자 대표자명이 필요합니다.'),
   supplierAddress: z.string().min(1, '공급자 주소가 필요합니다.'),
-  supplierEmail: z.string().email().optional(), // 이메일은 형식 체크, 필수 여부는 사업장별
+  supplierEmail: z.email().optional(), // 이메일은 형식 체크, 필수 여부는 사업장별
 
   // 업태/업종/종목
   supplierBusinessType: z.string().min(1, '업태가 필요합니다.'),

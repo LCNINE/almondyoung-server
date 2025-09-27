@@ -75,9 +75,10 @@
     "@fastify/swagger-ui": "^5.2.3",
     "@neondatabase/serverless": "^1.0.1",
     "@nestjs/axios": "^4.0.1",
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/bull": "^11.0.3",
+    "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.0.1",
+    "@nestjs/core": "^11.1.6",
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/mapped-types": "*",
@@ -90,6 +91,7 @@
     "@types/passport-kakao": "^1.0.3",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
+    "bull": "^4.16.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cors": "^2.8.5",
@@ -101,7 +103,9 @@
     "drizzle-seed": "^0.3.1",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
+    "firebase-admin": "^13.5.0",
     "form-data": "^4.0.4",
+    "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",
     "kafkajs": "^2.2.4",
     "nestjs-resend": "^1.0.3",
     "nestjs-zod": "^5.0.1",
@@ -115,8 +119,10 @@
     "prom-client": "^15.1.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "svix": "^1.76.1",
     "swagger-ui-express": "^5.0.1",
     "tsid-ts": "^0.0.9",
+    "twilio": "^5.9.0",
     "uuid": "^11.1.0",
     "zod": "^4.1.11"
   },
@@ -131,6 +137,7 @@
     "@swc/cli": "^0.6.0",
     "@swc/core": "^1.10.7",
     "@testcontainers/postgresql": "^11.6.0",
+    "@types/bull": "^3.15.9",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/jest": "^29.5.14",
@@ -138,6 +145,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.15.4",
     "@types/supertest": "^6.0.3",
+    "@types/twilio": "^3.19.2",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/parser": "^8.42.0",
     "drizzle-kit": "^0.31.2",
@@ -190,12 +198,4 @@
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
     }
   },
-  "itdoc": {
-    "output": "docs/api",
-    "document": {
-      "title": "Membership System API Documentation",
-      "description": "Auto-generated API documentation for the Membership System based on test cases",
-      "version": "1.0.0"
-    }
-  }
 }
