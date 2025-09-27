@@ -1,12 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelType } from './strategies/channel-strategy.factory';
-import { DataType } from '../types';
+import {
+  DataType,
+  NewSyncStatus,
+  SyncStatus,
+  UpdateSyncStatus,
+} from '../types';
+import { DbService } from '@app/db';
+import { eq, and } from 'drizzle-orm';
+import * as schema from '../schema';
 
 /**
- * 채널별 동기화 상태 및 통계 관리 서비스
+ * 채널별 동기화 상태 및 통계 관리 서비스 (PostgreSQL 기반)
  *
- * 각 판매채널의 동기화 이력, 성공/실패 통계, 성능 지표를 관리합니다.
- * PoC 단계에서는 메모리 기반으로 동작하며, 운영 단계에서는 Redis/DB로 확장 가능합니다.
+ * 각 판매채널의 동기화 이력, 성공/실패 통계, 성능 지표를 PostgreSQL에 영속화하여 관리합니다.
+ * CTO SoT 원칙에 따라 동기화 상태를 신뢰할 수 있는 단일 소스로 관리합니다.
  *
  * @example
  * ```typescript
@@ -19,7 +27,7 @@ import { DataType } from '../types';
  *   processingTime: 1450
  * });
  *
- * // 채널별 통계 조회
+ * // 채널별 통계 조회 (DB에서 조회)
  * const stats = await syncStatusService.getChannelStats('naver_smartstore');
  * ```
  */
@@ -27,13 +35,8 @@ import { DataType } from '../types';
 export class SyncStatusService {
   private readonly logger = new Logger(SyncStatusService.name);
 
-  // PoC: 메모리 기반 상태 저장소 (운영에서는 Redis/DB로 교체)
-  private readonly syncHistory = new Map<string, SyncRecord[]>();
-  private readonly channelStats = new Map<string, ChannelStats>();
-
-  constructor() {
-    // 초기 채널 통계 설정
-    this.initializeChannelStats();
+  constructor(private readonly db: DbService<typeof schema>) {
+    this.logger.log('📊 동기화 상태 서비스 초기화 완료 (PostgreSQL 기반)');
   }
 
   /**
@@ -48,28 +51,23 @@ export class SyncStatusService {
     dataType: DataType,
   ): Promise<string> {
     const sessionId = `${channel}_${dataType}_${Date.now()}`;
-    const record: SyncRecord = {
-      sessionId,
-      channel,
-      dataType,
-      startedAt: new Date(),
-      status: 'in_progress',
-    };
 
-    // 히스토리에 기록
-    const key = `${channel}_${dataType}`;
-    if (!this.syncHistory.has(key)) {
-      this.syncHistory.set(key, []);
+    try {
+      // sync_statuses 테이블에서 기존 레코드 조회 또는 생성
+      await this.upsertSyncStatus(channel, dataType, {
+        status: 'in_progress',
+        lastSyncAt: new Date(),
+      });
+
+      this.logger.debug(`🚀 동기화 시작 기록: ${sessionId}`);
+      return sessionId;
+    } catch (error) {
+      this.logger.error(
+        `❌ 동기화 시작 기록 실패: ${sessionId}`,
+        error.message,
+      );
+      throw new Error(`동기화 시작 기록 실패: ${error.message}`);
     }
-    this.syncHistory.get(key)!.unshift(record);
-
-    // 최대 100개 기록만 유지
-    if (this.syncHistory.get(key)!.length > 100) {
-      this.syncHistory.get(key)!.pop();
-    }
-
-    this.logger.debug(`🚀 동기화 시작 기록: ${sessionId}`);
-    return sessionId;
   }
 
   /**
@@ -88,35 +86,42 @@ export class SyncStatusService {
       sessionId?: string;
     },
   ): Promise<void> {
-    const key = `${channel}_${dataType}`;
-    const history = this.syncHistory.get(key) || [];
+    try {
+      // 기존 통계 조회
+      const currentStats = await this.getSyncStatusRecord(channel, dataType);
 
-    // 세션 ID가 있으면 해당 기록 업데이트, 없으면 최신 기록 업데이트
-    const recordIndex = result.sessionId
-      ? history.findIndex((r) => r.sessionId === result.sessionId)
-      : history.findIndex((r) => r.status === 'in_progress');
+      // 새로운 평균 처리 시간 계산
+      const newTotalSyncs = (currentStats?.totalSyncs || 0) + 1;
+      const newAvgProcessingTime = currentStats
+        ? Math.round(
+            ((currentStats.avgProcessingTimeMs || 0) *
+              (currentStats.totalSyncs || 0) +
+              result.processingTime) /
+              newTotalSyncs,
+          )
+        : result.processingTime;
 
-    if (recordIndex >= 0) {
-      const record = history[recordIndex];
-      record.status = 'success';
-      record.completedAt = new Date();
-      record.eventCount = result.eventCount;
-      record.processingTime = result.processingTime;
-      record.error = undefined;
+      // sync_statuses 테이블 업데이트
+      await this.upsertSyncStatus(channel, dataType, {
+        status: 'success',
+        lastSyncAt: new Date(),
+        lastEventCount: result.eventCount,
+        totalSyncs: newTotalSyncs,
+        successfulSyncs: (currentStats?.successfulSyncs || 0) + 1,
+        avgProcessingTimeMs: newAvgProcessingTime,
+        lastErrorMessage: null, // 성공 시 에러 메시지 클리어
+      });
+
+      this.logger.debug(
+        `✅ 동기화 완료 기록: ${channel}/${dataType} - ${result.eventCount}건 (${result.processingTime}ms)`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ 동기화 완료 기록 실패: ${channel}/${dataType}`,
+        error.message,
+      );
+      throw new Error(`동기화 완료 기록 실패: ${error.message}`);
     }
-
-    // 채널 통계 업데이트
-    this.updateChannelStats(channel, {
-      totalSyncs: 1,
-      successfulSyncs: 1,
-      lastEventCount: result.eventCount,
-      lastSyncAt: new Date(),
-      processingTime: result.processingTime,
-    });
-
-    this.logger.debug(
-      `✅ 동기화 완료 기록: ${channel}/${dataType} - ${result.eventCount}건 (${result.processingTime}ms)`,
-    );
   }
 
   /**
@@ -135,33 +140,42 @@ export class SyncStatusService {
       sessionId?: string;
     },
   ): Promise<void> {
-    const key = `${channel}_${dataType}`;
-    const history = this.syncHistory.get(key) || [];
+    try {
+      // 기존 통계 조회
+      const currentStats = await this.getSyncStatusRecord(channel, dataType);
 
-    // 세션 ID가 있으면 해당 기록 업데이트, 없으면 최신 기록 업데이트
-    const recordIndex = error.sessionId
-      ? history.findIndex((r) => r.sessionId === error.sessionId)
-      : history.findIndex((r) => r.status === 'in_progress');
+      // 새로운 평균 처리 시간 계산 (실패한 경우에도 포함)
+      const newTotalSyncs = (currentStats?.totalSyncs || 0) + 1;
+      const newAvgProcessingTime =
+        currentStats && error.processingTime
+          ? Math.round(
+              ((currentStats.avgProcessingTimeMs || 0) *
+                (currentStats.totalSyncs || 0) +
+                error.processingTime) /
+                newTotalSyncs,
+            )
+          : currentStats?.avgProcessingTimeMs || 0;
 
-    if (recordIndex >= 0) {
-      const record = history[recordIndex];
-      record.status = 'failed';
-      record.completedAt = new Date();
-      record.error = error.message;
-      record.processingTime = error.processingTime;
+      // sync_statuses 테이블 업데이트
+      await this.upsertSyncStatus(channel, dataType, {
+        status: 'failed',
+        lastSyncAt: new Date(),
+        totalSyncs: newTotalSyncs,
+        failedSyncs: (currentStats?.failedSyncs || 0) + 1,
+        avgProcessingTimeMs: newAvgProcessingTime,
+        lastErrorMessage: error.message,
+      });
+
+      this.logger.warn(
+        `❌ 동기화 실패 기록: ${channel}/${dataType} - ${error.message}`,
+      );
+    } catch (dbError) {
+      this.logger.error(
+        `❌ 동기화 실패 기록 중 DB 오류: ${channel}/${dataType}`,
+        dbError.message,
+      );
+      throw new Error(`동기화 실패 기록 중 DB 오류: ${dbError.message}`);
     }
-
-    // 채널 통계 업데이트
-    this.updateChannelStats(channel, {
-      totalSyncs: 1,
-      failedSyncs: 1,
-      lastSyncAt: new Date(),
-      processingTime: error.processingTime,
-    });
-
-    this.logger.warn(
-      `❌ 동기화 실패 기록: ${channel}/${dataType} - ${error.message}`,
-    );
   }
 
   /**
@@ -171,7 +185,23 @@ export class SyncStatusService {
    * @returns 채널 통계
    */
   async getChannelStats(channel: ChannelType): Promise<ChannelStats | null> {
-    return this.channelStats.get(channel) || null;
+    try {
+      const records = await this.db.db
+        .select()
+        .from(schema.syncStatuses)
+        .where(eq(schema.syncStatuses.channelId, channel));
+
+      if (records.length === 0) {
+        return null;
+      }
+
+      // 모든 데이터 타입의 통계를 합산
+      const aggregatedStats = this.aggregateChannelStats(channel, records);
+      return aggregatedStats;
+    } catch (error) {
+      this.logger.error(`❌ 채널 통계 조회 실패: ${channel}`, error.message);
+      throw new Error(`채널 통계 조회 실패: ${error.message}`);
+    }
   }
 
   /**
@@ -180,129 +210,273 @@ export class SyncStatusService {
    * @returns 전체 채널 통계
    */
   async getAllChannelStats(): Promise<Record<string, ChannelStats>> {
-    const result: Record<string, ChannelStats> = {};
-    for (const [channel, stats] of this.channelStats.entries()) {
-      result[channel] = stats;
+    try {
+      const allRecords = await this.db.db.select().from(schema.syncStatuses);
+
+      const result: Record<string, ChannelStats> = {};
+      const channelGroups = this.groupRecordsByChannel(allRecords);
+
+      for (const [channel, records] of channelGroups.entries()) {
+        result[channel] = this.aggregateChannelStats(
+          channel as ChannelType,
+          records,
+        );
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(`❌ 전체 채널 통계 조회 실패`, error.message);
+      throw new Error(`전체 채널 통계 조회 실패: ${error.message}`);
     }
-    return result;
   }
 
   /**
-   * 특정 채널의 동기화 히스토리 조회
+   * 특정 채널+데이터타입의 동기화 상태 조회
    *
    * @param channel 채널 타입
    * @param dataType 데이터 타입
-   * @param limit 조회할 기록 수 (기본 50)
-   * @returns 동기화 히스토리
+   * @returns 동기화 상태 레코드
+   */
+  async getSyncStatus(
+    channel: ChannelType,
+    dataType: DataType,
+  ): Promise<SyncStatus | null> {
+    try {
+      const [record] = await this.db.db
+        .select()
+        .from(schema.syncStatuses)
+        .where(
+          and(
+            eq(schema.syncStatuses.channelId, channel),
+            eq(schema.syncStatuses.dataType, dataType),
+          ),
+        )
+        .limit(1);
+
+      return record || null;
+    } catch (error) {
+      this.logger.error(
+        `❌ 동기화 상태 조회 실패: ${channel}/${dataType}`,
+        error.message,
+      );
+      throw new Error(`동기화 상태 조회 실패: ${error.message}`);
+    }
+  }
+
+  // ===== 내부 헬퍼 메서드들 =====
+
+  /**
+   * sync_statuses 테이블 upsert (생성 또는 업데이트)
+   *
+   * @param channel 채널 타입
+   * @param dataType 데이터 타입
+   * @param updates 업데이트할 필드들
+   */
+  private async upsertSyncStatus(
+    channel: ChannelType,
+    dataType: DataType,
+    updates: Partial<UpdateSyncStatus>,
+  ): Promise<void> {
+    try {
+      // 기존 레코드 확인
+      const existing = await this.getSyncStatusRecord(channel, dataType);
+
+      if (existing) {
+        // 업데이트
+        await this.db.db
+          .update(schema.syncStatuses)
+          .set({
+            ...updates,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.syncStatuses.channelId, channel),
+              eq(schema.syncStatuses.dataType, dataType),
+            ),
+          );
+      } else {
+        // 생성
+        const newRecord: NewSyncStatus = {
+          channelId: channel,
+          dataType,
+          status: 'idle',
+          totalSyncs: 0,
+          successfulSyncs: 0,
+          failedSyncs: 0,
+          lastEventCount: 0,
+          avgProcessingTimeMs: 0,
+          ...updates,
+        };
+
+        await this.db.db.insert(schema.syncStatuses).values(newRecord);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ sync_statuses upsert 실패: ${channel}/${dataType}`,
+        error.message,
+      );
+      throw new Error(`sync_statuses upsert 실패: ${error.message}`);
+    }
+  }
+
+  /**
+   * sync_statuses 테이블에서 레코드 조회 (내부용)
+   */
+  private async getSyncStatusRecord(
+    channel: ChannelType,
+    dataType: DataType,
+  ): Promise<SyncStatus | null> {
+    try {
+      const [record] = await this.db.db
+        .select()
+        .from(schema.syncStatuses)
+        .where(
+          and(
+            eq(schema.syncStatuses.channelId, channel),
+            eq(schema.syncStatuses.dataType, dataType),
+          ),
+        )
+        .limit(1);
+
+      return record || null;
+    } catch (error) {
+      this.logger.error(
+        `❌ sync_statuses 레코드 조회 실패: ${channel}/${dataType}`,
+        error.message,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * 채널별 통계 집계
+   */
+  private aggregateChannelStats(
+    channel: ChannelType,
+    records: SyncStatus[],
+  ): ChannelStats {
+    const totalSyncs = records.reduce((sum, r) => sum + (r.totalSyncs || 0), 0);
+    const successfulSyncs = records.reduce(
+      (sum, r) => sum + (r.successfulSyncs || 0),
+      0,
+    );
+    const failedSyncs = records.reduce(
+      (sum, r) => sum + (r.failedSyncs || 0),
+      0,
+    );
+
+    // 가장 최근 동기화 시각
+    const lastSyncAt = records.reduce(
+      (latest, r) => {
+        if (!r.lastSyncAt) return latest;
+        if (!latest) return r.lastSyncAt;
+        return r.lastSyncAt > latest ? r.lastSyncAt : latest;
+      },
+      null as Date | null,
+    );
+
+    // 평균 처리 시간 (가중 평균)
+    const avgProcessingTime =
+      records.length > 0
+        ? Math.round(
+            records.reduce((sum, r) => sum + (r.avgProcessingTimeMs || 0), 0) /
+              records.length,
+          )
+        : 0;
+
+    // 마지막 이벤트 수 (가장 최근 동기화의 이벤트 수)
+    const lastEventCount = records.reduce((latest, r) => {
+      if (!r.lastSyncAt) return latest;
+      return r.lastEventCount || 0;
+    }, 0);
+
+    // 전체 상태 결정
+    let status: ChannelStats['status'] = 'idle';
+    if (totalSyncs > 0) {
+      const failureRate = totalSyncs > 0 ? (failedSyncs / totalSyncs) * 100 : 0;
+      if (failureRate > 10) {
+        status = 'error';
+      } else if (failureRate > 0) {
+        status = 'warning';
+      } else {
+        status = 'active';
+      }
+    }
+
+    return {
+      channel,
+      totalSyncs,
+      successfulSyncs,
+      failedSyncs,
+      lastEventCount,
+      lastSyncAt,
+      avgProcessingTime,
+      status,
+    };
+  }
+
+  /**
+   * 레코드들을 채널별로 그룹화
+   */
+  private groupRecordsByChannel(
+    records: SyncStatus[],
+  ): Map<string, SyncStatus[]> {
+    const groups = new Map<string, SyncStatus[]>();
+
+    for (const record of records) {
+      if (!groups.has(record.channelId)) {
+        groups.set(record.channelId, []);
+      }
+      groups.get(record.channelId)!.push(record);
+    }
+
+    return groups;
+  }
+
+  /**
+   * 특정 채널과 데이터 타입의 동기화 히스토리 조회
+   *
+   * @param channel 채널 타입
+   * @param dataType 데이터 타입
+   * @param limit 조회 제한 (기본값: 50)
+   * @returns 동기화 히스토리 배열
    */
   async getSyncHistory(
     channel: ChannelType,
     dataType: DataType,
     limit: number = 50,
-  ): Promise<SyncRecord[]> {
-    const key = `${channel}_${dataType}`;
-    const history = this.syncHistory.get(key) || [];
-    return history.slice(0, Math.min(limit, history.length));
-  }
+  ): Promise<SyncStatus[]> {
+    try {
+      const history = await this.db.db
+        .select()
+        .from(schema.syncStatuses)
+        .where(
+          and(
+            eq(schema.syncStatuses.channelId, channel),
+            eq(schema.syncStatuses.dataType, dataType),
+          ),
+        )
+        .orderBy(schema.syncStatuses.updatedAt)
+        .limit(limit);
 
-  /**
-   * 채널 통계 초기화
-   */
-  private initializeChannelStats(): void {
-    const channels: ChannelType[] = ['naver_smartstore', 'coupang'];
-
-    channels.forEach((channel) => {
-      this.channelStats.set(channel, {
-        channel,
-        totalSyncs: 0,
-        successfulSyncs: 0,
-        failedSyncs: 0,
-        lastEventCount: 0,
-        lastSyncAt: null,
-        avgProcessingTime: 0,
-        status: 'idle',
-      });
-    });
-  }
-
-  /**
-   * 채널 통계 업데이트
-   *
-   * @param channel 채널 타입
-   * @param update 업데이트할 통계 정보
-   */
-  private updateChannelStats(
-    channel: ChannelType,
-    update: Partial<{
-      totalSyncs: number;
-      successfulSyncs: number;
-      failedSyncs: number;
-      lastEventCount: number;
-      lastSyncAt: Date;
-      processingTime: number;
-    }>,
-  ): void {
-    const currentStats = this.channelStats.get(channel);
-    if (!currentStats) return;
-
-    // 누적 통계 업데이트
-    if (update.totalSyncs) {
-      currentStats.totalSyncs += update.totalSyncs;
-    }
-    if (update.successfulSyncs) {
-      currentStats.successfulSyncs += update.successfulSyncs;
-    }
-    if (update.failedSyncs) {
-      currentStats.failedSyncs += update.failedSyncs;
-    }
-
-    // 최신 정보 업데이트
-    if (update.lastEventCount !== undefined) {
-      currentStats.lastEventCount = update.lastEventCount;
-    }
-    if (update.lastSyncAt) {
-      currentStats.lastSyncAt = update.lastSyncAt;
-    }
-
-    // 평균 처리 시간 계산
-    if (update.processingTime && currentStats.totalSyncs > 0) {
-      currentStats.avgProcessingTime = Math.round(
-        (currentStats.avgProcessingTime * (currentStats.totalSyncs - 1) +
-          update.processingTime) /
-          currentStats.totalSyncs,
+      this.logger.debug(
+        `📋 동기화 히스토리 조회: ${channel}/${dataType} - ${history.length}건`,
       );
-    }
 
-    // 상태 업데이트
-    if (currentStats.failedSyncs > 0) {
-      const failureRate =
-        (currentStats.failedSyncs / currentStats.totalSyncs) * 100;
-      currentStats.status = failureRate > 10 ? 'error' : 'warning';
-    } else {
-      currentStats.status = currentStats.totalSyncs > 0 ? 'active' : 'idle';
+      return history;
+    } catch (error) {
+      this.logger.error(
+        `❌ 동기화 히스토리 조회 실패: ${channel}/${dataType}`,
+        error.message,
+      );
+      throw new Error(`동기화 히스토리 조회 실패: ${error.message}`);
     }
-
-    this.channelStats.set(channel, currentStats);
   }
 }
 
 /**
- * 동기화 기록 인터페이스
- */
-export interface SyncRecord {
-  sessionId: string;
-  channel: ChannelType;
-  dataType: DataType;
-  status: 'in_progress' | 'success' | 'failed';
-  startedAt: Date;
-  completedAt?: Date;
-  eventCount?: number;
-  processingTime?: number; // milliseconds
-  error?: string;
-}
-
-/**
- * 채널 통계 인터페이스
+ * 채널 통계 인터페이스 (집계된 통계)
  */
 export interface ChannelStats {
   channel: ChannelType;

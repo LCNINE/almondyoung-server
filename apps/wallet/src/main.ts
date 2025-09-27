@@ -1,13 +1,14 @@
-// main.ts
+// apps/wallet/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -18,12 +19,13 @@ async function bootstrap() {
   // app.useGlobalPipes(new ValidationPipe());
 
   await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: true, // 🔧 false로 변경해서 전통적인 방식 사용
+    attachFieldsToBody: true,
     limits: {
       fileSize: 1024 * 1024 * 10,
       files: 1,
     },
   });
+
   app.enableCors({
     origin: [
       'http://127.0.0.1:5500',
@@ -31,12 +33,11 @@ async function bootstrap() {
       'http://localhost:8080',
       'http://localhost:9000',
       'http://localhost:8000',
-    ], // Live Server 주소 허용
+    ],
     credentials: true,
   });
 
   // 정적 파일 서빙 설정 (HTML 파일들)
-  // 프로젝트 루트의 html 폴더를 가리킴 (폴더명 변경 대응)
   const htmlPath = join(process.cwd(), 'html');
 
   await app.register(require('@fastify/static'), {
@@ -46,14 +47,34 @@ async function bootstrap() {
 
   console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
+  // Swagger 설정
   const config = new DocumentBuilder()
     .setTitle('Wallet Payment Server')
     .setDescription('MVP payment server for Medusa integration')
     .setVersion('0.1.0')
     .build();
 
-  const doc = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/docs', app, doc);
+  const document = SwaggerModule.createDocument(app, config);
+
+  // Swagger JSON apps/wallet/swagger-spec.json에 저장
+  const swaggerJsonPath = join(
+    process.cwd(),
+    'apps',
+    'wallet',
+    'swagger-spec.json',
+  );
+  mkdirSync(join(process.cwd(), 'apps', 'wallet'), { recursive: true });
+  writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
+  console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+
+  // Swagger UI (서버에서 확인)
+  SwaggerModule.setup('/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+  });
 
   const port = process.env.PORT || 5000;
   await app.listen(port);
