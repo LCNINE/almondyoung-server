@@ -5,7 +5,6 @@
       "description": "창고 관리 시스템 (Warehouse Management System) API",
       "version": "1.0.0",
       "appModule": "./apps/wms/src/wms.module.ts",
-      "outputPath": "./docs/wms-api.html",
       "port": 3010
     },
     "pim": {
@@ -13,7 +12,6 @@
       "description": "상품 정보 관리 시스템 (Product Information Management) API",
       "version": "1.0.0",
       "appModule": "./apps/pim/src/pim.module.ts",
-      "outputPath": "./docs/pim-api.html",
       "port": 3000
     }
   }

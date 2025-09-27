@@ -15,7 +15,6 @@ interface SwaggerConfig {
       description: string;
       version: string;
       appModule: string;
-      outputPath: string;
       port: number;
     };
   };
@@ -120,17 +119,20 @@ async function generateSwaggerDocs(appName: string) {
 </body>
 </html>`;
 
+    // Generate output path
+    const outputPath = path.join(process.cwd(), 'docs', 'api', `${appName}-api.html`);
+
     // Ensure output directory exists
-    const outputDir = path.dirname(appConfig.outputPath);
+    const outputDir = path.dirname(outputPath);
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
     // Write HTML file
-    fs.writeFileSync(appConfig.outputPath, htmlTemplate);
+    fs.writeFileSync(outputPath, htmlTemplate);
 
     console.log(`✅ Swagger documentation generated successfully!`);
-    console.log(`📄 Output: ${appConfig.outputPath}`);
+    console.log(`📄 Output: ${outputPath}`);
     console.log(`🔗 You can open this file in a browser to view the API documentation`);
 
     // Close the application

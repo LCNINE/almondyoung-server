@@ -70,10 +70,10 @@ export class ZoneLocationResponseDto extends LocationResponseDto {
     override readonly type: 'zone' = 'zone';
 
     @ApiProperty({ description: '랙 ID는 항상 null', nullable: true })
-    rackId: null;
+    rackId: string;
 
     @ApiProperty({ description: '빈 식별자는 항상 null', nullable: true })
-    binIdentifier: null;
+    binIdentifier: string;
 }
 
 export class LocationColumnResponseDto {
