@@ -8,10 +8,24 @@ export enum SkuCreationSource {
 }
 
 export class CreateSkuDto {
+    @ApiProperty({ description: '기존 마스터 ID (지정 시 사용)', required: false })
+    @IsUUID()
+    @IsOptional()
+    masterId?: string;
+
+    @ApiProperty({ description: '새 마스터 이름 (masterId 미지정 시 자동 생성용)', required: false })
+    @IsString()
+    @IsOptional()
+    masterName?: string;
+
     @ApiProperty({ description: 'SKU 이름 (수동 매칭 시 직접 입력, 자동 매칭 시 PIM 정보로 자동 생성)' })
     @IsString()
     @IsNotEmpty()
     name: string;
+
+    @ApiProperty({ description: '옵션 조합 키 (예: {"색상":"퍼플","용량":"256GB"})', required: false, type: Object })
+    @IsOptional()
+    optionKey?: Record<string, string>;
 
     @ApiProperty({ description: 'SKU 생성 맥락', enum: SkuCreationSource, required: false })
     @IsEnum(SkuCreationSource)

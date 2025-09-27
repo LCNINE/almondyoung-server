@@ -4,6 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-sch
 import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ProductSkuMappingService } from './product-sku-mapping.service';
+import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 
 export interface CreateFulfillmentOrderDto {
   warehouseId: string;
@@ -43,7 +44,8 @@ export class FulfillmentOrderTransactionService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly productSkuMappingService: ProductSkuMappingService
+    private readonly productSkuMappingService: ProductSkuMappingService,
+    private readonly reservationLifecycle: ReservationLifecycleService
   ) {}
 
   private get db() {
@@ -191,15 +193,8 @@ export class FulfillmentOrderTransactionService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      // 2. 예약 생명주기 서비스로 예약 처리 위임
-      // TODO: DI로 주입받도록 수정 필요
-      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
-      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
-
-      const unifiedReservation = new UnifiedReservationService(this.dbService);
-      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
-
-      await lifecycleService.handleFulfillmentOrderStatusChange(
+      // 2. 예약 생명주기 서비스로 예약 처리 위임 (DI 사용)
+      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'canceled',
@@ -239,14 +234,8 @@ export class FulfillmentOrderTransactionService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      // 2. 예약 생명주기 서비스로 예약 처리 위임
-      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
-      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
-
-      const unifiedReservation = new UnifiedReservationService(this.dbService);
-      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
-
-      await lifecycleService.handleFulfillmentOrderStatusChange(
+      // 2. 예약 생명주기 서비스로 예약 처리 위임 (DI 사용)
+      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'completed',
@@ -282,14 +271,8 @@ export class FulfillmentOrderTransactionService {
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      // 2. 예약 생명주기 서비스로 예약 처리 위임
-      const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
-      const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
-
-      const unifiedReservation = new UnifiedReservationService(this.dbService);
-      const lifecycleService = new ReservationLifecycleService(this.dbService, unifiedReservation);
-
-      await lifecycleService.handleFulfillmentOrderStatusChange(
+      // 2. 예약 생명주기 서비스로 예약 처리 위임 (DI 사용)
+      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
         fulfillmentOrderId,
         fulfillmentOrder.status,
         'shipped',

@@ -37,6 +37,20 @@ export class SkuResponseDto {
     @ApiProperty({ required: false })
     sale3m?: number;
 
+    @ApiProperty({ required: true })
+    masterId: string;
+
+    @ApiProperty({ required: false, type: Object })
+    optionKey?: Record<string, string>;
+
+    @ApiProperty({ required: false, type: Object })
+    master?: {
+        id: string;
+        name: string;
+        code: string;
+        hasOptions: boolean;
+    };
+
     @ApiProperty({ type: [BarcodeDto] })
     barcodes: BarcodeDto[];
 

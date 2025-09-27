@@ -4,254 +4,168 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a NestJS-based microservices monorepo for **AlmondYoung's e-commerce backend system**. The project serves as the backend infrastructure for a new online mall that extends Medusa.js functionality and comprehensively manages multiple sales channels including Coupang and Naver Smartstore.
+**Almondyoung Server** is a microservices-based integrated logistics management system built on NestJS, implementing a comprehensive warehouse management system (WMS), product information management (PIM), and main server functionality.
 
-### Business Context
-- **Primary Platform**: Medusa.js-based online mall (AlmondYoung)
-- **Multi-channel Strategy**: Unified product management across various Korean e-commerce platforms
-- **Core Purpose**: Centralized product information management with channel-specific optimizations
+### Architecture
+- **Monorepo Structure**: NestJS-based monorepo with multiple applications
+- **Database**: PostgreSQL with Drizzle ORM and postgres.js client
+- **Event Sourcing**: Stock management using event sourcing with `stock_events` as the source of truth and `stock_summary` projections
+- **Microservices**: Three main applications - WMS, PIM, and almondyoung-server
 
-### Microservices Architecture
-- **Main application**: `apps/almondyoung-server` - Base NestJS application
-- **PIM service**: `apps/pim` - Product Information Management microservice (primary application)
-- **WMS service**: `apps/wms` - Warehouse Management System microservice
-- **Shared libraries**: `libs/` containing common modules
+### Key Applications
+1. **WMS (`apps/wms`)**: Warehouse Management System for inventory, inbound/outbound operations, movement tracking
+2. **PIM (`apps/pim`)**: Product Information Management for product masters, variants, categories, and sales channels
+3. **Main Server (`apps/almondyoung-server`)**: Core server application
 
-## Common Commands
+## Development Commands
 
-### Development
+### Build & Start Commands
 ```bash
-# Install dependencies
-npm install
-
-# Start development server (watch mode)
-npm run start:dev
-
-# Start specific application
-nest start pim --watch
-```
-
-### Build & Production
-```bash
-# Build all applications
+# Build entire project
 npm run build
 
-# Start production
+# Build specific applications
+npm run build:wms
+
+# Development servers
+npm run start:dev                # Main server
+npm run start:wms:dev           # WMS service
+npm run start:prod              # Production mode
+
+# Production builds
 npm run start:prod
+npm run start:wms:prod          # node dist/apps/wms/main.js
+```
+
+### Database Operations
+```bash
+# WMS Database (Drizzle)
+npm run db:generate.wms         # Generate migrations
+npm run db:push.wms            # Push schema changes
+npm run db:push.wms:test       # Test database
+
+# PIM Database (Drizzle)
+npm run db:generate:pim        # Generate migrations
+npm run db:migrate:pim         # Run migrations
+npm run db:push:pim           # Push schema changes
+```
+
+### Testing
+```bash
+# Unit tests
+npm run test
+npm run test:watch
+
+# WMS-specific tests
+npm run wms:test
+npm run wms:test:watch
+npm run wms:test:debug
+
+# E2E tests
+npm run test:e2e
+
+# Test coverage
+npm run test:cov
 ```
 
 ### Code Quality
 ```bash
-# Lint code
-npm run lint
-
-# Format code
-npm run format
-
-# Run all tests
-npm run test
-
-# Run specific app tests
-npm run test:e2e
-
-# Test with coverage
-npm run test:cov
+npm run lint                   # ESLint with auto-fix
+npm run format                 # Prettier formatting
 ```
 
-### Database (PIM Service)
-```bash
-# Generate database migrations
-npm run db:generate:pim
+## Architecture Guidelines
 
-# Run migrations
-npm run db:migrate:pim
-
-# Push schema to database
-npm run db:push:pim
-```
-
-### Database (WMS Service)
-```bash
-# Generate database migrations
-npm run db:generate.wms
-
-# Push schema to database (dev)
-npm run db:push.wms
-
-# Push schema to database (test)
-npm run db:push.wms:test
-```
-
-### WMS Service Development
-```bash
-# Build WMS service
-npm run build:wms
-
-# Start WMS service
-npm run start:wms
-
-# Start WMS service in watch mode
-npm run start:wms:dev
-
-# Start WMS service in production
-npm run start:wms:prod
-
-# Run WMS unit tests
-npm run wms:test:unit
-
-# Run WMS e2e tests
-npm run wms:test:e2e
-
-# Run all WMS tests
-npm run wms:test
-```
-
-## Architecture
-
-### Monorepo Structure
-- Uses NestJS CLI monorepo with libraries prefixed as `@app/*`
-- TypeScript path mapping configured for imports: `@app/db`, `@app/events`, `@app/shared`
-- Each microservice is independent but shares common libraries
-
-### Database Architecture
+### Database Layer
+- **Schema Location**: `apps/wms/database/schemas/wms-schema.ts` (WMS), `apps/pim/src/schema.ts` (PIM)
 - **ORM**: Drizzle ORM with PostgreSQL
-- **Schema**: Centralized schema definition per service (e.g., `apps/pim/src/schema.ts`)
-- **Migrations**: Service-specific migration directories (e.g., `apps/pim/drizzle/`)
-- **Connection**: Uses connection strings (DATABASE_URL) for Neon/PostgreSQL compatibility
+- **Connection**: Each microservice uses `DbModule.forRoot()` with dedicated schema
 
-### Event-Driven Communication
-- **Transport**: Kafka via NestJS microservices
-- **Pattern**: Event publisher/consumer with type-safe event definitions
-- **Configuration**: Each service configures events through `EventsModule.forRoot()`
+### Transaction Management (WMS-specific)
+Follow strict transaction propagation rules defined in `.cursor/rules/wms-transaction-rule.mdc`:
 
-### Shared Libraries
-
-#### `@app/db`
-- Database connection management via `DbService`
-- Schema-agnostic database module
-- Usage: `DbModule.forRoot({ config, schema })`
-
-#### `@app/events`
-- Kafka-based event publishing system
-- Type-safe event definitions
-- Usage: `EventsModule.forRoot({ kafka, events })`
-
-#### `@app/shared`
-- Common DTOs, pipes, and utilities
-- Zod validation pipes
-- Shared event definitions
-
-### PIM Service Specifics
-The PIM (Product Information Management) service is the core of the e-commerce system, managing all product information with sophisticated multi-channel capabilities:
-
-#### Core Entities
-- **Product Categories**: Hierarchical category tree with SEO-optimized paths (`/electronics/smartphones`)
-- **Product Masters**: Central product definitions with brand, description, base pricing, and SEO metadata
-- **Product Option Groups/Values**: Flexible option system (colors, sizes, etc.) with display names
-- **Product Variants**: SKU-level products generated from option combinations
-- **Sales Channels**: Multi-platform distribution (Medusa.js, Coupang, Naver Smartstore)
-- **Channel Products**: Platform-specific product optimizations
-
-#### Pricing Strategies
-- **Option-based**: Base price + option surcharges (e.g., +5,000원 for size L)
-- **Variant-based**: Individual pricing per SKU variant (e.g., Red/L = 55,000원)
-
-#### Key Features
-- Centralized product information management
-- Multi-channel product distribution with platform-specific optimizations
-- Flexible pricing strategies supporting complex Korean e-commerce requirements
-- SEO-optimized category structures and product metadata
-- Real-time price calculation and preview functionality
-
-## Development Guidelines
-
-### Creating New Services
-Use NestJS CLI: `nest generate app [service-name]` or `nest generate library [lib-name]` (as specified in `.cursor/rules/nestjs-msa.mdc`)
-
-### Database Schema Changes (PIM Service)
-1. Modify schema in `apps/pim/src/schema.ts`
-2. Generate migration: `npm run db:generate:pim`
-3. Review and apply: `npm run db:migrate:pim`
-4. Push to development DB: `npm run db:push:pim`
-
-### PIM Service Development Patterns
-- **Price Strategy Pattern**: Use factory pattern for pricing strategies (`apps/pim/src/services/pricing/`)
-- **DTO Validation**: Use Zod schemas in `apps/pim/src/schemas/` for request validation
-- **Type Safety**: TypeScript types in `apps/pim/src/types/` for response DTOs
-- **Business Logic**: Services in `apps/pim/src/services/` handle domain logic
-- **API Layer**: Controllers in `apps/pim/src/controllers/` handle HTTP requests
-
-### Code Style
-- ESLint with TypeScript rules configured
-- Prettier for formatting
-- TypeScript strict mode with some relaxed rules for `any` types
-- Korean comments acceptable for business domain concepts
-
-#### Comment Guidelines
-**IMPORTANT**: Avoid excessive comments that simply describe what the code does - the code should be self-explanatory. Use comments only for:
-
-1. **JSDoc comments**: Method and class documentation describing purpose, parameters, and return values
-2. **TODO comments**: Mark areas that need future implementation or improvement
-3. **Complex logic explanation**: Document non-obvious algorithms, business rules, or "magic numbers" (like the famous fast inverse square root algorithm)
-4. **Business context**: Explain domain-specific concepts that aren't obvious from code alone
-
-**Bad example** (obvious comment):
+#### DbTx Import and Helper
 ```typescript
-// Increment counter by 1
-counter++;
+// Import from WMS schema only
+import { DbTx } from '../database/schemas/wms-schema';
+
+// Standard transaction helper in service classes
+private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+  return tx ? fn(tx) : this.db.transaction(fn);
+}
 ```
 
-**Good examples**:
+#### Method Signatures
+- **Public methods**: End with `tx?: DbTx` parameter
+- **Private helpers**: Require `tx: DbTx` parameter
 ```typescript
-/**
- * 판매상품을 재고상품으로 변환하여 출고주문 아이템 생성
- * @param salesOrderId - 원본 판매주문 ID
- * @param productId - PIM 판매상품 ID
- * @returns 생성된 FOI 목록
- */
-async createFulfillmentOrderItems(salesOrderId: string, productId: string): Promise<FOI[]>
+// Public service method
+async createOrder(dto: CreateOrderDto, tx?: DbTx) { }
 
-// TODO: 세트 상품의 부분 출고 정책 구현 필요
-const allowPartialShipment = false;
-
-// 0x5f3759df: 고속 역제곱근 알고리즘의 매직 넘버
-// IEEE 754 부동소수점 표현을 이용한 초기 추정값
-const magic = 0x5f3759df - (i >> 1);
+// Private helper method
+private async validateStock(tx: DbTx, skuId: string) { }
 ```
 
-### Testing
-- Jest for unit tests
-- E2E tests in service-specific directories (`apps/pim/test/`)
-- Integration tests for database operations and pricing strategies
+#### Core Query Patterns
+- **Prohibited**: `db.query.*`, `with` relations, `any`/`as` casting
+- **Required**: Explicit core queries using `select().from().innerJoin().where().orderBy()`
+- **Operators**: Use Drizzle operators (`eq`, `and`, `lt`, etc.)
 
-### API Documentation
-Refer to `apps/pim/docs/pim-comprehensive-guide.md` for complete API endpoints and business logic understanding.
+### Event Sourcing (WMS)
+- **Event Table**: `stock_events` - immutable audit trail of all stock changes
+- **Projection Table**: `stock_summary` - current state aggregations with optimistic locking (`version` field)
+- **Event Types**: `IN`, `OUT`, `ADJUST`, `MOVE`, `RESERVE`, `CONFIRM`, `RELEASE`, `CANCEL`
 
-## WMS Service Specifics
-The WMS (Warehouse Management System) service handles inventory management, order fulfillment, and warehouse operations:
+### Module Structure
+Each major feature follows this pattern:
+```
+src/
+├── [feature]/
+│   ├── controllers/          # REST controllers
+│   ├── services/            # Business logic
+│   ├── dto/                 # Data transfer objects
+│   ├── [feature].module.ts  # NestJS module
+```
 
-### WMS Core Modules
-- **InventoryModule**: Stock management, SKU matching, location operations
-- **MovementModule**: Internal stock movements and transfers
-- **InboundModule**: Purchase orders and receiving operations
-- **OrderModule**: Sales orders and fulfillment orders (currently being implemented)
-- **SharedModule**: Common utilities (barcodes, FIFO, transactions, audit logging)
+### Key WMS Modules
+- **InventoryModule**: Stock management, SKU management, product matching
+- **InboundModule**: Receiving, putaway, purchase orders
+- **OutboundModule**: Picking, packing, shipping tasks
+- **MovementModule**: Inter/intra-warehouse transfers
+- **OrderModule**: Order processing and fulfillments
 
-### WMS Key Features
-- **Order Domain**: Sales Orders (SO) and Fulfillment Orders (FO) with reservation system
-- **Multi-fulfillment Support**: In-house, 3PL, and drop-ship modes
-- **Inventory Management**: Event-sourced stock tracking with projections
-- **Product Matching**: PIM variant to WMS SKU mapping system
-- **Location Management**: Warehouse layout and FIFO allocation
-- **Transaction Safety**: Comprehensive audit logging and transaction management
+## Important Implementation Notes
 
-### WMS Documentation
-- Core architecture: `apps/wms/docs/wms_nestjs_structure.md`
-- Order system design: `apps/wms/docs/wms-orders-design.md`
-- Follow the documentation in `apps/wms/docs/` rather than scanning all code files
+### Type Safety Rules
+- **Enum Usage**: Only use enum values defined in schema (e.g., use `'drop_ship'`, never non-existent values like `'direct_ship'`)
+- **Nullable Handling**: Always normalize nullable fields:
+  - Strings: `value ?? ''`
+  - Numbers: `value ?? 0`
+  - Dates: `value ?? undefined`
+- **No Type Casting**: Avoid `any` and `as` casting unless absolutely necessary with team approval
 
-### WMS Database Schema Changes
-1. Modify schema in `apps/wms/database/schemas/wms-schema.ts`
-2. Generate migration: `npm run db:generate.wms`
-3. Apply to dev database: `npm run db:push.wms`
-4. Apply to test database: `npm run db:push.wms:test`
+### Common Patterns
+- **Location Management**: 2D coordinate system with FIFO ranking
+- **Stock Reservations**: Timeout-based reservation system
+- **Product Matching**: Strategy pattern for variant/option/void matching
+
+### Current Implementation Status
+- ✅ **Complete**: Inventory management, inbound operations, outbound task creation, movement tracking
+- 🚧 **Partial**: Outbound picking/packing logic, purchase orders
+- ❌ **Missing**: Reservation/allocation, returns processing, shipment tracking, audit services
+
+### Environment Variables
+- `DATABASE_URL`: PostgreSQL connection string
+- `PORT`: Server port (note: some code uses `process.env.port` - should be `PORT`)
+
+## Testing Guidelines
+- WMS uses dedicated Jest config: `apps/wms/jest.config.js`
+- Use TestContainers for integration tests with PostgreSQL
+- Event sourcing tests should verify both event creation and projection updates
+
+## Common Gotchas
+1. **Transaction Propagation**: Always pass `tx` parameter through service call chains
+2. **Schema Imports**: Import `DbTx` only from `wms-schema.ts`, never create local type aliases
+3. **Event Ordering**: Stock events must maintain proper sequence for projection accuracy
+4. **Optimistic Locking**: Handle version conflicts in `stock_summary` updates
+5. **Module Registration**: Some controllers lack `@Controller` decorator (Return/Shipment/Reservation)

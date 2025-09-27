@@ -211,7 +211,6 @@ export const auditSeverityEnum = pgEnum('audit_severity', [
 ]);
 
 // Inventory master enums
-export const inventoryMasterPurposeEnum = pgEnum('inventory_master_purpose', ['standard', 'set', 'material']);
 export const inventoryMasterStatusEnum = pgEnum('inventory_master_status', ['active', 'archived']);
 
 /*───────────────────────────
@@ -288,8 +287,12 @@ export const holders = pgTable('holders', {
 export const skus = pgTable('skus', {
     id: uuid('id').primaryKey().defaultRandom(),
     holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
+    // 필수 Master 귀속
+    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'restrict' }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     code: varchar('code', { length: 64 }).notNull().unique(),
+    // 옵션 조합 키 (마스터별 유니크)
+    optionKey: jsonb('option_key'),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     stockType: stockTypeEnum('stock_type').notNull().default('physical'),
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
@@ -297,7 +300,10 @@ export const skus = pgTable('skus', {
     sale3m: integer('sale_3m'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => ({
+    // (master_id, option_key) 유니크 제약으로 옵션 조합 중복 방지
+    uqSkuMasterOption: unique().on(t.masterId, t.optionKey),
+}));
 
 export const skuSuppliers = pgTable('sku_suppliers', {
     skuId: uuid('sku_id')
@@ -341,7 +347,6 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
     masterCode: varchar('master_code', { length: 64 }).notNull(),
-    purpose: inventoryMasterPurposeEnum('purpose').notNull().default('standard'),
     optionSchema: json('option_schema'),
     defaultPolicy: json('default_policy'),
     status: inventoryMasterStatusEnum('status').notNull().default('active'),
@@ -351,17 +356,6 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
     uqMasterCode: unique().on(t.masterCode),
 }));
 
-// Inventory Master ↔ SKU 링크: 옵션키 기반 연결 및 대표 여부
-export const inventoryMasterSkuLinks = pgTable('inventory_master_sku_links', {
-    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    optionKey: jsonb('option_key'),
-    isPrimary: boolean('is_primary').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => ({
-    pk: primaryKey(t.masterId, t.skuId),
-    uqMasterOption: unique().on(t.masterId, t.optionKey),
-}));
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -1394,7 +1388,6 @@ export const wmsTables = {
     categories,
     skuCategories,
     inventoryProductMasters,
-    inventoryMasterSkuLinks,
     deliveryProfiles,
     warehouses,
     locationColumns,
@@ -1487,6 +1480,10 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
         fields: [skus.holderId],
         references: [holders.id],
     }),
+    master: one(inventoryProductMasters, {
+        fields: [skus.masterId],
+        references: [inventoryProductMasters.id],
+    }),
     deliveryProfile: one(deliveryProfiles, {
         fields: [skus.deliveryProfileId],
         references: [deliveryProfiles.id],
@@ -1495,7 +1492,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
     skuSuppliers: many(skuSuppliers),
     skuCategories: many(skuCategories),
     skuBarcodes: many(skuBarcodes),
-    inventoryMasterSkuLinks: many(inventoryMasterSkuLinks),
     // Stock relations
     stockEvents: many(stockEvents),
     stockLedgers: many(stockLedgers),
@@ -1552,20 +1548,10 @@ export const skuBarcodesRelations = relations(skuBarcodes, ({ one }) => ({
 
 // Inventory Master Relations
 export const inventoryProductMastersRelations = relations(inventoryProductMasters, ({ many }) => ({
-    inventoryMasterSkuLinks: many(inventoryMasterSkuLinks),
+    skus: many(skus),
     productMatchings: many(productMatchings),
 }));
 
-export const inventoryMasterSkuLinksRelations = relations(inventoryMasterSkuLinks, ({ one }) => ({
-    master: one(inventoryProductMasters, {
-        fields: [inventoryMasterSkuLinks.masterId],
-        references: [inventoryProductMasters.id],
-    }),
-    sku: one(skus, {
-        fields: [inventoryMasterSkuLinks.skuId],
-        references: [skus.id],
-    }),
-}));
 
 // Warehouse & Location Relations
 export const warehousesRelations = relations(warehouses, ({ many }) => ({
@@ -2134,7 +2120,7 @@ export const wmsRelations = {
 
     // Inventory Master Relations
     inventoryProductMastersRelations,
-    inventoryMasterSkuLinksRelations,
+    
 
     // Warehouse & Location Relations
     warehousesRelations,

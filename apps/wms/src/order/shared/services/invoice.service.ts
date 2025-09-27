@@ -6,7 +6,6 @@ import { eq, inArray } from 'drizzle-orm';
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
 import { GoodsflowDeliveryProvider } from './goodsflow-delivery.provider';
 
-// type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
 
 export interface IssueInvoiceRequest {
   fulfillmentOrderId: string;

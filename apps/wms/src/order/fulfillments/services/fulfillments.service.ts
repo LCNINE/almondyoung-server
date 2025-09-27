@@ -9,6 +9,7 @@ import { FULFILLMENT_EVENTS } from '../../shared/events';
 import { OutboxService } from '../../shared/services/outbox.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MatchingsService } from '../../matchings/services/matchings.service';
+import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 
 
 @Injectable()
@@ -19,6 +20,7 @@ export class FulfillmentsService {
     private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
     private readonly availability: AvailabilityService,
+    private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly matchings?: MatchingsService,
     private readonly events?: EventPublisherService<any>,
     private readonly outbox?: OutboxService,
@@ -289,15 +291,8 @@ export class FulfillmentsService {
 
       // 4) 예약 재분배 처리
       if (splitItems.length > 0) {
-        // TODO: DI로 주입받도록 수정 필요
-        const { ReservationLifecycleService } = await import('../../../shared/services/reservation-lifecycle.service');
-        const { UnifiedReservationService } = await import('../../../shared/services/unified-reservation.service');
-
-        const dbService = this.db; // 현재 DB 서비스 사용
-        const unifiedReservation = new UnifiedReservationService(dbService as any);
-        const lifecycleService = new ReservationLifecycleService(dbService as any, unifiedReservation);
-
-        await lifecycleService.handleFulfillmentOrderSplit(
+        // 예약 재분배는 예약 생명주기 서비스에 위임 (DI 사용)
+        await this.reservationLifecycle.handleFulfillmentOrderSplit(
           id,
           newFo.id,
           splitItems,

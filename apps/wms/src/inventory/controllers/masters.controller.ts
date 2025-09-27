@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MasterService } from '../services/master.service';
 import { ConfigService } from '@nestjs/config';
+import { OptionSchema } from '@app/shared/option-engine/option-engine.service';
 
 @ApiTags('Masters')
 @Controller('wms/masters')
@@ -36,6 +37,18 @@ export class MastersController {
   @ApiOperation({ summary: 'PIM 동기화(마스터/변형 생성) 트리거' })
   triggerPimSync(@Param('id') id: string) {
     return this.masterService.syncWithPim(id);
+  }
+
+  @Put(':id/options')
+  @ApiOperation({ summary: '옵션 스키마 설정/수정' })
+  updateOptions(@Param('id') id: string, @Body() optionSchema: OptionSchema) {
+    return this.masterService.updateMasterOptions(id, optionSchema);
+  }
+
+  @Get(':id/skus')
+  @ApiOperation({ summary: '마스터의 SKU 목록 조회' })
+  getMasterSkus(@Param('id') id: string) {
+    return this.masterService.getSkusByMaster(id);
   }
 }
 

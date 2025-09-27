@@ -55,13 +55,31 @@ export class InventoryService implements OnModuleInit {
     // ****************************************************************
 
     async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
-        return this.inTx(async (tx) => {
-            const { supplierIds, categoryIds, ...skuData } = createSkuDto;
+        return this.inTx(async (trx) => {
+            const { supplierIds, categoryIds } = createSkuDto;
 
-            const newSku = await this._createSkuInternal(skuData, tx);
+            // masterId 결정 및 필요 시 마스터 자동 생성
+            let masterId: string;
+            if (createSkuDto.masterId) {
+                masterId = createSkuDto.masterId;
+            } else {
+                const nameForMaster = createSkuDto.masterName ?? createSkuDto.name;
+                const masterCode = `M-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+                const [createdMaster] = await trx.insert(wmsTables.inventoryProductMasters).values({
+                    name: nameForMaster,
+                    masterCode,
+                    status: 'active' as any,
+                }).returning();
+                masterId = createdMaster.id;
+            }
+
+            const newSku = await this._createSkuInternal({
+                ...createSkuDto,
+                masterId,
+            } as any, trx);
 
             if (supplierIds && supplierIds.length > 0) {
-                await tx.insert(wmsTables.skuSuppliers).values(
+                await trx.insert(wmsTables.skuSuppliers).values(
                     supplierIds.map(supplierId => ({
                         skuId: newSku.id,
                         supplierId,
@@ -70,7 +88,7 @@ export class InventoryService implements OnModuleInit {
             }
 
             if (categoryIds && categoryIds.length > 0) {
-                await tx.insert(wmsTables.skuCategories).values(
+                await trx.insert(wmsTables.skuCategories).values(
                     categoryIds.map(categoryId => ({
                         skuId: newSku.id,
                         categoryId,
@@ -78,7 +96,7 @@ export class InventoryService implements OnModuleInit {
                 );
             }
 
-            return this.getSkuById(newSku.id, tx);
+            return this.getSkuById(newSku.id, trx);
         }, tx);
     }
 
@@ -207,11 +225,30 @@ export class InventoryService implements OnModuleInit {
     async getSkuById(skuId: string, tx?: DbTx): Promise<SkuResponseDto> {
         const sku = await this.inTx(async (trx) => {
             const [row] = await trx
-                .select()
+                .select({
+                    id: wmsTables.skus.id,
+                    name: wmsTables.skus.name,
+                    code: wmsTables.skus.code,
+                    defaultBarcode: wmsTables.skus.defaultBarcode,
+                    deliveryProfileId: wmsTables.skus.deliveryProfileId,
+                    sale1m: wmsTables.skus.sale1m,
+                    sale3m: wmsTables.skus.sale3m,
+                    masterId: wmsTables.skus.masterId,
+                    optionKey: wmsTables.skus.optionKey,
+                    masterName: wmsTables.inventoryProductMasters.name,
+                    masterCode: wmsTables.inventoryProductMasters.masterCode,
+                    masterOptionSchema: wmsTables.inventoryProductMasters.optionSchema,
+                    createdAt: wmsTables.skus.createdAt,
+                    updatedAt: wmsTables.skus.updatedAt,
+                })
                 .from(wmsTables.skus)
+                .innerJoin(
+                    wmsTables.inventoryProductMasters,
+                    eq(wmsTables.skus.masterId, wmsTables.inventoryProductMasters.id)
+                )
                 .where(eq(wmsTables.skus.id, skuId))
                 .limit(1);
-            return row;
+            return row as any;
         }, tx);
 
         if (!sku) {
@@ -250,6 +287,14 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId ?? undefined,
             sale1m: sku.sale1m ?? undefined,
             sale3m: sku.sale3m ?? undefined,
+            masterId: (sku as any).masterId,
+            optionKey: (sku as any).optionKey ?? undefined,
+            master: {
+                id: (sku as any).masterId,
+                name: (sku as any).masterName,
+                code: (sku as any).masterCode,
+                hasOptions: !!(sku as any).masterOptionSchema,
+            },
             barcodes: barcodes.map(b => ({
                 id: b.id,
                 barcode: b.barcode,
@@ -258,8 +303,8 @@ export class InventoryService implements OnModuleInit {
             })),
             supplierNames: suppliers.map(s => s.name),
             categoryNames: categories.map(c => c.name),
-            createdAt: sku.createdAt ?? new Date(),
-            updatedAt: sku.updatedAt ?? new Date(),
+            createdAt: (sku as any).createdAt ?? new Date(),
+            updatedAt: (sku as any).updatedAt ?? new Date(),
         };
     }
 
@@ -270,6 +315,7 @@ export class InventoryService implements OnModuleInit {
         name?: string;
         supplierName?: string;
         inventoryManagement?: boolean;
+        masterId?: string;
     }, tx?: DbTx): Promise<SkuResponseDto[]> {
         const results = await this.inTx(async (trx) => {
             const baseQuery = trx.select({
@@ -289,6 +335,7 @@ export class InventoryService implements OnModuleInit {
 
             if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
             if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
+            if (query.masterId) conditions.push(eq(wmsTables.skus.masterId, query.masterId));
             if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
 
             if (query.barcode) {
@@ -346,6 +393,8 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId,
             sale1m: sku.sale1m,
             sale3m: sku.sale3m,
+            masterId: sku.masterId,
+            optionKey: sku.optionKey,
             barcodes: Array.from(sku.barcodes.values()),
             supplierNames: Array.from(sku.supplierNames),
             categoryNames: Array.from(sku.categoryNames),
@@ -701,7 +750,10 @@ export class InventoryService implements OnModuleInit {
     // Helper Methods
     // ****************************************************************
 
-    async _createSkuInternal(data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode' | 'supplierIds' | 'categoryIds'>, tx: DbTx) {
+    async _createSkuInternal(
+        data: Omit<CreateSkuDto, 'id' | 'code' | 'defaultBarcode' | 'supplierIds' | 'categoryIds'> & { masterId: string },
+        tx: DbTx,
+    ) {
         const db = tx;
         // preStockSellable 제거
         const skuCode = this._generateSkuCode();
@@ -716,8 +768,10 @@ export class InventoryService implements OnModuleInit {
         }
 
         const [newSku] = await db.insert(wmsTables.skus).values({
+            masterId: data.masterId,
             name: skuName,
             code: skuCode,
+            optionKey: (data as any).optionKey as any,
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,

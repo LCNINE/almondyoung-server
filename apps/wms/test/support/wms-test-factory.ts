@@ -25,11 +25,22 @@ export class WmsTestFactory {
 
   // SKU Factory
   static async createSku(overrides: Partial<any> = {}) {
+    // ensure master
+    let masterId = overrides.masterId as string | undefined;
+    if (!masterId) {
+      const masterCode = `M-${faker.string.alphanumeric(6).toUpperCase()}`;
+      const [master] = await this.db.insert(wmsTables.inventoryProductMasters)
+        .values({ name: faker.commerce.productName(), masterCode, status: 'active' as any })
+        .returning();
+      masterId = master.id;
+    }
+
     const sku = {
       name: faker.commerce.productName(),
       code: `SKU-${faker.string.alphanumeric(8)}`,
       holderId: '00000000-0000-0000-0000-000000000000', // Default holder
       stockType: 'physical' as const,
+      masterId,
       ...overrides
     };
 

@@ -29,7 +29,6 @@ export class MasterService {
   async createMaster(params: {
     name: string;
     masterCode: string;
-    purpose?: 'standard' | 'set' | 'material';
     optionSchema?: OptionSchema;
     defaultPolicy?: Record<string, unknown>;
   }, tx?: DbTx) {
@@ -39,7 +38,6 @@ export class MasterService {
       const [created] = await trx.insert(wmsTables.inventoryProductMasters).values({
         name: params.name,
         masterCode: params.masterCode,
-        purpose: (params.purpose ?? 'standard') as any,
         optionSchema: params.optionSchema as any,
         defaultPolicy: params.defaultPolicy as any,
       }).returning();
@@ -102,7 +100,6 @@ export class MasterService {
 
   async updateMaster(masterId: string, params: Partial<{
     name: string;
-    purpose: 'standard' | 'set' | 'material';
     optionSchema: OptionSchema;
     defaultPolicy: Record<string, unknown>;
     status: 'active' | 'archived';
@@ -112,7 +109,6 @@ export class MasterService {
       const [updated] = await trx.update(wmsTables.inventoryProductMasters)
         .set({
           name: params.name,
-          purpose: params.purpose as any,
           optionSchema: params.optionSchema as any,
           defaultPolicy: params.defaultPolicy as any,
           status: params.status as any,
@@ -125,7 +121,15 @@ export class MasterService {
 
   async deleteMaster(masterId: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      await trx.delete(wmsTables.inventoryMasterSkuLinks).where(eq(wmsTables.inventoryMasterSkuLinks.masterId, masterId));
+      // 새 모델에서는 skus.master_id FK가 있으므로 링크 테이블 정리는 선택적
+      const [linkedSku] = await trx
+        .select({ id: wmsTables.skus.id })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.masterId, masterId))
+        .limit(1);
+      if (linkedSku) {
+        throw new Error('Cannot delete master with linked SKUs');
+      }
       await trx.delete(wmsTables.inventoryProductMasters).where(eq(wmsTables.inventoryProductMasters.id, masterId));
     }, tx);
   }
@@ -139,19 +143,44 @@ export class MasterService {
 
       const createdSkuIds: string[] = [];
       for (const combo of combos) {
-        const existing = await trx.query.inventoryMasterSkuLinks.findFirst({ where: and(eq(wmsTables.inventoryMasterSkuLinks.masterId, masterId), eq(wmsTables.inventoryMasterSkuLinks.optionKey, combo as any)) });
-        // naive existence check by optionKey json string match is omitted for simplicity
+        // (master_id, option_key) 유니크 제약을 사용해 존재 검사
+        const existing = await trx.query.skus.findFirst({ where: and(eq(wmsTables.skus.masterId, masterId), eq(wmsTables.skus.optionKey, combo as any)) });
         if (existing) continue;
-        const sku = await this.inventoryService.createSku({ name: `${master.name} ${Object.values(combo).join(' / ')}` as any }, trx as any);
-        await trx.insert(wmsTables.inventoryMasterSkuLinks).values({
-          masterId,
-          skuId: sku.id,
-          optionKey: combo as any,
-          isPrimary: false,
-        });
+        const skuName = `${master.name} ${Object.values(combo).join(' / ')}`;
+        const sku = await this.inventoryService.createSku({ name: skuName, masterId, optionKey: combo as any } as any, trx);
         createdSkuIds.push(sku.id);
       }
       return createdSkuIds;
+    }, tx);
+  }
+
+  async updateMasterOptions(masterId: string, optionSchema: OptionSchema, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      this.optionEngine.validateSchema(optionSchema);
+      const [updated] = await trx.update(wmsTables.inventoryProductMasters)
+        .set({ optionSchema: optionSchema as any, updatedAt: new Date() })
+        .where(eq(wmsTables.inventoryProductMasters.id, masterId))
+        .returning();
+      return updated;
+    }, tx);
+  }
+
+  async getSkusByMaster(masterId: string, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({
+          id: wmsTables.skus.id,
+          name: wmsTables.skus.name,
+          code: wmsTables.skus.code,
+          defaultBarcode: wmsTables.skus.defaultBarcode,
+          masterId: wmsTables.skus.masterId,
+          optionKey: wmsTables.skus.optionKey,
+          createdAt: wmsTables.skus.createdAt,
+          updatedAt: wmsTables.skus.updatedAt,
+        })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.masterId, masterId));
+      return rows;
     }, tx);
   }
 }
