@@ -198,5 +198,5 @@
       "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
     }
-  },
+  }
 }
