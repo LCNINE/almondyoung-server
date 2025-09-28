@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
+import { StockEventService } from '../services/stock-event.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { CreateSkuDto } from '../dto/sku/create-sku.dto';
@@ -10,11 +11,15 @@ import { SkuResponseDto } from '../dto/sku/sku-response.dto';
 import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
 import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
 import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
+import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
 
 @ApiTags('Inventory')
 @Controller('wms/inventory')
 export class InventoryController {
-    constructor(private readonly inventoryService: InventoryService) { }
+    constructor(
+        private readonly inventoryService: InventoryService,
+        private readonly stockEventService: StockEventService
+    ) { }
 
     // ═══════════════════════════════════════════════════════════════
     // 재고 관리 API
@@ -141,6 +146,17 @@ export class InventoryController {
             adjustDto.delta,
             adjustDto.reason
         );
+    }
+
+    @Post('/stocks/entry-safe')
+    @ApiOperation({
+        summary: '안전한 재고 입고 (SKU ID 기반)',
+        description: '기존 SKU ID로만 재고를 입고합니다. 자동 SKU 생성을 하지 않아 데이터 무결성을 보장합니다.'
+    })
+    @ApiResponse({ status: 201, description: '재고 입고가 성공적으로 처리되었습니다.' })
+    @ApiResponse({ status: 400, description: 'SKU를 찾을 수 없거나 잘못된 요청입니다.' })
+    async createStockEntryBySkuId(@Body() dto: CreateStockEntryBySkuIdDto) {
+        return this.stockEventService.createStockEntryBySkuId(dto);
     }
 
     @Get('/stocks/history')

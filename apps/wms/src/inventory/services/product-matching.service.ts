@@ -12,9 +12,10 @@ import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
 import { OptionMatchingStrategy } from '../strategies/option-matching.strategy';
 
-// 임시 인터페이스 (실제로는 PIM 모듈에서 가져와야 함)
+// 안전한 SKU ID 기반 PIM 인터페이스
 interface PimSkuComponent {
-    skuName: string;
+    skuId: string;     // ✅ skuName → skuId 변경 (필수)
+    skuName?: string;  // 표시용으로만 유지 (옵셔널)
 }
 
 interface PimVariantPayload {
@@ -170,10 +171,10 @@ export class ProductMatchingService {
                 const mappings: SkuQuantityMapping[] = [];
 
                 for (const component of variant.components) {
-                    const newStock = await this.stockEventService.createStockEntry({
+                    // ✅ 안전한 SKU ID 기반 재고 입고
+                    const newStock = await this.stockEventService.createStockEntryBySkuId({
+                        skuId: component.skuId,  // ✅ skuName → skuId 변경
                         variantId: variant.id,
-                        skuName: component.skuName,
-                        inventoryManagement: true,
                         warehouseId,
                         quantity: 0,
                         stockType: 'physical',
@@ -398,17 +399,26 @@ export class ProductMatchingService {
         alwaysSellableZeroStock?: boolean;
     }, tx?: DbTx) {
         return this.inTx(async (trx) => {
+            // productMatching에서 masterId 조회
+            const productMatching = await trx.query.productMatchings.findFirst({
+                where: eq(wmsTables.productMatchings.variantId, variantId)
+            });
+
+            if (!productMatching?.masterId) {
+                throw new Error(`No master found for variant: ${variantId}`);
+            }
+
             const newSku = await this.inventoryService._createSkuInternal({
                 name: skuData.name,
                 source: SkuCreationSource.MANUAL_MATCHING,
+                masterId: productMatching.masterId, // masterId 추가
             }, trx);
 
             if (skuData.inventoryManagement) {
                 const warehouseId = this.inventoryService.getDefaultWarehouseId();
-                await this.stockEventService.createStockEntry({
+                await this.stockEventService.createStockEntryBySkuId({
+                    skuId: newSku.id,  // ✅ SKU ID로 직접 사용
                     variantId,
-                    skuName: newSku.name,
-                    inventoryManagement: true,
                     warehouseId,
                     quantity: 0,
                     stockType: 'physical',
