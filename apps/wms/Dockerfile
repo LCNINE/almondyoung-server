@@ -4,8 +4,8 @@ FROM node:18-alpine AS base
 # 작업 디렉토리 설정
 WORKDIR /app
 
-# 시스템 의존성 설치 (PostgreSQL 클라이언트 등)
-RUN apk add --no-cache postgresql-client
+# 시스템 의존성 설치 (PostgreSQL 클라이언트, git 등)
+RUN apk add --no-cache postgresql-client git
 
 # === 의존성 설치 단계 ===
 FROM base AS deps
