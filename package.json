@@ -4,7 +4,6 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    // === 전체 프로젝트 명령어 ===
     "build": "npm run build:all",
     "build:all": "nest build almondyoung-server && nest build wms && nest build pim && nest build user-service && nest build wallet && nest build membership && nest build notification && nest build channel-adapter",
     "start": "npm run start:main",
@@ -16,7 +15,6 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
 
-    // === 서비스별 빌드 ===
     "build:main": "nest build almondyoung-server",
     "build:wms": "nest build wms",
     "build:pim": "nest build pim",
@@ -26,7 +24,6 @@
     "build:notification": "nest build notification",
     "build:channel-adapter": "nest build channel-adapter",
 
-    // === 서비스별 시작 ===
     "start:main": "nest start almondyoung-server",
     "start:main:dev": "nest start almondyoung-server --watch",
     "start:main:debug": "nest start almondyoung-server --debug --watch",
@@ -60,7 +57,6 @@
     "start:channel-adapter:dev": "nest start channel-adapter --watch",
     "start:channel-adapter:prod": "node dist/apps/channel-adapter/main.js",
 
-    // === 서비스별 테스트 ===
     "test:wms": "jest --config apps/wms/jest.config.js",
     "test:wms:watch": "jest --config apps/wms/jest.config.js --watch",
     "test:wms:debug": "jest --config apps/wms/jest.config.js --verbose",
@@ -72,7 +68,6 @@
     "test:membership:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
 
-    // === 데이터베이스 관리 ===
     "db:generate:wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
     "db:push:wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
     "db:push:wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
@@ -86,18 +81,15 @@
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
 
-    // === 문서화 ===
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
     "docs:wms": "npm run docs:generate wms",
     "docs:pim": "npm run docs:generate pim",
     "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "docs:serve": "npx itdoc serve",
 
-    // === 기타 유틸리티 ===
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",
 
-    // === 레거시 스크립트 (하위 호환성) ===
     "start:dev": "npm run start:main:dev",
     "start:debug": "npm run start:main:debug",
     "start:prod": "npm run start:main:prod",
@@ -117,7 +109,6 @@
     "test:membership:e2e:verbose": "npm run test:membership:verbose",
     "test:membership:e2e:coverage": "npm run test:membership:coverage",
 
-    // === 개발/테스트 전용 스크립트 ===
     "test:payment": "jest --testPathPattern=payment.*spec.ts",
     "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
     "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
