@@ -27,6 +27,7 @@ import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { EventsModule } from '@app/events';
+import { createKafkaConfigFromEnv } from '@app/events/types';
 import { MatchingsController } from './matchings/controllers/matchings.controller';
 import { MatchingsService } from './matchings/services/matchings.service';
 import { OutboxService } from './shared/services/outbox.service';
@@ -41,11 +42,13 @@ import { SharedModule } from '../shared/shared.module';
       schema: wmsTables,
     }),
     EventsModule.forRoot({
-      kafka: {
-        clientId: process.env.KAFKA_CLIENT_ID ?? 'wms',
-        brokers: (process.env.KAFKA_BROKERS ?? '').split(',').filter(Boolean),
-        groupId: process.env.KAFKA_GROUP_ID ?? 'wms-group',
-      },
+      kafka: createKafkaConfigFromEnv({
+        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID ?? 'wms',
+        KAFKA_BROKERS: process.env.KAFKA_BROKERS ?? '',
+        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID ?? 'wms-group',
+        KAFKA_API_KEY: process.env.KAFKA_API_KEY,
+        KAFKA_API_SECRET: process.env.KAFKA_API_SECRET,
+      }),
       events: {} as any,
       serviceName: 'wms-order',
     }),
