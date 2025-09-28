@@ -10,7 +10,8 @@ export interface PimProductDetailChangeEvent {
         name: string;
         inventoryManagement: boolean;
         components: Array<{
-            skuName: string;
+            skuId: string;     // ✅ skuName → skuId 변경 (필수)
+            skuName?: string;  // 표시용으로만 유지 (옵셔널)
         }>;
     }>;
     changedVariantIds?: string[]; // VARIANT_ADDED/DELETED 이벤트용
