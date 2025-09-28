@@ -68,7 +68,7 @@ async function bootstrap() {
         },
     });
 
-    const port = process.env.NOTIFICATION_PORT ?? 5001;
+    const port = process.env.PORT ?? 5001;
     await app.listen(port);
 
     console.log(`Notification service is running on port ${port}`);

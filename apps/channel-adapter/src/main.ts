@@ -86,6 +86,8 @@ async function bootstrap() {
   });
   console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
-  await app.listen(3003);
+  const port = process.env.PORT ?? 3003;
+  await app.listen(port);
+  console.log(`Channel Adapter running on port ${port}`);
 }
 bootstrap();
