@@ -27,6 +27,12 @@ export interface KafkaConfig {
   clientId: string;
   brokers: string[];
   groupId?: string;
+  ssl?: boolean;
+  sasl?: {
+    mechanism: string;
+    username: string;
+    password: string;
+  };
   retry?: {
     retries?: number;
     initialRetryTime?: number;
@@ -38,13 +44,15 @@ export interface KafkaEnvironmentConfig {
   KAFKA_CLIENT_ID: string;
   KAFKA_BROKERS: string;
   KAFKA_GROUP_ID?: string;
+  KAFKA_API_KEY?: string;
+  KAFKA_API_SECRET?: string;
 }
 
 // 환경 변수를 KafkaConfig로 변환하는 헬퍼
 export function createKafkaConfigFromEnv(
   env: KafkaEnvironmentConfig,
 ): KafkaConfig {
-  return {
+  const config: KafkaConfig = {
     clientId: env.KAFKA_CLIENT_ID,
     brokers: env.KAFKA_BROKERS.split(','),
     groupId: env.KAFKA_GROUP_ID,
@@ -53,4 +61,16 @@ export function createKafkaConfigFromEnv(
       initialRetryTime: 300,
     },
   };
+
+  // Confluent Cloud 설정 (API Key/Secret이 있으면 SSL/SASL 활성화)
+  if (env.KAFKA_API_KEY && env.KAFKA_API_SECRET) {
+    config.ssl = true;
+    config.sasl = {
+      mechanism: 'plain',
+      username: env.KAFKA_API_KEY,
+      password: env.KAFKA_API_SECRET,
+    };
+  }
+
+  return config;
 }
