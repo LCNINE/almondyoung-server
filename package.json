@@ -4,46 +4,120 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build && nest build wallet && nest build wms",
-    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/apps/almondyoung-server/main",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    // === 전체 프로젝트 명령어 ===
+    "build": "npm run build:all",
+    "build:all": "nest build almondyoung-server && nest build wms && nest build pim && nest build user-service && nest build wallet && nest build membership && nest build notification && nest build channel-adapter",
+    "start": "npm run start:main",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
-    "test:membership:itdoc": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
-    "test:membership:e2e:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
-    "test:membership:e2e:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
-    "test:membership:e2e:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
-    "wms:test": "jest --config apps/wms/jest.config.js",
-    "wms:test:watch": "jest --config apps/wms/jest.config.js --watch",
-    "wms:test:debug": "jest --config apps/wms/jest.config.js --verbose",
-    "db:push.wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
-    "db:push.wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
-    "db:generate.wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
+
+    // === 서비스별 빌드 ===
+    "build:main": "nest build almondyoung-server",
     "build:wms": "nest build wms",
+    "build:pim": "nest build pim",
+    "build:user-service": "nest build user-service",
+    "build:wallet": "nest build wallet",
+    "build:membership": "nest build membership",
+    "build:notification": "nest build notification",
+    "build:channel-adapter": "nest build channel-adapter",
+
+    // === 서비스별 시작 ===
+    "start:main": "nest start almondyoung-server",
+    "start:main:dev": "nest start almondyoung-server --watch",
+    "start:main:debug": "nest start almondyoung-server --debug --watch",
+    "start:main:prod": "node dist/apps/almondyoung-server/main.js",
+
     "start:wms": "nest start wms",
     "start:wms:dev": "nest start wms --watch",
     "start:wms:prod": "node dist/apps/wms/main.js",
+
+    "start:pim": "nest start pim",
+    "start:pim:dev": "nest start pim --watch",
+    "start:pim:prod": "node dist/apps/pim/main.js",
+
+    "start:user-service": "nest start user-service",
+    "start:user-service:dev": "nest start user-service --watch",
+    "start:user-service:prod": "node dist/apps/user-service/main.js",
+
+    "start:wallet": "nest start wallet",
+    "start:wallet:dev": "nest start wallet --watch",
+    "start:wallet:prod": "node dist/apps/wallet/main.js",
+
+    "start:membership": "nest start membership",
+    "start:membership:dev": "nest start membership --watch",
+    "start:membership:prod": "node dist/apps/membership/main.js",
+
+    "start:notification": "nest start notification",
+    "start:notification:dev": "nest start notification --watch",
+    "start:notification:prod": "node dist/apps/notification/main.js",
+
+    "start:channel-adapter": "nest start channel-adapter",
+    "start:channel-adapter:dev": "nest start channel-adapter --watch",
+    "start:channel-adapter:prod": "node dist/apps/channel-adapter/main.js",
+
+    // === 서비스별 테스트 ===
+    "test:wms": "jest --config apps/wms/jest.config.js",
+    "test:wms:watch": "jest --config apps/wms/jest.config.js --watch",
+    "test:wms:debug": "jest --config apps/wms/jest.config.js --verbose",
+
+    "test:user-service": "jest --config ./apps/user-service/jest.config.js",
+
+    "test:membership": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
+    "test:membership:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
+    "test:membership:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
+    "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
+
+    // === 데이터베이스 관리 ===
+    "db:generate:wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
+    "db:push:wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
+    "db:push:wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
+
     "db:generate:pim": "cd apps/pim && drizzle-kit generate",
     "db:migrate:pim": "cd apps/pim && drizzle-kit migrate",
     "db:push:pim": "cd apps/pim && drizzle-kit push",
+
+    "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
+    "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
+    "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
+    "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
+
+    // === 문서화 ===
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
     "docs:wms": "npm run docs:generate wms",
     "docs:pim": "npm run docs:generate pim",
+    "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "docs:serve": "npx itdoc serve",
-    "test:user": "jest --config ./apps/user-service/jest.config.js",
+
+    // === 기타 유틸리티 ===
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
-    "seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
-    "db:push.user": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",
-    "db:seed": "cd apps/membership && npx tsx drizzle/seed.ts",
-    "db:seed:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
+
+    // === 레거시 스크립트 (하위 호환성) ===
+    "start:dev": "npm run start:main:dev",
+    "start:debug": "npm run start:main:debug",
+    "start:prod": "npm run start:main:prod",
+    "wms:test": "npm run test:wms",
+    "wms:test:watch": "npm run test:wms:watch",
+    "wms:test:debug": "npm run test:wms:debug",
+    "db:push.wms": "npm run db:push:wms",
+    "db:push.wms:test": "npm run db:push:wms:test",
+    "db:generate.wms": "npm run db:generate:wms",
+    "test:user": "npm run test:user-service",
+    "seed:user-service": "npm run db:seed:user-service",
+    "db:push.user": "npm run db:push:user-service",
+    "db:seed": "npm run db:seed:membership",
+    "db:seed:billing-test": "npm run db:seed:membership:billing-test",
+    "test:membership:itdoc": "npm run test:membership",
+    "test:membership:e2e:watch": "npm run test:membership:watch",
+    "test:membership:e2e:verbose": "npm run test:membership:verbose",
+    "test:membership:e2e:coverage": "npm run test:membership:coverage",
+
+    // === 개발/테스트 전용 스크립트 ===
     "test:payment": "jest --testPathPattern=payment.*spec.ts",
     "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
     "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
@@ -57,7 +131,6 @@
     "test:bnpl:itdoc": "jest --testPathPattern=bnpl-api.itdoc.spec.ts --verbose",
     "test:orchestration:webhook": "ts-node apps/channel-adapter/test-orchestration.ts webhook",
     "test:orchestration:command": "ts-node apps/channel-adapter/test-orchestration.ts command",
-    "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "test:coupang:sync": "ts-node apps/channel-adapter/test-coupang-sync.ts",
     "mock:naver-server": "ts-node apps/channel-adapter/naver-mock-server.ts",
     "mock:naver-server:bg": "ts-node apps/channel-adapter/naver-mock-server.ts &"
