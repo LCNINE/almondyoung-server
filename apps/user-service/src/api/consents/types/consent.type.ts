@@ -7,10 +7,7 @@ export interface IConsent {
   electronicTransaction: boolean;
   privacyPolicy: boolean;
   thirdPartySharing: boolean;
-  marketingConsent?: boolean;
-  emailConsent?: boolean;
-  smsConsent?: boolean;
-  pushConsent?: boolean;
+  marketingConsent: boolean; // 마케팅 수신 동의 (통합)
 }
 
 export type UserConsent = InferSelectModel<typeof userConsents>;

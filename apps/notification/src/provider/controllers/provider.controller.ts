@@ -14,6 +14,8 @@ import {
     NotFoundException,
     Headers,
 } from '@nestjs/common';
+
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
@@ -29,6 +31,8 @@ import {
 import { ProviderManagerService } from '../services/provider-manager.service';
 import { ProviderStatus } from '../enums/provider-status.enum';
 
+@ApiTags('providers')
+
 @Controller('api/v1/providers')
 export class ProviderController {
     constructor(
@@ -41,6 +45,8 @@ export class ProviderController {
     }
 
     @Get()
+    @ApiOperation({ summary: '프로바이더 목록 조회', description: '필터 조건에 따라 프로바이더 목록을 조회합니다.' })
+    @ApiResponse({ status: 200, description: '프로바이더 목록 조회 성공' })
     async findAll(@Query(ValidationPipe) filter: ProviderFilterDto) {
         const conditions: any[] = [];
 
@@ -70,6 +76,10 @@ export class ProviderController {
     }
 
     @Get(':id')
+    @ApiOperation({ summary: '프로바이더 상세 조회', description: '특정 프로바이더의 상세 정보를 조회합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiResponse({ status: 200, description: '프로바이더 상세 조회 성공' })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async findOne(@Param('id') id: string) {
         const provider = await this.db.query.notificationProviders.findFirst({
             where: eq(notificationProviders.providerId, id),
@@ -83,6 +93,10 @@ export class ProviderController {
     }
 
     @Post()
+    @ApiOperation({ summary: '프로바이더 생성', description: '새로운 알림 프로바이더를 생성합니다.' })
+    @ApiBody({ type: CreateProviderDto })
+    @ApiResponse({ status: 201, description: '프로바이더 생성 성공' })
+    @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
     async create(@Body(ValidationPipe) dto: CreateProviderDto) {
         const newProvider: any = {
             channel: dto.channel,
@@ -106,6 +120,11 @@ export class ProviderController {
     }
 
     @Put(':id')
+    @ApiOperation({ summary: '프로바이더 수정', description: '기존 프로바이더의 설정을 수정합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiBody({ type: UpdateProviderDto })
+    @ApiResponse({ status: 200, description: '프로바이더 수정 성공' })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async update(
         @Param('id') id: string,
         @Body(ValidationPipe) dto: UpdateProviderDto,
@@ -133,6 +152,10 @@ export class ProviderController {
     }
 
     @Put(':id/toggle')
+    @ApiOperation({ summary: '프로바이더 활성화/비활성화 토글', description: '프로바이더의 활성화 상태를 토글합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiResponse({ status: 200, description: '프로바이더 상태 토글 성공' })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async toggle(@Param('id') id: string) {
         const provider = await this.findOne(id);
 
@@ -152,6 +175,10 @@ export class ProviderController {
 
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({ summary: '프로바이더 삭제', description: '프로바이더를 삭제합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiResponse({ status: 204, description: '프로바이더 삭제 성공' })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async remove(@Param('id') id: string) {
         const result = await this.db
             .delete(notificationProviders)
@@ -165,6 +192,11 @@ export class ProviderController {
     }
 
     @Post(':id/test')
+    @ApiOperation({ summary: '프로바이더 테스트', description: '프로바이더의 동작을 테스트합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiBody({ type: TestProviderDto })
+    @ApiResponse({ status: 200, description: '프로바이더 테스트 성공', type: TestProviderResponseDto })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async testProvider(
         @Param('id') id: string,
         @Body(ValidationPipe) dto: TestProviderDto,
@@ -212,6 +244,10 @@ export class ProviderController {
     }
 
     @Get(':id/health')
+    @ApiOperation({ summary: '프로바이더 상태 확인', description: '프로바이더의 상태와 가용성을 확인합니다.' })
+    @ApiParam({ name: 'id', description: '프로바이더 ID', example: 'provider-123' })
+    @ApiResponse({ status: 200, description: '프로바이더 상태 확인 성공' })
+    @ApiResponse({ status: 404, description: '프로바이더를 찾을 수 없음' })
     async checkHealth(@Param('id') id: string) {
         const provider = await this.providerManager.getProviderById(id);
         if (!provider) {
@@ -233,6 +269,10 @@ export class ProviderController {
     }
 
     @Get('channels/:channel/primary')
+    @ApiOperation({ summary: '채널별 주 프로바이더 조회', description: '특정 채널의 주 프로바이더를 조회합니다.' })
+    @ApiParam({ name: 'channel', description: '채널명', example: 'EMAIL' })
+    @ApiResponse({ status: 200, description: '주 프로바이더 조회 성공' })
+    @ApiResponse({ status: 404, description: '해당 채널의 프로바이더를 찾을 수 없음' })
     async getPrimaryProvider(@Param('channel') channel: string) {
         const provider = this.providerManager.getPrimaryProviderForChannel(channel as any);
         if (!provider) {

@@ -1,0 +1,26 @@
+/**
+ * 정책 액션 타입 정의
+ * 정책 검증 시 사용되는 액션들을 정의합니다.
+ */
+export enum PolicyAction {
+  // 구독 일시정지 관련
+  PAUSE_SUBSCRIPTION = 'PAUSE_SUBSCRIPTION',
+  RESUME_SUBSCRIPTION = 'RESUME_SUBSCRIPTION',
+
+  // 플랜 변경 관련
+  PLAN_CHANGE = 'PLAN_CHANGE',
+  PLAN_UPGRADE = 'PLAN_UPGRADE',
+  PLAN_DOWNGRADE = 'PLAN_DOWNGRADE',
+
+  // 구독 관리 관련
+  SUBSCRIPTION_CANCEL = 'SUBSCRIPTION_CANCEL',
+  SUBSCRIPTION_RENEWAL = 'SUBSCRIPTION_RENEWAL',
+
+  // 권한 관련
+  ACCESS_PREMIUM_CONTENT = 'ACCESS_PREMIUM_CONTENT',
+  MODIFY_SUBSCRIPTION = 'MODIFY_SUBSCRIPTION',
+}
+
+/**
+ * 정책 검증 옵션
+ */

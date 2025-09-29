@@ -38,6 +38,15 @@
         "tsConfigPath": "libs/db/tsconfig.lib.json"
       }
     },
+    "pim": {
+      "type": "application",
+      "root": "apps/pim",
+      "entryFile": "main",
+      "sourceRoot": "apps/pim/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/pim/tsconfig.app.json"
+      }
+    },
     "roles": {
       "type": "library",
       "root": "libs/roles",
@@ -72,6 +81,15 @@
       "sourceRoot": "apps/wms/src",
       "compilerOptions": {
         "tsConfigPath": "apps/wms/tsconfig.app.json"
+      }
+    },
+    "membership": {
+      "type": "application",
+      "root": "apps/membership",
+      "entryFile": "main",
+      "sourceRoot": "apps/membership/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/membership/tsconfig.app.json"
       }
     },
     "wallet": {

@@ -36,7 +36,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     } catch (error) {
       if (error.type === MedusaError.Types.NOT_FOUND) {
         // provider_identity 테이블에 생성됌
-
         const createdAuthIdentity = await authIdentityProviderService.create({
           entity_id: data.body!.email, // email or some ID
           provider_metadata: {
@@ -63,7 +62,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
     authIdentityProviderService: AuthIdentityProviderService,
   ): Promise<AuthenticationResponse> {
     try {
-      // 토큰 인증 처리
       const authHeader = data?.headers?.authorization;
       let almond_token;
 
@@ -108,7 +106,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       const authIdentity = await authIdentityProviderService.retrieve({
         entity_id: payload.email,
       });
-
       // 메두사에서 'user'는 관리자 권한이 있는 사용자를 의미함
       const actorType = payload.scopes?.some(
         (role) =>
@@ -127,7 +124,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
             user_id: authIdentity?.app_metadata?.user_id,
             customer_id: authIdentity?.app_metadata?.customer_id,
             email: payload.email,
-            scopes: payload.scopes,
+            scopes: [payload.scopes],
           },
           provider_identities: [
             {
@@ -135,7 +132,7 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
               provider: 'my-auth',
               entity_id: payload.email,
               provider_metadata: {
-                scopes: payload.scopes,
+                scopes: [payload.scopes],
               },
             },
           ],

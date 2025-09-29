@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ChannelStrategy } from './channel-strategy.interface';
 import {
@@ -8,7 +8,7 @@ import {
   InternalInventoryData,
 } from '../../types';
 import { InternalOrderEvent, OrderQuery } from '../../types';
-import { ChannelCommand } from '../../types';
+import { ChannelCommand, ChannelQuery } from '../../types';
 
 import {
   InternalDispatchCommandSchema,
@@ -16,6 +16,11 @@ import {
   NaverDispatchRequestSchema,
 } from '../../zods/naver-dispatch.zod';
 import { NaverCommerceApiService } from '../apis/naver-commerce.api.service';
+import {
+  WmsApiService,
+  SalesOrder,
+  CreateSalesOrderDto,
+} from '../apis/wms.api.service';
 import { z } from 'zod';
 
 import {
@@ -108,7 +113,10 @@ interface TypedProductOrderInfo extends ProductOrderInfo {
 @Injectable()
 export class NaverSmartstoreStrategy implements ChannelStrategy {
   private readonly logger = new Logger(NaverSmartstoreStrategy.name);
-  constructor(private readonly naverApi: NaverCommerceApiService) {}
+  constructor(
+    private readonly naverApi: NaverCommerceApiService,
+    private readonly wmsApi: WmsApiService,
+  ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
     // 네이버 웹훅이 있는 경우 payload -> InternalOrderEvent로 변환
@@ -295,6 +303,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
               },
             };
           } catch (apiError: any) {
+            // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
+            if (apiError instanceof BadRequestException) {
+              throw apiError;
+            }
+
             this.logger.error(`❌ 네이버 재고 업데이트 API 호출 실패:`, {
               productId: inventoryData.productId,
               error: apiError.response?.data || apiError.message,
@@ -363,16 +376,19 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       const token = await this.naverApi.getAccessToken();
 
       switch (command.type) {
-        case 'order.confirm':
+        case 'order.prepare':
+          // 네이버의 order.confirm과 매핑
           return await this.executeOrderConfirm(token, command);
 
-        case 'dispatch.confirm':
+        case 'dispatch.ship':
+          // 네이버의 dispatch.confirm과 매핑
           return await this.executeDispatchConfirm(token, command);
 
         case 'dispatch.delay':
           return await this.executeDispatchDelay(token, command);
 
-        case 'cancel.approve':
+        case 'order.cancel':
+          // 네이버의 cancel.approve와 매핑
           return await this.executeCancelApprove(token, command);
 
         case 'return.approve':
@@ -381,7 +397,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         default:
           return {
             success: false,
-            errors: [{ message: `지원하지 않는 명령 타입: ${command.type}` }],
+            errors: [
+              { message: `네이버에서 지원하지 않는 명령: ${command.type}` },
+            ],
           };
       }
     } catch (error) {
@@ -391,6 +409,43 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         errors: [{ message: `네이버 명령 실행 실패: ${message}` }],
       };
     }
+  }
+
+  async executeQuery(query: ChannelQuery): Promise<any> {
+    try {
+      switch (query.type) {
+        case 'order.status':
+          // 네이버는 주문 상태 조회 지원
+          return await this.queryOrderStatus(query);
+
+        case 'claim.details':
+          // 네이버는 클레임 상세 조회 지원
+          return await this.queryClaimDetails(query);
+
+        default:
+          throw new Error(`네이버에서 지원하지 않는 조회: ${query.type}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`네이버 조회 실행 실패: ${message}`);
+    }
+  }
+
+  // 간단한 조회 메서드들
+  private async queryOrderStatus(query: {
+    type: 'order.status';
+    orderId: string;
+  }): Promise<any> {
+    // TODO: 네이버 주문 상태 조회 구현
+    throw new Error('구현 필요: 네이버 주문 상태 조회');
+  }
+
+  private async queryClaimDetails(query: {
+    type: 'claim.details';
+    claimId: string;
+  }): Promise<any> {
+    // TODO: 네이버 클레임 상세 조회 구현
+    throw new Error('구현 필요: 네이버 클레임 상세 조회');
   }
 
   /**
@@ -574,6 +629,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         validatedNaverRequest.dispatchProductOrders.length,
       );
     } catch (error) {
+      // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
       console.error(
         '❌ 네이버 발송처리 실패:',
         error.response?.data || error.message,
@@ -973,5 +1033,329 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       );
       return [];
     }
+  }
+
+  // ===== WMS 연동 메서드 (CTO SoT 원칙) =====
+
+  /**
+   * 네이버 주문을 WMS에 전달 (어댑터가 SoT → 동기 요청)
+   *
+   * @param orderEvent 네이버에서 수신한 주문 이벤트
+   * @returns WMS에서 생성된 판매주문 정보
+   */
+  async createOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
+    const startTime = Date.now();
+
+    this.logger.log(
+      `🏭 [네이버→WMS] 주문 생성 요청: ${orderEvent.externalOrderId}`,
+      {
+        channelType: orderEvent.channelType,
+        externalProductOrderId: orderEvent.externalProductOrderId,
+        buyerName: orderEvent.buyer?.name,
+      },
+    );
+
+    try {
+      // 1. 네이버 주문 이벤트를 WMS 주문 생성 형식으로 변환
+      const wmsOrderData = this.transformToWmsOrderFormat(orderEvent);
+
+      // 2. WMS API 호출
+      const wmsOrder = await this.wmsApi.createSalesOrder(wmsOrderData);
+
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `✅ [네이버→WMS] 주문 생성 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: orderEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error(
+        `❌ [네이버→WMS] 주문 생성 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          buyerName: orderEvent.buyer?.name,
+        },
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 네이버 주문 상태 업데이트를 WMS에 반영
+   *
+   * @param orderEvent 주문 상태 변경 이벤트
+   * @returns 업데이트된 WMS 주문 정보
+   */
+  async updateOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
+    this.logger.log(
+      `🔄 [네이버→WMS] 주문 상태 업데이트: ${orderEvent.externalOrderId}`,
+      {
+        status: orderEvent.status,
+        channelType: orderEvent.channelType,
+        lastChangedType: orderEvent.lastChangedType,
+      },
+    );
+
+    try {
+      // 네이버 특화 상태 업데이트 데이터 생성
+      const updateData = this.transformToWmsUpdateData(orderEvent);
+
+      const wmsOrder = await this.wmsApi.updateSalesOrder(
+        {
+          salesChannel: 'naver_smartstore',
+          channelOrderId: orderEvent.externalOrderId,
+        },
+        updateData,
+      );
+
+      this.logger.log(
+        `✅ [네이버→WMS] 주문 상태 업데이트 성공: ${orderEvent.externalOrderId}`,
+        {
+          wmsStatus: wmsOrder.status,
+          lastChangedType: orderEvent.lastChangedType,
+        },
+      );
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [네이버→WMS] 주문 상태 업데이트 실패: ${orderEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 네이버 주문 취소를 WMS에 반영
+   *
+   * @param orderEvent 주문 취소 이벤트
+   * @param reason 취소 사유
+   * @returns 취소된 WMS 주문 정보
+   */
+  async cancelOrderInWms(
+    orderEvent: InternalOrderEvent,
+    reason?: string,
+  ): Promise<SalesOrder> {
+    this.logger.log(
+      `❌ [네이버→WMS] 주문 취소 요청: ${orderEvent.externalOrderId}`,
+      {
+        reason: reason || orderEvent.reason || '사유 미제공',
+        channelType: orderEvent.channelType,
+        lastChangedType: orderEvent.lastChangedType,
+      },
+    );
+
+    try {
+      const wmsOrder = await this.wmsApi.cancelSalesOrder(
+        {
+          salesChannel: 'naver_smartstore',
+          channelOrderId: orderEvent.externalOrderId,
+        },
+        reason || orderEvent.reason || '네이버 스마트스토어 주문 취소 요청',
+      );
+
+      this.logger.log(
+        `✅ [네이버→WMS] 주문 취소 성공: ${orderEvent.externalOrderId}`,
+        {
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [네이버→WMS] 주문 취소 실패: ${orderEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 네이버 교환 요청을 WMS에 반영
+   *
+   * CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다"
+   * 따라서 기존 주문을 수정하는 방식으로 처리합니다.
+   *
+   * @param exchangeEvent 교환 요청 이벤트
+   * @returns 교환 처리된 WMS 주문 정보
+   */
+  async processExchangeInWms(
+    exchangeEvent: InternalOrderEvent,
+  ): Promise<SalesOrder> {
+    this.logger.log(
+      `🔄 [네이버→WMS] 교환 요청 처리: ${exchangeEvent.externalOrderId}`,
+      {
+        exchangeType: exchangeEvent.claimInfo?.claimType,
+        reason: exchangeEvent.reason,
+        lastChangedType: exchangeEvent.lastChangedType,
+      },
+    );
+
+    try {
+      // 1. 교환 요청 데이터를 주문 수정 형식으로 변환
+      const exchangeUpdateData =
+        this.transformExchangeToUpdateData(exchangeEvent);
+
+      // 2. WMS에서 주문 수정으로 교환 처리
+      const wmsOrder = await this.wmsApi.updateSalesOrder(
+        {
+          salesChannel: 'naver_smartstore',
+          channelOrderId: exchangeEvent.externalOrderId,
+        },
+        exchangeUpdateData,
+      );
+
+      this.logger.log(
+        `✅ [네이버→WMS] 교환 요청 처리 성공: ${exchangeEvent.externalOrderId}`,
+        {
+          wmsOrderId: wmsOrder.id,
+          exchangeType: exchangeEvent.claimInfo?.claimType,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [네이버→WMS] 교환 요청 처리 실패: ${exchangeEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  // ===== 네이버 → WMS 데이터 변환 헬퍼 메서드들 =====
+
+  /**
+   * 네이버 주문 이벤트를 WMS 주문 생성 형식으로 변환
+   *
+   * @param orderEvent 네이버 주문 이벤트
+   * @returns WMS 주문 생성 DTO
+   */
+  private transformToWmsOrderFormat(
+    orderEvent: InternalOrderEvent,
+  ): CreateSalesOrderDto {
+    return {
+      channelOrderId: orderEvent.externalOrderId,
+      salesChannel: 'naver_smartstore',
+      customer: orderEvent.buyer
+        ? {
+            name: orderEvent.buyer.name,
+            email: undefined, // 네이버에서는 이메일 제공 안함
+            phone: orderEvent.buyer.contact,
+          }
+        : undefined,
+      shippingAddress: this.transformAddress(orderEvent.buyer?.address),
+      totalAmount: orderEvent.priceAmount,
+      shippingFee: 0, // 네이버도 보통 무료배송이 많음
+      orderDate:
+        orderEvent.paymentDate ||
+        orderEvent.createdAt ||
+        new Date().toISOString(),
+      lines: this.transformOrderLines(orderEvent),
+    };
+  }
+
+  /**
+   * 네이버 주소 형식을 WMS 주소 형식으로 변환
+   */
+  private transformAddress(address: any): any {
+    if (!address) return undefined;
+
+    return {
+      postalCode: address.postalCode || '',
+      roadAddress: address.roadAddress || '',
+      detailAddress: address.detailAddress || '',
+      recipientName: address.recipientName,
+      recipientPhone: address.recipientPhone,
+    };
+  }
+
+  /**
+   * 네이버 주문 라인을 WMS 주문 라인 형식으로 변환
+   */
+  private transformOrderLines(orderEvent: InternalOrderEvent): Array<{
+    variantId: string;
+    productName?: string;
+    quantity: number;
+    unitPrice?: number;
+    totalPrice?: number;
+  }> {
+    // 네이버의 경우 productOrderId가 핵심 식별자
+    return [
+      {
+        variantId:
+          orderEvent.externalProductOrderId || orderEvent.externalOrderId,
+        productName: orderEvent.productName || '네이버 스마트스토어 상품',
+        quantity: orderEvent.quantity || 1,
+        unitPrice: orderEvent.priceAmount,
+        totalPrice: orderEvent.priceAmount,
+      },
+    ];
+  }
+
+  /**
+   * 네이버 상태 업데이트를 WMS 업데이트 데이터로 변환
+   */
+  private transformToWmsUpdateData(orderEvent: InternalOrderEvent): any {
+    return {
+      status: this.mapNaverStatusToWms(orderEvent.status),
+      lastChangedType: orderEvent.lastChangedType,
+      lastChangedAt: orderEvent.lastChangedAt,
+      metadata: {
+        naverStatus: orderEvent.status,
+        naverLastChangedType: orderEvent.lastChangedType,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  /**
+   * 교환 요청을 주문 수정 데이터로 변환
+   */
+  private transformExchangeToUpdateData(
+    exchangeEvent: InternalOrderEvent,
+  ): any {
+    return {
+      // 교환 관련 정보를 주문 수정 형식으로 변환
+      status: 'EXCHANGE_REQUESTED',
+      exchangeInfo: {
+        claimType: exchangeEvent.claimInfo?.claimType,
+        reason: exchangeEvent.reason,
+        requestedAt: new Date().toISOString(),
+        lastChangedType: exchangeEvent.lastChangedType,
+      },
+      metadata: {
+        originalStatus: exchangeEvent.status,
+        exchangeProcessedAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  /**
+   * 네이버 주문 상태를 WMS 상태로 매핑
+   */
+  private mapNaverStatusToWms(naverStatus: string): string {
+    const statusMapping: Record<string, string> = {
+      // 네이버 주문 상태 → WMS 상태 매핑
+      PAYMENT_WAITING: 'pending',
+      PAYED: 'confirmed',
+      PRODUCT_PREPARE: 'processing',
+      DELIVERY_START: 'shipped',
+      DELIVERY_DONE: 'delivered',
+      PURCHASE_DECIDED: 'completed',
+      CANCELED: 'cancelled',
+      RETURNED: 'returned',
+      EXCHANGED: 'exchanged',
+    };
+
+    return statusMapping[naverStatus] || 'unknown';
   }
 }

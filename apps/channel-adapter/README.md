@@ -384,6 +384,179 @@ getStrategy(channelType: ChannelType): ChannelStrategy {
 })
 ```
 
+## 🎯 쿠팡 고급 기능 (v1.3.0)
+
+### 새로 추가된 반품/클레임 관리 API
+
+#### 1. 반품 요청 승인 처리
+
+```typescript
+// 반품 요청을 승인하여 환불 진행
+const result = await orchestrator.execute('coupang', {
+  type: 'return.approve',
+  vendorId: 'A12345678',
+  receiptId: 123456789,
+  cancelCount: 1,
+});
+```
+
+#### 2. 반품상품 입고확인 처리
+
+```typescript
+// 반품된 상품의 입고를 확인
+const result = await orchestrator.execute('coupang', {
+  type: 'return.confirm_receipt',
+  vendorId: 'A12345678',
+  receiptId: 123456789,
+});
+```
+
+#### 3. 출고중지완료 처리
+
+```typescript
+// 고객 취소 요청으로 출고중지 완료 처리
+const result = await orchestrator.execute('coupang', {
+  type: 'return.stopped_shipment',
+  vendorId: 'A12345678',
+  receiptId: 123456789,
+  cancelCount: 1,
+});
+```
+
+#### 4. 이미출고처리
+
+```typescript
+// 이미 발송된 상품에 대한 상태 변경
+const result = await orchestrator.execute('coupang', {
+  type: 'return.completed_shipment',
+  vendorId: 'A12345678',
+  receiptId: 123456789,
+  deliveryCompanyCode: 'CJGLS',
+  invoiceNumber: '1234567890123',
+});
+```
+
+#### 5. 회수송장 등록
+
+```typescript
+// 반품/교환 회수송장 직접 등록
+const result = await orchestrator.execute('coupang', {
+  type: 'return.register_invoice',
+  returnExchangeDeliveryType: 'RETURN', // 'RETURN' | 'EXCHANGE'
+  receiptId: 123456789,
+  deliveryCompanyCode: 'CJGLS',
+  invoiceNumber: '1234567890123',
+  regNumber: 'REG123456', // 선택사항
+});
+```
+
+### 반품 철회 이력 조회
+
+#### 1. 기간별 조회
+
+```typescript
+// 최대 7일 기간 내 철회 이력 조회
+const result = await orchestrator.execute('coupang', {
+  type: 'return.withdrawal_history',
+  dateFrom: '2024-01-01',
+  dateTo: '2024-01-07',
+  pageIndex: 1,
+  sizePerPage: 10,
+});
+```
+
+#### 2. 접수번호로 조회
+
+```typescript
+// 특정 접수번호 목록의 철회 이력 조회 (최대 50개)
+const result = await orchestrator.execute('coupang', {
+  type: 'return.withdrawal_history_by_ids',
+  cancelIds: [123456789, 123456790, 123456791],
+});
+```
+
+### 배송 히스토리 조회
+
+```typescript
+// 특정 발주서의 배송상태 변경 히스토리 조회
+const result = await orchestrator.execute('coupang', {
+  type: 'delivery.history',
+  shipmentBoxId: '642538971006401429',
+});
+```
+
+### 지원 명령 타입 목록
+
+| 명령 타입                          | 설명                         | 지원 채널    |
+| ---------------------------------- | ---------------------------- | ------------ |
+| `order.acknowledge`                | 발주서 접수확인 (상품준비중) | 쿠팡         |
+| `dispatch.confirm`                 | 발송처리 (송장 업로드)       | 쿠팡, 네이버 |
+| `dispatch.update`                  | 송장 업데이트                | 쿠팡         |
+| `return.approve`                   | **반품 승인 처리**           | 쿠팡         |
+| `return.confirm_receipt`           | **반품상품 입고확인**        | 쿠팡         |
+| `return.stopped_shipment`          | **출고중지완료 처리**        | 쿠팡         |
+| `return.completed_shipment`        | **이미출고처리**             | 쿠팡         |
+| `return.register_invoice`          | **회수송장 등록**            | 쿠팡         |
+| `return.withdrawal_history`        | **반품 철회 이력 조회**      | 쿠팡         |
+| `return.withdrawal_history_by_ids` | **반품 철회 이력 ID 조회**   | 쿠팡         |
+| `delivery.history`                 | **배송상태 히스토리 조회**   | 쿠팡         |
+
+**굵은 글씨**: v1.3.0에서 새로 추가된 기능
+
+### 사용 예시
+
+```typescript
+// 오케스트레이션 서비스를 통한 명령 실행
+import { AdapterOrchestrationService } from './services/adapter-orchestration.service';
+
+// 반품 승인 → 입고확인 → 회수송장 등록 플로우
+async function processReturnWorkflow(receiptId: number) {
+  const orchestrator = new AdapterOrchestrationService();
+
+  try {
+    // 1. 반품 승인
+    const approveResult = await orchestrator.execute('coupang', {
+      type: 'return.approve',
+      vendorId: process.env.COUPANG_VENDOR_ID,
+      receiptId,
+      cancelCount: 1,
+    });
+
+    if (!approveResult.success) {
+      throw new Error('반품 승인 실패');
+    }
+
+    // 2. 입고확인
+    const confirmResult = await orchestrator.execute('coupang', {
+      type: 'return.confirm_receipt',
+      vendorId: process.env.COUPANG_VENDOR_ID,
+      receiptId,
+    });
+
+    if (!confirmResult.success) {
+      throw new Error('입고확인 실패');
+    }
+
+    // 3. 회수송장 등록 (필요시)
+    const invoiceResult = await orchestrator.execute('coupang', {
+      type: 'return.register_invoice',
+      returnExchangeDeliveryType: 'RETURN',
+      receiptId,
+      deliveryCompanyCode: 'CJGLS',
+      invoiceNumber: generateInvoiceNumber(),
+    });
+
+    console.log('반품 처리 완료:', {
+      approveResult,
+      confirmResult,
+      invoiceResult,
+    });
+  } catch (error) {
+    console.error('반품 처리 실패:', error.message);
+  }
+}
+```
+
 ## 🤝 기여 가이드
 
 1. 기능 브랜치 생성
