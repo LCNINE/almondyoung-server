@@ -13,7 +13,8 @@ import {
   channelProducts,
   optionValuePrices,
   variantPrices,
-  membershipMappings,
+  uploads,
+  productImages,
   type PimSchema,
 } from './schema';
 
@@ -107,11 +108,16 @@ export type UpdateVariantPrice = Partial<
   Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== MEMBERSHIP MAPPINGS 타입 =====
-export type MembershipMapping = InferSelectModel<typeof membershipMappings>;
-export type NewMembershipMapping = InferInsertModel<typeof membershipMappings>;
-export type UpdateMembershipMapping = Partial<
-  Omit<NewMembershipMapping, 'id' | 'createdAt'>
+// ===== UPLOADS 타입 =====
+export type Upload = InferSelectModel<typeof uploads>;
+export type NewUpload = InferInsertModel<typeof uploads>;
+export type UpdateUpload = Partial<Omit<NewUpload, 'id' | 'createdAt'>>;
+
+// ===== PRODUCT IMAGES 타입 =====
+export type ProductImage = InferSelectModel<typeof productImages>;
+export type NewProductImage = InferInsertModel<typeof productImages>;
+export type UpdateProductImage = Partial<
+  Omit<NewProductImage, 'id' | 'createdAt'>
 >;
 
 // ===== 가격 전략 관련 타입 =====
@@ -133,6 +139,13 @@ export interface CreateMasterDto {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string[];
+
+  // 구매제한 필드들
+  isWholesaleOnly?: boolean;
+  isMembershipOnly?: boolean;
+  // 특별 가격 필드들
+  membershipPrice?: number;
+  wholesalePrice?: number;
 
   // 옵션 정보
   optionGroups?: {

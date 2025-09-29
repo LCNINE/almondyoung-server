@@ -12,9 +12,8 @@ import { ChannelProductsController } from './controllers/channel-products.contro
 import { ChannelProductsService } from './services/channel-products.service';
 import { SalesChannelsController } from './controllers/sales-channels.controller';
 import { SalesChannelsService } from './services/sales-channels.service';
-import { MembershipPricingController } from './controllers/membership-pricing.controller';
-import { MembershipPricingService } from './services/membership-pricing.service';
-import { MembershipMappingsRepository } from './repositories/membership-mappings.repository';
+import { FileUploadController } from './controllers/file-upload.controller';
+import { FileUploadService } from './services/file-upload.service';
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
 import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
@@ -39,7 +38,7 @@ import { pimSchema } from './schema';
     ProductVariantsController,
     ChannelProductsController,
     SalesChannelsController,
-    MembershipPricingController,
+    FileUploadController,
   ],
   providers: [
     ProductCategoriesService,
@@ -47,8 +46,7 @@ import { pimSchema } from './schema';
     ProductVariantsService,
     ChannelProductsService,
     SalesChannelsService,
-    MembershipPricingService,
-    MembershipMappingsRepository,
+    FileUploadService,
     PricingStrategyFactory,
     OptionBasedPricingStrategy,
     VariantBasedPricingStrategy,

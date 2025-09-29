@@ -13,6 +13,7 @@ import {
   index,
   foreignKey,
 } from 'drizzle-orm/pg-core';
+import { eq, sql } from 'drizzle-orm';
 
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -75,6 +76,12 @@ export const productMasters = pgTable(
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
     status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
+    // 구매제한 관련 필드들
+    isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
+    isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
+    // 특별 가격 필드들
+    membershipPrice: bigint('membership_price', { mode: 'number' }), // 멤버십 전용 가격
+    wholesalePrice: bigint('wholesale_price', { mode: 'number' }), // 도매 전용 가격
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
     createdBy: uuid('created_by'),
@@ -326,48 +333,51 @@ export const variantPrices = pgTable(
   ],
 );
 
-// ===== 11. MEMBERSHIP POLICIES (멤버십 가격 정책) =====
-export const membershipMappings = pgTable(
-  'membership_mappings',
+// ===== 11. UPLOADS (파일 업로드) =====
+export const uploads = pgTable(
+  'uploads',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-
-    // 상품 또는 변형 단위로 연결
-    masterId: uuid('master_id').references(() => productMasters.id, {
-      onDelete: 'cascade',
-    }),
-    variantId: uuid('variant_id').references(() => productVariants.id, {
-      onDelete: 'cascade',
-    }),
-
-    membershipTierId: uuid('membership_tier_id').notNull(), // 멤버십 서버의 티어 ID
-    visibilityOnly: boolean('visibility_only').default(false), // 가시성 전용 여부
-
-    // 필요하면 표시용 가격/할인율(실제 검증은 멤버십 서버)
-    price: bigint('price', { mode: 'number' }),
-    discount: integer('discount'),
-
-    // 유효기간(정책 변경 이력용)
-    validFrom: timestamp('valid_from').defaultNow(),
-    validTo: timestamp('valid_to'),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    originalName: varchar('original_name', { length: 255 }).notNull(),
+    mimeType: varchar('mime_type', { length: 100 }).notNull(),
+    filePath: text('file_path').notNull(), // 실제 파일 저장 경로
+    url: text('url').notNull(), // 접근 가능한 URL
+    size: integer('size'), // 파일 사이즈 (bytes)
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
-    // master/variant+tier 조합 유니크
-    uniqueIndex('unique_membership_policy').on(
-      table.masterId,
-      table.variantId,
-      table.membershipTierId,
-    ),
-    // 유효기간 조회용 인덱스
-    index('idx_membership_policy_validity').on(
-      table.masterId,
-      table.membershipTierId,
-      table.validFrom,
-      table.validTo,
-    ),
+    index('idx_uploads_created_at').on(table.createdAt),
+    index('idx_uploads_mime_type').on(table.mimeType),
+  ],
+);
+
+// ===== 12. PRODUCT IMAGES (상품 이미지) =====
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    uploadId: uuid('upload_id')
+      .notNull()
+      .references(() => uploads.id, { onDelete: 'cascade' }),
+    isPrimary: boolean('is_primary').default(false), // 대표이미지 여부
+    sortOrder: integer('sort_order').default(0), // 부가이미지 순서 (1-5)
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_product_images_master').on(table.masterId),
+    index('idx_product_images_primary').on(table.masterId, table.isPrimary),
+    index('idx_product_images_sort').on(table.masterId, table.sortOrder),
+    uniqueIndex('unique_product_primary_image')
+      .on(table.masterId)
+      .where(sql`${table.isPrimary} = true`),
   ],
 );
 
@@ -411,7 +421,8 @@ export const pimSchema = {
   channelProducts,
   optionValuePrices,
   variantPrices,
-  membershipMappings,
+  uploads,
+  productImages,
 };
 
 // ===== RELATIONS =====
