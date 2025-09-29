@@ -51,7 +51,7 @@ export class AuthService {
     //     ...updateUserDto,
     //   });
 
-    return;
+    return; // 추후 프론트엔드에서 메두사  http://localhost:9000/auth/user/my-auth/register 호출해서 메두사에도 등록해줘야함
   }
 
   private async _createAccountWithTransaction(
