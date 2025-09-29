@@ -10,6 +10,7 @@ import * as schema from '../../../database/drizzle/schema';
 import {
   BusinessLicense,
   businessLicenses,
+  type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import {
   CreateBusinessLicenseWithFileDto,
@@ -21,7 +22,7 @@ import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 export class BusinessLicensesService {
   constructor(
     @InjectDb()
-    private readonly dbService: DbService<schema.BusinessLicense>,
+    private readonly dbService: DbService<UserServiceSchema>,
   ) {}
 
   async findBusinessLicenseByUserId(

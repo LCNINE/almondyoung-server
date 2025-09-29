@@ -1,14 +1,18 @@
 import { DbService, InjectDb } from '@app/db';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { User } from 'apps/user-service/database/drizzle/schema';
+import { Injectable } from '@nestjs/common';
+import {
+  User,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
-import { UpdateShopInfoDto } from './dto/update-shop-info';
 
 @Injectable()
 export class ShopService {
-  constructor(@InjectDb() private readonly dbService: DbService<schema.Shop>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+  ) {}
 
   async modify(createShopDto: CreateShopInfoDto, user: User): Promise<void> {
     const shopData = {

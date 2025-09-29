@@ -21,6 +21,7 @@ export class EventsModule {
   ): DynamicModule {
     return {
       module: EventsModule,
+      global: true,
       imports: [
         ClientsModule.register([
           {
