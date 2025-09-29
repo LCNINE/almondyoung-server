@@ -65,7 +65,6 @@ export const UpdateProductMasterSchema = z.object({
     .describe('제품 마스터 이름'),
   description: z.string().optional().describe('제품 설명'),
   categoryId: z
-    .string()
     .uuid('유효한 UUID 형식이어야 합니다')
     .optional()
     .describe('카테고리 ID (UUID 형식)'),
