@@ -28,11 +28,7 @@ export interface KafkaConfig {
   brokers: string[];
   groupId?: string;
   ssl?: boolean;
-  sasl?: {
-    mechanism: string;
-    username: string;
-    password: string;
-  };
+  sasl?: import('kafkajs').SASLOptions;
   retry?: {
     retries?: number;
     initialRetryTime?: number;
@@ -69,7 +65,7 @@ export function createKafkaConfigFromEnv(
       mechanism: 'plain',
       username: env.KAFKA_API_KEY,
       password: env.KAFKA_API_SECRET,
-    };
+    } as import('kafkajs').SASLOptions;
   }
 
   return config;

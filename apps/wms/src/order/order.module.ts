@@ -42,13 +42,21 @@ import { SharedModule } from '../shared/shared.module';
       schema: wmsTables,
     }),
     EventsModule.forRoot({
-      kafka: createKafkaConfigFromEnv({
-        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID ?? 'wms',
-        KAFKA_BROKERS: process.env.KAFKA_BROKERS ?? '',
-        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID ?? 'wms-group',
-        KAFKA_API_KEY: process.env.KAFKA_API_KEY,
-        KAFKA_API_SECRET: process.env.KAFKA_API_SECRET,
-      }),
+      kafka: {
+        clientId: process.env.KAFKA_CLIENT_ID ?? 'wms',
+        brokers: [process.env.KAFKA_BROKERS ?? ''],
+        groupId: process.env.KAFKA_GROUP_ID ?? 'wms-group',
+        retry: {
+          retries: 5,
+          initialRetryTime: 300,
+        },
+        ssl: process.env.KAFKA_API_KEY ? true : false,
+        sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+          mechanism: 'plain',
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        } : undefined,
+      },
       events: {} as any,
       serviceName: 'wms-order',
     }),
