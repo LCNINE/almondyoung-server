@@ -1,210 +1,330 @@
 // PIM 마이크로서비스의 전체 스키마 정의
-import { pgTable, uuid, varchar, text, integer, boolean, jsonb, timestamp, bigint, uniqueIndex, index, foreignKey } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
-import { relations } from 'drizzle-orm';
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  integer,
+  boolean,
+  jsonb,
+  timestamp,
+  bigint,
+  uniqueIndex,
+  index,
+  foreignKey,
+} from 'drizzle-orm/pg-core';
 
+import { relations, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 // ===== 1. PRODUCT CATEGORIES =====
-export const productCategories = pgTable('product_categories', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  slug: varchar('slug', { length: 255 }).notNull().unique(),
-  parentId: uuid('parent_id'),
-  level: integer('level').notNull().default(0),
-  path: varchar('path', { length: 1000 }).notNull().default(''),
-  sortOrder: integer('sort_order').notNull().default(0),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  createdBy: uuid('created_by'),
-  updatedBy: uuid('updated_by'),
-}, (table) => [
-  index('idx_categories_parent_id').on(table.parentId),
-  index('idx_categories_level').on(table.level),
-  index('idx_categories_path').on(table.path),
-  index('idx_categories_slug').on(table.slug),
-  index('idx_categories_active').on(table.isActive),
-  index('idx_categories_sort_order').on(table.parentId, table.sortOrder),
-  uniqueIndex('unique_categories_parent_name').on(table.parentId, table.name),
-  // 자기 참조 foreign key 제약 조건
-  foreignKey({
-    columns: [table.parentId],
-    foreignColumns: [table.id],
-  }),
-]);
+export const productCategories = pgTable(
+  'product_categories',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    slug: varchar('slug', { length: 255 }).notNull().unique(),
+    parentId: uuid('parent_id'),
+    level: integer('level').notNull().default(0),
+    path: varchar('path', { length: 1000 }).notNull().default(''),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_categories_parent_id').on(table.parentId),
+    index('idx_categories_level').on(table.level),
+    index('idx_categories_path').on(table.path),
+    index('idx_categories_slug').on(table.slug),
+    index('idx_categories_active').on(table.isActive),
+    index('idx_categories_sort_order').on(table.parentId, table.sortOrder),
+    uniqueIndex('unique_categories_parent_name').on(table.parentId, table.name),
+    // 자기 참조 foreign key 제약 조건
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+    }),
+  ],
+);
 
 // ===== 2. PRODUCT MASTERS (판매상품 마스터) =====
-export const productMasters = pgTable('product_masters', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  name: varchar('name', { length: 255 }).notNull(),
-  description: text('description'),
-  brand: varchar('brand', { length: 100 }),
-  // categoryId removed - now using many-to-many relationship via productMasterCategories
-  basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
-  pricingStrategy: varchar('pricing_strategy', { length: 50 }).notNull().default('option_based'), // 'option_based', 'variant_based'
-  // 물리적 속성 제거: weight, dimensions, costPrice 등
-  tags: text('tags').array(), // 마케팅 태그
-  images: jsonb('images'), // 상품 이미지 (string[])
-  attributes: jsonb('attributes'), // 판매 관련 속성 (색상, 소재, 용량 등의 표시용 정보)
-  seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
-  seoDescription: text('seo_description'), // SEO 설명
-  seoKeywords: text('seo_keywords').array(), // SEO 키워드
-  status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-  createdBy: uuid('created_by'),
-  updatedBy: uuid('updated_by'),
-}, (table) => [
-  index('idx_masters_status').on(table.status),
-  index('idx_masters_name').on(table.name),
-  index('idx_masters_brand').on(table.brand),
-  index('idx_masters_created_at').on(table.createdAt),
-  index('idx_masters_base_price').on(table.basePrice),
-  index('idx_masters_pricing_strategy').on(table.pricingStrategy),
-]);
+export const productMasters = pgTable(
+  'product_masters',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    brand: varchar('brand', { length: 100 }),
+    // categoryId removed - now using many-to-many relationship via productMasterCategories
+    basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
+    pricingStrategy: varchar('pricing_strategy', { length: 50 })
+      .notNull()
+      .default('option_based'), // 'option_based', 'variant_based'
+    // 물리적 속성 제거: weight, dimensions, costPrice 등
+    tags: text('tags').array(), // 마케팅 태그
+    images: jsonb('images'), // 상품 이미지 (string[])
+    attributes: jsonb('attributes'), // 판매 관련 속성 (색상, 소재, 용량 등의 표시용 정보)
+    seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
+    seoDescription: text('seo_description'), // SEO 설명
+    seoKeywords: text('seo_keywords').array(), // SEO 키워드
+    status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_masters_status').on(table.status),
+    index('idx_masters_name').on(table.name),
+    index('idx_masters_brand').on(table.brand),
+    index('idx_masters_created_at').on(table.createdAt),
+    index('idx_masters_base_price').on(table.basePrice),
+    index('idx_masters_pricing_strategy').on(table.pricingStrategy),
+  ],
+);
 
 // ===== 2.1. PRODUCT MASTER CATEGORIES (Many-to-Many Junction Table) =====
-export const productMasterCategories = pgTable('product_master_categories', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  masterId: uuid('master_id').notNull().references(() => productMasters.id, { onDelete: 'cascade' }),
-  categoryId: uuid('category_id').notNull().references(() => productCategories.id, { onDelete: 'cascade' }),
-  isPrimary: boolean('is_primary').default(false), // 주 카테고리 여부
-  createdAt: timestamp('created_at').defaultNow(),
-  createdBy: uuid('created_by'),
-}, (table) => [
-  index('idx_master_categories_master').on(table.masterId),
-  index('idx_master_categories_category').on(table.categoryId),
-  index('idx_master_categories_primary').on(table.masterId, table.isPrimary),
-  uniqueIndex('unique_master_category').on(table.masterId, table.categoryId),
-]);
+export const productMasterCategories = pgTable(
+  'product_master_categories',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => productCategories.id, { onDelete: 'cascade' }),
+    isPrimary: boolean('is_primary').default(false), // 주 카테고리 여부
+    createdAt: timestamp('created_at').defaultNow(),
+    createdBy: uuid('created_by'),
+  },
+  (table) => [
+    index('idx_master_categories_master').on(table.masterId),
+    index('idx_master_categories_category').on(table.categoryId),
+    index('idx_master_categories_primary').on(table.masterId, table.isPrimary),
+    uniqueIndex('unique_master_category').on(table.masterId, table.categoryId),
+  ],
+);
 
 // ===== 3. PRODUCT OPTION GROUPS =====
-export const productOptionGroups = pgTable('product_option_groups', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  masterId: uuid('master_id').notNull().references(() => productMasters.id, { onDelete: 'cascade' }),
-  name: varchar('name', { length: 100 }).notNull(), // 'color', 'size'
-  displayName: varchar('display_name', { length: 100 }).notNull(), // '색상', '사이즈'
-  sortOrder: integer('sort_order').default(0),
-  isRequired: boolean('is_required').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_option_groups_master').on(table.masterId),
-  index('idx_option_groups_sort_order').on(table.masterId, table.sortOrder),
-  uniqueIndex('unique_option_groups_master_name').on(table.masterId, table.name),
-]);
+export const productOptionGroups = pgTable(
+  'product_option_groups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(), // 'color', 'size'
+    displayName: varchar('display_name', { length: 100 }).notNull(), // '색상', '사이즈'
+    sortOrder: integer('sort_order').default(0),
+    isRequired: boolean('is_required').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_option_groups_master').on(table.masterId),
+    index('idx_option_groups_sort_order').on(table.masterId, table.sortOrder),
+    uniqueIndex('unique_option_groups_master_name').on(
+      table.masterId,
+      table.name,
+    ),
+  ],
+);
 
 // ===== 4. PRODUCT OPTION VALUES =====
-export const productOptionValues = pgTable('product_option_values', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  optionGroupId: uuid('option_group_id').notNull().references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-  value: varchar('value', { length: 100 }).notNull(), // 'red', 'M'
-  displayName: varchar('display_name', { length: 100 }).notNull(), // '빨간색', 'M사이즈'
-  sortOrder: integer('sort_order').default(0),
-  isActive: boolean('is_active').default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_option_values_group').on(table.optionGroupId),
-  index('idx_option_values_sort_order').on(table.optionGroupId, table.sortOrder),
-  index('idx_option_values_active').on(table.isActive),
-  uniqueIndex('unique_option_values_group_value').on(table.optionGroupId, table.value),
-]);
+export const productOptionValues = pgTable(
+  'product_option_values',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    optionGroupId: uuid('option_group_id')
+      .notNull()
+      .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
+    value: varchar('value', { length: 100 }).notNull(), // 'red', 'M'
+    displayName: varchar('display_name', { length: 100 }).notNull(), // '빨간색', 'M사이즈'
+    sortOrder: integer('sort_order').default(0),
+    isActive: boolean('is_active').default(true),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_option_values_group').on(table.optionGroupId),
+    index('idx_option_values_sort_order').on(
+      table.optionGroupId,
+      table.sortOrder,
+    ),
+    index('idx_option_values_active').on(table.isActive),
+    uniqueIndex('unique_option_values_group_value').on(
+      table.optionGroupId,
+      table.value,
+    ),
+  ],
+);
 
 // ===== 5. PRODUCT VARIANTS (판매상품 품목) =====
-export const productVariants = pgTable('product_variants', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  masterId: uuid('master_id').notNull().references(() => productMasters.id, { onDelete: 'cascade' }),
-  variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
-  images: jsonb('images'), // string[] - 품목별 이미지
-  priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
-  // 물리적 속성 제거: weightAdjustment 등
-  displayOrder: integer('display_order').default(0), // 표시 순서
-  status: varchar('status', { length: 20 }).default('active'), // active, inactive
-  isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_variants_master').on(table.masterId),
-  index('idx_variants_status').on(table.status),
-  index('idx_variants_is_default').on(table.isDefault),
-  index('idx_variants_display_order').on(table.masterId, table.displayOrder),
-  index('idx_variants_created_at').on(table.createdAt),
-]);
+export const productVariants = pgTable(
+  'product_variants',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
+    images: jsonb('images'), // string[] - 품목별 이미지
+    priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
+    // 물리적 속성 제거: weightAdjustment 등
+    displayOrder: integer('display_order').default(0), // 표시 순서
+    status: varchar('status', { length: 20 }).default('active'), // active, inactive
+    isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_variants_master').on(table.masterId),
+    index('idx_variants_status').on(table.status),
+    index('idx_variants_is_default').on(table.isDefault),
+    index('idx_variants_display_order').on(table.masterId, table.displayOrder),
+    index('idx_variants_created_at').on(table.createdAt),
+  ],
+);
 
 // ===== 6. VARIANT OPTION VALUES (다대다 매핑) =====
-export const variantOptionValues = pgTable('variant_option_values', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  variantId: uuid('variant_id').notNull().references(() => productVariants.id, { onDelete: 'cascade' }),
-  optionValueId: uuid('option_value_id').notNull().references(() => productOptionValues.id, { onDelete: 'cascade' }),
-}, (table) => [
-  index('idx_variant_options_variant').on(table.variantId),
-  index('idx_variant_options_value').on(table.optionValueId),
-  uniqueIndex('unique_variant_option_values').on(table.variantId, table.optionValueId),
-]);
+export const variantOptionValues = pgTable(
+  'variant_option_values',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    optionValueId: uuid('option_value_id')
+      .notNull()
+      .references(() => productOptionValues.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    index('idx_variant_options_variant').on(table.variantId),
+    index('idx_variant_options_value').on(table.optionValueId),
+    uniqueIndex('unique_variant_option_values').on(
+      table.variantId,
+      table.optionValueId,
+    ),
+  ],
+);
 
 // ===== 7. SALES CHANNELS =====
-export const salesChannels = pgTable('sales_channels', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  type: varchar('type', { length: 50 }).notNull().unique(), // 'medusa', 'coupang', 'smartstore'
-  name: varchar('name', { length: 100 }).notNull(), // '메두사', '쿠팡', '스마트스토어'
-  isActive: boolean('is_active').default(true),
-  apiConfig: jsonb('api_config'), // 각 채널별 설정 (선택사항)
-  supportedFeatures: jsonb('supported_features'), // 지원 기능들
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_sales_channels_type').on(table.type),
-  index('idx_sales_channels_active').on(table.isActive),
-]);
+export const salesChannels = pgTable(
+  'sales_channels',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    type: varchar('type', { length: 50 }).notNull().unique(), // 'medusa', 'coupang', 'smartstore'
+    name: varchar('name', { length: 100 }).notNull(), // '메두사', '쿠팡', '스마트스토어'
+    isActive: boolean('is_active').default(true),
+    apiConfig: jsonb('api_config'), // 각 채널별 설정 (선택사항)
+    supportedFeatures: jsonb('supported_features'), // 지원 기능들
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_sales_channels_type').on(table.type),
+    index('idx_sales_channels_active').on(table.isActive),
+  ],
+);
 
 // ===== 8. CHANNEL PRODUCTS =====
-export const channelProducts = pgTable('channel_products', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  masterId: uuid('master_id').notNull().references(() => productMasters.id, { onDelete: 'cascade' }),
-  channelId: uuid('channel_id').notNull().references(() => salesChannels.id, { onDelete: 'cascade' }),
-  
-  // 오버라이드 가능한 필드들 (판매 여부, 상품명만)
-  name: varchar('name', { length: 255 }), // 상품명 오버라이드
-  isActive: boolean('is_active').default(true), // 판매 여부
-  
-  // 채널별 특수 설정
-  channelSpecificData: jsonb('channel_specific_data'),
-  
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_channel_products_master').on(table.masterId),
-  index('idx_channel_products_channel').on(table.channelId),
-  index('idx_channel_products_active').on(table.isActive),
-  uniqueIndex('unique_master_channel').on(table.masterId, table.channelId),
-]);
+export const channelProducts = pgTable(
+  'channel_products',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    channelId: uuid('channel_id')
+      .notNull()
+      .references(() => salesChannels.id, { onDelete: 'cascade' }),
+
+    // 오버라이드 가능한 필드들 (판매 여부, 상품명만)
+    name: varchar('name', { length: 255 }), // 상품명 오버라이드
+    isActive: boolean('is_active').default(true), // 판매 여부
+
+    // 채널별 특수 설정
+    channelSpecificData: jsonb('channel_specific_data'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_channel_products_master').on(table.masterId),
+    index('idx_channel_products_channel').on(table.channelId),
+    index('idx_channel_products_active').on(table.isActive),
+    uniqueIndex('unique_master_channel').on(table.masterId, table.channelId),
+  ],
+);
 
 // ===== 9. OPTION VALUE PRICES (전략1: 옵션별 가격) =====
-export const optionValuePrices = pgTable('option_value_prices', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  masterId: uuid('master_id').notNull().references(() => productMasters.id, { onDelete: 'cascade' }),
-  optionValueId: uuid('option_value_id').notNull().references(() => productOptionValues.id, { onDelete: 'cascade' }),
-  price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_option_value_prices_master').on(table.masterId),
-  index('idx_option_value_prices_option_value').on(table.optionValueId),
-  uniqueIndex('unique_master_option_value_price').on(table.masterId, table.optionValueId),
-]);
+export const optionValuePrices = pgTable(
+  'option_value_prices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    optionValueId: uuid('option_value_id')
+      .notNull()
+      .references(() => productOptionValues.id, { onDelete: 'cascade' }),
+    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_option_value_prices_master').on(table.masterId),
+    index('idx_option_value_prices_option_value').on(table.optionValueId),
+    uniqueIndex('unique_master_option_value_price').on(
+      table.masterId,
+      table.optionValueId,
+    ),
+  ],
+);
 
 // ===== 10. VARIANT PRICES (전략2: 품목별 개별 가격) =====
-export const variantPrices = pgTable('variant_prices', {
-  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-  variantId: uuid('variant_id').notNull().references(() => productVariants.id, { onDelete: 'cascade' }),
-  price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => [
-  index('idx_variant_prices_variant').on(table.variantId),
-  uniqueIndex('unique_variant_price').on(table.variantId),
-]);
+export const variantPrices = pgTable(
+  'variant_prices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_variant_prices_variant').on(table.variantId),
+    uniqueIndex('unique_variant_price').on(table.variantId),
+  ],
+);
 
 // PIM 전체 스키마 통합
 export const pimSchema = {
@@ -222,31 +342,40 @@ export const pimSchema = {
 };
 
 // ===== RELATIONS =====
-export const productCategoriesRelations = relations(productCategories, ({ one, many }) => ({
-  parent: one(productCategories, {
-    fields: [productCategories.parentId],
-    references: [productCategories.id],
+export const productCategoriesRelations = relations(
+  productCategories,
+  ({ one, many }) => ({
+    parent: one(productCategories, {
+      fields: [productCategories.parentId],
+      references: [productCategories.id],
+    }),
+    children: many(productCategories),
+    productMasterCategories: many(productMasterCategories),
   }),
-  children: many(productCategories),
-  productMasterCategories: many(productMasterCategories),
-}));
+);
 
-export const productMastersRelations = relations(productMasters, ({ many }) => ({
-  productMasterCategories: many(productMasterCategories),
-}));
+export const productMastersRelations = relations(
+  productMasters,
+  ({ many }) => ({
+    productMasterCategories: many(productMasterCategories),
+  }),
+);
 
-export const productMasterCategoriesRelations = relations(productMasterCategories, ({ one }) => ({
-  master: one(productMasters, {
-    fields: [productMasterCategories.masterId],
-    references: [productMasters.id],
+export const productMasterCategoriesRelations = relations(
+  productMasterCategories,
+  ({ one }) => ({
+    master: one(productMasters, {
+      fields: [productMasterCategories.masterId],
+      references: [productMasters.id],
+    }),
+    category: one(productCategories, {
+      fields: [productMasterCategories.categoryId],
+      references: [productCategories.id],
+    }),
   }),
-  category: one(productCategories, {
-    fields: [productMasterCategories.categoryId],
-    references: [productCategories.id],
-  }),
-}));
+);
 
 // 스키마 타입 추출
 export type PimSchema = typeof pimSchema;
 
-// 개별 테이블들은 이미 export const로 선언되어 재export 불필요 
+// 개별 테이블들은 이미 export const로 선언되어 재export 불필요
