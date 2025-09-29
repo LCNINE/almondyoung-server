@@ -23,13 +23,11 @@ import {
   UpdateCategorySchema,
   CreateCategoryDto,
   UpdateCategoryDto,
-} from '../schemas/categories';
-import {
   CategoryResponseDto,
   CategoryDetailResponseDto,
   CategoryTreeResponseDto,
   CategoryPathResponseDto,
-} from '../types/categories';
+} from '../schemas/categories.schema';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -39,23 +37,39 @@ export class ProductCategoriesController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: '카테고리 생성', description: '새로운 제품 카테고리를 생성합니다.' })
+  @ApiOperation({
+    summary: '카테고리 생성',
+    description: '새로운 제품 카테고리를 생성합니다.',
+  })
   @ApiBody({ type: CreateCategoryDto, description: '카테고리 생성 정보' })
-  @ApiResponse({ status: 201, description: '카테고리 생성 성공', type: CategoryResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: '카테고리 생성 성공',
+    type: CategoryResponseDto,
+  })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 409, description: '이미 존재하는 카테고리명' })
   async createCategory(
     @Body(new ZodValidationPipe(CreateCategorySchema))
     createCategoryDto: CreateCategoryDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.createCategory(createCategoryDto);
+    return this.productCategoriesService.createCategory(
+      createCategoryDto,
+    ) as unknown as Promise<CategoryResponseDto>;
   }
 
   @Put(':id')
-  @ApiOperation({ summary: '카테고리 수정', description: '기존 카테고리 정보를 수정합니다.' })
+  @ApiOperation({
+    summary: '카테고리 수정',
+    description: '기존 카테고리 정보를 수정합니다.',
+  })
   @ApiParam({ name: 'id', description: '카테고리 ID' })
   @ApiBody({ type: UpdateCategoryDto, description: '카테고리 수정 정보' })
-  @ApiResponse({ status: 200, description: '카테고리 수정 성공', type: CategoryResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: '카테고리 수정 성공',
+    type: CategoryResponseDto,
+  })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   async updateCategory(
@@ -63,16 +77,30 @@ export class ProductCategoriesController {
     @Body(new ZodValidationPipe(UpdateCategorySchema))
     updateCategoryDto: UpdateCategoryDto,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateCategory(id, updateCategoryDto);
+    return this.productCategoriesService.updateCategory(
+      id,
+      updateCategoryDto,
+    ) as unknown as Promise<CategoryResponseDto>;
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '카테고리 삭제', description: '카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.' })
+  @ApiOperation({
+    summary: '카테고리 삭제',
+    description:
+      '카테고리를 삭제합니다. 해당 카테고리의 제품들을 다른 카테고리로 이동할 수 있습니다.',
+  })
   @ApiParam({ name: 'id', description: '삭제할 카테고리 ID' })
-  @ApiQuery({ name: 'moveProductsTo', required: false, description: '제품들을 이동시킬 대상 카테고리 ID' })
+  @ApiQuery({
+    name: 'moveProductsTo',
+    required: false,
+    description: '제품들을 이동시킬 대상 카테고리 ID',
+  })
   @ApiResponse({ status: 200, description: '카테고리 삭제 성공' })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
-  @ApiResponse({ status: 400, description: '하위 카테고리가 존재하여 삭제할 수 없음' })
+  @ApiResponse({
+    status: 400,
+    description: '하위 카테고리가 존재하여 삭제할 수 없음',
+  })
   async deleteCategory(
     @Param('id') id: string,
     @Query('moveProductsTo') moveProductsTo?: string,
@@ -81,20 +109,41 @@ export class ProductCategoriesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '카테고리 상세 조회', description: '특정 카테고리의 상세 정보를 조회합니다.' })
+  @ApiOperation({
+    summary: '카테고리 상세 조회',
+    description: '특정 카테고리의 상세 정보를 조회합니다.',
+  })
   @ApiParam({ name: 'id', description: '조회할 카테고리 ID' })
-  @ApiResponse({ status: 200, description: '카테고리 조회 성공', type: CategoryDetailResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: '카테고리 조회 성공',
+    type: CategoryDetailResponseDto,
+  })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
   async getCategoryById(
     @Param('id') id: string,
   ): Promise<CategoryDetailResponseDto> {
-    return this.productCategoriesService.getCategoryById(id);
+    return this.productCategoriesService.getCategoryById(
+      id,
+    ) as unknown as Promise<CategoryDetailResponseDto>;
   }
 
   @Get()
-  @ApiOperation({ summary: '카테고리 트리 조회', description: '전체 카테고리를 계층구조로 조회합니다.' })
-  @ApiQuery({ name: 'maxDepth', required: false, type: Number, description: '조회할 최대 깊이 (미지정시 전체)' })
-  @ApiResponse({ status: 200, description: '카테고리 트리 조회 성공', type: CategoryTreeResponseDto })
+  @ApiOperation({
+    summary: '카테고리 트리 조회',
+    description: '전체 카테고리를 계층구조로 조회합니다.',
+  })
+  @ApiQuery({
+    name: 'maxDepth',
+    required: false,
+    type: Number,
+    description: '조회할 최대 깊이 (미지정시 전체)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '카테고리 트리 조회 성공',
+    type: CategoryTreeResponseDto,
+  })
   async getCategoryTree(
     @Query('maxDepth') maxDepth?: number,
   ): Promise<CategoryTreeResponseDto> {
@@ -102,38 +151,73 @@ export class ProductCategoriesController {
   }
 
   @Get(':id/children')
-  @ApiOperation({ summary: '하위 카테고리 조회', description: '특정 카테고리의 직계 하위 카테고리 목록을 조회합니다.' })
+  @ApiOperation({
+    summary: '하위 카테고리 조회',
+    description: '특정 카테고리의 직계 하위 카테고리 목록을 조회합니다.',
+  })
   @ApiParam({ name: 'id', description: '부모 카테고리 ID' })
-  @ApiResponse({ status: 200, description: '하위 카테고리 조회 성공', type: [CategoryResponseDto] })
+  @ApiResponse({
+    status: 200,
+    description: '하위 카테고리 조회 성공',
+    type: [CategoryResponseDto],
+  })
   @ApiResponse({ status: 404, description: '부모 카테고리를 찾을 수 없음' })
   async getChildCategories(
     @Param('id') id: string,
   ): Promise<CategoryResponseDto[]> {
-    return this.productCategoriesService.getChildCategories(id);
+    return this.productCategoriesService.getChildCategories(
+      id,
+    ) as unknown as Promise<CategoryResponseDto[]>;
   }
 
   @Get(':id/path')
-  @ApiOperation({ summary: '카테고리 경로 조회', description: '특정 카테고리의 루트부터의 전체 경로를 조회합니다.' })
+  @ApiOperation({
+    summary: '카테고리 경로 조회',
+    description: '특정 카테고리의 루트부터의 전체 경로를 조회합니다.',
+  })
   @ApiParam({ name: 'id', description: '카테고리 ID' })
-  @ApiResponse({ status: 200, description: '카테고리 경로 조회 성공', type: CategoryPathResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: '카테고리 경로 조회 성공',
+    type: CategoryPathResponseDto,
+  })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
   async getCategoryPath(
     @Param('id') id: string,
   ): Promise<CategoryPathResponseDto> {
-    return this.productCategoriesService.getCategoryPath(id);
+    return this.productCategoriesService.getCategoryPath(
+      id,
+    ) as unknown as Promise<CategoryPathResponseDto>;
   }
 
   @Put(':id/move')
-  @ApiOperation({ summary: '카테고리 이동', description: '카테고리를 다른 부모 카테고리 하위로 이동시킵니다.' })
+  @ApiOperation({
+    summary: '카테고리 이동',
+    description: '카테고리를 다른 부모 카테고리 하위로 이동시킵니다.',
+  })
   @ApiParam({ name: 'id', description: '이동할 카테고리 ID' })
-  @ApiQuery({ name: 'newParentId', required: false, description: '새로운 부모 카테고리 ID (미지정시 루트로 이동)' })
-  @ApiResponse({ status: 200, description: '카테고리 이동 성공', type: CategoryResponseDto })
+  @ApiQuery({
+    name: 'newParentId',
+    required: false,
+    description: '새로운 부모 카테고리 ID (미지정시 루트로 이동)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '카테고리 이동 성공',
+    type: CategoryResponseDto,
+  })
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
-  @ApiResponse({ status: 400, description: '순환 참조 또는 자기 자신으로 이동 시도' })
+  @ApiResponse({
+    status: 400,
+    description: '순환 참조 또는 자기 자신으로 이동 시도',
+  })
   async moveCategory(
     @Param('id') id: string,
     @Query('newParentId') newParentId?: string,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.moveCategory(id, newParentId);
+    return this.productCategoriesService.moveCategory(
+      id,
+      newParentId,
+    ) as unknown as Promise<CategoryResponseDto>;
   }
 }
