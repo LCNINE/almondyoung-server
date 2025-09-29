@@ -14,7 +14,7 @@ import {
   foreignKey,
 } from 'drizzle-orm/pg-core';
 
-import { relations, sql } from 'drizzle-orm';
+import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 // ===== 1. PRODUCT CATEGORIES =====
 export const productCategories = pgTable(
@@ -326,6 +326,78 @@ export const variantPrices = pgTable(
   ],
 );
 
+// ===== 11. MEMBERSHIP POLICIES (멤버십 가격 정책) =====
+export const membershipMappings = pgTable(
+  'membership_mappings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // 상품 또는 변형 단위로 연결
+    masterId: uuid('master_id').references(() => productMasters.id, {
+      onDelete: 'cascade',
+    }),
+    variantId: uuid('variant_id').references(() => productVariants.id, {
+      onDelete: 'cascade',
+    }),
+
+    membershipTierId: uuid('membership_tier_id').notNull(), // 멤버십 서버의 티어 ID
+    visibilityOnly: boolean('visibility_only').default(false), // 가시성 전용 여부
+
+    // 필요하면 표시용 가격/할인율(실제 검증은 멤버십 서버)
+    price: bigint('price', { mode: 'number' }),
+    discount: integer('discount'),
+
+    // 유효기간(정책 변경 이력용)
+    validFrom: timestamp('valid_from').defaultNow(),
+    validTo: timestamp('valid_to'),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    // master/variant+tier 조합 유니크
+    uniqueIndex('unique_membership_policy').on(
+      table.masterId,
+      table.variantId,
+      table.membershipTierId,
+    ),
+    // 유효기간 조회용 인덱스
+    index('idx_membership_policy_validity').on(
+      table.masterId,
+      table.membershipTierId,
+      table.validFrom,
+      table.validTo,
+    ),
+  ],
+);
+
+// 추후 타임세일 구현을 위한 스키마. 10월 1일 이후 구현 예정 (혹은 메두사에 책임 이관)
+export const promotions = pgTable('promotions', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  startAt: timestamp('start_at').notNull(),
+  endAt: timestamp('end_at').notNull(),
+  discountType: varchar('discount_type', { length: 20 }).notNull(), // 'percentage' | 'fixed'
+  discountValue: integer('discount_value').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const promotionProducts = pgTable('promotion_products', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  promotionId: uuid('promotion_id')
+    .notNull()
+    .references(() => promotions.id, { onDelete: 'cascade' }),
+  masterId: uuid('master_id')
+    .notNull()
+    .references(() => productMasters.id, { onDelete: 'cascade' }),
+  variantId: uuid('variant_id').references(() => productVariants.id),
+});
+
 // PIM 전체 스키마 통합
 export const pimSchema = {
   productCategories,
@@ -339,6 +411,7 @@ export const pimSchema = {
   channelProducts,
   optionValuePrices,
   variantPrices,
+  membershipMappings,
 };
 
 // ===== RELATIONS =====
