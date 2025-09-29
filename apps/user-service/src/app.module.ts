@@ -1,6 +1,6 @@
+import * as os from 'os';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { createKafkaConfigFromEnv } from '@app/events/types';
 import { AuthorizationGuard } from '@app/roles';
 import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
 import { Module } from '@nestjs/common';
@@ -21,6 +21,41 @@ import { WishlistModule } from './api/wishlist/wishlist.module';
 import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 
+// Kafka 설정 생성 함수
+function createKafkaConfig() {
+  // 필수 환경변수 검증
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+  if (!prefix) {
+    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+  }
+
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) {
+    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+  }
+
+  const groupId = process.env.KAFKA_GROUP_ID;
+  if (!groupId) {
+    throw new Error('KAFKA_GROUP_ID 환경변수가 필요합니다.');
+  }
+
+  return {
+    clientId: `${prefix}_${os.hostname()}`,
+    brokers: brokers.split(','),
+    groupId,
+    retry: {
+      retries: 5,
+      initialRetryTime: 300,
+    },
+    ssl: process.env.KAFKA_API_KEY ? true : false,
+    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+      mechanism: 'plain' as const,
+      username: process.env.KAFKA_API_KEY,
+      password: process.env.KAFKA_API_SECRET,
+    } : undefined,
+  };
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -36,11 +71,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
       schema: userServiceSchema,
     }),
     EventsModule.forRoot<UserEvents>({
-      kafka: createKafkaConfigFromEnv({
-        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID!,
-        KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
-        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID,
-      }),
+      kafka: createKafkaConfig(),
       events: USER_EVENTS,
       serviceName: 'user-service',
     }),

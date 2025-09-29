@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import * as os from 'os';
 import { SalesOrdersController } from './sales-orders/controllers/sales-orders.controller';
 import { SalesOrdersService } from './sales-orders/services/sales-orders.service';
 import { FulfillmentsController } from './fulfillments/controllers/fulfillments.controller';
@@ -34,6 +35,41 @@ import { OutboxService } from './shared/services/outbox.service';
 import { OutboxDispatcherService } from './shared/services/outbox-dispatcher.service';
 import { SharedModule } from '../shared/shared.module';
 
+// Kafka 설정 생성 함수
+function createKafkaConfig() {
+  // 필수 환경변수 검증
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+  if (!prefix) {
+    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+  }
+
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) {
+    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+  }
+
+  const groupId = process.env.KAFKA_GROUP_ID;
+  if (!groupId) {
+    throw new Error('KAFKA_GROUP_ID 환경변수가 필요합니다.');
+  }
+
+  return {
+    clientId: `${prefix}_${os.hostname()}`,
+    brokers: [brokers],
+    groupId,
+    retry: {
+      retries: 5,
+      initialRetryTime: 300,
+    },
+    ssl: process.env.KAFKA_API_KEY ? true : false,
+    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+      mechanism: 'plain' as const,
+      username: process.env.KAFKA_API_KEY,
+      password: process.env.KAFKA_API_SECRET,
+    } : undefined,
+  };
+}
+
 @Module({
   imports: [
     SharedModule, // Import SharedModule for MetricsService, AuditService etc.
@@ -42,21 +78,7 @@ import { SharedModule } from '../shared/shared.module';
       schema: wmsTables,
     }),
     EventsModule.forRoot({
-      kafka: {
-        clientId: process.env.KAFKA_CLIENT_ID ?? 'wms',
-        brokers: [process.env.KAFKA_BROKERS ?? ''],
-        groupId: process.env.KAFKA_GROUP_ID ?? 'wms-group',
-        retry: {
-          retries: 5,
-          initialRetryTime: 300,
-        },
-        ssl: process.env.KAFKA_API_KEY ? true : false,
-        sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
-          mechanism: 'plain',
-          username: process.env.KAFKA_API_KEY,
-          password: process.env.KAFKA_API_SECRET,
-        } : undefined,
-      },
+      kafka: createKafkaConfig(),
       events: {} as any,
       serviceName: 'wms-order',
     }),
