@@ -21,7 +21,7 @@ export class CreateAccountDto {
   @MinLength(2, { message: '이름은 최소 2자 이상이어야 합니다.' })
   @MaxLength(8, { message: '이름은 최대 8자 이하여야 합니다.' })
   @IsNotEmpty({ message: '이름은 필수 입력 항목입니다.' })
-  name: string;
+  username: string;
 
   @ApiProperty({
     description: '닉네임',
