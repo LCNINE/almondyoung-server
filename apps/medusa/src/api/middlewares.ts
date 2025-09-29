@@ -3,8 +3,8 @@ import {
   defineMiddlewares,
   validateAndTransformQuery,
 } from '@medusajs/framework/http';
-import { adminRouteMiddlewares } from './admin/middlewares';
 import { createFindParams } from '@medusajs/medusa/api/utils/validators';
+import { adminRouteMiddlewares } from './admin/middlewares';
 
 export const GetRegionsSchema = createFindParams();
 
@@ -13,7 +13,9 @@ export default defineMiddlewares({
     {
       method: ['POST'],
       matcher: '/auth/token/restore',
-      middlewares: [authenticate('*', 'bearer', { allowUnregistered: true })],
+      middlewares: [
+        authenticate('all', ['session', 'bearer'], { allowUnregistered: true }),
+      ],
     },
     {
       matcher: '/store/regions',
@@ -25,6 +27,7 @@ export default defineMiddlewares({
         }),
       ],
     },
+
     ...adminRouteMiddlewares,
   ],
 });
