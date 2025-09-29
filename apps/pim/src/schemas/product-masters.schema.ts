@@ -27,6 +27,23 @@ export const CreateMasterSchema = z.object({
   seoDescription: z.string().optional().describe('SEO 설명'),
   seoKeywords: z.array(z.string()).optional().describe('SEO 키워드'),
 
+  // 구매제한 필드들
+  isWholesaleOnly: z.boolean().default(false).describe('도매회원 전용 여부'),
+  isMembershipOnly: z.boolean().default(false).describe('멤버십회원 전용 여부'),
+  // 특별 가격 필드들
+  membershipPrice: z
+    .number()
+    .int('정수여야 합니다')
+    .positive('양수여야 합니다')
+    .optional()
+    .describe('멤버십 전용 가격 (원 단위)'),
+  wholesalePrice: z
+    .number()
+    .int('정수여야 합니다')
+    .positive('양수여야 합니다')
+    .optional()
+    .describe('도매 전용 가격 (원 단위)'),
+
   // 옵션 정보
   optionGroups: z
     .array(
@@ -104,6 +121,12 @@ export const ProductMasterSchema = z.object({
   seoDescription: z.string().nullable().describe('SEO 설명'),
   seoKeywords: z.array(z.string()).nullable().describe('SEO 키워드'),
   status: z.string().nullable().describe('제품 상태'),
+  // 구매제한 필드들
+  isWholesaleOnly: z.boolean().nullable().describe('도매회원 전용 여부'),
+  isMembershipOnly: z.boolean().nullable().describe('멤버십회원 전용 여부'),
+  // 특별 가격 필드들
+  membershipPrice: z.number().nullable().describe('멤버십 전용 가격'),
+  wholesalePrice: z.number().nullable().describe('도매 전용 가격'),
   createdAt: z.iso.datetime().nullable().describe('생성일시'),
   updatedAt: z.iso.datetime().nullable().describe('수정일시'),
   createdBy: z.string().nullable().describe('생성자'),
