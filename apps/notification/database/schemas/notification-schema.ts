@@ -14,9 +14,8 @@ export const notificationStatusEnum = pgEnum('notification_status', [
     'RETRYING'
 ]);
 export const providerStatusEnum = pgEnum('provider_status', ['ACTIVE', 'INACTIVE', 'ERROR']);
-export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SCHEDULED', 'PROCESSING', 'COMPLETED', 'CANCELLED']);
+export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SCHEDULED', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'FAILED']);
 export const targetTypeEnum = pgEnum('target_type', ['all', 'filter', 'excel', 'search']);
-export const membershipTypeEnum = pgEnum('membership_type', ['general', 'premium']);
 export const devicePlatformEnum = pgEnum('device_platform', ['ios', 'android', 'web']);
 
 // 알림 카테고리 - notification-rules.mdc에 맞게 수정
@@ -128,6 +127,7 @@ export const campaignTargetGroups = pgTable('campaign_target_groups', {
     userList: jsonb('user_list'),
     userCount: integer('user_count').default(0),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     campaignIdx: index('idx_campaign_target').on(table.campaignId),
 }));
@@ -146,25 +146,7 @@ export const campaignRecipients = pgTable('campaign_recipients', {
     campaignUserIdx: index('idx_campaign_user').on(table.campaignId, table.userId),
 }));
 
-// 사용자 정보 캐시 테이블
-export const userProfiles = pgTable('user_profiles', {
-    userId: varchar('user_id', { length: 100 }).primaryKey(),
-    email: varchar('email', { length: 255 }),
-    phoneNumber: varchar('phone_number', { length: 20 }),
-    pushToken: varchar('push_token', { length: 255 }),
-    membershipType: membershipTypeEnum('membership_type').default('general'),
-    shopCategories: jsonb('shop_categories'),
-    deviceInfo: jsonb('device_info').$type<DeviceInfo>(),
-    metadata: jsonb('metadata'),
-    syncedAt: timestamp('synced_at').defaultNow().notNull(),
-}, (table) => ({
-    membershipIdx: index('idx_membership_type').on(table.membershipType),
-    emailIdx: index('idx_email').on(table.email),
-    phoneIdx: index('idx_phone').on(table.phoneNumber),
-    pushTokenIdx: index('idx_push_token').on(table.pushToken),
-}));
-
-// FCM 토큰 관리 테이블
+// FCM 토큰 관리 테이블 (앱 푸시용)
 export const fcmTokens = pgTable('fcm_tokens', {
     tokenId: uuid('token_id').defaultRandom().primaryKey(),
     userId: varchar('user_id', { length: 100 }).notNull(),
@@ -202,24 +184,6 @@ export const fcmTopicSubscriptions = pgTable('fcm_topic_subscriptions', {
     userTopicIdx: uniqueIndex('idx_user_topic').on(table.userId, table.topic),
     tokenTopicIdx: index('idx_token_topic').on(table.tokenId, table.topic),
     topicIdx: index('idx_topic').on(table.topic),
-}));
-
-// 사용자 알림 설정 테이블
-export const userNotificationSettings = pgTable('user_notification_settings', {
-    settingId: uuid('setting_id').defaultRandom().primaryKey(),
-    userId: varchar('user_id', { length: 100 }).unique().notNull(),
-    // 마케팅 알림 수신 동의 (모든 채널 통합)
-    isMarketingEnabled: boolean('is_marketing_enabled').default(false).notNull(),
-    // 시스템/정보성 알림은 항상 발송 (동의 불필요)
-    preferredLanguage: languageEnum('preferred_language').default('ko').notNull(),
-    // 푸시 알림 세부 설정 (소리, 진동 등)
-    pushSettings: jsonb('push_settings').$type<PushSettings>(),
-    // 기타 설정
-    settings: jsonb('settings').$type<GeneralSettings>(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-    userIdx: uniqueIndex('idx_user_notification_settings').on(table.userId),
 }));
 
 // 알림 프로바이더 테이블
@@ -326,32 +290,6 @@ export type NotificationPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 export type DevicePlatform = 'ios' | 'android' | 'web';
 
 // Interfaces
-export interface DeviceInfo {
-    platform?: DevicePlatform;
-    deviceId?: string;
-    deviceModel?: string;
-    osVersion?: string;
-    appVersion?: string;
-    lastActiveAt?: Date;
-}
-
-export interface PushSettings {
-    sound?: boolean;
-    vibration?: boolean;
-    showPreview?: boolean;
-    quietHours?: {
-        enabled: boolean;
-        startTime?: string;
-        endTime?: string;
-    };
-}
-
-export interface GeneralSettings {
-    timezone?: string;
-    locale?: string;
-    [key: string]: any;
-}
-
 export interface ChannelContent {
     ko?: {
         subject?: string;
@@ -431,8 +369,6 @@ export const notificationTables = {
     notificationCampaigns,
     campaignTargetGroups,
     campaignRecipients,
-    userProfiles,
-    userNotificationSettings,
     notificationProviders,
     notificationEvents,
     receipts,
@@ -453,10 +389,6 @@ export type CampaignTargetGroup = typeof campaignTargetGroups.$inferSelect;
 export type NewCampaignTargetGroup = typeof campaignTargetGroups.$inferInsert;
 export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
 export type NewCampaignRecipient = typeof campaignRecipients.$inferInsert;
-export type UserProfile = typeof userProfiles.$inferSelect;
-export type NewUserProfile = typeof userProfiles.$inferInsert;
-export type UserNotificationSetting = typeof userNotificationSettings.$inferSelect;
-export type NewUserNotificationSetting = typeof userNotificationSettings.$inferInsert;
 export type NotificationProvider = typeof notificationProviders.$inferSelect;
 export type NewNotificationProvider = typeof notificationProviders.$inferInsert;
 export type NotificationEvent = typeof notificationEvents.$inferSelect;
@@ -471,3 +403,6 @@ export type FcmToken = typeof fcmTokens.$inferSelect;
 export type NewFcmToken = typeof fcmTokens.$inferInsert;
 export type FcmTopicSubscription = typeof fcmTopicSubscriptions.$inferSelect;
 export type NewFcmTopicSubscription = typeof fcmTopicSubscriptions.$inferInsert;
+
+// Export schema type for DbService
+export type NotificationSchema = typeof notificationTables;

@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Post,
   UseGuards,
+  Param,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -54,5 +55,47 @@ export class ConsentsController {
     @Body() createConsentDto: CreateConsentDto,
   ): Promise<void> {
     return this.consentsService.createConsent(user.id, createConsentDto);
+  }
+
+  // notification-service용 API들 (인증 없이 접근 가능)
+  @ApiOperation({ summary: '사용자 마케팅 동의 여부 조회 (notification-service용)' })
+  @ApiResponse({
+    status: 200,
+    description: '마케팅 동의 여부 조회 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        isMarketingEnabled: { type: 'boolean' },
+      },
+    },
+  })
+  @Get('marketing/:userId')
+  async getMarketingConsent(@Param('userId') userId: string): Promise<{ isMarketingEnabled: boolean }> {
+    const isMarketingEnabled = await this.consentsService.getUserMarketingConsent(userId);
+    return { isMarketingEnabled };
+  }
+
+  @ApiOperation({ summary: '사용자 프로필 조회 (notification-service용)' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 프로필 조회 성공',
+  })
+  @Get('profile/:userId')
+  async getUserProfile(@Param('userId') userId: string) {
+    const profile = await this.consentsService.getUserProfile(userId);
+    if (!profile) {
+      throw new NotFoundException('User profile not found');
+    }
+    return profile;
+  }
+
+  @ApiOperation({ summary: '조건별 사용자 목록 조회 (notification-service용)' })
+  @ApiResponse({
+    status: 200,
+    description: '사용자 목록 조회 성공',
+  })
+  @Post('search')
+  async getUsersByCriteria(@Body() criteria: any) {
+    return await this.consentsService.getUsersByCriteria(criteria);
   }
 }

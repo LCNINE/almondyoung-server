@@ -19,15 +19,13 @@ import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplAccountService } from '../services/bnpl-account.service';
 
-import { z } from 'zod';
-
 import {
   PaymentError,
   PaymentType,
   ProviderType,
-} from '../providers/payment-provider.interface'; // enum으로 변경했다고 가정
+} from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { paymentIntentTypeEnum, runInTransaction } from '../shared/database';
+import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
@@ -36,132 +34,72 @@ import { FastifyRequest } from 'fastify';
 import { Multipart, MultipartFile } from '@fastify/multipart';
 import { HmsBnplRegisterInput } from '../providers/hms-bnpl.registrar';
 import {
+  ApiTags,
   ApiBody,
   ApiConsumes,
   ApiOperation,
   ApiResponse,
+  ApiParam,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { UploadedFile } from '../shared/types/fastify-file';
 
 import { CheckoutSessionService } from '../services/checkout-session.service';
-// Zod 스키마 정의
-export const CreateIntentSchema = z.object({
-  customerId: z.string().min(1),
-  amount: z.number().int().positive(),
-  // ✨ [수정] z.nativeEnum()을 사용하여 TypeScript enum을 Zod 스키마로 변환합니다.
-  type: z.enum(paymentIntentTypeEnum.enumValues),
-});
 
-export const ExecutePaymentSchema = z.object({
-  provider: z.string().min(1),
-  paymentKey: z.string().min(1),
-});
+// Zod 스키마 및 DTO 임포트
+import {
+  CreateIntentSchema,
+  AuthorizePaymentSchema,
+  CapturePaymentSchema,
+  CreateHmsCardProfileSchema,
+  OnboardHmsBnplProfileSchema,
+  CreateBnplAccountSchema,
+  CreateCheckoutSessionSchema,
+  ProcessIntentSchema,
+  // DTO 클래스들
+  CreateIntentDto,
+  AuthorizePaymentDto,
+  CapturePaymentDto,
+  CreateHmsCardProfileDto,
+  OnboardHmsBnplProfileDto,
+  CreateBnplAccountDto,
+  CreateCheckoutSessionDto,
+  ProcessIntentDto,
+  // Response DTO 클래스들
+  IntentResponseDto,
+  AuthorizePaymentResponseDto,
+  CapturePaymentResponseDto,
+  ExecutePaymentResponseDto,
+  HmsCardProfileResponseDto,
+  OnboardHmsBnplProfileResponseDto,
+  CreateBnplAccountResponseDto,
+  CreateCheckoutSessionResponseDto,
+  CheckoutUIDataResponseDto,
+  ErrorResponseDto,
+  // 타입들 (기존 호환성)
+  CreateIntentDtoType,
+  AuthorizePaymentDtoType,
+  CapturePaymentDtoType,
+  CreateHmsCardProfileDtoType,
+  OnboardHmsBnplProfileDtoType,
+  CreateBnplAccountDtoType,
+  CreateCheckoutSessionDtoType,
+  ProcessIntentDtoType,
+} from './payment.controller.zod';
 
-export const ProcessIntentSchema = z.object({
-  // ✨ [수정] z.nativeEnum()을 사용하여 TypeScript enum을 Zod 스키마로 변환합니다.
-  providerType: z.nativeEnum(ProviderType),
-  profileId: z.string().optional(),
-  instrumentRef: z.string().optional(), // Toss의 paymentKey 등
-});
-
-export const CreateHmsCardProfileSchema = z.object({
-  userId: z.string().min(1),
-  memberId: z.string().min(1).max(20),
-  memberName: z.string().min(1).max(25),
-  phone: z
-    .string()
-    .max(12, '전화번호 형식이 잘못되었습니다')
-    .min(1, '전화번호를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  payerNumber: z
-    .string()
-    .max(10, '10자 이내로 입력해주세요')
-    .min(6, '6자리 생년월일을 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  paymentNumber: z
-    .string()
-    .max(16, '16자 이내로 입력해주세요')
-    .min(1, '카드번호를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  payerName: z
-    .string()
-    .max(10, '10자 이내로 입력해주세요')
-    .min(1, '납부자명을 입력해주세요'),
-  validYear: z
-    .string()
-    .max(2, '카드 유효기간 년도를 입력해주세요')
-    .min(2, '카드 유효기간 년도를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  validMonth: z
-    .string()
-    .max(2, '카드 유효기간 월을 입력해주세요')
-    .min(2, '카드 유효기간 월을 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  validUntil: z
-    .string()
-    .max(4, '카드 유효기간을 입력해주세요')
-    .min(4, '카드 유효기간을 입력해주세요'),
-  password: z
-    .string()
-    .max(2, '비밀번호 앞 2자리를 입력해주세요')
-    .min(2, '비밀번호 앞 2자리를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
-  paymentCompany: z.string().max(3, '결제 기관 코드를 입력해주세요'),
-});
-
-export const OnboardHmsBnplProfileSchema = z.object({
-  userId: z.string().trim().min(1, '사용자 ID는 필수입니다.'),
-  payerName: z.string().trim().min(1, '납부자명은 필수입니다.'),
-  phone: z.string().trim().min(10, '올바른 전화번호를 입력해주세요.'),
-  paymentCompany: z.string().trim().min(1, '은행 코드는 필수입니다.'),
-  paymentNumber: z.string().trim().min(1, '계좌 번호는 필수입니다.'),
-  payerNumber: z.string().trim().min(6, '생년월일 6자리를 입력해주세요.'),
-  name: z.string().optional().nullable(), // 우리 시스템에서 사용할 프로필 별칭
-});
-
-export const CreateBnplAccountSchema = z.object({
-  userId: z.string().trim().min(1, '사용자 ID는 필수입니다.'),
-  creditLimit: z.number().int().positive('신용 한도는 양수여야 합니다.'),
-});
-
-// --- DTO 타입 추론 ---
-// ... (기존 타입)
-export type OnboardHmsBnplProfileDto = z.infer<
-  typeof OnboardHmsBnplProfileSchema
->;
-export type CreateBnplAccountDto = z.infer<typeof CreateBnplAccountSchema>;
-
-// DTO 타입 추론
-export type CreateIntentDto = z.infer<typeof CreateIntentSchema>;
-export type ExecutePaymentDto = z.infer<typeof ExecutePaymentSchema>;
-export type ProcessIntentDto = z.infer<typeof ProcessIntentSchema>;
-export type CreateHmsCardProfileDto = z.infer<
-  typeof CreateHmsCardProfileSchema
->;
-
-export const CreateCheckoutSessionSchema = z.object({
-  intentId: z.string().min(1, 'intentId는 필수입니다.'),
-  returnUrl: z.string().url('올바른 URL 형식이 아닙니다.'),
-  cancelUrl: z.string().url('올바른 URL 형식이 아닙니다.'),
-});
-
-export const AuthorizePaymentSchema = z.object({
-  provider: z.string().min(1, 'provider는 필수입니다.'),
-  paymentKey: z.string().min(1, 'paymentKey는 필수입니다.'),
-});
-
-export const CapturePaymentSchema = z.object({
-  attemptId: z.string().min(1, 'attemptId는 필수입니다.'),
-  amount: z.number().int().positive().optional(),
-});
-
-export type CreateCheckoutSessionDto = z.infer<
-  typeof CreateCheckoutSessionSchema
->;
-export type AuthorizePaymentDto = z.infer<typeof AuthorizePaymentSchema>;
-export type CapturePaymentDto = z.infer<typeof CapturePaymentSchema>;
-
-@Controller('v2/payments') // API 버전 명시
+/**
+ * 결제 API 컨트롤러 (v2)
+ *
+ * Wallet 서비스의 결제 처리를 위한 REST API를 제공합니다.
+ * 결제 의도(Intent) 생성부터 승인, 캡처까지의 전체 결제 플로우를 지원하며,
+ * HMS 카드/BNPL 프로필 관리 및 체크아웃 세션 생성 기능을 포함합니다.
+ *
+ * @version 2.0
+ * @author Wallet Team
+ * @since 2025-01-15
+ */
+@ApiTags('결제 (Payments)')
+@Controller('v2/payments')
 export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
   constructor(
@@ -175,6 +113,69 @@ export class PaymentController {
   ) {}
 
   @Post('intents')
+  @ApiOperation({
+    summary: '결제 의도(Intent) 생성',
+    description: `새로운 결제 의도를 생성합니다. 
+    
+**결제 의도(Payment Intent)란?**
+- 실제 결제 전에 결제할 의향을 나타내는 객체
+- 고객 정보, 금액, 결제 타입 등의 메타데이터를 포함
+- 이후 승인(authorize) → 캡처(capture) 단계로 진행
+
+**지원하는 결제 타입:**
+- \`PAYMENT\`: 일반 결제
+- \`SUBSCRIPTION\`: 정기 결제
+- \`REFUND\`: 환불
+
+**멱등성 보장:**
+- \`Idempotency-Key\` 헤더를 통해 중복 요청 방지
+- 동일한 키로 재요청 시 기존 결과 반환`,
+  })
+  @ApiBody({
+    description: '결제 의도 생성 요청',
+    type: CreateIntentDto,
+    examples: {
+      payment: {
+        summary: '일반 결제 의도',
+        description: '단건 상품 구매를 위한 결제 의도',
+        value: {
+          customerId: 'customer_12345',
+          amount: 29900,
+          type: 'PAYMENT',
+        },
+      },
+      subscription: {
+        summary: '정기 결제 의도',
+        description: '구독 서비스를 위한 정기 결제 의도',
+        value: {
+          customerId: 'customer_67890',
+          amount: 9900,
+          type: 'SUBSCRIPTION',
+        },
+      },
+    },
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 보장을 위한 고유 키 (선택사항)',
+    required: false,
+    example: 'intent_create_20250115_abc123',
+  })
+  @ApiResponse({
+    status: 201,
+    description: '결제 의도 생성 성공',
+    type: IntentResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 데이터',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
+  })
   async createPaymentIntent(
     @Body(new ZodValidationPipe(CreateIntentSchema)) dto: CreateIntentDto,
     @Headers('Idempotency-Key') idemKey?: string,
@@ -198,12 +199,41 @@ export class PaymentController {
 
   @Get('intents/:intentId')
   @ApiOperation({
-    summary: 'Intent 조회',
-    description: '결제 의도(Intent) ID로 Intent 정보를 조회합니다.',
+    summary: '결제 의도(Intent) 조회',
+    description: `결제 의도 ID로 상세 정보를 조회합니다.
+    
+**조회 가능한 정보:**
+- Intent 기본 정보 (ID, 고객 ID, 금액, 상태 등)
+- 생성/수정 시각
+- 메타데이터 (주문명, 상품 정보 등)
+- 현재 처리 상태
+
+**Intent 상태:**
+- \`PENDING\`: 생성됨, 결제 대기 중
+- \`AUTHORIZED\`: 승인 완료, 캡처 대기 중
+- \`CAPTURED\`: 결제 완료
+- \`FAILED\`: 결제 실패
+- \`CANCELLED\`: 취소됨`,
+  })
+  @ApiParam({
+    name: 'intentId',
+    description: '결제 의도 ID',
+    example: 'intent_20250115_abc123',
   })
   @ApiResponse({
     status: 200,
     description: 'Intent 조회 성공',
+    type: IntentResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Intent를 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
   })
   async getIntent(@Param('intentId') intentId: string) {
     try {
@@ -226,13 +256,69 @@ export class PaymentController {
 
   @Post('intents/:intentId/authorize')
   @ApiOperation({
-    summary: '결제 승인',
-    description:
-      '클라이언트에서 받은 결제 정보로 결제를 승인합니다 (캡처는 별도 처리).',
+    summary: '결제 승인 (Authorize)',
+    description: `결제 수단을 승인하여 결제 가능한 상태로 만듭니다.
+    
+**승인(Authorize)과 캡처(Capture)의 분리:**
+- **승인**: 결제 수단 유효성 검증 및 금액 홀드 (실제 차감 X)
+- **캡처**: 실제 금액 차감 및 정산 처리
+
+**지원 결제 제공자:**
+- \`TOSS\`: 토스페이먼츠 (테스트/운영 환경 지원)
+
+**Toss 결제 플로우:**
+1. 클라이언트에서 Toss SDK로 결제 수단 선택
+2. Toss에서 paymentKey 발급
+3. 이 API로 paymentKey 전달하여 승인 처리
+4. 별도 캡처 API로 실제 결제 완료
+
+**멱등성:**
+- 동일한 paymentKey로 재요청 시 기존 결과 반환`,
+  })
+  @ApiParam({
+    name: 'intentId',
+    description: '결제 의도 ID',
+    example: 'intent_20250115_abc123',
+  })
+  @ApiBody({
+    description: '결제 승인 요청',
+    type: AuthorizePaymentDto,
+    examples: {
+      toss: {
+        summary: 'Toss 결제 승인',
+        description: 'Toss SDK에서 받은 paymentKey로 승인 처리',
+        value: {
+          provider: 'TOSS',
+          paymentKey: 'tgen_20250115123456_aB3Cd4Ef',
+        },
+      },
+    },
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 보장을 위한 고유 키 (선택사항)',
+    required: false,
+    example: 'authorize_20250115_xyz789',
   })
   @ApiResponse({
     status: 200,
     description: '결제 승인 성공',
+    type: AuthorizePaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 또는 결제 승인 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Intent를 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
   })
   async authorizePayment(
     @Param('intentId') intentId: string,
@@ -308,12 +394,79 @@ export class PaymentController {
 
   @Post('intents/:intentId/capture')
   @ApiOperation({
-    summary: '결제 캡처',
-    description: '승인된 결제를 실제로 정산 처리합니다.',
+    summary: '결제 캡처 (Capture)',
+    description: `승인된 결제를 실제로 정산 처리합니다.
+    
+**캡처(Capture)란?**
+- 승인 단계에서 홀드된 금액을 실제로 차감하는 과정
+- 캡처 완료 후 고객에게 실제 청구되며, 판매자에게 정산됨
+- 부분 캡처도 지원 (승인 금액보다 적은 금액 캡처 가능)
+
+**사용 시나리오:**
+- 상품 발송 완료 후 캡처 (배송 후 결제)
+- 서비스 제공 완료 후 캡처
+- 부분 취소 시 남은 금액만 캡처
+
+**부분 캡처:**
+- amount 파라미터로 캡처할 금액 지정
+- 미지정 시 승인된 전체 금액 캡처
+- 승인 금액보다 큰 금액 캡처는 불가
+
+**주의사항:**
+- 승인된 결제만 캡처 가능
+- 캡처 후에는 취소 불가 (환불만 가능)`,
+  })
+  @ApiParam({
+    name: 'intentId',
+    description: '결제 의도 ID',
+    example: 'intent_20250115_abc123',
+  })
+  @ApiBody({
+    description: '결제 캡처 요청',
+    type: CapturePaymentDto,
+    examples: {
+      full: {
+        summary: '전체 금액 캡처',
+        description: '승인된 전체 금액을 캡처',
+        value: {
+          attemptId: 'attempt_20250115_def456',
+        },
+      },
+      partial: {
+        summary: '부분 금액 캡처',
+        description: '승인된 금액 중 일부만 캡처 (예: 29,900원 중 20,000원)',
+        value: {
+          attemptId: 'attempt_20250115_def456',
+          amount: 20000,
+        },
+      },
+    },
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 보장을 위한 고유 키 (선택사항)',
+    required: false,
+    example: 'capture_20250115_uvw123',
   })
   @ApiResponse({
     status: 200,
     description: '결제 캡처 성공',
+    type: CapturePaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 또는 캡처 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Intent 또는 Attempt를 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
   })
   async capturePayment(
     @Param('intentId') intentId: string,
@@ -360,65 +513,59 @@ export class PaymentController {
     }
   }
 
-  @Post('intents/:intentId/execute')
+  @Post('profiles/hms-card')
   @ApiOperation({
-    summary: '결제 실행 (레거시)',
-    description:
-      '클라이언트에서 받은 결제 정보로 실제 결제를 실행합니다. (auth + capture 통합)',
+    summary: 'HMS 카드 프로필 생성',
+    description: `HMS(Hyundai Motor Service) 카드 결제를 위한 프로필을 생성합니다.
+    
+**HMS 카드 프로필이란?**
+- 현대자동차 금융서비스 카드 결제를 위한 정보
+- 카드 번호, 유효기간, 비밀번호 등을 안전하게 저장
+- 이후 결제 시 프로필 ID로 간편 결제 가능
+
+**보안 처리:**
+- 민감한 카드 정보는 암호화하여 저장
+- PCI-DSS 규정에 따른 보안 처리
+- 카드 정보는 HMS 시스템에만 전달`,
+  })
+  @ApiBody({
+    description: 'HMS 카드 프로필 생성 요청',
+    type: CreateHmsCardProfileDto,
+    examples: {
+      hmsCard: {
+        summary: 'HMS 카드 프로필',
+        value: {
+          userId: 'user_12345',
+          memberId: 'HM20250115001',
+          memberName: '김현대',
+          phone: '01012345678',
+          payerNumber: '901201',
+          paymentNumber: '1234567890123456',
+          payerName: '김현대',
+          validYear: '28',
+          validMonth: '12',
+          validUntil: '2812',
+          password: '12',
+          paymentCompany: 'HMC',
+        },
+      },
+    },
   })
   @ApiResponse({
-    status: 200,
-    description: '결제 실행 성공',
+    status: 201,
+    description: 'HMS 카드 프로필 생성 성공',
+    type: HmsCardProfileResponseDto,
   })
-  async executePayment(
-    @Param('intentId') intentId: string,
-    @Body(new ZodValidationPipe(AuthorizePaymentSchema))
-    dto: AuthorizePaymentDto, // ExecutePaymentDto와 AuthorizePaymentDto가 동일한 구조
-    @Req() request: any,
-    @Headers('Idempotency-Key') idemKey?: string,
-  ) {
-    try {
-      this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
-      this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
-      this.logger.log(
-        `결제 실행 요청 (레거시): Intent ${intentId}, Provider ${dto.provider}`,
-      );
-
-      // 1단계: 승인
-      const authResult = await this.authorizePayment(
-        intentId,
-        dto,
-        request,
-        idemKey,
-      );
-
-      // 2단계: 즉시 캡처 (레거시 호환을 위해)
-      const captureDto = {
-        attemptId: (authResult as any).attemptId,
-        amount: (authResult as any).amount,
-      };
-      const captureResult = await this.capturePayment(
-        intentId,
-        captureDto,
-        idemKey,
-      );
-
-      // 레거시 응답 형식으로 반환
-      return {
-        success: true,
-        intentId: intentId,
-        status: 'CAPTURED',
-        provider: dto.provider,
-        amount: (authResult as any).amount,
-        paymentKey: dto.paymentKey,
-        message: '결제가 성공적으로 완료되었습니다.',
-      };
-    } catch (error) {
-      this.handleError(error, '결제 실행');
-    }
-  }
-
-  @Post('profiles/hms-card')
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 카드 정보 또는 유효성 검증 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '프로필 생성 중 서버 오류',
+    type: ErrorResponseDto,
+  })
   async createHmsCardProfile(
     @Body(new ZodValidationPipe(CreateHmsCardProfileSchema))
     dto: CreateHmsCardProfileDto,
@@ -517,12 +664,47 @@ export class PaymentController {
   @Get('checkout/ui-data/:intentId')
   @ApiOperation({
     summary: '체크아웃 UI 데이터 조회',
-    description:
-      'Intent ID로 체크아웃 페이지에 필요한 최소한의 UI 데이터만 반환합니다.',
+    description: `체크아웃 페이지 렌더링에 필요한 최소한의 데이터를 반환합니다.
+    
+**반환되는 정보:**
+- Intent 기본 정보 (ID, 금액, 주문명)
+- 지원 가능한 결제 제공자 목록
+- 각 제공자별 클라이언트 설정 (API 키 등)
+
+**보안 고려사항:**
+- 민감한 정보는 제외 (시크릿 키, 개인정보 등)
+- 클라이언트 측에서 안전하게 사용할 수 있는 정보만 포함
+- Intent 상태가 PENDING인 경우에만 조회 가능
+
+**사용 시나리오:**
+- 체크아웃 페이지 초기화
+- 결제 제공자별 SDK 초기화
+- 결제 UI 구성`,
+  })
+  @ApiParam({
+    name: 'intentId',
+    description: '결제 의도 ID',
+    example: 'intent_20250115_abc123',
   })
   @ApiResponse({
     status: 200,
-    description: 'UI 데이터 조회 성공',
+    description: '체크아웃 UI 데이터 조회 성공',
+    type: CheckoutUIDataResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Intent 상태가 PENDING이 아님',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Intent를 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
   })
   async getCheckoutUIData(@Param('intentId') intentId: string) {
     try {
@@ -566,12 +748,63 @@ export class PaymentController {
   @Post('checkout/sessions')
   @ApiOperation({
     summary: '범용 체크아웃 세션 생성',
-    description:
-      '결제 의도(Intent) ID를 받아, Wallet 자체 결제 UI로 연결되는 세션을 생성합니다.',
+    description: `결제 의도를 기반으로 체크아웃 세션을 생성합니다.
+    
+**체크아웃 세션이란?**
+- 결제 진행을 위한 임시 세션
+- 보안이 강화된 결제 전용 URL 제공
+- 세션 만료 시간 내에서만 유효
+
+**세션 기반 결제 플로우:**
+1. Intent 생성
+2. 체크아웃 세션 생성 (이 API)
+3. 반환된 paymentUrl로 사용자 리다이렉트
+4. Wallet 결제 페이지에서 결제 진행
+5. 완료 후 returnUrl 또는 cancelUrl로 리다이렉트
+
+**보안 특징:**
+- 세션 ID 기반 접근 제어
+- 만료 시간 설정 (기본 30분)
+- CSRF 보호
+- 결제 완료 후 세션 자동 무효화
+
+**URL 설정:**
+- returnUrl: 결제 성공 시 리다이렉트
+- cancelUrl: 결제 취소 시 리다이렉트`,
+  })
+  @ApiBody({
+    description: '체크아웃 세션 생성 요청',
+    type: CreateCheckoutSessionDto,
+    examples: {
+      session: {
+        summary: '체크아웃 세션 생성',
+        value: {
+          intentId: 'intent_20250115_abc123',
+          returnUrl: 'https://mystore.com/payment/success',
+          cancelUrl: 'https://mystore.com/payment/cancel',
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 201,
-    description: '세션 생성 성공. paymentUrl로 리다이렉트 하세요.',
+    description: '체크아웃 세션 생성 성공',
+    type: CreateCheckoutSessionResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 또는 Intent 상태 오류',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Intent를 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '세션 생성 중 서버 오류',
+    type: ErrorResponseDto,
   })
   async createSession(
     @Body(new ZodValidationPipe(CreateCheckoutSessionSchema))

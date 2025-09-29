@@ -7,7 +7,7 @@ import {
 } from '@app/events';
 import { NaverSmartstoreStrategy } from './services/strategies/naver-smartstore.strategy';
 import { CoupangStrategy } from './services/strategies/coupang.strategy';
-import { MedusaStrategy } from './services/strategies/medusa.strategy';
+
 import { ChannelStrategyFactory } from './services/strategies/channel-strategy.factory';
 import { AdapterOrchestrationService } from './services/adapter-orchestration.service';
 import { SyncStatusService } from './services/sync-status.service';
@@ -17,14 +17,16 @@ import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NaverCommerceApiService } from './services/apis/naver-commerce.api.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import {
-  CHANNEL_ADAPTER_EVENTS,
-  ChannelAdapterEvents,
-} from './events/channel-events';
+import { CHANNEL_ADAPTER_EVENTS } from '@app/shared/events/adapter.events';
 import * as schema from './schema';
 import { CoupangApiService } from './services/apis/coupang.api.service';
+import { WmsApiService } from './services/apis/wms.api.service';
+import { DlqMonitoringService } from './services/dlq-monitoring.service';
+import { ConfigModule } from '@nestjs/config';
+
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
     HttpModule,
     DbModule.forRoot({
       config: {
@@ -58,9 +60,11 @@ import { CoupangApiService } from './services/apis/coupang.api.service';
     ChannelStrategyFactory,
     NaverSmartstoreStrategy,
     CoupangStrategy,
-    MedusaStrategy,
     NaverCommerceApiService,
     CoupangApiService,
+    WmsApiService,
+    DlqMonitoringService,
+
     // 환경별 EventPublisher 제공
     ...(process.env.NODE_ENV === 'production'
       ? [] // 운영 환경: EventsModule에서 제공하는 EventPublisherService 사용

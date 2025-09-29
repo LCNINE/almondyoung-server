@@ -10,8 +10,6 @@ import {
     receipts,
     notificationLogs,
     notifications,
-    userProfiles,
-    userNotificationSettings,
 } from '../../../database/schemas/notification-schema';
 import { ResendWebhookData, ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
 import { AlertService } from './alert.service';
@@ -196,44 +194,19 @@ export class WebhookService {
             bounceMessage: bounceInfo?.message,
         });
 
-        // Permanent bounce인 경우 해당 이메일 비활성화
+        // Permanent bounce인 경우 운영 알림 생성
         if (bounceInfo?.type === 'Permanent') {
-            // 이메일 주소로 사용자 찾기
-            const user = await this.db.query.userProfiles.findFirst({
-                where: eq(userProfiles.email, recipientEmail),
+            await this.alertService.createAlert({
+                type: 'email_permanent_bounce',
+                severity: 'medium',
+                title: 'Permanent email bounce detected',
+                message: `Email ${recipientEmail} has been marked as invalid due to permanent bounce`,
+                context: {
+                    userId: userId,
+                    email: recipientEmail,
+                    bounceMessage: bounceInfo.message,
+                },
             });
-
-            if (user) {
-                // 사용자 이메일 무효화 (null로 설정)
-                await this.db
-                    .update(userProfiles)
-                    .set({
-                        email: null,
-                        metadata: sql`
-                            COALESCE(metadata, '{}'::jsonb) || 
-                            jsonb_build_object(
-                                'email_bounced', true,
-                                'bounce_date', ${new Date().toISOString()},
-                                'bounce_reason', ${bounceInfo.message}
-                            )
-                        `,
-                        syncedAt: new Date(),
-                    })
-                    .where(eq(userProfiles.userId, user.userId));
-
-                // 운영 알림 생성
-                await this.alertService.createAlert({
-                    type: 'email_permanent_bounce',
-                    severity: 'medium',
-                    title: 'Permanent email bounce detected',
-                    message: `Email ${recipientEmail} has been marked as invalid due to permanent bounce`,
-                    context: {
-                        userId: user.userId,
-                        email: recipientEmail,
-                        bounceMessage: bounceInfo.message,
-                    },
-                });
-            }
         }
     }
 
@@ -249,42 +222,18 @@ export class WebhookService {
             recipientEmail,
         });
 
-        // 스팸 신고한 사용자 수신 거부 처리
-        const user = await this.db.query.userProfiles.findFirst({
-            where: eq(userProfiles.email, recipientEmail),
+        // 운영 알림 생성
+        await this.alertService.createAlert({
+            type: 'spam_complaint',
+            severity: 'high',
+            title: 'Spam complaint received',
+            message: `User marked email as spam: ${recipientEmail}`,
+            context: {
+                userId: userId,
+                email: recipientEmail,
+                emailId,
+            },
         });
-
-        if (user) {
-            // 알림 수신 거부 처리
-            await this.db
-                .update(userNotificationSettings)
-                .set({
-                    isMarketingEnabled: false,
-                    settings: sql`
-                        COALESCE(settings, '{}'::jsonb) || 
-                        jsonb_build_object(
-                            'spam_complaint', true,
-                            'complaint_date', ${new Date().toISOString()},
-                            'complaint_channel', 'EMAIL'
-                        )
-                    `,
-                    updatedAt: new Date(),
-                })
-                .where(eq(userNotificationSettings.userId, user.userId));
-
-            // 운영 알림 생성
-            await this.alertService.createAlert({
-                type: 'spam_complaint',
-                severity: 'high',
-                title: 'Spam complaint received',
-                message: `User marked email as spam: ${recipientEmail}`,
-                context: {
-                    userId: user.userId,
-                    email: recipientEmail,
-                    emailId,
-                },
-            });
-        }
     }
 
     private async handleEmailOpened(

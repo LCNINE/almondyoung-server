@@ -1,6 +1,7 @@
 // apps/notification/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NotificationModule } from './notification.module';
 import { AllExceptionsFilter } from './shared/filters/exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
@@ -46,9 +47,31 @@ async function bootstrap() {
         credentials: true,
     });
 
-    const port = process.env.NOTIFICATION_PORT ?? 5001;
+    // Swagger 설정
+    const config = new DocumentBuilder()
+        .setTitle('Notification Service API')
+        .setDescription('알몬드영 알림 서비스 API 문서')
+        .setVersion('1.0')
+        .addTag('templates', '템플릿 관리')
+        .addTag('notifications', '알림 발송')
+        .addTag('providers', '알림 제공업체 관리')
+        .addTag('bulk', '대량 발송')
+        .addTag('dispatcher', '알림 디스패처')
+        .addTag('event-handlers', '이벤트 핸들러')
+        .addBearerAuth()
+        .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+        swaggerOptions: {
+            persistAuthorization: true,
+        },
+    });
+
+    const port = process.env.PORT ?? 5001;
     await app.listen(port);
 
     console.log(`Notification service is running on port ${port}`);
+    console.log(`Swagger documentation available at http://localhost:${port}/api/docs`);
 }
 bootstrap();

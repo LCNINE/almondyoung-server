@@ -1085,6 +1085,49 @@ export const taxInvoiceEventsDetails = pgTable(
     index('idx_tid_aggregation').on(t.aggregationType, t.aggregationKey),
   ],
 );
+
+// 원천 이벤트 로그
+export const cashReceiptEvents = pgTable(
+  'cash_receipt_events',
+  {
+    id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
+    userId: varchar('user_id').notNull(), // 발급 주체
+    cashReceiptId: text('cash_receipt_id').notNull(), // 외부 ID (YYYYMMDD+연번)
+    eventType: text('event_type').notNull(), // ISSUE, CANCEL
+    requestPayload: jsonb('request_payload'), // 발급 요청 원본
+    responsePayload: jsonb('response_payload'), // 응답 원본
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('idx_cash_receipt_events_receipt').on(table.cashReceiptId)],
+);
+
+// 이벤트 상세 (금액, 승인번호 등)
+export const cashReceiptEventDetails = pgTable(
+  'cash_receipt_event_details',
+  {
+    id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
+    eventId: varchar('event_id', { length: 36 })
+      .notNull()
+      .references(() => cashReceiptEvents.id),
+    supplyAmount: integer('supply_amount'),
+    vatAmount: integer('vat_amount'),
+    serviceAmount: integer('service_amount'),
+    totalAmount: integer('total_amount'),
+    receiptApprovalNumber: text('receipt_approval_number'),
+    receiptDate: date('receipt_date'),
+    receiptPurpose: text('receipt_purpose'),
+    cancelDate: date('cancel_date'),
+    cancelApprovalNumber: text('cancel_approval_number'),
+    cancelReason: text('cancel_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('idx_cash_receipt_event_details_event').on(table.eventId)],
+);
+
 /**
  * PaymentIntent 테이블 - 결제 의도 (provider 없음, 실행 시점에서 결정)
  */
@@ -1269,6 +1312,16 @@ export const taxInvoiceEventsRelations = relations(
     invoice: one(taxInvoices, {
       fields: [taxInvoiceEvents.invoiceId],
       references: [taxInvoices.id],
+    }),
+  }),
+);
+
+export const cashReceiptEventsRelations = relations(
+  cashReceiptEvents,
+  ({ one }) => ({
+    eventDetails: one(cashReceiptEventDetails, {
+      fields: [cashReceiptEvents.id],
+      references: [cashReceiptEventDetails.eventId],
     }),
   }),
 );

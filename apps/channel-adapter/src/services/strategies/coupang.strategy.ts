@@ -1,19 +1,35 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ChannelStrategy } from './channel-strategy.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
-import { InternalOrderEvent, OrderQuery } from '../../types';
-import { ChannelCommand } from '../../types';
+import {
+  InternalOrderEvent,
+  InternalExchangeEvent,
+  InternalReturnEvent,
+  OrderQuery,
+} from '../../types';
+import { ChannelCommand, ChannelQuery } from '../../types';
 import { CoupangApiService } from '../apis/coupang.api.service';
+import {
+  WmsApiService,
+  SalesOrder,
+  CreateSalesOrderDto,
+} from '../apis/wms.api.service';
 import {
   CoupangOrderSheet,
   CoupangDeliveryHistoryResponse,
+  CoupangExchangeRequest,
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang.api.zod';
 
 @Injectable()
 export class CoupangStrategy implements ChannelStrategy {
-  constructor(private readonly coupangApiService: CoupangApiService) {}
+  private readonly logger = new Logger(CoupangStrategy.name);
+
+  constructor(
+    private readonly coupangApiService: CoupangApiService,
+    private readonly wmsApiService: WmsApiService,
+  ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
     // 쿠팡 웹훅이 있는 경우 payload -> InternalOrderEvent로 변환
@@ -202,22 +218,99 @@ export class CoupangStrategy implements ChannelStrategy {
   }
 
   async executeCommand(command: ChannelCommand): Promise<SyncResult> {
-    const accessKey = process.env.COUPANG_ACCESS_KEY;
-    const secretKey = process.env.COUPANG_SECRET_KEY;
-    const api = process.env.COUPANG_API_ENDPOINT;
+    try {
+      // 🔍 입력 명령 유효성 검증 (네이버 패턴과 동일)
+      const validationResult = this.validateStandardCommand(command);
+      if (!validationResult.success) {
+        return {
+          success: false,
+          errors: validationResult.errors.map((err) => ({
+            message: `명령 검증 실패: ${err.message}`,
+          })),
+          failedCount: 1,
+        };
+      }
 
-    switch (command.type) {
-      case 'cancel.approve':
-        // 쿠팡 취소 승인 API 호출
-        return { success: true };
-      case 'dispatch.confirm':
-        // 쿠팡 발송 처리 API 호출
-        return { success: true };
-      // …기타 명령
-      default:
-        throw new Error(
-          `Unsupported command type for Coupang: ${command.type}`,
-        );
+      switch (command.type) {
+        case 'order.prepare':
+          return await this.executeOrderPrepare(command);
+
+        case 'dispatch.ship':
+          return await this.executeDispatchShip(command);
+
+        case 'dispatch.update_tracking':
+          return await this.executeDispatchUpdateTracking(command);
+
+        case 'return.approve':
+          return await this.executeReturnApprove(command);
+
+        case 'return.confirm_receipt':
+          return await this.executeReturnConfirmReceipt(command);
+
+        case 'return.process_shipment_stop':
+          return await this.executeReturnProcessShipmentStop(command);
+
+        case 'return.process_already_shipped':
+          return await this.executeReturnProcessAlreadyShipped(command);
+
+        case 'return.register_collection_invoice':
+          return await this.executeReturnRegisterCollectionInvoice(command);
+
+        case 'exchange.confirm_receipt':
+          return await this.executeExchangeConfirmReceipt(command);
+
+        case 'exchange.reject':
+          return await this.executeExchangeReject(command);
+
+        case 'exchange.upload_invoice':
+          return await this.executeExchangeUploadInvoice(command);
+
+        default:
+          return {
+            success: false,
+            errors: [
+              { message: `쿠팡에서 지원하지 않는 명령: ${command.type}` },
+            ],
+            failedCount: 1,
+          };
+      }
+    } catch (error) {
+      console.error('❌ 쿠팡 명령 실행 중 예외 발생:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        errors: [{ message: `쿠팡 명령 실행 실패: ${message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  async executeQuery(query: ChannelQuery): Promise<any> {
+    try {
+      switch (query.type) {
+        case 'delivery.history':
+          return await this.queryDeliveryHistory(query);
+
+        case 'return.withdrawal_history':
+          return await this.queryReturnWithdrawalHistory(query);
+
+        case 'return.withdrawal_history_by_claims':
+          return await this.queryReturnWithdrawalHistoryByClaims(query);
+
+        case 'exchange.requests':
+          return await this.queryExchangeRequests(query);
+
+        default:
+          throw new Error(`쿠팡에서 지원하지 않는 조회: ${query.type}`);
+      }
+    } catch (error) {
+      // 🎯 BadRequestException은 그대로 전달하여 컨트롤러에서 처리할 수 있도록 함
+      if (error instanceof BadRequestException) {
+        throw error; // BadRequestException은 그대로 전달
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`쿠팡 조회 실행 실패: ${message}`);
     }
   }
 
@@ -460,5 +553,1352 @@ export class CoupangStrategy implements ChannelStrategy {
     };
 
     return internalEvent;
+  }
+
+  // =================================================================
+  // == 표준 명령 → 쿠팡 API 번역 메서드들 (Command Translation Methods)
+  // =================================================================
+
+  /**
+   * 표준 명령: order.prepare → 쿠팡 API: acknowledgeOrdersheets
+   * 내부 표준 orderIds를 쿠팡의 shipmentBoxIds로 번역
+   */
+  private async executeOrderPrepare(command: {
+    type: 'order.prepare';
+    orderIds: string[];
+  }): Promise<SyncResult> {
+    try {
+      console.log('📦 쿠팡 주문 준비 처리 실행:', command);
+
+      // 🔄 표준 orderIds → 쿠팡 shipmentBoxIds 번역
+      const shipmentBoxIds = await this.translateOrderIdsToShipmentBoxIds(
+        command.orderIds,
+      );
+
+      const response = await this.coupangApiService.acknowledgeOrdersheets({
+        vendorId: this.getCoupangVendorId(),
+        shipmentBoxIds,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'order.prepare',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 주문 준비 처리 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `주문 준비 처리 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: dispatch.ship → 쿠팡 API: uploadInvoices
+   * 내부 표준 orderId + tracking을 쿠팡의 orderSheetInvoiceApplyDtos로 번역
+   */
+  private async executeDispatchShip(command: {
+    type: 'dispatch.ship';
+    orderId: string;
+    items?: Array<{ orderItemId: string; quantity: number }>;
+    tracking: { companyCode: string; number: string };
+    dispatchedAt?: string;
+  }): Promise<SyncResult> {
+    try {
+      console.log('🚚 쿠팡 발송 처리 실행:', command);
+
+      // 🔄 표준 orderId → 쿠팡 orderSheetInvoiceApplyDtos 번역
+      const orderSheetInvoiceApplyDtos = await this.translateOrderToInvoiceDtos(
+        command.orderId,
+        command.tracking,
+        command.items,
+      );
+
+      const response = await this.coupangApiService.uploadInvoices({
+        vendorId: this.getCoupangVendorId(),
+        orderSheetInvoiceApplyDtos,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'dispatch.ship',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 발송 처리 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `발송 처리 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: dispatch.update_tracking → 쿠팡 API: updateInvoices
+   */
+  private async executeDispatchUpdateTracking(command: {
+    type: 'dispatch.update_tracking';
+    orderId: string;
+    tracking: { companyCode: string; number: string };
+  }): Promise<SyncResult> {
+    try {
+      console.log('📝 쿠팡 송장 업데이트 실행:', command);
+
+      const orderSheetInvoiceApplyDtos =
+        await this.translateOrderToUpdateInvoiceDtos(
+          command.orderId,
+          command.tracking,
+        );
+
+      const response = await this.coupangApiService.updateInvoices({
+        vendorId: this.getCoupangVendorId(),
+        orderSheetInvoiceApplyDtos,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'dispatch.update_tracking',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 송장 업데이트 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `송장 업데이트 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: return.approve → 쿠팡 API: approveReturnRequest
+   * 내부 표준 claimId를 쿠팡의 receiptId + cancelCount로 번역
+   */
+  private async executeReturnApprove(command: {
+    type: 'return.approve';
+    claimId: string;
+    items?: Array<{ orderItemId: string; quantity: number }>;
+  }): Promise<SyncResult> {
+    try {
+      console.log('✅ 쿠팡 반품 승인 실행:', command);
+
+      // 🔄 표준 claimId → 쿠팡 receiptId + cancelCount 번역
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
+        command.claimId,
+      );
+
+      const response = await this.coupangApiService.approveReturnRequest({
+        vendorId: this.getCoupangVendorId(),
+        receiptId: coupangClaimInfo.receiptId,
+        cancelCount: coupangClaimInfo.cancelCount,
+      });
+
+      return {
+        success: response.code === '200',
+        processedCount: 1,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 반품 승인 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `반품 승인 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: return.confirm_receipt → 쿠팡 API: confirmReturnReceipt
+   */
+  private async executeReturnConfirmReceipt(command: {
+    type: 'return.confirm_receipt';
+    claimId: string;
+  }): Promise<SyncResult> {
+    try {
+      console.log('📦 쿠팡 반품상품 입고확인 실행:', command);
+
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
+        command.claimId,
+      );
+
+      const response = await this.coupangApiService.confirmReturnReceipt({
+        vendorId: this.getCoupangVendorId(),
+        receiptId: coupangClaimInfo.receiptId,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'return.confirm_receipt',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 반품상품 입고확인 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `반품상품 입고확인 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: return.process_shipment_stop → 쿠팡 API: stoppedShipment
+   */
+  private async executeReturnProcessShipmentStop(command: {
+    type: 'return.process_shipment_stop';
+    claimId: string;
+    reason?: string;
+  }): Promise<SyncResult> {
+    try {
+      console.log('⏹️ 쿠팡 출고중지 처리 실행:', command);
+
+      const coupangClaimInfo = await this.translateClaimIdToCoupangInfo(
+        command.claimId,
+      );
+
+      const response = await this.coupangApiService.stoppedShipment({
+        vendorId: this.getCoupangVendorId(),
+        receiptId: coupangClaimInfo.receiptId,
+        cancelCount: coupangClaimInfo.cancelCount,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'return.process_shipment_stop',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 출고중지 처리 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `출고중지 처리 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 쿠팡 이미출고처리
+   */
+  private async executeReturnCompletedShipment(
+    command: any,
+  ): Promise<SyncResult> {
+    try {
+      console.log('🚛 쿠팡 이미출고처리 실행:', command);
+
+      const response = await this.coupangApiService.completedShipment({
+        vendorId: command.vendorId,
+        receiptId: command.receiptId,
+        deliveryCompanyCode: command.deliveryCompanyCode,
+        invoiceNumber: command.invoiceNumber,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'return.completed_shipment',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 이미출고처리 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `이미출고처리 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 쿠팡 회수송장 등록
+   */
+  private async executeReturnRegisterInvoice(
+    command: any,
+  ): Promise<SyncResult> {
+    try {
+      console.log('📋 쿠팡 회수송장 등록 실행:', command);
+
+      const response = await this.coupangApiService.registerReturnInvoice({
+        returnExchangeDeliveryType: command.returnExchangeDeliveryType,
+        receiptId: command.receiptId,
+        deliveryCompanyCode: command.deliveryCompanyCode,
+        invoiceNumber: command.invoiceNumber,
+        regNumber: command.regNumber,
+      });
+
+      return this.transformCoupangResponseToSyncResult(
+        response,
+        'return.register_invoice',
+      );
+    } catch (error) {
+      console.error('❌ 쿠팡 회수송장 등록 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `회수송장 등록 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 쿠팡 반품 철회 이력 기간별 조회
+   */
+  private async executeReturnWithdrawalHistory(
+    command: any,
+  ): Promise<SyncResult> {
+    try {
+      console.log('📊 쿠팡 반품 철회 이력 조회 실행:', command);
+
+      const response = await this.coupangApiService.getReturnWithdrawalHistory({
+        dateFrom: command.dateFrom,
+        dateTo: command.dateTo,
+        pageIndex: command.pageIndex || 1,
+        sizePerPage: command.sizePerPage || 10,
+      });
+
+      return {
+        success: true,
+        processedCount: response.data.length,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 반품 철회 이력 조회 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `반품 철회 이력 조회 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 쿠팡 반품 철회 이력 접수번호로 조회
+   */
+  private async executeReturnWithdrawalHistoryByIds(
+    command: any,
+  ): Promise<SyncResult> {
+    try {
+      console.log('🔍 쿠팡 반품 철회 이력(ID) 조회 실행:', command);
+
+      const response =
+        await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+          cancelIds: command.cancelIds,
+        });
+
+      return {
+        success: true,
+        processedCount: response.data.length,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 반품 철회 이력(ID) 조회 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `반품 철회 이력(ID) 조회 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 쿠팡 배송상태 변경 히스토리 조회
+   */
+  private async executeDeliveryHistory(command: any): Promise<SyncResult> {
+    try {
+      console.log('📋 쿠팡 배송상태 히스토리 조회 실행:', command);
+
+      const response = await this.coupangApiService.getDeliveryHistory(
+        command.shipmentBoxId,
+      );
+
+      return {
+        success: true,
+        processedCount: response.data?.histories?.length || 0,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 배송상태 히스토리 조회 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `배송상태 히스토리 조회 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 간단한 나머지 메서드들 (구현 생략)
+   */
+  private async executeReturnProcessAlreadyShipped(
+    command: any,
+  ): Promise<SyncResult> {
+    // 표준 claimId + tracking → 쿠팡 completedShipment API 호출
+    throw new Error('구현 필요: return.process_already_shipped');
+  }
+
+  private async executeReturnRegisterCollectionInvoice(
+    command: any,
+  ): Promise<SyncResult> {
+    // 표준 claimId + tracking → 쿠팡 registerReturnInvoice API 호출
+    throw new Error('구현 필요: return.register_collection_invoice');
+  }
+
+  // =================================================================
+  // == 교환 관련 명령 실행 메서드들 (Exchange Command Methods)
+  // =================================================================
+
+  /**
+   * 표준 명령: exchange.confirm_receipt → 쿠팡 API: confirmExchangeReceipt
+   * 교환 상품 입고 확인 처리
+   */
+  private async executeExchangeConfirmReceipt(command: {
+    type: 'exchange.confirm_receipt';
+    claimId: string;
+  }): Promise<SyncResult> {
+    try {
+      console.log('📦 쿠팡 교환 상품 입고확인 실행:', command);
+
+      // 🔄 표준 claimId → 쿠팡 exchangeId 번역
+      const exchangeId = await this.translateClaimIdToExchangeId(
+        command.claimId,
+      );
+
+      const response = await this.coupangApiService.confirmExchangeReceipt({
+        vendorId: this.getCoupangVendorId(),
+        exchangeId,
+      });
+
+      return {
+        success: response.code === '200',
+        processedCount: 1,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 교환 상품 입고확인 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `교환 상품 입고확인 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: exchange.reject → 쿠팡 API: rejectExchangeRequest
+   * 교환 요청 거부 처리
+   */
+  private async executeExchangeReject(command: {
+    type: 'exchange.reject';
+    claimId: string;
+    reason: string;
+  }): Promise<SyncResult> {
+    try {
+      console.log('🚫 쿠팡 교환 요청 거부 실행:', command);
+
+      // 🔄 표준 claimId → 쿠팡 exchangeId 번역
+      const exchangeId = await this.translateClaimIdToExchangeId(
+        command.claimId,
+      );
+
+      // 🔄 표준 reason → 쿠팡 exchangeRejectCode 번역
+      const exchangeRejectCode = this.translateReasonToRejectCode(
+        command.reason,
+      );
+
+      const response = await this.coupangApiService.rejectExchangeRequest({
+        vendorId: this.getCoupangVendorId(),
+        exchangeId,
+        exchangeRejectCode,
+      });
+
+      return {
+        success: response.data.resultCode === 'SUCCESS',
+        processedCount: 1,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 교환 요청 거부 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `교환 요청 거부 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  /**
+   * 표준 명령: exchange.upload_invoice → 쿠팡 API: uploadExchangeInvoice
+   * 교환 재발송 송장 업로드
+   */
+  private async executeExchangeUploadInvoice(command: {
+    type: 'exchange.upload_invoice';
+    claimId: string;
+    tracking: { companyCode: string; number: string };
+    items?: Array<{ itemId: string; shipmentBoxId: string }>;
+  }): Promise<SyncResult> {
+    try {
+      console.log('🚀 쿠팡 교환 송장 업로드 실행:', command);
+
+      // 🔄 표준 claimId → 쿠팡 exchangeId 번역
+      const exchangeId = await this.translateClaimIdToExchangeId(
+        command.claimId,
+      );
+
+      // 🔄 표준 송장 정보 → 쿠팡 업로드 형식으로 번역
+      const invoiceItems = await this.translateExchangeInvoiceItems(
+        command.claimId,
+        command.tracking,
+        command.items,
+      );
+
+      const response = await this.coupangApiService.uploadExchangeInvoice(
+        exchangeId,
+        invoiceItems,
+      );
+
+      return {
+        success: response.data.resultCode === 'SUCCESS',
+        processedCount: 1,
+        data: response,
+      };
+    } catch (error) {
+      console.error('❌ 쿠팡 교환 송장 업로드 실패:', error);
+      return {
+        success: false,
+        errors: [{ message: `교환 송장 업로드 실패: ${error.message}` }],
+        failedCount: 1,
+      };
+    }
+  }
+
+  // =================================================================
+  // == 조회 메서드들 (Query Methods)
+  // =================================================================
+
+  private async queryDeliveryHistory(query: {
+    type: 'delivery.history';
+    orderId: string;
+  }): Promise<any> {
+    const shipmentBoxId = await this.translateOrderIdToShipmentBoxId(
+      query.orderId,
+    );
+    return await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
+  }
+
+  private async queryReturnWithdrawalHistory(query: {
+    type: 'return.withdrawal_history';
+    dateFrom: string;
+    dateTo: string;
+    pageIndex?: number;
+    sizePerPage?: number;
+  }): Promise<any> {
+    return await this.coupangApiService.getReturnWithdrawalHistory({
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      pageIndex: query.pageIndex || 1,
+      sizePerPage: query.sizePerPage || 10,
+    });
+  }
+
+  private async queryReturnWithdrawalHistoryByClaims(query: {
+    type: 'return.withdrawal_history_by_claims';
+    claimIds: string[];
+  }): Promise<any> {
+    const cancelIds = await this.translateClaimIdsToCancelIds(query.claimIds);
+    return await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+      cancelIds,
+    });
+  }
+
+  private async queryExchangeRequests(query: {
+    type: 'exchange.requests';
+    dateFrom: string;
+    dateTo: string;
+    status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL';
+    orderId?: number;
+    pageIndex?: number;
+    sizePerPage?: number;
+  }): Promise<InternalExchangeEvent[]> {
+    // 🔄 쿠팡 API 호출
+    const coupangResponse = await this.coupangApiService.getExchangeRequests({
+      createdAtFrom: query.dateFrom,
+      createdAtTo: query.dateTo,
+      status: query.status,
+      orderId: query.orderId,
+      maxPerPage: query.sizePerPage || 10,
+    });
+
+    // 🎯 SSOT 원칙: 쿠팡 응답을 표준 내부 모델로 번역
+    return coupangResponse.data.map((coupangExchange) =>
+      this.mapCoupangExchangeToInternal(coupangExchange),
+    );
+  }
+
+  // =================================================================
+  // == 🔄 쿠팡 → 표준 내부 모델 번역 메서드들 (SSOT Translation)
+  // =================================================================
+
+  /**
+   * 🎯 핵심 번역 메서드: 쿠팡 교환 응답 → 표준 내부 교환 이벤트
+   * SSOT 원칙에 따라 외부의 복잡한 구조를 내부의 단순하고 명확한 모델로 변환
+   */
+  private mapCoupangExchangeToInternal(
+    coupangExchange: CoupangExchangeRequest,
+  ): InternalExchangeEvent {
+    return {
+      eventId: `exchange_${coupangExchange.exchangeId}_${Date.now()}`,
+      eventType: this.mapExchangeEventType(coupangExchange.exchangeStatus),
+
+      // 🔑 핵심 식별자 번역
+      claimId: `EXCHANGE_${coupangExchange.exchangeId}`, // 내부 표준 클레임 ID
+      orderId: `ORDER_${coupangExchange.orderId}`, // 내부 표준 주문 ID
+
+      // 📍 채널 정보
+      channel: 'coupang',
+      externalClaimId: String(coupangExchange.exchangeId),
+      externalOrderId: String(coupangExchange.orderId),
+
+      // 📊 상태 번역 (쿠팡 → 표준)
+      status: this.mapCoupangExchangeStatusToInternal(
+        coupangExchange.exchangeStatus,
+      ),
+
+      // 🎯 귀책사유 번역
+      faultType: this.mapCoupangFaultTypeToInternal(coupangExchange.faultType),
+
+      // 📝 요청 정보
+      reason: coupangExchange.reason || coupangExchange.reasonCodeText,
+      reasonCode: coupangExchange.reasonCode,
+
+      // 📦 교환 상품 정보 (핵심 필드만 추출)
+      exchangeItems: coupangExchange.exchangeItemDtoV1s.map((item) => ({
+        originalItemId: String(item.orderItemId),
+        originalItemName: item.orderItemName,
+        targetItemId: String(item.targetItemId),
+        targetItemName: item.targetItemName,
+        quantity: item.quantity,
+        unitPrice: item.orderItemUnitPrice,
+      })),
+
+      // 🚚 배송 정보 번역
+      deliveryInfo: {
+        returnAddress: {
+          customerName: coupangExchange.exchangeAddressDtoV1.returnCustomerName,
+          address: `${coupangExchange.exchangeAddressDtoV1.returnAddress} ${coupangExchange.exchangeAddressDtoV1.returnAddressDetail}`,
+          phone:
+            coupangExchange.exchangeAddressDtoV1.returnPhone ||
+            coupangExchange.exchangeAddressDtoV1.returnMobile,
+        },
+        deliveryAddress: {
+          customerName:
+            coupangExchange.exchangeAddressDtoV1.deliveryCustomerName,
+          address: `${coupangExchange.exchangeAddressDtoV1.deliveryAddress} ${coupangExchange.exchangeAddressDtoV1.deliveryAddressDetail}`,
+          phone:
+            coupangExchange.exchangeAddressDtoV1.deliveryPhone ||
+            coupangExchange.exchangeAddressDtoV1.deliveryMobile,
+        },
+        collectStatus: this.mapCoupangCollectStatusToInternal(
+          coupangExchange.collectStatus,
+        ),
+        deliveryStatus: this.mapCoupangDeliveryStatusToInternal(
+          coupangExchange.deliveryStatus,
+        ),
+      },
+
+      // ⏰ 타임스탬프
+      createdAt: coupangExchange.createdAt,
+      updatedAt: coupangExchange.modifiedAt,
+
+      // 🗃️ 메타데이터 (원본 보존 + 디버깅용)
+      metadata: {
+        originalPayload: coupangExchange, // 전체 쿠팡 응답 보존
+        processingNotes: [
+          `쿠팡 교환 ID ${coupangExchange.exchangeId}에서 변환됨`,
+          `교환 상태: ${coupangExchange.exchangeStatus} → ${this.mapCoupangExchangeStatusToInternal(coupangExchange.exchangeStatus)}`,
+        ],
+        channelSpecificData: {
+          coupangExchangeId: coupangExchange.exchangeId,
+          coupangVendorId: coupangExchange.vendorId,
+          successable: coupangExchange.successable,
+          rejectable: coupangExchange.rejectable,
+          deliveryInvoiceModifiable: coupangExchange.deliveryInvoiceModifiable,
+        },
+      },
+    };
+  }
+
+  /**
+   * 쿠팡 교환 상태를 내부 표준 상태로 번역
+   */
+  private mapCoupangExchangeStatusToInternal(
+    coupangStatus: string,
+  ): InternalExchangeEvent['status'] {
+    const statusMapping: Record<string, InternalExchangeEvent['status']> = {
+      RECEIPT: 'PENDING',
+      PROGRESS: 'IN_PROGRESS',
+      SUCCESS: 'COMPLETED',
+      REJECT: 'REJECTED',
+      CANCEL: 'CANCELLED',
+    };
+    return statusMapping[coupangStatus] || 'PENDING';
+  }
+
+  /**
+   * 쿠팡 귀책사유를 내부 표준으로 번역
+   */
+  private mapCoupangFaultTypeToInternal(
+    coupangFaultType: string,
+  ): InternalExchangeEvent['faultType'] {
+    const faultMapping: Record<string, InternalExchangeEvent['faultType']> = {
+      SELLER: 'SELLER',
+      CUSTOMER: 'CUSTOMER',
+      DELIVERY: 'DELIVERY',
+      PRODUCT: 'PRODUCT_DEFECT',
+    };
+    return faultMapping[coupangFaultType] || 'OTHER';
+  }
+
+  /**
+   * 쿠팡 회수 상태를 내부 표준으로 번역
+   */
+  private mapCoupangCollectStatusToInternal(
+    collectStatus: string,
+  ): 'PENDING' | 'COLLECTED' | 'COMPLETED' {
+    const statusMapping: Record<string, 'PENDING' | 'COLLECTED' | 'COMPLETED'> =
+      {
+        PENDING: 'PENDING',
+        COLLECTED: 'COLLECTED',
+        COMPLETED: 'COMPLETED',
+      };
+    return statusMapping[collectStatus] || 'PENDING';
+  }
+
+  /**
+   * 쿠팡 배송 상태를 내부 표준으로 번역
+   */
+  private mapCoupangDeliveryStatusToInternal(
+    deliveryStatus: string,
+  ): 'PENDING' | 'SHIPPED' | 'DELIVERED' {
+    const statusMapping: Record<string, 'PENDING' | 'SHIPPED' | 'DELIVERED'> = {
+      PENDING: 'PENDING',
+      SHIPPED: 'SHIPPED',
+      DELIVERED: 'DELIVERED',
+    };
+    return statusMapping[deliveryStatus] || 'PENDING';
+  }
+
+  /**
+   * 쿠팡 교환 상태를 이벤트 타입으로 번역
+   */
+  private mapExchangeEventType(
+    exchangeStatus: string,
+  ): InternalExchangeEvent['eventType'] {
+    const eventMapping: Record<string, InternalExchangeEvent['eventType']> = {
+      RECEIPT: 'exchange_created',
+      PROGRESS: 'exchange_updated',
+      SUCCESS: 'exchange_completed',
+      REJECT: 'exchange_rejected',
+      CANCEL: 'exchange_rejected',
+    };
+    return eventMapping[exchangeStatus] || 'exchange_updated';
+  }
+
+  // =================================================================
+  // == 🔍 표준 명령 검증 메서드들 (Command Validation)
+  // =================================================================
+
+  /**
+   * 표준 명령의 유효성을 검증 (네이버 패턴과 동일한 구조)
+   */
+  private validateStandardCommand(command: ChannelCommand): {
+    success: boolean;
+    errors: Array<{ message: string }>;
+  } {
+    try {
+      // 기본 필수 필드 검증
+      if (!command.type) {
+        return {
+          success: false,
+          errors: [{ message: '명령 타입이 필요합니다' }],
+        };
+      }
+
+      // 명령별 상세 검증
+      switch (command.type) {
+        case 'order.prepare':
+          if (!command.orderIds || command.orderIds.length === 0) {
+            return {
+              success: false,
+              errors: [{ message: 'orderIds가 필요합니다' }],
+            };
+          }
+          break;
+
+        case 'dispatch.ship':
+          if (!command.orderId) {
+            return {
+              success: false,
+              errors: [{ message: 'orderId가 필요합니다' }],
+            };
+          }
+          if (!command.tracking?.companyCode || !command.tracking?.number) {
+            return {
+              success: false,
+              errors: [{ message: '배송업체 코드와 송장번호가 필요합니다' }],
+            };
+          }
+          break;
+
+        case 'return.approve':
+          if (!command.claimId) {
+            return {
+              success: false,
+              errors: [{ message: 'claimId가 필요합니다' }],
+            };
+          }
+          break;
+
+        // ... 기타 명령들 검증
+      }
+
+      return { success: true, errors: [] };
+    } catch (error) {
+      return {
+        success: false,
+        errors: [
+          {
+            message: `명령 검증 중 오류: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+
+  // =================================================================
+  // == 🔄 번역 헬퍼 메서드들 (Translation Helpers) - 어댑터의 핵심!
+  // =================================================================
+
+  /**
+   * 🔄 내부 표준 orderIds → 쿠팡 shipmentBoxIds 번역
+   * 실제 구현에서는 DB 조회나 매핑 테이블을 사용
+   */
+  private async translateOrderIdsToShipmentBoxIds(
+    orderIds: string[],
+  ): Promise<string[]> {
+    // TODO: 실제 구현 - DB에서 내부 orderId → 쿠팡 shipmentBoxId 매핑 조회
+    console.log('🔄 번역 중: orderIds → shipmentBoxIds', orderIds);
+
+    // 임시 구현 (실제로는 DB 조회)
+    return orderIds.map((orderId) => `SHIPMENT_${orderId}`);
+  }
+
+  /**
+   * 🔄 내부 표준 orderId → 쿠팡 shipmentBoxId 번역 (단건)
+   */
+  private async translateOrderIdToShipmentBoxId(
+    orderId: string,
+  ): Promise<string> {
+    const [shipmentBoxId] = await this.translateOrderIdsToShipmentBoxIds([
+      orderId,
+    ]);
+    return shipmentBoxId;
+  }
+
+  /**
+   * 🔄 내부 표준 claimId → 쿠팡 receiptId + cancelCount 번역
+   * 실제 구현에서는 클레임 관리 시스템과 연동
+   */
+  private async translateClaimIdToCoupangInfo(claimId: string): Promise<{
+    receiptId: number;
+    cancelCount: number;
+  }> {
+    // 🔍 입력 검증
+    if (!claimId || typeof claimId !== 'string') {
+      throw new Error('유효하지 않은 claimId입니다');
+    }
+
+    try {
+      // TODO: 실제 구현 - 클레임 관리 시스템에서 조회
+      console.log('🔄 번역 중: claimId → 쿠팡 클레임 정보', claimId);
+
+      // 임시 구현 (실제로는 클레임 DB 조회)
+      const receiptId = parseInt(claimId.replace('CLAIM_', ''), 10);
+
+      // 🔍 번역 결과 검증
+      if (!receiptId || receiptId <= 0) {
+        throw new Error(
+          `클레임 ID를 쿠팡 receiptId로 번역할 수 없습니다: ${claimId}`,
+        );
+      }
+
+      return {
+        receiptId,
+        cancelCount: 1,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`클레임 정보 번역 실패: ${message}`);
+    }
+  }
+
+  /**
+   * 🔄 내부 표준 claimIds → 쿠팡 cancelIds 번역
+   */
+  private async translateClaimIdsToCancelIds(
+    claimIds: string[],
+  ): Promise<number[]> {
+    // TODO: 실제 구현 - 클레임 관리 시스템에서 매핑 조회
+    console.log('🔄 번역 중: claimIds → cancelIds', claimIds);
+
+    // 임시 구현
+    return claimIds.map(
+      (claimId) => parseInt(claimId.replace('CLAIM_', ''), 10) || 123456789,
+    );
+  }
+
+  /**
+   * 🔄 내부 표준 orderId + tracking → 쿠팡 orderSheetInvoiceApplyDtos 번역
+   */
+  private async translateOrderToInvoiceDtos(
+    orderId: string,
+    tracking: { companyCode: string; number: string },
+    items?: Array<{ orderItemId: string; quantity: number }>,
+  ): Promise<any[]> {
+    // TODO: 실제 구현 - 주문 관리 시스템에서 쿠팡 발주서 정보 조회
+    console.log('🔄 번역 중: 표준 주문 → 쿠팡 송장 DTO', {
+      orderId,
+      tracking,
+      items,
+    });
+
+    // 임시 구현 (실제로는 주문 DB에서 shipmentBoxId, vendorItemId 등 조회)
+    return [
+      {
+        shipmentBoxId: parseInt(orderId.replace('ORDER_', ''), 10) || 12345,
+        orderId: parseInt(orderId.replace('ORDER_', ''), 10) || 67890,
+        vendorItemId: 11111,
+        deliveryCompanyCode: this.mapDeliveryCompanyCode(tracking.companyCode),
+        invoiceNumber: tracking.number,
+        splitShipping: false,
+        preSplitShipped: false,
+      },
+    ];
+  }
+
+  /**
+   * 🔄 송장 업데이트용 DTO 번역
+   */
+  private async translateOrderToUpdateInvoiceDtos(
+    orderId: string,
+    tracking: { companyCode: string; number: string },
+  ): Promise<any[]> {
+    // 기본 송장 DTO와 유사하지만 업데이트용 필드 구조
+    return await this.translateOrderToInvoiceDtos(orderId, tracking);
+  }
+
+  /**
+   * 🔄 배송업체 코드 매핑 (내부 표준 → 쿠팡 표준)
+   */
+  private mapDeliveryCompanyCode(internalCode: string): string {
+    const mapping: Record<string, string> = {
+      CJ: 'CJGLS',
+      LOTTE: 'LOTTE',
+      HANJIN: 'HANJIN',
+      LOGEN: 'LOGEN',
+      // ... 기타 매핑
+    };
+    return mapping[internalCode] || 'OTHER';
+  }
+
+  /**
+   * 🔄 내부 표준 claimId → 쿠팡 exchangeId 번역
+   * 실제 구현에서는 교환 관리 시스템과 연동
+   */
+  private async translateClaimIdToExchangeId(claimId: string): Promise<number> {
+    // 🔍 입력 검증
+    if (!claimId || typeof claimId !== 'string') {
+      throw new Error('유효하지 않은 claimId입니다');
+    }
+
+    try {
+      // TODO: 실제 구현 - 교환 관리 시스템에서 조회
+      console.log('🔄 번역 중: claimId → 쿠팡 exchangeId', claimId);
+
+      // 임시 구현 (실제로는 교환 DB 조회)
+      const exchangeId = parseInt(claimId.replace('EXCHANGE_', ''), 10);
+
+      // 🔍 번역 결과 검증
+      if (!exchangeId || exchangeId <= 0) {
+        throw new Error(
+          `클레임 ID를 쿠팡 exchangeId로 번역할 수 없습니다: ${claimId}`,
+        );
+      }
+
+      return exchangeId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`교환 ID 번역 실패: ${message}`);
+    }
+  }
+
+  /**
+   * 🔄 표준 reason → 쿠팡 exchangeRejectCode 번역
+   */
+  private translateReasonToRejectCode(reason: string): 'SOLDOUT' | 'WITHDRAW' {
+    // 표준 거부 사유를 쿠팡 거부 코드로 매핑
+    const mapping: Record<string, 'SOLDOUT' | 'WITHDRAW'> = {
+      품절: 'SOLDOUT',
+      soldout: 'SOLDOUT',
+      판매중단: 'WITHDRAW',
+      withdraw: 'WITHDRAW',
+    };
+
+    return mapping[reason.toLowerCase()] || 'WITHDRAW'; // 기본값: WITHDRAW
+  }
+
+  /**
+   * 🔄 교환 송장 정보를 쿠팡 업로드 형식으로 번역
+   */
+  private async translateExchangeInvoiceItems(
+    claimId: string,
+    tracking: { companyCode: string; number: string },
+    items?: Array<{ itemId: string; shipmentBoxId: string }>,
+  ): Promise<any[]> {
+    try {
+      // TODO: 실제 구현 - 교환 관리 시스템에서 필요한 정보 조회
+      console.log('🔄 번역 중: 표준 교환 송장 → 쿠팡 업로드 형식', {
+        claimId,
+        tracking,
+        items,
+      });
+
+      const exchangeId = await this.translateClaimIdToExchangeId(claimId);
+
+      // 임시 구현 (실제로는 교환 DB에서 shipmentBoxId 등 조회)
+      return [
+        {
+          exchangeId,
+          vendorId: this.getCoupangVendorId(),
+          shipmentBoxId: items?.[0]?.shipmentBoxId || 12345,
+          goodsDeliveryCode: this.mapDeliveryCompanyCode(tracking.companyCode),
+          invoiceNumber: tracking.number,
+        },
+      ];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`교환 송장 정보 번역 실패: ${message}`);
+    }
+  }
+
+  /**
+   * 🔧 쿠팡 vendorId 조회
+   */
+  private getCoupangVendorId(): string {
+    return process.env.COUPANG_VENDOR_ID || '';
+  }
+
+  /**
+   * 쿠팡 API 응답을 SyncResult로 변환하는 헬퍼 메서드
+   */
+  private transformCoupangResponseToSyncResult(
+    coupangResponse: any,
+    commandType: string,
+  ): SyncResult {
+    const responseList = coupangResponse.data?.responseList || [];
+    const successCount = responseList.filter(
+      (item: any) => item.succeed === true,
+    ).length;
+    const failedItems = responseList.filter(
+      (item: any) => item.succeed === false,
+    );
+
+    return {
+      success: failedItems.length === 0,
+      processedCount: successCount,
+      failedCount: failedItems.length,
+      errors: failedItems.map((item: any) => ({
+        id: item.shipmentBoxId?.toString() || 'unknown',
+        message: item.resultMessage || '알 수 없는 오류',
+      })),
+      data: {
+        commandType,
+        timestamp: new Date().toISOString(),
+        coupangResponse,
+      },
+    };
+  }
+
+  // ===== WMS 연동 메서드 구현 (CTO SoT 원칙) =====
+
+  /**
+   * 쿠팡 주문을 WMS에 전달 (어댑터가 SoT → 동기 요청)
+   *
+   * @param orderEvent 쿠팡에서 수신한 주문 이벤트
+   * @returns WMS에서 생성된 판매주문 정보
+   */
+  async createOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
+    const startTime = Date.now();
+
+    this.logger.log(
+      `🏭 [쿠팡→WMS] 주문 생성 요청: ${orderEvent.externalOrderId}`,
+      {
+        channelType: orderEvent.channelType,
+        externalProductOrderId: orderEvent.externalProductOrderId,
+        buyerName: orderEvent.buyer?.name,
+      },
+    );
+
+    try {
+      // 1. 쿠팡 주문 데이터를 WMS 형식으로 변환
+      const wmsOrderData = this.transformToWmsOrderFormat(orderEvent);
+
+      // 2. WMS API 호출 (재시도 + DLQ 처리는 WmsApiService에서 담당)
+      const wmsOrder = await this.wmsApiService.createSalesOrder(wmsOrderData);
+
+      const duration = Date.now() - startTime;
+      this.logger.log(
+        `✅ [쿠팡→WMS] 주문 생성 성공: ${wmsOrder.id} (${duration}ms)`,
+        {
+          channelOrderId: orderEvent.externalOrderId,
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error(
+        `❌ [쿠팡→WMS] 주문 생성 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
+        {
+          error: error.message,
+          buyerName: orderEvent.buyer?.name,
+        },
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 쿠팡 주문 상태 업데이트를 WMS에 반영
+   *
+   * @param orderEvent 주문 상태 변경 이벤트
+   * @returns 업데이트된 WMS 주문 정보
+   */
+  async updateOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
+    this.logger.log(
+      `🔄 [쿠팡→WMS] 주문 상태 업데이트: ${orderEvent.externalOrderId}`,
+      {
+        status: orderEvent.status,
+        channelType: orderEvent.channelType,
+      },
+    );
+
+    try {
+      // 1. 상태 변경 데이터 준비
+      const updateData = {
+        processedAt: orderEvent.updatedAt || new Date().toISOString(),
+        // 필요한 경우 추가 필드들...
+      };
+
+      // 2. WMS 주문 업데이트 ((채널, 주문ID) 쌍 사용)
+      const wmsOrder = await this.wmsApiService.updateSalesOrder(
+        {
+          salesChannel: 'coupang',
+          channelOrderId: orderEvent.externalOrderId,
+        },
+        updateData,
+      );
+
+      this.logger.log(
+        `✅ [쿠팡→WMS] 주문 상태 업데이트 성공: ${orderEvent.externalOrderId}`,
+      );
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡→WMS] 주문 상태 업데이트 실패: ${orderEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 쿠팡 주문 취소를 WMS에 반영
+   *
+   * @param orderEvent 주문 취소 이벤트
+   * @param reason 취소 사유
+   * @returns 취소된 WMS 주문 정보
+   */
+  async cancelOrderInWms(
+    orderEvent: InternalOrderEvent,
+    reason?: string,
+  ): Promise<SalesOrder> {
+    this.logger.log(
+      `❌ [쿠팡→WMS] 주문 취소 요청: ${orderEvent.externalOrderId}`,
+      {
+        reason: reason || orderEvent.reason || '사유 미제공',
+        channelType: orderEvent.channelType,
+      },
+    );
+
+    try {
+      // WMS 주문 취소 ((채널, 주문ID) 쌍 사용)
+      const wmsOrder = await this.wmsApiService.cancelSalesOrder(
+        {
+          salesChannel: 'coupang',
+          channelOrderId: orderEvent.externalOrderId,
+        },
+        reason || orderEvent.reason || '쿠팡 주문 취소 요청',
+      );
+
+      this.logger.log(
+        `✅ [쿠팡→WMS] 주문 취소 성공: ${orderEvent.externalOrderId}`,
+        {
+          wmsOrderId: wmsOrder.id,
+          wmsStatus: wmsOrder.status,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡→WMS] 주문 취소 실패: ${orderEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 쿠팡 교환 요청을 WMS에 반영
+   *
+   * CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다"
+   * 따라서 기존 주문을 수정하는 방식으로 처리합니다.
+   *
+   * @param exchangeEvent 교환 요청 이벤트
+   * @returns 교환 처리된 WMS 주문 정보
+   */
+  async processExchangeInWms(
+    exchangeEvent: InternalOrderEvent,
+  ): Promise<SalesOrder> {
+    this.logger.log(
+      `🔄 [쿠팡→WMS] 교환 요청 처리: ${exchangeEvent.externalOrderId}`,
+      {
+        exchangeType: exchangeEvent.claimInfo?.claimType,
+        reason: exchangeEvent.reason,
+      },
+    );
+
+    try {
+      // 1. 교환 요청 데이터를 주문 수정 형식으로 변환
+      const exchangeUpdateData =
+        this.transformExchangeToUpdateData(exchangeEvent);
+
+      // 2. WMS에서 주문 수정으로 교환 처리
+      const wmsOrder = await this.wmsApiService.updateSalesOrder(
+        {
+          salesChannel: 'coupang',
+          channelOrderId: exchangeEvent.externalOrderId,
+        },
+        exchangeUpdateData,
+      );
+
+      this.logger.log(
+        `✅ [쿠팡→WMS] 교환 요청 처리 성공: ${exchangeEvent.externalOrderId}`,
+        {
+          wmsOrderId: wmsOrder.id,
+          exchangeType: exchangeEvent.claimInfo?.claimType,
+        },
+      );
+
+      return wmsOrder;
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡→WMS] 교환 요청 처리 실패: ${exchangeEvent.externalOrderId}`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  // ===== 데이터 변환 헬퍼 메서드들 =====
+
+  /**
+   * 쿠팡 주문 이벤트를 WMS 주문 생성 형식으로 변환
+   *
+   * @param orderEvent 쿠팡 주문 이벤트
+   * @returns WMS 주문 생성 DTO
+   */
+  private transformToWmsOrderFormat(
+    orderEvent: InternalOrderEvent,
+  ): CreateSalesOrderDto {
+    return {
+      channelOrderId: orderEvent.externalOrderId,
+      salesChannel: 'coupang',
+      customer: orderEvent.buyer
+        ? {
+            name: orderEvent.buyer.name,
+            email: undefined, // 쿠팡에서는 이메일 제공 안함
+            phone: orderEvent.buyer.contact,
+          }
+        : undefined,
+      shippingAddress: this.transformAddress(orderEvent.buyer?.address),
+      totalAmount: orderEvent.priceAmount,
+      shippingFee: 0, // 쿠팡은 보통 무료배송
+      orderDate:
+        orderEvent.paymentDate ||
+        orderEvent.createdAt ||
+        new Date().toISOString(),
+      lines: this.transformOrderLines(orderEvent),
+    };
+  }
+
+  /**
+   * 쿠팡 주소 형식을 WMS 주소 형식으로 변환
+   */
+  private transformAddress(address: any): any {
+    if (!address) return {};
+
+    return {
+      postalCode: address.postalCode,
+      roadAddress: address.roadAddress,
+      detailAddress: address.detailAddress,
+      // WMS에서 요구하는 추가 필드들...
+    };
+  }
+
+  /**
+   * 쿠팡 주문 아이템을 WMS 주문 라인으로 변환
+   */
+  private transformOrderLines(orderEvent: InternalOrderEvent): Array<{
+    variantId: string;
+    productName?: string;
+    quantity: number;
+    unitPrice?: number;
+    totalPrice?: number;
+  }> {
+    // 단일 아이템 주문인 경우
+    return [
+      {
+        variantId:
+          orderEvent.externalProductOrderId || orderEvent.externalOrderId,
+        productName: orderEvent.productName || '쿠팡 상품',
+        quantity: orderEvent.quantity || 1,
+        unitPrice: orderEvent.priceAmount,
+        totalPrice: orderEvent.priceAmount,
+      },
+    ];
+  }
+
+  /**
+   * 교환 요청을 주문 수정 데이터로 변환
+   */
+  private transformExchangeToUpdateData(
+    exchangeEvent: InternalOrderEvent,
+  ): any {
+    return {
+      // 교환 관련 정보를 주문 수정 형식으로 변환
+      // CTO 가이드라인에 따라 주문 내에서 교환 처리
+      processedAt: new Date().toISOString(),
+      // 교환 상품 정보, 수량 변경 등...
+    };
   }
 }
