@@ -16,9 +16,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
   User,
+  userServiceEnums,
   userServiceSchema,
   type UserServiceSchema,
-  userServiceEnums,
 } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
@@ -587,7 +587,8 @@ export class AuthService {
     return { user: newUser };
   }
 
-  async signOut(req: FastifyRequest, user: User) {
+  async signOut(req: FastifyRequest, user: User, tx?: DbTransaction) {
+    const client = this.getClient(tx);
     const authHeader = req.headers.authorization;
     const accessToken = authHeader?.split(' ')[1];
 
@@ -596,13 +597,30 @@ export class AuthService {
         throw new UnauthorizedException('인증 토큰이 필요합니다.');
       }
 
-      // 토큰과 사용자 ID로 토큰 삭제
-      const result = await this.dbService.db
+      //사용자 ID로 accessToken 삭제
+      await client
         .delete(userServiceSchema.tokens)
         .where(
           and(
-            eq(userServiceSchema.tokens.value, accessToken),
             eq(userServiceSchema.tokens.userId, user.id),
+            eq(
+              userServiceSchema.tokens.type,
+              userServiceEnums.tokenTypeEnum.enumValues[0],
+            ),
+          ),
+        )
+        .returning();
+
+      //사용자 ID로 refreshToken 삭제
+      await client
+        .delete(userServiceSchema.tokens)
+        .where(
+          and(
+            eq(userServiceSchema.tokens.userId, user.id),
+            eq(
+              userServiceSchema.tokens.type,
+              userServiceEnums.tokenTypeEnum.enumValues[1],
+            ),
           ),
         )
         .returning();
