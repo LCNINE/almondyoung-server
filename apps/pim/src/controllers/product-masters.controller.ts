@@ -19,6 +19,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
+import { ZodValidationPipe } from '@app/shared';
 import {
   CreateMasterDto,
   UpdateProductMasterDto,
@@ -28,6 +29,9 @@ import {
   PricePreviewDto,
   MasterListResponseDto,
   MasterUpdateResponseDto,
+  CreateMasterSchema,
+  UpdateProductMasterSchema,
+  ChangePricingStrategySchema,
 } from '../schemas/product-masters.schema';
 
 @ApiTags('Product Masters')
@@ -52,7 +56,8 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async createMaster(
-    @Body() createMasterDto: CreateMasterDto,
+    @Body(new ZodValidationPipe(CreateMasterSchema))
+    createMasterDto: CreateMasterDto,
   ): Promise<ProductMasterDto> {
     try {
       if (
@@ -68,11 +73,14 @@ export class ProductMastersController {
 
       return master as unknown as ProductMasterDto;
     } catch (error) {
+      console.error('Create master error:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Request data:', createMasterDto);
       if (error.message === 'Validation failed') {
         throw error;
       }
       throw new HttpException(
-        'Failed to create master',
+        `Failed to create master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -221,7 +229,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async updateMaster(
     @Param('id') id: string,
-    @Body() updateData: UpdateProductMasterDto,
+    @Body(new ZodValidationPipe(UpdateProductMasterSchema))
+    updateData: UpdateProductMasterDto,
   ): Promise<MasterUpdateResponseDto> {
     try {
       const updatedMaster = await this.productMastersService.updateMaster(
@@ -332,7 +341,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async changePricingStrategy(
     @Param('id') id: string,
-    @Body() pricingDto: ChangePricingStrategyDto,
+    @Body(new ZodValidationPipe(ChangePricingStrategySchema))
+    pricingDto: ChangePricingStrategyDto,
   ): Promise<void> {
     try {
       if (!pricingDto.pricingStrategy) {

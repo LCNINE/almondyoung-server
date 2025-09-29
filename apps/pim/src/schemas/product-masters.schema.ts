@@ -15,7 +15,6 @@ export const CreateMasterSchema = z.object({
   name: z.string().min(1, '제품명은 필수입니다').describe('제품 마스터 이름'),
   description: z.string().optional().describe('제품 설명'),
   brand: z.string().optional().describe('브랜드명'),
-  categoryId: z.string().optional().describe('카테고리 ID (UUID 형식)'),
   basePrice: z.number().describe('기본 가격'),
   pricingStrategy: PricingStrategySchema.describe('가격 전략'),
   tags: z.array(z.string()).optional().describe('마케팅 태그'),
