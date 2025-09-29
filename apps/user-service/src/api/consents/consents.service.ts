@@ -1,7 +1,7 @@
 // apps/user-service/src/api/consents/consents.service.ts 수정
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, SQL } from 'drizzle-orm';
 import { DbTransaction } from '../../commons/types';
 import { CreateConsentDto } from './dto/consent-dto';
 import {
@@ -104,9 +104,25 @@ export class ConsentsService {
     isMarketingEnabled?: boolean;
   }): Promise<{ users: any[]; totalCount: number }> {
     const db = this.getClient();
-    
-    // 기본 쿼리 - users와 user_consents 조인
-    let query = db
+
+    // where 조건들을 배열로 관리
+    const conditions: SQL[] = [];
+
+    // 조건 구성
+    if (criteria.userIds && criteria.userIds.length > 0) {
+      // inArray를 사용하려면 import 필요
+      const { inArray } = await import('drizzle-orm');
+      conditions.push(inArray(users.id, criteria.userIds));
+    }
+
+    if (criteria.isMarketingEnabled !== undefined) {
+      conditions.push(
+        eq(userConsents.marketingConsent, criteria.isMarketingEnabled),
+      );
+    }
+
+    // 쿼리 실행 - 조건이 있으면 where 적용, 없으면 그대로
+    const baseQuery = db
       .select({
         userId: users.id,
         email: users.email,
@@ -117,20 +133,15 @@ export class ConsentsService {
       .from(users)
       .leftJoin(userConsents, eq(users.id, userConsents.userId));
 
-    // 조건 적용
-    if (criteria.userIds && criteria.userIds.length > 0) {
-      // 실제로는 inArray 사용해야 하지만, 간단히 첫 번째 ID만 사용
-      query = query.where(eq(users.id, criteria.userIds[0]));
-    }
+    // and 조건으로 결합
+    const { and } = await import('drizzle-orm');
+    const results =
+      conditions.length > 0
+        ? await baseQuery.where(and(...conditions))
+        : await baseQuery;
 
-    if (criteria.isMarketingEnabled !== undefined) {
-      query = query.where(eq(userConsents.marketingConsent, criteria.isMarketingEnabled));
-    }
-
-    const results = await query;
-    
     return {
-      users: results.map(row => ({
+      users: results.map((row) => ({
         userId: row.userId,
         email: row.email,
         name: row.name,
