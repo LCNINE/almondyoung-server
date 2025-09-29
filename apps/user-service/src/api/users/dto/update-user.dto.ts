@@ -26,6 +26,20 @@ export class UpdateUserDto extends PartialType(AddressDto) {
   username?: string;
 
   @ApiProperty({
+    description: '사용자 닉네임',
+    example: '홍길동',
+    minLength: 2,
+    maxLength: 8,
+    required: false,
+  })
+  @IsString({ message: '닉네임은 문자열이어야 합니다.' })
+  @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
+  @MinLength(2, { message: '닉네임은 최소 2자 이상이어야 합니다.' })
+  @MaxLength(8, { message: '닉네임은 최대 8자 이하여야 합니다.' })
+  @IsOptional()
+  nickname?: string;
+
+  @ApiProperty({
     description: '전화번호',
     example: '010-1234-5678',
     required: false,
@@ -41,7 +55,7 @@ export class UpdateUserDto extends PartialType(AddressDto) {
   })
   @IsOptional()
   @IsDateString({}, { message: '생년월일은 날짜 형식이어야 합니다.' })
-  birthDate?: Date;
+  birthDate?: string;
 
   @ApiProperty({
     description: '프로필 이미지 URL',
