@@ -19,13 +19,17 @@ import {
   UserRoleScopesResponseDto,
   UserRolesResponse,
 } from './dto/user-role-scopes.response.dto';
+import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
   constructor(
-    @InjectDb() private readonly dbService: DbService<schema.User>,
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectEventPublisher()
     private readonly eventPublisher: EventPublisherService<UserEvents>,
   ) {}

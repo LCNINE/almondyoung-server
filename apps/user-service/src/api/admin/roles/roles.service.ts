@@ -9,13 +9,17 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { UsersService } from '../../users/users.service';
 import { SetUserRoleDto } from './dto/roles.dto';
+import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
 
   constructor(
-    @InjectDb() private readonly dbService: DbService<schema.User>,
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly usersService: UsersService,
   ) {}
 

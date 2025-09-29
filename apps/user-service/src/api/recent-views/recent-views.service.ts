@@ -1,12 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import * as schema from 'apps/user-service/database/drizzle/schema';
-import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { DbService, InjectDb } from '@app/db';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import * as schema from 'apps/user-service/database/drizzle/schema';
+import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
+import { and, desc, eq } from 'drizzle-orm';
+import { AddToRecentViewsDto } from './dto/recent-views.dto';
 
 @Injectable()
 export class RecentViewsService {
-  constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+  ) {}
 
   async addToRecentViews(
     userId: string,

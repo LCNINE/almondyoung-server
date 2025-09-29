@@ -1,6 +1,7 @@
 import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import * as schema from './drizzle/schema';
+import { userServiceSchema, type UserServiceSchema } from './drizzle/schema';
 
 // 미리 정의된 UUID (고정 ID 사용)
 export const PREDEFINED_IDS = {
@@ -161,7 +162,7 @@ const DEFAULT_ROLE_SCOPE_MAPPINGS = [
   },
 ];
 
-export async function seedDatabase(client: DbService<schema.User>) {
+export async function seedDatabase(client: DbService<UserServiceSchema>) {
   console.log('🌱 데이터베이스 시드 시작...');
 
   // 스코프 추가
@@ -176,7 +177,7 @@ export async function seedDatabase(client: DbService<schema.User>) {
   console.log('✅ 데이터베이스 시드 완료');
 }
 
-async function seedScopes(client: DbService<schema.User>) {
+async function seedScopes(client: DbService<UserServiceSchema>) {
   console.log('스코프 시드 중...');
 
   for (const scope of DEFAULT_SCOPES) {
@@ -202,7 +203,7 @@ async function seedScopes(client: DbService<schema.User>) {
   }
 }
 
-async function seedRoles(client: DbService<schema.User>) {
+async function seedRoles(client: DbService<UserServiceSchema>) {
   console.log('역할 시드 중...');
 
   for (const role of DEFAULT_ROLES) {
@@ -230,7 +231,7 @@ async function seedRoles(client: DbService<schema.User>) {
   }
 }
 
-async function seedRoleScopeMappings(client: DbService<schema.User>) {
+async function seedRoleScopeMappings(client: DbService<UserServiceSchema>) {
   console.log('역할-스코프 매핑 시드 중...');
 
   for (const mapping of DEFAULT_ROLE_SCOPE_MAPPINGS) {

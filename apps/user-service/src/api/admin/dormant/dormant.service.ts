@@ -5,13 +5,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
+import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from '../../../../database/drizzle/schema';
 
 @Injectable()
 export class DormantService {
   private readonly logger = new Logger(DormantService.name);
 
   constructor(
-    @InjectDb() private readonly dbService: DbService<schema.User>,
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectEventPublisher()
     private readonly eventPublisher: EventPublisherService<UserEvents>,
   ) {}
