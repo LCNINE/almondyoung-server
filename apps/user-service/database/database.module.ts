@@ -2,7 +2,7 @@ import { DbModule } from '@app/db';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseService } from './database.service';
-import { userSchema } from './drizzle/schema';
+import { userServiceSchema } from './drizzle/schema';
 
 @Module({
   imports: [
@@ -15,7 +15,7 @@ import { userSchema } from './drizzle/schema';
           process.env.DATABASE_URL ||
           'postgres://postgres:postgres@localhost:5432/postgres',
       },
-      schema: userSchema,
+      schema: userServiceSchema,
     }),
   ],
   providers: [DatabaseService],

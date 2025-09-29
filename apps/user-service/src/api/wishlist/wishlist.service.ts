@@ -7,10 +7,16 @@ import { and, eq, desc } from 'drizzle-orm';
 import * as schema from 'apps/user-service/database/drizzle/schema';
 import { AddToWishlistDto } from './dto/wishlist.dto';
 import { DbService, InjectDb } from '@app/db';
+import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class WishlistService {
-  constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+  ) {}
 
   async addToWishlist(userId: string, { productId }: AddToWishlistDto) {
     const result = await this.dbService.db

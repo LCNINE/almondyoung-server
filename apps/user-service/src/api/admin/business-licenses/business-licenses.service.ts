@@ -18,12 +18,16 @@ import {
 import * as schema from '../../../../database/drizzle/schema';
 import { UpdateBusinessLicenseDtoWithReviewCommentAndStatus } from '../../business-licenses/dto/update-business-license.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
+import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
 
 @Injectable()
 export class BusinessLicensesService {
   constructor(
     @InjectDb()
-    private readonly dbService: DbService<schema.BusinessLicense>,
+    private readonly dbService: DbService<UserServiceSchema>,
   ) {}
 
   async getBusinessLicenses({

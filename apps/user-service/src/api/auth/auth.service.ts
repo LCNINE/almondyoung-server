@@ -18,6 +18,7 @@ import {
   User,
   userServiceSchema,
   type UserServiceSchema,
+  userServiceEnums,
 } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
@@ -126,7 +127,7 @@ export class AuthService {
               eq(userServiceSchema.tokens.userId, existingUser.id),
               eq(
                 userServiceSchema.tokens.type,
-                userServiceSchema.tokenTypeEnum.enumValues[2],
+                userServiceEnums.tokenTypeEnum.enumValues[2],
               ),
             ),
           );
@@ -148,7 +149,7 @@ export class AuthService {
 
         // 새 토큰 저장
         await this.dbService.db.insert(userServiceSchema.tokens).values({
-          type: userServiceSchema.tokenTypeEnum.enumValues[2],
+          type: userServiceEnums.tokenTypeEnum.enumValues[2],
           userId: existingUser.id,
           value: verificationToken,
           scopes: '',
@@ -231,7 +232,7 @@ export class AuthService {
 
         // 토큰 저장
         await tx.insert(userServiceSchema.tokens).values({
-          type: userServiceSchema.tokenTypeEnum.enumValues[2],
+          type: userServiceEnums.tokenTypeEnum.enumValues[2],
           userId: user.id,
           value: verificationToken,
           scopes: '',
@@ -288,7 +289,7 @@ export class AuthService {
             eq(userServiceSchema.tokens.isRevoked, false),
             eq(
               userServiceSchema.tokens.type,
-              userServiceSchema.tokenTypeEnum.enumValues[2],
+              userServiceEnums.tokenTypeEnum.enumValues[2],
             ),
           ),
         )
@@ -366,7 +367,7 @@ export class AuthService {
 
     // 새 토큰 저장
     await this.dbService.db.insert(userServiceSchema.tokens).values({
-      type: userServiceSchema.tokenTypeEnum.enumValues[2],
+      type: userServiceEnums.tokenTypeEnum.enumValues[2],
       userId: user.id,
       value: verificationToken,
       scopes: '',
@@ -698,14 +699,14 @@ export class AuthService {
           eq(userServiceSchema.tokens.userId, user.id),
           eq(
             userServiceSchema.tokens.type,
-            userServiceSchema.tokenTypeEnum.enumValues[0],
+            userServiceEnums.tokenTypeEnum.enumValues[0],
           ),
         ),
       );
 
     // 새 액세스 토큰 저장
     await client.insert(userServiceSchema.tokens).values({
-      type: userServiceSchema.tokenTypeEnum.enumValues[0],
+      type: userServiceEnums.tokenTypeEnum.enumValues[0],
       userId: user.id,
       value: accessToken,
       scopes: scopes.join(','),
@@ -763,14 +764,14 @@ export class AuthService {
           eq(userServiceSchema.tokens.userId, userId),
           eq(
             userServiceSchema.tokens.type,
-            userServiceSchema.tokenTypeEnum.enumValues[1],
+            userServiceEnums.tokenTypeEnum.enumValues[1],
           ),
         ),
       );
 
     // 새 리프레시 토큰 저장
     await client.insert(userServiceSchema.tokens).values({
-      type: userServiceSchema.tokenTypeEnum.enumValues[1],
+      type: userServiceEnums.tokenTypeEnum.enumValues[1],
       userId,
       value: refreshToken,
       scopes: scopes.join(','),

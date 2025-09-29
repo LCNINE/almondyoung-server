@@ -7,7 +7,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { userSchema } from '../database/drizzle/schema';
+import { userServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
@@ -33,7 +33,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
           process.env.DATABASE_URL ||
           'postgres://postgres:postgres@localhost:5432/postgres',
       },
-      schema: userSchema,
+      schema: userServiceSchema,
     }),
     EventsModule.forRoot<UserEvents>({
       kafka: createKafkaConfigFromEnv({

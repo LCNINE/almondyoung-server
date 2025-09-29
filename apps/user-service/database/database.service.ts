@@ -1,11 +1,14 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import * as schema from './drizzle/schema';
+
 import { seedDatabase } from './seed';
+import { userServiceSchema, type UserServiceSchema } from './drizzle/schema';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit {
-  constructor(@InjectDb() private readonly dbService: DbService<schema.User>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+  ) {}
 
   async onModuleInit() {
     // 앱 시작 시 기본 데이터 시드

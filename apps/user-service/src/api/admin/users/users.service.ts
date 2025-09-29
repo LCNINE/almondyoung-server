@@ -1,5 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, asc, count, desc, eq } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 
@@ -7,7 +8,7 @@ import * as schema from '../../../../database/drizzle/schema';
 export class UsersService {
   constructor(
     @InjectDb()
-    private readonly dbService: DbService<schema.User>,
+    private readonly dbService: DbService<UserServiceSchema>,
   ) {}
 
   async getUsers(filters: {
