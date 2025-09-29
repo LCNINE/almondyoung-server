@@ -260,8 +260,8 @@ export type UpdateOptionStockBody = z.infer<typeof UpdateOptionStockBodySchema>;
 // == 조회 파라미터 스키마
 // =================================================================
 export const QueryProductOrdersParamsSchema = z.object({
-  from: z.iso.date(),
-  to: z.iso.date().optional(),
+  from: z.iso.datetime(),
+  to: z.iso.datetime().optional(),
   rangeType: z.enum(NAVER_RANGE_TYPES),
   productOrderStatuses: z
     .array(z.enum(NAVER_PRODUCT_ORDER_STATUSES))
