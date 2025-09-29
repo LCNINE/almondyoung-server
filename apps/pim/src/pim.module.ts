@@ -24,7 +24,7 @@ import { pimSchema } from './schema';
       config: {
         connectionString:
           process.env.DATABASE_URL ||
-          'postgresql://postgres:ehddud0724*@localhost:5432/pim_db',
+          'postgresql://neondb_owner:npg_uZH3erzXIdR6@ep-plain-tooth-a1jtqmyb-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
       schema: pimSchema,
     }),
