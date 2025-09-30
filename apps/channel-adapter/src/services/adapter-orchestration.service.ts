@@ -12,6 +12,7 @@ import {
   NewEventLog,
   NewSyncHistory,
   NewProcessedEvent,
+  ChannelAdapterSchema,
 } from '../types';
 import { InternalOrderEvent, OrderQuery } from '../types';
 import { ChannelCommand, ChannelQuery } from '../types';
@@ -50,7 +51,7 @@ export class AdapterOrchestrationService {
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
     private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<ChannelAdapterSchema>,
   ) {
     this.logger.log(
       `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동 + 멱등키 처리)`,
