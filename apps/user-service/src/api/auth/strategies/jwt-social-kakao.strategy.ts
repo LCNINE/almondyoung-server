@@ -7,10 +7,20 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 @Injectable()
 export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {
   constructor(private configService: ConfigService) {
+    const clientID = configService.get<string>('KAKAO_CLIENT_ID');
+    const clientSecret = configService.get<string>('KAKAO_CLIENT_SECRET');
+    const callbackURL = configService.get<string>('KAKAO_CALLBACK_URL');
+
+    if (!clientID || !clientSecret || !callbackURL) {
+      throw new Error(
+        'Kakao OAuth 환경 변수가 설정되지 않았습니다. KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_CALLBACK_URL을 설정하세요.'
+      );
+    }
+
     super({
-      clientID: configService.get<string>('KAKAO_CLIENT_ID')!,
-      clientSecret: configService.get<string>('KAKAO_CLIENT_SECRET')!,
-      callbackURL: configService.get<string>('KAKAO_CALLBACK_URL')!,
+      clientID,
+      clientSecret,
+      callbackURL,
     });
   }
 
