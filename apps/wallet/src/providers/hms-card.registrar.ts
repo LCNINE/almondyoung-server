@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProfileRegistrar } from './payment-provider.interface';
-import { HmsApiFactory } from '../shared/utils/hms-api.factory';
-import { HmsAPI } from 'hms-api-wrapper'; 
+// 실제 HMS API 클라이언트를 사용한다고 가정합니다.
+import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
 
 @Injectable()
 export class HmsCardRegistrar
@@ -32,9 +32,14 @@ export class HmsCardRegistrar
   private readonly hmsApi: HmsAPI; // API 클라이언트를 주입받거나 직접 생성합니다.
 
   constructor() {
-    // HmsApiFactory를 사용하여 환경에 따라 적절한 API 클라이언트 생성
-    // 키가 없으면 자동으로 Mock API로 폴백
-    this.hmsApi = HmsApiFactory.createForCard() as HmsAPI;
+    // API 클라이언트 초기화 로직을 여기로 가져옵니다.
+    // 더 좋은 방법은 API 클라이언트를 별도 Provider로 만들어 주입(Inject)받는 것입니다.
+    this.hmsApi = ApiClientFactory.create({
+      swKey: process.env.SW_KEY || '',
+      custKey: process.env.CUST_KEY || '',
+      isTest: process.env.NODE_ENV !== 'production',
+      useMock: false,
+    }) as HmsAPI;
   }
 
   async register(input: any, ctx: { tx: any }) {
