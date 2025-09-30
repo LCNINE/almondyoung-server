@@ -1,5 +1,5 @@
 # Channel Adapter 서비스 Dockerfile
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 WORKDIR /app
 RUN apk add --no-cache postgresql-client
@@ -19,7 +19,7 @@ RUN npm run build:channel-adapter
 
 FROM base AS runner
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
