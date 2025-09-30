@@ -19,6 +19,7 @@ import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
 import { CHANNEL_ADAPTER_EVENTS } from '@app/shared/events/adapter.events';
 import * as schema from './schema';
+import { channelAdapterSchema } from './schema';
 import { CoupangApiService } from './services/apis/coupang.api.service';
 import { WmsApiService } from './services/apis/wms.api.service';
 import { DlqMonitoringService } from './services/dlq-monitoring.service';
@@ -69,7 +70,7 @@ function createKafkaConfig() {
           process.env.DATABASE_URL ||
           'postgresql://neondb_owner:npg_4jlXAK7qVywN@ep-young-thunder-a1bkhlx2-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
-      schema: { ...schema },
+      schema: { ...channelAdapterSchema },
     }),
     // 운영 환경에서만 실제 EventsModule 활성화
     ...(process.env.NODE_ENV === 'production'

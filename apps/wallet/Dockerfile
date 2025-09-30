@@ -28,7 +28,7 @@ COPY package*.json ./
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
-COPY --from=builder /app/apps/wallet/html ./apps/wallet/html
+# html 디렉토리는 존재하지 않으므로 복사하지 않음
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs

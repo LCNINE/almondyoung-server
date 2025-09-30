@@ -176,3 +176,18 @@ export const syncStatuses = pgTable(
     index('idx_sync_status_last_sync').on(table.lastSyncAt),
   ],
 );
+
+// ===============================
+// 전체 스키마 객체 Export (Drizzle ORM 규칙)
+// ===============================
+// 주의: DbService의 타입 체크를 위해 channelAdapterSchema만 사용하세요
+// import * as schema를 사용하면 generateUUIDv7 같은 함수도 포함되어 타입 에러 발생
+export const channelAdapterSchema = {
+  eventLogs,
+  syncHistories,
+  processedEvents,
+  wmsOrderMappings,
+  syncStatuses,
+} as const;
+
+export type ChannelAdapterSchema = typeof channelAdapterSchema;
