@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { eq, and, lte, isNull, or } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
+import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PaymentClientService } from './payment-client.service';
 import { EntitlementService } from '../entitlement.service';
 import { PlanService } from '../plan.service';
@@ -26,7 +27,7 @@ export class RecurringBillingService {
   private readonly logger = new Logger(RecurringBillingService.name);
 
   constructor(
-    private readonly dbService: DbService<typeof schema>,
+    private readonly dbService: DbService<typeof membershipSchema>,
     private readonly paymentClient: PaymentClientService,
     private readonly entitlementService: EntitlementService,
     private readonly planService: PlanService,

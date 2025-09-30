@@ -21,6 +21,7 @@ import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '../schema';
+import { channelAdapterSchema } from '../schema';
 /**
  * 판매채널 어댑터 오케스트레이션 서비스
  *
@@ -51,7 +52,9 @@ export class AdapterOrchestrationService {
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
     private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
-    private readonly db: DbService<ChannelAdapterSchema>,
+
+    private readonly db: DbService<typeof channelAdapterSchema>,
+
   ) {
     this.logger.log(
       `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동 + 멱등키 처리)`,

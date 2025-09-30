@@ -6,6 +6,7 @@ import { POLICY_ACTION_KEY } from './policy.decorator';
 import { PolicyValidationContext } from '../../shared/schemas/policy.type';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/schemas/entities/schema';
+import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { eq, and, gte, sql, desc } from 'drizzle-orm';
 import { FastifyRequest } from 'fastify';
 
@@ -14,7 +15,7 @@ export class PolicyGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly policyValidationService: PolicyValidationService, // 검증 서비스만 사용
-    private readonly dbService: DbService<typeof schema>,
+    private readonly dbService: DbService<typeof membershipSchema>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

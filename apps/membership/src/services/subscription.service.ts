@@ -6,6 +6,7 @@ import {
   SubscriptionException,
 } from '../shared/exceptions/subscription.exceptions';
 import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import { DbService } from '@app/db';
 import { eq, desc } from 'drizzle-orm';
 import { addDays } from 'date-fns';
@@ -24,7 +25,7 @@ type DrizzleTransaction = PostgresJsTransaction<
 @Injectable()
 export class SubscriptionService {
   constructor(
-    private readonly dbService: DbService<typeof schema>,
+    private readonly dbService: DbService<typeof membershipSchema>,
     private readonly planService: PlanService,
     private readonly entitlementService: EntitlementService,
   ) {}

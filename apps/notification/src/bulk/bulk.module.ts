@@ -13,7 +13,7 @@ import { DispatcherModule } from '../dispatcher/dispatcher.module';
     BullModule.registerQueue({ name: 'bulk-notification' }),
     DbModule.forRoot({
       config: {
-        connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
+        connectionString: process.env.DATABASE_URL ?? '',
       },
       schema: notificationTables,
     }),

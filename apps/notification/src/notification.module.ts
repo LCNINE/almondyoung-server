@@ -27,7 +27,7 @@ import { EventHandlersModule } from './event-handlers/event-handlers.module';
     }),
     DbModule.forRoot<NotificationSchema>({
       config: {
-        connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
+        connectionString: process.env.DATABASE_URL ?? '',
       },
       schema: notificationTables,
     }),

@@ -59,11 +59,13 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  // Swagger JSON 파일로 저장
-  writeFileSync(
-    'apps/user-service/swagger-spec.json',
-    JSON.stringify(document),
-  );
+  // Swagger JSON 파일로 저장 (개발 환경에서만)
+  // if (process.env.NODE_ENV !== 'production') {
+  //   writeFileSync(
+  //     'apps/user-service/swagger-spec.json',
+  //     JSON.stringify(document),
+  //   );
+  // }
 
   // Passport와 Fastify 호환성을 위한 훅 추가
   app
