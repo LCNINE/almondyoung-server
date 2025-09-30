@@ -5,10 +5,11 @@ import {
   NewSyncStatus,
   SyncStatus,
   UpdateSyncStatus,
+  ChannelAdapterSchema,
 } from '../types';
-import { DbService } from '@app/db';
 import { eq, and } from 'drizzle-orm';
 import * as schema from '../schema';
+import { DbService } from '@app/db';
 
 /**
  * 채널별 동기화 상태 및 통계 관리 서비스 (PostgreSQL 기반)
@@ -35,7 +36,7 @@ import * as schema from '../schema';
 export class SyncStatusService {
   private readonly logger = new Logger(SyncStatusService.name);
 
-  constructor(private readonly db: DbService<typeof schema>) {
+  constructor(private readonly db: DbService<ChannelAdapterSchema>) {
     this.logger.log('📊 동기화 상태 서비스 초기화 완료 (PostgreSQL 기반)');
   }
 
