@@ -10,7 +10,7 @@ import { ProviderModule } from '../provider/provider.module';
     imports: [
         DbModule.forRoot({
             config: {
-                connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
+                connectionString: process.env.DATABASE_URL ?? '',
             },
             schema: notificationTables,
         }),

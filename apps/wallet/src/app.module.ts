@@ -18,6 +18,7 @@ import { PaymentProfileService } from './services/profiles/payment-profile.servi
 // === Provider 전략 패턴 ===
 
 import * as schema from './shared/database/schema';
+import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
 import {
   PaymentOrchestratorService,
@@ -56,7 +57,7 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
           process.env.DATABASE_URL ||
           'postgresql://neondb_owner:npg_UdDYLFvO5Tq2@ep-young-pine-a149ey1z-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
-      schema: { ...schema },
+      schema: { ...walletSchema },
     }),
     EventsModule,
   ],

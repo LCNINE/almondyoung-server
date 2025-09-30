@@ -8,8 +8,8 @@ import {
   ChannelAdapterSchema,
 } from '../types';
 import { eq, and } from 'drizzle-orm';
-import * as schema from '../schema';
 import { DbService } from '@app/db';
+import { channelAdapterSchema } from '../schema';
 
 /**
  * 채널별 동기화 상태 및 통계 관리 서비스 (PostgreSQL 기반)
@@ -36,7 +36,9 @@ import { DbService } from '@app/db';
 export class SyncStatusService {
   private readonly logger = new Logger(SyncStatusService.name);
 
-  constructor(private readonly db: DbService<ChannelAdapterSchema>) {
+
+  constructor(private readonly db: DbService<typeof channelAdapterSchema>) {
+
     this.logger.log('📊 동기화 상태 서비스 초기화 완료 (PostgreSQL 기반)');
   }
 
@@ -189,8 +191,8 @@ export class SyncStatusService {
     try {
       const records = await this.db.db
         .select()
-        .from(schema.syncStatuses)
-        .where(eq(schema.syncStatuses.channelId, channel));
+        .from(channelAdapterSchema.syncStatuses)
+        .where(eq(channelAdapterSchema.syncStatuses.channelId, channel));
 
       if (records.length === 0) {
         return null;
@@ -212,7 +214,7 @@ export class SyncStatusService {
    */
   async getAllChannelStats(): Promise<Record<string, ChannelStats>> {
     try {
-      const allRecords = await this.db.db.select().from(schema.syncStatuses);
+      const allRecords = await this.db.db.select().from(channelAdapterSchema.syncStatuses);
 
       const result: Record<string, ChannelStats> = {};
       const channelGroups = this.groupRecordsByChannel(allRecords);
@@ -245,11 +247,11 @@ export class SyncStatusService {
     try {
       const [record] = await this.db.db
         .select()
-        .from(schema.syncStatuses)
+        .from(channelAdapterSchema.syncStatuses)
         .where(
           and(
-            eq(schema.syncStatuses.channelId, channel),
-            eq(schema.syncStatuses.dataType, dataType),
+            eq(channelAdapterSchema.syncStatuses.channelId, channel),
+            eq(channelAdapterSchema.syncStatuses.dataType, dataType),
           ),
         )
         .limit(1);
@@ -285,15 +287,15 @@ export class SyncStatusService {
       if (existing) {
         // 업데이트
         await this.db.db
-          .update(schema.syncStatuses)
+          .update(channelAdapterSchema.syncStatuses)
           .set({
             ...updates,
             updatedAt: new Date(),
           })
           .where(
             and(
-              eq(schema.syncStatuses.channelId, channel),
-              eq(schema.syncStatuses.dataType, dataType),
+              eq(channelAdapterSchema.syncStatuses.channelId, channel),
+              eq(channelAdapterSchema.syncStatuses.dataType, dataType),
             ),
           );
       } else {
@@ -310,7 +312,7 @@ export class SyncStatusService {
           ...updates,
         };
 
-        await this.db.db.insert(schema.syncStatuses).values(newRecord);
+        await this.db.db.insert(channelAdapterSchema.syncStatuses).values(newRecord);
       }
     } catch (error) {
       this.logger.error(
@@ -331,11 +333,11 @@ export class SyncStatusService {
     try {
       const [record] = await this.db.db
         .select()
-        .from(schema.syncStatuses)
+        .from(channelAdapterSchema.syncStatuses)
         .where(
           and(
-            eq(schema.syncStatuses.channelId, channel),
-            eq(schema.syncStatuses.dataType, dataType),
+            eq(channelAdapterSchema.syncStatuses.channelId, channel),
+            eq(channelAdapterSchema.syncStatuses.dataType, dataType),
           ),
         )
         .limit(1);
@@ -451,14 +453,14 @@ export class SyncStatusService {
     try {
       const history = await this.db.db
         .select()
-        .from(schema.syncStatuses)
+        .from(channelAdapterSchema.syncStatuses)
         .where(
           and(
-            eq(schema.syncStatuses.channelId, channel),
-            eq(schema.syncStatuses.dataType, dataType),
+            eq(channelAdapterSchema.syncStatuses.channelId, channel),
+            eq(channelAdapterSchema.syncStatuses.dataType, dataType),
           ),
         )
-        .orderBy(schema.syncStatuses.updatedAt)
+        .orderBy(channelAdapterSchema.syncStatuses.updatedAt)
         .limit(limit);
 
       this.logger.debug(

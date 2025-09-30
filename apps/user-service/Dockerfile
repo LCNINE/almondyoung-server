@@ -2,12 +2,17 @@
 FROM node:22-alpine AS base
 
 WORKDIR /app
-RUN apk add --no-cache postgresql-client
+RUN apk add --no-cache postgresql-client git openssh-client
 
 # === 의존성 설치 단계 ===
 FROM base AS deps
 COPY package*.json ./
 RUN npm ci
+
+# === 프로덕션 의존성 설치 단계 ===
+FROM base AS deps-prod
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
 # === 빌드 단계 ===
 FROM base AS builder
@@ -21,8 +26,9 @@ RUN npm run build:user-service
 
 # === 프로덕션 단계 ===
 FROM base AS runner
+# 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
+COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs

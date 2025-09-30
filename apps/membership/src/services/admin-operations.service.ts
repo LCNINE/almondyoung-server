@@ -4,6 +4,7 @@ import { SubscriptionService } from './subscription.service';
 import { EntitlementService } from './entitlement.service';
 import { eq, desc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import {
   CreateTierRequest,
   UpdateTierRequest,

@@ -503,44 +503,45 @@ export class AdminOperationsController {
   }
 
   // =================================================================
-  // 정기결제 테스트 엔드포인트 (임시)
+  // 정기결제 테스트 엔드포인트 (임시) - 중복 경로로 인해 주석처리됨
+  // 실제 정기결제 처리는 BillingController의 /api/admin/billing/process-due 사용
   // =================================================================
 
-  @Post('billing/process-due')
-  @ApiOperation({ 
-    summary: '정기결제 처리 테스트',
-    description: '정기결제 스케줄러 상태를 확인합니다. (개발용)'
-  })
-  @ApiResponse({ 
-    status: 200, 
-    description: '정기결제 처리 테스트 성공',
-    type: AdminBillingTestResponseDto
-  })
-  async processDueBillings() {
-    try {
-      this.logger.log('정기결제 처리 테스트 요청');
+  // @Post('billing/process-due')
+  // @ApiOperation({ 
+  //   summary: '정기결제 처리 테스트',
+  //   description: '정기결제 스케줄러 상태를 확인합니다. (개발용)'
+  // })
+  // @ApiResponse({ 
+  //   status: 200, 
+  //   description: '정기결제 처리 테스트 성공',
+  //   type: AdminBillingTestResponseDto
+  // })
+  // async processDueBillings() {
+  //   try {
+  //     this.logger.log('정기결제 처리 테스트 요청');
 
-      // 임시로 간단한 응답 반환
-      const result = {
-        message: '정기결제 스케줄러는 매 5분마다 자동 실행됩니다',
-        status: '스케줄러가 백그라운드에서 실행 중입니다',
-        nextRun: '다음 5분 간격',
-        testData:
-          'quick-test-setup.sql을 실행하여 테스트 데이터를 준비해주세요',
-      };
+  //     // 임시로 간단한 응답 반환
+  //     const result = {
+  //       message: '정기결제 스케줄러는 매 5분마다 자동 실행됩니다',
+  //       status: '스케줄러가 백그라운드에서 실행 중입니다',
+  //       nextRun: '다음 5분 간격',
+  //       testData:
+  //         'quick-test-setup.sql을 실행하여 테스트 데이터를 준비해주세요',
+  //     };
 
-      this.logger.log('✅ 정기결제 처리 테스트 응답 반환');
+  //     this.logger.log('✅ 정기결제 처리 테스트 응답 반환');
 
-      return {
-        success: true,
-        data: result,
-        meta: {
-          action: 'billing_process_test',
-          processedAt: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '정기결제 처리 테스트');
-    }
-  }
+  //     return {
+  //       success: true,
+  //       data: result,
+  //       meta: {
+  //         action: 'billing_process_test',
+  //         processedAt: new Date().toISOString(),
+  //       },
+  //     };
+  //   } catch (error) {
+  //     this.handleError(error, '정기결제 처리 테스트');
+  //   }
+  // }
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, isNull } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import type { Policy, PolicyValidationContext } from '../shared/schemas';
 import {
   MembershipPolicy,
@@ -22,7 +23,7 @@ import {
  */
 @Injectable()
 export class PolicyValidationService {
-  constructor(private readonly dbService: DbService<typeof schema>) {}
+  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   /**
    * 하이브리드 정책 검증
