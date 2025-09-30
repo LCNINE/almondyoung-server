@@ -76,7 +76,7 @@ function createKafkaConfig() {
       serviceName: 'user-service',
     }),
     ScheduleModule.forRoot(),
-    AuthModule,
+    AuthModule.register(),
     UsersModule,
     ShopModule,
     ConsentsModule,
