@@ -16,14 +16,21 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
   User,
+  userServiceEnums,
   userServiceSchema,
   type UserServiceSchema,
-  userServiceEnums,
 } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DbTransaction, ProviderType } from '../../commons/types';
+import {
+  JWT_ACCESS_TOKEN_EXPIRATION,
+  JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION,
+  JWT_REFRESH_TOKEN_EXPIRATION,
+  JWT_REFRESH_TOKEN_LONG_EXPIRATION,
+  JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
+} from '../../constants/auth.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { NotificationEventPublisher } from '../events/notification-event.publisher';
 import { UsersService } from '../users/users.service';
@@ -132,17 +139,13 @@ export class AuthService {
             ),
           );
 
-        const expiresIn =
-          this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ??
-          '15m';
+        const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
         // 새로운 인증 토큰 생성
         const verificationToken = this.jwtService.sign(
           { sub: existingUser.id },
           {
-            secret: this.configService.get<string>(
-              'JWT_VERIFICATION_TOKEN_SECRET',
-            ),
+            secret: this.configService.get<string>('AUTH_SECRET'),
             expiresIn,
           },
         );
@@ -215,17 +218,13 @@ export class AuthService {
           marketingConsent,
         });
 
-        const expiresIn =
-          this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ??
-          '15m';
+        const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
         // 이메일 인증용 토큰 생성
         const verificationToken = this.jwtService.sign(
           { sub: user.id },
           {
-            secret: this.configService.get<string>(
-              'JWT_VERIFICATION_TOKEN_SECRET',
-            ),
+            secret: this.configService.get<string>('AUTH_SECRET'),
             expiresIn,
           },
         );
@@ -353,14 +352,13 @@ export class AuthService {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
-    const expiresIn =
-      this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ?? '15m';
+    const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
     // 새로운 인증 토큰 생성
     const verificationToken = this.jwtService.sign(
       { sub: user.id },
       {
-        secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        secret: this.configService.get<string>('AUTH_SECRET'),
         expiresIn,
       },
     );
@@ -587,7 +585,8 @@ export class AuthService {
     return { user: newUser };
   }
 
-  async signOut(req: FastifyRequest, user: User) {
+  async signOut(req: FastifyRequest, user: User, tx?: DbTransaction) {
+    const client = this.getClient(tx);
     const authHeader = req.headers.authorization;
     const accessToken = authHeader?.split(' ')[1];
 
@@ -596,13 +595,30 @@ export class AuthService {
         throw new UnauthorizedException('인증 토큰이 필요합니다.');
       }
 
-      // 토큰과 사용자 ID로 토큰 삭제
-      const result = await this.dbService.db
+      //사용자 ID로 accessToken 삭제
+      await client
         .delete(userServiceSchema.tokens)
         .where(
           and(
-            eq(userServiceSchema.tokens.value, accessToken),
             eq(userServiceSchema.tokens.userId, user.id),
+            eq(
+              userServiceSchema.tokens.type,
+              userServiceEnums.tokenTypeEnum.enumValues[0],
+            ),
+          ),
+        )
+        .returning();
+
+      //사용자 ID로 refreshToken 삭제
+      await client
+        .delete(userServiceSchema.tokens)
+        .where(
+          and(
+            eq(userServiceSchema.tokens.userId, user.id),
+            eq(
+              userServiceSchema.tokens.type,
+              userServiceEnums.tokenTypeEnum.enumValues[1],
+            ),
           ),
         )
         .returning();
@@ -683,11 +699,9 @@ export class AuthService {
       email: user.email,
     };
 
-    const expiresIn =
-      this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRATION') ?? '15m';
-
+    const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+      secret: this.configService.get<string>('AUTH_SECRET'),
       expiresIn,
     });
 
@@ -749,7 +763,7 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(
       { sub: userId, scopes },
       {
-        secret: this.configService.get<string>('JWT_REFRESH'),
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
         expiresIn,
       },
     );
@@ -822,8 +836,8 @@ export class AuthService {
     const verificationToken = this.jwtService.sign(
       { email },
       {
-        secret: this.configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
-        expiresIn: `${this.configService.get('JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION')}`,
+        secret: this.configService.get('AUTH_SECRET'),
+        expiresIn: JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
       },
     );
 
@@ -835,7 +849,7 @@ export class AuthService {
 
   async resetPassword(token: string, password: string): Promise<void> {
     const email = await this.jwtService.verify(token, {
-      secret: this.configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
+      secret: this.configService.get('AUTH_SECRET'),
     });
 
     if (typeof email !== 'string') {
@@ -932,15 +946,10 @@ export class AuthService {
   private getRefreshTokenExpiration(rememberMe: boolean): string {
     if (rememberMe) {
       // 자동 로그인 체크 = 90일
-      return (
-        this.configService.get<string>('JWT_REFRESH_TOKEN_LONG_EXPIRATION') ??
-        '90d'
-      );
+      return JWT_REFRESH_TOKEN_LONG_EXPIRATION;
     } else {
       // 일반 로그인 = 2주
-      return (
-        this.configService.get<string>('JWT_REFRESH_TOKEN_EXPIRATION') ?? '2w'
-      );
+      return JWT_REFRESH_TOKEN_EXPIRATION;
     }
   }
 
