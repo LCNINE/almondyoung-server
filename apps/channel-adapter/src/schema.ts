@@ -14,16 +14,12 @@ import {
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid'; // uuid v7 지원 라이브러리 사용
 
-export function generateUUIDv7(): string {
-  return uuidv7();
-}
-
 export const eventLogs = pgTable(
   'event_logs',
   {
     id: uuid('id')
       .primaryKey()
-      .$defaultFn(() => generateUUIDv7()),
+      .$defaultFn(() => uuidv7()),
 
     channelId: uuid('channel_id').notNull(),
 
@@ -59,7 +55,7 @@ export const syncHistories = pgTable(
   {
     id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => generateUUIDv7()),
+      .$defaultFn(() => uuidv7()),
     channelId: uuid('channel_id').notNull(),
 
     syncType: varchar('sync_type', { length: 50 }).notNull(), // products, inventory, orders...
@@ -119,7 +115,7 @@ export const wmsOrderMappings = pgTable(
   {
     id: uuid('id')
       .primaryKey()
-      .$defaultFn(() => generateUUIDv7()),
+      .$defaultFn(() => uuidv7()),
 
     // 채널 정보
     salesChannel: varchar('sales_channel', { length: 50 }).notNull(), // 'coupang', 'naver', 'medusa'
@@ -151,7 +147,7 @@ export const syncStatuses = pgTable(
   {
     id: uuid('id')
       .primaryKey()
-      .$defaultFn(() => generateUUIDv7()),
+      .$defaultFn(() => uuidv7()),
     // ← channelId 타입을 event_logs와 통일 권장 (uuid 쓸지 varchar 쓸지 결정)
     channelId: varchar('channel_id', { length: 50 }).notNull(),
     dataType: varchar('data_type', { length: 50 }).notNull(),

@@ -1,5 +1,5 @@
 # Channel Adapter 서비스 Dockerfile
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 WORKDIR /app
 RUN apk add --no-cache postgresql-client

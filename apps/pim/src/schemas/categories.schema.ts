@@ -10,6 +10,11 @@ export const CreateCategorySchema = z.object({
     .describe('카테고리 이름'),
   description: z.string().optional().describe('카테고리 설명'),
   slug: z.string().optional().describe('URL 슬러그'),
+  imageUrl: z
+    .string()
+    .url('유효한 URL 형식이어야 합니다')
+    .optional()
+    .describe('카테고리 이미지 URL'),
   parentId: z
     .uuid('유효한 UUID 형식이어야 합니다')
     .optional()
@@ -26,6 +31,11 @@ export const UpdateCategorySchema = z.object({
     .describe('카테고리 이름'),
   description: z.string().optional().describe('카테고리 설명'),
   slug: z.string().optional().describe('URL 슬러그'),
+  imageUrl: z
+    .string()
+    .url('유효한 URL 형식이어야 합니다')
+    .optional()
+    .describe('카테고리 이미지 URL'),
   sortOrder: z.number().int().min(0).optional().describe('정렬 순서'),
   isActive: z.boolean().optional().describe('활성 상태'),
 });
@@ -36,6 +46,7 @@ export const CategoryResponseSchema = z.object({
   name: z.string().describe('카테고리 이름'),
   description: z.string().nullable().describe('카테고리 설명'),
   slug: z.string().nullable().describe('URL 슬러그'),
+  imageUrl: z.string().nullable().describe('카테고리 이미지 URL'),
   parentId: z.uuid().nullable().describe('부모 카테고리 ID (UUID 형식)'),
   sortOrder: z.number().int().describe('정렬 순서'),
   isActive: z.boolean().describe('활성 상태'),
@@ -48,6 +59,7 @@ export const CategoryDetailResponseSchema = z.object({
   name: z.string().describe('카테고리 이름'),
   description: z.string().nullable().describe('카테고리 설명'),
   slug: z.string().nullable().describe('URL 슬러그'),
+  imageUrl: z.string().nullable().describe('카테고리 이미지 URL'),
   parentId: z.uuid().nullable().describe('부모 카테고리 ID (UUID 형식)'),
   sortOrder: z.number().int().describe('정렬 순서'),
   isActive: z.boolean().describe('활성 상태'),
@@ -63,6 +75,7 @@ export const CategoryTreeNodeSchema: z.ZodType<any> = z.lazy(() =>
     name: z.string().describe('카테고리 이름'),
     description: z.string().nullable().describe('카테고리 설명'),
     slug: z.string().nullable().describe('URL 슬러그'),
+    imageUrl: z.string().nullable().describe('카테고리 이미지 URL'),
     parentId: z.uuid().nullable().describe('부모 카테고리 ID (UUID 형식)'),
     sortOrder: z.number().int().describe('정렬 순서'),
     isActive: z.boolean().describe('활성 상태'),

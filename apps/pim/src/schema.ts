@@ -27,6 +27,7 @@ export const productCategories = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     slug: varchar('slug', { length: 255 }).notNull().unique(),
+    imageUrl: text('image_url'), // 카테고리 이미지 URL
     parentId: uuid('parent_id'),
     level: integer('level').notNull().default(0),
     path: varchar('path', { length: 1000 }).notNull().default(''),
