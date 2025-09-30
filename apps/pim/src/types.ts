@@ -22,6 +22,7 @@ import {
 export type DbTransaction = PostgresJsDatabase<PimSchema>;
 
 // ===== PRODUCT CATEGORIES 타입 =====
+
 export type ProductCategory = InferSelectModel<typeof productCategories>;
 export type NewProductCategory = InferInsertModel<typeof productCategories>;
 export type UpdateProductCategory = Partial<
@@ -34,6 +35,8 @@ export type NewProductMaster = InferInsertModel<typeof productMasters>;
 export type UpdateProductMaster = Partial<
   Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>
 >;
+
+// 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
 
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
 export type ProductMasterCategory = InferSelectModel<
@@ -130,6 +133,7 @@ export interface CreateMasterDto {
   name: string;
   description?: string;
   brand?: string;
+  thumbnail?: string; // 썸네일 이미지 URL 추가
   categoryId?: string;
   basePrice: number;
   pricingStrategy: PricingStrategyType;
@@ -164,7 +168,19 @@ export interface CreateMasterDto {
   variantPrices?: Record<string, number>; // 옵션 조합별 가격
 }
 
-// Product Master 상세 응답 DTO
+// Product Master 목록용 DTO (간단한 정보만)
+export interface MasterListItemDto {
+  id: string;
+  name: string;
+  thumbnail?: string;
+  basePrice: number;
+  membershipPrice?: number;
+  isMembershipOnly: boolean;
+  status: string;
+  createdAt: Date;
+}
+
+// Product Master 상세 응답 DTO (모든 정보 포함)
 export interface MasterDetailDto extends ProductMaster {
   optionGroups: (ProductOptionGroup & {
     values: ProductOptionValue[];

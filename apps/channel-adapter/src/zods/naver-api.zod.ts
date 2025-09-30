@@ -7,7 +7,7 @@ export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.iso.date(),
+    timestamp: z.iso.datetime(),
     traceId: z.string(),
     data: dataSchema,
   });
@@ -17,7 +17,7 @@ export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(
   dataSchema: T,
 ) {
   return z.object({
-    timestamp: z.iso.date(),
+    timestamp: z.iso.datetime(),
     traceId: z.string(),
     data: dataSchema.optional(),
   });
@@ -217,7 +217,7 @@ export type ChangeHopeDeliveryBody = z.infer<
 
 // 지연발송 Body (빠진 것 추가)
 export const DelayDispatchBodySchema = z.object({
-  dispatchDueDate: z.iso.date(),
+  dispatchDueDate: z.iso.datetime(),
   delayedDispatchReason: z.string().min(1),
   dispatchDelayedDetailedReason: z.string().min(1),
 });
@@ -227,8 +227,8 @@ export type DelayDispatchBody = z.infer<typeof DelayDispatchBodySchema>;
 const DiscountMethodSchema = z.object({
   value: z.number().int(),
   unitType: z.enum(['PERCENT', 'WON', 'YEN', 'COUNT']),
-  startDate: z.iso.date().optional(),
-  endDate: z.iso.date().optional(),
+  startDate: z.iso.datetime().optional(),
+  endDate: z.iso.datetime().optional(),
 });
 const OptionCombinationStockSchema = z.object({
   id: z.number().int(),
@@ -354,8 +354,8 @@ export interface ProductOrderInfo {
 // 판매 상태 변경 Body
 export const ChangeSaleStatusBodySchema = z.object({
   statusType: z.enum(NAVER_SALE_STATUS_TYPES),
-  saleStartDate: z.iso.date().optional(),
-  saleEndDate: z.iso.date().optional(),
+  saleStartDate: z.iso.datetime().optional(),
+  saleEndDate: z.iso.datetime().optional(),
   stockQuantity: z.number().int().max(99999999).optional(),
 });
 export type ChangeSaleStatusBody = z.infer<typeof ChangeSaleStatusBodySchema>;
