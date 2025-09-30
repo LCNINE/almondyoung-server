@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { JWT_ACCESS_TOKEN_EXPIRATION } from '../../constants/auth.constant';
 import { ConsentsModule } from '../consents/consents.module';
 import { EventProcessorModule } from '../events/events.module';
 import { UsersModule } from '../users/users.module';
@@ -21,9 +22,9 @@ import { JwtKakaoStrategy } from './strategies/jwt-social-kakao.strategy';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
+        secret: configService.get('AUTH_SECRET'),
         signOptions: {
-          expiresIn: configService.get('JWT_ACCESS_TOKEN_EXPIRATION', '15m'),
+          expiresIn: JWT_ACCESS_TOKEN_EXPIRATION,
         },
       }),
       inject: [ConfigService],
