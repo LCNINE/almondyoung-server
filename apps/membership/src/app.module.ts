@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 
 import { DbModule } from '@app/db';
 import * as schema from './shared/schemas/entities/schema';
+import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { DevAuthModule } from './auth/dev-auth-module';
 import { PlanService } from './services/plan.service';
@@ -33,7 +34,7 @@ import { PauseController } from './controllers/pause.controller';
         connectionString:
           'postgresql://neondb_owner:npg_VR7yj1uOfPTs@ep-divine-hill-a1nspuc3-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
-      schema: { ...schema }, // 여기도 원래 의도한 spread로 수정 필요. :contentReference[oaicite:13]{index=13}
+      schema: { ...membershipSchema },
     }),
   ],
   controllers: [

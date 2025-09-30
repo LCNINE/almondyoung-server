@@ -63,6 +63,7 @@
     "db:push:pim": "cd apps/pim && drizzle-kit push",
     "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
+    "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
     "db:push:channel-adapter": "drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
@@ -136,7 +137,7 @@
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
     "@types/passport-kakao": "^1.0.3",
-    "axios": "^1.12.2",
+    "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "bull": "^4.16.5",
     "class-transformer": "^0.5.1",
@@ -152,6 +153,7 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.5.0",
     "form-data": "^4.0.4",
+    "handlebars": "^4.7.8",
     "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",
     "kafkajs": "^2.2.4",
     "nestjs-resend": "^1.0.3",
@@ -244,5 +246,6 @@
       "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
     }
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

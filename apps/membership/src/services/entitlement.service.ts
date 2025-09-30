@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, inArray } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import { EntitlementNotFoundException } from '../shared/exceptions/subscription.exceptions';
 import { addDays } from 'date-fns';
 import type { SubscriptionEntitlement } from '../shared/schemas';
@@ -11,7 +12,7 @@ import { DrizzleTransaction } from '../shared/schemas/types';
 @Injectable()
 export class EntitlementService {
   constructor(
-    private readonly dbService: DbService<typeof schema>,
+    private readonly dbService: DbService<typeof membershipSchema>,
     private readonly planService: PlanService, // Tier 정보 조회를 위해 주입
   ) {}
 

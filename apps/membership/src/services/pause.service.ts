@@ -2,12 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, desc, isNull } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import { addDays, differenceInDays } from 'date-fns';
 import { DrizzleTransaction } from '../shared/schemas/types';
 
 @Injectable()
 export class PauseService {
-  constructor(private readonly dbService: DbService<typeof schema>) {}
+  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   /**
    * 구독을 일시정지합니다.

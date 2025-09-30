@@ -13,7 +13,7 @@ import { AlertService } from '../shared/services/alert.service';
     ConfigModule,
     DbModule.forRoot({
       config: {
-        connectionString: process.env.NOTIFICATION_DATABASE_URL ?? '',
+        connectionString: process.env.DATABASE_URL ?? '',
       },
       schema: notificationTables,
     }),

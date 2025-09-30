@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { eq, and, gte, lte, desc, asc, SQL } from 'drizzle-orm';
 
 import {
@@ -36,7 +37,7 @@ import { WalletExecutor } from '../shared/database';
 export class TaxInvoiceService {
   private readonly logger = new Logger(TaxInvoiceService.name);
 
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   /**
    * 새로운 세금계산서를 생성합니다.
