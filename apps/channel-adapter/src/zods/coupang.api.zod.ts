@@ -123,16 +123,16 @@ export const OrderItemSchema = z.object({
 export const CoupangOrderSheetSchema = z.object({
   shipmentBoxId: z.number(), // 배송번호 (묶음배송번호)
   orderId: z.number(), // 주문번호
-  orderedAt: z.iso.date(), // 주문일시
-  paidAt: z.iso.date(), // 결제일시
+  orderedAt: z.iso.datetime(), // 주문일시
+  paidAt: z.iso.datetime(), // 결제일시
   status: CoupangOrderStatusSchema, // 발주서 상태
   orderer: OrdererSchema, // 주문자 정보
   receiver: ReceiverSchema, // 수취인 정보
   orderItems: z.array(OrderItemSchema), // 주문 상품 목록
   deliveryCompanyName: z.string().optional(), // 택배사
   invoiceNumber: z.string().optional(), // 운송장번호
-  inTrasitDateTime: z.iso.date().optional(), // 출고일(발송일)
-  deliveredDate: z.iso.date().optional(), // 배송완료일
+  inTrasitDateTime: z.iso.datetime().optional(), // 출고일(발송일)
+  deliveredDate: z.iso.datetime().optional(), // 배송완료일
 });
 
 export const CoupangOrderSheetListResponseSchema = z.object({
