@@ -17,6 +17,9 @@ RUN yarn install --frozen-lockfile --non-interactive
 # 앱 소스 복사
 COPY apps/medusa/ ./
 
+# monorepo 내부 공용 라이브러리 복사 (tsconfig paths: "@libs/*": "../../libs/*")
+COPY libs /app/libs
+
 # 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
 
