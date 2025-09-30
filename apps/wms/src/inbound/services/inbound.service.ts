@@ -65,8 +65,8 @@ export class InboundService {
         const { warehouseId, items } = dto;
         return this.inTx(async (tx) => {
             // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
-            await this.locationService.ensureSystemLocations(warehouseId);
-            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            await this.locationService.ensureSystemLocations(warehouseId, tx);
+            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
             if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
             const effectiveLocationId = inboundZone.id;
             // 회차(journal + receipt) 생성
@@ -134,8 +134,8 @@ export class InboundService {
     async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
         const { warehouseId, items } = dto;
         return this.inTx(async (tx) => {
-            await this.locationService.ensureSystemLocations(warehouseId);
-            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+            await this.locationService.ensureSystemLocations(warehouseId, tx);
+            const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
             if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
             const effectiveLocationId = inboundZone.id;
 
@@ -198,8 +198,8 @@ export class InboundService {
         return this.inTx(async (tx) => {
             let effectiveLocationId = dto.locationId ?? null;
             if (!effectiveLocationId) {
-                await this.locationService.ensureSystemLocations(warehouseId);
-                const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default');
+                await this.locationService.ensureSystemLocations(warehouseId, tx);
+                const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
                 if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
                 effectiveLocationId = inboundZone.id;
             }
@@ -508,8 +508,8 @@ export class InboundService {
             // 위치 결정 (옵션, 없으면 기본입고존)
             let effectiveLocationId = dto.locationId ?? null;
             if (!effectiveLocationId) {
-                await this.locationService.ensureSystemLocations(plan.warehouseId);
-                const inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default');
+                await this.locationService.ensureSystemLocations(plan.warehouseId, tx);
+                const inboundZone = await this.locationService.getSystemLocationByRole(plan.warehouseId, 'inbound_default', tx);
                 if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
                 effectiveLocationId = inboundZone.id;
             }

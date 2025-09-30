@@ -1,21 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { 
-  CreateMasterDto, 
-  MasterDetailDto, 
+import {
+  CreateMasterDto,
+  MasterDetailDto,
   PricePreviewDto,
   ProductMaster,
   NewProductMaster,
   UpdateProductMaster,
-  DbTransaction 
+  DbTransaction,
 } from '../types';
-import { 
+import {
   type PimSchema,
   productMasters,
   productOptionGroups,
   productOptionValues,
   productVariants,
-  variantOptionValues
+  variantOptionValues,
+  productImages,
+  uploads,
 } from '../schema';
 import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
 import { eq, and, or, like, ilike, count, asc, desc, sql } from 'drizzle-orm';
@@ -31,12 +33,16 @@ export class ProductMastersService {
     return tx ?? this.db.db;
   }
 
+  async createMaster(
+    data: CreateMasterDto,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
+    const db =
+      tx ||
+      (await this.db.db.transaction(async (txn) => {
+        return await this._createMasterWithinTransaction(data, txn);
+      }));
 
-  async createMaster(data: CreateMasterDto, tx?: DbTransaction): Promise<ProductMaster> {
-    const db = tx || await this.db.db.transaction(async (txn) => {
-      return await this._createMasterWithinTransaction(data, txn);
-    });
-    
     if (tx) {
       return await this._createMasterWithinTransaction(data, tx);
     } else {
@@ -44,7 +50,10 @@ export class ProductMastersService {
     }
   }
 
-  private async _createMasterWithinTransaction(data: CreateMasterDto, tx: DbTransaction): Promise<ProductMaster> {
+  private async _createMasterWithinTransaction(
+    data: CreateMasterDto,
+    tx: DbTransaction,
+  ): Promise<ProductMaster> {
     // categoryId 제거됨 - many-to-many 관계로 변경
     const masterData = {
       name: data.name,
@@ -58,29 +67,44 @@ export class ProductMastersService {
       seoTitle: data.seoTitle,
       seoDescription: data.seoDescription,
       seoKeywords: data.seoKeywords,
+      // 구매제한 필드들
+      isWholesaleOnly: data.isWholesaleOnly || false,
+      isMembershipOnly: data.isMembershipOnly || false,
+      // 특별 가격 필드들
+      membershipPrice: data.membershipPrice || null,
+      wholesalePrice: data.wholesalePrice || null,
     };
 
-    const [master] = await tx.insert(productMasters).values(masterData).returning();
+    const [master] = await tx
+      .insert(productMasters)
+      .values(masterData)
+      .returning();
 
     const createdOptionGroups: any[] = [];
     if (data.optionGroups && data.optionGroups.length > 0) {
       for (const optionGroup of data.optionGroups) {
-        const [group] = await tx.insert(productOptionGroups).values({
-          masterId: master.id,
-          name: optionGroup.name,
-          displayName: optionGroup.displayName,
-          sortOrder: optionGroup.sortOrder || 0,
-        }).returning();
+        const [group] = await tx
+          .insert(productOptionGroups)
+          .values({
+            masterId: master.id,
+            name: optionGroup.name,
+            displayName: optionGroup.displayName,
+            sortOrder: optionGroup.sortOrder || 0,
+          })
+          .returning();
 
         const optionValues: any[] = [];
         for (const value of optionGroup.values) {
-          const [optionValue] = await tx.insert(productOptionValues).values({
-            optionGroupId: group.id,
-            value: value.value,
-            displayName: value.displayName,
-            sortOrder: value.sortOrder || 0,
-          }).returning();
-          
+          const [optionValue] = await tx
+            .insert(productOptionValues)
+            .values({
+              optionGroupId: group.id,
+              value: value.value,
+              displayName: value.displayName,
+              sortOrder: value.sortOrder || 0,
+            })
+            .returning();
+
           optionValues.push({
             ...optionValue,
             price: value.price, // option_based 전략용
@@ -96,16 +120,24 @@ export class ProductMastersService {
 
     await this._generateVariants(master.id, createdOptionGroups, tx);
 
-    await this.initializePricingStrategy(master.id, {
-      pricingStrategy: data.pricingStrategy,
-      optionGroups: createdOptionGroups,
-      variantPrices: data.variantPrices,
-    }, tx);
+    await this.initializePricingStrategy(
+      master.id,
+      {
+        pricingStrategy: data.pricingStrategy,
+        optionGroups: createdOptionGroups,
+        variantPrices: data.variantPrices,
+      },
+      tx,
+    );
 
     return master;
   }
 
-  private async _generateVariants(masterId: string, optionGroups: any[], tx: DbTransaction): Promise<void> {
+  private async _generateVariants(
+    masterId: string,
+    optionGroups: any[],
+    tx: DbTransaction,
+  ): Promise<void> {
     if (!optionGroups || optionGroups.length === 0) {
       await tx.insert(productVariants).values({
         masterId,
@@ -119,12 +151,15 @@ export class ProductMastersService {
     const combinations = this.generateOptionCombinations(optionGroups);
 
     for (const combination of combinations) {
-      const [variant] = await tx.insert(productVariants).values({
-        masterId,
-        variantName: combination.map(v => v.displayName).join(' × '),
-        isDefault: false,
-        status: 'active',
-      }).returning();
+      const [variant] = await tx
+        .insert(productVariants)
+        .values({
+          masterId,
+          variantName: combination.map((v) => v.displayName).join(' × '),
+          isDefault: false,
+          status: 'active',
+        })
+        .returning();
 
       for (const optionValue of combination) {
         await tx.insert(variantOptionValues).values({
@@ -135,24 +170,84 @@ export class ProductMastersService {
     }
   }
 
-  async getMasterById(masterId: string, tx?: DbTransaction): Promise<ProductMaster | null> {
+  async getMasterById(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster | null> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
 
     const client = this.getClient(tx);
-    
+
     const result = await client
       .select()
       .from(productMasters)
       .where(eq(productMasters.id, masterId));
-    
+
     return result.length > 0 ? result[0] : null;
   }
 
-  async getMasterDetail(masterId: string, tx?: DbTransaction): Promise<MasterDetailDto | null> {
+  async getMasterWithImages(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<
+    (ProductMaster & { images: { primary: any; additional: any[] } }) | null
+  > {
+    if (!masterId) {
+      throw new Error('Master ID is required');
+    }
+
     const client = this.getClient(tx);
-    
+
+    // 1. 상품 기본 정보 조회
+    const masterResult = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (masterResult.length === 0) {
+      return null;
+    }
+
+    const master = masterResult[0];
+
+    // 2. 상품에 연결된 이미지 + 업로드 정보 join
+    const images = await client
+      .select({
+        id: productImages.id,
+        isPrimary: productImages.isPrimary,
+        sortOrder: productImages.sortOrder,
+        url: uploads.url,
+        originalName: uploads.originalName,
+        fileName: uploads.fileName,
+        mimeType: uploads.mimeType,
+        size: uploads.size,
+      })
+      .from(productImages)
+      .innerJoin(uploads, eq(productImages.uploadId, uploads.id))
+      .where(eq(productImages.masterId, masterId))
+      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
+    // 3. 대표이미지와 부가이미지 분리
+    const primaryImage = images.find((img) => img.isPrimary) || null;
+    const additionalImages = images.filter((img) => !img.isPrimary);
+
+    return {
+      ...master,
+      images: {
+        primary: primaryImage,
+        additional: additionalImages,
+      },
+    };
+  }
+
+  async getMasterDetail(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<MasterDetailDto | null> {
+    const client = this.getClient(tx);
+
     const master = await this.getMasterById(masterId, tx);
     if (!master) {
       return null;
@@ -170,10 +265,10 @@ export class ProductMastersService {
         .from(productOptionValues)
         .where(eq(productOptionValues.optionGroupId, group.id))
         .orderBy(productOptionValues.sortOrder);
-      
+
       optionGroupsWithValues.push({
         ...group,
-        values
+        values,
       });
     }
 
@@ -188,56 +283,60 @@ export class ProductMastersService {
     return {
       ...master,
       optionGroups: optionGroupsWithValues,
-      variants: variants.map(v => ({ ...v, optionValues: [] })),
-      channelProducts
+      variants: variants.map((v) => ({ ...v, optionValues: [] })),
+      channelProducts,
     };
   }
 
-  async getMasters(filters?: {
-    status?: string;
-    categoryId?: string;
-    brand?: string;
-    pricingStrategy?: string;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }, tx?: DbTransaction): Promise<{
+  async getMasters(
+    filters?: {
+      status?: string;
+      categoryId?: string;
+      brand?: string;
+      pricingStrategy?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
     data: ProductMaster[];
     total: number;
     page: number;
     limit: number;
   }> {
     const client = this.getClient(tx);
-    
+
     const page = filters?.page || 1;
     const limit = Math.min(filters?.limit || 20, 100);
     const offset = (page - 1) * limit;
-    
+
     const whereConditions: any[] = [];
     if (filters?.status) {
       whereConditions.push(eq(productMasters.status, filters.status));
     }
-    
+
     // 카테고리 필터링은 별도 처리가 필요하므로 여기서는 제거하고 나중에 구현
     if (filters?.brand) {
       whereConditions.push(eq(productMasters.brand, filters.brand));
     }
     if (filters?.pricingStrategy) {
-      whereConditions.push(eq(productMasters.pricingStrategy, filters.pricingStrategy));
+      whereConditions.push(
+        eq(productMasters.pricingStrategy, filters.pricingStrategy),
+      );
     }
     if (filters?.search) {
       whereConditions.push(ilike(productMasters.name, `%${filters.search}%`));
     }
-    
-    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
-    const countQuery = client
-      .select({ count: count() })
-      .from(productMasters);
-      
+
+    const whereClause =
+      whereConditions.length > 0 ? and(...whereConditions) : undefined;
+    const countQuery = client.select({ count: count() }).from(productMasters);
+
     if (whereClause) {
       countQuery.where(whereClause);
     }
-    
+
     const [{ count: total }] = await countQuery;
     const dataQuery = client
       .select()
@@ -245,33 +344,37 @@ export class ProductMastersService {
       .orderBy(desc(productMasters.createdAt))
       .limit(limit)
       .offset(offset);
-      
+
     if (whereClause) {
       dataQuery.where(whereClause);
     }
-    
+
     const data = await dataQuery;
-    
+
     return {
       data,
       total,
       page,
-      limit
+      limit,
     };
   }
 
-  async updateMaster(masterId: string, data: UpdateProductMaster, tx?: DbTransaction): Promise<ProductMaster> {
+  async updateMaster(
+    masterId: string,
+    data: UpdateProductMaster,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existingMaster = await this.getMasterById(masterId, tx);
     if (!existingMaster) {
       throw new Error(`Master not found: ${masterId}`);
     }
-    
+
     const updateData = {
       ...data,
       updatedAt: new Date(),
@@ -283,11 +386,11 @@ export class ProductMastersService {
       .set(updateData)
       .where(eq(productMasters.id, masterId))
       .returning();
-    
+
     if (result.length === 0) {
       throw new Error(`Failed to update master: ${masterId}`);
     }
-    
+
     return result[0];
   }
 
@@ -297,7 +400,7 @@ export class ProductMastersService {
     }
 
     const client = this.getClient(tx);
-    
+
     const master = await this.getMasterById(masterId, tx);
     if (!master) {
       return false;
@@ -305,47 +408,61 @@ export class ProductMastersService {
     const result = await client
       .delete(productMasters)
       .where(eq(productMasters.id, masterId));
-    
+
     return true;
   }
 
-
-  async createOptionGroups(masterId: string, optionGroups: any[], tx?: DbTransaction): Promise<void> {
+  async createOptionGroups(
+    masterId: string,
+    optionGroups: any[],
+    tx?: DbTransaction,
+  ): Promise<void> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     if (!optionGroups || optionGroups.length === 0) {
       throw new Error('Option groups are required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsMaster(masterId, tx);
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
     }
     for (const optionGroup of optionGroups) {
-      if (!optionGroup.name || !optionGroup.displayName || !optionGroup.values) {
+      if (
+        !optionGroup.name ||
+        !optionGroup.displayName ||
+        !optionGroup.values
+      ) {
         throw new Error('Option group must have name, displayName, and values');
       }
       const existingGroup = await client
         .select()
         .from(productOptionGroups)
-        .where(and(
-          eq(productOptionGroups.masterId, masterId),
-          eq(productOptionGroups.name, optionGroup.name)
-        ));
-        
+        .where(
+          and(
+            eq(productOptionGroups.masterId, masterId),
+            eq(productOptionGroups.name, optionGroup.name),
+          ),
+        );
+
       if (existingGroup.length > 0) {
-        throw new Error(`Option group '${optionGroup.name}' already exists for this master`);
+        throw new Error(
+          `Option group '${optionGroup.name}' already exists for this master`,
+        );
       }
-      const [group] = await client.insert(productOptionGroups).values({
-        masterId: masterId,
-        name: optionGroup.name,
-        displayName: optionGroup.displayName,
-        sortOrder: optionGroup.sortOrder || 0,
-      }).returning();
+      const [group] = await client
+        .insert(productOptionGroups)
+        .values({
+          masterId: masterId,
+          name: optionGroup.name,
+          displayName: optionGroup.displayName,
+          sortOrder: optionGroup.sortOrder || 0,
+        })
+        .returning();
       for (const value of optionGroup.values) {
         if (!value.value || !value.displayName) {
           throw new Error('Option value must have value and displayName');
@@ -353,15 +470,19 @@ export class ProductMastersService {
         const existingValue = await client
           .select()
           .from(productOptionValues)
-          .where(and(
-            eq(productOptionValues.optionGroupId, group.id),
-            eq(productOptionValues.value, value.value)
-          ));
-          
+          .where(
+            and(
+              eq(productOptionValues.optionGroupId, group.id),
+              eq(productOptionValues.value, value.value),
+            ),
+          );
+
         if (existingValue.length > 0) {
-          throw new Error(`Option value '${value.value}' already exists in group '${optionGroup.name}'`);
+          throw new Error(
+            `Option value '${value.value}' already exists in group '${optionGroup.name}'`,
+          );
         }
-        
+
         await client.insert(productOptionValues).values({
           optionGroupId: group.id,
           value: value.value,
@@ -376,9 +497,9 @@ export class ProductMastersService {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsMaster(masterId, tx);
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
@@ -387,9 +508,11 @@ export class ProductMastersService {
       .select()
       .from(productVariants)
       .where(eq(productVariants.masterId, masterId));
-      
+
     if (existingVariants.length > 0) {
-      throw new Error('Master already has variants. Use regenerateVariants to recreate them.');
+      throw new Error(
+        'Master already has variants. Use regenerateVariants to recreate them.',
+      );
     }
     const optionGroups = await client
       .select()
@@ -403,10 +526,10 @@ export class ProductMastersService {
         .from(productOptionValues)
         .where(eq(productOptionValues.optionGroupId, group.id))
         .orderBy(asc(productOptionValues.sortOrder));
-      
+
       optionGroupsWithValues.push({
         ...group,
-        values
+        values,
       } as any);
     }
     if (tx) {
@@ -418,13 +541,16 @@ export class ProductMastersService {
     }
   }
 
-  async generateDefaultVariant(masterId: string, tx?: DbTransaction): Promise<void> {
+  async generateDefaultVariant(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsMaster(masterId, tx);
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
@@ -433,17 +559,21 @@ export class ProductMastersService {
       .select()
       .from(productOptionGroups)
       .where(eq(productOptionGroups.masterId, masterId));
-      
+
     if (existingOptionGroups.length > 0) {
-      throw new Error('Cannot generate default variant for master with option groups. Use generateVariants instead.');
+      throw new Error(
+        'Cannot generate default variant for master with option groups. Use generateVariants instead.',
+      );
     }
     const existingVariants = await client
       .select()
       .from(productVariants)
       .where(eq(productVariants.masterId, masterId));
-      
+
     if (existingVariants.length > 0) {
-      throw new Error('Master already has variants. Cannot generate default variant.');
+      throw new Error(
+        'Master already has variants. Cannot generate default variant.',
+      );
     }
     await client.insert(productVariants).values({
       masterId,
@@ -454,13 +584,16 @@ export class ProductMastersService {
     });
   }
 
-  async regenerateVariants(masterId: string, tx?: DbTransaction): Promise<void> {
+  async regenerateVariants(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsMaster(masterId, tx);
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
@@ -481,15 +614,15 @@ export class ProductMastersService {
           .from(productOptionValues)
           .where(eq(productOptionValues.optionGroupId, group.id))
           .orderBy(asc(productOptionValues.sortOrder));
-        
+
         optionGroupsWithValues.push({
           ...group,
-          values
+          values,
         } as any);
       }
       await this._generateVariants(masterId, optionGroupsWithValues, txn);
     };
-    
+
     if (tx) {
       await executeRegeneration(tx);
     } else {
@@ -499,16 +632,21 @@ export class ProductMastersService {
     }
   }
 
-
-  async initializePricingStrategy(masterId: string, strategyData: any, tx?: DbTransaction): Promise<void> {
+  async initializePricingStrategy(
+    masterId: string,
+    strategyData: any,
+    tx?: DbTransaction,
+  ): Promise<void> {
     const client = this.getClient(tx);
-    
+
     try {
-      const strategy = this.pricingStrategyFactory.getStrategy(strategyData.pricingStrategy);
-      
+      const strategy = this.pricingStrategyFactory.getStrategy(
+        strategyData.pricingStrategy,
+      );
+
       if (strategyData.pricingStrategy === 'option_based') {
         const priceData: Record<string, number> = {};
-        
+
         if (strategyData.optionGroups) {
           for (const group of strategyData.optionGroups) {
             for (const value of group.values) {
@@ -518,18 +656,17 @@ export class ProductMastersService {
             }
           }
         }
-        
+
         if (strategy && typeof strategy.setPriceData === 'function') {
           await strategy.setPriceData(masterId, priceData, client);
         }
-        
       } else if (strategyData.pricingStrategy === 'variant_based') {
         const priceData: Record<string, number> = {};
-        
+
         if (strategyData.variantPrices) {
           Object.assign(priceData, strategyData.variantPrices);
         }
-        
+
         if (strategy && typeof strategy.setPriceData === 'function') {
           await strategy.setPriceData(masterId, priceData, client);
         }
@@ -543,28 +680,28 @@ export class ProductMastersService {
     masterId: string,
     toStrategy: string,
     migrationData?: any,
-    tx?: DbTransaction
+    tx?: DbTransaction,
   ): Promise<void> {
     const client = this.getClient(tx);
-    
+
     const result = await client
       .select({ pricingStrategy: productMasters.pricingStrategy })
       .from(productMasters)
       .where(eq(productMasters.id, masterId));
-    
+
     const master = Array.isArray(result) ? result[0] : result;
-    
+
     if (!master) {
       throw new Error(`Master not found: ${masterId}`);
     }
-    
+
     const fromStrategy = master.pricingStrategy;
     await this.pricingStrategyFactory.changeStrategy(
       masterId,
       fromStrategy as any,
       toStrategy as any,
       migrationData || {},
-      client
+      client,
     );
     await client
       .update(productMasters)
@@ -572,13 +709,16 @@ export class ProductMastersService {
       .where(eq(productMasters.id, masterId));
   }
 
-  async getPricePreview(masterId: string, tx?: DbTransaction): Promise<PricePreviewDto> {
+  async getPricePreview(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<PricePreviewDto> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const master = await this.getMasterById(masterId, tx);
     if (!master) {
       throw new Error(`Master not found: ${masterId}`);
@@ -588,17 +728,23 @@ export class ProductMastersService {
       .from(productVariants)
       .where(eq(productVariants.masterId, masterId))
       .orderBy(asc(productVariants.displayOrder));
-    
+
     if (variants.length === 0) {
       return {
         masterId,
-        variants: []
+        variants: [],
       };
     }
-    
-    const strategy = await this.pricingStrategyFactory.getStrategy(master.pricingStrategy as any);
-    const variantPreviews: { variantId: string; optionCombination: string; price: number; }[] = [];
-    
+
+    const strategy = await this.pricingStrategyFactory.getStrategy(
+      master.pricingStrategy as any,
+    );
+    const variantPreviews: {
+      variantId: string;
+      optionCombination: string;
+      price: number;
+    }[] = [];
+
     for (const variant of variants) {
       try {
         const variantOptions = await client
@@ -607,16 +753,22 @@ export class ProductMastersService {
               id: productOptionValues.id,
               value: productOptionValues.value,
               displayName: productOptionValues.displayName,
-              optionGroupId: productOptionValues.optionGroupId
+              optionGroupId: productOptionValues.optionGroupId,
             },
             optionGroup: {
               name: productOptionGroups.name,
-              displayName: productOptionGroups.displayName
-            }
+              displayName: productOptionGroups.displayName,
+            },
           })
           .from(variantOptionValues)
-          .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
-          .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
+          .innerJoin(
+            productOptionValues,
+            eq(variantOptionValues.optionValueId, productOptionValues.id),
+          )
+          .innerJoin(
+            productOptionGroups,
+            eq(productOptionValues.optionGroupId, productOptionGroups.id),
+          )
           .where(eq(variantOptionValues.variantId, variant.id))
           .orderBy(asc(productOptionGroups.sortOrder));
         let optionCombination: string;
@@ -625,80 +777,87 @@ export class ProductMastersService {
           optionCombination = '기본 품목';
         } else {
           optionCombination = variantOptions
-            .map(vo => vo.optionValue.displayName)
+            .map((vo) => vo.optionValue.displayName)
             .join(' × ');
         }
-        const optionInfo = variantOptions.map(vo => ({
+        const optionInfo = variantOptions.map((vo) => ({
           optionValueId: vo.optionValue.id,
           value: vo.optionValue.value,
-          groupName: vo.optionGroup.name
+          groupName: vo.optionGroup.name,
         }));
         const price = await strategy.calculatePrice(optionInfo as any, client);
-        
+
         variantPreviews.push({
           variantId: variant.id,
           optionCombination,
-          price
+          price,
         });
-        
       } catch (error) {
-        console.warn(`Failed to calculate price for variant ${variant.id}:`, error.message);
-        
+        console.warn(
+          `Failed to calculate price for variant ${variant.id}:`,
+          error.message,
+        );
+
         variantPreviews.push({
           variantId: variant.id,
           optionCombination: variant.variantName || '알 수 없음',
-          price: master.basePrice || 0
+          price: master.basePrice || 0,
         });
       }
     }
-    
+
     return {
       masterId,
-      variants: variantPreviews
+      variants: variantPreviews,
     };
   }
-
 
   async existsMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {
     if (!masterId) {
       return false;
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const result = await client
       .select({ count: count() })
       .from(productMasters)
       .where(eq(productMasters.id, masterId));
-    
+
     return result[0].count > 0;
   }
 
-  async updateMasterStatus(masterId: string, status: string, tx?: DbTransaction): Promise<void> {
+  async updateMasterStatus(
+    masterId: string,
+    status: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     if (!status) {
       throw new Error('Status is required');
     }
-    
+
     const validStatuses = ['active', 'inactive', 'draft'];
     if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
+      throw new Error(
+        `Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`,
+      );
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsMaster(masterId, tx);
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
     }
     await client
       .update(productMasters)
-      .set({ 
+      .set({
         status,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(productMasters.id, masterId));
   }
@@ -715,7 +874,7 @@ export class ProductMastersService {
     const restCombinations = this.generateOptionCombinations(restGroups);
 
     const combinations: any[][] = [];
-    
+
     for (const value of firstGroup.values) {
       if (restCombinations.length === 0) {
         combinations.push([value]);
@@ -731,8 +890,8 @@ export class ProductMastersService {
 
   public generateOptionCombinationsForTest(optionGroups: any[]): string[][] {
     const combinations = this.generateOptionCombinations(optionGroups);
-    return combinations.map(combination => 
-      combination.map(option => option.value || option)
+    return combinations.map((combination) =>
+      combination.map((option) => option.value || option),
     );
   }
 }
