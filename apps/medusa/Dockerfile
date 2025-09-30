@@ -18,7 +18,7 @@ RUN yarn install --frozen-lockfile --non-interactive
 COPY apps/medusa/ ./
 COPY libs /app/libs
 RUN mkdir -p /app/apps/channel-adapter/src
-COPY apps/channel-adapter/src/types /app/apps/channel-adapter/src/types
+COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
