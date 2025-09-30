@@ -7,6 +7,7 @@ import {
 import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { WalletExecutor } from '../shared/database';
 
@@ -24,7 +25,7 @@ export class HmsBnplCashReceiptProvider implements CashReceiptPort {
   private readonly logger = new Logger(HmsBnplCashReceiptProvider.name);
   private readonly hmsApi: HmsAPI;
 
-  constructor(private readonly db: DbService<typeof schema>) {
+  constructor(private readonly db: DbService<typeof walletSchema>) {
     this.hmsApi = ApiClientFactory.create({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
