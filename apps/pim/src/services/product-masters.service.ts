@@ -16,6 +16,8 @@ import {
   productOptionValues,
   productVariants,
   variantOptionValues,
+  productImages,
+  uploads,
 } from '../schema';
 import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
 import { eq, and, or, like, ilike, count, asc, desc, sql } from 'drizzle-orm';
@@ -184,6 +186,60 @@ export class ProductMastersService {
       .where(eq(productMasters.id, masterId));
 
     return result.length > 0 ? result[0] : null;
+  }
+
+  async getMasterWithImages(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<
+    (ProductMaster & { images: { primary: any; additional: any[] } }) | null
+  > {
+    if (!masterId) {
+      throw new Error('Master ID is required');
+    }
+
+    const client = this.getClient(tx);
+
+    // 1. 상품 기본 정보 조회
+    const masterResult = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (masterResult.length === 0) {
+      return null;
+    }
+
+    const master = masterResult[0];
+
+    // 2. 상품에 연결된 이미지 + 업로드 정보 join
+    const images = await client
+      .select({
+        id: productImages.id,
+        isPrimary: productImages.isPrimary,
+        sortOrder: productImages.sortOrder,
+        url: uploads.url,
+        originalName: uploads.originalName,
+        fileName: uploads.fileName,
+        mimeType: uploads.mimeType,
+        size: uploads.size,
+      })
+      .from(productImages)
+      .innerJoin(uploads, eq(productImages.uploadId, uploads.id))
+      .where(eq(productImages.masterId, masterId))
+      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
+    // 3. 대표이미지와 부가이미지 분리
+    const primaryImage = images.find((img) => img.isPrimary) || null;
+    const additionalImages = images.filter((img) => !img.isPrimary);
+
+    return {
+      ...master,
+      images: {
+        primary: primaryImage,
+        additional: additionalImages,
+      },
+    };
   }
 
   async getMasterDetail(
