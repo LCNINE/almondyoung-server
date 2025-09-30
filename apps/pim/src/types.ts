@@ -133,7 +133,7 @@ export interface CreateMasterDto {
   name: string;
   description?: string;
   brand?: string;
-  thumbnail?: string; // 썸네일 이미지 URL 추가
+  thumbnail?: string; // 썸네일 이미지 URL (내부 또는 외부)
   categoryId?: string;
   basePrice: number;
   pricingStrategy: PricingStrategyType;
