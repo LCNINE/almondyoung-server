@@ -5,6 +5,7 @@ ENV PORT=9000
 
 # 1) 루트 의존성 설치 (libs/*가 필요로 하는 의존성 포함)
 WORKDIR /app
+RUN apk add --no-cache postgresql-client git openssh-client
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
