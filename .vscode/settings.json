@@ -10,7 +10,7 @@
   "prettier.bracketSpacing": true,
   "prettier.arrowParens": "avoid",
   "prettier.endOfLine": "lf",
-  "files.autoSave": "off",
+  "files.autoSave": "afterDelay",
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },

@@ -300,7 +300,16 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    data: ProductMaster[];
+    data: {
+      id: string;
+      name: string;
+      thumbnail: string | null;
+      basePrice: number | null;
+      membershipPrice: number | null;
+      isMembershipOnly: boolean | null;
+      status: string | null;
+      createdAt: string | null;
+    }[];
     total: number;
     page: number;
     limit: number;
@@ -338,8 +347,19 @@ export class ProductMastersService {
     }
 
     const [{ count: total }] = await countQuery;
+
+    // 목록용으로 필요한 필드만 선택
     const dataQuery = client
-      .select()
+      .select({
+        id: productMasters.id,
+        name: productMasters.name,
+        thumbnail: productMasters.thumbnail,
+        basePrice: productMasters.basePrice,
+        membershipPrice: productMasters.membershipPrice,
+        isMembershipOnly: productMasters.isMembershipOnly,
+        status: productMasters.status,
+        createdAt: productMasters.createdAt,
+      })
       .from(productMasters)
       .orderBy(desc(productMasters.createdAt))
       .limit(limit)
@@ -349,7 +369,13 @@ export class ProductMastersService {
       dataQuery.where(whereClause);
     }
 
-    const data = await dataQuery;
+    const rawData = await dataQuery;
+
+    // Date 객체를 ISO 문자열로 변환
+    const data = rawData.map((item) => ({
+      ...item,
+      createdAt: item.createdAt?.toISOString() || null,
+    }));
 
     return {
       data,

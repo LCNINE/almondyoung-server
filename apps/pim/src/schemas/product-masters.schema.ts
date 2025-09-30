@@ -15,6 +15,7 @@ export const CreateMasterSchema = z.object({
   name: z.string().min(1, '제품명은 필수입니다').describe('제품 마스터 이름'),
   description: z.string().optional().describe('제품 설명'),
   brand: z.string().optional().describe('브랜드명'),
+  thumbnail: z.string().optional().describe('썸네일 이미지 URL'),
   basePrice: z.number().describe('기본 가격'),
   pricingStrategy: PricingStrategySchema.describe('가격 전략'),
   tags: z.array(z.string()).optional().describe('마케팅 태그'),
@@ -219,8 +220,20 @@ export const PricePreviewSchema = z.object({
     .describe('변형별 가격 목록'),
 });
 
+// 상품 목록용 간단한 스키마 (목록 조회용)
+export const MasterListItemSchema = z.object({
+  id: z.string().describe('제품 마스터 ID'),
+  name: z.string().describe('제품 마스터 이름'),
+  thumbnail: z.string().nullable().describe('썸네일 이미지 URL'),
+  basePrice: z.number().nullable().describe('기본 가격'),
+  membershipPrice: z.number().nullable().describe('멤버십 전용 가격'),
+  isMembershipOnly: z.boolean().nullable().describe('멤버십회원 전용 여부'),
+  status: z.string().nullable().describe('제품 상태'),
+  createdAt: z.iso.datetime().nullable().describe('생성일시'),
+});
+
 export const MasterListResponseSchema = z.object({
-  data: z.array(ProductMasterSchema).describe('제품 마스터 목록'),
+  data: z.array(MasterListItemSchema).describe('제품 마스터 목록'),
   page: z.number().int().min(1).describe('현재 페이지 번호'),
   limit: z.number().int().min(1).describe('페이지당 아이템 수'),
   total: z.number().int().min(0).describe('전체 아이템 수'),
@@ -242,6 +255,7 @@ export class ChangePricingStrategyDto extends createZodDto(
 export class ProductMasterDto extends createZodDto(ProductMasterSchema) {}
 export class MasterDetailDto extends createZodDto(MasterDetailSchema) {}
 export class PricePreviewDto extends createZodDto(PricePreviewSchema) {}
+export class MasterListItemDto extends createZodDto(MasterListItemSchema) {}
 export class MasterListResponseDto extends createZodDto(
   MasterListResponseSchema,
 ) {}
