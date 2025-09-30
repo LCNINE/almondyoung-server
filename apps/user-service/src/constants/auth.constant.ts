@@ -1,7 +1,13 @@
-export enum JwtToken {
-  AccessToken = 'access-token',
-  RefreshToken = 'refresh-token',
-  EmailVerificationToken = 'email-verification-token',
-}
+const JWT_ACCESS_TOKEN_EXPIRATION = '30d'; // 액세스 토큰 만료 시간
+const JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION = '5m'; // 비밀번호 재설정 액세스 토큰 만료 시간
+const JWT_REFRESH_TOKEN_EXPIRATION = '2w'; // 일반 로그인 (2주)
+const JWT_REFRESH_TOKEN_LONG_EXPIRATION = '90d'; // 자동 로그인 (90일)
+const JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION = '10m'; // 이메일 인증 액세스 토큰 만료 시간
 
-export const AUTH_INSTANCE_KEY = 'AUTH_INSTANCE';
+export {
+  JWT_ACCESS_TOKEN_EXPIRATION,
+  JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
+  JWT_REFRESH_TOKEN_EXPIRATION,
+  JWT_REFRESH_TOKEN_LONG_EXPIRATION,
+  JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION,
+};

@@ -215,24 +215,27 @@ export class UsersService {
   }
 
   // 사용자 프로필 정보 업데이트
-  async update(
+  async updateMyProfile(
     userId: string,
     updateUserDto: UpdateUserDto,
     tx?: DbTransaction,
   ): Promise<void> {
-    const { username, ...address } = updateUserDto;
+    const {
+      username,
+      nickname,
+      phoneNumber,
+      birthDate,
+      profileImageUrl,
+      ...address
+    } = updateUserDto;
 
     const client = this.getClient(tx);
 
-    if (!username && Object.keys(address).length === 0) {
-      throw new BadRequestException('업데이트할 데이터가 없습니다.');
-    }
-
     try {
-      if (username) {
+      if (username || nickname) {
         await client
           .update(schema.users)
-          .set({ username })
+          .set({ username, nickname })
           .where(eq(schema.users.id, userId));
       }
 
@@ -241,11 +244,17 @@ export class UsersService {
           .insert(schema.profiles)
           .values({
             userId,
-            ...updateUserDto,
+            birthDate: birthDate ? new Date(birthDate as any) : undefined,
+            phoneNumber: phoneNumber,
+            profileImageUrl: profileImageUrl,
+            address,
           })
           .onConflictDoUpdate({
             target: schema.profiles.userId,
             set: {
+              phoneNumber: phoneNumber,
+              profileImageUrl: profileImageUrl,
+              birthDate: birthDate ? new Date(birthDate as any) : undefined,
               address,
             },
           });
