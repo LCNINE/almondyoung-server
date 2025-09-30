@@ -18,7 +18,7 @@ export const channelAdapterSchema = {
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
-export type DbService = PostgresJsDatabase<ChannelAdapterSchema>;
+export type DbService = import('@app/db').DbService<ChannelAdapterSchema>;
 // ===== EVENT LOGS 타입 =====
 export type EventLog = InferSelectModel<typeof eventLogs>;
 export type NewEventLog = InferInsertModel<typeof eventLogs>;
