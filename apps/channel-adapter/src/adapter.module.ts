@@ -36,21 +36,16 @@ import { ConfigModule } from '@nestjs/config';
       },
       schema: { ...schema },
     }),
-    // 운영 환경에서만 실제 EventsModule 활성화
-    ...(process.env.NODE_ENV === 'production'
-      ? [
-          EventsModule.forRoot({
-            kafka: createKafkaConfigFromEnv({
-              KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || 'channel-adapter',
-              KAFKA_BROKERS: process.env.KAFKA_BROKERS || 'localhost:9092',
-              KAFKA_GROUP_ID:
-                process.env.KAFKA_GROUP_ID || 'channel-adapter-group',
-            }),
-            events: CHANNEL_ADAPTER_EVENTS,
-            serviceName: 'channel-adapter',
-          }),
-        ]
-      : []),
+
+    EventsModule.forRoot({
+      kafka: createKafkaConfigFromEnv({
+        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || 'channel-adapter',
+        KAFKA_BROKERS: process.env.KAFKA_BROKERS || 'localhost:9092',
+        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID || 'channel-adapter-group',
+      }),
+      events: CHANNEL_ADAPTER_EVENTS,
+      serviceName: 'channel-adapter',
+    }),
   ],
   controllers: [ChannelAdapterController, SyncStatusController],
   providers: [
