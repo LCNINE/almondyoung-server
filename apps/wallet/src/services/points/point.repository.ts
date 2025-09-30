@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import * as schema from '../../shared/database/schema'; // 질문에 준 Drizzle 스키마 (point_* 테이블)
+import { walletSchema } from '../../shared/database/schema';
 import { DbService } from '@app/db';
 export type PointAction = 'EARN' | 'REDEEM' | 'EARN_CANCEL' | 'REDEEM_CANCEL';
 
@@ -32,7 +33,7 @@ export interface EarnCancelParams {
 
 @Injectable()
 export class PointRepository {
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   /** 파트너 총 잔액 (모든 포인트 합) */
   async getBalance(partnerId: number): Promise<number> {

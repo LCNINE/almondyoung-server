@@ -20,6 +20,7 @@ import { TaxInvoiceService } from '../services/tax-invoice.service';
 import { IdempotencyService } from '../services/idempotency.service';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { runInTransaction } from '../shared/database';
 
 import {
@@ -50,7 +51,7 @@ export class TaxInvoiceController {
   constructor(
     private readonly taxInvoiceService: TaxInvoiceService,
     private readonly idempotencyService: IdempotencyService,
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
   ) {}
 
   /**

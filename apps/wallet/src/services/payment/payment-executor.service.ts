@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
+import { walletSchema } from '../../shared/database/schema';
 import { runInTransaction } from '../../shared/database';
 import { PaymentPolicy } from '../../providers/payment-policy';
 import { ProviderRegistry } from '../../providers/provider-registry';
@@ -23,7 +24,7 @@ export class PaymentExecutorService {
   private readonly logger = new Logger(PaymentExecutorService.name);
 
   constructor(
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
     private readonly registry: ProviderRegistry,
     private readonly profiles: PaymentProfileService,
     private readonly bnplAccountService: BnplAccountService,

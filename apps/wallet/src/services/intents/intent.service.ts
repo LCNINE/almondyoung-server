@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
+import { walletSchema } from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
 
 import { NewPaymentIntent, PaymentIntent } from '../../shared/database/types'; // Drizzle 타입
@@ -19,7 +20,7 @@ import { WalletExecutor } from '../../shared/database';
 export class PaymentIntentService {
   private readonly logger = new Logger(PaymentIntentService.name);
 
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   /**
    * 새로운 결제 의도를 생성하고 DB에 저장합니다.
