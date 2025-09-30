@@ -90,7 +90,7 @@ export class AuthService {
     await this.usersService.assignUserRole(user.id, roleId, tx);
 
     // 유저 프로필 생성
-    await this.usersService.update(
+    await this.usersService.updateMyProfile(
       user.id,
       {
         phoneNumber: phone_number,
