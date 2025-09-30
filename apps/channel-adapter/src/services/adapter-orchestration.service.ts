@@ -12,6 +12,7 @@ import {
   NewEventLog,
   NewSyncHistory,
   NewProcessedEvent,
+  ChannelAdapterSchema,
 } from '../types';
 import { InternalOrderEvent, OrderQuery } from '../types';
 import { ChannelCommand, ChannelQuery } from '../types';

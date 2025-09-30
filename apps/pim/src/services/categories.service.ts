@@ -91,7 +91,9 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.parentId, categoryId));
 
       if (childCategories.length > 0) {
-        throw new Error(`Cannot delete category with child categories. Move or delete children first.`);
+        throw new Error(
+          `Cannot delete category with child categories. Move or delete children first.`,
+        );
       }
 
       const productRelations = await txn
@@ -113,12 +115,16 @@ export class ProductCategoriesService {
           await txn
             .update(pimSchema.productMasterCategories)
             .set({ categoryId: moveProductsTo })
-            .where(eq(pimSchema.productMasterCategories.categoryId, categoryId));
+            .where(
+              eq(pimSchema.productMasterCategories.categoryId, categoryId),
+            );
         } else {
           // 상품은 유지되지만 카테고리 연결만 제거
           await txn
             .delete(pimSchema.productMasterCategories)
-            .where(eq(pimSchema.productMasterCategories.categoryId, categoryId));
+            .where(
+              eq(pimSchema.productMasterCategories.categoryId, categoryId),
+            );
         }
       }
 
@@ -156,14 +162,22 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.parentId, categoryId))
       .orderBy(pimSchema.productCategories.sortOrder);
 
-    const directProductCount = await this.getCategoryProductCount(categoryId, false, tx);
-    const totalProductCount = await this.getCategoryProductCount(categoryId, true, tx);
+    const directProductCount = await this.getCategoryProductCount(
+      categoryId,
+      false,
+      tx,
+    );
+    const totalProductCount = await this.getCategoryProductCount(
+      categoryId,
+      true,
+      tx,
+    );
 
     const responseDto: CategoryDetailResponseDto = {
       ...category,
       children: children,
       productCount: directProductCount,
-      totalProductCount: totalProductCount
+      totalProductCount: totalProductCount,
     };
     return responseDto;
   }
@@ -192,7 +206,10 @@ export class ProductCategoriesService {
       .select()
       .from(pimSchema.productCategories)
       .where(eq(pimSchema.productCategories.isActive, true))
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
+      .orderBy(
+        pimSchema.productCategories.level,
+        pimSchema.productCategories.sortOrder,
+      );
 
     // Build tree structure
     const categoryMap = new Map<string, CategoryTreeNodeDto>();
@@ -203,7 +220,7 @@ export class ProductCategoriesService {
       if (maxDepth === undefined || category.level <= maxDepth) {
         categoryMap.set(category.id, {
           ...category,
-          children: []
+          children: [],
         });
       }
     }
@@ -211,10 +228,10 @@ export class ProductCategoriesService {
     // Second pass: build tree
     for (const category of allCategories) {
       if (maxDepth !== undefined && category.level > maxDepth) continue;
-      
+
       const categoryNode = categoryMap.get(category.id);
       if (!categoryNode) continue;
-      
+
       if (!category.parentId) {
         rootCategories.push(categoryNode);
       } else {
@@ -228,7 +245,7 @@ export class ProductCategoriesService {
     return {
       categories: rootCategories,
       totalCount: allCategories.length,
-      maxDepth: maxDepth || Math.max(...allCategories.map(c => c.level))
+      maxDepth: maxDepth || Math.max(...allCategories.map((c) => c.level)),
     };
   }
 
@@ -275,19 +292,21 @@ export class ProductCategoriesService {
         if (parentResult.length === 0) {
           throw new Error(`Parent category not found: ${newParentId}`);
         }
-        
+
         newParentCategory = parentResult[0];
 
         // 순환 참조 확인 - 새 부모가 현재 카테고리의 자식인지 검사
         if (await this.checkCircularReference(categoryId, newParentId, txn)) {
-          throw new Error('Circular reference detected: Cannot move category to its own descendant');
+          throw new Error(
+            'Circular reference detected: Cannot move category to its own descendant',
+          );
         }
       }
 
       const newLevel = newParentCategory ? newParentCategory.level + 1 : 0;
-      const newPath = newParentCategory ? 
-        `${newParentCategory.path}/${categoryId}` : 
-        categoryId;
+      const newPath = newParentCategory
+        ? `${newParentCategory.path}/${categoryId}`
+        : categoryId;
 
       const [updatedCategory] = await txn
         .update(pimSchema.productCategories)
@@ -295,7 +314,7 @@ export class ProductCategoriesService {
           parentId: newParentId || null,
           level: newLevel,
           path: newPath,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -307,16 +326,19 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    const result = tx ? 
-      await executeMove(tx) : 
-      await this.db.db.transaction(executeMove);
+    const result = tx
+      ? await executeMove(tx)
+      : await this.db.db.transaction(executeMove);
 
     const responseDto: CategoryResponseDto = result;
     return responseDto;
   }
 
   // 자손들의 경로와 레벨을 재계산하는 헬퍼 메서드
-  private async _updateDescendantPaths(categoryId: string, txn: any): Promise<void> {
+  private async _updateDescendantPaths(
+    categoryId: string,
+    txn: any,
+  ): Promise<void> {
     const [currentCategory] = await txn
       .select()
       .from(pimSchema.productCategories)
@@ -338,7 +360,7 @@ export class ProductCategoriesService {
         .set({
           level: newLevel,
           path: newPath,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(pimSchema.productCategories.id, child.id));
 
@@ -368,7 +390,7 @@ export class ProductCategoriesService {
 
     while (currentCategory) {
       path.unshift(currentCategory);
-      
+
       if (currentCategory.parentId) {
         const [parent] = await client
           .select()
@@ -382,13 +404,13 @@ export class ProductCategoriesService {
 
     return {
       categoryId,
-      path: path.map(cat => ({
+      path: path.map((cat) => ({
         id: cat.id,
         name: cat.name,
         slug: cat.slug,
-        level: cat.level
+        level: cat.level,
       })),
-      fullPath: path.map(cat => cat.name).join(' / ')
+      fullPath: path.map((cat) => cat.name).join(' / '),
     };
   }
 
@@ -399,7 +421,9 @@ export class ProductCategoriesService {
     const client = this.getClient(tx);
 
     const result = await client
-      .select({ maxLevel: sql<number>`MAX(${pimSchema.productCategories.level})` })
+      .select({
+        maxLevel: sql<number>`MAX(${pimSchema.productCategories.level})`,
+      })
       .from(pimSchema.productCategories)
       .where(like(pimSchema.productCategories.path, `%/${categoryId}/%`));
 
@@ -431,8 +455,10 @@ export class ProductCategoriesService {
       throw new Error(`Category not found: ${categoryId}`);
     }
 
-    const pathIds = category.path.split('/').filter(id => id && id !== categoryId);
-    
+    const pathIds = category.path
+      .split('/')
+      .filter((id) => id && id !== categoryId);
+
     if (pathIds.length === 0) {
       return [];
     }
@@ -469,10 +495,13 @@ export class ProductCategoriesService {
       .where(
         and(
           like(pimSchema.productCategories.path, `${category.path}/%`),
-          sql`${pimSchema.productCategories.id} != ${categoryId}`
-        )
+          sql`${pimSchema.productCategories.id} != ${categoryId}`,
+        ),
       )
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
+      .orderBy(
+        pimSchema.productCategories.level,
+        pimSchema.productCategories.sortOrder,
+      );
 
     const responseDto: CategoryResponseDto[] = descendants;
     return responseDto;
@@ -497,15 +526,15 @@ export class ProductCategoriesService {
     }
 
     let categoryIds = [categoryId];
-    
+
     if (includeSubcategories) {
       // 하위 카테고리들도 포함
       const descendants = await client
         .select({ id: pimSchema.productCategories.id })
         .from(pimSchema.productCategories)
         .where(like(pimSchema.productCategories.path, `${category.path}/%`));
-      
-      categoryIds = [...categoryIds, ...descendants.map(d => d.id)];
+
+      categoryIds = [...categoryIds, ...descendants.map((d) => d.id)];
     }
 
     // 해당 카테고리(들)의 상품들 조회
@@ -515,6 +544,7 @@ export class ProductCategoriesService {
         name: pimSchema.productMasters.name,
         description: pimSchema.productMasters.description,
         brand: pimSchema.productMasters.brand,
+        thumbnail: pimSchema.productMasters.thumbnail, // thumbnail 필드 추가
         basePrice: pimSchema.productMasters.basePrice,
         pricingStrategy: pimSchema.productMasters.pricingStrategy,
         tags: pimSchema.productMasters.tags,
@@ -524,6 +554,10 @@ export class ProductCategoriesService {
         seoDescription: pimSchema.productMasters.seoDescription,
         seoKeywords: pimSchema.productMasters.seoKeywords,
         status: pimSchema.productMasters.status,
+        isWholesaleOnly: pimSchema.productMasters.isWholesaleOnly,
+        isMembershipOnly: pimSchema.productMasters.isMembershipOnly,
+        membershipPrice: pimSchema.productMasters.membershipPrice,
+        wholesalePrice: pimSchema.productMasters.wholesalePrice,
         createdAt: pimSchema.productMasters.createdAt,
         updatedAt: pimSchema.productMasters.updatedAt,
         createdBy: pimSchema.productMasters.createdBy,
@@ -532,7 +566,10 @@ export class ProductCategoriesService {
       .from(pimSchema.productMasters)
       .innerJoin(
         pimSchema.productMasterCategories,
-        eq(pimSchema.productMasters.id, pimSchema.productMasterCategories.masterId)
+        eq(
+          pimSchema.productMasters.id,
+          pimSchema.productMasterCategories.masterId,
+        ),
       )
       .where(inArray(pimSchema.productMasterCategories.categoryId, categoryIds))
       .orderBy(pimSchema.productMasters.name);
@@ -558,26 +595,33 @@ export class ProductCategoriesService {
     }
 
     let categoryIds = [categoryId];
-    
+
     if (includeSubcategories) {
       // 하위 카테고리들도 포함
       const descendants = await client
         .select({ id: pimSchema.productCategories.id })
         .from(pimSchema.productCategories)
         .where(like(pimSchema.productCategories.path, `${category.path}/%`));
-      
-      categoryIds = [...categoryIds, ...descendants.map(d => d.id)];
+
+      categoryIds = [...categoryIds, ...descendants.map((d) => d.id)];
     }
 
     // 상품 수 카운트 (중복 제거를 위해 DISTINCT 사용)
     const [result] = await client
-      .select({ count: sql<number>`COUNT(DISTINCT ${pimSchema.productMasters.id})` })
+      .select({
+        count: sql<number>`COUNT(DISTINCT ${pimSchema.productMasters.id})`,
+      })
       .from(pimSchema.productMasters)
       .innerJoin(
         pimSchema.productMasterCategories,
-        eq(pimSchema.productMasters.id, pimSchema.productMasterCategories.masterId)
+        eq(
+          pimSchema.productMasters.id,
+          pimSchema.productMasterCategories.masterId,
+        ),
       )
-      .where(inArray(pimSchema.productMasterCategories.categoryId, categoryIds));
+      .where(
+        inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
+      );
 
     return result.count;
   }
@@ -610,8 +654,10 @@ export class ProductCategoriesService {
         .from(pimSchema.productMasters)
         .where(inArray(pimSchema.productMasters.id, productIds));
 
-      const existingProductIds = existingProducts.map(p => p.id);
-      const missingProductIds = productIds.filter(id => !existingProductIds.includes(id));
+      const existingProductIds = existingProducts.map((p) => p.id);
+      const missingProductIds = productIds.filter(
+        (id) => !existingProductIds.includes(id),
+      );
 
       if (missingProductIds.length > 0) {
         throw new Error(`Products not found: ${missingProductIds.join(', ')}`);
@@ -623,16 +669,14 @@ export class ProductCategoriesService {
         .where(inArray(pimSchema.productMasterCategories.masterId, productIds));
 
       // 4. 새 카테고리 관계 생성
-      const newRelations = productIds.map(productId => ({
+      const newRelations = productIds.map((productId) => ({
         masterId: productId,
         categoryId: categoryId,
         isPrimary: true, // 기본값으로 주 카테고리로 설정
         createdAt: new Date(),
       }));
 
-      await txn
-        .insert(pimSchema.productMasterCategories)
-        .values(newRelations);
+      await txn.insert(pimSchema.productMasterCategories).values(newRelations);
     };
 
     // 트랜잭션 처리
@@ -659,8 +703,8 @@ export class ProductCategoriesService {
     let whereConditions = [
       or(
         like(pimSchema.productCategories.name, searchTerm),
-        like(pimSchema.productCategories.description, searchTerm)
-      )
+        like(pimSchema.productCategories.description, searchTerm),
+      ),
     ];
 
     // 부모 ID가 지정된 경우 해당 부모 하위에서만 검색
@@ -679,8 +723,8 @@ export class ProductCategoriesService {
       whereConditions.push(
         or(
           eq(pimSchema.productCategories.parentId, parentId),
-          like(pimSchema.productCategories.path, `${parentCategory.path}/%`)
-        )
+          like(pimSchema.productCategories.path, `${parentCategory.path}/%`),
+        ),
       );
     }
 
@@ -688,7 +732,10 @@ export class ProductCategoriesService {
       .select()
       .from(pimSchema.productCategories)
       .where(and(...whereConditions))
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.name);
+      .orderBy(
+        pimSchema.productCategories.level,
+        pimSchema.productCategories.name,
+      );
 
     const responseDto: CategoryResponseDto[] = categories;
     return responseDto;
@@ -708,7 +755,10 @@ export class ProductCategoriesService {
       .select()
       .from(pimSchema.productCategories)
       .where(eq(pimSchema.productCategories.level, level))
-      .orderBy(pimSchema.productCategories.sortOrder, pimSchema.productCategories.name);
+      .orderBy(
+        pimSchema.productCategories.sortOrder,
+        pimSchema.productCategories.name,
+      );
 
     const responseDto: CategoryResponseDto[] = categories;
     return responseDto;
@@ -748,21 +798,23 @@ export class ProductCategoriesService {
             inArray(pimSchema.productCategories.id, categoryIds),
             parentId
               ? eq(pimSchema.productCategories.parentId, parentId)
-              : isNull(pimSchema.productCategories.parentId)
-          )
+              : isNull(pimSchema.productCategories.parentId),
+          ),
         );
 
       if (existingCategories.length !== categoryIds.length) {
-        throw new Error('Some categories do not belong to the specified parent');
+        throw new Error(
+          'Some categories do not belong to the specified parent',
+        );
       }
 
       // 3. sortOrder 업데이트
       for (let i = 0; i < categoryIds.length; i++) {
         await txn
           .update(pimSchema.productCategories)
-          .set({ 
+          .set({
             sortOrder: i,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(pimSchema.productCategories.id, categoryIds[i]));
       }
@@ -800,9 +852,9 @@ export class ProductCategoriesService {
     // sortOrder 업데이트
     const [updatedCategory] = await client
       .update(pimSchema.productCategories)
-      .set({ 
+      .set({
         sortOrder: sortOrder,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       })
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
@@ -885,8 +937,10 @@ export class ProductCategoriesService {
     }
 
     // newParent의 path가 currentCategory의 path로 시작하는지 확인 (자손 관계)
-    return newParent.path.startsWith(currentCategory.path + '/') || 
-           newParent.path === currentCategory.path;
+    return (
+      newParent.path.startsWith(currentCategory.path + '/') ||
+      newParent.path === currentCategory.path
+    );
   }
 
   async rebuildCategoryPaths(tx?: DbTransaction): Promise<void> {
@@ -923,7 +977,7 @@ export class ProductCategoriesService {
           .set({
             path: newPath,
             level: newLevel,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(pimSchema.productCategories.id, category.id));
       }

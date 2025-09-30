@@ -12,4 +12,7 @@ export interface CategoryResponseDto {
   updatedAt: Date;
   childCount?: number;
   productCount?: number;
+  thumbnail?: string | null;
+  basePrice?: string | null;
+  pricingStrategy?: number;
 }

@@ -5,11 +5,11 @@ import {
   NewSyncStatus,
   SyncStatus,
   UpdateSyncStatus,
+  ChannelAdapterSchema,
 } from '../types';
-import { DbService } from '@app/db';
 import { eq, and } from 'drizzle-orm';
-import * as schema from '../schema';
 import { channelAdapterSchema } from '../schema';
+import { DbService } from '@app/db';
 
 /**
  * 채널별 동기화 상태 및 통계 관리 서비스 (PostgreSQL 기반)

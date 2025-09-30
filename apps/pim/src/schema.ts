@@ -13,8 +13,9 @@ import {
   index,
   foreignKey,
 } from 'drizzle-orm/pg-core';
+import { eq, sql } from 'drizzle-orm';
 
-import { relations, sql } from 'drizzle-orm';
+import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 // ===== 1. PRODUCT CATEGORIES =====
 export const productCategories = pgTable(
@@ -26,6 +27,7 @@ export const productCategories = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     slug: varchar('slug', { length: 255 }).notNull().unique(),
+    imageUrl: text('image_url'), // 카테고리 이미지 URL
     parentId: uuid('parent_id'),
     level: integer('level').notNull().default(0),
     path: varchar('path', { length: 1000 }).notNull().default(''),
@@ -62,6 +64,7 @@ export const productMasters = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
+    thumbnail: text('thumbnail'), // 썸네일 이미지 URL
     // categoryId removed - now using many-to-many relationship via productMasterCategories
     basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
     pricingStrategy: varchar('pricing_strategy', { length: 50 })
@@ -75,6 +78,12 @@ export const productMasters = pgTable(
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
     status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
+    // 구매제한 관련 필드들
+    isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
+    isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
+    // 특별 가격 필드들
+    membershipPrice: bigint('membership_price', { mode: 'number' }), // 멤버십 전용 가격
+    wholesalePrice: bigint('wholesale_price', { mode: 'number' }), // 도매 전용 가격
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
     createdBy: uuid('created_by'),
@@ -326,6 +335,81 @@ export const variantPrices = pgTable(
   ],
 );
 
+// ===== 11. UPLOADS (파일 업로드) =====
+export const uploads = pgTable(
+  'uploads',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    originalName: varchar('original_name', { length: 255 }).notNull(),
+    mimeType: varchar('mime_type', { length: 100 }).notNull(),
+    filePath: text('file_path').notNull(), // 실제 파일 저장 경로
+    url: text('url').notNull(), // 접근 가능한 URL
+    size: integer('size'), // 파일 사이즈 (bytes)
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_uploads_created_at').on(table.createdAt),
+    index('idx_uploads_mime_type').on(table.mimeType),
+  ],
+);
+
+// ===== 12. PRODUCT IMAGES (상품 이미지) =====
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    uploadId: uuid('upload_id')
+      .notNull()
+      .references(() => uploads.id, { onDelete: 'cascade' }),
+    isPrimary: boolean('is_primary').default(false), // 대표이미지 여부
+    sortOrder: integer('sort_order').default(0), // 부가이미지 순서 (1-5)
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_product_images_master').on(table.masterId),
+    index('idx_product_images_primary').on(table.masterId, table.isPrimary),
+    index('idx_product_images_sort').on(table.masterId, table.sortOrder),
+    uniqueIndex('unique_product_primary_image')
+      .on(table.masterId)
+      .where(sql`${table.isPrimary} = true`),
+  ],
+);
+
+// 추후 타임세일 구현을 위한 스키마. 10월 1일 이후 구현 예정 (혹은 메두사에 책임 이관)
+export const promotions = pgTable('promotions', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  startAt: timestamp('start_at').notNull(),
+  endAt: timestamp('end_at').notNull(),
+  discountType: varchar('discount_type', { length: 20 }).notNull(), // 'percentage' | 'fixed'
+  discountValue: integer('discount_value').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const promotionProducts = pgTable('promotion_products', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  promotionId: uuid('promotion_id')
+    .notNull()
+    .references(() => promotions.id, { onDelete: 'cascade' }),
+  masterId: uuid('master_id')
+    .notNull()
+    .references(() => productMasters.id, { onDelete: 'cascade' }),
+  variantId: uuid('variant_id').references(() => productVariants.id),
+});
+
 // PIM 전체 스키마 통합
 export const pimSchema = {
   productCategories,
@@ -339,6 +423,8 @@ export const pimSchema = {
   channelProducts,
   optionValuePrices,
   variantPrices,
+  uploads,
+  productImages,
 };
 
 // ===== RELATIONS =====

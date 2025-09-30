@@ -1,78 +1,127 @@
 // PIM 마이크로서비스의 중앙 집중화된 타입 정의
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { 
-  productCategories, 
+import {
+  productCategories,
   productMasters,
   productMasterCategories,
-  productOptionGroups, 
-  productOptionValues, 
-  productVariants, 
-  variantOptionValues, 
-  salesChannels, 
+  productOptionGroups,
+  productOptionValues,
+  productVariants,
+  variantOptionValues,
+  salesChannels,
   channelProducts,
   optionValuePrices,
   variantPrices,
-  type PimSchema 
+  uploads,
+  productImages,
+  type PimSchema,
 } from './schema';
 
 // ===== TRANSACTION 타입 =====
 export type DbTransaction = PostgresJsDatabase<PimSchema>;
 
 // ===== PRODUCT CATEGORIES 타입 =====
+
 export type ProductCategory = InferSelectModel<typeof productCategories>;
 export type NewProductCategory = InferInsertModel<typeof productCategories>;
-export type UpdateProductCategory = Partial<Omit<NewProductCategory, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateProductCategory = Partial<
+  Omit<NewProductCategory, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== PRODUCT MASTERS 타입 =====
 export type ProductMaster = InferSelectModel<typeof productMasters>;
 export type NewProductMaster = InferInsertModel<typeof productMasters>;
-export type UpdateProductMaster = Partial<Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateProductMaster = Partial<
+  Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
 
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
-export type ProductMasterCategory = InferSelectModel<typeof productMasterCategories>;
-export type NewProductMasterCategory = InferInsertModel<typeof productMasterCategories>;
-export type UpdateProductMasterCategory = Partial<Omit<NewProductMasterCategory, 'id' | 'createdAt'>>;
+export type ProductMasterCategory = InferSelectModel<
+  typeof productMasterCategories
+>;
+export type NewProductMasterCategory = InferInsertModel<
+  typeof productMasterCategories
+>;
+export type UpdateProductMasterCategory = Partial<
+  Omit<NewProductMasterCategory, 'id' | 'createdAt'>
+>;
 
 // ===== PRODUCT OPTION GROUPS 타입 =====
 export type ProductOptionGroup = InferSelectModel<typeof productOptionGroups>;
-export type NewProductOptionGroup = InferInsertModel<typeof productOptionGroups>;
-export type UpdateProductOptionGroup = Partial<Omit<NewProductOptionGroup, 'id' | 'createdAt' | 'updatedAt'>>;
+export type NewProductOptionGroup = InferInsertModel<
+  typeof productOptionGroups
+>;
+export type UpdateProductOptionGroup = Partial<
+  Omit<NewProductOptionGroup, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== PRODUCT OPTION VALUES 타입 =====
 export type ProductOptionValue = InferSelectModel<typeof productOptionValues>;
-export type NewProductOptionValue = InferInsertModel<typeof productOptionValues>;
-export type UpdateProductOptionValue = Partial<Omit<NewProductOptionValue, 'id' | 'createdAt' | 'updatedAt'>>;
+export type NewProductOptionValue = InferInsertModel<
+  typeof productOptionValues
+>;
+export type UpdateProductOptionValue = Partial<
+  Omit<NewProductOptionValue, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== PRODUCT VARIANTS 타입 =====
 export type ProductVariant = InferSelectModel<typeof productVariants>;
 export type NewProductVariant = InferInsertModel<typeof productVariants>;
-export type UpdateProductVariant = Partial<Omit<NewProductVariant, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateProductVariant = Partial<
+  Omit<NewProductVariant, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== VARIANT OPTION VALUES 타입 =====
 export type VariantOptionValue = InferSelectModel<typeof variantOptionValues>;
-export type NewVariantOptionValue = InferInsertModel<typeof variantOptionValues>;
-export type UpdateVariantOptionValue = Partial<Omit<NewVariantOptionValue, 'id' | 'createdAt' | 'updatedAt'>>;
+export type NewVariantOptionValue = InferInsertModel<
+  typeof variantOptionValues
+>;
+export type UpdateVariantOptionValue = Partial<
+  Omit<NewVariantOptionValue, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== SALES CHANNELS 타입 =====
 export type SalesChannel = InferSelectModel<typeof salesChannels>;
 export type NewSalesChannel = InferInsertModel<typeof salesChannels>;
-export type UpdateSalesChannel = Partial<Omit<NewSalesChannel, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateSalesChannel = Partial<
+  Omit<NewSalesChannel, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== CHANNEL PRODUCTS 타입 =====
 export type ChannelProduct = InferSelectModel<typeof channelProducts>;
 export type NewChannelProduct = InferInsertModel<typeof channelProducts>;
-export type UpdateChannelProduct = Partial<Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateChannelProduct = Partial<
+  Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== OPTION VALUE PRICES 타입 =====
 export type OptionValuePrice = InferSelectModel<typeof optionValuePrices>;
 export type NewOptionValuePrice = InferInsertModel<typeof optionValuePrices>;
-export type UpdateOptionValuePrice = Partial<Omit<NewOptionValuePrice, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateOptionValuePrice = Partial<
+  Omit<NewOptionValuePrice, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== VARIANT PRICES 타입 =====
 export type VariantPrice = InferSelectModel<typeof variantPrices>;
 export type NewVariantPrice = InferInsertModel<typeof variantPrices>;
-export type UpdateVariantPrice = Partial<Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>>;
+export type UpdateVariantPrice = Partial<
+  Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== UPLOADS 타입 =====
+export type Upload = InferSelectModel<typeof uploads>;
+export type NewUpload = InferInsertModel<typeof uploads>;
+export type UpdateUpload = Partial<Omit<NewUpload, 'id' | 'createdAt'>>;
+
+// ===== PRODUCT IMAGES 타입 =====
+export type ProductImage = InferSelectModel<typeof productImages>;
+export type NewProductImage = InferInsertModel<typeof productImages>;
+export type UpdateProductImage = Partial<
+  Omit<NewProductImage, 'id' | 'createdAt'>
+>;
 
 // ===== 가격 전략 관련 타입 =====
 export type PricingStrategyType = 'option_based' | 'variant_based';
@@ -84,6 +133,7 @@ export interface CreateMasterDto {
   name: string;
   description?: string;
   brand?: string;
+  thumbnail?: string; // 썸네일 이미지 URL 추가
   categoryId?: string;
   basePrice: number;
   pricingStrategy: PricingStrategyType;
@@ -93,7 +143,14 @@ export interface CreateMasterDto {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string[];
-  
+
+  // 구매제한 필드들
+  isWholesaleOnly?: boolean;
+  isMembershipOnly?: boolean;
+  // 특별 가격 필드들
+  membershipPrice?: number;
+  wholesalePrice?: number;
+
   // 옵션 정보
   optionGroups?: {
     name: string;
@@ -106,12 +163,24 @@ export interface CreateMasterDto {
       price?: number; // option_based 전략용
     }[];
   }[];
-  
+
   // variant_based 전략용 품목별 가격
   variantPrices?: Record<string, number>; // 옵션 조합별 가격
 }
 
-// Product Master 상세 응답 DTO
+// Product Master 목록용 DTO (간단한 정보만)
+export interface MasterListItemDto {
+  id: string;
+  name: string;
+  thumbnail?: string;
+  basePrice: number;
+  membershipPrice?: number;
+  isMembershipOnly: boolean;
+  status: string;
+  createdAt: Date;
+}
+
+// Product Master 상세 응답 DTO (모든 정보 포함)
 export interface MasterDetailDto extends ProductMaster {
   optionGroups: (ProductOptionGroup & {
     values: ProductOptionValue[];
