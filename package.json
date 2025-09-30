@@ -79,6 +79,7 @@
     "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
     
+    "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
     "db:push:channel-adapter": "drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
