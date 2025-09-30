@@ -77,6 +77,8 @@ export const productMasters = pgTable(
     seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
+    // 고지훈 임시 시연용수정 - 상품 상세설명 (HTML 에디터용)
+    descriptionHtml: text('description_html'), // 상품 상세설명 HTML (단일 필드)
     status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
     // 구매제한 관련 필드들
     isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
