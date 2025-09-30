@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {
@@ -32,42 +32,49 @@ export class LocationService {
         return this.dbService.db;
     }
 
-    // 시스템 로케이션 존재 보장 (멱등)
-    async ensureSystemLocations(warehouseId: string) {
-        const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS) as SystemLocationRole[];
-
-        for (const role of roles) {
-            const [exists] = await this.db
-                .select()
-                .from(wmsTables.locations)
-                .where(
-                    and(
-                        eq(wmsTables.locations.warehouseId, warehouseId),
-                        eq(wmsTables.locations.systemRole as any, role as any)
-                    )
-                )
-                .limit(1);
-
-            if (!exists) {
-                const def = SYSTEM_LOCATION_DEFAULTS[role];
-                await this.db.insert(wmsTables.locations).values({
-                    warehouseId,
-                    code: def.code,
-                    displayName: def.displayName,
-                    locationType: 'zone',
-                    rackId: null,
-                    binIdentifier: null,
-                    isSystem: true,
-                    systemRole: role as any,
-                    isActive: true,
-                });
-                this.logger.log(`System location created for ${warehouseId}: ${role}`);
-            }
-        }
+    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
+        return tx ? fn(tx) : this.db.transaction(fn);
     }
 
-    async getSystemLocationByRole(warehouseId: string, role: SystemLocationRole) {
-        const loc = await this.db.query.locations.findFirst({
+    // 시스템 로케이션 존재 보장 (멱등)
+    async ensureSystemLocations(warehouseId: string, tx?: DbTx) {
+        const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS) as SystemLocationRole[];
+
+        await this.inTx(async (trx) => {
+            for (const role of roles) {
+                const [exists] = await trx
+                    .select()
+                    .from(wmsTables.locations)
+                    .where(
+                        and(
+                            eq(wmsTables.locations.warehouseId, warehouseId),
+                            eq(wmsTables.locations.systemRole as any, role as any)
+                        )
+                    )
+                    .limit(1);
+
+                if (!exists) {
+                    const def = SYSTEM_LOCATION_DEFAULTS[role];
+                    await trx.insert(wmsTables.locations).values({
+                        warehouseId,
+                        code: def.code,
+                        displayName: def.displayName,
+                        locationType: 'zone',
+                        rackId: null,
+                        binIdentifier: null,
+                        isSystem: true,
+                        systemRole: role as any,
+                        isActive: true,
+                    });
+                    this.logger.log(`System location created for ${warehouseId}: ${role}`);
+                }
+            }
+        }, tx);
+    }
+
+    async getSystemLocationByRole(warehouseId: string, role: SystemLocationRole, tx?: DbTx) {
+        const db = tx ?? this.db;
+        const loc = await db.query.locations.findFirst({
             where: and(
                 eq(wmsTables.locations.warehouseId, warehouseId),
                 eq(wmsTables.locations.systemRole as any, role as any)

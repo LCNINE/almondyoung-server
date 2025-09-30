@@ -35,8 +35,7 @@ export class FileService implements OnModuleInit {
     const secretAccessKey = this.configService.getOrThrow<string>(
       'AWS_SECRET_ACCESS_KEY',
     );
-    this.bucketName =
-      this.configService.getOrThrow<string>('AWS_S3_BUCKET_NAME');
+    this.bucketName = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
 
     this.s3Client = new S3Client({
       region: this.region,

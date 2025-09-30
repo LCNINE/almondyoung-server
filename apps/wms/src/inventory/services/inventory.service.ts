@@ -40,14 +40,6 @@ export class InventoryService implements OnModuleInit {
 
     async onModuleInit() {
         await this._ensureDefaultWarehousesExist();
-        try {
-            const allWarehouses = await this.findAllWarehouses();
-            for (const wh of allWarehouses) {
-                await this.locationService.ensureSystemLocations(wh.id);
-            }
-        } catch (e) {
-            this.logger.error('시스템 로케이션 프로비저닝 중 오류', e);
-        }
     }
 
     // ****************************************************************
@@ -648,16 +640,18 @@ export class InventoryService implements OnModuleInit {
     // ****************************************************************
 
     async createWarehouse(createWarehouseDto: CreateWarehouseDto, tx?: DbTx) {
-        const [newWarehouse] = await this.inTx(async (trx) => trx.insert(wmsTables.warehouses).values({
-            name: createWarehouseDto.name,
-            type: createWarehouseDto.type || 'domestic',
-            location: createWarehouseDto.location,
-        }).returning(), tx);
+        return this.inTx(async (trx) => {
+            const [newWarehouse] = await trx.insert(wmsTables.warehouses).values({
+                name: createWarehouseDto.name,
+                type: createWarehouseDto.type || 'domestic',
+                location: createWarehouseDto.location,
+            }).returning();
 
-        this.logger.log(`새 창고 생성: ${newWarehouse.name} (ID: ${newWarehouse.id})`);
-        // 창고 생성 직후 시스템 로케이션 보장
-        await this.locationService.ensureSystemLocations(newWarehouse.id);
-        return newWarehouse;
+            this.logger.log(`새 창고 생성: ${newWarehouse.name} (ID: ${newWarehouse.id})`);
+            // 창고 생성 직후 시스템 로케이션 보장 (동일 트랜잭션)
+            await this.locationService.ensureSystemLocations(newWarehouse.id, trx);
+            return newWarehouse;
+        }, tx);
     }
 
     async findAllWarehouses(tx?: DbTx) {
