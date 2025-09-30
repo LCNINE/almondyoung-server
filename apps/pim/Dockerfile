@@ -36,6 +36,10 @@ COPY --from=builder /app/libs ./libs
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
+
+# 이미지 업로드 디렉토리 생성 및 권한 설정 고지훈 임시수정
+RUN mkdir -p /app/images && chown -R nestjs:nodejs /app/images
+
 USER nestjs
 
 ENV NODE_ENV=production
