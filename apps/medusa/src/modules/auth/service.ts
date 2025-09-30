@@ -87,20 +87,14 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
-      if (
-        process.env.NODE_ENV !== 'production' &&
-        !process.env.JWT_VERIFICATION_TOKEN_SECRET
-      ) {
+      if (process.env.NODE_ENV !== 'production' && !process.env.AUTH_SECRET) {
         return {
           success: false,
-          error: 'JWT_VERIFICATION_TOKEN_SECRET is not defined',
+          error: 'AUTH_SECRET is not defined',
         };
       }
 
-      const payload = jwtVerify(
-        almond_token,
-        process.env.JWT_VERIFICATION_TOKEN_SECRET!,
-      );
+      const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({
