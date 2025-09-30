@@ -43,6 +43,8 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     ports:
       - "3020:3020"
+    volumes:
+      - pim-images:/app/images
     env_file:
       - .env
     restart: unless-stopped
@@ -167,6 +169,10 @@ services:
       - .env
     restart: unless-stopped
     profiles: ["full"]
+
+volumes:
+  pim-images:
+    driver: local
 
 networks:
   default:
