@@ -16,11 +16,19 @@ export class JwtRefreshStrategy extends PassportStrategy(
     private readonly authService: AuthService,
     private usersService: UsersService,
   ) {
+    const refreshSecret = configService.get<string>('JWT_REFRESH');
+
+    if (!refreshSecret) {
+      throw new Error(
+        'JWT_REFRESH 환경 변수가 설정되지 않았습니다. JWT Refresh Token을 위해 이 환경 변수를 설정하세요.'
+      );
+    }
+
     super({
       jwtFromRequest: (req: FastifyRequest) => {
         return req.cookies?.refreshToken || null;
       },
-      secretOrKey: configService.get<string>('JWT_REFRESH')!,
+      secretOrKey: refreshSecret,
       passReqToCallback: true,
     });
   }
