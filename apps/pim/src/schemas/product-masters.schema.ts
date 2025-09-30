@@ -15,7 +15,20 @@ export const CreateMasterSchema = z.object({
   name: z.string().min(1, '제품명은 필수입니다').describe('제품 마스터 이름'),
   description: z.string().optional().describe('제품 설명'),
   brand: z.string().optional().describe('브랜드명'),
-  thumbnail: z.string().optional().describe('썸네일 이미지 URL'),
+  thumbnail: z
+    .string()
+    .optional()
+    .describe('썸네일 이미지 URL (내부 또는 외부)'),
+  thumbnailUploadId: z
+    .string()
+    .uuid()
+    .optional()
+    .describe('썸네일 이미지 업로드 ID'),
+  additionalImageUploadIds: z
+    .array(z.string().uuid())
+    .max(5, '부가 이미지는 최대 5개까지 가능합니다')
+    .optional()
+    .describe('부가 이미지 업로드 ID 배열 (최대 5개)'),
   basePrice: z.number().describe('기본 가격'),
   pricingStrategy: PricingStrategySchema.describe('가격 전략'),
   tags: z.array(z.string()).optional().describe('마케팅 태그'),
@@ -27,6 +40,16 @@ export const CreateMasterSchema = z.object({
   seoTitle: z.string().optional().describe('SEO 제목'),
   seoDescription: z.string().optional().describe('SEO 설명'),
   seoKeywords: z.array(z.string()).optional().describe('SEO 키워드'),
+
+  descriptionHtml: z
+    .string()
+    .optional()
+    .describe('상품 상세설명 HTML'),
+  thumbnailUrl: z
+    .string()
+    .url()
+    .optional()
+    .describe('썸네일 이미지 URL (외부 URL 직접 사용)'),
 
   // 구매제한 필드들
   isWholesaleOnly: z.boolean().default(false).describe('도매회원 전용 여부'),

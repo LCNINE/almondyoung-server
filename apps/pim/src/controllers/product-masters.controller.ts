@@ -42,13 +42,13 @@ export class ProductMastersController {
 
   @Post()
   @ApiOperation({
-    summary: '제품 마스터 생성',
-    description: '새로운 제품 마스터를 생성합니다.',
+    summary: '제품 마스터 생성 (최적화됨)',
+    description: '새로운 제품 마스터를 생성합니다. 상품 마스터는 즉시 생성되고, 옵션 처리는 백그라운드에서 비동기로 처리됩니다.',
   })
   @ApiBody({ type: CreateMasterDto, description: '제품 마스터 생성 정보' })
   @ApiResponse({
     status: 201,
-    description: '제품 마스터 생성 성공',
+    description: '제품 마스터 생성 성공 (옵션 처리는 백그라운드에서 진행)',
     type: ProductMasterDto,
   })
   @ApiResponse({
@@ -69,14 +69,18 @@ export class ProductMastersController {
         throw new HttpException('Validation failed', HttpStatus.BAD_REQUEST);
       }
 
+      // 상품 마스터 생성 (옵션은 백그라운드에서 처리)
       const master =
         await this.productMastersService.createMaster(createMasterDto);
 
-      return master as unknown as ProductMasterDto;
+      // 즉시 응답 반환 (옵션 처리는 비동기로 진행 중)
+      return {
+        ...master,
+        createdAt: master.createdAt?.toISOString() || null,
+        updatedAt: master.updatedAt?.toISOString() || null,
+      } as unknown as ProductMasterDto;
     } catch (error) {
       console.error('Create master error:', error);
-      console.error('Error stack:', error.stack);
-      console.error('Request data:', createMasterDto);
       if (error.message === 'Validation failed') {
         throw error;
       }
