@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, desc } from 'drizzle-orm';
 import * as schema from '../shared/schemas/entities/schema'; // 새로운 스키마 import
+import { membershipSchema } from '../shared/schemas/entities/schema';
 import type {
   CreateTierInput,
   UpdateTierInput,
@@ -13,7 +14,7 @@ import type {
 
 @Injectable()
 export class PlanService {
-  constructor(private readonly dbService: DbService<typeof schema>) {}
+  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   /**
    * Retrieves all active subscription plans with their tier information.
