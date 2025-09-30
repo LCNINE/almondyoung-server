@@ -34,21 +34,21 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
 
   // Swagger JSON 파일 apps/channel-adapter/swagger-spec.json에 저장 (개발 환경만)
-  if (process.env.NODE_ENV !== 'production') {
-    const swaggerJsonPath = join(
-      process.cwd(),
-      'apps',
-      'channel-adapter',
-      'swagger-spec.json',
-    );
+  // if (process.env.NODE_ENV !== 'production') {
+  //   const swaggerJsonPath = join(
+  //     process.cwd(),
+  //     'apps',
+  //     'channel-adapter',
+  //     'swagger-spec.json',
+  //   );
 
-    mkdirSync(join(process.cwd(), 'apps', 'channel-adapter'), {
-      recursive: true,
-    });
+  //   mkdirSync(join(process.cwd(), 'apps', 'channel-adapter'), {
+  //     recursive: true,
+  //   });
 
-    writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
-    console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
-  }
+  //   writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
+  //   console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+  // }
 
   // Swagger UI (서버에서 바로 확인 가능)
   SwaggerModule.setup('/docs', app, document, {
