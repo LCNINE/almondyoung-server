@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { Injectable, ConflictException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { WalletTx } from '../shared/database';
 
 export interface IdempotencyResult<T> {
@@ -12,7 +13,7 @@ export interface IdempotencyResult<T> {
 
 @Injectable()
 export class IdempotencyService {
-  constructor(private readonly dbService: DbService<typeof schema>) {}
+  constructor(private readonly dbService: DbService<typeof walletSchema>) {}
 
   private static createSafeHash(payload: unknown): string {
     // ... (기존 해시 생성 로직은 변경 없음)
