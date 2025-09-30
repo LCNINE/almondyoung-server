@@ -43,11 +43,11 @@ export class PublicPrivateGuard implements CanActivate {
     }
     try {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        secret: this.configService.get<string>('AUTH_SECRET'),
       });
       // 💡 We're assigning the payload to the request object here
       // so that we can access it in our route handlers
-      request['user'] = payload;
+      request['user'] = payload as any;
     } catch {
       throw new UnauthorizedException('토큰이 유효하지 않습니다.');
     }

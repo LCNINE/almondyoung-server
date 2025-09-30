@@ -1,12 +1,16 @@
 import { defineConfig } from 'drizzle-kit';
+import { join } from 'path';
+import { config } from 'dotenv';
+
+config({ path: join(__dirname, '.env'), override: true });
 
 export default defineConfig({
-  schema: './src/schema.ts',
-  out: './drizzle',
-  dialect: 'postgresql',
-  dbCredentials: {
-    url: 'postgresql://neondb_owner:npg_4jlXAK7qVywN@ep-young-thunder-a1bkhlx2-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-  },
-  verbose: true, // 상세한 로그 출력
-  strict: true,
+    schema: './src/schema.ts',
+    out: './drizzle',
+    dialect: 'postgresql',
+    dbCredentials: {
+        url: process.env.DATABASE_URL ?? '',
+    },
+    verbose: true,
+    strict: true,
 });
