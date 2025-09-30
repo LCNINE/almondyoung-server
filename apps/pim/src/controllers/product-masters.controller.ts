@@ -27,6 +27,7 @@ import {
   ProductMasterDto,
   MasterDetailDto,
   PricePreviewDto,
+  MasterListItemDto,
   MasterListResponseDto,
   MasterUpdateResponseDto,
   CreateMasterSchema,
@@ -162,9 +163,7 @@ export class ProductMastersController {
         search: query.search,
       };
 
-      return (await this.productMastersService.getMasters(
-        filters,
-      )) as unknown as MasterListResponseDto;
+      return await this.productMastersService.getMasters(filters);
     } catch (error) {
       throw new HttpException(
         'Failed to get masters',
