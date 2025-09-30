@@ -32,7 +32,7 @@ COPY package*.json ./
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
-COPY --from=builder /app/apps/pim/drizzle ./apps/pim/drizzle
+# drizzle 디렉토리는 비어있어 복사하지 않음 (마이그레이션은 별도 실행)
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
