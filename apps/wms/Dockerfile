@@ -1,5 +1,5 @@
 # WMS 서비스 Dockerfile
-FROM node:18-alpine AS base
+FROM node:22-alpine AS base
 
 # 작업 디렉토리 설정
 WORKDIR /app
@@ -38,7 +38,7 @@ FROM base AS runner
 
 # 프로덕션 의존성만 설치
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # 빌드된 앱과 필요한 파일들 복사
 COPY --from=builder /app/dist ./dist
