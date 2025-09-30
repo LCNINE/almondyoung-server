@@ -31,6 +31,10 @@ import {
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
 } from '../../constants/auth.constant';
+import {
+  AUTH_EMAIL_VERIFY_CALLBACK_URL,
+  AUTH_SOCIAL_LOGIN_REDIRECT_URL,
+} from '../../constants/redirect-url.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { NotificationEventPublisher } from '../events/notification-event.publisher';
 import { UsersService } from '../users/users.service';
@@ -57,39 +61,43 @@ export class AuthService {
   }
 
   private getSocialRedirectUrl(provider: ProviderType): string {
-    const frontBaseUrl =
-      this.configService.get('AUTH_SOCIAL_LOGIN_REDIRECT_URL') ||
-      'http://localhost:8000';
+    const frontBaseUrl = process.env.production
+      ? AUTH_SOCIAL_LOGIN_REDIRECT_URL
+      : 'http://localhost:8000';
 
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
   }
 
   private getEmailVerifyCallbackUrl(redirectTo?: string): string {
     // 서버쪽 주소
-    const frontBaseUrl =
-      this.configService.get('AUTH_EMAIL_VERIFY_CALLBACK_URL') ||
-      'http://localhost:5000/auth/callback/signup';
+    const baseUrl = process.env.production
+      ? AUTH_EMAIL_VERIFY_CALLBACK_URL
+      : 'http://localhost:5000/auth/callback/signup';
 
     return new URL(
       `/auth/callback/signup?redirect_to=${redirectTo}`,
-      frontBaseUrl,
+      baseUrl,
     ).toString();
   }
 
   private getEmailVerifyRedirectUrl(redirectTo?: string): string {
-    const frontBaseUrl =
-      this.configService.get('AUTH_EMAIL_VERIFY_REDIRECT_URL') ||
-      'http://localhost:8000';
+    // 프론트쪽 주소
+    const baseUrl = process.env.production
+      ? this.configService.get('CORS_ORIGIN_DOMAIN')
+      : this.configService.get('CORS_ORIGIN_DOMAIN') || 'http://localhost:8000';
 
     return new URL(
       `/auth/callback/signup?redirect_to=${redirectTo}`,
-      frontBaseUrl,
+      baseUrl,
     ).toString();
   }
 
   private getRedirectUrl(redirectTo: string): string {
-    const baseUrl = process.env.APP_BASE_URL ?? 'http://localhost:8000';
+    const baseUrl =
+      this.configService.get('CORS_ORIGIN_DOMAIN') ?? 'http://localhost:8000';
+
     const redirectUrl = new URL(baseUrl);
+
     redirectUrl.searchParams.set('redirect_to', redirectTo);
     return redirectUrl.toString();
   }
