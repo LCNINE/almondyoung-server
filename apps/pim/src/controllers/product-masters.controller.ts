@@ -19,6 +19,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
+import { ZodValidationPipe } from '@app/shared';
 import {
   CreateMasterDto,
   UpdateProductMasterDto,
@@ -28,6 +29,9 @@ import {
   PricePreviewDto,
   MasterListResponseDto,
   MasterUpdateResponseDto,
+  CreateMasterSchema,
+  UpdateProductMasterSchema,
+  ChangePricingStrategySchema,
 } from '../schemas/product-masters.schema';
 
 @ApiTags('Product Masters')
@@ -52,7 +56,8 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async createMaster(
-    @Body() createMasterDto: CreateMasterDto,
+    @Body(new ZodValidationPipe(CreateMasterSchema))
+    createMasterDto: CreateMasterDto,
   ): Promise<ProductMasterDto> {
     try {
       if (
@@ -68,11 +73,14 @@ export class ProductMastersController {
 
       return master as unknown as ProductMasterDto;
     } catch (error) {
+      console.error('Create master error:', error);
+      console.error('Error stack:', error.stack);
+      console.error('Request data:', createMasterDto);
       if (error.message === 'Validation failed') {
         throw error;
       }
       throw new HttpException(
-        'Failed to create master',
+        `Failed to create master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -167,26 +175,87 @@ export class ProductMastersController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '제품 마스터 상세 조회',
-    description: '특정 제품 마스터의 상세 정보를 조회합니다.',
+    summary: '제품 마스터 상세 조회 (이미지 포함)',
+    description: '특정 제품 마스터의 상세 정보와 연결된 이미지들을 조회합니다.',
   })
   @ApiParam({ name: 'id', description: '제품 마스터 ID' })
   @ApiResponse({
     status: 200,
     description: '제품 마스터 상세 조회 성공',
-    type: MasterDetailDto,
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        brand: { type: 'string' },
+        basePrice: { type: 'number' },
+        pricingStrategy: { type: 'string' },
+        status: { type: 'string' },
+        isWholesaleOnly: { type: 'boolean' },
+        isMembershipOnly: { type: 'boolean' },
+        membershipPrice: { type: 'number' },
+        wholesalePrice: { type: 'number' },
+        images: {
+          type: 'object',
+          properties: {
+            primary: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                url: { type: 'string' },
+                originalName: { type: 'string' },
+                fileName: { type: 'string' },
+                mimeType: { type: 'string' },
+                size: { type: 'number' },
+              },
+              nullable: true,
+            },
+            additional: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  url: { type: 'string' },
+                  originalName: { type: 'string' },
+                  fileName: { type: 'string' },
+                  sortOrder: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+        optionGroups: { type: 'array' },
+        variants: { type: 'array' },
+        channelProducts: { type: 'array' },
+      },
+    },
   })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getMasterDetail(@Param('id') id: string): Promise<MasterDetailDto> {
+  async getMasterDetail(@Param('id') id: string) {
     try {
-      const master = await this.productMastersService.getMasterDetail(id);
+      // 이미지 정보를 포함한 마스터 조회
+      const masterWithImages =
+        await this.productMastersService.getMasterWithImages(id);
 
-      if (!master) {
+      if (!masterWithImages) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
 
-      return master as unknown as MasterDetailDto;
+      // 기존 상세 정보도 가져오기 (옵션 그룹, 변형, 채널 제품 등)
+      const masterDetail = await this.productMastersService.getMasterDetail(id);
+
+      if (!masterDetail) {
+        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
+      }
+
+      // 이미지 정보를 포함한 응답 반환
+      return {
+        ...masterDetail,
+        images: masterWithImages.images,
+      };
     } catch (error) {
       if (
         error.message === 'Master not found' ||
@@ -221,7 +290,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async updateMaster(
     @Param('id') id: string,
-    @Body() updateData: UpdateProductMasterDto,
+    @Body(new ZodValidationPipe(UpdateProductMasterSchema))
+    updateData: UpdateProductMasterDto,
   ): Promise<MasterUpdateResponseDto> {
     try {
       const updatedMaster = await this.productMastersService.updateMaster(
@@ -332,7 +402,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async changePricingStrategy(
     @Param('id') id: string,
-    @Body() pricingDto: ChangePricingStrategyDto,
+    @Body(new ZodValidationPipe(ChangePricingStrategySchema))
+    pricingDto: ChangePricingStrategyDto,
   ): Promise<void> {
     try {
       if (!pricingDto.pricingStrategy) {

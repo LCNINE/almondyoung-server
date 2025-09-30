@@ -32,6 +32,8 @@ export class EventsModule {
                 clientId: options.kafka.clientId,
                 brokers: options.kafka.brokers,
                 retry: options.kafka.retry,
+                ...(options.kafka.ssl !== undefined ? { ssl: options.kafka.ssl } : {}),
+                ...(options.kafka.sasl ? { sasl: options.kafka.sasl } : {}),
               },
               consumer: {
                 groupId:

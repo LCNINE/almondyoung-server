@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
+import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import {
   EventsModule,
   EventPublisherService,
-  createKafkaConfigFromEnv,
 } from '@app/events';
 import { NaverSmartstoreStrategy } from './services/strategies/naver-smartstore.strategy';
 import { CoupangStrategy } from './services/strategies/coupang.strategy';
@@ -24,6 +24,41 @@ import { WmsApiService } from './services/apis/wms.api.service';
 import { DlqMonitoringService } from './services/dlq-monitoring.service';
 import { ConfigModule } from '@nestjs/config';
 
+// Kafka 설정 생성 함수 (운영 환경 전용)
+function createKafkaConfig() {
+  // 필수 환경변수 검증
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+  if (!prefix) {
+    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+  }
+
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) {
+    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+  }
+
+  const groupId = process.env.KAFKA_GROUP_ID;
+  if (!groupId) {
+    throw new Error('KAFKA_GROUP_ID 환경변수가 필요합니다.');
+  }
+
+  return {
+    clientId: `${prefix}_${os.hostname()}`,
+    brokers: brokers.split(','),
+    groupId,
+    retry: {
+      retries: 5,
+      initialRetryTime: 300,
+    },
+    ssl: process.env.KAFKA_API_KEY ? true : false,
+    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+      mechanism: 'plain' as const,
+      username: process.env.KAFKA_API_KEY,
+      password: process.env.KAFKA_API_SECRET,
+    } : undefined,
+  };
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -40,12 +75,7 @@ import { ConfigModule } from '@nestjs/config';
     ...(process.env.NODE_ENV === 'production'
       ? [
           EventsModule.forRoot({
-            kafka: createKafkaConfigFromEnv({
-              KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || 'channel-adapter',
-              KAFKA_BROKERS: process.env.KAFKA_BROKERS || 'localhost:9092',
-              KAFKA_GROUP_ID:
-                process.env.KAFKA_GROUP_ID || 'channel-adapter-group',
-            }),
+            kafka: createKafkaConfig(),
             events: CHANNEL_ADAPTER_EVENTS,
             serviceName: 'channel-adapter',
           }),
