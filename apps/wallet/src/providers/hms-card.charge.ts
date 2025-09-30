@@ -5,7 +5,8 @@ import {
   PaymentResult,
   ProviderType,
 } from './payment-provider.interface';
-import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
+import { HmsApiFactory } from '../shared/utils/hms-api.factory';
+import { HmsAPI } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
 
 @Injectable()
 export class HmsCardChargeProvider
@@ -15,12 +16,8 @@ export class HmsCardChargeProvider
   private readonly hmsApi: HmsAPI;
 
   constructor() {
-    this.hmsApi = ApiClientFactory.create({
-      swKey: process.env.SW_KEY || '',
-      custKey: process.env.CUST_KEY || '',
-      isTest: process.env.NODE_ENV !== 'production',
-      useMock: false,
-    }) as HmsAPI;
+    // HmsApiFactory를 사용하여 환경에 따라 적절한 API 클라이언트 생성
+    this.hmsApi = HmsApiFactory.createForCard() as HmsAPI;
   }
 
   async process(payload: HmsCardPayload): Promise<PaymentResult> {
