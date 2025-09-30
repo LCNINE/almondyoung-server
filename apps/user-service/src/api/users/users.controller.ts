@@ -92,18 +92,16 @@ export class UsersController {
     return this.usersService.getUserRoles(user.id);
   }
 
-  @ApiOperation({ summary: '사용자 프로필 정보 수정' })
-  @ApiResponse({ status: 200, description: '사용자 정보 수정 성공' })
-  @ApiParam({ name: 'userId', description: '수정할 사용자 ID' })
-  @Patch(':userId')
-  @RequireScopes(['user:modify', 'master', 'admin:users:modify'])
+  @ApiOperation({ summary: '내 프로필 정보 수정' })
+  @ApiResponse({ status: 200, description: '프로필 수정 성공' })
+  @Patch('me')
+  @RequireScopes(['user:modify'])
   @HttpCode(HttpStatus.OK)
-  async updateUser(
-    @Param('userId') userId: string,
+  async updateMyProfile(
+    @CurrentUser() user: User,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    await this.usersService.update(userId, updateUserDto);
-
+    await this.usersService.updateMyProfile(user.id, updateUserDto);
     return;
   }
 
