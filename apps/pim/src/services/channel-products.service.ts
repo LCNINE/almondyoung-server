@@ -172,7 +172,7 @@ export class ChannelProductsService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    data: (ChannelProduct & { master: ProductMaster })[];
+    data: any; //추후 수정 상품마스터에 썸네일 추가하면서 타입안맞음.
     total: number;
     page: number;
     limit: number;
@@ -243,6 +243,7 @@ export class ChannelProductsService {
           name: productMasters.name,
           description: productMasters.description,
           brand: productMasters.brand,
+          thumbnail: productMasters.thumbnail, // thumbnail 필드 추가
           basePrice: productMasters.basePrice,
           pricingStrategy: productMasters.pricingStrategy,
           tags: productMasters.tags,
@@ -252,10 +253,6 @@ export class ChannelProductsService {
           seoDescription: productMasters.seoDescription,
           seoKeywords: productMasters.seoKeywords,
           status: productMasters.status,
-          isWholesaleOnly: productMasters.isWholesaleOnly,
-          isMembershipOnly: productMasters.isMembershipOnly,
-          membershipPrice: productMasters.membershipPrice,
-          wholesalePrice: productMasters.wholesalePrice,
           createdAt: productMasters.createdAt,
           updatedAt: productMasters.updatedAt,
           createdBy: productMasters.createdBy,

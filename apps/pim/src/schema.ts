@@ -64,6 +64,7 @@ export const productMasters = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
+    thumbnail: text('thumbnail'), // 썸네일 이미지 URL
     // categoryId removed - now using many-to-many relationship via productMasterCategories
     basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
     pricingStrategy: varchar('pricing_strategy', { length: 50 })

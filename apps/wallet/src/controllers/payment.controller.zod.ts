@@ -34,11 +34,11 @@ const IntentResponseSchema = z.object({
   type: z.string(),
   status: z.string(),
   // z.date() 대신 문자열로 처리 (JSON Schema 호환성)
-  createdAt: z.string().or(z.coerce.string()),
-  updatedAt: z.string().or(z.coerce.string()),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
   metadata: z.any().optional(),
   // 실제 서비스에서 반환되는 추가 필드들
-  capturedAt: z.string().or(z.coerce.string()).nullable().optional(),
+  capturedAt: z.iso.datetime().nullable().optional(),
 });
 
 // 결제 승인 관련 스키마
