@@ -1,7 +1,7 @@
 // apps/user-service/src/events/notification-event.publisher.ts
 import { Injectable } from '@nestjs/common';
-import { EventPublisherService, InjectEventPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/events/user.events';
+import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/streams';
 
 interface UserVerificationEvent {
   userId: string;
@@ -15,8 +15,8 @@ interface UserVerificationEvent {
 @Injectable()
 export class NotificationEventPublisher {
   constructor(
-    @InjectEventPublisher()
-    private readonly eventPublisher: EventPublisherService<UserEvents>,
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
   ) {}
 
   // 회원가입시 이메일 인증 이벤트 발행
@@ -28,21 +28,29 @@ export class NotificationEventPublisher {
     callbackUrl,
     redirectTo,
   }: UserVerificationEvent) {
-    return this.eventPublisher.publishEvent('USER_VERIFICATION', {
-      userId,
-      email,
-      name,
-      verificationToken,
-      callbackUrl,
-      redirectTo,
+    return this.eventPublisher.publishEvent({
+      eventType: 'UserVerification',
+      aggregateId: userId,
+      payload: {
+        userId,
+        email,
+        name,
+        verificationToken,
+        callbackUrl,
+        redirectTo,
+      },
     });
   }
 
   // ID 찾기 이벤트 발행
   async publishUserFindIdEvent(email: string, loginId: string) {
-    return this.eventPublisher.publishEvent('USER_FIND_ID', {
-      email,
-      loginId,
+    return this.eventPublisher.publishEvent({
+      eventType: 'UserFindId',
+      aggregateId: email,
+      payload: {
+        email,
+        loginId,
+      },
     });
   }
 
@@ -51,9 +59,13 @@ export class NotificationEventPublisher {
     email: string,
     verificationToken: string,
   ) {
-    return this.eventPublisher.publishEvent('USER_RESET_PASSWORD', {
-      email,
-      verificationToken,
+    return this.eventPublisher.publishEvent({
+      eventType: 'UserResetPassword',
+      aggregateId: email,
+      payload: {
+        email,
+        verificationToken,
+      },
     });
   }
 }

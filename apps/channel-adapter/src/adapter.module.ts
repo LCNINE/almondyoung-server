@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
-import { EventsModule, EventPublisherService } from '@app/events';
+import { EventsModule, StreamPublisher } from '@app/events';
 import { NaverSmartstoreStrategy } from './services/strategies/naver-smartstore.strategy';
 import { CoupangStrategy } from './services/strategies/coupang.strategy';
 
@@ -14,7 +14,7 @@ import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NaverCommerceApiService } from './services/apis/naver-commerce.api.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_EVENTS } from '@app/shared/events/adapter.events';
+import { CHANNEL_ADAPTER_STREAM } from '@app/shared/streams';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import { CoupangApiService } from './services/apis/coupang.api.service';
@@ -76,9 +76,13 @@ function createKafkaConfig() {
     ...(process.env.NODE_ENV === 'production'
       ? [
           EventsModule.forRoot({
-            kafka: createKafkaConfig(),
-            events: CHANNEL_ADAPTER_EVENTS,
+            streams: [CHANNEL_ADAPTER_STREAM],
             serviceName: 'channel-adapter',
+            kafka: createKafkaConfig(),
+            validation: {
+              validateOnPublish: true,
+              throwOnValidationError: true,
+            },
           }),
         ]
       : []),
@@ -98,11 +102,11 @@ function createKafkaConfig() {
 
     // 환경별 EventPublisher 제공
     ...(process.env.NODE_ENV === 'production'
-      ? [] // 운영 환경: EventsModule에서 제공하는 EventPublisherService 사용
+      ? [] // 운영 환경: EventsModule에서 제공하는 StreamPublisher 사용
       : [
           // 개발/테스트 환경: NullEventPublisher로 대체
           {
-            provide: EventPublisherService,
+            provide: StreamPublisher,
             useClass: NullEventPublisher,
           },
         ]),

@@ -1,5 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { EventPublisherService } from '@app/events';
+import { StreamPublisher } from '@app/events';
 import {
   ChannelStrategyFactory,
   ChannelType,
@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { InternalOrderEvent, OrderQuery } from '../types';
 import { ChannelCommand, ChannelQuery } from '../types';
-import { ChannelAdapterEvents } from '@app/shared/events/adapter.events';
+import { ChannelAdapterEvents } from '@app/shared/streams';
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -51,7 +51,7 @@ export class AdapterOrchestrationService {
   constructor(
     private readonly factory: ChannelStrategyFactory,
     private readonly syncStatusService: SyncStatusService,
-    private readonly eventPublisher: EventPublisherService<ChannelAdapterEvents>,
+    private readonly eventPublisher: StreamPublisher<ChannelAdapterEvents>,
 
     private readonly db: DbService<typeof channelAdapterSchema>,
 
@@ -374,18 +374,22 @@ export class AdapterOrchestrationService {
               : 'unknown'
       ) as string;
 
-      await this.eventPublisher.publishEvent('command.executed', {
-        channelType: channel,
-        commandType: command.type,
-        targetId,
-        executionResult: result.success ? 'success' : 'failed',
-        processedCount: result.processedCount || 0,
-        failedCount: result.failedCount || 0,
-        errors: result.errors?.map((err) => ({
-          id: err.id || 'unknown',
-          message: err.message,
-        })),
-        executionDurationMs: duration,
+      await this.eventPublisher.publishEvent({
+        eventType: 'CommandExecuted',
+        aggregateId: `${channel}-${targetId}`,
+        payload: {
+          channelType: channel,
+          commandType: command.type,
+          targetId,
+          executionResult: result.success ? 'success' : 'failed',
+          processedCount: result.processedCount || 0,
+          failedCount: result.failedCount || 0,
+          errors: result.errors?.map((err) => ({
+            id: err.id || 'unknown',
+            message: err.message,
+          })),
+          executionDurationMs: duration,
+        },
       });
 
       if (result.success) {
@@ -472,15 +476,19 @@ export class AdapterOrchestrationService {
 
       // 🎯 재고 동기화 완료 이벤트 발행
       if (payload.dataType === 'inventory') {
-        await this.eventPublisher.publishEvent('inventory.sync.completed', {
-          channelType: channel,
-          productId: payload.payload.productId,
-          syncType: payload.payload.isOptionProduct ? 'option' : 'single',
-          stockQuantity: payload.payload.stockQuantity,
-          syncResult: result.success ? 'success' : 'failed',
-          errorMessage: result.success
-            ? undefined
-            : result.errors?.[0]?.message,
+        await this.eventPublisher.publishEvent({
+          eventType: 'InventorySyncCompleted',
+          aggregateId: `${channel}-${payload.payload.productId}`,
+          payload: {
+            channelType: channel,
+            productId: payload.payload.productId,
+            syncType: payload.payload.isOptionProduct ? 'option' : 'single',
+            stockQuantity: payload.payload.stockQuantity,
+            syncResult: result.success ? 'success' : 'failed',
+            errorMessage: result.success
+              ? undefined
+              : result.errors?.[0]?.message,
+          },
         });
 
         this.logger.log(
@@ -526,16 +534,20 @@ export class AdapterOrchestrationService {
       );
 
       // 🚨 동기화 실패 이벤트 발행
-      await this.eventPublisher.publishEvent('sync.failure', {
-        channelType: channel,
-        syncType: 'inventory',
-        failureReason: error.message,
-        retryCount: 0,
-        maxRetries: 3,
-        affectedIds:
-          payload.dataType === 'inventory'
-            ? [payload.payload.productId]
-            : undefined,
+      await this.eventPublisher.publishEvent({
+        eventType: 'SyncFailure',
+        aggregateId: `${channel}-sync-failure`,
+        payload: {
+          channelType: channel,
+          syncType: 'inventory',
+          failureReason: error.message,
+          retryCount: 0,
+          maxRetries: 3,
+          affectedIds:
+            payload.dataType === 'inventory'
+              ? [payload.payload.productId]
+              : undefined,
+        },
       });
 
       throw new Error(
@@ -711,12 +723,16 @@ export class AdapterOrchestrationService {
       const duration = Date.now() - startTime;
 
       // 3. 조회 완료 이벤트 발행
-      await this.eventPublisher.publishEvent('query.executed', {
-        channelType: channel,
-        queryType: query.type,
-        resultCount: Array.isArray(result) ? result.length : 1,
-        executionDurationMs: duration,
-        success: true,
+      await this.eventPublisher.publishEvent({
+        eventType: 'QueryExecuted',
+        aggregateId: `${channel}-query-${query.type}`,
+        payload: {
+          channelType: channel,
+          queryType: query.type,
+          resultCount: Array.isArray(result) ? result.length : 1,
+          executionDurationMs: duration,
+          success: true,
+        },
       });
 
       this.logger.log(
@@ -731,13 +747,17 @@ export class AdapterOrchestrationService {
       const duration = Date.now() - startTime;
 
       // 실패 이벤트 발행
-      await this.eventPublisher.publishEvent('query.executed', {
-        channelType: channel,
-        queryType: query.type,
-        resultCount: 0,
-        executionDurationMs: duration,
-        success: false,
-        errorMessage: error.message,
+      await this.eventPublisher.publishEvent({
+        eventType: 'QueryExecuted',
+        aggregateId: `${channel}-query-${query.type}`,
+        payload: {
+          channelType: channel,
+          queryType: query.type,
+          resultCount: 0,
+          executionDurationMs: duration,
+          success: false,
+          errorMessage: error.message,
+        },
       });
 
       this.logger.error(

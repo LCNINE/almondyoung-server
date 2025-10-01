@@ -1,372 +1,590 @@
-# Events 모듈
+# @app/events - Stream-based Event Module
 
-MSA 기반 멀티레포 NestJS 프로젝트에서 사용하는 공통 이벤트 모듈입니다. Kafka를 기반으로 하며, 각 마이크로서비스 간의 타입 안전한 이벤트 기반 통신을 지원합니다.
+도메인 스트림 기반 Kafka 이벤트 시스템
 
-## 특징
+## 🎯 핵심 개념
 
-- ✅ Kafka 기반 이벤트 시스템
-- ✅ 완전한 TypeScript 타입 안정성
-- ✅ 이벤트별 페이로드 타입 검증
-- ✅ Publisher/Subscriber 패턴 지원
-- ✅ Request-Response 패턴 지원
-- ✅ 데코레이터 기반 편의 기능
-- ✅ 자동 메타데이터 추가 (timestamp, correlationId, source)
+### Stream-based Topics
+하나의 토픽에 여러 이벤트 타입을 포함하는 구조:
+- ❌ **기존**: `user.created`, `user.updated`, `user.deleted` (토픽 3개)
+- ✅ **개선**: `users.events.v1` (토픽 1개, 이벤트 타입 3개)
 
-## 설치
+### Message Envelope
+모든 메시지는 표준 Envelope로 감싸짐:
+```typescript
+{
+  messageId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  messageType: "OrderCreated",
+  messageKind: "event",
+  payload: { ... },
+  source: {
+    service: "wms-order",
+    aggregateType: "Order",
+    aggregateId: "ORD-123"
+  }
+}
+```
+
+## 📦 설치
 
 ```bash
-npm install @nestjs/microservices kafkajs uuid
-npm install -D @types/uuid
+npm install @nestjs/microservices kafkajs ulid zod
 ```
 
-## 사용법
+## 📚 문서
 
-### 1. 이벤트 타입 정의 (공통 스키마)
+- **[빠른 시작 가이드](./docs/quick-start-guide.md)** ⭐ 처음 사용자 필독!
+- **[문제 해결 가이드](./docs/troubleshooting.md)** 🆘 문제가 있을 때
+- [Schema Validation Guide](./docs/schema-validation-guide.md) - Zod 스키마 검증
+- [Graceful Shutdown Guide](./docs/graceful-shutdown-guide.md) - 안전한 종료
+- [First Look](./docs/first-look.md) - 아키텍처 평가
+
+## 💡 주요 업데이트
+
+### v1.1.0 (2025-10-01)
+- ✅ **EventTypeGuard** 추가 - 이벤트 타입 필터링 (필수!)
+- ✅ **환경변수 네이밍 통일** - `KAFKA_API_KEY`/`KAFKA_API_SECRET`
+- ✅ **JSON 파싱 개선** - NestJS 자동 파싱 지원
+- ✅ **에러 처리 개선** - `of(undefined)` 사용으로 깔끔한 필터링
+- ✅ **완전한 예제** - `apps/events-test` 앱 제공
+
+## 🚀 빠른 시작
+
+> 💡 **처음 사용하시나요?** [빠른 시작 가이드](./docs/quick-start-guide.md)를 먼저 읽어보세요!
+
+### 1. Stream 정의 (libs/shared/src/streams/)
 
 ```typescript
-// libs/shared/src/events/user.events.ts
-import { BaseEventPayload, EventDefinition } from '@app/events';
+// libs/shared/src/streams/orders.stream.ts
+import { StreamConfig, EventType } from '@app/events';
 
-// User 관련 이벤트 페이로드 타입들
-export interface UserCreatedPayload extends BaseEventPayload {
-  userId: string;
-  email: string;
-  name: string;
+// 이벤트 페이로드 타입 정의
+export interface OrderCreatedPayload {
+  orderId: string;
+  customerId: string;
+  items: Array<{ skuId: string; quantity: number }>;
+  totalAmount: number;
 }
 
-export interface UserUpdatedPayload extends BaseEventPayload {
-  userId: string;
-  email?: string;
-  name?: string;
+export interface OrderCancelledPayload {
+  orderId: string;
+  reason: string;
+  cancelledBy: string;
 }
 
-export interface UserDeletedPayload extends BaseEventPayload {
-  userId: string;
-}
+// 이벤트 타입 맵
+export type OrderEvents = {
+  OrderCreated: EventType<OrderCreatedPayload>;
+  OrderCancelled: EventType<OrderCancelledPayload>;
+};
 
-// 이벤트 정의
-export const USER_EVENTS = {
-  USER_CREATED: {
-    topic: 'user.created',
-    payload: {} as UserCreatedPayload,
+// Stream 설정
+export const ORDER_STREAM: StreamConfig<OrderEvents> = {
+  topic: {
+    topic: 'orders.events.v1',
+    partitions: 12,
   },
-  USER_UPDATED: {
-    topic: 'user.updated', 
-    payload: {} as UserUpdatedPayload,
+  aggregateType: 'Order',
+  events: {
+    OrderCreated: {
+      messageType: 'OrderCreated',
+      payloadType: {} as OrderCreatedPayload,
+    },
+    OrderCancelled: {
+      messageType: 'OrderCancelled',
+      payloadType: {} as OrderCancelledPayload,
+    },
   },
-  USER_DELETED: {
-    topic: 'user.deleted',
-    payload: {} as UserDeletedPayload,
-  },
-} as const satisfies Record<string, EventDefinition>;
-
-export type UserEvents = typeof USER_EVENTS;
+};
 ```
 
-### 2. 이벤트 발행자 설정 (User Service)
+### 2. Publisher 설정 (이벤트 발행 서비스)
 
 ```typescript
-// apps/user-service/src/app.module.ts
+// apps/wms/src/order/order.module.ts
 import { Module } from '@nestjs/common';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
+import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forRoot<UserEvents>({
+    EventsModule.forRoot({
       kafka: createKafkaConfigFromEnv({
-        KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID!,
+        KAFKA_CLIENT_ID: 'wms-order-publisher',
         KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
-        KAFKA_GROUP_ID: process.env.KAFKA_GROUP_ID,
       }),
-      events: USER_EVENTS,
-      serviceName: 'user-service',
+      streams: [ORDER_STREAM],
+      serviceName: 'wms-order',
     }),
   ],
 })
-export class AppModule {}
+export class OrderModule {}
 ```
 
 ### 3. 이벤트 발행
 
 ```typescript
-// apps/user-service/src/user.service.ts
+// apps/wms/src/order/services/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { EventPublisherService, InjectEventPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/events/user.events';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { ORDER_STREAM, OrderEvents } from '@app/shared/streams/orders.stream';
 
 @Injectable()
-export class UserService {
+export class OrderService {
   constructor(
-    @InjectEventPublisher()
-    private readonly eventPublisher: EventPublisherService<UserEvents>,
+    @InjectStreamPublisher('orders.events.v1')
+    private readonly orderPublisher: StreamPublisher<OrderEvents>,
   ) {}
 
-  async createUser(userData: { email: string; name: string }) {
-    // 사용자 생성 로직
-    const user = await this.saveUser(userData);
+  async createOrder(dto: CreateOrderDto) {
+    const order = await this.saveOrder(dto);
 
-    // 타입 안전한 이벤트 발행
-    await this.eventPublisher.publishEvent('USER_CREATED', {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      // timestamp, correlationId, source는 자동으로 추가됨
-    });
-
-    return user;
-  }
-
-  async updateUser(userId: string, updateData: { email?: string; name?: string }) {
-    const user = await this.updateUserData(userId, updateData);
-
-    await this.eventPublisher.publishEvent('USER_UPDATED', {
-      userId,
-      ...updateData,
-    });
-
-    return user;
-  }
-
-  // 다중 이벤트 발행
-  async bulkCreateUsers(usersData: Array<{ email: string; name: string }>) {
-    const users = await this.saveUsers(usersData);
-
-    const events = users.map(user => ({
-      eventKey: 'USER_CREATED' as const,
+    // 이벤트 발행
+    await this.orderPublisher.publishEvent({
+      eventType: 'OrderCreated',
+      aggregateId: order.id,
       payload: {
-        userId: user.id,
-        email: user.email,
-        name: user.name,
+        orderId: order.id,
+        customerId: order.customerId,
+        items: order.items,
+        totalAmount: order.totalAmount,
       },
-    }));
-
-    await this.eventPublisher.publishEvents(events);
-
-    return users;
-  }
-}
-```
-
-### 4. 이벤트 구독자 설정 (Notification Service)
-
-```typescript
-// apps/notification-service/src/app.module.ts
-import { Module } from '@nestjs/common';
-import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
-
-@Module({
-  imports: [
-    EventsModule.forRoot<UserEvents>({
-      kafka: createKafkaConfigFromEnv({
-        KAFKA_CLIENT_ID: 'notification-service',
-        KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
-        KAFKA_GROUP_ID: 'notification-consumer',
-      }),
-      events: USER_EVENTS,
-      serviceName: 'notification-service',
-    }),
-  ],
-})
-export class AppModule {}
-```
-
-### 5. 이벤트 핸들러 구현
-
-```typescript
-// apps/notification-service/src/user-event.handler.ts
-import { Controller, Logger } from '@nestjs/common';
-import { 
-  TypedEventPattern, 
-  EventHandler,
-  TypedMessagePattern,
-  MessageHandler 
-} from '@app/events';
-import { UserEvents, UserCreatedPayload, UserUpdatedPayload } from '@app/shared/events/user.events';
-
-@Controller()
-export class UserEventHandler {
-  private readonly logger = new Logger(UserEventHandler.name);
-
-  // 이벤트 핸들러 (Fire and Forget)
-  @TypedEventPattern<UserEvents, 'USER_CREATED'>('USER_CREATED')
-  async handleUserCreated(payload: UserCreatedPayload): Promise<void> {
-    this.logger.log(`User created: ${payload.userId}`, {
-      correlationId: payload.correlationId,
-      source: payload.source,
     });
 
-    // 환영 이메일 발송 로직
-    await this.sendWelcomeEmail(payload.email, payload.name);
+    return order;
   }
 
-  @TypedEventPattern<UserEvents, 'USER_UPDATED'>('USER_UPDATED')
-  async handleUserUpdated(payload: UserUpdatedPayload): Promise<void> {
-    this.logger.log(`User updated: ${payload.userId}`);
-    
-    // 사용자 정보 변경 알림 로직
-    if (payload.email) {
-      await this.sendEmailChangeNotification(payload.email);
-    }
-  }
+  async cancelOrder(orderId: string, reason: string) {
+    await this.updateOrderStatus(orderId, 'cancelled');
 
-  // Request-Response 패턴 핸들러
-  @TypedMessagePattern<UserEvents, 'USER_DELETED'>('USER_DELETED')
-  async handleUserDeletedRequest(payload: UserDeletedPayload): Promise<{ success: boolean }> {
-    this.logger.log(`Processing user deletion: ${payload.userId}`);
-    
-    // 사용자 관련 알림 정리 로직
-    await this.cleanupUserNotifications(payload.userId);
-    
-    return { success: true };
-  }
-
-  private async sendWelcomeEmail(email: string, name: string) {
-    // 이메일 발송 구현
-  }
-
-  private async sendEmailChangeNotification(email: string) {
-    // 이메일 변경 알림 구현
-  }
-
-  private async cleanupUserNotifications(userId: string) {
-    // 알림 정리 구현
+    await this.orderPublisher.publishEvent({
+      eventType: 'OrderCancelled',
+      aggregateId: orderId,
+      payload: {
+        orderId,
+        reason,
+        cancelledBy: 'admin',
+      },
+    });
   }
 }
 ```
 
-### 6. Request-Response 패턴 사용
+### 4. Consumer 설정 (이벤트 구독 서비스)
 
 ```typescript
-// apps/user-service/src/user.service.ts
-export class UserService {
-  async deleteUser(userId: string) {
-    // Request-Response 패턴으로 다른 서비스에 요청
-    const result = await this.eventPublisher.sendRequest(
-      'USER_DELETED',
-      { userId },
-      5000 // 5초 타임아웃
-    );
-
-    if (result.success) {
-      await this.removeUser(userId);
-    }
-
-    return result;
-  }
-}
-```
-
-## 환경 변수 설정
-
-각 마이크로서비스의 `.env` 파일:
-
-```env
-KAFKA_CLIENT_ID=user-service
-KAFKA_BROKERS=localhost:9092,localhost:9093
-KAFKA_GROUP_ID=user-consumer
-```
-
-## 고급 기능
-
-### 커스텀 헤더와 파티션 설정
-
-```typescript
-await this.eventPublisher.publishEvent('USER_CREATED', payload, {
-  partition: 0,
-  headers: {
-    'x-tenant-id': 'tenant-123',
-    'x-request-id': 'req-456',
-  },
-});
-```
-
-### 타입 안전한 이벤트 핸들러 시그니처
-
-```typescript
-// 타입 헬퍼를 사용한 핸들러 메서드 정의
-const handleUserCreated: EventHandler<UserEvents, 'USER_CREATED'> = async (payload) => {
-  // payload는 자동으로 UserCreatedPayload 타입으로 추론됨
-  console.log(payload.userId); // 타입 안전함
-};
-
-const handleUserDeletedRequest: MessageHandler<UserEvents, 'USER_DELETED', { success: boolean }> = 
-  async (payload) => {
-    // payload는 UserDeletedPayload 타입
-    // 반환값은 { success: boolean } 타입이어야 함
-    return { success: true };
-  };
-```
-
-## 마이크로서비스 Consumer 앱 구성
-
-Consumer 전용 마이크로서비스를 만들 때:
-
-```typescript
-// apps/notification-consumer/src/main.ts
+// apps/channel-adapter/src/main.ts
 import { NestFactory } from '@nestjs/core';
-import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { AppModule } from './app.module';
+import { AdapterModule } from './adapter.module';
+import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
+import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 async function bootstrap() {
-  const app = await NestFactory.createMicroservice<MicroserviceOptions>(
-    AppModule,
-    {
-      transport: Transport.KAFKA,
-      options: {
-        client: {
-          clientId: 'notification-consumer',
-          brokers: ['localhost:9092'],
-        },
-        consumer: {
-          groupId: 'notification-consumer-group',
-        },
-      },
-    },
-  );
+  const app = await NestFactory.create(AdapterModule);
 
-  await app.listen();
+  // Kafka Consumer 연결
+  const consumerOptions = EventsModule.forConsumer({
+    kafka: createKafkaConfigFromEnv({
+      KAFKA_CLIENT_ID: 'channel-adapter-consumer',
+      KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
+    }),
+    streams: [ORDER_STREAM],
+    groupId: 'channel-adapter-consumers',
+  });
+
+  app.connectMicroservice(consumerOptions);
+
+  await app.startAllMicroservices();
+  await app.listen(3003);
 }
 bootstrap();
 ```
 
-## 타입 안정성 보장
+### 5. 이벤트 핸들러 구현
 
-이 이벤트 모듈은 다음과 같은 타입 안정성을 제공합니다:
+**⚠️ 중요:** Consumer는 반드시 `controllers` 배열에 등록하고, `@UseInterceptors(EventTypeGuard)`를 추가해야 합니다!
 
-- ✅ 정의된 이벤트만 발행/구독 가능
-- ✅ 각 이벤트의 페이로드 타입이 컴파일 타임에 검증됨
-- ✅ 이벤트 핸들러의 매개변수 타입이 자동 추론됨
-- ✅ Request-Response 패턴의 응답 타입 검증
-- ✅ 잘못된 이벤트나 페이로드는 TypeScript 에러로 방지
+```typescript
+// apps/channel-adapter/src/consumers/order-events.consumer.ts
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { 
+  OnEvent, 
+  EventPayload, 
+  EventMetadata,
+  EventTypeGuard,  // ← 이벤트 타입 필터링 (필수!)
+  RetryPolicy,     // ← 재시도 정책 (권장)
+} from '@app/events';
+import { OrderCreatedPayload, OrderCancelledPayload } from '@app/shared/streams/orders.stream';
 
-## Docker Compose로 Kafka 실행
+@Controller()
+@UseInterceptors(EventTypeGuard)  // ← 반드시 추가! (이벤트 타입 필터링)
+export class OrderEventsConsumer {
+  private readonly logger = new Logger(OrderEventsConsumer.name);
 
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+  @OnEvent('orders.events.v1', 'OrderCreated')
+  @RetryPolicy({ maxAttempts: 3, backoff: 'exponential' })  // ← 재시도 정책
+  async handleOrderCreated(
+    @EventPayload() payload: OrderCreatedPayload,
+    @EventMetadata() metadata: any,
+  ) {
+    this.logger.log(`Order created: ${payload.orderId}`, {
+      correlationId: metadata.correlationId,
+    });
 
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    // 채널로 주문 동기화
+    await this.syncOrderToChannels(payload);
+  }
+
+  @OnEvent('orders.events.v1', 'OrderCancelled')
+  async handleOrderCancelled(
+    @EventPayload() payload: OrderCancelledPayload,
+  ) {
+    this.logger.log(`Order cancelled: ${payload.orderId}`);
+
+    // 채널에 취소 상태 전송
+    await this.notifyOrderCancellation(payload);
+  }
+
+  private async syncOrderToChannels(order: OrderCreatedPayload) {
+    // 구현...
+  }
+
+  private async notifyOrderCancellation(order: OrderCancelledPayload) {
+    // 구현...
+  }
+}
 ```
 
-실행:
-```bash
-docker-compose up -d
-``` 
+## 📚 고급 기능
+
+### 배치 이벤트 발행
+
+```typescript
+await this.orderPublisher.publishEvents([
+  { eventType: 'OrderCreated', aggregateId: 'ORD-1', payload: {...} },
+  { eventType: 'OrderCreated', aggregateId: 'ORD-2', payload: {...} },
+  { eventType: 'OrderCreated', aggregateId: 'ORD-3', payload: {...} },
+]);
+```
+
+### Correlation ID 전파
+
+```typescript
+await this.orderPublisher.publishEvent({
+  eventType: 'OrderCreated',
+  aggregateId: orderId,
+  payload: {...},
+  correlationId: request.correlationId,  // 요청에서 전달받은 ID
+  causationId: previousEventId,          // 이전 이벤트 ID
+});
+```
+
+### Aggregate Version (Event Sourcing)
+
+```typescript
+await this.orderPublisher.publishEvent({
+  eventType: 'OrderCreated',
+  aggregateId: orderId,
+  aggregateVersion: 1,                   // Event Sourcing용
+  payload: {...},
+});
+```
+
+### 커맨드 발행
+
+```typescript
+await this.orderPublisher.publishCommand({
+  commandType: 'ProcessOrder',
+  aggregateId: orderId,
+  payload: { orderId },
+  expiresIn: 60000,                      // 1분 후 만료
+});
+```
+
+### 자동 DLQ 처리 (권장) ⭐
+
+```typescript
+// 1. Consumer Module에서 자동 DLQ 활성화
+@Module({
+  imports: [
+    EventsModule.forConsumerModule({
+      streams: [ORDER_STREAM],
+      groupId: 'order-consumer',
+      enableAutoDLQ: true,  // 자동 DLQ 처리 (기본값: true)
+    }),
+  ],
+})
+export class AppModule {}
+
+// 2. 핸들러에서 try-catch 불필요!
+@Controller()
+export class OrderEventsConsumer {
+  @OnEvent('orders.events.v1', 'OrderCreated')
+  async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
+    // 에러 발생 시:
+    // 1. 자동으로 3번 재시도 (exponential backoff)
+    // 2. 재시도 실패 시 DLQ로 자동 전송
+    await this.processOrder(payload);
+  }
+
+  @OnEvent('orders.events.v1', 'OrderUpdated')
+  @RetryPolicy({ maxRetries: 5, backoff: 'exponential' })
+  async handleOrderUpdated(@EventPayload() payload: OrderUpdatedPayload) {
+    // 핸들러별 재시도 정책 커스터마이즈
+    await this.updateOrder(payload);
+  }
+}
+```
+
+상세 가이드: [자동 DLQ 처리 가이드](./docs/auto-dlq-guide.md)
+
+### 스키마 검증 (Schema Validation) ⭐
+
+```typescript
+// 1. Zod 스키마 정의 (libs/shared/src/streams/orders.stream.ts)
+import { z } from 'zod';
+
+const OrderCreatedSchema = z.object({
+  orderId: z.string().uuid(),
+  customerId: z.string().uuid(),
+  totalAmount: z.number().positive(),
+});
+
+type OrderCreatedPayload = z.infer<typeof OrderCreatedSchema>;
+
+export const ORDER_STREAM: StreamConfig<OrderEvents> = {
+  events: {
+    OrderCreated: {
+      messageType: 'OrderCreated',
+      payloadType: {} as OrderCreatedPayload,
+      schema: OrderCreatedSchema,  // ✅ 스키마 추가!
+    },
+  },
+};
+
+// 2. Publisher (발행 시 자동 검증)
+EventsModule.forRoot({
+  streams: [ORDER_STREAM],
+  validation: { validateOnPublish: true },  // 기본값: true
+});
+
+await publisher.publishEvent({
+  eventType: 'OrderCreated',
+  aggregateId: 'order-123',
+  payload: { orderId: 'invalid-uuid', ... },  // ❌ 검증 실패 → SchemaValidationError
+});
+
+// 3. Consumer (수신 시 자동 검증)
+EventsModule.forConsumerModule({
+  streams: [ORDER_STREAM],
+  validation: { validateOnConsume: true },  // 기본값: true
+});
+
+@OnEvent('orders.events.v1', 'OrderCreated')
+async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
+  // ✅ 이 시점에 payload는 이미 스키마 검증 완료!
+  // ✅ 타입 안전성 + 런타임 검증 보장
+}
+```
+
+**검증 실패 시**: 재시도 없이 즉시 DLQ로 전송
+
+상세 가이드: [스키마 검증 가이드](./docs/schema-validation-guide.md)
+
+### Graceful Shutdown ⭐
+
+```typescript
+// 1. main.ts에서 shutdown hooks 활성화 (필수!)
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();  // ✅ 필수!
+await app.listen(3000);
+
+// 2. EventsModule 사용 시 자동으로 활성화됨!
+EventsModule.forRoot({
+  streams: [ORDER_STREAM],
+});
+
+// 애플리케이션 종료 시:
+// 1. In-flight 메시지 처리 완료 대기
+// 2. Kafka producer/consumer graceful disconnect
+// 3. 최대 30초 타임아웃
+```
+
+**종료 로그 예시**:
+```
+[GracefulShutdownService] 🛑 Graceful shutdown initiated (signal: SIGTERM)
+[GracefulShutdownService] Disconnecting Kafka client...
+[GracefulShutdownService] ✅ Kafka client disconnected
+[GracefulShutdownService] ✅ Graceful shutdown completed
+```
+
+상세 가이드: [Graceful Shutdown 가이드](./docs/graceful-shutdown-guide.md)
+
+### 수동 DLQ 처리
+
+```typescript
+import { DLQHandler, DisableDLQ } from '@app/events';
+
+@Injectable()
+export class MyConsumer {
+  constructor(private readonly dlqHandler: DLQHandler) {}
+
+  @OnEvent('orders.events.v1', 'OrderCreated')
+  @DisableDLQ()  // 자동 DLQ 비활성화
+  async handleOrderCreated(@EventEnvelope() envelope: DomainEvent) {
+    try {
+      await this.processOrder(envelope.payload);
+    } catch (error) {
+      // 수동으로 DLQ 전송 (커스텀 로직 가능)
+      await this.dlqHandler.sendToDLQ({
+        originalTopic: 'orders.events.v1',
+        originalMessage: envelope,
+        error,
+        context: {
+          partition: 0,
+          offset: '12345',
+          consumer: 'OrderEventsConsumer',
+          retryCount: 3,
+        },
+      });
+
+      throw error;
+    }
+  }
+}
+```
+
+## 🏗️ 프로젝트 구조
+
+```
+libs/events/src/
+├── envelope.types.ts              # MessageEnvelope, DomainEvent, DomainCommand
+├── stream-config.types.ts         # StreamConfig, KafkaConfig (Zod schema 지원)
+├── events.module.ts               # EventsModule (forRoot, forConsumer, forConsumerModule)
+├── publishers/
+│   └── stream-publisher.service.ts# 스키마 검증 포함
+├── consumers/
+│   └── decorators.ts              # @OnEvent, @EventPayload, etc.
+├── dlq/
+│   ├── dlq.types.ts
+│   └── dlq-handler.service.ts
+├── retry/
+│   ├── retry-policy.types.ts      # 재시도 정책 타입
+│   ├── retry-policy.decorator.ts  # @RetryPolicy, @DisableDLQ
+│   └── retry.util.ts              # 재시도 로직
+├── filters/
+│   └── events-exception.filter.ts # 자동 DLQ 처리 필터
+├── validation/
+│   ├── schema-validation.types.ts # Zod 스키마 타입
+│   └── schema-validation.util.ts  # 스키마 검증 유틸리티
+├── interceptors/
+│   └── schema-validation.interceptor.ts # Consumer 스키마 검증
+├── shutdown/
+│   └── graceful-shutdown.service.ts # Graceful shutdown 처리
+├── utils/
+│   └── message-id.util.ts         # ULID 생성
+└── docs/
+    ├── auto-dlq-guide.md          # 자동 DLQ 가이드
+    ├── schema-validation-guide.md # 스키마 검증 가이드
+    └── graceful-shutdown-guide.md # Graceful shutdown 가이드
+
+libs/shared/src/streams/           # 공통 Stream 정의
+├── orders.stream.ts
+├── inventory.stream.ts
+├── inventory-with-schema.example.ts # Zod 스키마 예시
+├── payments.stream.ts
+└── users.stream.ts
+```
+
+## 🔧 환경 변수
+
+### Confluent Cloud
+
+```env
+SERVICE_NAME=my-service
+KAFKA_BROKERS=pkc-xxxxx.region.aws.confluent.cloud:9092
+KAFKA_API_KEY=your-api-key          # 신규 표준 네이밍
+KAFKA_API_SECRET=your-api-secret    # 신규 표준 네이밍
+KAFKA_CLIENT_ID=my-service
+KAFKA_GROUP_ID=my-consumer-group
+
+# 또는 레거시 네이밍 (하위 호환)
+# KAFKA_SASL_USERNAME=your-api-key
+# KAFKA_SASL_PASSWORD=your-api-secret
+```
+
+### 로컬 Kafka
+
+```env
+SERVICE_NAME=my-service
+KAFKA_BROKERS=localhost:9092
+KAFKA_CLIENT_ID=my-service
+KAFKA_GROUP_ID=my-consumer-group
+# 로컬에서는 인증 불필요
+```
+
+### ⚠️ 환경변수 로딩 주의
+
+**main.ts 최상단에서 로딩:**
+
+```typescript
+// ⚠️ 반드시 다른 import보다 먼저!
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ 
+  path: path.resolve(process.cwd(), 'apps/my-service/.env'),
+  override: true 
+});
+
+// 환경변수 로딩 후 다른 모듈 import
+import { NestFactory } from '@nestjs/core';
+// ...
+```
+
+## 📊 토픽 네이밍 컨벤션
+
+```
+{domain}.{type}.v{version}
+
+orders.events.v1         # 주문 이벤트
+orders.commands.v1       # 주문 커맨드
+orders.events.v1.dlq     # 주문 이벤트 DLQ
+
+inventory.events.v1
+payments.events.v1
+users.events.v1
+```
+
+## 🎯 Best Practices
+
+1. **Shutdown Hooks 활성화**: `app.enableShutdownHooks()` 필수 호출 (main.ts)
+2. **자동 DLQ 활성화**: `forConsumerModule()`로 자동 DLQ 처리 활성화 (권장)
+3. **스키마 검증 적용**: 중요한 이벤트에 Zod 스키마 추가 (런타임 검증)
+4. **Aggregate ID 기반 파티셔닝**: 같은 Order의 이벤트는 같은 파티션으로 → 순서 보장
+5. **Idempotency**: `messageId`로 중복 처리 방지 (핸들러는 멱등해야 함)
+6. **Correlation ID**: 전체 플로우 추적
+7. **재시도 정책 커스터마이즈**: 핸들러별로 적절한 재시도 정책 설정
+8. **타입 안전성**: TypeScript 타입 + Zod 스키마로 완벽한 타입 안전성
+9. **DLQ 모니터링**: DLQ 메시지는 별도 알림 및 재처리 프로세스 구축
+10. **선택적 스키마 적용**: 모든 이벤트에 스키마를 적용할 필요는 없음 (핵심 이벤트 우선)
+11. **Graceful Shutdown 테스트**: 프로덕션 배포 전 종료 테스트 필수
+
+## 🐛 트러블슈팅
+
+### Consumer가 메시지를 받지 못할 때
+```typescript
+// main.ts에서 connectMicroservice() 확인
+app.connectMicroservice(EventsModule.forConsumer({...}));
+await app.startAllMicroservices();  // 이거 필수!
+```
+
+### 타입 에러
+```typescript
+// StreamConfig 타입을 명시적으로 지정
+export const ORDER_STREAM: StreamConfig<OrderEvents> = { ... };
+```
+
+### DLQ 토픽이 없다는 에러
+- Kafka에서 자동 토픽 생성이 비활성화되어 있는 경우
+- 수동으로 DLQ 토픽 생성: `orders.events.v1.dlq`

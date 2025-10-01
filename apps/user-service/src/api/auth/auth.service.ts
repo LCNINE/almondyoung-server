@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
-import { EventPublisherService, InjectEventPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/events/user.events';
+import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/streams';
 import {
   BadRequestException,
   ConflictException,
@@ -50,8 +50,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectEventPublisher()
-    private readonly eventPublisher: EventPublisherService<UserEvents>,
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly notificationPublisher: NotificationEventPublisher,
     private readonly consentsService: ConsentsService,
   ) {}
@@ -334,10 +334,14 @@ export class AuthService {
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(verificationToken.user);
 
-      await this.eventPublisher.publishEvent('USER_CREATED', {
-        userId: verificationToken.user.id,
-        email: verificationToken.user.email,
-        name: verificationToken.user.username,
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserCreated',
+        aggregateId: verificationToken.user.id,
+        payload: {
+          userId: verificationToken.user.id,
+          email: verificationToken.user.email,
+          name: verificationToken.user.username,
+        },
       });
 
       return reply.status(302).redirect(redirectTo);
@@ -456,10 +460,14 @@ export class AuthService {
           transaction,
         );
 
-        await this.eventPublisher.publishEvent('USER_CREATED', {
-          userId: newUser.user.id,
-          email: newUser.user.email,
-          name: newUser.user.username,
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserCreated',
+          aggregateId: newUser.user.id,
+          payload: {
+            userId: newUser.user.id,
+            email: newUser.user.email,
+            name: newUser.user.username,
+          },
         });
 
         return newUser;
@@ -938,8 +946,12 @@ export class AuthService {
       .returning();
 
     if (deletedUser.length > 0) {
-      await this.eventPublisher.publishEvent('USER_DELETED', {
-        userId: user.id,
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserDeleted',
+        aggregateId: user.id,
+        payload: {
+          userId: user.id,
+        },
       });
     } else {
       throw new NotFoundException(
