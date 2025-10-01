@@ -1,7 +1,6 @@
 import { Kafka, Producer, Consumer, EachMessagePayload } from 'kafkajs';
 import { MedusaService } from '@medusajs/framework/utils';
-import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
-import { USER_EVENTS } from '@libs/shared/src/events/user.events';
+import { PAYMENT_EVENTS, USER_EVENTS } from '@libs/shared/src/streams';
 
 type ModuleOptions = {
   kafka: {

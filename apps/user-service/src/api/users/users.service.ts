@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
-import { EventPublisherService, InjectEventPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/events/user.events';
+import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/streams';
 import {
   BadRequestException,
   Injectable,
@@ -30,8 +30,8 @@ export class UsersService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectEventPublisher()
-    private readonly eventPublisher: EventPublisherService<UserEvents>,
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
   ) {}
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -262,9 +262,13 @@ export class UsersService {
 
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
       if (!tx) {
-        await this.eventPublisher.publishEvent('USER_UPDATED', {
-          userId,
-          ...updateUserDto,
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserUpdated',
+          aggregateId: userId,
+          payload: {
+            userId,
+            ...updateUserDto,
+          },
         });
       }
     } catch (error) {

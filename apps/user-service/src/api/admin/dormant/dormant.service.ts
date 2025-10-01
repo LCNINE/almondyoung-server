@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
-import { EventPublisherService, InjectEventPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/events/user.events';
+import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { UserEvents } from '@app/shared/streams';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
@@ -16,8 +16,8 @@ export class DormantService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectEventPublisher()
-    private readonly eventPublisher: EventPublisherService<UserEvents>,
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
@@ -88,10 +88,14 @@ export class DormantService {
       // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {
         try {
-          await this.eventPublisher.publishEvent('DORMANT_USER_CONVERTED', {
-            userId: user.id,
-            email: user.email,
-            convertedAt: new Date(),
+          await this.eventPublisher.publishEvent({
+            eventType: 'UserDormantConverted',
+            aggregateId: user.id,
+            payload: {
+              userId: user.id,
+              email: user.email,
+              convertedAt: new Date().toISOString(),
+            },
           });
         } catch (error) {
           this.logger.error(
@@ -144,9 +148,13 @@ export class DormantService {
 
       // 각 사용자에 대해 영구 삭제가 되었다는 안내 이벤트 발행
       for (const user of targetUsers) {
-        await this.eventPublisher.publishEvent('USER_PERMANENT_DELETED', {
-          userId: user.id,
-          deletedAt: new Date(),
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserPermanentDeleted',
+          aggregateId: user.id,
+          payload: {
+            userId: user.id,
+            deletedAt: new Date().toISOString(),
+          },
         });
       }
 
