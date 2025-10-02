@@ -87,10 +87,10 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
-      if (process.env.NODE_ENV !== 'production' && !process.env.AUTH_SECRET) {
+      if (process.env.NODE_ENV !== 'production' && !process.env.JWT_SECRET) {
         return {
           success: false,
-          error: 'AUTH_SECRET is not defined',
+          error: 'JWT_SECRET is not defined',
         };
       }
 
