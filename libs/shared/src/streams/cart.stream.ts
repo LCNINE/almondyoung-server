@@ -1,19 +1,19 @@
 /**
  * Cart Domain Stream Configuration
- * 
+ *
  * 장바구니 도메인 이벤트 스트림 정의
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream, EventType, StreamConfig } from '@app/events';
 import { z } from 'zod';
 
 // ===== Payload 타입 정의 =====
 
 export interface CartCreatedPayload {
   id: string;
-  customer_id: string;
-  region_id: string;
-  created_at: string; // ISO 8601
+  customerId: string;
+  regionId: string;
+  createdAt: string; // ISO 8601
 }
 
 export interface CartUpdatedPayload {
@@ -22,29 +22,29 @@ export interface CartUpdatedPayload {
     id: string;
     title: string;
     quantity: number;
-    unit_price: number;
-    variant_id: string;
+    unitPrice: number;
+    variantId: string;
   }>;
   total: number;
   subtotal: number;
-  updated_at: string; // ISO 8601
+  updatedAt: string; // ISO 8601
 }
 
 // ===== Zod 스키마 정의 =====
 
 const CartCreatedSchema = z.object({
   id: z.string().min(1),
-  customer_id: z.string().min(1),
-  region_id: z.string().min(1),
-  created_at: z.string().datetime(),
+  customerId: z.string().min(1),
+  regionId: z.string().min(1),
+  createdAt: z.string().datetime(),
 });
 
 const CartItemSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   quantity: z.number().int().positive(),
-  unit_price: z.number().nonnegative(),
-  variant_id: z.string().min(1),
+  unitPrice: z.number().nonnegative(),
+  variantId: z.string().min(1),
 });
 
 const CartUpdatedSchema = z.object({
@@ -52,41 +52,34 @@ const CartUpdatedSchema = z.object({
   items: z.array(CartItemSchema),
   total: z.number().nonnegative(),
   subtotal: z.number().nonnegative(),
-  updated_at: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 
-// ===== Event Types Map =====
+// ===== Stream Config (타입 안전 버전) =====
 
-export type CartEvents = {
-  CartCreated: EventType<CartCreatedPayload>;
-  CartUpdated: EventType<CartUpdatedPayload>;
-};
-
-// ===== Stream Config =====
-
-export const CART_STREAM: StreamConfig<CartEvents> = {
-  topic: {
-    topic: 'carts.events.v1',
-    partitions: 6,
-  },
+export const CART_STREAM = stream({
+  topic: 'carts.events.v1',
+  partitions: 6,
   aggregateType: 'Cart',
   events: {
-    CartCreated: {
-      messageType: 'CartCreated',
-      payloadType: {} as CartCreatedPayload,
-      schema: CartCreatedSchema,
-    },
-    CartUpdated: {
-      messageType: 'CartUpdated',
-      payloadType: {} as CartUpdatedPayload,
-      schema: CartUpdatedSchema,
-    },
+    CartCreated: event('CartCreated', CartCreatedSchema),
+    CartUpdated: event('CartUpdated', CartUpdatedSchema),
   },
-};
+});
+
+// ===== 타입 추론 =====
+
+export type CartEvents = typeof CART_STREAM.events;
 
 // Medusa 호환성: 레거시 이벤트 토픽 참조
 export const CART_EVENTS = {
-  CART_CREATED: { topic: CART_STREAM.topic.topic },
-  CART_UPDATED: { topic: CART_STREAM.topic.topic },
+  CART_CREATED: {
+    topic: CART_STREAM.topic.topic,
+    messageType: 'CartCreated' as const,
+  },
+  CART_UPDATED: {
+    topic: CART_STREAM.topic.topic,
+    messageType: 'CartUpdated' as const,
+  },
 } as const;
 

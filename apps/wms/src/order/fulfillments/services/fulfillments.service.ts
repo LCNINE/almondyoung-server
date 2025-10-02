@@ -4,7 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-sch
 import { and, eq, inArray } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { AvailabilityService } from '../../shared/services/availability.service';
-import { EventPublisherService } from '@app/events';
+import { StreamPublisher } from '@app/events';
 import { FULFILLMENT_EVENTS } from '../../shared/events';
 import { OutboxService } from '../../shared/services/outbox.service';
 import { AuditService } from '../../../shared/services/audit.service';
@@ -22,7 +22,7 @@ export class FulfillmentsService {
     private readonly availability: AvailabilityService,
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly matchings?: MatchingsService,
-    private readonly events?: EventPublisherService<any>,
+    private readonly events?: StreamPublisher<any>,
     private readonly outbox?: OutboxService,
     private readonly audit?: AuditService,
   ) {}

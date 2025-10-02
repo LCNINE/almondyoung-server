@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and, lte, asc } from 'drizzle-orm';
-import { EventPublisherService } from '@app/events';
+import { StreamPublisher } from '@app/events';
 
 
 @Injectable()
@@ -10,7 +10,7 @@ export class OutboxDispatcherService {
   private readonly logger = new Logger(OutboxDispatcherService.name);
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly publisher?: EventPublisherService<any>,
+    private readonly publisher?: StreamPublisher<any>,
   ) {}
 
   async dispatchBatch(limit = 100) {

@@ -1,12 +1,70 @@
 /**
  * Channel Adapter Stream Configuration
- * 
+ *
  * 채널 어댑터 이벤트 스트림 정의
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
 import { z } from 'zod';
-import { InternalOrderEvent } from '../channel-adapter.types';
+
+// ===== Channel Adapter 공통 타입 정의 =====
+
+export type ChannelType = 'naver_smartstore' | 'coupang' | 'medusa';
+
+export type ClaimType = 'CANCEL' | 'RETURN' | 'EXCHANGE';
+
+export interface ClaimInfo {
+  claimId: string;
+  claimType: ClaimType;
+  status?: string;
+  reason?: string;
+  quantity?: number;
+  completedDate?: string;
+}
+
+export interface DispatchInfo {
+  deliveryMethod: string;
+  trackingNumber?: string;
+  deliveryCompanyCode?: string;
+  promiseDeliveryDate?: string;
+  dispatchedAt?: string;
+}
+
+export interface BuyerInfo {
+  name?: string;
+  contact?: string;
+  address?: {
+    postalCode?: string;
+    roadAddress?: string;
+    detailAddress?: string;
+  };
+}
+
+/**
+ * 내부 주문 이벤트 데이터 형식
+ */
+export interface InternalOrderEvent {
+  channelType: ChannelType;
+  externalOrderId: string;
+  externalProductOrderId?: string;
+  status: string;
+  lastChangedType?: string;
+  lastChangedAt?: string;
+  paymentDate?: string;
+  quantity: number;
+  remainQuantity?: number;
+  priceAmount: number;
+  discountAmount?: number;
+  buyer?: BuyerInfo;
+  dispatch?: DispatchInfo;
+  currentClaim?: ClaimInfo;
+  completedClaims?: ClaimInfo[];
+  createdAt?: string;
+  updatedAt?: string;
+  reason?: string;
+  claimInfo?: ClaimInfo;
+  productName?: string;
+}
 
 // ===== Payload 타입 정의 =====
 
@@ -161,56 +219,23 @@ const QueryExecutedSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
-// ===== Event Types Map =====
+// ===== Stream Config (타입 안전 버전) =====
 
-export type ChannelAdapterEvents = {
-  OrderSyncCompleted: EventType<OrderSyncCompletedPayload>;
-  InventorySyncCompleted: EventType<InventorySyncCompletedPayload>;
-  CommandExecuted: EventType<CommandExecutedPayload>;
-  SyncFailure: EventType<SyncFailurePayload>;
-  ChannelStatusChanged: EventType<ChannelStatusChangedPayload>;
-  QueryExecuted: EventType<QueryExecutedPayload>;
-};
-
-// ===== Stream Config =====
-
-export const CHANNEL_ADAPTER_STREAM: StreamConfig<ChannelAdapterEvents> = {
-  topic: {
-    topic: 'channel-adapter.events.v1',
-    partitions: 6,
-  },
+export const CHANNEL_ADAPTER_STREAM = stream({
+  topic: 'channel-adapter.events.v1',
+  partitions: 6,
   aggregateType: 'ChannelAdapter',
   events: {
-    OrderSyncCompleted: {
-      messageType: 'OrderSyncCompleted',
-      payloadType: {} as OrderSyncCompletedPayload,
-      schema: OrderSyncCompletedSchema,
-    },
-    InventorySyncCompleted: {
-      messageType: 'InventorySyncCompleted',
-      payloadType: {} as InventorySyncCompletedPayload,
-      schema: InventorySyncCompletedSchema,
-    },
-    CommandExecuted: {
-      messageType: 'CommandExecuted',
-      payloadType: {} as CommandExecutedPayload,
-      schema: CommandExecutedSchema,
-    },
-    SyncFailure: {
-      messageType: 'SyncFailure',
-      payloadType: {} as SyncFailurePayload,
-      schema: SyncFailureSchema,
-    },
-    ChannelStatusChanged: {
-      messageType: 'ChannelStatusChanged',
-      payloadType: {} as ChannelStatusChangedPayload,
-      schema: ChannelStatusChangedSchema,
-    },
-    QueryExecuted: {
-      messageType: 'QueryExecuted',
-      payloadType: {} as QueryExecutedPayload,
-      schema: QueryExecutedSchema,
-    },
+    OrderSyncCompleted: event('OrderSyncCompleted', OrderSyncCompletedSchema),
+    InventorySyncCompleted: event('InventorySyncCompleted', InventorySyncCompletedSchema),
+    CommandExecuted: event('CommandExecuted', CommandExecutedSchema),
+    SyncFailure: event('SyncFailure', SyncFailureSchema),
+    ChannelStatusChanged: event('ChannelStatusChanged', ChannelStatusChangedSchema),
+    QueryExecuted: event('QueryExecuted', QueryExecutedSchema),
   },
-};
+});
+
+// ===== 타입 추론 =====
+
+export type ChannelAdapterEvents = typeof CHANNEL_ADAPTER_STREAM.events;
 
