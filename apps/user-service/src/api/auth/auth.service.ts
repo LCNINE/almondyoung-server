@@ -232,7 +232,9 @@ export class AuthService {
         const verificationToken = this.jwtService.sign(
           { sub: user.id },
           {
-            secret: this.configService.get<string>('AUTH_SECRET'),
+            secret: this.configService.get<string>(
+              'JWT_VERIFICATION_TOKEN_SECRET',
+            ),
             expiresIn,
           },
         );
@@ -370,7 +372,7 @@ export class AuthService {
     const verificationToken = this.jwtService.sign(
       { sub: user.id },
       {
-        secret: this.configService.get<string>('AUTH_SECRET'),
+        secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
         expiresIn,
       },
     );
