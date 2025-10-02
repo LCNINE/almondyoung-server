@@ -544,6 +544,7 @@ export class ProductCategoriesService {
         name: pimSchema.productMasters.name,
         description: pimSchema.productMasters.description,
         brand: pimSchema.productMasters.brand,
+        thumbnail: pimSchema.productMasters.thumbnail, // thumbnail 필드 추가
         basePrice: pimSchema.productMasters.basePrice,
         pricingStrategy: pimSchema.productMasters.pricingStrategy,
         tags: pimSchema.productMasters.tags,
@@ -552,6 +553,7 @@ export class ProductCategoriesService {
         seoTitle: pimSchema.productMasters.seoTitle,
         seoDescription: pimSchema.productMasters.seoDescription,
         seoKeywords: pimSchema.productMasters.seoKeywords,
+        descriptionHtml: pimSchema.productMasters.descriptionHtml,
         status: pimSchema.productMasters.status,
         isWholesaleOnly: pimSchema.productMasters.isWholesaleOnly,
         isMembershipOnly: pimSchema.productMasters.isMembershipOnly,
@@ -683,6 +685,84 @@ export class ProductCategoriesService {
       await executeMove(tx);
     } else {
       await this.db.db.transaction(executeMove);
+    }
+  }
+
+  // 고지훈 추가 - 기존 카테고리를 유지하면서 추가로 카테고리에 상품 연결 (다대다 지원)
+  async addProductsToCategory(
+    productIds: string[],
+    categoryId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    if (!productIds || productIds.length === 0) {
+      throw new Error('Product IDs are required');
+    }
+
+    const client = this.getClient(tx);
+
+    const executeAdd = async (txn: any) => {
+      // 1. 대상 카테고리 존재 확인
+      const [category] = await txn
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
+
+      if (!category) {
+        throw new Error(`Category not found: ${categoryId}`);
+      }
+
+      // 2. 상품들이 존재하는지 확인
+      const existingProducts = await txn
+        .select({ id: pimSchema.productMasters.id })
+        .from(pimSchema.productMasters)
+        .where(inArray(pimSchema.productMasters.id, productIds));
+
+      const existingProductIds = existingProducts.map((p) => p.id);
+      const missingProductIds = productIds.filter(
+        (id) => !existingProductIds.includes(id),
+      );
+
+      if (missingProductIds.length > 0) {
+        throw new Error(`Products not found: ${missingProductIds.join(', ')}`);
+      }
+
+      // 3. 이미 연결된 상품-카테고리 관계 조회
+      const existingRelations = await txn
+        .select()
+        .from(pimSchema.productMasterCategories)
+        .where(
+          and(
+            inArray(pimSchema.productMasterCategories.masterId, productIds),
+            eq(pimSchema.productMasterCategories.categoryId, categoryId),
+          ),
+        );
+
+      const existingMasterIds = existingRelations.map((r) => r.masterId);
+
+      // 4. 아직 연결되지 않은 상품들만 새로 연결
+      const newProductIds = productIds.filter(
+        (id) => !existingMasterIds.includes(id),
+      );
+
+      if (newProductIds.length > 0) {
+        const newRelations = newProductIds.map((productId) => ({
+          masterId: productId,
+          categoryId: categoryId,
+          isPrimary: false, // 추가 카테고리는 보조로 설정
+          createdAt: new Date(),
+        }));
+
+        await txn
+          .insert(pimSchema.productMasterCategories)
+          .values(newRelations);
+      }
+    };
+
+    // 트랜잭션 처리
+    if (tx) {
+      await executeAdd(tx);
+    } else {
+      await this.db.db.transaction(executeAdd);
     }
   }
 

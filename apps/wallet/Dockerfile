@@ -2,11 +2,15 @@
 FROM node:22-alpine AS base
 
 WORKDIR /app
-RUN apk add --no-cache postgresql-client
+RUN apk add --no-cache postgresql-client git openssh-client
 
 FROM base AS deps
 COPY package*.json ./
 RUN npm ci
+
+FROM base AS deps-prod
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
@@ -18,12 +22,13 @@ COPY apps/wallet/ ./apps/wallet/
 RUN npm run build:wallet
 
 FROM base AS runner
+# 런타임 이미지에서는 이미 deps-prod 레이어에서 설치한 node_modules를 재사용하여 중복 설치를 피함
+COPY --from=deps-prod /app/node_modules ./node_modules
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
-COPY --from=builder /app/apps/wallet/html ./apps/wallet/html
+# html 디렉토리는 존재하지 않으므로 복사하지 않음
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs

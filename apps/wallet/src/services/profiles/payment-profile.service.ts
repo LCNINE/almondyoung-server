@@ -13,6 +13,7 @@ import {
   CmsBatchProfilesRepository,
 } from './payment-profile.repository';
 import * as schema from '../../shared/database/schema';
+import { walletSchema } from '../../shared/database/schema';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { getTsid } from 'tsid-ts';
 import { CreateHmsCardProfileSchema } from '../../controllers/payment.controller.zod';
@@ -31,7 +32,7 @@ export class PaymentProfileService {
   private readonly logger = new Logger(PaymentProfileService.name);
 
   constructor(
-    private readonly db: DbService<typeof schema>, // for transactions
+    private readonly db: DbService<typeof walletSchema>, // for transactions
     private readonly registry: ProviderRegistry,
     private readonly profilesRepo: PaymentProfilesRepository,
     private readonly cmsCardRepo: CmsCardProfilesRepository,

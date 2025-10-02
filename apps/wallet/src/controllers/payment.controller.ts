@@ -29,6 +29,7 @@ import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { eq } from 'drizzle-orm';
 import { FastifyRequest } from 'fastify';
 import { Multipart, MultipartFile } from '@fastify/multipart';
@@ -107,7 +108,7 @@ export class PaymentController {
     private readonly intentService: PaymentIntentService,
     private readonly profileService: PaymentProfileService,
     private readonly bnplAccountService: BnplAccountService,
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly checkoutSessionService: CheckoutSessionService,
   ) {}

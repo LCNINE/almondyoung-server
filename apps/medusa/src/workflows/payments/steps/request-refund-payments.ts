@@ -1,4 +1,4 @@
-import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
+import { PAYMENT_EVENTS } from '@libs/shared/src/streams';
 import { EVENT_MODULE } from '@medusa/modules/events';
 import EventModuleService from '@medusa/modules/events/service';
 import { IPaymentModuleService, Logger } from '@medusajs/framework/types';

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { eq, and, lte, gte, desc, sum, SQL, inArray } from 'drizzle-orm';
 
 import {
@@ -30,7 +31,7 @@ import {
 export class BnplAccountService {
   private readonly logger = new Logger(BnplAccountService.name);
 
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   /**
    * BNPL 계정을 생성합니다.

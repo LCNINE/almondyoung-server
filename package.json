@@ -5,7 +5,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "npm run build:all",
-    "build:all": "nest build almondyoung-server && nest build wms && nest build pim && nest build user-service && nest build wallet && nest build membership && nest build notification && nest build channel-adapter",
+    "build:all": "nest build almondyoung-server && nest build wms && nest build pim && nest build user-service && nest build wallet && nest build membership && nest build notification && nest build channel-adapter && nest build events-test",
     "start": "npm run start:main",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -14,7 +14,6 @@
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
-
     "build:main": "nest build almondyoung-server",
     "build:wms": "nest build wms",
     "build:pim": "nest build pim",
@@ -23,75 +22,62 @@
     "build:membership": "nest build membership",
     "build:notification": "nest build notification",
     "build:channel-adapter": "nest build channel-adapter",
-
+    "build:events-test": "nest build events-test",
     "start:main": "nest start almondyoung-server",
     "start:main:dev": "nest start almondyoung-server --watch",
     "start:main:debug": "nest start almondyoung-server --debug --watch",
     "start:main:prod": "node dist/apps/almondyoung-server/main.js",
-
     "start:wms": "nest start wms",
     "start:wms:dev": "nest start wms --watch",
     "start:wms:prod": "node dist/apps/wms/main.js",
-
     "start:pim": "nest start pim",
     "start:pim:dev": "nest start pim --watch",
     "start:pim:prod": "node dist/apps/pim/main.js",
-
     "start:user-service": "nest start user-service",
     "start:user-service:dev": "nest start user-service --watch",
     "start:user-service:prod": "node dist/apps/user-service/main.js",
-
     "start:wallet": "nest start wallet",
     "start:wallet:dev": "nest start wallet --watch",
     "start:wallet:prod": "node dist/apps/wallet/main.js",
-
     "start:membership": "nest start membership",
     "start:membership:dev": "nest start membership --watch",
     "start:membership:prod": "node dist/apps/membership/main.js",
-
     "start:notification": "nest start notification",
     "start:notification:dev": "nest start notification --watch",
     "start:notification:prod": "node dist/apps/notification/main.js",
-
     "start:channel-adapter": "nest start channel-adapter",
     "start:channel-adapter:dev": "nest start channel-adapter --watch",
     "start:channel-adapter:prod": "node dist/apps/channel-adapter/main.js",
-
+    "start:events-test": "nest start events-test",
+    "start:events-test:dev": "nest start events-test --watch",
+    "start:events-test:prod": "node dist/apps/events-test/main.js",
     "test:wms": "jest --config apps/wms/jest.config.js",
     "test:wms:watch": "jest --config apps/wms/jest.config.js --watch",
     "test:wms:debug": "jest --config apps/wms/jest.config.js --verbose",
-
     "test:user-service": "jest --config ./apps/user-service/jest.config.js",
-
     "test:membership": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
     "test:membership:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
     "test:membership:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
-
     "db:generate:wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
     "db:push:wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
     "db:push:wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
-
     "db:generate:pim": "cd apps/pim && drizzle-kit generate",
     "db:migrate:pim": "cd apps/pim && drizzle-kit migrate",
     "db:push:pim": "cd apps/pim && drizzle-kit push",
-
     "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
-    
+    "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
     "db:push:channel-adapter": "drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
     "db:seed:membership": "cd apps/membership && npx tsx drizzle/seed.ts",
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
-
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
     "docs:wms": "npm run docs:generate wms",
     "docs:pim": "npm run docs:generate pim",
     "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",
     "docs:serve": "npx itdoc serve",
-
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",
-
     "start:dev": "npm run start:main:dev",
     "start:debug": "npm run start:main:debug",
     "start:prod": "npm run start:main:prod",
@@ -110,7 +96,6 @@
     "test:membership:e2e:watch": "npm run test:membership:watch",
     "test:membership:e2e:verbose": "npm run test:membership:verbose",
     "test:membership:e2e:coverage": "npm run test:membership:coverage",
-
     "test:payment": "jest --testPathPattern=payment.*spec.ts",
     "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
     "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
@@ -172,6 +157,7 @@
     "express": "^5.1.0",
     "firebase-admin": "^13.5.0",
     "form-data": "^4.0.4",
+    "handlebars": "^4.7.8",
     "hms-api-wrapper": "git+https://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@github.com/LCNINE/hms-api-wrapper.git#main",
     "kafkajs": "^2.2.4",
     "nestjs-resend": "^1.0.3",
@@ -190,6 +176,7 @@
     "swagger-ui-express": "^5.0.1",
     "tsid-ts": "^0.0.9",
     "twilio": "^5.9.0",
+    "ulid": "^3.0.1",
     "uuid": "^11.1.0",
     "zod": "^4.1.11"
   },
@@ -264,5 +251,6 @@
       "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1"
     }
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

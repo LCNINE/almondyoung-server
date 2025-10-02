@@ -1,5 +1,5 @@
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
-import { CART_EVENTS } from '../../../../libs/shared/src/events/cart.events';
+import { CART_EVENTS } from '@libs/shared/src/streams';
 import { container } from '@medusajs/framework';
 import { Modules } from '@medusajs/framework/utils';
 import EventModuleService from '../modules/events/service';

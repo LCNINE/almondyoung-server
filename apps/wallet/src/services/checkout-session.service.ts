@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { PaymentIntentService } from './intents/intent.service';
 import { PaymentError } from '../providers/payment-provider.interface';
 import { getTsid } from 'tsid-ts';
@@ -16,7 +17,7 @@ export class CheckoutSessionService {
     process.env.WALLET_UI_BASE_URL || 'http://localhost:8000/kr/payment';
 
   constructor(
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
     private readonly intentService: PaymentIntentService,
   ) {}
 

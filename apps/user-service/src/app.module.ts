@@ -2,7 +2,7 @@ import * as os from 'os';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { AuthorizationGuard } from '@app/roles';
-import { USER_EVENTS, UserEvents } from '@app/shared/events/user.events';
+import { USER_STREAM, UserEvents } from '@app/shared/streams';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -70,13 +70,17 @@ function createKafkaConfig() {
       },
       schema: userServiceSchema,
     }),
-    EventsModule.forRoot<UserEvents>({
-      kafka: createKafkaConfig(),
-      events: USER_EVENTS,
+    EventsModule.forRoot({
+      streams: [USER_STREAM],
       serviceName: 'user-service',
+      kafka: createKafkaConfig(),
+      validation: {
+        validateOnPublish: true,
+        throwOnValidationError: true,
+      },
     }),
     ScheduleModule.forRoot(),
-    AuthModule,
+    AuthModule.register(),
     UsersModule,
     ShopModule,
     ConsentsModule,
