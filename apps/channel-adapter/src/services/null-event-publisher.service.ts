@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelAdapterEvents } from '@app/shared/streams';
+import { ExtractPayloadType } from '@app/events';
 
 /**
  * 아무 동작도 하지 않는 StreamPublisher 구현체
@@ -45,7 +46,7 @@ export class NullEventPublisher {
   async publishEvent<K extends keyof ChannelAdapterEvents>(params: {
     eventType: K;
     aggregateId: string;
-    payload: ChannelAdapterEvents[K]['payloadType'];
+    payload: ExtractPayloadType<ChannelAdapterEvents[K]>;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     this.logger.debug(
@@ -65,7 +66,7 @@ export class NullEventPublisher {
     events: Array<{
       eventType: K;
       aggregateId: string;
-      payload: ChannelAdapterEvents[K]['payloadType'];
+      payload: ExtractPayloadType<ChannelAdapterEvents[K]>;
       metadata?: Record<string, unknown>;
     }>,
   ): Promise<void> {

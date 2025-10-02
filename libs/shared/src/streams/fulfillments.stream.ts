@@ -4,7 +4,8 @@
  * 이행/배송 도메인 이벤트 스트림
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
+import { z } from 'zod';
 
 // ===== Common Types =====
 
@@ -143,59 +144,118 @@ export interface FulfillmentReturnedPayload {
   returnReason: string;
 }
 
-// ===== Event Types Map =====
+// ===== Zod 스키마 정의 =====
 
-export type FulfillmentEvents = {
-  FulfillmentCreated: EventType<FulfillmentCreatedPayload>;
-  FulfillmentReady: EventType<FulfillmentReadyPayload>;
-  FulfillmentLabeled: EventType<FulfillmentLabeledPayload>;
-  FulfillmentShipped: EventType<FulfillmentShippedPayload>;
-  FulfillmentDelivered: EventType<FulfillmentDeliveredPayload>;
-  FulfillmentCancelled: EventType<FulfillmentCancelledPayload>;
-  FulfillmentReturned: EventType<FulfillmentReturnedPayload>;
-};
+const FulfillmentModeSchema = z.enum(['in_house', '3pl', 'drop_ship']);
+const CarrierSchema = z.enum(['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 
-// ===== Stream Config =====
+const FulfillmentItemSchema = z.object({
+  fulfillmentItemId: z.string().min(1),
+  orderItemId: z.string().min(1),
+  skuId: z.string().min(1),
+  quantity: z.number().int().positive(),
+});
 
-export const FULFILLMENT_STREAM: StreamConfig<FulfillmentEvents> = {
-  topic: {
-    topic: 'fulfillments.events.v1',
-    partitions: 6,
-  },
+const TrackingInfoSchema = z.object({
+  carrier: CarrierSchema,
+  trackingNumber: z.string().min(1),
+  invoiceUrl: z.string().url().optional(),
+});
+
+const FulfillmentCreatedSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  fulfillmentNo: z.string().min(1),
+  orderId: z.string().min(1),
+  mode: FulfillmentModeSchema,
+  warehouseId: z.string().optional(),
+  items: z.array(FulfillmentItemSchema),
+  createdAt: z.string().datetime(),
+});
+
+const FulfillmentReadySchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  readyItems: z.array(z.object({
+    fulfillmentItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    readyQty: z.number().int().positive(),
+  })),
+  readyAt: z.string().datetime(),
+  readyBy: z.string().min(1),
+});
+
+const FulfillmentLabeledSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  trackingInfo: TrackingInfoSchema,
+  labeledAt: z.string().datetime(),
+});
+
+const FulfillmentShippedSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  trackingInfo: TrackingInfoSchema,
+  shippedAt: z.string().datetime(),
+  estimatedDeliveryDate: z.string().datetime().optional(),
+  shippedItems: z.array(z.object({
+    fulfillmentItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    shippedQty: z.number().int().positive(),
+  })),
+});
+
+const FulfillmentDeliveredSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  deliveredAt: z.string().datetime(),
+  recipient: z.string().optional(),
+  deliverySignature: z.string().optional(),
+});
+
+const FulfillmentCancelledSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  reason: z.enum(['ORDER_CANCELLED', 'OUT_OF_STOCK', 'ADMIN_CANCEL']),
+  reasonDetail: z.string().optional(),
+  cancelledBy: z.string().min(1),
+  cancelledAt: z.string().datetime(),
+});
+
+const FulfillmentReturnedSchema = z.object({
+  fulfillmentId: z.string().min(1),
+  orderId: z.string().min(1),
+  returnId: z.string().min(1),
+  returnedItems: z.array(z.object({
+    fulfillmentItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    returnedQty: z.number().int().positive(),
+  })),
+  returnedAt: z.string().datetime(),
+  returnReason: z.string().min(1),
+});
+
+// ===== Stream Config (타입 안전 버전) =====
+
+export const FULFILLMENT_STREAM = stream({
+  topic: 'fulfillments.events.v1',
+  partitions: 6,
   aggregateType: 'Fulfillment',
   events: {
-    FulfillmentCreated: {
-      messageType: 'FulfillmentCreated',
-      payloadType: {} as FulfillmentCreatedPayload,
-    },
-    FulfillmentReady: {
-      messageType: 'FulfillmentReady',
-      payloadType: {} as FulfillmentReadyPayload,
-    },
-    FulfillmentLabeled: {
-      messageType: 'FulfillmentLabeled',
-      payloadType: {} as FulfillmentLabeledPayload,
-    },
-    FulfillmentShipped: {
-      messageType: 'FulfillmentShipped',
-      payloadType: {} as FulfillmentShippedPayload,
-    },
-    FulfillmentDelivered: {
-      messageType: 'FulfillmentDelivered',
-      payloadType: {} as FulfillmentDeliveredPayload,
-    },
-    FulfillmentCancelled: {
-      messageType: 'FulfillmentCancelled',
-      payloadType: {} as FulfillmentCancelledPayload,
-    },
-    FulfillmentReturned: {
-      messageType: 'FulfillmentReturned',
-      payloadType: {} as FulfillmentReturnedPayload,
-    },
+    FulfillmentCreated: event('FulfillmentCreated', FulfillmentCreatedSchema),
+    FulfillmentReady: event('FulfillmentReady', FulfillmentReadySchema),
+    FulfillmentLabeled: event('FulfillmentLabeled', FulfillmentLabeledSchema),
+    FulfillmentShipped: event('FulfillmentShipped', FulfillmentShippedSchema),
+    FulfillmentDelivered: event('FulfillmentDelivered', FulfillmentDeliveredSchema),
+    FulfillmentCancelled: event('FulfillmentCancelled', FulfillmentCancelledSchema),
+    FulfillmentReturned: event('FulfillmentReturned', FulfillmentReturnedSchema),
   },
-};
+});
 
-// ===== Event Type Constants =====
+// ===== 타입 추론 =====
+
+export type FulfillmentEvents = typeof FULFILLMENT_STREAM.events;
+
+// ===== Medusa 호환성: 레거시 이벤트 상수 =====
 
 export const FulfillmentEventTypes = {
   CREATED: 'FulfillmentCreated',

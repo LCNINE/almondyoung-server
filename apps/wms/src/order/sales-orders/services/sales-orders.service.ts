@@ -6,7 +6,7 @@ import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
 import { OutboxService } from '../../shared/services/outbox.service';
-import { EventPublisherService } from '@app/events';
+import { StreamPublisher } from '@app/events';
 import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
@@ -18,7 +18,7 @@ export class SalesOrdersService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
-    private readonly events: EventPublisherService<any>,
+    private readonly events: StreamPublisher<any>,
     private readonly outbox: OutboxService,
     private readonly fulfillments: FulfillmentsService,
     private readonly reservationLifecycle: ReservationLifecycleService,

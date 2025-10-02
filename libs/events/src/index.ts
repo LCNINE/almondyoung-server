@@ -7,6 +7,7 @@
 // Core Types
 export * from './envelope.types';
 export * from './stream-config.types';
+export * from './stream-builder';
 
 // Module
 export * from './events.module';
