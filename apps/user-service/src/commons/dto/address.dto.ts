@@ -1,24 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class AddressDto {
-  @ApiProperty({ description: '거리명 / 도로명' })
+  @ApiProperty({ description: '주소 1 (기본주소)' })
   @IsString()
-  street: string;
+  address_1: string;
 
-  @ApiProperty({ description: '도시 (예: 서울)' })
+  @ApiProperty({ description: '주소 2 (상세주소)', required: false })
+  @IsString()
+  @IsOptional()
+  address_2?: string;
+
+  @ApiProperty({ description: '도시' })
   @IsString()
   city: string;
 
-  @ApiProperty({ description: '시/도 (예: 서울특별시)' })
+  @ApiProperty({ description: '국가 코드', example: 'KR' })
   @IsString()
-  state: string;
+  country_code: string;
 
-  @ApiProperty({ description: '국가 코드 (예: KR)' })
+  @ApiProperty({ description: '우편번호' })
   @IsString()
-  country: string;
+  postal_code: string;
 
-  @ApiProperty({ description: '상세주소 (예: 무슨 아파트 101동 1203호)' })
+  @ApiProperty({ description: '시/도', example: '서울특별시' })
   @IsString()
-  detail: string;
+  @IsOptional()
+  province?: string;
 }
