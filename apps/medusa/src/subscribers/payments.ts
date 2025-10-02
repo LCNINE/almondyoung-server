@@ -9,7 +9,7 @@ import {
 } from '@medusajs/framework/utils';
 import { EVENT_MODULE } from '../modules/events';
 import EventModuleService from '../modules/events/service';
-import { PAYMENT_EVENTS } from '@libs/shared/src/events/payment.events';
+import { PAYMENT_EVENTS } from '@libs/shared/src/streams';
 
 export const config: SubscriberConfig = {
   event: [

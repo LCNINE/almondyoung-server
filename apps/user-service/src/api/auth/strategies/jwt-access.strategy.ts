@@ -10,6 +10,14 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private usersService: UsersService,
   ) {
+    const jwtSecret = configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET');
+
+    if (!jwtSecret) {
+      throw new Error(
+        'JWT_VERIFICATION_TOKEN_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.'
+      );
+    }
+
     super({
       // jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -17,7 +25,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
           return req?.cookies?.accessToken;
         },
       ]),
-      secretOrKey: configService.get<string>('AUTH_SECRET')!,
+      secretOrKey: jwtSecret,
       ignoreExpiration: false,
     });
   }

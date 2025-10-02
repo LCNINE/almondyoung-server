@@ -1,4 +1,39 @@
-export * from './event-publisher.service';
+/**
+ * Events Module - Public API
+ *
+ * Stream 기반 Kafka 이벤트 시스템
+ */
+
+// Core Types
+export * from './envelope.types';
+export * from './stream-config.types';
+
+// Module
 export * from './events.module';
-export * from './types';
-export * from './decorators';
+
+// Publisher
+export * from './publishers/stream-publisher.service';
+
+// Consumer Decorators & Guards
+export * from './consumers/decorators';
+export * from './guards/event-type.guard';
+
+// DLQ
+export * from './dlq/dlq.types';
+export * from './dlq/dlq-handler.service';
+
+// Retry & Auto DLQ
+export * from './retry/retry-policy.types';
+export * from './retry/retry-policy.decorator';
+export * from './filters/events-exception.filter';
+
+// Schema Validation
+export * from './validation/schema-validation.types';
+export * from './validation/schema-validation.util';
+export * from './interceptors/schema-validation.interceptor';
+
+// Graceful Shutdown
+export * from './shutdown/graceful-shutdown.service';
+
+// Utilities
+export * from './utils/message-id.util';

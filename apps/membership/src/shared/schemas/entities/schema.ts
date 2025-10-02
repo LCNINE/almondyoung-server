@@ -405,3 +405,35 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
     .defaultNow()
     .notNull(),
 });
+
+// ===============================
+// 전체 스키마 객체 Export (Drizzle ORM 규칙)
+// ===============================
+// 주의: DbService의 타입 체크를 위해 membershipSchema만 사용하세요
+// import * as schema를 사용하면 Enum들도 포함되어 타입 에러 발생
+export const membershipSchema = {
+  // Tables
+  tiers,
+  plan,
+  subscriptionContracts,
+  subscriptionEntitlement,
+  eventBatches,
+  pauseEvents,
+  pauseEventDetails,
+  membershipDunningQueue,
+  billingEvents,
+  subscriptionPolicies,
+  
+  // Relations
+  tiersRelations,
+  planRelations,
+  subscriptionContractsRelations,
+  subscriptionEntitlementRelations,
+  eventBatchesRelations,
+  pauseEventsRelations,
+  pauseEventDetailsRelations,
+  membershipDunningQueueRelations,
+  billingEventsRelations,
+} as const;
+
+export type MembershipSchema = typeof membershipSchema;

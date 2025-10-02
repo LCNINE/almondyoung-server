@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
+import { walletSchema } from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
 import { PaymentExecutorService } from './payment-executor.service';
 import {
@@ -16,7 +17,7 @@ export class PaymentOrchestratorService {
   private readonly logger = new Logger(PaymentOrchestratorService.name);
 
   constructor(
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
     private readonly paymentExecutor: PaymentExecutorService,
   ) {}
 

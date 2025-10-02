@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
+import { walletSchema } from '../shared/database/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { BnplAccountService } from './bnpl-account.service';
@@ -20,7 +21,7 @@ export class BnplBillingScheduler {
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   constructor(
-    private readonly db: DbService<typeof schema>,
+    private readonly db: DbService<typeof walletSchema>,
     private readonly bnpl: BnplAccountService,
     private readonly orchestrator: PaymentOrchestratorService,
   ) {

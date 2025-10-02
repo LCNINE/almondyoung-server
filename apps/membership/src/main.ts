@@ -53,11 +53,13 @@ async function bootstrap(): Promise<void> {
 
     const document = SwaggerModule.createDocument(app, config);
 
-    // apps/membership/swagger-spec.json에 저장
-    const swaggerJsonPath = join(process.cwd(), 'apps', 'membership', 'swagger-spec.json');
-    mkdirSync(join(process.cwd(), 'apps', 'membership'), { recursive: true });
-    writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
-    console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+    // apps/membership/swagger-spec.json에 저장 (개발 환경만)
+    // if (process.env.NODE_ENV !== 'production') {
+    //   const swaggerJsonPath = join(process.cwd(), 'apps', 'membership', 'swagger-spec.json');
+    //   mkdirSync(join(process.cwd(), 'apps', 'membership'), { recursive: true });
+    //   writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
+    //   console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
+    // }
 
     // Swagger UI
     SwaggerModule.setup('/api/docs', app, document, {
