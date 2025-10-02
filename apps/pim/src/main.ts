@@ -17,7 +17,7 @@ async function bootstrap() {
 
   // 정적 파일 서빙 설정 (이미지 파일 접근용)
   app.useStaticAssets({
-    root: join(process.cwd(), 'apps', 'pim', 'images'),
+    root: join(process.cwd(), 'images'),
     prefix: '/images/',
   });
 

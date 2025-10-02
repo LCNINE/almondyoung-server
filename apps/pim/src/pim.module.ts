@@ -13,6 +13,7 @@ import { ChannelProductsService } from './services/channel-products.service';
 import { SalesChannelsController } from './controllers/sales-channels.controller';
 import { SalesChannelsService } from './services/sales-channels.service';
 import { FileUploadController } from './controllers/file-upload.controller';
+import { ImageService } from './services/image.service';
 
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
@@ -41,11 +42,13 @@ import { pimSchema } from './schema';
     FileUploadController,
   ],
   providers: [
+    PimService,
     ProductCategoriesService,
     ProductMastersService,
     ProductVariantsService,
     ChannelProductsService,
     SalesChannelsService,
+    ImageService,
     PricingStrategyFactory,
     OptionBasedPricingStrategy,
     VariantBasedPricingStrategy,

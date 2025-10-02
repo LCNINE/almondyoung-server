@@ -12,6 +12,8 @@ import {
 import {
   type PimSchema,
   productMasters,
+  productMasterCategories,
+  productCategories,
   productOptionGroups,
   productOptionValues,
   productVariants,
@@ -20,7 +22,7 @@ import {
   uploads,
 } from '../schema';
 import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
-import { eq, and, or, like, ilike, count, asc, desc, sql } from 'drizzle-orm';
+import { eq, and, ilike, count, asc, desc, inArray } from 'drizzle-orm';
 
 @Injectable()
 export class ProductMastersService {
@@ -28,6 +30,35 @@ export class ProductMastersService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly pricingStrategyFactory: PricingStrategyFactory,
   ) {}
+
+  private async _linkImages(
+    masterId: string,
+    data: CreateMasterDto,
+    tx: DbTransaction,
+  ): Promise<void> {
+    // 썸네일 URL 직접 사용 (외부 URL 그대로)
+    if ((data as any).thumbnailUrl) {
+      await tx
+        .update(productMasters)
+        .set({ thumbnail: (data as any).thumbnailUrl })
+        .where(eq(productMasters.id, masterId));
+    }
+    // 기존 업로드 방식도 지원 (하위 호환성)
+    else if ((data as any).thumbnailUploadId) {
+      const uploadResult = await tx
+        .select({ url: uploads.url })
+        .from(uploads)
+        .where(eq(uploads.id, (data as any).thumbnailUploadId))
+        .limit(1);
+
+      if (uploadResult.length > 0) {
+        await tx
+          .update(productMasters)
+          .set({ thumbnail: uploadResult[0].url })
+          .where(eq(productMasters.id, masterId));
+      }
+    }
+  }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -54,11 +85,27 @@ export class ProductMastersService {
     data: CreateMasterDto,
     tx: DbTransaction,
   ): Promise<ProductMaster> {
-    // categoryId 제거됨 - many-to-many 관계로 변경
+    // HTML 처리 단순화
+    let processedHtml = null;
+    if ((data as any).descriptionHtml) {
+      processedHtml = (data as any).descriptionHtml
+        .replace(/<img ec-data-src="([^"]+)"/g, '<img src="$1"')
+        .replace(/<br><p><br><\/p>/g, '')
+        .replace(/<p><br><\/p>/g, '');
+    } else if ((data as any).detailHtmlTags) {
+      processedHtml = (data as any).detailHtmlTags
+        .join('')
+        .replace(/<img ec-data-src="([^"]+)"/g, '<img src="$1"')
+        .replace(/<br><p><br><\/p>/g, '')
+        .replace(/<p><br><\/p>/g, '');
+    }
+
     const masterData = {
       name: data.name,
       description: data.description,
+      descriptionHtml: processedHtml,
       brand: data.brand,
+      thumbnail: data.thumbnail,
       basePrice: data.basePrice,
       pricingStrategy: data.pricingStrategy,
       tags: data.tags,
@@ -67,10 +114,8 @@ export class ProductMastersService {
       seoTitle: data.seoTitle,
       seoDescription: data.seoDescription,
       seoKeywords: data.seoKeywords,
-      // 구매제한 필드들
       isWholesaleOnly: data.isWholesaleOnly || false,
       isMembershipOnly: data.isMembershipOnly || false,
-      // 특별 가격 필드들
       membershipPrice: data.membershipPrice || null,
       wholesalePrice: data.wholesalePrice || null,
     };
@@ -80,55 +125,17 @@ export class ProductMastersService {
       .values(masterData)
       .returning();
 
-    const createdOptionGroups: any[] = [];
-    if (data.optionGroups && data.optionGroups.length > 0) {
-      for (const optionGroup of data.optionGroups) {
-        const [group] = await tx
-          .insert(productOptionGroups)
-          .values({
-            masterId: master.id,
-            name: optionGroup.name,
-            displayName: optionGroup.displayName,
-            sortOrder: optionGroup.sortOrder || 0,
-          })
-          .returning();
+    // 이미지 연결 처리
+    await this._linkImages(master.id, data, tx);
 
-        const optionValues: any[] = [];
-        for (const value of optionGroup.values) {
-          const [optionValue] = await tx
-            .insert(productOptionValues)
-            .values({
-              optionGroupId: group.id,
-              value: value.value,
-              displayName: value.displayName,
-              sortOrder: value.sortOrder || 0,
-            })
-            .returning();
-
-          optionValues.push({
-            ...optionValue,
-            price: value.price, // option_based 전략용
-          });
-        }
-
-        createdOptionGroups.push({
-          ...group,
-          values: optionValues,
-        });
+    // 옵션 처리는 비동기로 후속 처리
+    setImmediate(async () => {
+      try {
+        await this._processOptionsAsync(master.id, data);
+      } catch (error) {
+        console.error('옵션 처리 실패:', error.message);
       }
-    }
-
-    await this._generateVariants(master.id, createdOptionGroups, tx);
-
-    await this.initializePricingStrategy(
-      master.id,
-      {
-        pricingStrategy: data.pricingStrategy,
-        optionGroups: createdOptionGroups,
-        variantPrices: data.variantPrices,
-      },
-      tx,
-    );
+    });
 
     return master;
   }
@@ -300,15 +307,26 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    data: ProductMaster[];
+    data: {
+      id: string;
+      name: string;
+      thumbnail: string | null;
+      basePrice: number | null;
+      membershipPrice: number | null;
+      isMembershipOnly: boolean | null;
+      status: string | null;
+      createdAt: string | null;
+    }[];
     total: number;
     page: number;
     limit: number;
   }> {
     const client = this.getClient(tx);
 
+    // 고지훈 임시 수정 - page가 없으면 전체 상품 반환 (검색 기능용)
+    const returnAll = filters?.page === undefined;
     const page = filters?.page || 1;
-    const limit = Math.min(filters?.limit || 20, 100);
+    const limit = returnAll ? 99999 : Math.min(filters?.limit || 20, 100);
     const offset = (page - 1) * limit;
 
     const whereConditions: any[] = [];
@@ -316,7 +334,6 @@ export class ProductMastersService {
       whereConditions.push(eq(productMasters.status, filters.status));
     }
 
-    // 카테고리 필터링은 별도 처리가 필요하므로 여기서는 제거하고 나중에 구현
     if (filters?.brand) {
       whereConditions.push(eq(productMasters.brand, filters.brand));
     }
@@ -329,6 +346,95 @@ export class ProductMastersService {
       whereConditions.push(ilike(productMasters.name, `%${filters.search}%`));
     }
 
+    // 고지훈 임시 수정 - 카테고리 필터링 구현 (하위 카테고리 포함)
+    // 카테고리 필터가 있는 경우와 없는 경우를 분리 처리
+    if (filters?.categoryId) {
+      // 1. 하위 카테고리 ID 목록 가져오기
+      const categoryIds = [filters.categoryId];
+
+      // 하위 카테고리 조회 (재귀적으로 모든 하위 카테고리 찾기)
+      const getDescendants = async (parentId: string) => {
+        const children = await client
+          .select()
+          .from(productCategories)
+          .where(eq(productCategories.parentId, parentId));
+
+        for (const child of children) {
+          categoryIds.push(child.id);
+          await getDescendants(child.id); // 재귀 호출
+        }
+      };
+
+      await getDescendants(filters.categoryId);
+
+      // 2. 카테고리 필터가 있는 경우: JOIN 사용
+      const whereClause =
+        whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+      // COUNT 쿼리 (JOIN 포함, 하위 카테고리도 포함)
+      const countBaseQuery = client
+        .select({ count: count() })
+        .from(productMasters)
+        .innerJoin(
+          productMasterCategories,
+          eq(productMasters.id, productMasterCategories.masterId),
+        );
+
+      const countConditions = [
+        inArray(productMasterCategories.categoryId, categoryIds),
+      ];
+      if (whereClause) {
+        countConditions.push(whereClause);
+      }
+
+      const countQuery = countBaseQuery.where(and(...countConditions));
+      const [{ count: total }] = await countQuery;
+
+      // 데이터 쿼리 (JOIN 포함, 하위 카테고리도 포함)
+      const dataQuery = client
+        .select({
+          id: productMasters.id,
+          name: productMasters.name,
+          thumbnail: productMasters.thumbnail,
+          basePrice: productMasters.basePrice,
+          membershipPrice: productMasters.membershipPrice,
+          isMembershipOnly: productMasters.isMembershipOnly,
+          status: productMasters.status,
+          createdAt: productMasters.createdAt,
+        })
+        .from(productMasters)
+        .innerJoin(
+          productMasterCategories,
+          eq(productMasters.id, productMasterCategories.masterId),
+        )
+        .where(and(...countConditions))
+        .orderBy(desc(productMasters.createdAt));
+
+      // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
+      if (!returnAll) {
+        dataQuery.limit(limit).offset(offset);
+      }
+
+      const rawData = await dataQuery;
+
+      // Date 객체를 ISO 문자열로 변환
+      const data = rawData.map((item) => ({
+        ...item,
+        createdAt: item.createdAt?.toISOString() || null,
+        // 고지훈 임시 시연용수정 - 썸네일 이미지 URL 제대로 반환
+        thumbnail: item.thumbnail,
+        // 고지훈 임시 시연용수정 - 상세설명은 description에 저장됨
+      }));
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+      };
+    }
+
+    // 카테고리 필터가 없는 경우: 기존 로직
     const whereClause =
       whereConditions.length > 0 ? and(...whereConditions) : undefined;
     const countQuery = client.select({ count: count() }).from(productMasters);
@@ -338,18 +444,41 @@ export class ProductMastersService {
     }
 
     const [{ count: total }] = await countQuery;
+
+    // 목록용으로 필요한 필드만 선택
     const dataQuery = client
-      .select()
+      .select({
+        id: productMasters.id,
+        name: productMasters.name,
+        thumbnail: productMasters.thumbnail,
+        basePrice: productMasters.basePrice,
+        membershipPrice: productMasters.membershipPrice,
+        isMembershipOnly: productMasters.isMembershipOnly,
+        status: productMasters.status,
+        createdAt: productMasters.createdAt,
+      })
       .from(productMasters)
-      .orderBy(desc(productMasters.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .orderBy(desc(productMasters.createdAt));
+
+    // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
+    if (!returnAll) {
+      dataQuery.limit(limit).offset(offset);
+    }
 
     if (whereClause) {
       dataQuery.where(whereClause);
     }
 
-    const data = await dataQuery;
+    const rawData = await dataQuery;
+
+    // Date 객체를 ISO 문자열로 변환
+    const data = rawData.map((item) => ({
+      ...item,
+      createdAt: item.createdAt?.toISOString() || null,
+      // 고지훈 임시 시연용수정 - 썸네일 이미지 URL 제대로 반환
+      thumbnail: item.thumbnail,
+      // 고지훈 임시 시연용수정 - 상세설명은 description에 저장됨
+    }));
 
     return {
       data,
@@ -893,5 +1022,79 @@ export class ProductMastersService {
     return combinations.map((combination) =>
       combination.map((option) => option.value || option),
     );
+  }
+
+  private async _processOptionsAsync(
+    masterId: string,
+    data: CreateMasterDto,
+  ): Promise<void> {
+    if (
+      !(data as any).optionGroups ||
+      (data as any).optionGroups.length === 0
+    ) {
+      // 옵션이 없으면 기본 variant 생성
+      await this.db.db.transaction(async (tx) => {
+        await tx.insert(productVariants).values({
+          masterId,
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+        });
+      });
+      return;
+    }
+
+    await this.db.db.transaction(async (tx) => {
+      await this._bulkInsertOptions(masterId, (data as any).optionGroups, tx);
+    });
+  }
+
+  private async _bulkInsertOptions(
+    masterId: string,
+    optionGroups: any[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    // 1. 옵션 그룹들을 bulk insert
+    const groupInsertData = optionGroups.map((group, index) => ({
+      masterId,
+      name: group.name,
+      displayName: group.displayName,
+      sortOrder: group.sortOrder || index,
+    }));
+
+    const insertedGroups = await tx
+      .insert(productOptionGroups)
+      .values(groupInsertData)
+      .returning();
+
+    // 2. 옵션 값들을 bulk insert
+    const valueInsertData: any[] = [];
+    for (let i = 0; i < optionGroups.length; i++) {
+      const group = optionGroups[i];
+      const insertedGroup = insertedGroups[i];
+
+      for (let j = 0; j < group.values.length; j++) {
+        const value = group.values[j];
+        valueInsertData.push({
+          optionGroupId: insertedGroup.id,
+          value: value.value,
+          displayName: value.displayName,
+          sortOrder: value.sortOrder || j,
+        });
+      }
+    }
+
+    const insertedValues = await tx
+      .insert(productOptionValues)
+      .values(valueInsertData)
+      .returning();
+
+    // 3. 옵션 조합으로 variants 생성
+    const optionGroupsWithValues = insertedGroups.map((group, index) => ({
+      ...group,
+      values: insertedValues.filter((v) => v.optionGroupId === group.id),
+    }));
+
+    await this._generateVariants(masterId, optionGroupsWithValues, tx);
   }
 }

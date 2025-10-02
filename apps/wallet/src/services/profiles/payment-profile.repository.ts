@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
+import { walletSchema } from '../../shared/database/schema';
 import { eq, and } from 'drizzle-orm';
 import { WalletExecutor } from '../../shared/database';
 import { ProviderType } from '../../providers/payment-provider.interface';
@@ -10,7 +11,7 @@ import { ProviderType } from '../../providers/payment-provider.interface';
  */
 @Injectable()
 export class PaymentProfilesRepository {
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   private get executor() {
     return this.db.db;
@@ -62,7 +63,7 @@ export class PaymentProfilesRepository {
  */
 @Injectable()
 export class CmsCardProfilesRepository {
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
   private get executor() {
     return this.db.db;
   }
@@ -89,7 +90,7 @@ export class CmsCardProfilesRepository {
  */
 @Injectable()
 export class CmsBatchProfilesRepository {
-  constructor(private readonly db: DbService<typeof schema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
   private get executor() {
     return this.db.db;
   }
