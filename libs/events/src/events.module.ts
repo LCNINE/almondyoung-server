@@ -297,12 +297,12 @@ export class EventsModule {
    * 환경변수에서 KafkaConfig 생성 (헬퍼 메서드)
    */
   private static createKafkaConfigFromEnv(): KafkaConfig {
-    const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092')
+    const brokers = (process.env.KAFKA_BROKERS || '')
       .split(',')
       .map((b) => b.trim());
 
     const config: KafkaConfig = {
-      clientId: process.env.KAFKA_CLIENT_ID || process.env.SERVICE_NAME || 'nest-app',
+      clientId: process.env.KAFKA_CLIENT_ID || process.env.SERVICE_NAME || '',
       brokers,
       retry: {
         retries: 5,
