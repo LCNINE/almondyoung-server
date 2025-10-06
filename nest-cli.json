@@ -119,6 +119,15 @@
       "compilerOptions": {
         "tsConfigPath": "apps/events-test/tsconfig.json"
       }
+    },
+    "outbox-demo": {
+      "type": "application",
+      "root": "apps/outbox-demo",
+      "entryFile": "main",
+      "sourceRoot": "apps/outbox-demo/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/outbox-demo/tsconfig.app.json"
+      }
     }
   }
 }
