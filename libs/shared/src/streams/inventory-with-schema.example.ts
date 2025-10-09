@@ -82,12 +82,12 @@ export type StockReservedPayload = z.infer<typeof StockReservedSchema>;
 
 export type InventoryEventsWithSchema = {
   // 스키마 검증이 있는 이벤트
-  StockReceived: EventType<StockReceivedPayload>;
-  StockAdjusted: EventType<StockAdjustedPayload>;
-  StockReserved: EventType<StockReservedPayload>;
+  StockReceived: EventType<'StockReceived', StockReceivedPayload>;
+  StockAdjusted: EventType<'StockAdjusted', StockAdjustedPayload>;
+  StockReserved: EventType<'StockReserved', StockReservedPayload>;
 
   // 스키마 검증이 없는 이벤트 (선택적)
-  // StockShipped: EventType<StockShippedPayload>;
+  // StockShipped: EventType<'StockShipped', StockShippedPayload>;
   // ...
 };
 
@@ -102,17 +102,14 @@ export const INVENTORY_STREAM_WITH_SCHEMA: StreamConfig<InventoryEventsWithSchem
   events: {
     StockReceived: {
       messageType: 'StockReceived',
-      payloadType: {} as StockReceivedPayload,
       schema: StockReceivedSchema, // ✅ 스키마 추가!
     },
     StockAdjusted: {
       messageType: 'StockAdjusted',
-      payloadType: {} as StockAdjustedPayload,
       schema: StockAdjustedSchema, // ✅ 스키마 추가!
     },
     StockReserved: {
       messageType: 'StockReserved',
-      payloadType: {} as StockReservedPayload,
       schema: StockReservedSchema, // ✅ 스키마 추가!
     },
   },

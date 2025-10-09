@@ -13,7 +13,7 @@ import {
   DomainCommand,
   MessageEnvelope,
 } from '../envelope.types';
-import { StreamConfig, StreamEventTypes } from '../stream-config.types';
+import { StreamConfig, StreamEventTypes, EventType } from '../stream-config.types';
 import { generateMessageId } from '../utils/message-id.util';
 import {
   SchemaValidationOptions,
@@ -26,10 +26,13 @@ import {
 } from '../validation/schema-validation.util';
 
 /**
- * 이벤트 발행 파라미터
+ * 이벤트 발행 파라미터 (타입 안전 버전)
  */
-export interface PublishEventParams<TPayload> {
-  eventType: string;
+export interface PublishEventParams<
+  TEventKey extends string,
+  TPayload,
+> {
+  eventType: TEventKey;
   aggregateId: string;
   payload: TPayload;
 
@@ -42,10 +45,13 @@ export interface PublishEventParams<TPayload> {
 }
 
 /**
- * 커맨드 발행 파라미터
+ * 커맨드 발행 파라미터 (타입 안전 버전)
  */
-export interface PublishCommandParams<TPayload> {
-  commandType: string;
+export interface PublishCommandParams<
+  TCommandKey extends string,
+  TPayload,
+> {
+  commandType: TCommandKey;
   aggregateId: string;
   payload: TPayload;
 
@@ -79,17 +85,20 @@ export class StreamPublisher<
   }
 
   /**
-   * 도메인 이벤트 발행
+   * 도메인 이벤트 발행 (타입 안전)
    *
    * @example
    * await publisher.publishEvent({
-   *   eventType: 'OrderCreated',
+   *   eventType: 'OrderCreated',  // ← 자동완성됨, 오타 시 컴파일 에러
    *   aggregateId: 'ORD-123',
    *   payload: { orderId: 'ORD-123', customerId: 'USR-456', ... },
    * });
    */
-  async publishEvent<K extends keyof TEvents>(
-    params: PublishEventParams<TEvents[K]['payloadType']>,
+  async publishEvent<K extends keyof TEvents & string>(
+    params: PublishEventParams<
+      K,
+      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
+    >,
   ): Promise<void> {
     const messageId = generateMessageId();
     const now = new Date();
@@ -104,7 +113,9 @@ export class StreamPublisher<
     }
 
     // Envelope 생성
-    const envelope: DomainEvent<TEvents[K]['payloadType']> = {
+    const envelope: DomainEvent<
+      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
+    > = {
       messageId,
       messageType: String(params.eventType),
       messageVersion: 1,
@@ -139,8 +150,13 @@ export class StreamPublisher<
    *   { eventType: 'OrderCreated', aggregateId: 'ORD-124', payload: {...} },
    * ]);
    */
-  async publishEvents<K extends keyof TEvents>(
-    events: Array<PublishEventParams<TEvents[K]['payloadType']>>,
+  async publishEvents<K extends keyof TEvents & string>(
+    events: Array<
+      PublishEventParams<
+        K,
+        TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
+      >
+    >,
   ): Promise<void> {
     await Promise.all(events.map((event) => this.publishEvent(event)));
   }
@@ -156,13 +172,18 @@ export class StreamPublisher<
    *   expiresIn: 60000, // 1분
    * });
    */
-  async publishCommand<K extends keyof TEvents>(
-    params: PublishCommandParams<TEvents[K]['payloadType']>,
+  async publishCommand<K extends keyof TEvents & string>(
+    params: PublishCommandParams<
+      K,
+      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
+    >,
   ): Promise<void> {
     const messageId = generateMessageId();
     const now = new Date();
 
-    const envelope: DomainCommand<TEvents[K]['payloadType']> = {
+    const envelope: DomainCommand<
+      TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never
+    > = {
       messageId,
       messageType: String(params.commandType),
       messageVersion: 1,
