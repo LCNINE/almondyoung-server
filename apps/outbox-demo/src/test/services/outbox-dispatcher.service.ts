@@ -177,27 +177,20 @@ export class OutboxDispatcher {
    * Kafka로 이벤트 발행
    */
   private async publishToKafka(event: OutboxEventRow) {
-    const publisher = this.getPublisher(event.aggregateType);
-
-    await publisher.publishEvent({
-      eventType: event.eventType as any,
-      aggregateId: event.aggregateId,
-      payload: event.payload,
-      metadata: event.metadata,
-      correlationId: event.correlationId,
-      causationId: event.causationId,
-    });
-  }
-
-  /**
-   * aggregateType에 따라 적절한 publisher 선택
-   */
-  private getPublisher(aggregateType: string): StreamPublisher<any> {
-    switch (aggregateType) {
+    // aggregateType에 따라 적절한 publisher로 발행
+    switch (event.aggregateType) {
       case 'TestRecord':
-        return this.testPublisher;
+        await this.testPublisher.publishEvent({
+          eventType: event.eventType as keyof TestEvents,
+          aggregateId: event.aggregateId,
+          payload: event.payload,
+          metadata: event.metadata,
+          correlationId: event.correlationId,
+          causationId: event.causationId,
+        });
+        break;
       default:
-        throw new Error(`Unknown aggregate type: ${aggregateType}`);
+        throw new Error(`Unknown aggregate type: ${event.aggregateType}`);
     }
   }
 
@@ -230,7 +223,8 @@ export class OutboxDispatcher {
         AND published_at < ${sevenDaysAgo}
     `);
 
-    this.logger.log(`🧹 Cleaned up ${result.length} old events`);
+    const deletedCount = result.length;
+    this.logger.log(`🧹 Cleaned up ${deletedCount} old events`);
   }
 
   /**

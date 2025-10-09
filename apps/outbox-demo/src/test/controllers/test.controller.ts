@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, ParseIntPipe, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { TestService } from '../services/test.service';
 import { CreateTestRecordDto } from '../dto/create-test-record.dto';
 
@@ -14,12 +14,19 @@ export class TestController {
    */
   @Post()
   async createTestRecord(@Body() dto: CreateTestRecordDto) {
-    const record = await this.testService.createTestRecord(dto);
-    return {
-      success: true,
-      data: record,
-      message: 'Test record created and event saved to outbox',
-    };
+    try {
+      const record = await this.testService.createTestRecord(dto);
+      return {
+        success: true,
+        data: record,
+        message: 'Test record created and event saved to outbox',
+      };
+    } catch (error) {
+      throw new HttpException(
+        `Failed to create test record: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
@@ -45,6 +52,11 @@ export class TestController {
   @Get(':id')
   async getTestRecordById(@Param('id', ParseIntPipe) id: number) {
     const record = await this.testService.getTestRecordById(id);
+
+    if (!record) {
+      throw new NotFoundException(`Test record with id ${id} not found`);
+    }
+
     return {
       success: true,
       data: record,
@@ -58,11 +70,21 @@ export class TestController {
    */
   @Delete(':id')
   async deleteTestRecord(@Param('id', ParseIntPipe) id: number) {
-    const record = await this.testService.deleteTestRecord(id);
-    return {
-      success: true,
-      data: record,
-      message: 'Test record deleted and event saved to outbox',
-    };
+    try {
+      const record = await this.testService.deleteTestRecord(id);
+      return {
+        success: true,
+        data: record,
+        message: 'Test record deleted and event saved to outbox',
+      };
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new NotFoundException(`Test record with id ${id} not found`);
+      }
+      throw new HttpException(
+        `Failed to delete test record: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
