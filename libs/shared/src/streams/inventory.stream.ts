@@ -4,7 +4,8 @@
  * 재고 도메인 이벤트 스트림
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
+import { z } from 'zod';
 
 // ===== Common Types =====
 
@@ -252,96 +253,194 @@ export interface StockReworkedPayload {
   reworkedBy: string;
 }
 
-// ===== Event Types Map =====
+// ===== Zod 스키마 정의 =====
 
-export type InventoryEvents = {
-  StockReceived: EventType<StockReceivedPayload>;
-  StockShipped: EventType<StockShippedPayload>;
-  StockAdjusted: EventType<StockAdjustedPayload>;
-  StockMoved: EventType<StockMovedPayload>;
-  StockReserved: EventType<StockReservedPayload>;
-  StockReservationConfirmed: EventType<StockReservationConfirmedPayload>;
-  StockReservationReleased: EventType<StockReservationReleasedPayload>;
-  StockDamaged: EventType<StockDamagedPayload>;
-  StockLost: EventType<StockLostPayload>;
-  StockDisposed: EventType<StockDisposedPayload>;
-  StockDefectMarked: EventType<StockDefectMarkedPayload>;
-  StockReworked: EventType<StockReworkedPayload>;
-};
+const InboundTypeSchema = z.enum(['DOMESTIC', 'OVERSEAS', 'RETURN', 'GENERAL']);
+const OutboundTypeSchema = z.enum(['ORDER', 'DAMAGE', 'LOSS', 'DISPOSAL', 'GENERAL']);
+const AdjustmentTypeSchema = z.enum(['MANUAL', 'INVENTORY_COUNT', 'SYSTEM']);
+const MovementTypeSchema = z.enum(['INTER_WAREHOUSE', 'INTRA_WAREHOUSE']);
 
-// ===== Stream Config =====
+const StockReceivedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  inboundType: InboundTypeSchema,
+  inboundId: z.string().optional(),
+  purchaseOrderId: z.string().optional(),
+  receivedAt: z.string().datetime(),
+  reason: z.string().optional(),
+  note: z.string().optional(),
+});
 
-export const INVENTORY_STREAM: StreamConfig<InventoryEvents> = {
-  topic: {
-    topic: 'inventory.events.v1',
-    partitions: 24,
-  },
+const StockShippedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  outboundType: OutboundTypeSchema,
+  orderId: z.string().optional(),
+  fulfillmentId: z.string().optional(),
+  shippedAt: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+const StockAdjustedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  deltaQuantity: z.number().int(),
+  beforeQuantity: z.number().int().nonnegative(),
+  afterQuantity: z.number().int().nonnegative(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().optional(),
+  adjustmentType: AdjustmentTypeSchema,
+  reason: z.string().min(1),
+  note: z.string().optional(),
+  adjustedBy: z.string().min(1),
+  adjustedAt: z.string().datetime(),
+});
+
+const StockMovedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  fromWarehouseId: z.string().min(1),
+  fromLocationId: z.string().min(1),
+  toWarehouseId: z.string().min(1),
+  toLocationId: z.string().min(1),
+  movementType: MovementTypeSchema,
+  movementId: z.string().optional(),
+  movedAt: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+const StockReservedSchema = z.object({
+  reservationId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  reservedFor: z.enum(['ORDER', 'FULFILLMENT', 'MANUAL']),
+  orderId: z.string().optional(),
+  fulfillmentId: z.string().optional(),
+  expiresAt: z.string().datetime().optional(),
+  reservedAt: z.string().datetime(),
+});
+
+const StockReservationConfirmedSchema = z.object({
+  reservationId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  orderId: z.string().optional(),
+  fulfillmentId: z.string().optional(),
+  confirmedAt: z.string().datetime(),
+});
+
+const StockReservationReleasedSchema = z.object({
+  reservationId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  reason: z.enum(['CANCELLED', 'EXPIRED', 'FULFILLED', 'MANUAL']),
+  releasedAt: z.string().datetime(),
+});
+
+const StockDamagedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  damageReason: z.string().min(1),
+  damageDescription: z.string().optional(),
+  damagePhotoUrls: z.array(z.string().url()).optional(),
+  damagedAt: z.string().datetime(),
+  reportedBy: z.string().min(1),
+});
+
+const StockLostSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  lostReason: z.string().min(1),
+  lostDescription: z.string().optional(),
+  lostAt: z.string().datetime(),
+  reportedBy: z.string().min(1),
+});
+
+const StockDisposedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  disposalReason: z.string().min(1),
+  disposalMethod: z.string().optional(),
+  disposedAt: z.string().datetime(),
+  disposedBy: z.string().min(1),
+});
+
+const StockDefectMarkedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  defectReason: z.string().min(1),
+  defectDescription: z.string().optional(),
+  markedAt: z.string().datetime(),
+  markedBy: z.string().min(1),
+});
+
+const StockReworkedSchema = z.object({
+  stockEventId: z.string().min(1),
+  skuId: z.string().min(1),
+  skuCode: z.string().min(1),
+  quantity: z.number().int().positive(),
+  warehouseId: z.string().min(1),
+  locationId: z.string().min(1),
+  reworkNote: z.string().optional(),
+  reworkedAt: z.string().datetime(),
+  reworkedBy: z.string().min(1),
+});
+
+// ===== Stream Config (타입 안전 버전) =====
+
+export const INVENTORY_STREAM = stream({
+  topic: 'inventory.events.v1',
+  partitions: 24,
   aggregateType: 'Stock',
   events: {
-    StockReceived: {
-      messageType: 'StockReceived',
-      payloadType: {} as StockReceivedPayload,
-    },
-    StockShipped: {
-      messageType: 'StockShipped',
-      payloadType: {} as StockShippedPayload,
-    },
-    StockAdjusted: {
-      messageType: 'StockAdjusted',
-      payloadType: {} as StockAdjustedPayload,
-    },
-    StockMoved: {
-      messageType: 'StockMoved',
-      payloadType: {} as StockMovedPayload,
-    },
-    StockReserved: {
-      messageType: 'StockReserved',
-      payloadType: {} as StockReservedPayload,
-    },
-    StockReservationConfirmed: {
-      messageType: 'StockReservationConfirmed',
-      payloadType: {} as StockReservationConfirmedPayload,
-    },
-    StockReservationReleased: {
-      messageType: 'StockReservationReleased',
-      payloadType: {} as StockReservationReleasedPayload,
-    },
-    StockDamaged: {
-      messageType: 'StockDamaged',
-      payloadType: {} as StockDamagedPayload,
-    },
-    StockLost: {
-      messageType: 'StockLost',
-      payloadType: {} as StockLostPayload,
-    },
-    StockDisposed: {
-      messageType: 'StockDisposed',
-      payloadType: {} as StockDisposedPayload,
-    },
-    StockDefectMarked: {
-      messageType: 'StockDefectMarked',
-      payloadType: {} as StockDefectMarkedPayload,
-    },
-    StockReworked: {
-      messageType: 'StockReworked',
-      payloadType: {} as StockReworkedPayload,
-    },
+    StockReceived: event('StockReceived', StockReceivedSchema),
+    StockShipped: event('StockShipped', StockShippedSchema),
+    StockAdjusted: event('StockAdjusted', StockAdjustedSchema),
+    StockMoved: event('StockMoved', StockMovedSchema),
+    StockReserved: event('StockReserved', StockReservedSchema),
+    StockReservationConfirmed: event('StockReservationConfirmed', StockReservationConfirmedSchema),
+    StockReservationReleased: event('StockReservationReleased', StockReservationReleasedSchema),
+    StockDamaged: event('StockDamaged', StockDamagedSchema),
+    StockLost: event('StockLost', StockLostSchema),
+    StockDisposed: event('StockDisposed', StockDisposedSchema),
+    StockDefectMarked: event('StockDefectMarked', StockDefectMarkedSchema),
+    StockReworked: event('StockReworked', StockReworkedSchema),
   },
-};
+});
 
-// ===== Event Type Constants =====
+// ===== 타입 추론 =====
 
-export const InventoryEventTypes = {
-  RECEIVED: 'StockReceived',
-  SHIPPED: 'StockShipped',
-  ADJUSTED: 'StockAdjusted',
-  MOVED: 'StockMoved',
-  RESERVED: 'StockReserved',
-  RESERVATION_CONFIRMED: 'StockReservationConfirmed',
-  RESERVATION_RELEASED: 'StockReservationReleased',
-  DAMAGED: 'StockDamaged',
-  LOST: 'StockLost',
-  DISPOSED: 'StockDisposed',
-  DEFECT_MARKED: 'StockDefectMarked',
-  REWORKED: 'StockReworked',
-} as const;
+export type InventoryEvents = typeof INVENTORY_STREAM.events;

@@ -4,7 +4,7 @@
  * 사용자 도메인 이벤트 스트림 정의
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
 import { z } from 'zod';
 
 // ===== Payload 타입 정의 =====
@@ -103,73 +103,33 @@ const UserResetPasswordSchema = z.object({
   verificationToken: z.string().min(1),
 });
 
-// ===== Event Types Map =====
+// ===== Stream Config (타입 안전 버전) =====
 
-export type UserEvents = {
-  UserCreated: EventType<UserCreatedPayload>;
-  UserVerification: EventType<UserVerificationPayload>;
-  UserUpdated: EventType<UserUpdatedPayload>;
-  UserDeleted: EventType<UserDeletedPayload>;
-  UserDormantConverted: EventType<UserDormantConvertedPayload>;
-  UserPermanentDeleted: EventType<UserPermanentDeletedPayload>;
-  UserFindId: EventType<UserFindIdPayload>;
-  UserResetPassword: EventType<UserResetPasswordPayload>;
-};
-
-// ===== Stream Config =====
-
-export const USER_STREAM: StreamConfig<UserEvents> = {
-  topic: {
-    topic: 'users.events.v1',
-    partitions: 6,
-  },
+export const USER_STREAM = stream({
+  topic: 'users.events.v1',
+  partitions: 6,
   aggregateType: 'User',
   events: {
-    UserCreated: {
-      messageType: 'UserCreated',
-      payloadType: {} as UserCreatedPayload,
-      schema: UserCreatedSchema,
-    },
-    UserVerification: {
-      messageType: 'UserVerification',
-      payloadType: {} as UserVerificationPayload,
-      schema: UserVerificationSchema,
-    },
-    UserUpdated: {
-      messageType: 'UserUpdated',
-      payloadType: {} as UserUpdatedPayload,
-      schema: UserUpdatedSchema,
-    },
-    UserDeleted: {
-      messageType: 'UserDeleted',
-      payloadType: {} as UserDeletedPayload,
-      schema: UserDeletedSchema,
-    },
-    UserDormantConverted: {
-      messageType: 'UserDormantConverted',
-      payloadType: {} as UserDormantConvertedPayload,
-      schema: UserDormantConvertedSchema,
-    },
-    UserPermanentDeleted: {
-      messageType: 'UserPermanentDeleted',
-      payloadType: {} as UserPermanentDeletedPayload,
-      schema: UserPermanentDeletedSchema,
-    },
-    UserFindId: {
-      messageType: 'UserFindId',
-      payloadType: {} as UserFindIdPayload,
-      schema: UserFindIdSchema,
-    },
-    UserResetPassword: {
-      messageType: 'UserResetPassword',
-      payloadType: {} as UserResetPasswordPayload,
-      schema: UserResetPasswordSchema,
-    },
+    UserCreated: event<'UserCreated', UserCreatedPayload>('UserCreated', UserCreatedSchema),
+    UserVerification: event<'UserVerification', UserVerificationPayload>('UserVerification', UserVerificationSchema),
+    UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
+    UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
+    UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),
+    UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema),
+    UserFindId: event<'UserFindId', UserFindIdPayload>('UserFindId', UserFindIdSchema),
+    UserResetPassword: event<'UserResetPassword', UserResetPasswordPayload>('UserResetPassword', UserResetPasswordSchema),
   },
-};
+});
+
+// ===== 타입 추론 =====
+
+export type UserEvents = typeof USER_STREAM.events;
 
 // Medusa 호환성: 레거시 이벤트 토픽 참조
 export const USER_EVENTS = {
-  USER_PERMANENT_DELETED: { topic: USER_STREAM.topic.topic },
+  USER_PERMANENT_DELETED: {
+    topic: USER_STREAM.topic.topic,
+    messageType: 'UserPermanentDeleted' as const,
+  },
 } as const;
 

@@ -4,7 +4,7 @@
  * 테스트용 간단한 이벤트 스트림
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
 
 // ===== Payload 타입 정의 =====
 
@@ -25,42 +25,19 @@ export interface TestEventDeletedPayload {
   reason: string;
 }
 
-// ===== Event Types Map =====
+// ===== Stream Config (타입 안전 버전) =====
 
-export type TestEvents = {
-  TestEventCreated: EventType<TestEventCreatedPayload>;
-  TestEventProcessed: EventType<TestEventProcessedPayload>;
-  TestEventDeleted: EventType<TestEventDeletedPayload>;
-};
-
-// ===== Stream Config =====
-
-export const TEST_STREAM: StreamConfig<TestEvents> = {
-  topic: {
-    topic: 'test.events.v1',
-    partitions: 6,  // Confluent Cloud 실제 파티션 수와 일치
-  },
+export const TEST_STREAM = stream({
+  topic: 'test.events.v1',
+  partitions: 6,  // Confluent Cloud 실제 파티션 수와 일치
   aggregateType: 'Test',
   events: {
-    TestEventCreated: {
-      messageType: 'TestEventCreated',
-      payloadType: {} as TestEventCreatedPayload,
-    },
-    TestEventProcessed: {
-      messageType: 'TestEventProcessed',
-      payloadType: {} as TestEventProcessedPayload,
-    },
-    TestEventDeleted: {
-      messageType: 'TestEventDeleted',
-      payloadType: {} as TestEventDeletedPayload,
-    },
+    TestEventCreated: event<'TestEventCreated', TestEventCreatedPayload>('TestEventCreated'),
+    TestEventProcessed: event<'TestEventProcessed', TestEventProcessedPayload>('TestEventProcessed'),
+    TestEventDeleted: event<'TestEventDeleted', TestEventDeletedPayload>('TestEventDeleted'),
   },
-};
+});
 
-// ===== Event Type Constants (for easy reference) =====
+// ===== 타입 추론 =====
 
-export const TestEventTypes = {
-  CREATED: 'TestEventCreated',
-  PROCESSED: 'TestEventProcessed',
-  DELETED: 'TestEventDeleted',
-} as const;
+export type TestEvents = typeof TEST_STREAM.events;

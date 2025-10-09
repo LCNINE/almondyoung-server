@@ -43,7 +43,7 @@ npm install @nestjs/microservices kafkajs
 
 ```typescript
 // libs/shared/src/streams/orders.stream.ts
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
 import { z } from 'zod';
 
 // 1️⃣ Payload 타입 정의
@@ -77,32 +77,19 @@ const OrderCancelledSchema = z.object({
   cancelledBy: z.string(),
 });
 
-// 3️⃣ Event Types Map
-export type OrderEvents = {
-  OrderCreated: EventType<OrderCreatedPayload>;
-  OrderCancelled: EventType<OrderCancelledPayload>;
-};
-
-// 4️⃣ Stream Config
-export const ORDER_STREAM: StreamConfig<OrderEvents> = {
-  topic: {
-    topic: 'orders.events.v1',
-    partitions: 6,  // Confluent Cloud의 실제 파티션 수와 일치
-  },
+// 3️⃣ Stream Config (타입 안전 버전)
+export const ORDER_STREAM = stream({
+  topic: 'orders.events.v1',
+  partitions: 6,  // Confluent Cloud의 실제 파티션 수와 일치
   aggregateType: 'Order',
   events: {
-    OrderCreated: {
-      messageType: 'OrderCreated',
-      payloadType: {} as OrderCreatedPayload,
-      schema: OrderCreatedSchema,  // 스키마 검증 활성화
-    },
-    OrderCancelled: {
-      messageType: 'OrderCancelled',
-      payloadType: {} as OrderCancelledPayload,
-      schema: OrderCancelledSchema,
-    },
+    OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
+    OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
   },
-};
+});
+
+// 4️⃣ 타입 추론
+export type OrderEvents = typeof ORDER_STREAM.events;
 ```
 
 ---

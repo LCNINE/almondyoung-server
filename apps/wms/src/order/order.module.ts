@@ -28,7 +28,6 @@ import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { EventsModule } from '@app/events';
-import { createKafkaConfigFromEnv } from '@app/events/types';
 import { MatchingsController } from './matchings/controllers/matchings.controller';
 import { MatchingsService } from './matchings/services/matchings.service';
 import { OutboxService } from './shared/services/outbox.service';
@@ -79,7 +78,7 @@ function createKafkaConfig() {
     }),
     EventsModule.forRoot({
       kafka: createKafkaConfig(),
-      events: {} as any,
+      streams: [],
       serviceName: 'wms-order',
     }),
   ],

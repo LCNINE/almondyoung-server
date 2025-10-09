@@ -4,7 +4,8 @@
  * 주문 도메인 이벤트 스트림
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
+import { z } from 'zod';
 
 // ===== Common Types =====
 
@@ -185,72 +186,148 @@ export interface OrderMergedPayload {
   reason?: string;
 }
 
-// ===== Event Types Map =====
+// ===== Zod 스키마 정의 =====
 
-export type OrderEvents = {
-  OrderCreated: EventType<OrderCreatedPayload>;
-  OrderConfirmed: EventType<OrderConfirmedPayload>;
-  OrderModified: EventType<OrderModifiedPayload>;
-  OrderCancelled: EventType<OrderCancelledPayload>;
-  OrderPaymentCompleted: EventType<OrderPaymentCompletedPayload>;
-  OrderReturnRequested: EventType<OrderReturnRequestedPayload>;
-  OrderRefundCreated: EventType<OrderRefundCreatedPayload>;
-  OrderMerged: EventType<OrderMergedPayload>;
-};
+const SalesChannelSchema = z.enum(['medusa', 'naver', 'coupang', '3pl']);
+const OrderStatusSchema = z.enum(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'timeout']);
 
-// ===== Stream Config =====
+const OrderItemSchema = z.object({
+  orderItemId: z.string().min(1),
+  skuId: z.string().min(1),
+  productId: z.string().optional(),
+  variantId: z.string().optional(),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().nonnegative(),
+  totalPrice: z.number().nonnegative(),
+});
 
-export const ORDER_STREAM: StreamConfig<OrderEvents> = {
-  topic: {
-    topic: 'orders.events.v1',
-    partitions: 12,
-  },
+const ShippingAddressSchema = z.object({
+  recipientName: z.string().min(1),
+  phone: z.string().min(1),
+  postalCode: z.string().min(1),
+  roadAddress: z.string().min(1),
+  detailAddress: z.string().min(1),
+  deliveryNote: z.string().optional(),
+});
+
+const OrderCreatedSchema = z.object({
+  orderId: z.string().min(1),
+  externalOrderId: z.string().optional(),
+  salesChannel: SalesChannelSchema,
+  customerId: z.string().min(1),
+  items: z.array(OrderItemSchema),
+  totalAmount: z.number().nonnegative(),
+  subtotalAmount: z.number().nonnegative(),
+  shippingAmount: z.number().nonnegative(),
+  discountAmount: z.number().nonnegative(),
+  currency: z.string().min(1),
+  shippingAddress: ShippingAddressSchema,
+  status: OrderStatusSchema,
+  createdAt: z.string().datetime(),
+});
+
+const OrderConfirmedSchema = z.object({
+  orderId: z.string().min(1),
+  confirmedAt: z.string().datetime(),
+  confirmedBy: z.string().min(1),
+  stockDeductionResults: z.array(z.object({
+    orderItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    requestedQty: z.number().int().positive(),
+    deductedQty: z.number().int().nonnegative(),
+    stockEventId: z.string().optional(),
+  })),
+});
+
+const OrderModifiedSchema = z.object({
+  orderId: z.string().min(1),
+  changes: z.object({
+    items: z.array(OrderItemSchema).optional(),
+    shippingAddress: ShippingAddressSchema.optional(),
+    totalAmount: z.number().nonnegative().optional(),
+  }),
+  modifiedBy: z.string().min(1),
+  modifiedAt: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+const OrderCancelledSchema = z.object({
+  orderId: z.string().min(1),
+  reason: z.enum(['CUSTOMER_REQUEST', 'OUT_OF_STOCK', 'PAYMENT_FAILED', 'ADMIN_CANCEL', 'TIMEOUT']),
+  reasonDetail: z.string().optional(),
+  cancelledBy: z.string().min(1),
+  cancelledAt: z.string().datetime(),
+  refundRequired: z.boolean(),
+  refundAmount: z.number().nonnegative().optional(),
+  stockRestorationResults: z.array(z.object({
+    orderItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    restoredQty: z.number().int().nonnegative(),
+    stockEventId: z.string().optional(),
+  })).optional(),
+});
+
+const OrderPaymentCompletedSchema = z.object({
+  orderId: z.string().min(1),
+  paymentId: z.string().min(1),
+  amount: z.number().nonnegative(),
+  currency: z.string().min(1),
+  capturedAt: z.string().datetime(),
+});
+
+const OrderReturnRequestedSchema = z.object({
+  orderId: z.string().min(1),
+  returnId: z.string().min(1),
+  items: z.array(z.object({
+    orderItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    quantity: z.number().int().positive(),
+    reason: z.enum(['DEFECTIVE', 'WRONG_ITEM', 'CUSTOMER_CHANGED_MIND', 'SIZE_NOT_FIT']),
+    reasonDetail: z.string().optional(),
+  })),
+  requestedBy: z.enum(['CUSTOMER', 'ADMIN']),
+  requestedAt: z.string().datetime(),
+  note: z.string().optional(),
+});
+
+const OrderRefundCreatedSchema = z.object({
+  orderId: z.string().min(1),
+  refundId: z.string().min(1),
+  paymentId: z.string().min(1),
+  amount: z.number().nonnegative(),
+  currency: z.string().min(1),
+  reason: z.string().min(1),
+  note: z.string().optional(),
+  createdBy: z.string().min(1),
+  createdAt: z.string().datetime(),
+});
+
+const OrderMergedSchema = z.object({
+  targetOrderId: z.string().min(1),
+  sourceOrderIds: z.array(z.string().min(1)),
+  mergedBy: z.string().min(1),
+  mergedAt: z.string().datetime(),
+  reason: z.string().optional(),
+});
+
+// ===== Stream Config (타입 안전 버전) =====
+
+export const ORDER_STREAM = stream({
+  topic: 'orders.events.v1',
+  partitions: 12,
   aggregateType: 'Order',
   events: {
-    OrderCreated: {
-      messageType: 'OrderCreated',
-      payloadType: {} as OrderCreatedPayload,
-    },
-    OrderConfirmed: {
-      messageType: 'OrderConfirmed',
-      payloadType: {} as OrderConfirmedPayload,
-    },
-    OrderModified: {
-      messageType: 'OrderModified',
-      payloadType: {} as OrderModifiedPayload,
-    },
-    OrderCancelled: {
-      messageType: 'OrderCancelled',
-      payloadType: {} as OrderCancelledPayload,
-    },
-    OrderPaymentCompleted: {
-      messageType: 'OrderPaymentCompleted',
-      payloadType: {} as OrderPaymentCompletedPayload,
-    },
-    OrderReturnRequested: {
-      messageType: 'OrderReturnRequested',
-      payloadType: {} as OrderReturnRequestedPayload,
-    },
-    OrderRefundCreated: {
-      messageType: 'OrderRefundCreated',
-      payloadType: {} as OrderRefundCreatedPayload,
-    },
-    OrderMerged: {
-      messageType: 'OrderMerged',
-      payloadType: {} as OrderMergedPayload,
-    },
+    OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
+    OrderConfirmed: event<'OrderConfirmed', OrderConfirmedPayload>('OrderConfirmed', OrderConfirmedSchema),
+    OrderModified: event<'OrderModified', OrderModifiedPayload>('OrderModified', OrderModifiedSchema),
+    OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
+    OrderPaymentCompleted: event<'OrderPaymentCompleted', OrderPaymentCompletedPayload>('OrderPaymentCompleted', OrderPaymentCompletedSchema),
+    OrderReturnRequested: event<'OrderReturnRequested', OrderReturnRequestedPayload>('OrderReturnRequested', OrderReturnRequestedSchema),
+    OrderRefundCreated: event<'OrderRefundCreated', OrderRefundCreatedPayload>('OrderRefundCreated', OrderRefundCreatedSchema),
+    OrderMerged: event<'OrderMerged', OrderMergedPayload>('OrderMerged', OrderMergedSchema),
   },
-};
+});
 
-// ===== Event Type Constants =====
+// ===== 타입 추론 =====
 
-export const OrderEventTypes = {
-  CREATED: 'OrderCreated',
-  CONFIRMED: 'OrderConfirmed',
-  MODIFIED: 'OrderModified',
-  CANCELLED: 'OrderCancelled',
-  PAYMENT_COMPLETED: 'OrderPaymentCompleted',
-  RETURN_REQUESTED: 'OrderReturnRequested',
-  REFUND_CREATED: 'OrderRefundCreated',
-  MERGED: 'OrderMerged',
-} as const;
+export type OrderEvents = typeof ORDER_STREAM.events;

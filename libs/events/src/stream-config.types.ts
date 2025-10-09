@@ -19,6 +19,8 @@ export interface StreamTopicConfig {
 /**
  * 이벤트 타입 정의
  *
+ * TMessageType을 리터럴 타입으로 받아 타입 안전성 확보
+ *
  * @example
  * import { z } from 'zod';
  *
@@ -29,15 +31,14 @@ export interface StreamTopicConfig {
  *
  * type OrderCreatedPayload = z.infer<typeof OrderCreatedSchema>;
  *
- * type OrderEventType = {
- *   messageType: 'OrderCreated';
- *   payloadType: OrderCreatedPayload;
- *   schema: typeof OrderCreatedSchema;
- * }
+ * type OrderCreatedEvent = EventType<'OrderCreated', OrderCreatedPayload>;
+ * // => { messageType: 'OrderCreated'; schema?: ZodSchema<OrderCreatedPayload> }
  */
-export interface EventType<TPayload = unknown> {
-  messageType: string;
-  payloadType: TPayload;
+export interface EventType<
+  TMessageType extends string = string,
+  TPayload = unknown,
+> {
+  messageType: TMessageType;
   schema?: ZodSchema<TPayload>;        // Zod 스키마 (런타임 검증용, 선택)
 }
 
@@ -46,11 +47,25 @@ export interface EventType<TPayload = unknown> {
  *
  * @example
  * type OrderEvents = {
- *   OrderCreated: EventType<OrderCreatedPayload>;
- *   OrderCancelled: EventType<OrderCancelledPayload>;
+ *   OrderCreated: EventType<'OrderCreated', OrderCreatedPayload>;
+ *   OrderCancelled: EventType<'OrderCancelled', OrderCancelledPayload>;
  * }
  */
-export type StreamEventTypes = Record<string, EventType<any>>;
+export type StreamEventTypes = Record<string, EventType<any, any>>;
+
+/**
+ * Payload 타입 추출 헬퍼
+ */
+export type ExtractPayloadType<T> = T extends EventType<any, infer TPayload>
+  ? TPayload
+  : never;
+
+/**
+ * MessageType 추출 헬퍼
+ */
+export type ExtractMessageType<T> = T extends EventType<infer TMessageType, any>
+  ? TMessageType
+  : never;
 
 /**
  * Consumer 설정
@@ -74,8 +89,8 @@ export interface ConsumerConfig {
  *   topic: { topic: 'orders.events.v1', partitions: 12 },
  *   aggregateType: 'Order',
  *   events: {
- *     OrderCreated: { messageType: 'OrderCreated', payloadType: {} as OrderCreatedPayload },
- *     OrderCancelled: { messageType: 'OrderCancelled', payloadType: {} as OrderCancelledPayload }
+ *     OrderCreated: { messageType: 'OrderCreated' },
+ *     OrderCancelled: { messageType: 'OrderCancelled' }
  *   }
  * }
  */

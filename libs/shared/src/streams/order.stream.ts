@@ -1,10 +1,10 @@
 /**
  * Order Domain Stream Configuration
- * 
+ *
  * 주문 도메인 이벤트 스트림 정의
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream, EventType, StreamConfig } from '@app/events';
 import { z } from 'zod';
 
 // ===== Payload 타입 정의 =====
@@ -25,33 +25,33 @@ export interface OrderCancelledPayload {
 }
 
 export interface OrderPaymentCompletePayload {
-  order_id: string;
-  payment_id: string;
+  orderId: string;
+  paymentId: string;
   amount: number;
-  currency_code: string;
-  captured_at: string; // ISO 8601
+  currencyCode: string;
+  capturedAt: string; // ISO 8601
 }
 
 export interface OrderReturnRequestedPayload {
-  order_id: string;
-  return_id: string;
+  orderId: string;
+  returnId: string;
   items: Array<{
-    item_id: string;
+    itemId: string;
     quantity: number;
     reason: string;
   }>;
   note?: string;
-  requested_at: string; // ISO 8601
+  requestedAt: string; // ISO 8601
 }
 
 export interface OrderRefundCreatedPayload {
-  order_id: string;
-  refund_id: string;
+  orderId: string;
+  refundId: string;
   amount: number;
-  currency_code: string;
+  currencyCode: string;
   reason: string;
   note?: string;
-  created_at: string; // ISO 8601
+  createdAt: string; // ISO 8601
 }
 
 // ===== Zod 스키마 정의 =====
@@ -74,88 +74,69 @@ const OrderCancelledSchema = z.object({
 });
 
 const OrderPaymentCompleteSchema = z.object({
-  order_id: z.string().min(1),
-  payment_id: z.string().min(1),
+  orderId: z.string().min(1),
+  paymentId: z.string().min(1),
   amount: z.number().nonnegative(),
-  currency_code: z.string().min(1),
-  captured_at: z.string().datetime(),
+  currencyCode: z.string().min(1),
+  capturedAt: z.string().datetime(),
 });
 
 const ReturnItemSchema = z.object({
-  item_id: z.string().min(1),
+  itemId: z.string().min(1),
   quantity: z.number().int().positive(),
   reason: z.string().min(1),
 });
 
 const OrderReturnRequestedSchema = z.object({
-  order_id: z.string().min(1),
-  return_id: z.string().min(1),
+  orderId: z.string().min(1),
+  returnId: z.string().min(1),
   items: z.array(ReturnItemSchema),
   note: z.string().optional(),
-  requested_at: z.string().datetime(),
+  requestedAt: z.string().datetime(),
 });
 
 const OrderRefundCreatedSchema = z.object({
-  order_id: z.string().min(1),
-  refund_id: z.string().min(1),
+  orderId: z.string().min(1),
+  refundId: z.string().min(1),
   amount: z.number().nonnegative(),
-  currency_code: z.string().min(1),
+  currencyCode: z.string().min(1),
   reason: z.string().min(1),
   note: z.string().optional(),
-  created_at: z.string().datetime(),
+  createdAt: z.string().datetime(),
 });
 
-// ===== Event Types Map =====
+// ===== Stream Config (타입 안전 버전) =====
 
-export type OrderEvents = {
-  OrderCreated: EventType<OrderCreatedPayload>;
-  OrderCancelled: EventType<OrderCancelledPayload>;
-  OrderPaymentComplete: EventType<OrderPaymentCompletePayload>;
-  OrderReturnRequested: EventType<OrderReturnRequestedPayload>;
-  OrderRefundCreated: EventType<OrderRefundCreatedPayload>;
-};
-
-// ===== Stream Config =====
-
-export const ORDER_STREAM: StreamConfig<OrderEvents> = {
-  topic: {
-    topic: 'orders.events.v1',
-    partitions: 12, // 주문은 더 많은 파티션 권장
-  },
+export const ORDER_STREAM = stream({
+  topic: 'orders.events.v1',
+  partitions: 12, // 주문은 더 많은 파티션 권장
   aggregateType: 'Order',
   events: {
-    OrderCreated: {
-      messageType: 'OrderCreated',
-      payloadType: {} as OrderCreatedPayload,
-      schema: OrderCreatedSchema,
-    },
-    OrderCancelled: {
-      messageType: 'OrderCancelled',
-      payloadType: {} as OrderCancelledPayload,
-      schema: OrderCancelledSchema,
-    },
-    OrderPaymentComplete: {
-      messageType: 'OrderPaymentComplete',
-      payloadType: {} as OrderPaymentCompletePayload,
-      schema: OrderPaymentCompleteSchema,
-    },
-    OrderReturnRequested: {
-      messageType: 'OrderReturnRequested',
-      payloadType: {} as OrderReturnRequestedPayload,
-      schema: OrderReturnRequestedSchema,
-    },
-    OrderRefundCreated: {
-      messageType: 'OrderRefundCreated',
-      payloadType: {} as OrderRefundCreatedPayload,
-      schema: OrderRefundCreatedSchema,
-    },
+    OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
+    OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
+    OrderPaymentComplete: event<'OrderPaymentComplete', OrderPaymentCompletePayload>('OrderPaymentComplete', OrderPaymentCompleteSchema),
+    OrderReturnRequested: event<'OrderReturnRequested', OrderReturnRequestedPayload>('OrderReturnRequested', OrderReturnRequestedSchema),
+    OrderRefundCreated: event<'OrderRefundCreated', OrderRefundCreatedPayload>('OrderRefundCreated', OrderRefundCreatedSchema),
   },
-};
+});
+
+// ===== 타입 추론 =====
+
+export type OrderEvents = typeof ORDER_STREAM.events;
 
 // Medusa 호환성: 레거시 이벤트 토픽 참조
 export const ORDER_EVENTS = {
-  ORDER_CREATED: { topic: ORDER_STREAM.topic.topic },
-  ORDER_CANCELLED: { topic: ORDER_STREAM.topic.topic },
-  ORDER_RETURN_REQUESTED: { topic: ORDER_STREAM.topic.topic },
+  ORDER_CREATED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderCreated' as const,
+  },
+  ORDER_CANCELLED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderCancelled' as const,
+  },
+  ORDER_RETURN_REQUESTED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderReturnRequested' as const,
+  },
 } as const;
 

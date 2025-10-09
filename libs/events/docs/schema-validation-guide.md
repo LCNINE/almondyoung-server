@@ -19,7 +19,7 @@ Zod를 사용한 런타임 스키마 검증으로 **타입 안전성 + 런타임
 ```typescript
 // libs/shared/src/streams/orders.stream.ts
 import { z } from 'zod';
-import { StreamConfig, EventType } from '@app/events';
+import { event, stream } from '@app/events';
 
 // 1. Zod 스키마 정의 (런타임 검증)
 export const OrderCreatedSchema = z.object({
@@ -48,32 +48,19 @@ export const OrderCancelledSchema = z.object({
 export type OrderCreatedPayload = z.infer<typeof OrderCreatedSchema>;
 export type OrderCancelledPayload = z.infer<typeof OrderCancelledSchema>;
 
-// 3. 이벤트 타입 맵
-export type OrderEvents = {
-  OrderCreated: EventType<OrderCreatedPayload>;
-  OrderCancelled: EventType<OrderCancelledPayload>;
-};
-
-// 4. Stream 정의 (스키마 포함)
-export const ORDER_STREAM: StreamConfig<OrderEvents> = {
-  topic: {
-    topic: 'orders.events.v1',
-    partitions: 12,
-  },
+// 3. Stream 정의 (타입 안전 버전 - 스키마 포함)
+export const ORDER_STREAM = stream({
+  topic: 'orders.events.v1',
+  partitions: 12,
   aggregateType: 'Order',
   events: {
-    OrderCreated: {
-      messageType: 'OrderCreated',
-      payloadType: {} as OrderCreatedPayload,
-      schema: OrderCreatedSchema,  // ✅ 스키마 추가!
-    },
-    OrderCancelled: {
-      messageType: 'OrderCancelled',
-      payloadType: {} as OrderCancelledPayload,
-      schema: OrderCancelledSchema,  // ✅ 스키마 추가!
-    },
+    OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
+    OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
   },
-};
+});
+
+// 4. 타입 추론
+export type OrderEvents = typeof ORDER_STREAM.events;
 ```
 
 ### 2. Publisher 설정 (자동 검증)
