@@ -20,13 +20,13 @@
         "tsConfigPath": "apps/almondyoung-server/tsconfig.app.json"
       }
     },
-    "notification": {
+    "channel-adapter": {
       "type": "application",
-      "root": "apps/notification",
+      "root": "apps/channel-adapter",
       "entryFile": "main",
-      "sourceRoot": "apps/notification/src",
+      "sourceRoot": "apps/channel-adapter/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/notification/tsconfig.app.json"
+        "tsConfigPath": "apps/channel-adapter/tsconfig.app.json"
       }
     },
     "db": {
@@ -36,6 +36,51 @@
       "sourceRoot": "libs/db/src",
       "compilerOptions": {
         "tsConfigPath": "libs/db/tsconfig.lib.json"
+      }
+    },
+    "events-test": {
+      "type": "application",
+      "root": "apps/events-test",
+      "entryFile": "main",
+      "sourceRoot": "apps/events-test/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/events-test/tsconfig.json"
+      }
+    },
+    "membership": {
+      "type": "application",
+      "root": "apps/membership",
+      "entryFile": "main",
+      "sourceRoot": "apps/membership/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/membership/tsconfig.app.json"
+      }
+    },
+    "notification": {
+      "type": "application",
+      "root": "apps/notification",
+      "entryFile": "main",
+      "sourceRoot": "apps/notification/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notification/tsconfig.app.json"
+      }
+    },
+    "orchestrator": {
+      "type": "application",
+      "root": "apps/orchestrator",
+      "entryFile": "main",
+      "sourceRoot": "apps/orchestrator/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/orchestrator/tsconfig.app.json"
+      }
+    },
+    "outbox-demo": {
+      "type": "application",
+      "root": "apps/outbox-demo",
+      "entryFile": "main",
+      "sourceRoot": "apps/outbox-demo/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/outbox-demo/tsconfig.app.json"
       }
     },
     "pim": {
@@ -74,24 +119,6 @@
         "tsConfigPath": "apps/user-service/tsconfig.app.json"
       }
     },
-    "wms": {
-      "type": "application",
-      "root": "apps/wms",
-      "entryFile": "main",
-      "sourceRoot": "apps/wms/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/wms/tsconfig.app.json"
-      }
-    },
-    "membership": {
-      "type": "application",
-      "root": "apps/membership",
-      "entryFile": "main",
-      "sourceRoot": "apps/membership/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/membership/tsconfig.app.json"
-      }
-    },
     "wallet": {
       "type": "application",
       "root": "apps/wallet",
@@ -99,34 +126,18 @@
       "sourceRoot": "apps/wallet/src",
       "compilerOptions": {
         "tsConfigPath": "apps/wallet/tsconfig.app.json",
-        "assets": ["html/**/*"]
+        "assets": [
+          "html/**/*"
+        ]
       }
     },
-    "channel-adapter": {
+    "wms": {
       "type": "application",
-      "root": "apps/channel-adapter",
+      "root": "apps/wms",
       "entryFile": "main",
-      "sourceRoot": "apps/channel-adapter/src",
+      "sourceRoot": "apps/wms/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/channel-adapter/tsconfig.app.json"
-      }
-    },
-    "events-test": {
-      "type": "application",
-      "root": "apps/events-test",
-      "entryFile": "main",
-      "sourceRoot": "apps/events-test/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/events-test/tsconfig.json"
-      }
-    },
-    "outbox-demo": {
-      "type": "application",
-      "root": "apps/outbox-demo",
-      "entryFile": "main",
-      "sourceRoot": "apps/outbox-demo/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/outbox-demo/tsconfig.app.json"
+        "tsConfigPath": "apps/wms/tsconfig.app.json"
       }
     }
   }
