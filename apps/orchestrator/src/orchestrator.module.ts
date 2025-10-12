@@ -1,0 +1,23 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { HttpModule } from '@nestjs/axios';
+import { WorkflowController } from './controllers/workflow.controller';
+import { UnifiedMasterWorkflow } from './workflows/unified-master.workflow';
+import { PimApiService } from './services/pim.api.service';
+import { WmsApiService } from './services/wms.api.service';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: 'apps/orchestrator/.env',
+    }),
+    HttpModule.register({
+      timeout: 30000,
+      maxRedirects: 5,
+    }),
+  ],
+  controllers: [WorkflowController],
+  providers: [UnifiedMasterWorkflow, PimApiService, WmsApiService],
+})
+export class OrchestratorModule {}
