@@ -2,9 +2,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   PointRepository,
-  EarnParams,
+  AddPointsParams,
   RedeemParams,
-  EarnCancelParams,
+  CancelPointsParams,
 } from './point.repository';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { walletSchema } from '../../shared/database/schema';
@@ -31,11 +31,11 @@ export class PointService {
   }
 
   /** 적립 */
-  async earn(params: EarnParams, tx?: DbTx) {
+  async addPoints(params: AddPointsParams, tx?: DbTx) {
     if (params.amount <= 0) throw new Error('적립 금액은 양수여야 합니다.');
-    const res = await this.repo.earn(params, tx); // ✅ tx 전파
+    const res = await this.repo.addPoints(params, tx); // ✅ tx 전파
     this.logger.log(
-      `EARN: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
+      `ADD_POINTS: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
     );
     return res;
   }
@@ -53,10 +53,10 @@ export class PointService {
   }
 
   /** 적립 취소 (부분/전량) */
-  async earnCancel(params: EarnCancelParams, tx?: DbTx) {
-    const res = await this.repo.earnCancel(params, tx); // ✅ tx 전파
+  async cancelPoints(params: CancelPointsParams, tx?: DbTx) {
+    const res = await this.repo.cancelPoints(params, tx); // ✅ tx 전파
     this.logger.log(
-      `EARN_CANCEL: partner=${params.partnerId} cancel=${res.cancel} event=${res.eventId}`,
+      `CANCEL_POINTS: partner=${params.partnerId} cancel=${res.cancel} event=${res.eventId}`,
     );
     return res;
   }

@@ -82,7 +82,8 @@ export class RefundService {
         `환불 금액 분할: 포인트=${pointsToRefund}, 현금=${cashToRefund}, 비율=${ratio}`,
       );
 
-      // 4. 포인트 복원
+      // 4. 포인트 복원 (결제 시 사용한 포인트만 복원)
+      // 주의: 구매로 적립된 포인트는 메두사의 취소 이벤트로 별도 처리
       if (pointsToRefund > 0) {
         // discounts 배열에서 포인트 정보 확인
         const discounts = (intent.discounts as any) || [];
@@ -93,7 +94,7 @@ export class RefundService {
 
           // ⚠️ 중요: 포인트 복원을 동일 트랜잭션에서 실행
           // 외부 환불 실패 시 포인트 복원도 함께 롤백됨
-          await this.pointService.earn(
+          await this.pointService.addPoints(
             {
               partnerId,
               amount: pointsToRefund,
