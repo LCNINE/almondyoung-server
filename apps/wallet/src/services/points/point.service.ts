@@ -2,10 +2,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   PointRepository,
-  EarnParams,
+  AddPointsParams,
   RedeemParams,
-  EarnCancelParams,
+  CancelPointsParams,
 } from './point.repository';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { walletSchema } from '../../shared/database/schema';
+
+// ✅ WMS 패턴: 트랜잭션 타입 정의
+type DbTx = Parameters<
+  Parameters<PostgresJsDatabase<typeof walletSchema>['transaction']>[0]
+>[0];
 
 @Injectable()
 export class PointService {
@@ -24,21 +31,21 @@ export class PointService {
   }
 
   /** 적립 */
-  async earn(params: EarnParams) {
+  async addPoints(params: AddPointsParams, tx?: DbTx) {
     if (params.amount <= 0) throw new Error('적립 금액은 양수여야 합니다.');
-    const res = await this.repo.earn(params);
+    const res = await this.repo.addPoints(params, tx); // ✅ tx 전파
     this.logger.log(
-      `EARN: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
+      `ADD_POINTS: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
     );
     return res;
   }
 
   /** 사용(REDEEM) */
-  async redeem(params: RedeemParams) {
+  async redeem(params: RedeemParams, tx?: DbTx) {
     if (params.amount <= 0) throw new Error('사용 금액은 양수여야 합니다.');
     const balance = await this.repo.getBalance(params.partnerId);
     if (balance < params.amount) throw new Error('포인트가 부족합니다.');
-    const res = await this.repo.redeem(params);
+    const res = await this.repo.redeem(params, tx); // ✅ tx 전파
     this.logger.log(
       `REDEEM: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
     );
@@ -46,10 +53,10 @@ export class PointService {
   }
 
   /** 적립 취소 (부분/전량) */
-  async earnCancel(params: EarnCancelParams) {
-    const res = await this.repo.earnCancel(params);
+  async cancelPoints(params: CancelPointsParams, tx?: DbTx) {
+    const res = await this.repo.cancelPoints(params, tx); // ✅ tx 전파
     this.logger.log(
-      `EARN_CANCEL: partner=${params.partnerId} cancel=${res.cancel} event=${res.eventId}`,
+      `CANCEL_POINTS: partner=${params.partnerId} cancel=${res.cancel} event=${res.eventId}`,
     );
     return res;
   }
