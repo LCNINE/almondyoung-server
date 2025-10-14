@@ -36,8 +36,9 @@ export class PaymentService {
    */
   async authorizePaymentByIntent(
     intentId: string,
-    providerType: ProviderType,
+    providerType: ProviderType | null, // ✅ 포인트 전액 결제 시 null 허용
     options: {
+      usePoints?: number;
       profileId?: string;
       instrumentRef?: string;
       actor?: string;
@@ -45,7 +46,7 @@ export class PaymentService {
     } = {},
   ): Promise<PaymentResult> {
     this.logger.log(
-      `Authorizing payment for intent: ${intentId} with provider: ${providerType}`,
+      `Authorizing payment for intent: ${intentId} with provider: ${providerType || '포인트 전액'}`,
     );
 
     return this.paymentOrchestrator.authorizePayment(

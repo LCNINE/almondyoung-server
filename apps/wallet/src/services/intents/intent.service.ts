@@ -43,6 +43,8 @@ export class PaymentIntentService {
       id: generateUUIDv7(),
       customerId: params.customerId,
       amount: params.amount,
+      totalAmount: String(params.amount), // 포인트 통합: 초기에는 totalAmount = amount
+      finalAmount: String(params.amount), // 포인트 통합: 초기에는 finalAmount = amount
       type: params.type,
       status: 'PENDING',
       expiresAt: new Date(
