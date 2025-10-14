@@ -13,7 +13,7 @@ type DbTx = Parameters<
   Parameters<PostgresJsDatabase<typeof walletSchema>['transaction']>[0]
 >[0];
 
-export interface EarnParams {
+export interface AddPointsParams {
   partnerId: number;
   amount: number; // +정수
   reason?: string;
@@ -30,7 +30,7 @@ export interface RedeemParams {
   memo?: string;
 }
 
-export interface EarnCancelParams {
+export interface CancelPointsParams {
   partnerId: number;
   eventIdToCancel: number; // 원본 EARN point_events.id
   cancelAmount?: number; // 없으면 잔여 전량 취소
@@ -75,9 +75,9 @@ export class PointRepository {
     return Number(sum ?? 0);
   }
 
-  /** 적립(EARN): 헤더 + 디테일 1건(자기참조) 생성 */
-  async earn(
-    p: EarnParams,
+  /** 적립(ADD_POINTS): 헤더 + 디테일 1건(자기참조) 생성 */
+  async addPoints(
+    p: AddPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; detailId: number }> {
     return await this.inTx(async (trx) => {
@@ -295,11 +295,11 @@ export class PointRepository {
   }
 
   /**
-   * 적립 취소(EARN_CANCEL)
+   * 적립 취소(CANCEL_POINTS)
    * • 부분/전량 취소 모두 지원: cancelAmount 없으면 "남아있는 잔여 전량"
    */
-  async earnCancel(
-    p: EarnCancelParams,
+  async cancelPoints(
+    p: CancelPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; cancel: number }> {
     return await this.inTx(async (trx) => {

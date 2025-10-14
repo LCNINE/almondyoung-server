@@ -440,9 +440,10 @@ export class RefundService {
       const pointsToRefund = Math.floor(Number(intent.discountsTotal) * ratio);
       const cashToRefund = refundAmount - pointsToRefund;
 
-      // 1. 포인트 복원
+      // 1. 포인트 복원 (결제 시 사용한 포인트만 복원)
+      // 주의: 구매 적립 포인트는 메두사의 취소 이벤트로 별도 처리
       if (pointsToRefund > 0) {
-        await this.pointService.earn(
+        await this.pointService.addPoints(
           {
             partnerId: Number(intent.customerId),
             amount: pointsToRefund,
@@ -667,12 +668,12 @@ class PointService {
     params: RedeemParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; used: number }>;
-  async earn(
-    params: EarnParams,
+  async addPoints(
+    params: AddPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; detailId: number }>;
-  async earnCancel(
-    params: EarnCancelParams,
+  async cancelPoints(
+    params: CancelPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; cancel: number }>;
 }
@@ -683,12 +684,12 @@ class PointRepository {
     p: RedeemParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; used: number }>;
-  async earn(
-    p: EarnParams,
+  async addPoints(
+    p: AddPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; detailId: number }>;
-  async earnCancel(
-    p: EarnCancelParams,
+  async cancelPoints(
+    p: CancelPointsParams,
     tx?: DbTx,
   ): Promise<{ eventId: number; cancel: number }>;
 }
@@ -732,7 +733,132 @@ describe('PaymentOrchestrator', () => {
 });
 ```
 
-## 7. 구현 일정
+## 7. 포인트 적립 (주문 완료 시)
+
+### 7.1 아키텍처 원칙
+
+**중요**: 결제 트랜잭션에서는 포인트 적립이 발생하지 않습니다.
+
+- **메두사(Medusa)의 역할**: 주문의 SoT(Source of Truth)로서 적립 포인트 계산
+- **Wallet의 역할**: Kafka 이벤트를 구독하여 포인트 적립 실행
+- **이점**: 이벤트별 특정 상품 적립율 변경 등의 정책이 Wallet에 누수되지 않음
+
+### 7.2 이벤트 기반 적립 플로우
+
+```
+[Medusa] 주문 완료 처리
+    ↓
+[Medusa] 적립 포인트 계산 (상품별 정책 적용)
+    ↓
+[Medusa] Kafka 이벤트 발행: orders.events.v1.order_completed
+    ↓
+[Wallet] 이벤트 구독 및 포인트 적립 실행
+```
+
+### 7.3 이벤트 스키마
+
+**Topic**: `orders.events.v1.order_completed`
+
+```json
+{
+  "orderId": "ord_01HXYZ...",
+  "customerId": "1",
+  "totalAmount": 50000,
+  "earnPoints": 500,
+  "reason": "PURCHASE",
+  "completedAt": "2025-10-14T12:34:56Z"
+}
+```
+
+### 7.4 Wallet 이벤트 리스너 (슈도코드)
+
+```typescript
+/**
+ * 주문 완료 이벤트 리스너
+ *
+ * TODO: Kafka 연동 시 구현
+ * - @nestjs/microservices의 @MessagePattern 또는
+ * - KafkaJS 직접 사용
+ */
+@Injectable()
+export class OrderEventsListener {
+  constructor(
+    private readonly pointService: PointService,
+    private readonly logger: Logger,
+  ) {}
+
+  /**
+   * 주문 완료 시 포인트 적립
+   *
+   * 처리 단계:
+   * 1. 이벤트 검증 (필수 필드 확인)
+   * 2. 중복 적립 방지 (idempotency check by orderId)
+   * 3. pointService.addPoints() 호출
+   * 4. 성공 로그 기록
+   */
+  async handleOrderCompleted(event: OrderCompletedEvent): Promise<void> {
+    // 1. 이벤트 검증
+    if (!event.customerId || !event.earnPoints || event.earnPoints <= 0) {
+      this.logger.warn(`Invalid event: ${JSON.stringify(event)}`);
+      return;
+    }
+
+    // 2. 중복 적립 방지
+    // TODO: orderId 기반 idempotency 체크
+    // const alreadyProcessed = await this.checkIdempotency(event.orderId);
+    // if (alreadyProcessed) {
+    //   this.logger.log(`Already processed: ${event.orderId}`);
+    //   return;
+    // }
+
+    try {
+      // 3. 포인트 적립
+      const result = await this.pointService.addPoints({
+        partnerId: Number(event.customerId),
+        amount: event.earnPoints,
+        reason: 'PURCHASE',
+        orderId: event.orderId,
+        memo: `주문 완료 적립: ${event.orderId}`,
+      });
+
+      // 4. 성공 로그
+      this.logger.log(
+        `포인트 적립 완료: ${event.earnPoints}원 (주문: ${event.orderId}, eventId: ${result.eventId})`,
+      );
+    } catch (error) {
+      this.logger.error(`포인트 적립 실패: ${event.orderId}`, error.stack);
+      // TODO: 실패 시 DLQ(Dead Letter Queue) 또는 재시도 정책
+      throw error;
+    }
+  }
+}
+
+interface OrderCompletedEvent {
+  orderId: string;
+  customerId: string;
+  totalAmount: number;
+  earnPoints: number;
+  reason: string;
+  completedAt: string;
+}
+```
+
+### 7.5 환불 시 적립 포인트 처리
+
+- **결제 시 사용한 포인트**: RefundService에서 자동 복원
+- **구매로 적립된 포인트**: 메두사가 별도 취소 이벤트 발행 → Wallet이 `cancelPoints()` 호출
+
+```
+[Medusa] 주문 취소 처리
+    ↓
+[Medusa] Kafka 이벤트 발행: orders.events.v1.order_cancelled
+    ↓
+[Wallet] 이벤트 구독 및 적립 포인트 취소 실행
+    ↓
+[Wallet] pointService.cancelPoints({ eventIdToCancel: ... })
+```
+
+## 8. 구현 일정
 
 | Day | 작업 내용                                 |
 | --- | ----------------------------------------- |
@@ -741,7 +867,8 @@ describe('PaymentOrchestrator', () => {
 | 3   | RefundService, BnplSettlementService 구현 |
 | 4   | API 레이어, 통합 테스트                   |
 | 5   | 배포 및 모니터링                          |
+| 6   | Kafka 이벤트 리스너 구현 (적립/취소)      |
 
 ---
 
-**이 스펙대로 정확히 구현하면 authorize/capture가 명확히 구분된 깔끔한 시스템이 됩니다.**
+**이 스펙대로 정확히 구현하면 authorize/capture가 명확히 구분되고, 적립 정책이 메두사에 집중된 깔끔한 시스템이 됩니다.**
