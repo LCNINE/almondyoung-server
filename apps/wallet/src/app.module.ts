@@ -7,14 +7,21 @@ import { PaymentController } from './controllers/payment.controller';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
 import { PaymentIntentService } from './services/intents/intent.service';
+import { IntentRepository } from './services/intents/intent.repository';
+import { IntentManager } from './services/intents/intent.manager';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
 
 import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
 import {
-  PaymentOrchestratorService,
-  PaymentExecutorService,
+  PAYMENT_ORCHESTRATOR_SERVICE,
+  PAYMENT_EXECUTOR_SERVICE,
+  PaymentOrchestratorServiceImpl,
+  PaymentExecutorServiceImpl,
 } from './services/payment';
+import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
+import { PaymentAttemptManager } from './services/payment/payment-attempt.manager';
+import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
 import {
   CmsBatchProfilesRepository,
   CmsCardProfilesRepository,
@@ -72,10 +79,25 @@ import { PointRepository } from './services/points/point.repository';
     PointService,
     PointRepository,
 
-    // --- 내부 흐름 제어 서비스 ---
-    PaymentOrchestratorService,
-    PaymentExecutorService,
+    // --- 내부 흐름 제어 서비스 (Port-Adapter 패턴) ---
+    {
+      provide: PAYMENT_ORCHESTRATOR_SERVICE,
+      useClass: PaymentOrchestratorServiceImpl,
+    },
+    {
+      provide: PAYMENT_EXECUTOR_SERVICE,
+      useClass: PaymentExecutorServiceImpl,
+    },
     IdempotencyService,
+
+    // --- Implement Layer (Manager - Repository 캡슐화) ---
+    IntentManager,
+    PaymentAttemptManager,
+    PaymentRequestBuilder,
+
+    // --- Data Access Layer (Repository) ---
+    IntentRepository,
+    PaymentAttemptRepository,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
     CmsCardProfilesRepository,
