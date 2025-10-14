@@ -1128,6 +1128,16 @@ export const cashReceiptEventDetails = pgTable(
   (table) => [index('idx_cash_receipt_event_details_event').on(table.eventId)],
 );
 
+// ───────────────────────────────────────────
+// DiscountLine 타입 정의 (포인트 할인 정보)
+// ───────────────────────────────────────────
+export type DiscountLine = {
+  type: 'POINTS';
+  amount: number;
+  pointEventId: number;
+  appliedAt: Date;
+};
+
 /**
  * PaymentIntent 테이블 - 결제 의도 (provider 없음, 실행 시점에서 결정)
  */
@@ -1136,7 +1146,16 @@ export const paymentIntents = pgTable(
   {
     id: varchar('id', { length: 36 }).primaryKey(),
     customerId: varchar('customer_id', { length: 64 }).notNull(),
-    amount: bigint('amount', { mode: 'number' }).notNull(),
+
+    // 금액 필드 (포인트 통합 지원)
+    amount: bigint('amount', { mode: 'number' }).notNull(), // 레거시 호환용 (totalAmount와 동일)
+    totalAmount: numeric('total_amount').notNull(), // 원래 금액
+    discounts: jsonb('discounts')
+      .default(sql`'[]'::jsonb`)
+      .$type<DiscountLine[]>(), // 할인 내역
+    discountsTotal: numeric('discounts_total').default('0'), // 할인 총액
+    finalAmount: numeric('final_amount').notNull(), // 실제 결제액 (totalAmount - discountsTotal)
+
     status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
     type: paymentIntentTypeEnum('type').notNull().default('ORDER'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -1358,6 +1377,9 @@ export const walletSchema = {
   // Point System
   pointEvents,
   pointEventDetails,
+  partners,
+  referrals,
+  referralRewards,
 
   // Utility Tables (Tax Invoice)
   taxInvoices,

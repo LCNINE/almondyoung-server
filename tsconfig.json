@@ -18,30 +18,14 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@app/db": [
-        "libs/db/src"
-      ],
-      "@app/db/*": [
-        "libs/db/src/*"
-      ],
-      "@app/events": [
-        "libs/events/src"
-      ],
-      "@app/events/*": [
-        "libs/events/src/*"
-      ],
-      "@app/roles": [
-        "libs/roles/src"
-      ],
-      "@app/roles/*": [
-        "libs/roles/src/*"
-      ],
-      "@app/shared": [
-        "libs/shared/src"
-      ],
-      "@app/shared/*": [
-        "libs/shared/src/*"
-      ]
+      "@app/db": ["libs/db/src"],
+      "@app/db/*": ["libs/db/src/*"],
+      "@app/events": ["libs/events/src"],
+      "@app/events/*": ["libs/events/src/*"],
+      "@app/roles": ["libs/roles/src"],
+      "@app/roles/*": ["libs/roles/src/*"],
+      "@app/shared": ["libs/shared/src"],
+      "@app/shared/*": ["libs/shared/src/*"]
     }
   }
 }

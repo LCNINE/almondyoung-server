@@ -44,6 +44,9 @@ import { CheckoutSessionService } from './services/checkout-session.service';
 import { TaxInvoiceService } from './services/tax-invoice.service';
 import { BnplAccountService } from './services/bnpl-account.service';
 import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
+import { RefundService } from './services/refund.service';
+import { PointService } from './services/points/point.service';
+import { PointRepository } from './services/points/point.repository';
 
 @Module({
   imports: [
@@ -74,6 +77,11 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
     TaxInvoiceService,
     BnplAccountService,
     BnplBillingScheduler,
+    RefundService,
+
+    // --- 포인트 시스템 ---
+    PointService,
+    PointRepository,
 
     // --- 내부 흐름 제어 서비스 ---
     PaymentOrchestratorService,
