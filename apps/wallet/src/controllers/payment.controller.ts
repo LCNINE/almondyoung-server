@@ -17,9 +17,7 @@ import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplAccountService } from '../services/bnpl-account.service';
 
-import {
-  PaymentError,
-} from '../providers/payment-provider.interface';
+import { PaymentError } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
@@ -610,6 +608,7 @@ export class PaymentController {
   async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
     try {
       // 1. Multipart 요청 파싱
+      // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
       if (!data) {
         throw new BadRequestException(

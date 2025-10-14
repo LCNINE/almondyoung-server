@@ -1,5 +1,5 @@
 // services/bnpl-billing.scheduler.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
@@ -13,7 +13,10 @@ import {
   CmsWithdrawalRequestSchema,
   type CmsWithdrawalRequestDto,
 } from '../shared/zods/cms-withdrawal.zod';
-import { PaymentOrchestratorService } from './payment/payment-orchestrator.service';
+import {
+  PAYMENT_ORCHESTRATOR_SERVICE,
+  type PaymentOrchestratorService,
+} from './payment';
 
 @Injectable()
 export class BnplBillingScheduler {
@@ -23,6 +26,7 @@ export class BnplBillingScheduler {
   constructor(
     private readonly db: DbService<typeof walletSchema>,
     private readonly bnpl: BnplAccountService,
+    @Inject(PAYMENT_ORCHESTRATOR_SERVICE)
     private readonly orchestrator: PaymentOrchestratorService,
   ) {
     this.hmsApi = HmsApiFactory.createForBnpl();

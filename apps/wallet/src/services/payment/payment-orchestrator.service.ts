@@ -1,39 +1,76 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { walletSchema, DiscountLine } from '../../shared/database/schema';
-import { eq, and, inArray } from 'drizzle-orm';
-import { PaymentExecutorService } from './payment-executor.service';
+import { eq } from 'drizzle-orm';
+import type { PaymentExecutorService } from './payment-executor.service.interface';
 import {
-  PaymentRequest,
   PaymentResult,
-  PaymentType,
   ProviderType,
 } from '../../providers/payment-provider.interface';
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import { PointService } from '../points/point.service';
+import type { PaymentOrchestratorService } from './payment-orchestrator.service.interface';
+import { PAYMENT_EXECUTOR_SERVICE } from './tokens';
+import { IntentManager } from '../intents/intent.manager';
+import { PaymentAttemptManager } from './payment-attempt.manager';
+import { PaymentRequestBuilder } from './payment-request.builder';
+import type { PaymentIntent } from '../../shared/database/types';
 
+/**
+ * PaymentOrchestratorService 구현체 (Business Layer)
+ *
+ * 책임: 결제 플로우 전체 조율 (비즈니스 흐름 중심)
+ * - Intent 준비 → 포인트 적용 → 외부 결제 → 기록
+ * - 상세 구현은 Implement Layer(Manager)에 위임
+ *
+ * 블로그 철학:
+ * "상세 구현 로직은 잘 모르더라도 비즈니스의 흐름은 이해 가능한 로직"
+ *
+ * 레이어 구조:
+ * Business Layer (Orchestrator) → Implement Layer (Manager) → Data Access Layer (Repository)
+ *
+ * 의존성 주입:
+ * - IntentManager: Intent 관련 구현 로직 (Implement Layer)
+ * - PaymentAttemptManager: Attempt 관련 구현 로직 (Implement Layer)
+ * - PointService: 포인트 차감/복원
+ * - PaymentExecutorService: 외부 결제 실행
+ * - PaymentRequestBuilder: PaymentRequest 객체 조립
+ */
 @Injectable()
-export class PaymentOrchestratorService {
-  private readonly logger = new Logger(PaymentOrchestratorService.name);
+export class PaymentOrchestratorServiceImpl
+  implements PaymentOrchestratorService
+{
+  private readonly logger = new Logger(PaymentOrchestratorServiceImpl.name);
 
   constructor(
     private readonly db: DbService<typeof walletSchema>,
-    private readonly paymentExecutor: PaymentExecutorService,
+    private readonly intentManager: IntentManager,
+    private readonly attemptManager: PaymentAttemptManager,
     private readonly pointService: PointService,
+    @Inject(PAYMENT_EXECUTOR_SERVICE)
+    private readonly paymentExecutor: PaymentExecutorService,
+    private readonly requestBuilder: PaymentRequestBuilder,
   ) {}
 
   /**
    * 결제 승인(Authorization) - Intent 조회부터 승인 상태 업데이트까지 담당합니다.
    * 포인트 + 현금 혼합 결제를 지원합니다.
    *
+   * ✅ 비즈니스 흐름 중심:
+   * 1. Intent 조회 및 검증
+   * 2. 기존 활성 결제 취소
+   * 3. 포인트 차감 및 할인 계산
+   * 4. 포인트 전액 결제 시 바로 완료
+   * 5. 외부 결제 필요 시 요청 생성 및 실행
+   * 6. 결제 기록 및 결과 반환
+   *
    * ✅ providerType은 nullable: 포인트 전액 결제 시 불필요
    */
   async authorizePayment(
     intentId: string,
-    providerType: ProviderType | null, // ✅ null 허용
+    providerType: ProviderType | null,
     options: {
-      usePoints?: number; // 사용할 포인트 금액
+      usePoints?: number;
       profileId?: string;
       instrumentRef?: string;
       sessionId?: string;
@@ -45,286 +82,334 @@ export class PaymentOrchestratorService {
       `Orchestrating payment authorization for Intent: ${intentId} via ${providerType || '포인트 전액'}`,
     );
 
-    const intent = await this.db.db.query.paymentIntents.findFirst({
-      where: eq(schema.paymentIntents.id, intentId),
-    });
+    // ✅ 1. Intent 조회 및 검증
+    const intent = await this.prepareIntent(intentId, providerType);
 
-    if (!intent) {
-      throw new Error(`Intent not found: ${intentId}`);
+    // ✅ 2-6. 트랜잭션 안에서 모든 결제 처리
+    return this.db.db.transaction(async (tx) => {
+      // ✅ 2. 기존 활성 결제 취소 (동시 결제 방지)
+      const canceledIds = await this.attemptManager.cancelActiveAttempts(
+        intentId,
+        tx,
+      );
+      if (canceledIds.length > 0) {
+        this.logger.log(
+          `Previous active attempts canceled: ${canceledIds.join(', ')}`,
+        );
+      }
+
+      // ✅ 3. 포인트 차감 및 할인 계산
+      const pointResult = await this.applyPoints(intent, options.usePoints, tx);
+
+      // ✅ 4. 포인트 전액 결제 시 바로 완료
+      if (pointResult.isFullPayment) {
+        return await this.completePointOnlyPayment(
+          intent,
+          pointResult,
+          options,
+          tx,
+        );
+      }
+
+      // ✅ 5. 외부 결제 필요 - 요청 생성 및 실행
+      return await this.executeExternalPayment(
+        intent,
+        providerType!,
+        pointResult,
+        options,
+        tx,
+      );
+    });
+  }
+
+  /**
+   * Intent를 조회하고 결제 가능한 상태인지 검증합니다.
+   * UNKNOWN 상태인 경우 복구를 시도합니다.
+   */
+  private async prepareIntent(
+    intentId: string,
+    providerType: ProviderType | null,
+  ): Promise<PaymentIntent> {
+    return this.intentManager.prepareForPayment(
+      intentId,
+      providerType,
+      this.attemptRecovery.bind(this),
+    );
+  }
+
+  /**
+   * UNKNOWN 상태의 Intent 복구를 시도합니다.
+   */
+  private async attemptRecovery(
+    intent: PaymentIntent,
+    providerType: ProviderType | null,
+  ): Promise<void> {
+    this.logger.log(
+      `Intent ${intent.id} is in UNKNOWN state. Attempting recovery...`,
+    );
+
+    if (!providerType) return;
+
+    try {
+      const inquiry = await this.paymentExecutor.inquire(
+        intent.id,
+        providerType,
+      );
+      if (inquiry?.status === 'AUTHORIZED' || inquiry?.status === 'CAPTURED') {
+        await this.db.db
+          .update(schema.paymentIntents)
+          .set({
+            status: inquiry.status as any,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.paymentIntents.id, intent.id));
+
+        this.logger.log(
+          `Successfully recovered intent ${intent.id} status to ${inquiry.status}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to recover UNKNOWN state for intent ${intent.id}:`,
+        error,
+      );
+      // 복구 실패 시에도 계속 진행 (새로운 결제 시도)
+    }
+  }
+
+  /**
+   * 포인트를 차감하고 할인 정보를 생성합니다.
+   */
+  private async applyPoints(
+    intent: PaymentIntent,
+    usePoints: number | undefined,
+    tx: any,
+  ): Promise<{
+    pointEventId: number | null;
+    pointsUsed: number;
+    finalAmount: number;
+    isFullPayment: boolean;
+    discounts: DiscountLine[];
+  }> {
+    // 포인트 사용 요청이 없는 경우
+    if (!usePoints || usePoints <= 0) {
+      return {
+        pointEventId: null,
+        pointsUsed: 0,
+        finalAmount: Number(intent.amount),
+        isFullPayment: false,
+        discounts: [],
+      };
     }
 
-    // ✨ [UNKNOWN 상태 복구] intent 상태가 UNKNOWN인 경우 복구 시도
-    if ((intent.status as string) === 'UNKNOWN') {
-      this.logger.log(
-        `Intent ${intentId} is in UNKNOWN state. Attempting recovery...`,
+    this.logger.log(`Applying ${usePoints} points to intent ${intent.id}`);
+
+    // partnerId 변환
+    const partnerId = Number(intent.customerId);
+    this.logger.log(
+      `Converted customerId ${intent.customerId} to partnerId ${partnerId}`,
+    );
+
+    // 포인트 잔액 체크
+    const balance = await this.pointService.getBalance(partnerId);
+    this.logger.log(`Current point balance: ${balance}`);
+
+    if (balance < usePoints) {
+      throw new Error(
+        `Insufficient points. Balance: ${balance}, Required: ${usePoints}`,
+      );
+    }
+
+    // 포인트 차감
+    const redeemResult = await this.pointService.redeem(
+      {
+        partnerId,
+        amount: usePoints,
+        reason: 'PAYMENT',
+        memo: `Intent: ${intent.id}`,
+      },
+      tx,
+    );
+
+    this.logger.log(
+      `Points redeemed successfully. EventId: ${redeemResult.eventId}`,
+    );
+
+    // 할인 정보 생성
+    const discounts: DiscountLine[] = [
+      {
+        type: 'POINTS',
+        amount: usePoints,
+        pointEventId: redeemResult.eventId,
+        appliedAt: new Date(),
+      },
+    ];
+
+    const finalAmount = Number(intent.amount) - usePoints;
+    const isFullPayment = finalAmount === 0;
+
+    // Intent에 할인 정보 업데이트
+    await this.intentManager.applyDiscounts(
+      intent.id,
+      discounts,
+      String(usePoints),
+      String(finalAmount),
+      tx,
+    );
+
+    this.logger.log(
+      `Points applied. Final amount: ${finalAmount}, Full payment: ${isFullPayment}`,
+    );
+
+    return {
+      pointEventId: redeemResult.eventId,
+      pointsUsed: usePoints,
+      finalAmount,
+      isFullPayment,
+      discounts,
+    };
+  }
+
+  /**
+   * 포인트 전액 결제를 완료 처리합니다.
+   */
+  private async completePointOnlyPayment(
+    intent: PaymentIntent,
+    pointResult: {
+      pointEventId: number | null;
+      pointsUsed: number;
+      finalAmount: number;
+      isFullPayment: boolean;
+      discounts: DiscountLine[];
+    },
+    options: {
+      sessionId?: string;
+      actor?: string;
+      source?: string;
+    },
+    tx: any,
+  ): Promise<PaymentResult> {
+    this.logger.log('포인트 전액 결제 - 바로 CAPTURED 처리');
+
+    await this.intentManager.completeAsPointOnly(intent.id, tx);
+
+    return {
+      success: true,
+      message: '포인트 전액 결제 완료',
+      transactionId: intent.id,
+      attemptId: null,
+      pointEventId: pointResult.pointEventId,
+      breakdown: {
+        totalAmount: Number(intent.amount),
+        pointsUsed: pointResult.pointsUsed,
+        finalAmount: 0,
+      },
+    };
+  }
+
+  /**
+   * 외부 결제를 실행하고 결과를 기록합니다.
+   */
+  private async executeExternalPayment(
+    intent: PaymentIntent,
+    providerType: ProviderType,
+    pointResult: {
+      pointEventId: number | null;
+      pointsUsed: number;
+      finalAmount: number;
+      isFullPayment: boolean;
+      discounts: DiscountLine[];
+    },
+    options: {
+      profileId?: string;
+      instrumentRef?: string;
+      sessionId?: string;
+      actor?: string;
+      source?: string;
+    },
+    tx: any,
+  ): Promise<PaymentResult> {
+    // Provider 필수 검증
+    if (!providerType) {
+      throw new Error(
+        'Provider is required for non-point payments. External payment provider must be specified.',
+      );
+    }
+
+    // PaymentRequest 객체 조립
+    const paymentRequest = this.requestBuilder.build(
+      intent,
+      pointResult.finalAmount,
+      {
+        ...options,
+        pointEventId: pointResult.pointEventId,
+        pointsUsed: pointResult.pointsUsed,
+      },
+    );
+
+    try {
+      // 외부 결제 승인 실행
+      const result = await this.paymentExecutor.authorize(
+        paymentRequest,
+        providerType,
+        intent,
+        { tx },
       );
 
-      if (providerType) {
-        try {
-          const inquiry = await this.paymentExecutor.inquire(
-            intent.id,
-            providerType,
-          );
-          if (
-            inquiry?.status === 'AUTHORIZED' ||
-            inquiry?.status === 'CAPTURED'
-          ) {
-            await this.db.db
-              .update(schema.paymentIntents)
-              .set({
-                status: inquiry.status as any,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.paymentIntents.id, intent.id));
+      // 성공 시 Attempt와 Intent 상태 업데이트
+      await this.attemptManager.recordAttempt(
+        paymentRequest,
+        result,
+        providerType,
+        'AUTHORIZED',
+        tx,
+      );
+      await this.intentManager.updateStatus(intent.id, 'AUTHORIZED', tx);
 
-            this.logger.log(
-              `Successfully recovered intent ${intentId} status to ${inquiry.status}`,
-            );
-            return {
-              success: true,
-              message: '이전 결제 상태를 복구했습니다.',
-              transactionId: inquiry.transactionId,
-            };
-          }
-        } catch (error) {
-          this.logger.error(
-            `Failed to recover UNKNOWN state for intent ${intentId}:`,
-            error,
-          );
-          // 복구 실패 시에도 계속 진행 (새로운 결제 시도)
-        }
-      }
-    }
-
-    // ✨ [핵심 개선] 모든 DB 업데이트를 하나의 트랜잭션으로 묶어 원자성을 보장합니다.
-    return this.db.db.transaction(async (tx) => {
-      // ✨ [동시 결제 방지] 활성 결제 시도 감지 및 취소
-      const canceledAttemptIds = await this.cancelActiveAttempt(intentId, tx);
-      if (canceledAttemptIds.length > 0) {
-        this.logger.log(
-          `Previous active attempts canceled for intent ${intentId}: ${canceledAttemptIds.join(', ')}`,
-        );
-      }
-      let pointEventId: number | null = null;
-      let finalAmount = Number(intent.amount);
-      const discounts: DiscountLine[] = [];
-
-      // 1. 포인트 처리 (사용 요청이 있는 경우)
-      if (options.usePoints && options.usePoints > 0) {
-        this.logger.log(`포인트 차감 시도: ${options.usePoints}원`);
-
-        // 포인트 잔액 체크
-        // partnerId는 customerId를 숫자로 변환 (실제 구현에서는 매핑 테이블 필요)
-        const partnerId = Number(intent.customerId);
-        this.logger.log(`partnerId 변환: ${intent.customerId} -> ${partnerId}`);
-
-        let balance: number;
-        try {
-          balance = await this.pointService.getBalance(partnerId);
-          this.logger.log(`포인트 잔액 조회 성공: ${balance}원`);
-        } catch (error) {
-          this.logger.error(
-            `포인트 잔액 조회 실패: ${error.message}`,
-            error.stack,
-          );
-          throw error;
-        }
-
-        if (balance < options.usePoints) {
-          throw new Error(
-            `포인트가 부족합니다. 잔액: ${balance}, 요청: ${options.usePoints}`,
-          );
-        }
-
-        this.logger.log(`잔액 체크 통과. 포인트 차감 시작...`);
-
-        // ⚠️ 중요: 포인트 차감을 동일 트랜잭션에서 실행
-        // 외부 결제 실패 시 포인트도 함께 롤백됨
-        let redeemResult: { eventId: number; used: number };
-        try {
-          redeemResult = await this.pointService.redeem(
-            {
-              partnerId,
-              amount: options.usePoints,
-              reason: 'PAYMENT',
-              memo: `Intent: ${intentId}`,
-            },
-            tx, // ✅ 상위 트랜잭션 전파
-          );
-          this.logger.log(
-            `포인트 차감(redeem) 성공. eventId: ${redeemResult.eventId}`,
-          );
-        } catch (error) {
-          this.logger.error(
-            `포인트 차감(redeem) 실패: ${error.message}`,
-            error.stack,
-          );
-          throw error;
-        }
-
-        pointEventId = redeemResult.eventId;
-
-        // 할인 정보 추가
-        discounts.push({
-          type: 'POINTS',
-          amount: options.usePoints,
-          pointEventId: pointEventId!, // redeemResult.eventId로 할당되었으므로 null이 아님
-          appliedAt: new Date(),
-        });
-
-        finalAmount = Number(intent.amount) - options.usePoints;
-
-        // Intent에 할인 정보 업데이트
-        await tx
-          .update(schema.paymentIntents)
-          .set({
-            discounts: discounts as any,
-            discountsTotal: String(options.usePoints),
-            finalAmount: String(finalAmount),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.paymentIntents.id, intentId));
-
-        this.logger.log(
-          `포인트 차감 완료. eventId: ${pointEventId}, 최종 금액: ${finalAmount}`,
-        );
-      }
-
-      // 2. 포인트 전액 결제인 경우 바로 CAPTURED 처리
-      if (finalAmount === 0) {
-        this.logger.log('포인트 전액 결제 - 바로 CAPTURED 처리');
-
-        await tx
-          .update(schema.paymentIntents)
-          .set({
-            status: 'CAPTURED',
-            capturedAt: new Date(),
-            authorizedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.paymentIntents.id, intentId));
-
-        return {
-          success: true,
-          message: '포인트 전액 결제 완료',
-          transactionId: intentId,
-          attemptId: null,
-          pointEventId,
-          breakdown: {
-            totalAmount: Number(intent.amount),
-            pointsUsed: options.usePoints || 0,
-            finalAmount: 0,
-          },
-        };
-      }
-
-      // 3. 외부 결제 필요한 경우 (finalAmount > 0)
-      // ✅ provider 필수 검증
-      if (!providerType) {
-        throw new Error(
-          'Provider는 필수입니다. 포인트 전액 결제가 아닌 경우 외부 결제 provider를 지정해야 합니다.',
-        );
-      }
-
-      const paymentRequest: PaymentRequest = {
-        intentId: intent.id,
-        attemptId: generateUUIDv7(),
-        amount: finalAmount,
-        paymentType: intent.type as PaymentType,
-        userId: intent.customerId,
-        instrumentType: options.profileId ? 'PROFILE' : 'ONE_TIME',
-        profileId: options.profileId,
-        instrumentRef: options.instrumentRef,
-        metadata: {
-          sessionId: options.sessionId,
-          source: options.source || 'api',
-          actor: options.actor || 'SYSTEM',
-          pointEventId,
-          pointsUsed: options.usePoints || 0,
-        },
+      // 포인트 정보를 결과에 포함
+      result.attemptId = paymentRequest.attemptId;
+      result.pointEventId = pointResult.pointEventId;
+      result.breakdown = {
+        totalAmount: Number(intent.amount),
+        pointsUsed: pointResult.pointsUsed,
+        finalAmount: pointResult.finalAmount,
       };
 
-      // 4. 외부 결제 승인 처리
-      try {
-        // 1. Executor에게 결제 승인을 위임 (트랜잭션 컨텍스트 전달)
-        const result = await this.paymentExecutor.authorize(
-          paymentRequest,
-          providerType, // 이제 null이 아님이 보장됨
-          intent,
-          { tx },
+      this.logger.log(
+        `Authorization successful for Intent: ${intent.id}, Success: ${result.success}`,
+      );
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        `Authorization failed for Intent: ${intent.id}`,
+        error.stack,
+      );
+
+      // ✨ [UNKNOWN 상태 처리] 외부 결제 승인 성공했지만 내부 처리 도중 에러 가능성 대비
+      if (error.pgApproved === true) {
+        this.logger.warn(
+          `External payment approved but internal processing failed for Intent: ${intent.id}. Setting status to UNKNOWN.`,
         );
-
-        // 2. 성공 시 모든 관련 상태를 이 트랜잭션 안에서 업데이트합니다.
-        await this.saveAttemptRecord(
-          paymentRequest,
-          result,
-          providerType,
-          'AUTHORIZED',
-          tx,
-        );
-        await this.updateIntentStatus(
-          intentId,
-          result,
-          paymentRequest,
-          'AUTHORIZED',
-          tx,
-        );
-
-        // ✨ 포인트 정보를 결과에 포함
-        result.attemptId = paymentRequest.attemptId;
-        result.pointEventId = pointEventId;
-        result.breakdown = {
-          totalAmount: Number(intent.amount),
-          pointsUsed: options.usePoints || 0,
-          finalAmount,
-        };
-
-        this.logger.log(
-          `Authorization successful for Intent: ${intentId}, Success: ${result.success}`,
-        );
-        return result;
-      } catch (error: any) {
-        this.logger.error(
-          `Authorization failed for Intent: ${intentId}`,
-          error.stack,
-        );
-
-        // ✨ [UNKNOWN 상태 처리] 외부 결제 승인 성공했지만 내부 처리 도중 에러 가능성 대비
-        if (error.pgApproved === true) {
-          this.logger.warn(
-            `External payment approved but internal processing failed for Intent: ${intentId}. Setting status to UNKNOWN.`,
-          );
-
-          // 별도 트랜잭션으로 UNKNOWN 상태 저장 (롤백되지 않도록)
-          await this.db.db
-            .update(schema.paymentIntents)
-            .set({
-              status: 'UNKNOWN' as any,
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.paymentIntents.id, intentId));
-        }
-
-        // 3. 실패 시에도 필요한 기록은 남기고, 트랜잭션은 롤백됩니다.
-        // ⚠️ 트랜잭션 롤백 시 포인트 차감도 함께 취소됩니다.
-        const failedResult: PaymentResult = {
-          success: false,
-          code: error.code,
-          message: error.message,
-        };
-        await this.saveAttemptRecord(
-          paymentRequest,
-          failedResult,
-          providerType,
-          'FAILED',
-          tx,
-        );
-
-        // 에러를 다시 던져서 트랜잭션을 롤백시키고 호출자에게 알림
-        // 포인트 차감이 있었다면 함께 롤백됨
-        throw error;
+        await this.intentManager.markAsUnknown(intent.id);
       }
-    });
+
+      // 실패 기록
+      const failedResult: PaymentResult = {
+        success: false,
+        code: error.code,
+        message: error.message,
+      };
+      await this.attemptManager.recordAttempt(
+        paymentRequest,
+        failedResult,
+        providerType,
+        'FAILED',
+        tx,
+      );
+
+      // 에러를 다시 던져서 트랜잭션을 롤백시키고 호출자에게 알림
+      throw error;
+    }
   }
 
   /**
@@ -346,21 +431,9 @@ export class PaymentOrchestratorService {
 
     // Intent와 Attempt 조회
     const [intent, attempt] = await Promise.all([
-      this.db.db.query.paymentIntents.findFirst({
-        where: eq(schema.paymentIntents.id, intentId),
-      }),
-      this.db.db.query.paymentAttempts.findFirst({
-        where: eq(schema.paymentAttempts.id, attemptId),
-      }),
+      this.intentManager.findByIdOrFail(intentId),
+      this.attemptManager.findByIdOrFail(attemptId),
     ]);
-
-    if (!intent) {
-      throw new Error(`Intent not found: ${intentId}`);
-    }
-
-    if (!attempt) {
-      throw new Error(`Attempt not found: ${attemptId}`);
-    }
 
     if (attempt.status !== 'AUTHORIZED') {
       throw new Error(
@@ -372,7 +445,7 @@ export class PaymentOrchestratorService {
 
     return this.db.db.transaction(async (tx) => {
       try {
-        // 1. Executor에게 결제 캡처를 위임
+        // Executor에게 결제 캡처를 위임
         const result = await this.paymentExecutor.capture(
           attemptId,
           attempt.provider as ProviderType,
@@ -380,9 +453,14 @@ export class PaymentOrchestratorService {
           { tx },
         );
 
-        // 2. 성공 시 Attempt와 Intent 상태를 업데이트
-        await this.updateAttemptStatus(attemptId, 'CAPTURED', result, tx);
-        await this.updateIntentStatus(intentId, result, null, 'CAPTURED', tx);
+        // 성공 시 Attempt와 Intent 상태를 업데이트
+        await this.attemptManager.updateStatus(
+          attemptId,
+          'CAPTURED',
+          result,
+          tx,
+        );
+        await this.intentManager.updateStatus(intentId, 'CAPTURED', tx);
 
         this.logger.log(
           `Capture successful for Intent: ${intentId}, Attempt: ${attemptId}`,
@@ -401,7 +479,7 @@ export class PaymentOrchestratorService {
           message: error.message,
         };
 
-        await this.updateAttemptStatus(
+        await this.attemptManager.updateStatus(
           attemptId,
           'CAPTURE_FAILED',
           failedResult,
@@ -411,112 +489,5 @@ export class PaymentOrchestratorService {
         throw error;
       }
     });
-  }
-
-  // ✨ [수정] 트랜잭션 객체(tx)와 명시적 상태를 받도록 수정
-  private async saveAttemptRecord(
-    request: PaymentRequest,
-    result: PaymentResult,
-    providerType: ProviderType,
-    status: string,
-    tx: any,
-  ): Promise<void> {
-    await tx.insert(schema.paymentAttempts).values({
-      id: request.attemptId,
-      intentId: request.intentId,
-      provider: providerType,
-      instrumentType: request.instrumentType,
-      profileId: request.profileId || null,
-      amount: request.amount,
-      status: result.success ? status : 'FAILED',
-      transactionId: result.transactionId ?? null,
-      eventContext: JSON.stringify(request.metadata),
-    });
-  }
-
-  // ✨ [수정] 트랜잭션 객체(tx)와 명시적 상태를 받도록 수정
-  private async updateIntentStatus(
-    intentId: string,
-    result: PaymentResult,
-    _request: PaymentRequest | null,
-    status: string,
-    tx: any,
-  ): Promise<void> {
-    await tx
-      .update(schema.paymentIntents)
-      .set({
-        status: result.success ? status : 'FAILED',
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentIntents.id, intentId));
-  }
-
-  // ✨ [신규] Attempt 상태만 업데이트하는 헬퍼 메서드
-  private async updateAttemptStatus(
-    attemptId: string,
-    status: string,
-    result: PaymentResult,
-    tx: any,
-  ): Promise<void> {
-    await tx
-      .update(schema.paymentAttempts)
-      .set({
-        status,
-        updatedAt: new Date(),
-        transactionId: result.transactionId ?? undefined,
-      })
-      .where(eq(schema.paymentAttempts.id, attemptId));
-  }
-
-  /**
-   * 주어진 intentId의 모든 활성 상태 결제 시도를 취소합니다.
-   * 동시 결제 방지를 위해 새로운 결제 시도 전에 호출됩니다.
-   *
-   * @param intentId - 결제 의도 ID
-   * @param tx - 트랜잭션 객체
-   * @returns 취소된 시도들의 ID 배열
-   */
-  private async cancelActiveAttempt(
-    intentId: string,
-    tx: any,
-  ): Promise<string[]> {
-    this.logger.log(`Canceling active attempts for intent: ${intentId}`);
-
-    // 활성 상태의 결제 시도들을 조회
-    const activeAttempts = await tx.query.paymentAttempts.findMany({
-      where: and(
-        eq(schema.paymentAttempts.intentId, intentId),
-        inArray(schema.paymentAttempts.status, ['AUTHORIZED']), // 현재 enum에서 활성 상태로 간주되는 것들
-      ),
-    });
-
-    if (activeAttempts.length === 0) {
-      this.logger.log(`No active attempts found for intent: ${intentId}`);
-      return [];
-    }
-
-    const attemptIds = activeAttempts.map((attempt) => attempt.id);
-    this.logger.log(
-      `Found ${activeAttempts.length} active attempts to cancel: ${attemptIds.join(', ')}`,
-    );
-
-    // 모든 활성 시도를 CANCELLED 상태로 업데이트
-    await tx
-      .update(schema.paymentAttempts)
-      .set({
-        status: 'CANCELLED',
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.paymentAttempts.intentId, intentId),
-          inArray(schema.paymentAttempts.status, ['AUTHORIZED']),
-        ),
-      );
-
-    this.logger.log(
-      `Successfully canceled ${attemptIds.length} attempts for intent: ${intentId}`,
-    );
-    return attemptIds;
   }
 }
