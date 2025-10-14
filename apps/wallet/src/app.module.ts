@@ -40,7 +40,6 @@ import { TossChargeProvider } from './providers/toss.charge';
 import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
 import { IdempotencyService } from './services/idempotency.service';
-import { CheckoutSessionService } from './services/checkout-session.service';
 import { TaxInvoiceService } from './services/tax-invoice.service';
 import { BnplAccountService } from './services/bnpl-account.service';
 import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
@@ -73,7 +72,6 @@ import { PointRepository } from './services/points/point.repository';
     PaymentService,
     PaymentIntentService,
     PaymentProfileService,
-    CheckoutSessionService,
     TaxInvoiceService,
     BnplAccountService,
     BnplBillingScheduler,
