@@ -6,14 +6,12 @@ import {
   Param,
   HttpException,
   HttpStatus,
-  UsePipes,
   Headers,
   BadRequestException,
   Req,
   HttpCode,
   Logger, // ✨ 바로 이 부분이 @nestjs/common에서 온 것인지가 중요합니다.
 } from '@nestjs/common';
-
 import { PaymentService } from '../services/payment.service';
 import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
@@ -21,19 +19,16 @@ import { BnplAccountService } from '../services/bnpl-account.service';
 
 import {
   PaymentError,
-  PaymentType,
-  ProviderType,
 } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
 import { DbService } from '@app/db';
-import * as schema from '../shared/database/schema';
+
 import { walletSchema } from '../shared/database/schema';
-import { eq } from 'drizzle-orm';
+
 import { FastifyRequest } from 'fastify';
-import { Multipart, MultipartFile } from '@fastify/multipart';
-import { HmsBnplRegisterInput } from '../providers/hms-bnpl.registrar';
+
 import {
   ApiTags,
   ApiBody,
@@ -43,9 +38,6 @@ import {
   ApiParam,
   ApiHeader,
 } from '@nestjs/swagger';
-import { UploadedFile } from '../shared/types/fastify-file';
-
-import { CheckoutSessionService } from '../services/checkout-session.service';
 import { RefundService } from '../services/refund.service';
 
 // Zod 스키마 및 DTO 임포트
@@ -56,41 +48,22 @@ import {
   CreateHmsCardProfileSchema,
   OnboardHmsBnplProfileSchema,
   CreateBnplAccountSchema,
-  CreateCheckoutSessionSchema,
-  ProcessIntentSchema,
   RefundPaymentSchema,
   // DTO 클래스들
   CreateIntentDto,
   AuthorizePaymentDto,
   CapturePaymentDto,
   CreateHmsCardProfileDto,
-  OnboardHmsBnplProfileDto,
   CreateBnplAccountDto,
-  CreateCheckoutSessionDto,
-  ProcessIntentDto,
   RefundPaymentDto,
   // Response DTO 클래스들
   IntentResponseDto,
   AuthorizePaymentResponseDto,
   CapturePaymentResponseDto,
-  ExecutePaymentResponseDto,
   HmsCardProfileResponseDto,
-  OnboardHmsBnplProfileResponseDto,
-  CreateBnplAccountResponseDto,
-  CreateCheckoutSessionResponseDto,
-  CheckoutUIDataResponseDto,
   RefundPaymentResponseDto,
   ErrorResponseDto,
   // 타입들 (기존 호환성)
-  CreateIntentDtoType,
-  AuthorizePaymentDtoType,
-  CapturePaymentDtoType,
-  CreateHmsCardProfileDtoType,
-  OnboardHmsBnplProfileDtoType,
-  CreateBnplAccountDtoType,
-  CreateCheckoutSessionDtoType,
-  ProcessIntentDtoType,
-  RefundPaymentDtoType,
 } from './payment.controller.zod';
 
 /**
@@ -115,7 +88,6 @@ export class PaymentController {
     private readonly bnplAccountService: BnplAccountService,
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
-    private readonly checkoutSessionService: CheckoutSessionService,
     private readonly refundService: RefundService,
   ) {}
 
@@ -705,185 +677,6 @@ export class PaymentController {
       };
     } catch (error) {
       this.handleError(error, 'BNPL 계정 생성');
-    }
-  }
-
-  @Get('checkout/ui-data/:intentId')
-  @ApiOperation({
-    summary: '체크아웃 UI 데이터 조회',
-    description: `체크아웃 페이지 렌더링에 필요한 최소한의 데이터를 반환합니다.
-    
-**반환되는 정보:**
-- Intent 기본 정보 (ID, 금액, 주문명)
-- 지원 가능한 결제 제공자 목록
-- 각 제공자별 클라이언트 설정 (API 키 등)
-
-**보안 고려사항:**
-- 민감한 정보는 제외 (시크릿 키, 개인정보 등)
-- 클라이언트 측에서 안전하게 사용할 수 있는 정보만 포함
-- Intent 상태가 PENDING인 경우에만 조회 가능
-
-**사용 시나리오:**
-- 체크아웃 페이지 초기화
-- 결제 제공자별 SDK 초기화
-- 결제 UI 구성`,
-  })
-  @ApiParam({
-    name: 'intentId',
-    description: '결제 의도 ID',
-    example: 'intent_20250115_abc123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '체크아웃 UI 데이터 조회 성공',
-    type: CheckoutUIDataResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Intent 상태가 PENDING이 아님',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Intent를 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 500,
-    description: '서버 내부 오류',
-    type: ErrorResponseDto,
-  })
-  async getCheckoutUIData(@Param('intentId') intentId: string) {
-    try {
-      this.logger.log(`체크아웃 UI 데이터 요청: ${intentId}`);
-
-      const intent = await this.intentService.findIntentById(intentId);
-
-      if (!intent) {
-        throw new HttpException(
-          `Intent not found: ${intentId}`,
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      if (intent.status !== 'PENDING') {
-        throw new HttpException(
-          `Intent is not in PENDING status: ${intent.status}`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 민감하지 않은 UI 정보만 반환
-      return {
-        intentId: intent.id,
-        amount: intent.amount,
-        orderName: (intent.metadata as any)?.orderName || '결제',
-        allowedProviders: ['TOSS'], // Toss 테스트 서버만 사용
-        clientConfig: {
-          TOSS: {
-            clientKey:
-              process.env.TOSS_CLIENT_KEY ||
-              'test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO', // 시크릿 키와 매칭되는 클라이언트 키
-          },
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '체크아웃 UI 데이터 조회');
-    }
-  }
-
-  @Post('checkout/sessions')
-  @ApiOperation({
-    summary: '범용 체크아웃 세션 생성',
-    description: `결제 의도를 기반으로 체크아웃 세션을 생성합니다.
-    
-**체크아웃 세션이란?**
-- 결제 진행을 위한 임시 세션
-- 보안이 강화된 결제 전용 URL 제공
-- 세션 만료 시간 내에서만 유효
-
-**세션 기반 결제 플로우:**
-1. Intent 생성
-2. 체크아웃 세션 생성 (이 API)
-3. 반환된 paymentUrl로 사용자 리다이렉트
-4. Wallet 결제 페이지에서 결제 진행
-5. 완료 후 returnUrl 또는 cancelUrl로 리다이렉트
-
-**보안 특징:**
-- 세션 ID 기반 접근 제어
-- 만료 시간 설정 (기본 30분)
-- CSRF 보호
-- 결제 완료 후 세션 자동 무효화
-
-**URL 설정:**
-- returnUrl: 결제 성공 시 리다이렉트
-- cancelUrl: 결제 취소 시 리다이렉트`,
-  })
-  @ApiBody({
-    description: '체크아웃 세션 생성 요청',
-    type: CreateCheckoutSessionDto,
-    examples: {
-      session: {
-        summary: '체크아웃 세션 생성',
-        value: {
-          intentId: 'intent_20250115_abc123',
-          returnUrl: 'https://mystore.com/payment/success',
-          cancelUrl: 'https://mystore.com/payment/cancel',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description: '체크아웃 세션 생성 성공',
-    type: CreateCheckoutSessionResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 또는 Intent 상태 오류',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Intent를 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 500,
-    description: '세션 생성 중 서버 오류',
-    type: ErrorResponseDto,
-  })
-  async createSession(
-    @Body(new ZodValidationPipe(CreateCheckoutSessionSchema))
-    dto: CreateCheckoutSessionDto,
-  ) {
-    try {
-      this.logger.log(`체크아웃 세션 생성 요청: Intent ID ${dto.intentId}`);
-
-      const session = await this.checkoutSessionService.createCheckoutSession(
-        dto.intentId,
-        {
-          returnUrl: dto.returnUrl,
-          cancelUrl: dto.cancelUrl,
-        },
-      );
-
-      return session;
-    } catch (error) {
-      this.logger.error(
-        `체크아웃 세션 생성 실패: ${error.message}`,
-        error.stack,
-      );
-      if (error instanceof PaymentError) {
-        if (error.code === 'INTENT_NOT_FOUND') {
-          throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-        }
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        '세션 생성 중 서버 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
     }
   }
 
