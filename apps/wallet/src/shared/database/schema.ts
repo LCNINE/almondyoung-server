@@ -76,6 +76,7 @@ export const paymentSessionStatusEnum = pgEnum('payment_session_status', [
   'CANCELLED',
   'PARTIALLY_REFUNDED',
   'REFUNDED',
+  'UNKNOWN',
 ]);
 
 // TransactionStatus
