@@ -29,11 +29,19 @@ export interface PaymentRequest {
 
 export interface PaymentResult {
   success: boolean;
-  attemptId?: string; // 결제 시도 ID (승인 시 생성)
+  attemptId?: string | null; // 결제 시도 ID (승인 시 생성, 포인트 전액 결제 시 null)
   transactionId?: string;
   code?: string; // 도메인 코드(성공/실패)
   message?: string; // 사용자/로그 메시지
   raw?: unknown; // 원 응답 스냅샷(옵션)
+
+  // 포인트 통합 결제 관련
+  pointEventId?: number | null; // 포인트 차감 이벤트 ID
+  breakdown?: {
+    totalAmount: number; // 원래 금액
+    pointsUsed: number; // 사용한 포인트
+    finalAmount: number; // 실제 결제 금액
+  };
 }
 
 // 공통 환불/취소 요청 (Provider 중립적)

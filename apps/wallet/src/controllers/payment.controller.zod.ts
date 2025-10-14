@@ -43,8 +43,9 @@ const IntentResponseSchema = z.object({
 
 // 결제 승인 관련 스키마
 export const AuthorizePaymentSchema = z.object({
-  provider: z.string().min(1, 'provider는 필수입니다.'),
-  paymentKey: z.string().min(1, 'paymentKey는 필수입니다.'),
+  provider: z.string().min(1).optional(), // ✅ 포인트 전액 결제 시 불필요
+  paymentKey: z.string().min(1).optional(), // ✅ 포인트 전액 결제 시 불필요
+  usePoints: z.number().int().nonnegative().optional(), // 포인트 사용 금액
 });
 
 const AuthorizePaymentResponseSchema = BaseResponseSchema.extend({
@@ -55,6 +56,14 @@ const AuthorizePaymentResponseSchema = BaseResponseSchema.extend({
   amount: z.number(),
   paymentKey: z.string(),
   message: z.string(),
+  pointEventId: z.number().optional(), // 포인트 차감 이벤트 ID
+  breakdown: z
+    .object({
+      totalAmount: z.number(),
+      pointsUsed: z.number(),
+      finalAmount: z.number(),
+    })
+    .optional(),
 });
 
 // 결제 캡처 관련 스키마
@@ -193,10 +202,26 @@ export const ProcessIntentSchema = z.object({
   instrumentRef: z.string().optional(),
 });
 
+// 환불 관련 스키마
+export const RefundPaymentSchema = z.object({
+  amount: z.number().int().positive().optional(), // 환불 금액 (미지정 시 전액)
+  reason: z.string().optional(), // 환불 사유
+});
+
+const RefundPaymentResponseSchema = BaseResponseSchema.extend({
+  refunded: z.object({
+    points: z.number(),
+    cash: z.number(),
+    total: z.number(),
+  }),
+  status: z.string(),
+});
+
 // DTO 클래스 생성
 export class CreateIntentDto extends createZodDto(CreateIntentSchema) {}
 export class AuthorizePaymentDto extends createZodDto(AuthorizePaymentSchema) {}
 export class CapturePaymentDto extends createZodDto(CapturePaymentSchema) {}
+export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) {}
 export class CreateHmsCardProfileDto extends createZodDto(
   CreateHmsCardProfileSchema,
 ) {}
@@ -237,12 +262,16 @@ export class CreateCheckoutSessionResponseDto extends createZodDto(
 export class CheckoutUIDataResponseDto extends createZodDto(
   CheckoutUIDataResponseSchema,
 ) {}
+export class RefundPaymentResponseDto extends createZodDto(
+  RefundPaymentResponseSchema,
+) {}
 export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) {}
 
 // 타입 추론 (기존 호환성을 위해)
 export type CreateIntentDtoType = z.infer<typeof CreateIntentSchema>;
 export type AuthorizePaymentDtoType = z.infer<typeof AuthorizePaymentSchema>;
 export type CapturePaymentDtoType = z.infer<typeof CapturePaymentSchema>;
+export type RefundPaymentDtoType = z.infer<typeof RefundPaymentSchema>;
 export type CreateHmsCardProfileDtoType = z.infer<
   typeof CreateHmsCardProfileSchema
 >;
