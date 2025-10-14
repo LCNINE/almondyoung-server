@@ -80,15 +80,7 @@ const CapturePaymentResponseSchema = BaseResponseSchema.extend({
   message: z.string(),
 });
 
-// 결제 실행 (레거시) 응답 스키마
-const ExecutePaymentResponseSchema = BaseResponseSchema.extend({
-  intentId: z.string(),
-  status: z.literal('CAPTURED'),
-  provider: z.string(),
-  amount: z.number(),
-  paymentKey: z.string(),
-  message: z.string(),
-});
+
 
 // HMS 카드 프로필 관련 스키마
 export const CreateHmsCardProfileSchema = z.object({
@@ -149,58 +141,13 @@ export const OnboardHmsBnplProfileSchema = z.object({
   name: z.string().optional().nullable(), // 프로필 별칭
 });
 
-const OnboardHmsBnplProfileResponseSchema = BaseResponseSchema.extend({
-  profileId: z.string(),
-  userId: z.string(),
-  status: z.string(),
-  agreementFileUrl: z.string().optional(),
-  message: z.string(),
-});
-
 // BNPL 계정 관련 스키마
 export const CreateBnplAccountSchema = z.object({
   userId: z.string().trim().min(1, '사용자 ID는 필수입니다.'),
   creditLimit: z.number().int().positive('신용 한도는 양수여야 합니다.'),
 });
 
-const CreateBnplAccountResponseSchema = BaseResponseSchema.extend({
-  accountId: z.string(),
-  userId: z.string(),
-  creditLimit: z.number(),
-  availableLimit: z.number(),
-  status: z.string(),
-});
 
-// 체크아웃 관련 스키마
-export const CreateCheckoutSessionSchema = z.object({
-  intentId: z.string().min(1, 'intentId는 필수입니다.'),
-  returnUrl: z.string().url('올바른 URL 형식이 아닙니다.'),
-  cancelUrl: z.string().url('올바른 URL 형식이 아닙니다.'),
-});
-
-// 실제 서비스에서 반환하는 체크아웃 세션 응답 형식
-const CreateCheckoutSessionResponseSchema = z.object({
-  sessionId: z.string(),
-  paymentUrl: z.string(),
-  // 실제로는 success, expiresAt이 없을 수 있음
-  success: z.boolean().optional(),
-  expiresAt: z.string().optional(),
-});
-
-const CheckoutUIDataResponseSchema = z.object({
-  intentId: z.string(),
-  amount: z.number(),
-  orderName: z.string(),
-  allowedProviders: z.array(z.string()),
-  clientConfig: z.record(z.string(), z.any()),
-});
-
-// Process Intent 스키마 (기존 코드에서 사용)
-export const ProcessIntentSchema = z.object({
-  providerType: z.nativeEnum(ProviderType),
-  profileId: z.string().optional(),
-  instrumentRef: z.string().optional(),
-});
 
 // 환불 관련 스키마
 export const RefundPaymentSchema = z.object({
@@ -225,16 +172,12 @@ export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) {}
 export class CreateHmsCardProfileDto extends createZodDto(
   CreateHmsCardProfileSchema,
 ) {}
-export class OnboardHmsBnplProfileDto extends createZodDto(
-  OnboardHmsBnplProfileSchema,
-) {}
+
 export class CreateBnplAccountDto extends createZodDto(
   CreateBnplAccountSchema,
 ) {}
-export class CreateCheckoutSessionDto extends createZodDto(
-  CreateCheckoutSessionSchema,
-) {}
-export class ProcessIntentDto extends createZodDto(ProcessIntentSchema) {}
+
+
 
 // Response DTO 클래스
 export class IntentResponseDto extends createZodDto(IntentResponseSchema) {}
@@ -244,24 +187,11 @@ export class AuthorizePaymentResponseDto extends createZodDto(
 export class CapturePaymentResponseDto extends createZodDto(
   CapturePaymentResponseSchema,
 ) {}
-export class ExecutePaymentResponseDto extends createZodDto(
-  ExecutePaymentResponseSchema,
-) {}
 export class HmsCardProfileResponseDto extends createZodDto(
   HmsCardProfileResponseSchema,
 ) {}
-export class OnboardHmsBnplProfileResponseDto extends createZodDto(
-  OnboardHmsBnplProfileResponseSchema,
-) {}
-export class CreateBnplAccountResponseDto extends createZodDto(
-  CreateBnplAccountResponseSchema,
-) {}
-export class CreateCheckoutSessionResponseDto extends createZodDto(
-  CreateCheckoutSessionResponseSchema,
-) {}
-export class CheckoutUIDataResponseDto extends createZodDto(
-  CheckoutUIDataResponseSchema,
-) {}
+
+
 export class RefundPaymentResponseDto extends createZodDto(
   RefundPaymentResponseSchema,
 ) {}
@@ -275,11 +205,7 @@ export type RefundPaymentDtoType = z.infer<typeof RefundPaymentSchema>;
 export type CreateHmsCardProfileDtoType = z.infer<
   typeof CreateHmsCardProfileSchema
 >;
-export type OnboardHmsBnplProfileDtoType = z.infer<
-  typeof OnboardHmsBnplProfileSchema
->;
+
 export type CreateBnplAccountDtoType = z.infer<typeof CreateBnplAccountSchema>;
-export type CreateCheckoutSessionDtoType = z.infer<
-  typeof CreateCheckoutSessionSchema
->;
-export type ProcessIntentDtoType = z.infer<typeof ProcessIntentSchema>;
+
+
