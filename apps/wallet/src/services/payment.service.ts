@@ -81,52 +81,6 @@ export class PaymentService {
   }
 
   /**
-   * 결제 처리 - Intent 기반 (레거시 호환용 - auth + capture 통합)
-   */
-  async processPaymentByIntent(
-    intentId: string,
-    providerType: ProviderType, // ✨ providerType을 매개변수로 추가
-    options: {
-      profileId?: string;
-      instrumentRef?: string;
-      actor?: string;
-      source?: string;
-    } = {},
-  ): Promise<PaymentResult> {
-    this.logger.log(
-      `Processing payment (legacy) for intent: ${intentId} with provider: ${providerType}`,
-    );
-
-    // 🚫 [레거시 호환 - 더 이상 사용하지 않음] authorize + capture를 순차 실행
-    // const authResult = await this.paymentOrchestrator.authorizePayment(
-    //   intentId,
-    //   providerType,
-    //   options,
-    // );
-
-    // if (!authResult.success) {
-    //   return authResult;
-    // }
-
-    // // 즉시 캡처
-    // const captureResult = await this.paymentOrchestrator.capturePayment(
-    //   intentId,
-    //   authResult.attemptId!,
-    //   undefined, // 전액 캡처
-    //   options,
-    // );
-
-    // return captureResult;
-
-    // ✅ [신규] 모든 결제는 AUTHORIZED 상태로만 처리 (정산은 별도 프로세스)
-    return await this.paymentOrchestrator.authorizePayment(
-      intentId,
-      providerType,
-      options,
-    );
-  }
-
-  /**
    * 환불 처리
    * ✨ [CTO 스타일] 공통 파라미터만 받고, Provider별 DTO 조립은 각 Provider에서 담당
    */
