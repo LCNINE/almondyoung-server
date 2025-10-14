@@ -176,4 +176,36 @@ export class PaymentExecutorService {
 
     return result;
   }
+
+  /**
+   * 결제 상태를 조회합니다.
+   * @param intentId 결제 의도 ID
+   * @param provider 결제 제공자
+   * @returns 결제 상태 정보
+   */
+  async inquire(intentId: string, provider: ProviderType) {
+    this.logger.log(
+      `Inquiring payment status for intent ${intentId} via ${provider}`,
+    );
+
+    const handle = this.registry.get(provider);
+    if (!handle) {
+      throw new Error(`Provider not found: ${provider}`);
+    }
+
+    try {
+      // 실제 구현에서는 각 provider의 inquire 메서드를 호출해야 합니다
+      // 현재는 기본적인 구조만 제공합니다
+      return {
+        status: 'AUTHORIZED', // 임시로 AUTHORIZED 반환
+        transactionId: `temp_${intentId}`,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to inquire payment status for intent ${intentId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
 }

@@ -8,16 +8,7 @@ import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
 import { PaymentIntentService } from './services/intents/intent.service';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
-// 신규 정책 시스템은 Provider Factory에서 직접 사용
 
-// === 어댑터들 (기존 호환성만) ===
-
-// ❌ import { HmsCardPaymentAdapter } from './adapters/hms-card-payment.adapter';  // Provider로 통합됨
-// ❌ import { HmsBnplPaymentAdapter } from './adapters/hms-bnpl-payment.adapter'; // Provider로 통합됨
-
-// === Provider 전략 패턴 ===
-
-import * as schema from './shared/database/schema';
 import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
 import {
