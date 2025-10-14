@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import {
   PaymentResult,
   RefundResult,
@@ -10,7 +10,10 @@ import {
   PaymentError,
 } from '../providers/payment-provider.interface';
 import { PaymentPolicy } from '../providers/payment-policy';
-import { PaymentOrchestratorService } from './payment/payment-orchestrator.service';
+import {
+  PAYMENT_ORCHESTRATOR_SERVICE,
+  type PaymentOrchestratorService,
+} from './payment';
 import { ProviderRegistry } from '../providers/provider-registry';
 // ✨ [CTO 스타일] Provider별 DTO는 더 이상 PaymentService에서 알 필요 없음
 
@@ -21,6 +24,10 @@ import { ProviderRegistry } from '../providers/provider-registry';
  * - 결제 모듈의 공식 API 엔드포인트 역할
  * - 외부 세계에 단순하고 일관된 인터페이스 제공
  * - 내부의 복잡한 서비스(Orchestrator, Registry 등)를 조합하여 기능 수행
+ *
+ * 의존성 주입:
+ * - Port-Adapter 패턴을 통한 토큰 기반 주입 사용
+ * - PaymentOrchestratorService는 인터페이스(Port)로 주입
  */
 @Injectable()
 export class PaymentService {
@@ -28,6 +35,7 @@ export class PaymentService {
 
   constructor(
     private readonly providerRegistry: ProviderRegistry,
+    @Inject(PAYMENT_ORCHESTRATOR_SERVICE)
     private readonly paymentOrchestrator: PaymentOrchestratorService,
   ) {}
 
