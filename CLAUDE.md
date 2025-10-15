@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Architecture
 - **Monorepo Structure**: NestJS-based monorepo with multiple applications
-- **Database**: PostgreSQL with Drizzle ORM and postgres.js client
+- **Database**: PostgreSQL with Drizzle ORM and postgres.js client 
 - **Event Sourcing**: Stock management using event sourcing with `stock_events` as the source of truth and `stock_summary` projections
 - **Microservices**: Three main applications - WMS, PIM, and almondyoung-server
 

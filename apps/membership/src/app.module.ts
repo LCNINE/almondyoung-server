@@ -15,11 +15,13 @@ import { PolicyGuard } from './services/policy/policy.guard';
 import { SubscriptionService } from './services/subscription.service';
 import { PaymentClientService } from './services/billing/payment-client.service';
 import { RecurringBillingService } from './services/billing/recurring-billing.service';
+import { BenefitTrackingService } from './services/benefit-tracking.service';
 import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
 import { PlanController } from './controllers/plan.controller';
 import { PauseController } from './controllers/pause.controller';
+import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { PauseController } from './controllers/pause.controller';
     SubscriptionController,
     PlanController,
     PauseController,
+    BenefitTrackingController,
   ],
   providers: [
     PlanService,
@@ -54,6 +57,7 @@ import { PauseController } from './controllers/pause.controller';
     SubscriptionService,
     PaymentClientService,
     RecurringBillingService,
+    BenefitTrackingService,
   ],
 })
 export class AppModule {}
