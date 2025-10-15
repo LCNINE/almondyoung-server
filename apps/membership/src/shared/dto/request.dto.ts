@@ -44,3 +44,11 @@ export class CancelSubscriptionRequestDto extends createZodDto(CancelSubscriptio
 
 export class PauseSubscriptionRequestDto extends createZodDto(PauseSubscriptionRequestSchema) {}
 export class ResumeSubscriptionRequestDto extends createZodDto(ResumeSubscriptionRequestSchema) {}
+
+// ===== Admin Cancellation Operations Request DTOs =====
+
+import { ForceCancelSubscriptionRequestSchema } from '../schemas/requests';
+
+export class ForceCancelSubscriptionRequestDto extends createZodDto(
+  ForceCancelSubscriptionRequestSchema,
+) {}
