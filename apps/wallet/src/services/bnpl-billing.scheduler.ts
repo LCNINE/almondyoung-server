@@ -13,21 +13,15 @@ import {
   CmsWithdrawalRequestSchema,
   type CmsWithdrawalRequestDto,
 } from '../shared/zods/cms-withdrawal.zod';
-import {
-  PAYMENT_ORCHESTRATOR_SERVICE,
-  type PaymentOrchestratorService,
-} from './payment';
-
+import { PaymentOrchestratorServiceImpl } from './payment/payment-orchestrator.service';
 @Injectable()
 export class BnplBillingScheduler {
   private readonly logger = new Logger(BnplBillingScheduler.name);
   private readonly hmsApi: HmsAPI | MockHmsAPI;
-
+  private readonly paymentOrchestrator: PaymentOrchestratorServiceImpl;
   constructor(
     private readonly db: DbService<typeof walletSchema>,
     private readonly bnpl: BnplAccountService,
-    @Inject(PAYMENT_ORCHESTRATOR_SERVICE)
-    private readonly orchestrator: PaymentOrchestratorService,
   ) {
     this.hmsApi = HmsApiFactory.createForBnpl();
   }
@@ -185,7 +179,7 @@ export class BnplBillingScheduler {
 
         for (const attempt of attempts) {
           try {
-            await this.orchestrator.capturePayment(
+            await this.paymentOrchestrator.capturePayment(
               intentId,
               attempt.id,
               undefined,

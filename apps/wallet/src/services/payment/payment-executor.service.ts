@@ -17,7 +17,6 @@ import {
 } from '../intents/intent.assets';
 import type { PaymentIntent } from '../../shared/database/types';
 import { BnplAccountService } from '../bnpl-account.service';
-import type { PaymentExecutorService as IPaymentExecutorService } from './payment-executor.service.interface';
 
 /**
  * PaymentExecutorService 구현체 (Adapter)
@@ -28,7 +27,7 @@ import type { PaymentExecutorService as IPaymentExecutorService } from './paymen
  * - DB 트랜잭션 처리
  */
 @Injectable()
-export class PaymentExecutorServiceImpl implements IPaymentExecutorService {
+export class PaymentExecutorServiceImpl {
   private readonly logger = new Logger(PaymentExecutorServiceImpl.name);
 
   constructor(

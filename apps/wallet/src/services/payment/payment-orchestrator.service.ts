@@ -3,18 +3,18 @@ import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { walletSchema, DiscountLine } from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
-import type { PaymentExecutorService } from './payment-executor.service.interface';
+
 import {
   PaymentResult,
   ProviderType,
 } from '../../providers/payment-provider.interface';
 import { PointService } from '../points/point.service';
-import type { PaymentOrchestratorService } from './payment-orchestrator.service.interface';
-import { PAYMENT_EXECUTOR_SERVICE } from './tokens';
 import { IntentManager } from '../intents/intent.manager';
-import { PaymentAttemptManager } from './payment-attempt.manager';
+
 import { PaymentRequestBuilder } from './payment-request.builder';
 import type { PaymentIntent } from '../../shared/database/types';
+import { PaymentExecutorServiceImpl } from './payment-executor.service';
+import { PaymentAttemptRepository } from './payment-attempt.repository';
 
 /**
  * PaymentOrchestratorService 구현체 (Business Layer)
@@ -37,18 +37,15 @@ import type { PaymentIntent } from '../../shared/database/types';
  * - PaymentRequestBuilder: PaymentRequest 객체 조립
  */
 @Injectable()
-export class PaymentOrchestratorServiceImpl
-  implements PaymentOrchestratorService
-{
+export class PaymentOrchestratorServiceImpl {
   private readonly logger = new Logger(PaymentOrchestratorServiceImpl.name);
 
   constructor(
     private readonly db: DbService<typeof walletSchema>,
     private readonly intentManager: IntentManager,
-    private readonly attemptManager: PaymentAttemptManager,
+    private readonly attemptManager: PaymentAttemptRepository,
     private readonly pointService: PointService,
-    @Inject(PAYMENT_EXECUTOR_SERVICE)
-    private readonly paymentExecutor: PaymentExecutorService,
+    private readonly paymentExecutor: PaymentExecutorServiceImpl,
     private readonly requestBuilder: PaymentRequestBuilder,
   ) {}
 
@@ -357,7 +354,7 @@ export class PaymentOrchestratorServiceImpl
       );
 
       // 성공 시 Attempt와 Intent 상태 업데이트
-      await this.attemptManager.recordAttempt(
+      await this.attemptManager.create(
         paymentRequest,
         result,
         providerType,
@@ -399,7 +396,7 @@ export class PaymentOrchestratorServiceImpl
         code: error.code,
         message: error.message,
       };
-      await this.attemptManager.recordAttempt(
+      await this.attemptManager.create(
         paymentRequest,
         failedResult,
         providerType,
