@@ -1,13 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
 import { walletSchema } from '../../shared/database/schema';
-import { runInTransaction } from '../../shared/database';
 import { PaymentPolicy } from '../../providers/payment-policy';
 import { ProviderRegistry } from '../../providers/provider-registry';
 import {
   PaymentError,
   PaymentRequest,
+  PaymentResult,
   ProviderType,
   TossPayload,
 } from '../../providers/payment-provider.interface';
@@ -16,12 +15,20 @@ import {
   assertIntentIsPending,
   assertIntentIsNotExpired,
 } from '../intents/intent.assets';
-import { PaymentIntent } from '../../shared/database/types';
+import type { PaymentIntent } from '../../shared/database/types';
 import { BnplAccountService } from '../bnpl-account.service';
 
+/**
+ * PaymentExecutorService 구현체 (Adapter)
+ *
+ * 책임:
+ * - 결제 승인/캡처/조회 실행
+ * - Provider 호출 및 정책 검증
+ * - DB 트랜잭션 처리
+ */
 @Injectable()
-export class PaymentExecutorService {
-  private readonly logger = new Logger(PaymentExecutorService.name);
+export class PaymentExecutorServiceImpl {
+  private readonly logger = new Logger(PaymentExecutorServiceImpl.name);
 
   constructor(
     private readonly db: DbService<typeof walletSchema>,
@@ -30,20 +37,12 @@ export class PaymentExecutorService {
     private readonly bnplAccountService: BnplAccountService,
   ) {}
 
-  /**
-   * 결제 승인(Authorization)을 검증하고 실행합니다.
-   * @param request 결제 시도 정보 (Attempt)
-   * @param provider 사용할 결제 수단
-   * @param intent 원본 결제 의도 객체 (검증용)
-   */
   async authorize(
     request: PaymentRequest,
     provider: ProviderType,
     intent: PaymentIntent,
-    // ✨ [수정] 옵션 객체와 tx를 선택적으로 받도록 변경
     options?: { tx?: any },
-  ) {
-    // ✨ [핵심 개선] 전달받은 tx가 있으면 사용하고, 없으면 새로운 트랜잭션을 시작합니다.
+  ): Promise<PaymentResult> {
     const transaction = options?.tx ?? this.db.db;
 
     this.logger.log(
@@ -55,13 +54,10 @@ export class PaymentExecutorService {
     // =======================================================
 
     // 1. 정책 검증
-    const allowed = await PaymentPolicy.getAllowedProviders(
-      request.paymentType,
-    );
+    const allowed = PaymentPolicy.getAllowedProviders(request.paymentType);
     if (!allowed.includes(provider)) {
-      throw new PaymentError(
-        'POLICY_FORBIDDEN',
-        `Policy violation for ${request.paymentType}`,
+      throw new Error(
+        `Policy violation: ${provider} not allowed for ${request.paymentType}`,
       );
     }
 
@@ -72,9 +68,8 @@ export class PaymentExecutorService {
     // 3. Provider의 능력(Capability) 확인
     const handle = this.registry.get(provider);
     if (!handle.charge) {
-      throw new PaymentError(
-        'CHARGE_NOT_SUPPORTED',
-        `${provider} does not support charge`,
+      throw new Error(
+        `Provider ${provider} does not support charge functionality`,
       );
     }
 
@@ -117,40 +112,33 @@ export class PaymentExecutorService {
     // 🚀 실제 결제 승인 실행 (authorize 모드)
     const result = handle.charge.authorize
       ? await handle.charge.authorize(payload as any)
-      : await handle.charge.process(payload as any); // fallback to process
+      : await handle.charge.process(payload as any);
 
     if (!result.success) {
-      throw new PaymentError(
-        result.code || 'PAYMENT_AUTHORIZATION_FAILED',
-        result.message,
+      throw new Error(
+        result.message ||
+          'Payment authorization failed. Provider returned unsuccessful result.',
       );
     }
 
     return result;
   }
 
-  /**
-   * 결제 캡처(Capture)를 실행합니다.
-   * @param attemptId 캡처할 시도 ID
-   * @param provider 사용할 결제 수단
-   * @param amount 캡처할 금액
-   */
   async capture(
     attemptId: string,
     provider: ProviderType,
     amount: number,
     options?: { tx?: any },
-  ) {
-    const transaction = options?.tx ?? this.db.db;
+  ): Promise<PaymentResult> {
+    const _transaction = options?.tx ?? this.db.db;
 
     this.logger.log(`Capturing attempt ${attemptId} with amount ${amount}`);
 
     // Provider의 capture 능력 확인
     const handle = this.registry.get(provider);
     if (!handle.charge) {
-      throw new PaymentError(
-        'CHARGE_NOT_SUPPORTED',
-        `${provider} does not support charge`,
+      throw new Error(
+        `Provider ${provider} does not support charge functionality`,
       );
     }
 
@@ -168,29 +156,26 @@ export class PaymentExecutorService {
         };
 
     if (!result.success) {
-      throw new PaymentError(
-        result.code || 'PAYMENT_CAPTURE_FAILED',
-        result.message,
+      throw new Error(
+        result.message ||
+          'Payment capture failed. Provider returned unsuccessful result.',
       );
     }
 
     return result;
   }
 
-  /**
-   * 결제 상태를 조회합니다.
-   * @param intentId 결제 의도 ID
-   * @param provider 결제 제공자
-   * @returns 결제 상태 정보
-   */
-  async inquire(intentId: string, provider: ProviderType) {
+  async inquire(
+    intentId: string,
+    provider: ProviderType,
+  ): Promise<{ status: string; transactionId: string }> {
     this.logger.log(
       `Inquiring payment status for intent ${intentId} via ${provider}`,
     );
 
     const handle = this.registry.get(provider);
     if (!handle) {
-      throw new Error(`Provider not found: ${provider}`);
+      throw new Error(`Provider not found for inquiry: ${provider}`);
     }
 
     try {
