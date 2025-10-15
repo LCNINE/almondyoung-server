@@ -17,9 +17,7 @@ import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplAccountService } from '../services/bnpl-account.service';
 
-import {
-  PaymentError,
-} from '../providers/payment-provider.interface';
+import { PaymentError } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
@@ -610,6 +608,7 @@ export class PaymentController {
   async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
     try {
       // 1. Multipart 요청 파싱
+      // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
       if (!data) {
         throw new BadRequestException(
@@ -750,24 +749,51 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 보장을 위한 고유 키 (선택사항)',
+    required: false,
+    example: 'refund_20250115_xyz789',
+  })
   async refundPayment(
     @Param('intentId') intentId: string,
     @Body(new ZodValidationPipe(RefundPaymentSchema)) dto: RefundPaymentDto,
+    @Headers('Idempotency-Key') idemKey?: string,
   ) {
     try {
       this.logger.log(
-        `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, Reason ${dto.reason}`,
+        `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
+          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
-      const result = await this.refundService.refundPayment(
-        intentId,
-        dto.amount,
-        dto.reason || 'CUSTOMER_REQUEST',
-      );
+      return await runInTransaction(this.db, async (tx) => {
+        // 멱등성 키 체크
+        const { hit, response } = await this.idempotencyService.checkOrCreate(
+          tx,
+          idemKey,
+          intentId,
+          dto,
+          `v2/payments/${intentId}/refund`,
+        );
 
-      this.logger.log(`🎯 환불 결과:`, JSON.stringify(result));
+        if (hit) {
+          this.logger.log(`멱등성 키 히트: ${idemKey}, 기존 결과 반환`);
+          return response;
+        }
 
-      return result;
+        // 환불 처리
+        const result = await this.refundService.refundPayment(
+          intentId,
+          dto.amount,
+          dto.reason || 'CUSTOMER_REQUEST',
+        );
+
+        // 멱등성 키 완료 처리
+        await this.idempotencyService.complete(tx, idemKey, result);
+
+        this.logger.log(`🎯 환불 결과:`, JSON.stringify(result));
+        return result;
+      });
     } catch (error) {
       this.handleError(error, '결제 환불');
     }

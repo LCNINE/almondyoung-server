@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { walletSchema } from '../shared/database/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { PointService } from './points/point.service';
 import { ProviderRegistry } from '../providers/provider-registry';
 import { ProviderType } from '../providers/payment-provider.interface';
@@ -64,15 +64,38 @@ export class RefundService {
         throw new Error(`Cannot refund intent in ${intent.status} status`);
       }
 
-      const refundAmount = amount ?? Number(intent.amount);
+      const refundAmount = amount ?? intent.amount;
+      const totalAmount = intent.totalAmount || intent.amount;
 
       this.logger.log(
         `환불 처리 시작: intentId=${intentId}, amount=${refundAmount}, reason=${reason}`,
       );
 
-      // 3. 비율 계산 (소수점 버림)
-      const totalAmount = Number(intent.totalAmount || intent.amount);
-      const discountsTotal = Number(intent.discountsTotal || 0);
+      // 3. 누적 환불 검증 (동시성 제어 포함)
+      const existingRefunds = await tx
+        .select()
+        .from(schema.paymentRefunds)
+        .where(eq(schema.paymentRefunds.intentId, intentId))
+        .for('update'); // 동시성 제어를 위한 락
+
+      const totalRefunded = existingRefunds.reduce(
+        (sum, r) => sum + Number(r.amount),
+        0,
+      );
+
+      if (totalRefunded + refundAmount > totalAmount) {
+        throw new Error(
+          `환불 가능 금액 초과: 이미 ${totalRefunded}원 환불됨, ` +
+            `요청 ${refundAmount}원, 총액 ${totalAmount}원`,
+        );
+      }
+
+      this.logger.log(
+        `환불 검증 통과: 누적 ${totalRefunded}원, 요청 ${refundAmount}원, 총액 ${totalAmount}원`,
+      );
+
+      // 4. 비율 계산 (소수점 버림)
+      const discountsTotal = intent.discountsTotal || 0;
 
       const ratio = refundAmount / totalAmount;
       const pointsToRefund = Math.floor(discountsTotal * ratio);
@@ -82,7 +105,7 @@ export class RefundService {
         `환불 금액 분할: 포인트=${pointsToRefund}, 현금=${cashToRefund}, 비율=${ratio}`,
       );
 
-      // 4. 포인트 복원 (결제 시 사용한 포인트만 복원)
+      // 5. 포인트 복원 (결제 시 사용한 포인트만 복원)
       // 주의: 구매로 적립된 포인트는 메두사의 취소 이벤트로 별도 처리
       if (pointsToRefund > 0) {
         // discounts 배열에서 포인트 정보 확인
@@ -109,7 +132,7 @@ export class RefundService {
         }
       }
 
-      // 5. 현금 환불
+      // 6. 현금 환불
       if (cashToRefund > 0) {
         const attempt = await tx
           .select()
@@ -164,11 +187,10 @@ export class RefundService {
         }
       }
 
-      // 6. Intent 상태 업데이트
+      // 7. Intent 상태 업데이트
+      const newRefundedAmount = intent.refundedAmount + refundAmount;
       const newStatus =
-        refundAmount === totalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
-
-      const newRefundedAmount = Number(intent.refundedAmount) + refundAmount;
+        newRefundedAmount === totalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
 
       await tx
         .update(schema.paymentIntents)
@@ -179,7 +201,7 @@ export class RefundService {
         })
         .where(eq(schema.paymentIntents.id, intentId));
 
-      // 7. 환불 기록 생성
+      // 8. 환불 기록 생성
       await tx.insert(schema.paymentRefunds).values({
         intentId,
         attemptId:

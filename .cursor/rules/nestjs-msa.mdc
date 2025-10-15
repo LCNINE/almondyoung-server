@@ -25,12 +25,10 @@ alwaysApply: true
 - API 엔드포인트를 제공한다.
 - 통신 수단(HTTP, GraphQL, WebSocket 등)에 종속된 책임을 가진다.
 - **서비스에서 던진 일반 Error를 전송 방식에 맞게 변환**한다.
-
   - HTTP → 적절한 상태 코드와 에러 메시지
   - WebSocket → `{ success: false, payload: error.message }` 형식
 
 - 에러 매핑은 **문자열 패턴 기반**으로 처리한다.
-
   - `"not found"` → 404
   - `"already processed"`, `"exceeds"`, `"required"`, `"invalid"`, `"failed"` → 400
   - 그 외 → 500
@@ -55,13 +53,11 @@ alwaysApply: true
 ## General
 
 - **각 레이어는 책임 분리가 명확해야 한다.**
-
   - Controller: 전송 계층 처리 + Error → Response 변환
   - Service: 도메인 로직 + 단순 Error 던짐
   - Repository: 데이터 소스 추상화
 
 - 이 구조는 테스트, 유지보수, 확장성에 유리하다.
-
   - 서비스 단위 테스트 → 순수 로직만 검증 (`Error.message` 포함)
   - e2e 테스트 → 컨트롤러 응답 변환 로직 검증
 
