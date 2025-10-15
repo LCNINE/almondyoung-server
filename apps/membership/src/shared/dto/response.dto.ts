@@ -195,3 +195,30 @@ export class AdminBillingTestResponseDto extends createZodDto(AdminBillingTestRe
 
 // Error Response DTO
 export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) {}
+// 
+===== Cancellation Response Schemas =====
+
+const CancellationResultSchema = z.object({
+  contractId: z.string().uuid(),
+  status: z.literal('CANCELLED'),
+  cancelledAt: z.string(),
+  refundEligible: z.boolean(),
+  refundAmount: z.number(),
+  refundStatus: z.enum(['PENDING', 'NOT_APPLICABLE']),
+  message: z.string().optional(),
+});
+
+export class CancellationResultDto extends createZodDto(CancellationResultSchema) {}
+
+const CancellationReasonSchema = z.object({
+  code: z.string(),
+  displayText: z.string(),
+  category: z.string(),
+  sortOrder: z.number(),
+});
+
+const CancellationReasonsResponseSchema = z.object({
+  reasons: z.array(CancellationReasonSchema),
+});
+
+export class CancellationReasonsResponseDto extends createZodDto(CancellationReasonsResponseSchema) {}
