@@ -16,6 +16,9 @@ import { SubscriptionService } from './services/subscription.service';
 import { PaymentClientService } from './services/billing/payment-client.service';
 import { RecurringBillingService } from './services/billing/recurring-billing.service';
 import { BenefitTrackingService } from './services/benefit-tracking.service';
+import { ContractEventService } from './services/contract-event.service';
+import { SubscriptionCancellationService } from './services/subscription-cancellation.service';
+import { CancellationReasonService } from './services/cancellation-reason.service';
 import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
@@ -58,6 +61,9 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     PaymentClientService,
     RecurringBillingService,
     BenefitTrackingService,
+    ContractEventService,
+    SubscriptionCancellationService,
+    CancellationReasonService,
   ],
 })
 export class AppModule {}

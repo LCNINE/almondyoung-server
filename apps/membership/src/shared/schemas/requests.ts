@@ -270,3 +270,15 @@ export type GetApplicablePoliciesQuery = z.infer<
 export type ExtendEntitlementRequest = z.infer<
   typeof ExtendEntitlementRequestSchema
 >;
+
+// Force Cancel Subscription (Admin)
+export const ForceCancelSubscriptionRequestSchema = z.object({
+  reason: z.string().min(1, '취소 사유는 필수입니다'),
+  refundType: z.enum(['FULL', 'PARTIAL', 'NONE']),
+  refundAmount: z.number().min(0, '환불 금액은 0 이상이어야 합니다').optional(),
+  adminNote: z.string().optional(),
+});
+
+export type ForceCancelSubscriptionRequest = z.infer<
+  typeof ForceCancelSubscriptionRequestSchema
+>;
