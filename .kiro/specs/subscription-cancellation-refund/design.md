@@ -540,6 +540,17 @@ async function forceCancelSubscription(
 // 환불 완료 이벤트 수신
 async function handleRefundCompleted(event: RefundCompletedEvent) {
   await db.transaction(async (tx) => {
+    // 0. 계약 존재 여부 확인
+    const contract = await getContract(tx, event.contractId);
+    if (!contract) {
+      throw new Error('Contract not found');
+    }
+
+    // 멱등성 체크: 이미 환불 완료된 경우 스킵
+    if (contract.refundCompleted) {
+      return; // 이미 처리됨
+    }
+
     // 1. REFUND_COMPLETED 이벤트 추가
     const refundEvent = await addContractEvent(tx, {
       contractId: event.contractId,
@@ -564,6 +575,12 @@ async function handleRefundCompleted(event: RefundCompletedEvent) {
 // 환불 실패 이벤트 수신
 async function handleRefundFailed(event: RefundFailedEvent) {
   await db.transaction(async (tx) => {
+    // 0. 계약 존재 여부 확인
+    const contract = await getContract(tx, event.contractId);
+    if (!contract) {
+      throw new Error('Contract not found');
+    }
+
     // 1. REFUND_FAILED 이벤트 추가
     const failEvent = await addContractEvent(tx, {
       contractId: event.contractId,
@@ -579,13 +596,8 @@ async function handleRefundFailed(event: RefundFailedEvent) {
       lastEventId: failEvent.id,
     });
 
-    // 3. 알림 발송 (어드민)
-    await notifyAdmin({
-      type: 'REFUND_FAILED',
-      contractId: event.contractId,
-      userId: event.userId,
-      error: event.errorMessage,
-    });
+    // 3. 알림 발송 (어드민) - 추후 구현
+    // TODO: await notifyAdmin({ ... });
   });
 }
 ```

@@ -24,7 +24,7 @@
   - POST /admin/subscriptions/:contractId/force-cancel API 추가 ✅
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 7.2_
 
-- [ ] 5. 어드민 API 추가
+- [x] 5. 어드민 API 추가
   - GET /admin/subscriptions/:contractId/events (이벤트 이력 조회)
   - GET /cancellation-reasons (취소 이유 목록)
   - _Requirements: 1.2, 4.5, 7.3, 7.4_
