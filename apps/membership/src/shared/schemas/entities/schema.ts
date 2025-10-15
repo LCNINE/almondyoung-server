@@ -11,6 +11,7 @@ import {
   varchar,
   index,
   primaryKey,
+  serial,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -136,6 +137,20 @@ export const subscriptionContracts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
+    // 취소 및 환불 관련 필드
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'CANCELLED', 'EXPIRED'
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancellationReasonCode: text('cancellation_reason_code'),
+    refundRequested: boolean('refund_requested').notNull().default(false),
+    refundRequestedAt: timestamp('refund_requested_at', { withTimezone: true }),
+    eligibleRefundAmount: integer('eligible_refund_amount'),
+    refundCompleted: boolean('refund_completed').notNull().default(false),
+    refundCompletedAt: timestamp('refund_completed_at', { withTimezone: true }),
+    walletReferenceId: text('wallet_reference_id'),
+    lastEventId: integer('last_event_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [index('idx_subscription_billing_date').on(table.billingDate)],
 );
@@ -173,6 +188,50 @@ export const eventBatches = pgTable('event_batches', {
     .defaultNow()
     .notNull(),
 });
+
+/**
+ * Cancellation reasons - 취소 이유 마스터 테이블
+ */
+export const cancellationReasons = pgTable('cancellation_reasons', {
+  code: text('code').primaryKey(),
+  displayText: text('display_text').notNull(),
+  category: text('category').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/**
+ * Subscription contract events - 이벤트 소싱 패턴
+ */
+export const subscriptionContractEvents = pgTable(
+  'subscription_contract_events',
+  {
+    id: serial('id').primaryKey(),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => subscriptionContracts.id),
+    eventType: text('event_type').notNull(),
+    userId: varchar('user_id').notNull(),
+    metadata: jsonb('metadata').notNull(),
+    batchId: uuid('batch_id').references(() => eventBatches.id),
+    causedBy: text('caused_by').notNull(),
+    causedByUserId: text('caused_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_contract_events_contract_id').on(table.contractId),
+    index('idx_contract_events_user_id').on(table.userId),
+    index('idx_contract_events_type').on(table.eventType),
+  ],
+);
 
 /**
  * Pause events - 일시정지 이벤트 (CTO 스타일)
@@ -509,6 +568,8 @@ export const membershipSchema = {
   subscriptionContracts,
   subscriptionEntitlement,
   eventBatches,
+  cancellationReasons,
+  subscriptionContractEvents,
   pauseEvents,
   pauseEventDetails,
   membershipDunningQueue,
