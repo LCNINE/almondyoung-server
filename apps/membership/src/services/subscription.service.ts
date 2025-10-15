@@ -12,6 +12,7 @@ import { eq, desc, and } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { PlanService } from './plan.service';
 import { EntitlementService } from './entitlement.service';
+import { ContractEventService } from './contract-event.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -19,6 +20,7 @@ export class SubscriptionService {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly planService: PlanService,
     private readonly entitlementService: EntitlementService,
+    private readonly contractEventService: ContractEventService,
   ) {}
 
   /**
@@ -76,6 +78,22 @@ export class SubscriptionService {
           nextBillingDate: nextBillingDate.toISOString().split('T')[0],
         })
         .returning();
+
+      // 2.5. CREATED 이벤트 추가
+      await this.contractEventService.addEvent(
+        tx,
+        contract.id,
+        'CREATED',
+        {
+          planId,
+          billingDate: billingDate.toISOString().split('T')[0],
+          trialDays: plan.plan.trialDays || 0,
+        },
+        'USER',
+        userId,
+        batch.id,
+        userId,
+      );
 
       // 3. EntitlementService를 통해 구독 권한 생성
       const entitlement = await this.entitlementService.createEntitlement(
@@ -140,6 +158,23 @@ export class SubscriptionService {
         .update(schema.subscriptionContracts)
         .set({ planId: newPlanId })
         .where(eq(schema.subscriptionContracts.id, current.contract.id));
+
+      // 2.5. PLAN_CHANGED 이벤트 추가
+      await this.contractEventService.addEvent(
+        tx,
+        current.contract.id,
+        'PLAN_CHANGED',
+        {
+          fromPlanId: current.plan.id,
+          toPlanId: newPlanId,
+          fromTierId: current.tier.id,
+          toTierId: newPlan.tier.id,
+        },
+        'USER',
+        userId,
+        batch.id,
+        userId,
+      );
 
       // 3. EntitlementService를 통해 새 권한 생성 (기존 권한은 내부적으로 종료됨)
       const newEntitlement = await this.entitlementService.createEntitlement(
