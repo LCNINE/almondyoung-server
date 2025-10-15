@@ -41,16 +41,29 @@ export class SubscriptionCancellationService {
     reasonText?: string,
   ): Promise<CancellationResult> {
     return await this.dbService.db.transaction(async (tx) => {
-      // 1. 활성 계약 조회
-      const contract = await this.getActiveContract(tx, userId);
-      if (!contract) {
+      // 1. 사용자의 최신 계약 조회 (상태 무관)
+      const [latestContract] = await tx
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.userId, userId))
+        .orderBy(schema.subscriptionContracts.createdAt)
+        .limit(1);
+
+      if (!latestContract) {
         throw new Error('Active subscription not found');
       }
 
       // 중복 취소 체크
-      if (contract.status === 'CANCELLED') {
+      if (latestContract.status === 'CANCELLED') {
         throw new Error('Contract already cancelled');
       }
+
+      // ACTIVE 상태 확인
+      if (latestContract.status !== 'ACTIVE') {
+        throw new Error('Active subscription not found');
+      }
+
+      const contract = latestContract;
 
       // 2. 플랜 조회
       const [plan] = await tx
