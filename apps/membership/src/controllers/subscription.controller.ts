@@ -8,11 +8,22 @@ import {
   HttpStatus,
   UseGuards,
   Req,
+  NotFoundException,
+  BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiQuery, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiSecurity,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 // import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import { SubscriptionService } from '../services/subscription.service';
+import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
   CreateSubscriptionRequestSchema,
@@ -29,6 +40,7 @@ import {
   SubscriptionDetailsResponseDto,
   SubscriptionHistoryResponseDto,
   ErrorResponseDto,
+  CancellationResultDto,
 } from '../shared/dto/response.dto';
 import {
   CreateSubscriptionRequestDto,
@@ -49,31 +61,35 @@ import { FastifyRequest } from 'fastify';
 @Controller('subscriptions')
 @UseFilters(SubscriptionExceptionFilter)
 export class SubscriptionController {
-  constructor(private readonly subscriptionService: SubscriptionService) {}
+  constructor(
+    private readonly subscriptionService: SubscriptionService,
+    private readonly cancellationService: SubscriptionCancellationService,
+  ) {}
 
   /**
    * 현재 구독 상태 조회
    */
   @Get('current')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '현재 구독 상태 조회',
-    description: '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다.'
+    description:
+      '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다.',
   })
-  @ApiQuery({ 
-    name: 'userId', 
+  @ApiQuery({
+    name: 'userId',
     description: '사용자 ID (개발용)',
     required: false,
-    example: 'test_user_001'
+    example: 'test_user_001',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 상태 조회 성공',
-    type: SubscriptionDetailsResponseDto
+    type: SubscriptionDetailsResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '활성 구독을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
   async getCurrentSubscriptionDetails(@Req() req: FastifyRequest) {
@@ -86,31 +102,31 @@ export class SubscriptionController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '새 구독 생성',
-    description: '지정된 플랜으로 새로운 구독을 생성합니다.'
+    description: '지정된 플랜으로 새로운 구독을 생성합니다.',
   })
-  @ApiQuery({ 
-    name: 'userId', 
+  @ApiQuery({
+    name: 'userId',
     description: '사용자 ID (개발용)',
     required: false,
-    example: 'test_user_001'
+    example: 'test_user_001',
   })
   @ApiBody({ type: CreateSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: '구독 생성 성공',
-    type: SubscriptionDetailsResponseDto
+    type: SubscriptionDetailsResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
   async createSubscription(
@@ -131,26 +147,26 @@ export class SubscriptionController {
    */
   @Post('upgrade')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 업그레이드',
-    description: '현재 구독을 더 높은 등급의 플랜으로 업그레이드합니다.'
+    description: '현재 구독을 더 높은 등급의 플랜으로 업그레이드합니다.',
   })
   @ApiSecurity('dev-user-id')
   @ApiBody({ type: UpgradeSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 업그레이드 성공',
-    type: SubscriptionDetailsResponseDto
+    type: SubscriptionDetailsResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '업그레이드 불가능한 플랜',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '활성 구독 또는 플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
   @CheckPolicies('CHANGE_PLAN')
@@ -171,26 +187,26 @@ export class SubscriptionController {
    */
   @Post('downgrade')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 다운그레이드',
-    description: '현재 구독을 더 낮은 등급의 플랜으로 다운그레이드합니다.'
+    description: '현재 구독을 더 낮은 등급의 플랜으로 다운그레이드합니다.',
   })
   @ApiSecurity('dev-user-id')
   @ApiBody({ type: DowngradeSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 다운그레이드 성공',
-    type: SubscriptionDetailsResponseDto
+    type: SubscriptionDetailsResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '다운그레이드 불가능한 플랜',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '활성 구독 또는 플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
   @CheckPolicies('CHANGE_PLAN')
@@ -212,54 +228,66 @@ export class SubscriptionController {
    */
   @Post('cancel')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 취소',
-    description: '현재 활성 구독을 취소합니다.'
+    description: '현재 활성 구독을 취소합니다.',
   })
   @ApiSecurity('dev-user-id')
   @ApiBody({ type: CancelSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 취소 성공',
-    type: SubscriptionDetailsResponseDto
+    type: CancellationResultDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '취소할 활성 구독을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
-  @CheckPolicies('CANCEL_SUBSCRIPTION')
+  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
   async cancelSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
   ) {
     const userId = req.user!.userId;
-    return this.subscriptionService.cancelSubscription(
-      userId,
-      cancelSubscriptionDto.reason,
-    );
+
+    try {
+      return await this.cancellationService.cancelSubscription(
+        userId,
+        cancelSubscriptionDto.reasonCode,
+        cancelSubscriptionDto.reasonText,
+      );
+    } catch (e: any) {
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) {
+        throw new NotFoundException(e.message);
+      }
+      if (msg.includes('already cancelled')) {
+        throw new BadRequestException(e.message);
+      }
+      throw new InternalServerErrorException(e.message);
+    }
   }
 
   /**
    * 구독 이력 조회
    */
   @Get('history')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 이력 조회',
-    description: '사용자의 모든 구독 이력을 조회합니다.'
+    description: '사용자의 모든 구독 이력을 조회합니다.',
   })
   @ApiSecurity('dev-user-id')
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 이력 조회 성공',
-    type: SubscriptionHistoryResponseDto
+    type: SubscriptionHistoryResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '구독 이력을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
   async getSubscriptionHistory(@Req() req: FastifyRequest) {
