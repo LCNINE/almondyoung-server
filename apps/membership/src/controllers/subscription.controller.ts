@@ -24,6 +24,7 @@ import {
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
+import { CancellationReasonService } from '../services/cancellation-reason.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
   CreateSubscriptionRequestSchema,
@@ -41,6 +42,7 @@ import {
   SubscriptionHistoryResponseDto,
   ErrorResponseDto,
   CancellationResultDto,
+  CancellationReasonsResponseDto,
 } from '../shared/dto/response.dto';
 import {
   CreateSubscriptionRequestDto,
@@ -64,6 +66,7 @@ export class SubscriptionController {
   constructor(
     private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
+    private readonly cancellationReasonService: CancellationReasonService,
   ) {}
 
   /**
@@ -293,5 +296,25 @@ export class SubscriptionController {
   async getSubscriptionHistory(@Req() req: FastifyRequest) {
     const userId = req.user!.userId;
     return this.subscriptionService.getSubscriptionHistory(userId);
+  }
+
+  /**
+   * 취소 이유 목록 조회
+   */
+  @Get('cancellation-reasons')
+  @ApiOperation({
+    summary: '취소 이유 목록 조회',
+    description: '활성화된 구독 취소 이유 목록을 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '취소 이유 목록 조회 성공',
+    type: CancellationReasonsResponseDto,
+  })
+  async getCancellationReasons() {
+    const reasons = await this.cancellationReasonService.getActiveReasons();
+    return {
+      reasons,
+    };
   }
 }

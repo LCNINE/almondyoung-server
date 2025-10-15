@@ -25,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
+import { ContractEventService } from '../services/contract-event.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
@@ -53,6 +54,7 @@ import {
   AdminBillingTestResponseDto,
   ErrorResponseDto,
   CancellationResultDto,
+  ContractEventsResponseDto,
 } from '../shared/dto/response.dto';
 import {
   CreateTierRequestDto,
@@ -80,6 +82,7 @@ export class AdminOperationsController {
   constructor(
     private readonly adminOperationsService: AdminOperationsService,
     private readonly cancellationService: SubscriptionCancellationService,
+    private readonly contractEventService: ContractEventService,
   ) {}
 
   /**
@@ -554,6 +557,49 @@ export class AdminOperationsController {
   // =================================================================
   // 구독 취소 관리 (Admin)
   // =================================================================
+
+  /**
+   * 계약 이벤트 이력 조회
+   */
+  @Get('subscriptions/:contractId/events')
+  @ApiOperation({
+    summary: '계약 이벤트 이력 조회',
+    description: '특정 구독 계약의 모든 이벤트 이력을 조회합니다.',
+  })
+  @ApiParam({
+    name: 'contractId',
+    description: '구독 계약 ID',
+    type: 'string',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '이벤트 이력 조회 성공',
+    type: ContractEventsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '계약을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async getContractEvents(@Param('contractId') contractId: string) {
+    try {
+      this.logger.log(`계약 이벤트 이력 조회 - contractId: ${contractId}`);
+
+      const events =
+        await this.contractEventService.getContractEvents(contractId);
+
+      this.logger.log(
+        `✅ 계약 이벤트 이력 조회 성공 - contractId: ${contractId}, events: ${events.length}`,
+      );
+
+      return {
+        contractId,
+        events,
+      };
+    } catch (error) {
+      this.handleError(error, '계약 이벤트 이력 조회');
+    }
+  }
 
   /**
    * 강제 구독 취소

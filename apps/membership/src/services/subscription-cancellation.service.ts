@@ -47,6 +47,11 @@ export class SubscriptionCancellationService {
         throw new Error('Active subscription not found');
       }
 
+      // 중복 취소 체크
+      if (contract.status === 'CANCELLED') {
+        throw new Error('Contract already cancelled');
+      }
+
       // 2. 플랜 조회
       const [plan] = await tx
         .select()
@@ -262,6 +267,11 @@ export class SubscriptionCancellationService {
         throw new Error('Contract not found');
       }
 
+      // 중복 취소 체크
+      if (contract.status === 'CANCELLED') {
+        throw new Error('Contract already cancelled');
+      }
+
       // 2. 플랜 조회
       const [plan] = await tx
         .select()
@@ -278,8 +288,11 @@ export class SubscriptionCancellationService {
       if (refundType === 'FULL') {
         finalRefundAmount = plan.price;
       } else if (refundType === 'PARTIAL') {
-        if (!refundAmount || refundAmount < 0) {
-          throw new Error('Invalid refund amount for PARTIAL refund type');
+        if (refundAmount === undefined || refundAmount < 0) {
+          throw new Error('Invalid refund amount');
+        }
+        if (refundAmount > plan.price) {
+          throw new Error('Refund amount exceeds plan price');
         }
         finalRefundAmount = refundAmount;
       }
