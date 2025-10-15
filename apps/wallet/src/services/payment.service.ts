@@ -10,11 +10,8 @@ import {
   PaymentError,
 } from '../providers/payment-provider.interface';
 import { PaymentPolicy } from '../providers/payment-policy';
-import {
-  PAYMENT_ORCHESTRATOR_SERVICE,
-  type PaymentOrchestratorService,
-} from './payment';
 import { ProviderRegistry } from '../providers/provider-registry';
+import { PaymentOrchestratorServiceImpl } from './payment/payment-orchestrator.service';
 // ✨ [CTO 스타일] Provider별 DTO는 더 이상 PaymentService에서 알 필요 없음
 
 /**
@@ -35,8 +32,7 @@ export class PaymentService {
 
   constructor(
     private readonly providerRegistry: ProviderRegistry,
-    @Inject(PAYMENT_ORCHESTRATOR_SERVICE)
-    private readonly paymentOrchestrator: PaymentOrchestratorService,
+    private readonly paymentOrchestrator: PaymentOrchestratorServiceImpl,
   ) {}
 
   /**
