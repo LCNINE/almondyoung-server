@@ -1,7 +1,5 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
-import { paymentIntentTypeEnum } from '../shared/database';
-import { ProviderType } from '../providers/payment-provider.interface';
 
 // ===== ZOD 스키마 정의 =====
 
@@ -73,14 +71,12 @@ export const CapturePaymentSchema = z.object({
 });
 
 const CapturePaymentResponseSchema = BaseResponseSchema.extend({
-  intentId: z.string(),
-  attemptId: z.string(),
+  intentId: z.string('intentId는 필수입니다.'),
+  attemptId: z.string('attemptId는 필수입니다.'),
   status: z.string(), // 실제로는 다양한 상태값이 가능
   amount: z.number().optional(),
-  message: z.string(),
+  message: z.string('message는 필수입니다.'),
 });
-
-
 
 // HMS 카드 프로필 관련 스키마
 export const CreateHmsCardProfileSchema = z.object({
@@ -147,8 +143,6 @@ export const CreateBnplAccountSchema = z.object({
   creditLimit: z.number().int().positive('신용 한도는 양수여야 합니다.'),
 });
 
-
-
 // 환불 관련 스키마
 export const RefundPaymentSchema = z.object({
   amount: z.number().int().positive().optional(), // 환불 금액 (미지정 시 전액)
@@ -177,8 +171,6 @@ export class CreateBnplAccountDto extends createZodDto(
   CreateBnplAccountSchema,
 ) {}
 
-
-
 // Response DTO 클래스
 export class IntentResponseDto extends createZodDto(IntentResponseSchema) {}
 export class AuthorizePaymentResponseDto extends createZodDto(
@@ -190,7 +182,6 @@ export class CapturePaymentResponseDto extends createZodDto(
 export class HmsCardProfileResponseDto extends createZodDto(
   HmsCardProfileResponseSchema,
 ) {}
-
 
 export class RefundPaymentResponseDto extends createZodDto(
   RefundPaymentResponseSchema,
@@ -207,5 +198,3 @@ export type CreateHmsCardProfileDtoType = z.infer<
 >;
 
 export type CreateBnplAccountDtoType = z.infer<typeof CreateBnplAccountSchema>;
-
-

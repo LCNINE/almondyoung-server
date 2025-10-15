@@ -1148,14 +1148,16 @@ export const paymentIntents = pgTable(
     id: varchar('id', { length: 36 }).primaryKey(),
     customerId: varchar('customer_id', { length: 64 }).notNull(),
 
-    // 금액 필드 (포인트 통합 지원)
+    // 금액 필드 (포인트 통합 지원) - 모두 정수(원 단위)로 통일
     amount: bigint('amount', { mode: 'number' }).notNull(), // 레거시 호환용 (totalAmount와 동일)
-    totalAmount: numeric('total_amount').notNull(), // 원래 금액
+    totalAmount: bigint('total_amount', { mode: 'number' }).notNull(), // 원래 금액
     discounts: jsonb('discounts')
       .default(sql`'[]'::jsonb`)
       .$type<DiscountLine[]>(), // 할인 내역
-    discountsTotal: numeric('discounts_total').default('0'), // 할인 총액
-    finalAmount: numeric('final_amount').notNull(), // 실제 결제액 (totalAmount - discountsTotal)
+    discountsTotal: bigint('discounts_total', { mode: 'number' })
+      .notNull()
+      .default(0), // 할인 총액
+    finalAmount: bigint('final_amount', { mode: 'number' }).notNull(), // 실제 결제액 (totalAmount - discountsTotal)
 
     status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
     type: paymentIntentTypeEnum('type').notNull().default('ORDER'),

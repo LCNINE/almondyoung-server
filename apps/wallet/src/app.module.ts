@@ -7,14 +7,14 @@ import { PaymentController } from './controllers/payment.controller';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
 import { PaymentIntentService } from './services/intents/intent.service';
+import { IntentRepository } from './services/intents/intent.repository';
+import { IntentManager } from './services/intents/intent.manager';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
 
 import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
-import {
-  PaymentOrchestratorService,
-  PaymentExecutorService,
-} from './services/payment';
+import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
+import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
 import {
   CmsBatchProfilesRepository,
   CmsCardProfilesRepository,
@@ -37,6 +37,8 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 import { RefundService } from './services/refund.service';
 import { PointService } from './services/points/point.service';
 import { PointRepository } from './services/points/point.repository';
+import { PaymentOrchestratorServiceImpl } from './services/payment/payment-orchestrator.service';
+import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.service';
 
 @Module({
   imports: [
@@ -71,11 +73,19 @@ import { PointRepository } from './services/points/point.repository';
     // --- 포인트 시스템 ---
     PointService,
     PointRepository,
+    PaymentOrchestratorServiceImpl,
+    PaymentExecutorServiceImpl,
 
-    // --- 내부 흐름 제어 서비스 ---
-    PaymentOrchestratorService,
-    PaymentExecutorService,
     IdempotencyService,
+
+    // --- Implement Layer (Manager - Repository 캡슐화) ---
+    IntentManager,
+
+    PaymentRequestBuilder,
+
+    // --- Data Access Layer (Repository) ---
+    IntentRepository,
+    PaymentAttemptRepository,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
     CmsCardProfilesRepository,

@@ -40,6 +40,28 @@ export class TaxInvoiceService {
   constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   /**
+   * 세금계산서 발행 기한을 검증합니다 (익월 10일까지).
+   * @param supplyDate 공급일자 (YYYY-MM-DD)
+   * @throws Error 발행 기한 초과 시
+   */
+  private validateIssuanceDeadline(supplyDate: string): void {
+    const supply = new Date(supplyDate);
+    const deadline = new Date(supply);
+
+    // 익월 10일 계산
+    deadline.setMonth(deadline.getMonth() + 1);
+    deadline.setDate(10);
+    deadline.setHours(23, 59, 59, 999); // 당일 23:59:59까지
+
+    if (new Date() > deadline) {
+      throw new Error(
+        `세금계산서 발행 기한 초과: 공급일 ${supplyDate}, ` +
+          `기한 ${deadline.toISOString().split('T')[0]}`,
+      );
+    }
+  }
+
+  /**
    * 새로운 세금계산서를 생성합니다.
    * @param dto 세금계산서 생성 정보
    * @param tx 트랜잭션 객체 (선택사항)
@@ -52,7 +74,10 @@ export class TaxInvoiceService {
     const executor = tx || this.db.db;
 
     try {
-      // 1. 중복 검사 (externalOrderId 기준)
+      // 1. 발행 기한 검증 (익월 10일까지)
+      this.validateIssuanceDeadline(dto.supplyDate);
+
+      // 2. 중복 검사 (externalOrderId 기준)
       const existing = await executor.query.taxInvoices.findFirst({
         where: eq(schema.taxInvoices.externalOrderId, dto.externalOrderId),
       });
@@ -63,7 +88,7 @@ export class TaxInvoiceService {
         );
       }
 
-      // 2. 금액 검증
+      // 3. 금액 검증
       const calculatedTotal = dto.supplyAmount + dto.taxAmount;
       if (calculatedTotal !== dto.totalAmount) {
         throw new Error(
@@ -73,7 +98,7 @@ export class TaxInvoiceService {
 
       const invoiceId = generateUUIDv7();
 
-      // 3. 마스터 테이블 INSERT
+      // 4. 마스터 테이블 INSERT
       const newInvoice: NewTaxInvoice = {
         id: invoiceId,
         userId: dto.userId,
@@ -88,7 +113,7 @@ export class TaxInvoiceService {
         .values(newInvoice)
         .returning();
 
-      // 4. 상세 테이블 INSERT
+      // 5. 상세 테이블 INSERT
       const newDetail: NewTaxInvoiceEventsDetail = {
         id: generateUUIDv7(),
         invoiceId: invoiceId,
@@ -114,7 +139,7 @@ export class TaxInvoiceService {
         .values(newDetail)
         .returning();
 
-      // 5. 이벤트 로그 INSERT
+      // 6. 이벤트 로그 INSERT
       const newEvent: NewTaxInvoiceEvent = {
         id: generateUUIDv7(),
         invoiceId: invoiceId,
@@ -475,12 +500,24 @@ export class TaxInvoiceService {
         throw new Error(`Cannot refund non-issued invoice: ${original.status}`);
       }
 
-      // 2. 환불 금액 검증
+      // 2. 수정세금계산서 발행 기한 검증 (원본 발행일로부터 6개월)
+      const issueDate = new Date(original.createdAt);
+      const deadline = new Date(issueDate);
+      deadline.setMonth(deadline.getMonth() + 6);
+
+      if (new Date() > deadline) {
+        throw new Error(
+          `수정세금계산서 발행 기한 초과: 원본 발행일 ${issueDate.toISOString().split('T')[0]}, ` +
+            `기한 ${deadline.toISOString().split('T')[0]}`,
+        );
+      }
+
+      // 3. 환불 금액 검증
       if (refundAmount <= 0 || refundAmount > original.totalAmount) {
         throw new Error(`Invalid refund amount: ${refundAmount}`);
       }
 
-      // 3. 수정세금계산서 생성을 위한 DTO 구성
+      // 4. 수정세금계산서 생성을 위한 DTO 구성
       const refundDto: CreateTaxInvoiceDto = {
         userId: original.userId,
         externalOrderId: `refund_${original.externalOrderId}_${Date.now()}`,
@@ -512,7 +549,7 @@ export class TaxInvoiceService {
         },
       };
 
-      // 4. 수정세금계산서 생성
+      // 5. 수정세금계산서 생성
       const refundInvoice = await this.createTaxInvoice(refundDto, executor);
 
       this.logger.log(
