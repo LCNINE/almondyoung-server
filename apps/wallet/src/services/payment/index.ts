@@ -11,13 +11,6 @@
  * - 주입: 토큰 기반 주입 (예: @Inject(PAYMENT_EXECUTOR_SERVICE))
  */
 
-// Ports (인터페이스) - 타입만 export
-export type { PaymentExecutorService } from './payment-executor.service.interface';
-export type { PaymentOrchestratorService } from './payment-orchestrator.service.interface';
-
 // Adapters (구현체) - 클래스 export
 export { PaymentExecutorServiceImpl } from './payment-executor.service';
 export { PaymentOrchestratorServiceImpl } from './payment-orchestrator.service';
-
-// DI 토큰
-export * from './tokens';

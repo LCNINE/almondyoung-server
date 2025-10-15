@@ -13,14 +13,7 @@ import { PaymentProfileService } from './services/profiles/payment-profile.servi
 
 import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
-import {
-  PAYMENT_ORCHESTRATOR_SERVICE,
-  PAYMENT_EXECUTOR_SERVICE,
-  PaymentOrchestratorServiceImpl,
-  PaymentExecutorServiceImpl,
-} from './services/payment';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
-import { PaymentAttemptManager } from './services/payment/payment-attempt.manager';
 import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
 import {
   CmsBatchProfilesRepository,
@@ -44,6 +37,8 @@ import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 import { RefundService } from './services/refund.service';
 import { PointService } from './services/points/point.service';
 import { PointRepository } from './services/points/point.repository';
+import { PaymentOrchestratorServiceImpl } from './services/payment/payment-orchestrator.service';
+import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.service';
 
 @Module({
   imports: [
@@ -78,21 +73,14 @@ import { PointRepository } from './services/points/point.repository';
     // --- 포인트 시스템 ---
     PointService,
     PointRepository,
+    PaymentOrchestratorServiceImpl,
+    PaymentExecutorServiceImpl,
 
-    // --- 내부 흐름 제어 서비스 (Port-Adapter 패턴) ---
-    {
-      provide: PAYMENT_ORCHESTRATOR_SERVICE,
-      useClass: PaymentOrchestratorServiceImpl,
-    },
-    {
-      provide: PAYMENT_EXECUTOR_SERVICE,
-      useClass: PaymentExecutorServiceImpl,
-    },
     IdempotencyService,
 
     // --- Implement Layer (Manager - Repository 캡슐화) ---
     IntentManager,
-    PaymentAttemptManager,
+
     PaymentRequestBuilder,
 
     // --- Data Access Layer (Repository) ---
