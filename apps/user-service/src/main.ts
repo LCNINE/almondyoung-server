@@ -25,10 +25,16 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
-  const port = configService.get('PORT') || 5000;
-  const corsOrigins = process.env.CORS_ORIGIN_DOMAIN
-    ? process.env.CORS_ORIGIN_DOMAIN.split(',').map((origin) => origin.trim())
-    : ['http://localhost:3000'];
+  const port = configService.get('USER_SERVICE_URL') || 3030;
+
+  const corsOrigins =
+    process.env.NODE_ENV === 'production'
+      ? (process.env.CORS_ORIGIN_DOMAIN_PROD?.split(',').map((origin) =>
+          origin.trim(),
+        ) ?? [])
+      : (process.env.CORS_ORIGIN_DOMAIN_DEV?.split(',').map((origin) =>
+          origin.trim(),
+        ) ?? ['http://localhost:8000']);
 
   logger.log('CORS:', corsOrigins);
 
