@@ -9,6 +9,7 @@ import { LocationController } from './controllers/location.controller';
 import { InventoryService } from './services/inventory.service';
 import { ProductMatchingService } from './services/product-matching.service';
 import { StockEventService } from './services/stock-event.service';
+import { SafetyStockService } from './services/safety-stock.service';
 import { LocationService } from './services/location.service';
 import { StockEventStore } from './repositories/stock-event.store';
 import { InventoryCommandService } from './services/inventory-command.service';
@@ -43,6 +44,7 @@ import { MastersController } from './controllers/masters.controller';
     InventoryService,
     ProductMatchingService,
     StockEventService,
+    SafetyStockService,
     LocationService,
     StockEventStore,
     InventoryCommandService,
@@ -57,6 +59,7 @@ import { MastersController } from './controllers/masters.controller';
     InventoryService,
     ProductMatchingService,
     StockEventService,
+    SafetyStockService,
     LocationService,
     StockEventStore,
     InventoryCommandService,

@@ -769,6 +769,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
+            safetyStock: data.safetyStock ?? 0,
         }).returning();
 
         if (!newSku) {
@@ -789,6 +790,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
+            safetyStock: data.safetyStock,
             updatedAt: new Date(),
         };
 

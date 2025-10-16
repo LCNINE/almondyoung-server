@@ -67,6 +67,11 @@ export class CreateSkuDto {
     @IsOptional()
     sale3m?: number;
 
+    @ApiProperty({ description: '안전 재고 (Safety stock)', example: 10, required: false, default: 0, minimum: 0 })
+    @IsNumber()
+    @IsOptional()
+    safetyStock?: number;
+
     @ApiProperty({ description: '공급사 ID 목록', type: [String], required: false })
     @IsArray()
     @IsUUID('4', { each: true })
