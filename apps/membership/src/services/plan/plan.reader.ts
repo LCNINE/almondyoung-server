@@ -45,6 +45,9 @@ export class PlanReader {
 
   /**
    * 특정 플랜 상세 정보 조회 (티어 정보 포함)
+   *
+   * 참고: isActive 조건 없음 - 비활성화된 플랜도 조회 가능
+   * 활성화 여부는 호출하는 쪽에서 검증
    */
   async findPlanById(planId: string): Promise<PlanWithTier | null> {
     const result = await this.dbService.db
@@ -54,7 +57,7 @@ export class PlanReader {
       })
       .from(schema.plan)
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-      .where(and(eq(schema.plan.id, planId), eq(schema.plan.isActive, true)))
+      .where(eq(schema.plan.id, planId))
       .limit(1);
 
     return result.length ? result[0] : null;

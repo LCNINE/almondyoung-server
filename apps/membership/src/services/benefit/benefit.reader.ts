@@ -19,7 +19,7 @@ export interface CurrentCycleBenefit {
   orderCount: number;
   daysRemaining: number;
   daysElapsed: number;
-  subscriptionType: string;
+  subscriptionType: 'MONTHLY' | 'YEAR';
   nextCycleStartDate: string;
 }
 
@@ -54,7 +54,7 @@ export class BenefitReader {
   async findCurrentCycleBenefit(
     userId: string,
     billingDate: Date,
-    subscriptionType: string,
+    subscriptionType: 'MONTHLY' | 'YEAR',
   ): Promise<CurrentCycleBenefit> {
     const now = new Date();
     const cycleStartDate = calculateCycleStart(billingDate, now);

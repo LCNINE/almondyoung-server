@@ -95,7 +95,7 @@ CREATE INDEX idx_cycle_end_date ON membership_cycle_benefits(cycle_end_date);
   "cycle_end_date": "2025-11-13",
   "total_discount_amount": 67000,
   "order_count": 15,
-  "subscription_id": "sub_annual_abc",
+  "subscription_id": "sub_YEAR_abc",
   "cycle_number": 10,
   "created_at": "2025-10-15T10:30:00Z",
   "updated_at": "2025-10-28T14:30:00Z"
@@ -303,7 +303,7 @@ GET /api/membership/benefits/current?userId={userId}
   "orderCount": 15,
   "daysRemaining": 12,
   "daysElapsed": 18,
-  "subscriptionType": "ANNUAL",
+  "subscriptionType": "YEAR",
   "nextCycleStartDate": "2025-11-14"
 }
 ```
@@ -343,7 +343,7 @@ GET /api/membership/benefits/cycle?userId={userId}&cycleStartDate={date}
   "cycleEndDate": "2025-10-14",
   "totalDiscountAmount": 52000,
   "orderCount": 12,
-  "subscriptionType": "ANNUAL",
+  "subscriptionType": "YEAR",
   "isCompleted": true
 }
 ```
@@ -814,7 +814,7 @@ export const CycleBenefitSchema = z.object({
   orderCount: z.number().int().min(0),
   daysRemaining: z.number().int(),
   daysElapsed: z.number().int(),
-  subscriptionType: z.enum(['MONTHLY', 'ANNUAL']),
+  subscriptionType: z.enum(['MONTHLY', 'YEAR']),
   nextCycleStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
@@ -1099,7 +1099,7 @@ export type ActiveSubscription = {
   id: string;
   userId: string;
   billingDate: Date; // 첫 결제일 (30일 주기 기준점)
-  type: 'MONTHLY' | 'ANNUAL';
+  type: 'MONTHLY' | 'YEAR';
 };
 ```
 

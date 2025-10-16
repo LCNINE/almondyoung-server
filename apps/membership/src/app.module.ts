@@ -70,7 +70,7 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     RecurringBillingService,
     BenefitTrackingService,
     SubscriptionCancellationService,
-
+    EntitlementService,
     // Implementation Layer (Readers & Managers)
     EntitlementReader,
     EntitlementManager,
