@@ -15,7 +15,7 @@ import {
 import { PaymentService } from '../services/payment.service';
 import { PaymentIntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
-import { BnplAccountService } from '../services/bnpl-account.service';
+import { BnplService } from '../services/bnpl/bnpl.service';
 
 import { PaymentError } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -83,7 +83,7 @@ export class PaymentController {
     private readonly paymentService: PaymentService,
     private readonly intentService: PaymentIntentService,
     private readonly profileService: PaymentProfileService,
-    private readonly bnplAccountService: BnplAccountService,
+    private readonly bnplService: BnplService,
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
@@ -661,7 +661,7 @@ export class PaymentController {
     try {
       this.logger.log(`BNPL 계정 생성 요청: ${JSON.stringify(dto)}`);
 
-      const account = await this.bnplAccountService.createBnplAccount(
+      const account = await this.bnplService.createAccount(
         dto.userId,
         dto.creditLimit,
       );
