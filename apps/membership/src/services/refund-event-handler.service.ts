@@ -3,7 +3,7 @@ import { DbService } from '@app/db';
 import { membershipSchema } from '../shared/schemas/entities/schema';
 import * as schema from '../shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
-import { ContractEventService } from './contract-event.service';
+import { ContractEventManager } from './subscription/contract-event.manager';
 
 export interface RefundCompletedEvent {
   contractId: string;
@@ -25,7 +25,7 @@ export class RefundEventHandler {
 
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
-    private readonly contractEventService: ContractEventService,
+    private readonly contractEventManager: ContractEventManager,
   ) {}
 
   /**
@@ -58,7 +58,7 @@ export class RefundEventHandler {
         }
 
         // 1. REFUND_COMPLETED 이벤트 추가
-        const refundEvent = await this.contractEventService.addEvent(
+        const refundEvent = await this.contractEventManager.addEvent(
           tx,
           event.contractId,
           'REFUND_COMPLETED',
@@ -117,7 +117,7 @@ export class RefundEventHandler {
         }
 
         // 1. REFUND_FAILED 이벤트 추가
-        const failEvent = await this.contractEventService.addEvent(
+        const failEvent = await this.contractEventManager.addEvent(
           tx,
           event.contractId,
           'REFUND_FAILED',

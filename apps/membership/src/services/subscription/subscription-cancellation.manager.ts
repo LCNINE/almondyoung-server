@@ -4,7 +4,7 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and } from 'drizzle-orm';
 import { addDays } from 'date-fns';
-import { ContractEventService } from '../contract-event.service';
+import { ContractEventManager } from './contract-event.manager';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
@@ -43,7 +43,7 @@ export interface RecurringCancellationResult {
 export class SubscriptionCancellationManager {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
-    private readonly contractEventService: ContractEventService,
+    private readonly contractEventManager: ContractEventManager,
   ) {}
 
   /**
@@ -96,7 +96,7 @@ export class SubscriptionCancellationManager {
         .returning();
 
       // 2. CANCELLED 이벤트 추가
-      const cancelEvent = await this.contractEventService.addEvent(
+      const cancelEvent = await this.contractEventManager.addEvent(
         tx,
         contract.id,
         'CANCELLED',
@@ -114,7 +114,7 @@ export class SubscriptionCancellationManager {
 
       // 3. 환불 요청 이벤트 추가
       if (eligibility.eligible) {
-        await this.contractEventService.addEvent(
+        await this.contractEventManager.addEvent(
           tx,
           contract.id,
           'REFUND_REQUESTED',
@@ -195,7 +195,7 @@ export class SubscriptionCancellationManager {
         .returning();
 
       // 3. RECURRING_CANCELLED 이벤트 추가
-      const cancelEvent = await this.contractEventService.addEvent(
+      const cancelEvent = await this.contractEventManager.addEvent(
         tx,
         contract.id,
         'RECURRING_CANCELLED',

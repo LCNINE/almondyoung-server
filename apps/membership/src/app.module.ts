@@ -15,7 +15,7 @@ import { SubscriptionService } from './services/subscription.service';
 import { PaymentClientService } from './services/billing/payment-client.service';
 import { RecurringBillingService } from './services/billing/recurring-billing.service';
 import { BenefitTrackingService } from './services/benefit-tracking.service';
-import { ContractEventService } from './services/contract-event.service';
+import { ContractEventManager } from './services/subscription/contract-event.manager';
 import { SubscriptionCancellationService } from './services/subscription-cancellation.service';
 import { SubscriptionContractReader } from './services/subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
@@ -75,7 +75,7 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     EntitlementReader,
     EntitlementManager,
     PolicyValidationService,
-    ContractEventService,
+    ContractEventManager,
     SubscriptionContractReader,
     SubscriptionCreator,
     SubscriptionManager,
