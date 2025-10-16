@@ -29,13 +29,13 @@
   - GET /cancellation-reasons (취소 이유 목록)
   - _Requirements: 1.2, 4.5, 7.3, 7.4_
 
-- [ ] 6. Wallet 환불 이벤트 처리 구현
+- [x] 6. Wallet 환불 이벤트 처리 구현
   - RefundEventHandler 생성
   - handleRefundCompleted, handleRefundFailed 메서드 구현
   - 모듈에 등록 (Kafka 연동은 추후)
   - _Requirements: 5.3, 5.4, 5.5_
 
-- [ ] 7. 기존 구독 서비스에 이벤트 추가
+- [x] 7. 기존 구독 서비스에 이벤트 추가
   - createSubscription에 CREATED 이벤트 기록
   - upgradeSubscription에 PLAN_CHANGED 이벤트 기록
   - _Requirements: 4.1_
