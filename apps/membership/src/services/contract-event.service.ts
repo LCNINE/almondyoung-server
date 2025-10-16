@@ -1,86 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { DbService } from '@app/db';
-import { membershipSchema } from '../shared/schemas/entities/schema';
-import * as schema from '../shared/schemas/entities/schema';
-import { eq, desc, and } from 'drizzle-orm';
-import { DrizzleTransaction } from '../shared/schemas/types';
+/**
+ * @deprecated 이 파일은 하위 호환성을 위해 유지됩니다.
+ * 새로운 코드에서는 ContractEventManager를 사용하세요.
+ *
+ * 이동 위치: apps/membership/src/services/subscription/contract-event.manager.ts
+ *
+ * 이유: ContractEventService는 Service가 아닌 Implementation Layer의 Manager입니다.
+ * 이벤트 소싱 패턴을 위한 유틸리티 클래스로, subscription 폴더에 위치해야 합니다.
+ */
 
-export interface ContractEvent {
-  id: number;
-  contractId: string;
-  eventType: string;
-  userId: string;
-  metadata: Record<string, any>;
-  batchId: string | null;
-  causedBy: string;
-  causedByUserId: string | null;
-  createdAt: Date;
-}
-
-@Injectable()
-export class ContractEventService {
-  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
-
-  /**
-   * 계약 이벤트 추가
-   */
-  async addEvent(
-    tx: DrizzleTransaction,
-    contractId: string,
-    eventType: string,
-    metadata: Record<string, any>,
-    causedBy: string,
-    userId: string,
-    batchId?: string,
-    causedByUserId?: string,
-  ): Promise<ContractEvent> {
-    const [event] = await tx
-      .insert(schema.subscriptionContractEvents)
-      .values({
-        contractId,
-        eventType,
-        userId,
-        metadata,
-        batchId: batchId || null,
-        causedBy,
-        causedByUserId: causedByUserId || null,
-      })
-      .returning();
-
-    return event as ContractEvent;
-  }
-
-  /**
-   * 계약의 모든 이벤트 조회
-   */
-  async getContractEvents(contractId: string): Promise<ContractEvent[]> {
-    const events = await this.dbService.db
-      .select()
-      .from(schema.subscriptionContractEvents)
-      .where(eq(schema.subscriptionContractEvents.contractId, contractId))
-      .orderBy(desc(schema.subscriptionContractEvents.createdAt));
-
-    return events as ContractEvent[];
-  }
-
-  /**
-   * 특정 타입 이벤트 조회
-   */
-  async getEventsByType(
-    contractId: string,
-    eventType: string,
-  ): Promise<ContractEvent[]> {
-    const events = await this.dbService.db
-      .select()
-      .from(schema.subscriptionContractEvents)
-      .where(
-        and(
-          eq(schema.subscriptionContractEvents.contractId, contractId),
-          eq(schema.subscriptionContractEvents.eventType, eventType),
-        ),
-      )
-      .orderBy(desc(schema.subscriptionContractEvents.createdAt));
-
-    return events as ContractEvent[];
-  }
-}
+export {
+  ContractEventManager as ContractEventService,
+  type ContractEvent,
+} from './subscription/contract-event.manager';

@@ -3,7 +3,7 @@ import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { addDays } from 'date-fns';
-import { ContractEventService } from '../contract-event.service';
+import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 
 type Plan = typeof schema.plan.$inferSelect;
@@ -21,7 +21,7 @@ type Tier = typeof schema.tiers.$inferSelect;
 export class SubscriptionCreator {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
-    private readonly contractEventService: ContractEventService,
+    private readonly contractEventManager: ContractEventManager,
     private readonly entitlementManager: EntitlementManager,
   ) {}
 
@@ -64,7 +64,7 @@ export class SubscriptionCreator {
         .returning();
 
       // 3. CREATED 이벤트 추가
-      await this.contractEventService.addEvent(
+      await this.contractEventManager.addEvent(
         tx,
         contract.id,
         'CREATED',
