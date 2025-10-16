@@ -6,7 +6,7 @@ import * as schema from '../shared/database/schema';
 import { walletSchema } from '../shared/database/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { generateUUIDv7 } from '../shared/utils/id-generator';
-import { BnplAccountService } from './bnpl-account.service';
+import { BnplService } from './bnpl/bnpl.service';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
 import {
@@ -21,7 +21,7 @@ export class BnplBillingScheduler {
   private readonly paymentOrchestrator: PaymentOrchestratorServiceImpl;
   constructor(
     private readonly db: DbService<typeof walletSchema>,
-    private readonly bnpl: BnplAccountService,
+    private readonly bnpl: BnplService,
   ) {
     this.hmsApi = HmsApiFactory.createForBnpl();
   }

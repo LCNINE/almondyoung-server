@@ -6,7 +6,7 @@ alwaysApply: true
 ---
 
 ## 📝 Cursor Rules – Drizzle ORM + Typescript 타입 규칙
-
+jsdoc
 ### 1. 스키마 정의 규칙 (`schema.ts`)
 
 - **모든 테이블 정의는 하나의 `schema.ts`에서만 한다.**

@@ -16,7 +16,7 @@ import {
   assertIntentIsNotExpired,
 } from '../intents/intent.assets';
 import type { PaymentIntent } from '../../shared/database/types';
-import { BnplAccountService } from '../bnpl-account.service';
+import { BnplService } from '../bnpl/bnpl.service';
 
 /**
  * PaymentExecutorService 구현체 (Adapter)
@@ -34,7 +34,7 @@ export class PaymentExecutorServiceImpl {
     private readonly db: DbService<typeof walletSchema>,
     private readonly registry: ProviderRegistry,
     private readonly profiles: PaymentProfileService,
-    private readonly bnplAccountService: BnplAccountService,
+    private readonly bnplService: BnplService,
   ) {}
 
   async authorize(
@@ -75,7 +75,7 @@ export class PaymentExecutorServiceImpl {
 
     // 4. BNPL 특별 처리: 한도 차감 및 신용 사용 이벤트 생성
     if (provider === ProviderType.HMS_BNPL) {
-      await this.bnplAccountService.createCreditEvent(
+      await this.bnplService.purchaseWithCredit(
         intent.customerId,
         request.amount,
         request.metadata?.externalOrderId || request.intentId,
