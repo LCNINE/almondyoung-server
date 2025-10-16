@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DbModule, DbService } from '@app/db';
 import { SubscriptionCancellationService } from '../../src/services/subscription-cancellation.service';
 import { ContractEventService } from '../../src/services/contract-event.service';
-import { CancellationReasonService } from '../../src/services/cancellation-reason.service';
+import { CancellationReasonReader } from '../../src/services/subscription/cancellation-reason.reader';
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
 import {
   membershipSchema,
@@ -20,7 +20,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 describe('Subscription Cancellation Integration Tests', () => {
   let cancellationService: SubscriptionCancellationService;
   let contractEventService: ContractEventService;
-  let cancellationReasonService: CancellationReasonService;
+  let cancellationReasonReader: CancellationReasonReader;
   let refundEventHandler: RefundEventHandler;
   let dbService: DbService<MembershipSchema>;
   let module: TestingModule;
@@ -48,7 +48,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       providers: [
         SubscriptionCancellationService,
         ContractEventService,
-        CancellationReasonService,
+        CancellationReasonReader,
         RefundEventHandler,
       ],
     }).compile();
@@ -58,8 +58,8 @@ describe('Subscription Cancellation Integration Tests', () => {
     );
     contractEventService =
       module.get<ContractEventService>(ContractEventService);
-    cancellationReasonService = module.get<CancellationReasonService>(
-      CancellationReasonService,
+    cancellationReasonReader = module.get<CancellationReasonReader>(
+      CancellationReasonReader,
     );
     refundEventHandler = module.get<RefundEventHandler>(RefundEventHandler);
     dbService = module.get<DbService<MembershipSchema>>(DbService);
@@ -175,7 +175,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
   describe('Task 2: 이벤트 소싱 및 취소 이유 서비스', () => {
     it('✅ 취소 이유 목록 조회', async () => {
-      const reasons = await cancellationReasonService.getActiveReasons();
+      const reasons = await cancellationReasonReader.findActiveReasons();
 
       expect(reasons).toHaveLength(2);
       expect(reasons[0].code).toBe('TRIAL_PERIOD');
@@ -183,8 +183,7 @@ describe('Subscription Cancellation Integration Tests', () => {
     });
 
     it('✅ 취소 이유 코드로 조회', async () => {
-      const reason =
-        await cancellationReasonService.getReasonByCode('TRIAL_PERIOD');
+      const reason = await cancellationReasonReader.findByCode('TRIAL_PERIOD');
 
       expect(reason).toBeDefined();
       expect(reason?.displayText).toBe('더 나은 서비스를 위해 노력하겠습니다');
