@@ -459,7 +459,9 @@ export const bnplEvents = pgTable(
 export const bnplCmsResponses = pgTable(
   'bnpl_cms_responses',
   {
-    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => getTsid().toString()),
 
     // 배치 단위 추적
     batchId: varchar('batch_id', { length: 50 }).notNull(),
