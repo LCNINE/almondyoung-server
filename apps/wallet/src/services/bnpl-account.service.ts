@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../shared/database/schema';
 import { walletSchema } from '../shared/database/schema';
-import { eq, and, lte, gte, desc, sum, SQL, inArray } from 'drizzle-orm';
+import { eq, and, lte, desc, sum, inArray } from 'drizzle-orm';
 
 import {
   NewBnplAccount,
@@ -10,13 +10,8 @@ import {
   BnplAccount,
   BnplEvent,
 } from '../shared/database/types';
-import { generateUUIDv7 } from '../shared/utils/id-generator';
 import { getTsid } from 'tsid-ts';
-import {
-  BnplEventCategory,
-  BnplEventType,
-  WalletExecutor,
-} from '../shared/database';
+import { WalletExecutor } from '../shared/database';
 
 /**
  * BnplAccountService - BNPL 계정 및 이벤트 관리
@@ -444,45 +439,44 @@ export class BnplAccountService {
   }
 
   /**
-   * CMS 응답 결과를 반영합니다.
-   * @param batchTransactionId CMS 배치 거래 ID
-   * @param cmsStatus CMS 상태
-   * @param cmsErrorCode CMS 에러 코드 (선택사항)
-   * @param cmsResponseSnapshot CMS 응답 스냅샷 (선택사항)
+   * CMS 실패 시 한도를 복원합니다.
+   * @param accountId BNPL 계정 ID
+   * @param amount 복원할 금액
    * @param tx 트랜잭션 객체 (선택사항)
    */
-  async updateCmsResponse(
-    batchTransactionId: string,
-    cmsStatus: string,
-    cmsErrorCode?: string,
-    cmsResponseSnapshot?: any,
+  async restoreCreditLimit(
+    accountId: string,
+    amount: number,
     tx?: WalletExecutor,
   ): Promise<void> {
     const executor = tx || this.db.db;
 
     try {
+      const account = await executor.query.bnplAccounts.findFirst({
+        where: eq(schema.bnplAccounts.id, accountId),
+      });
+
+      if (!account) {
+        throw new Error(`BNPL account not found: ${accountId}`);
+      }
+
       await executor
-        .update(schema.bnplEvents)
+        .update(schema.bnplAccounts)
         .set({
-          cmsStatus,
-          cmsErrorCode,
-          cmsResponseSnapshot,
-          status:
-            cmsStatus === 'PROCESSED'
-              ? ('COMPLETED' as any)
-              : ('FAILED' as any),
+          availableLimit: account.availableLimit + amount,
+          updatedAt: new Date(),
         })
-        .where(eq(schema.bnplEvents.batchTransactionId, batchTransactionId));
+        .where(eq(schema.bnplAccounts.id, accountId));
 
       this.logger.log(
-        `Updated CMS response for batch ${batchTransactionId}: ${cmsStatus}`,
+        `Restored credit limit for account ${accountId}: +${amount}, new limit: ${account.availableLimit + amount}`,
       );
     } catch (error) {
       this.logger.error(
-        `Failed to update CMS response: ${error.message}`,
+        `Failed to restore credit limit: ${error.message}`,
         error.stack,
       );
-      throw new Error(`CMS response update failed: ${error.message}`);
+      throw new Error(`Credit limit restoration failed: ${error.message}`);
     }
   }
 
