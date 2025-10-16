@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 export interface CreateCmsResponseDto {
   batchId: string;
