@@ -298,6 +298,7 @@ export const skus = pgTable('skus', {
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
+    safetyStock: integer('safety_stock').notNull().default(0), // 안전 재고
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({

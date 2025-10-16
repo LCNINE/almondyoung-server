@@ -37,6 +37,9 @@ export class SkuResponseDto {
     @ApiProperty({ required: false })
     sale3m?: number;
 
+    @ApiProperty({ description: '안전 재고 (Safety stock)', example: 10, default: 0 })
+    safetyStock: number;
+
     @ApiProperty({ required: true })
     masterId: string;
 
