@@ -4,7 +4,7 @@ import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
-import { ContractEventService } from '../contract-event.service';
+import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { SubscriptionException } from '../../shared/exceptions/subscription.exceptions';
 
@@ -24,7 +24,7 @@ type Tier = typeof schema.tiers.$inferSelect;
 export class SubscriptionManager {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
-    private readonly contractEventService: ContractEventService,
+    private readonly contractEventManager: ContractEventManager,
     private readonly entitlementManager: EntitlementManager,
   ) {}
 
@@ -68,7 +68,7 @@ export class SubscriptionManager {
         .where(eq(schema.subscriptionContracts.id, currentContract.id));
 
       // 3. PLAN_CHANGED 이벤트 추가
-      await this.contractEventService.addEvent(
+      await this.contractEventManager.addEvent(
         tx,
         currentContract.id,
         'PLAN_CHANGED',
@@ -140,7 +140,7 @@ export class SubscriptionManager {
         .where(eq(schema.subscriptionContracts.id, currentContract.id));
 
       // 3. PLAN_CHANGED 이벤트 추가
-      await this.contractEventService.addEvent(
+      await this.contractEventManager.addEvent(
         tx,
         currentContract.id,
         'PLAN_CHANGED',
