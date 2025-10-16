@@ -238,6 +238,107 @@ export class EntitlementService {
   }
 
   /**
+   * 구독 상태 체크 및 자동 만료 처리 (Lazy Expiration)
+   *
+   * @description 사용자의 현재 구독 상태를 조회하고, 만료된 경우 자동으로 정규화합니다.
+   * @sideEffect 만료된 구독의 isCurrent 플래그를 false로 업데이트
+   * @rationale 데이터 정합성 보장 및 성능 최적화
+   *
+   * @param userId 사용자 ID
+   * @returns 활성 구독 여부
+   */
+  async checkAndUpdateSubscription(userId: string): Promise<boolean> {
+    const today = new Date().toISOString().split('T')[0];
+
+    // 1. 현재 활성 권한 조회
+    const [entitlement] = await this.dbService.db
+      .select({
+        id: schema.subscriptionEntitlement.id,
+        endsAt: schema.subscriptionEntitlement.endsAt,
+      })
+      .from(schema.subscriptionEntitlement)
+      .where(
+        and(
+          eq(schema.subscriptionEntitlement.userId, userId),
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+        ),
+      )
+      .limit(1);
+
+    if (!entitlement) {
+      return false;
+    }
+
+    // 2. 만료 체크
+    if (entitlement.endsAt < today) {
+      // 3. 즉시 만료 처리 (이벤트 소싱 포함)
+      await this.expireEntitlementWithEvent(entitlement.id, userId);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 만료된 권한을 이벤트와 함께 처리
+   *
+   * @param entitlementId 권한 ID
+   * @param userId 사용자 ID
+   */
+  private async expireEntitlementWithEvent(
+    entitlementId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      // 1. 이벤트 배치 생성
+      const [batch] = await tx
+        .insert(schema.eventBatches)
+        .values({
+          type: 'SUBSCRIPTION_EXPIRED',
+          effectiveDate: new Date().toISOString().split('T')[0],
+        })
+        .returning();
+
+      // 2. 권한 만료 처리
+      await tx
+        .update(schema.subscriptionEntitlement)
+        .set({
+          isCurrent: false,
+          closedAt: new Date(),
+          closedBatchId: batch.id,
+        })
+        .where(eq(schema.subscriptionEntitlement.id, entitlementId));
+
+      // 3. 계약 이벤트 기록 (계약 ID 조회 필요)
+      const [contract] = await tx
+        .select({ id: schema.subscriptionContracts.id })
+        .from(schema.subscriptionContracts)
+        .where(
+          and(
+            eq(schema.subscriptionContracts.userId, userId),
+            eq(schema.subscriptionContracts.status, 'ACTIVE'),
+          ),
+        )
+        .limit(1);
+
+      if (contract) {
+        await tx.insert(schema.subscriptionContractEvents).values({
+          contractId: contract.id,
+          eventType: 'EXPIRED',
+          userId,
+          metadata: {
+            reason: 'NATURAL_EXPIRATION',
+            expiredAt: new Date().toISOString().split('T')[0],
+          },
+          batchId: batch.id,
+          causedBy: 'SYSTEM',
+          causedByUserId: null,
+        });
+      }
+    });
+  }
+
+  /**
    * 현재 활성화된 사용자 권한을 종료시킵니다. (내부용)
    * @param tx - Drizzle 트랜잭션 객체
    * @param userId - 사용자 ID
