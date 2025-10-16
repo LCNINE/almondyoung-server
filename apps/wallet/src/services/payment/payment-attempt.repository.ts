@@ -142,24 +142,41 @@ export class PaymentAttemptRepository {
           ? JSON.parse(attempt.providerResponseSnapshot)
           : attempt.providerResponseSnapshot;
 
-      // HMS CMS 응답 형식
-      if (response.errorCode || response.errorMessage) {
-        return response.errorMessage || `Error code: ${response.errorCode}`;
-      }
+      // Provider별 에러 메시지 추출
+      switch (attempt.provider) {
+        case 'HMS_CARD':
+          // HMS 카드 응답 형식: payment.result.message
+          return (
+            response?.payment?.result?.message ||
+            response?.errorMessage ||
+            response?.message ||
+            null
+          );
 
-      // Toss Payments 응답 형식
-      if (response.code || response.message) {
-        return response.message || `Error code: ${response.code}`;
-      }
+        case 'HMS_BNPL':
+          // HMS BNPL 응답 형식: message 또는 errorMessage
+          return response?.message || response?.errorMessage || null;
 
-      // 일반적인 에러 형식
-      if (response.error) {
-        return typeof response.error === 'string'
-          ? response.error
-          : response.error.message || JSON.stringify(response.error);
-      }
+        case 'TOSS':
+        case 'KAKAOPAY':
+          // Toss/Kakao 응답 형식: message 또는 code
+          return response?.message || `Error code: ${response?.code}` || null;
 
-      return null;
+        case 'POINTS':
+          // 포인트 시스템 에러
+          return response?.error || response?.message || null;
+
+        default:
+          // 일반적인 에러 형식 fallback
+          if (response.errorMessage) return response.errorMessage;
+          if (response.message) return response.message;
+          if (response.error) {
+            return typeof response.error === 'string'
+              ? response.error
+              : response.error.message || JSON.stringify(response.error);
+          }
+          return null;
+      }
     } catch (error) {
       this.logger.warn(
         `Failed to parse providerResponseSnapshot for attempt ${attempt.id}: ${error}`,
