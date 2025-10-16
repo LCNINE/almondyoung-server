@@ -1,42 +1,43 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { IntentRepository } from './intent.repository';
 import type { PaymentIntent } from '../../shared/database/types';
 import type { ProviderType } from '../../providers/payment-provider.interface';
+import type { WalletExecutor } from '../../shared/database';
 
 /**
- * IntentManager (Implement Layer)
+ * IntentManager (Implementation Layer)
  *
- * 책임:
- * - Intent 관련 구현 로직 조율
- * - Repository 접근을 캡슐화
- * - Business Layer에 필요한 고수준 메서드 제공
- *
- * 레이어 구조:
- * Business Layer (Orchestrator) → Implement Layer (Manager) → Data Access Layer (Repository)
+ * 책임: Intent 비즈니스 로직 (검증 + 상태 관리 + DB 접근)
  */
 @Injectable()
 export class IntentManager {
-  constructor(private readonly intentRepo: IntentRepository) {}
+  private readonly logger = new Logger(IntentManager.name);
+
+  constructor(private readonly repo: IntentRepository) {}
 
   /**
-   * Intent를 조회하고 결제 가능 상태로 준비합니다.
-   * UNKNOWN 상태인 경우 복구 시도를 포함합니다.
+   * 결제를 위한 Intent 준비 (검증 포함)
    */
   async prepareForPayment(
-    intentId: string,
+    intent: PaymentIntent | null,
     providerType: ProviderType | null,
-    recoveryFn?: (
-      intent: PaymentIntent,
-      providerType: ProviderType | null,
-    ) => Promise<void>,
   ): Promise<PaymentIntent> {
-    const intent = await this.intentRepo.findByIdOrFail(intentId);
+    // 1. 검증
+    if (!intent) throw new Error('Intent not found');
+    if (intent.status !== 'PENDING' && intent.status !== 'UNKNOWN') {
+      throw new Error('Intent not pending');
+    }
+    if (new Date() > new Date(intent.expiresAt)) {
+      throw new Error('Intent expired');
+    }
 
-    // UNKNOWN 상태 복구 (외부 콜백 사용)
-    if ((intent.status as string) === 'UNKNOWN' && recoveryFn) {
-      await recoveryFn(intent, providerType);
+    // 2. UNKNOWN 상태 복구
+    if (intent.status === 'UNKNOWN') {
+      await this.recoverUnknownIntent(intent, providerType);
       // 복구 후 다시 조회
-      return this.intentRepo.findByIdOrFail(intentId);
+      const recovered = await this.repo.findById(intent.id);
+      if (!recovered) throw new Error('Intent not found after recovery');
+      return recovered;
     }
 
     return intent;
@@ -46,26 +47,42 @@ export class IntentManager {
    * Intent에 할인 정보를 적용합니다.
    */
   async applyDiscounts(
-    intentId: string,
+    intent: PaymentIntent | null,
     discounts: any[],
-    discountsTotal: string,
-    finalAmount: string,
-    tx?: any,
+    tx?: WalletExecutor,
   ): Promise<void> {
-    return this.intentRepo.updateDiscounts(
-      intentId,
+    if (!intent) throw new Error('Intent not found');
+
+    const discountsTotal = discounts.reduce(
+      (sum: number, d: any) => sum + (d.amount || 0),
+      0,
+    );
+    const finalAmount = intent.amount - discountsTotal;
+
+    if (finalAmount < 0) throw new Error('Invalid discount amount');
+
+    await this.repo.updateDiscounts(
+      intent.id,
       discounts,
       discountsTotal,
       finalAmount,
       tx,
+    );
+
+    this.logger.log(
+      `Discounts applied to intent ${intent.id}: ${discountsTotal}`,
     );
   }
 
   /**
    * Intent를 포인트 전액 결제로 완료 처리합니다.
    */
-  async completeAsPointOnly(intentId: string, tx?: any): Promise<void> {
-    return this.intentRepo.markAsCaptured(intentId, tx);
+  async completeAsPointOnly(
+    intentId: string,
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    await this.repo.markAsCaptured(intentId, tx);
+    this.logger.log(`Intent ${intentId} completed as point-only payment`);
   }
 
   /**
@@ -74,9 +91,10 @@ export class IntentManager {
   async updateStatus(
     intentId: string,
     status: string,
-    tx?: any,
+    tx?: WalletExecutor,
   ): Promise<void> {
-    return this.intentRepo.updateStatus(intentId, status, tx);
+    await this.repo.updateStatus(intentId, status, tx);
+    this.logger.log(`Intent ${intentId} status updated to ${status}`);
   }
 
   /**
@@ -84,20 +102,23 @@ export class IntentManager {
    * (외부 결제는 성공했지만 내부 처리 중 에러 발생 시)
    */
   async markAsUnknown(intentId: string): Promise<void> {
-    return this.intentRepo.markAsUnknown(intentId);
+    await this.repo.markAsUnknown(intentId);
+    this.logger.warn(`Intent ${intentId} marked as UNKNOWN for recovery`);
   }
 
   /**
-   * Intent를 조회합니다.
+   * UNKNOWN 상태 복구 (내부 메서드)
    */
-  async findById(intentId: string): Promise<PaymentIntent | undefined> {
-    return this.intentRepo.findById(intentId);
-  }
+  private async recoverUnknownIntent(
+    intent: PaymentIntent,
+    providerType: ProviderType | null,
+  ): Promise<void> {
+    this.logger.log(`Attempting to recover UNKNOWN intent: ${intent.id}`);
 
-  /**
-   * Intent를 조회하고 존재하지 않으면 에러를 던집니다.
-   */
-  async findByIdOrFail(intentId: string): Promise<PaymentIntent> {
-    return this.intentRepo.findByIdOrFail(intentId);
+    // TODO: 외부 Provider 상태 확인 후 Intent 상태 동기화
+    // 현재는 기본 복구 로직만 수행
+    await this.repo.updateStatus(intent.id, 'PENDING');
+
+    this.logger.log(`Intent ${intent.id} recovered from UNKNOWN state`);
   }
 }
