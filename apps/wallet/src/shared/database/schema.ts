@@ -428,7 +428,6 @@ export const bnplEvents = pgTable(
     // CMS 응답·상태
     cmsStatus: varchar('cms_status', { length: 32 }), // REQUESTED/PROCESSED/FAILED
     cmsErrorCode: varchar('cms_error_code', { length: 64 }),
-    cmsResponseSnapshot: jsonb('cms_response_snapshot'),
 
     // 상태·사유
     status: varchar('status', { length: 16 }).notNull().default('PENDING'),
@@ -452,6 +451,57 @@ export const bnplEvents = pgTable(
     index('idx_be_status').on(t.status),
   ],
 );
+
+// ────────────────────────────────────────────
+// BNPL CMS Responses - CMS 응답 이력 추적
+// ────────────────────────────────────────────
+
+export const bnplCmsResponses = pgTable(
+  'bnpl_cms_responses',
+  {
+    id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
+
+    // 배치 단위 추적
+    batchId: varchar('batch_id', { length: 50 }).notNull(),
+    accountId: varchar('account_id', { length: 26 })
+      .notNull()
+      .references(() => bnplAccounts.id, { onDelete: 'cascade' }),
+
+    // 개별 이벤트 참조 (선택적 - 배치 전체 응답인 경우 null)
+    eventId: varchar('event_id', { length: 26 }).references(
+      () => bnplEvents.id,
+      { onDelete: 'cascade' },
+    ),
+
+    // 응답 타입
+    responseType: varchar('response_type', { length: 32 }).notNull(),
+    // 'BATCH_REQUEST_SUBMITTED' - 배치 출금 신청
+    // 'BATCH_RESULT_CONFIRMED' - 배치 결과 확인
+    // 'BATCH_RETRY_ATTEMPTED' - 배치 재시도
+
+    // HMS CMS 응답 원본
+    cmsResponseSnapshot: jsonb('cms_response_snapshot').notNull(),
+
+    // 상태 변화 추적
+    previousStatus: varchar('previous_status', { length: 32 }),
+    newStatus: varchar('new_status', { length: 32 }).notNull(),
+
+    // 메타데이터
+    metadata: jsonb('metadata'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_bnpl_cms_batch').on(t.batchId),
+    index('idx_bnpl_cms_account').on(t.accountId),
+    index('idx_bnpl_cms_event').on(t.eventId),
+    index('idx_bnpl_cms_type').on(t.responseType),
+    index('idx_bnpl_cms_created').on(t.createdAt),
+  ],
+);
+
 // 3️⃣ BNPL 이벤트 상세 (복식부기)
 // ────────────────────────────────────────────
 
@@ -1205,14 +1255,14 @@ export const paymentAttempts = pgTable(
       .$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>()
       .notNull()
       .default('USER'),
-    eventContext: jsonb('event_context'),
+    requestMetadata: jsonb('request_metadata'),
+    providerResponseSnapshot: jsonb('provider_response_snapshot'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    errorMessage: text('error_message'),
     transactionId: varchar('transaction_id', { length: 255 }),
     approvalNumber: varchar('approval_number', { length: 255 }),
   },
