@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { FastifyRequest } from 'fastify';
 import { Strategy } from 'passport-jwt';
-import { AuthService } from '../auth.service';
+import { TokensService } from '../../tokens/tokens.service';
 import { UsersService } from '../../users/users.service';
 
 @Injectable()
@@ -13,8 +13,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
 ) {
   constructor(
     private configService: ConfigService,
-    private readonly authService: AuthService,
     private usersService: UsersService,
+    private tokensService: TokensService,
   ) {
     const refreshSecret = configService.get<string>('JWT_REFRESH_SECRET');
 
@@ -39,10 +39,26 @@ export class JwtRefreshStrategy extends PassportStrategy(
   ) {
     const refreshToken = req.cookies?.refreshToken;
     if (!refreshToken) {
-      throw new UnauthorizedException('refresh token이 없습니다.');
+      throw new UnauthorizedException('refresh token not found');
     }
 
-    await this.authService.findValidToken(payload.sub, refreshToken);
+    // DB에서 리프레시 토큰 검증 (만료, revoke 체크)
+    try {
+      await this.tokensService.validateRefreshToken(payload.sub, refreshToken);
+    } catch (error) {
+      if (error.message === 'Refresh token not found') {
+        throw new UnauthorizedException(
+          '로그아웃되었거나 유효하지 않은 리프레시 토큰입니다.',
+        );
+      }
+      if (error.message === 'Refresh token revoked') {
+        throw new UnauthorizedException('무효화된 리프레시 토큰입니다.');
+      }
+      if (error.message === 'Refresh token expired') {
+        throw new UnauthorizedException('만료된 리프레시 토큰입니다.');
+      }
+      throw new UnauthorizedException('리프레시 토큰 검증에 실패했습니다.');
+    }
 
     const user = await this.usersService.findUserById(payload.sub);
 
