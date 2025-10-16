@@ -7,7 +7,6 @@ import { EntitlementNotFoundException } from '../shared/exceptions/subscription.
 import { addDays } from 'date-fns';
 import type { SubscriptionEntitlement } from '../shared/schemas';
 import { PlanService } from './plan.service';
-import { DrizzleTransaction } from '../shared/schemas/types';
 
 @Injectable()
 export class EntitlementService {
@@ -28,7 +27,7 @@ export class EntitlementService {
    * @returns 생성된 SubscriptionEntitlement 객체
    */
   async createEntitlement(
-    tx: DrizzleTransaction, // 'any' 타입을 'DrizzleTransaction'으로 변경
+    tx: any,
     userId: string,
     tierId: string,
     startsAt: Date,
@@ -245,7 +244,7 @@ export class EntitlementService {
    * @param closedBatchId - 이 권한을 종료시킨 이벤트 배치의 ID
    */
   private async terminateActiveEntitlement(
-    tx: DrizzleTransaction, // 'any' 타입을 'DrizzleTransaction'으로 변경
+    tx: any,
     userId: string,
     closedBatchId: string,
   ): Promise<void> {

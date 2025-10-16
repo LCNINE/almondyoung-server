@@ -24,6 +24,8 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
+import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
+import { ContractEventService } from '../services/contract-event.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
@@ -40,6 +42,8 @@ import {
   UpdatePlanRequestSchema,
   DeactivatePlanRequestSchema,
   ExtendEntitlementRequestSchema,
+  ForceCancelSubscriptionRequest,
+  ForceCancelSubscriptionRequestSchema,
 } from '../shared/schemas';
 
 import {
@@ -49,6 +53,8 @@ import {
   AdminEntitlementResponseDto,
   AdminBillingTestResponseDto,
   ErrorResponseDto,
+  CancellationResultDto,
+  ContractEventsResponseDto,
 } from '../shared/dto/response.dto';
 import {
   CreateTierRequestDto,
@@ -57,6 +63,7 @@ import {
   UpdatePlanRequestDto,
   DeactivatePlanRequestDto,
   ExtendEntitlementRequestDto,
+  ForceCancelSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 /**
@@ -74,6 +81,8 @@ export class AdminOperationsController {
 
   constructor(
     private readonly adminOperationsService: AdminOperationsService,
+    private readonly cancellationService: SubscriptionCancellationService,
+    private readonly contractEventService: ContractEventService,
   ) {}
 
   /**
@@ -121,20 +130,20 @@ export class AdminOperationsController {
 
   @Post('tiers')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '새 티어 생성',
-    description: '새로운 구독 티어를 생성합니다.'
+    description: '새로운 구독 티어를 생성합니다.',
   })
   @ApiBody({ type: CreateTierRequestDto })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: '티어 생성 성공',
-    type: AdminTierResponseDto
+    type: AdminTierResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async createTier(
     @Req() req: FastifyRequest,
@@ -165,30 +174,30 @@ export class AdminOperationsController {
   }
 
   @Put('tiers/:tierId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '티어 정보 수정',
-    description: '기존 티어의 정보를 수정합니다.'
+    description: '기존 티어의 정보를 수정합니다.',
   })
-  @ApiParam({ 
-    name: 'tierId', 
+  @ApiParam({
+    name: 'tierId',
     description: '티어 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiBody({ type: UpdateTierRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '티어 수정 성공',
-    type: AdminTierResponseDto
+    type: AdminTierResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '티어를 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async updateTier(
     @Req() req: FastifyRequest,
@@ -225,25 +234,25 @@ export class AdminOperationsController {
 
   @Post('plans')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '새 플랜 생성',
-    description: '특정 티어에 새로운 구독 플랜을 생성합니다.'
+    description: '특정 티어에 새로운 구독 플랜을 생성합니다.',
   })
   @ApiBody({ type: CreatePlanRequestDto })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: '플랜 생성 성공',
-    type: AdminPlanResponseDto
+    type: AdminPlanResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '티어를 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async createPlan(
     @Req() req: FastifyRequest,
@@ -276,30 +285,30 @@ export class AdminOperationsController {
   }
 
   @Put('plans/:planId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '플랜 정보 수정',
-    description: '기존 플랜의 정보를 수정합니다.'
+    description: '기존 플랜의 정보를 수정합니다.',
   })
-  @ApiParam({ 
-    name: 'planId', 
+  @ApiParam({
+    name: 'planId',
     description: '플랜 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiBody({ type: UpdatePlanRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '플랜 수정 성공',
-    type: AdminPlanResponseDto
+    type: AdminPlanResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async updatePlan(
     @Req() req: FastifyRequest,
@@ -335,30 +344,30 @@ export class AdminOperationsController {
   }
 
   @Delete('plans/:planId')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '플랜 비활성화',
-    description: '기존 플랜을 비활성화합니다.'
+    description: '기존 플랜을 비활성화합니다.',
   })
-  @ApiParam({ 
-    name: 'planId', 
+  @ApiParam({
+    name: 'planId',
     description: '플랜 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiBody({ type: DeactivatePlanRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '플랜 비활성화 성공',
-    type: AdminPlanResponseDto
+    type: AdminPlanResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '플랜을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async deactivatePlan(
     @Req() req: FastifyRequest,
@@ -400,25 +409,25 @@ export class AdminOperationsController {
 
   @Post('entitlements/adjust')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '사용자 구독 기간 조정',
-    description: '사용자의 구독 기간을 연장하거나 단축합니다.'
+    description: '사용자의 구독 기간을 연장하거나 단축합니다.',
   })
   @ApiBody({ type: ExtendEntitlementRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 기간 조정 성공',
-    type: AdminEntitlementResponseDto
+    type: AdminEntitlementResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 요청 데이터',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '사용자 구독을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async adjustUserEntitlement(
     @Req() req: FastifyRequest,
@@ -454,24 +463,24 @@ export class AdminOperationsController {
   }
 
   @Get('users/:userId/pause-history')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '사용자 일시정지 이력 조회',
-    description: '특정 사용자의 모든 일시정지 이력을 조회합니다.'
+    description: '특정 사용자의 모든 일시정지 이력을 조회합니다.',
   })
-  @ApiParam({ 
-    name: 'userId', 
+  @ApiParam({
+    name: 'userId',
     description: '사용자 UUID',
-    example: '123e4567-e89b-12d3-a456-426614174000'
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '일시정지 이력 조회 성공',
-    type: AdminUserPauseHistoryResponseDto
+    type: AdminUserPauseHistoryResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '사용자를 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   async getUserPauseHistory(@Param('userId') userId: string) {
     try {
@@ -508,12 +517,12 @@ export class AdminOperationsController {
   // =================================================================
 
   // @Post('billing/process-due')
-  // @ApiOperation({ 
+  // @ApiOperation({
   //   summary: '정기결제 처리 테스트',
   //   description: '정기결제 스케줄러 상태를 확인합니다. (개발용)'
   // })
-  // @ApiResponse({ 
-  //   status: 200, 
+  // @ApiResponse({
+  //   status: 200,
   //   description: '정기결제 처리 테스트 성공',
   //   type: AdminBillingTestResponseDto
   // })
@@ -544,4 +553,112 @@ export class AdminOperationsController {
   //     this.handleError(error, '정기결제 처리 테스트');
   //   }
   // }
+
+  // =================================================================
+  // 구독 취소 관리 (Admin)
+  // =================================================================
+
+  /**
+   * 계약 이벤트 이력 조회
+   */
+  @Get('subscriptions/:contractId/events')
+  @ApiOperation({
+    summary: '계약 이벤트 이력 조회',
+    description: '특정 구독 계약의 모든 이벤트 이력을 조회합니다.',
+  })
+  @ApiParam({
+    name: 'contractId',
+    description: '구독 계약 ID',
+    type: 'string',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '이벤트 이력 조회 성공',
+    type: ContractEventsResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '계약을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async getContractEvents(@Param('contractId') contractId: string) {
+    try {
+      this.logger.log(`계약 이벤트 이력 조회 - contractId: ${contractId}`);
+
+      const events =
+        await this.contractEventService.getContractEvents(contractId);
+
+      this.logger.log(
+        `✅ 계약 이벤트 이력 조회 성공 - contractId: ${contractId}, events: ${events.length}`,
+      );
+
+      return {
+        contractId,
+        events,
+      };
+    } catch (error) {
+      this.handleError(error, '계약 이벤트 이력 조회');
+    }
+  }
+
+  /**
+   * 강제 구독 취소
+   */
+  @Post('subscriptions/:contractId/force-cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '강제 구독 취소 (어드민)',
+    description:
+      '정책을 무시하고 구독을 강제로 취소합니다. 환불 금액을 직접 지정할 수 있습니다.',
+  })
+  @ApiParam({
+    name: 'contractId',
+    description: '구독 계약 ID',
+    type: 'string',
+  })
+  @ApiBody({ type: ForceCancelSubscriptionRequestDto })
+  @ApiResponse({
+    status: 200,
+    description: '강제 취소 성공',
+    type: CancellationResultDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '계약을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청',
+    type: ErrorResponseDto,
+  })
+  async forceCancelSubscription(
+    @Param('contractId') contractId: string,
+    @Req() req: FastifyRequest,
+    @Body(new ZodValidationPipe(ForceCancelSubscriptionRequestSchema))
+    dto: ForceCancelSubscriptionRequest,
+  ) {
+    try {
+      const adminId = req.user?.userId || 'admin';
+
+      this.logger.log(
+        `강제 구독 취소 요청 - contractId: ${contractId}, adminId: ${adminId}, refundType: ${dto.refundType}`,
+      );
+
+      const result = await this.cancellationService.forceCancelSubscription(
+        contractId,
+        adminId,
+        dto.reason,
+        dto.refundType,
+        dto.refundAmount,
+        dto.adminNote,
+      );
+
+      this.logger.log(`✅ 강제 구독 취소 성공 - contractId: ${contractId}`);
+
+      return result;
+    } catch (error) {
+      this.handleError(error, '강제 구독 취소');
+    }
+  }
 }

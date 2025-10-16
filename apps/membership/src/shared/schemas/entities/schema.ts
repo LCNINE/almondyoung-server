@@ -10,6 +10,8 @@ import {
   jsonb,
   varchar,
   index,
+  primaryKey,
+  serial,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -112,27 +114,46 @@ export const plan = pgTable('plan', {
 /**
  * Subscription contracts - 계약 개념으로 명확화
  */
-export const subscriptionContracts = pgTable('subscription_contracts', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: varchar('user_id').notNull(), // users 테이블 참조
-  planId: uuid('plan_id')
-    .notNull()
-    .references(() => plan.id),
-  nextBillingDate: date('next_billing_date'),
-  leadDays: integer('lead_days').notNull().default(0),
-  isVoided: boolean('is_voided').notNull().default(false),
-  voidedAt: timestamp('voided_at', { withTimezone: true }),
-  reason: text('reason'),
-  // 정기결제 연동 필드 (최소한의 메타데이터)
-  lastPaymentIntentId: text('last_payment_intent_id'), // 마지막 결제 Intent ID
-  lastPaymentAttemptId: text('last_payment_attempt_id'), // 마지막 결제 Attempt ID
-  paymentProfileId: text('payment_profile_id'), // 저장된 결제 프로필 ID
-  isPastDue: boolean('is_past_due').notNull().default(false), // 연체 상태
-  billingRetryCount: integer('billing_retry_count').notNull().default(0), // 현재 재시도 횟수
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const subscriptionContracts = pgTable(
+  'subscription_contracts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: varchar('user_id').notNull(), // users 테이블 참조
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plan.id),
+    billingDate: date('billing_date').notNull(), // 첫 결제일 (30일 주기 기준점)
+    nextBillingDate: date('next_billing_date'),
+    leadDays: integer('lead_days').notNull().default(0),
+    isVoided: boolean('is_voided').notNull().default(false),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    reason: text('reason'),
+    // 정기결제 연동 필드 (최소한의 메타데이터)
+    lastPaymentIntentId: text('last_payment_intent_id'), // 마지막 결제 Intent ID
+    lastPaymentAttemptId: text('last_payment_attempt_id'), // 마지막 결제 Attempt ID
+    paymentProfileId: text('payment_profile_id'), // 저장된 결제 프로필 ID
+    isPastDue: boolean('is_past_due').notNull().default(false), // 연체 상태
+    billingRetryCount: integer('billing_retry_count').notNull().default(0), // 현재 재시도 횟수
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    // 취소 및 환불 관련 필드
+    status: text('status').notNull().default('ACTIVE'), // 'ACTIVE', 'CANCELLED', 'EXPIRED'
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancellationReasonCode: text('cancellation_reason_code'),
+    refundRequested: boolean('refund_requested').notNull().default(false),
+    refundRequestedAt: timestamp('refund_requested_at', { withTimezone: true }),
+    eligibleRefundAmount: integer('eligible_refund_amount'),
+    refundCompleted: boolean('refund_completed').notNull().default(false),
+    refundCompletedAt: timestamp('refund_completed_at', { withTimezone: true }),
+    walletReferenceId: text('wallet_reference_id'),
+    lastEventId: integer('last_event_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('idx_subscription_billing_date').on(table.billingDate)],
+);
 
 /**
  * Subscription entitlement - 권한 개념으로 명확화
@@ -167,6 +188,50 @@ export const eventBatches = pgTable('event_batches', {
     .defaultNow()
     .notNull(),
 });
+
+/**
+ * Cancellation reasons - 취소 이유 마스터 테이블
+ */
+export const cancellationReasons = pgTable('cancellation_reasons', {
+  code: text('code').primaryKey(),
+  displayText: text('display_text').notNull(),
+  category: text('category').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/**
+ * Subscription contract events - 이벤트 소싱 패턴
+ */
+export const subscriptionContractEvents = pgTable(
+  'subscription_contract_events',
+  {
+    id: serial('id').primaryKey(),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => subscriptionContracts.id),
+    eventType: text('event_type').notNull(),
+    userId: varchar('user_id').notNull(),
+    metadata: jsonb('metadata').notNull(),
+    batchId: uuid('batch_id').references(() => eventBatches.id),
+    causedBy: text('caused_by').notNull(),
+    causedByUserId: text('caused_by_user_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_contract_events_contract_id').on(table.contractId),
+    index('idx_contract_events_user_id').on(table.userId),
+    index('idx_contract_events_type').on(table.eventType),
+  ],
+);
 
 /**
  * Pause events - 일시정지 이벤트 (CTO 스타일)
@@ -406,6 +471,91 @@ export const subscriptionPolicies = pgTable('subscription_policies', {
     .notNull(),
 });
 
+// =================================================================
+// 멤버십 혜택 추적 (Membership Benefits Tracking)
+// =================================================================
+
+/**
+ * 주기별 혜택 집계 테이블 - 30일 주기 단위 총 절약 금액
+ */
+export const membershipCycleBenefits = pgTable(
+  'membership_cycle_benefits',
+  {
+    userId: varchar('user_id').notNull(),
+    cycleStartDate: date('cycle_start_date').notNull(),
+    cycleEndDate: date('cycle_end_date').notNull(),
+    totalDiscountAmount: integer('total_discount_amount').notNull().default(0),
+    orderCount: integer('order_count').notNull().default(0),
+    subscriptionId: varchar('subscription_id').notNull(),
+    cycleNumber: integer('cycle_number').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.cycleStartDate] }),
+    subscriptionIdx: index('idx_cycle_subscription').on(table.subscriptionId),
+    endDateIdx: index('idx_cycle_end_date').on(table.cycleEndDate),
+  }),
+);
+
+/**
+ * 주문별 할인 이벤트 테이블 - 멱등성 보장 및 취소 처리
+ */
+export const membershipDiscountEvents = pgTable(
+  'membership_discount_events',
+  {
+    orderId: varchar('order_id', { length: 100 }).primaryKey(),
+    userId: varchar('user_id').notNull(),
+    discountAmount: integer('discount_amount').notNull(),
+    tierId: uuid('tier_id').notNull(),
+    cycleStartDate: date('cycle_start_date').notNull(),
+    subscriptionId: varchar('subscription_id').notNull(),
+    orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
+    isCancelled: boolean('is_cancelled').notNull().default(false),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    userCycleIdx: index('idx_events_user_cycle').on(
+      table.userId,
+      table.cycleStartDate,
+    ),
+    subscriptionIdx: index('idx_events_subscription').on(table.subscriptionId),
+    cancelledIdx: index('idx_events_cancelled').on(table.isCancelled),
+  }),
+);
+
+// Relations for Benefits Tracking
+export const membershipCycleBenefitsRelations = relations(
+  membershipCycleBenefits,
+  ({ one }) => ({
+    subscription: one(subscriptionContracts, {
+      fields: [membershipCycleBenefits.subscriptionId],
+      references: [subscriptionContracts.id],
+    }),
+  }),
+);
+
+export const membershipDiscountEventsRelations = relations(
+  membershipDiscountEvents,
+  ({ one }) => ({
+    subscription: one(subscriptionContracts, {
+      fields: [membershipDiscountEvents.subscriptionId],
+      references: [subscriptionContracts.id],
+    }),
+    tier: one(tiers, {
+      fields: [membershipDiscountEvents.tierId],
+      references: [tiers.id],
+    }),
+  }),
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -418,12 +568,16 @@ export const membershipSchema = {
   subscriptionContracts,
   subscriptionEntitlement,
   eventBatches,
+  cancellationReasons,
+  subscriptionContractEvents,
   pauseEvents,
   pauseEventDetails,
   membershipDunningQueue,
   billingEvents,
   subscriptionPolicies,
-  
+  membershipCycleBenefits,
+  membershipDiscountEvents,
+
   // Relations
   tiersRelations,
   planRelations,
@@ -434,6 +588,8 @@ export const membershipSchema = {
   pauseEventDetailsRelations,
   membershipDunningQueueRelations,
   billingEventsRelations,
+  membershipCycleBenefitsRelations,
+  membershipDiscountEventsRelations,
 } as const;
 
 export type MembershipSchema = typeof membershipSchema;
