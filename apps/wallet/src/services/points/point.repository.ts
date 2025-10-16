@@ -14,7 +14,7 @@ type DbTx = Parameters<
 >[0];
 
 export interface AddPointsParams {
-  partnerId: number;
+  partnerId: string; // UUIDv7 (customerId와 동일)
   amount: number; // +정수
   reason?: string;
   orderId?: string;
@@ -24,14 +24,14 @@ export interface AddPointsParams {
 }
 
 export interface RedeemParams {
-  partnerId: number;
+  partnerId: string; // UUIDv7 (customerId와 동일)
   amount: number; // -로 반영되지만 입력은 양수 (필수)
   reason?: string;
   memo?: string;
 }
 
 export interface CancelPointsParams {
-  partnerId: number;
+  partnerId: string; // UUIDv7 (customerId와 동일)
   eventIdToCancel: number; // 원본 EARN point_events.id
   cancelAmount?: number; // 없으면 잔여 전량 취소
   reason?: string;
@@ -51,7 +51,7 @@ export class PointRepository {
   }
 
   /** 파트너 총 잔액 (모든 포인트 합) */
-  async getBalance(partnerId: number): Promise<number> {
+  async getBalance(partnerId: string): Promise<number> {
     const [{ sum }] = await this.db.db.execute<{ sum: number }>(
       sql`SELECT COALESCE(SUM(${schema.pointEvents.amount}), 0) AS sum
           FROM ${schema.pointEvents}
@@ -62,7 +62,7 @@ export class PointRepository {
 
   /** 출금 가능 잔액 (출금 가능일 도달/정책 반영은 서비스단에서 파라미터로 제어해도 됨) */
   async getWithdrawable(
-    partnerId: number,
+    partnerId: string,
     now: Date = new Date(),
   ): Promise<number> {
     const [{ sum }] = await this.db.db.execute<{ sum: number }>(
@@ -88,7 +88,9 @@ export class PointRepository {
           partnerId: p.partnerId,
           eventType: 'EARN',
           amount: p.amount, // +정수
-          expiresAt: p.expiresAt ?? new Date(8640000000000000), // 기본: 아주 먼 미래(자사 정책으로 조정)
+          expiresAt:
+            p.expiresAt ??
+            new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000), // 기본: 10년 후
           withdrawalAvailableAt: p.withdrawalAvailableAt ?? new Date(), // 기본: 즉시
           reason: p.reason ?? null,
           memo: p.memo ?? null,

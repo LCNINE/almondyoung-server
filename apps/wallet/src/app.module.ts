@@ -6,13 +6,19 @@ import { EventsModule } from '@app/events';
 import { PaymentController } from './controllers/payment.controller';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
-import { PaymentIntentService } from './services/intents/intent.service';
-import { IntentRepository } from './services/intents/intent.repository';
+import { IntentService } from './services/intents/intent.service';
+import { IntentReader } from './services/intents/intent.reader';
+import { IntentCreator } from './services/intents/intent.creator';
 import { IntentManager } from './services/intents/intent.manager';
+import { IntentRepository } from './services/intents/intent.repository';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
 
 import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
+import { PaymentReader } from './services/payment/payment.reader';
+import { PaymentManager } from './services/payment/payment.manager';
+import { PaymentPointManager } from './services/payment/payment-point.manager';
+import { PaymentProviderManager } from './services/payment/payment-provider.manager';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
 import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
 import { BnplRepository } from './services/bnpl/bnpl.repository';
@@ -41,12 +47,11 @@ import { BnplService } from './services/bnpl/bnpl.service';
 import { BnplAccountReader } from './services/bnpl/bnpl-account.reader';
 import { BnplAccountCreator } from './services/bnpl/bnpl-account.creator';
 import { BnplCreditManager } from './services/bnpl/bnpl-credit.manager';
-import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 import { RefundService } from './services/refund.service';
 import { PointService } from './services/points/point.service';
+import { PointReader } from './services/points/point.reader';
+import { PointManager } from './services/points/point.manager';
 import { PointRepository } from './services/points/point.repository';
-import { PaymentOrchestratorServiceImpl } from './services/payment/payment-orchestrator.service';
-import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.service';
 
 @Module({
   imports: [
@@ -71,38 +76,42 @@ import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.
   ],
   providers: [
     PaymentService,
-    PaymentIntentService,
+    IntentService,
     PaymentProfileService,
     TaxInvoiceService,
     BnplService,
     BnplSettlementService,
-    BnplBillingScheduler,
     RefundService,
 
-    // --- 포인트 시스템 ---
+    // --- Point 도메인 ---
     PointService,
+    PointReader,
+    PointManager,
     PointRepository,
-    PaymentOrchestratorServiceImpl,
-    PaymentExecutorServiceImpl,
 
     IdempotencyService,
 
-    // --- Implement Layer (Manager - Repository 캡슐화) ---
+    // --- Intent Implementation Layer ---
+    IntentReader,
+    IntentCreator,
     IntentManager,
+    IntentRepository,
 
+    // --- Payment Implementation Layer ---
+    PaymentReader,
+    PaymentManager,
+    PaymentPointManager,
+    PaymentProviderManager,
+    PaymentAttemptRepository,
     PaymentRequestBuilder,
 
-    // --- Implementation Layer ---
+    // --- BNPL Implementation Layer ---
     BnplAccountReader,
     BnplAccountCreator,
     BnplCreditManager,
     BnplBatchCreator,
     BnplCmsManager,
     BnplRetryManager,
-
-    // --- Data Access Layer (Repository) ---
-    IntentRepository,
-    PaymentAttemptRepository,
     BnplRepository,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
