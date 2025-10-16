@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DbModule, DbService } from '@app/db';
 import { SubscriptionCancellationService } from '../../src/services/subscription-cancellation.service';
-import { ContractEventService } from '../../src/services/contract-event.service';
+import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { CancellationReasonReader } from '../../src/services/subscription/cancellation-reason.reader';
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
 import {
@@ -19,7 +19,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 describe('Subscription Cancellation Integration Tests', () => {
   let cancellationService: SubscriptionCancellationService;
-  let contractEventService: ContractEventService;
+  let contractEventManager: ContractEventManager;
   let cancellationReasonReader: CancellationReasonReader;
   let refundEventHandler: RefundEventHandler;
   let dbService: DbService<MembershipSchema>;
@@ -47,7 +47,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       ],
       providers: [
         SubscriptionCancellationService,
-        ContractEventService,
+        ContractEventManager,
         CancellationReasonReader,
         RefundEventHandler,
       ],
@@ -56,8 +56,8 @@ describe('Subscription Cancellation Integration Tests', () => {
     cancellationService = module.get<SubscriptionCancellationService>(
       SubscriptionCancellationService,
     );
-    contractEventService =
-      module.get<ContractEventService>(ContractEventService);
+    contractEventManager =
+      module.get<ContractEventManager>(ContractEventManager);
     cancellationReasonReader = module.get<CancellationReasonReader>(
       CancellationReasonReader,
     );
@@ -192,7 +192,7 @@ describe('Subscription Cancellation Integration Tests', () => {
     it('✅ 계약 이벤트 조회', async () => {
       // 이벤트 추가
       await dbService.db.transaction(async (tx) => {
-        await contractEventService.addEvent(
+        await contractEventManager.addEvent(
           tx,
           testContractId,
           'CREATED',
@@ -203,7 +203,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       });
 
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
 
       expect(events).toHaveLength(1);
       expect(events[0].eventType).toBe('CREATED');
@@ -235,7 +235,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 이벤트 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
       expect(events.length).toBeGreaterThanOrEqual(2); // CANCELLED, REFUND_REQUESTED
       expect(events.some((e) => e.eventType === 'CANCELLED')).toBe(true);
       expect(events.some((e) => e.eventType === 'REFUND_REQUESTED')).toBe(true);
@@ -290,7 +290,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 이벤트 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
       const cancelEvent = events.find((e) => e.eventType === 'CANCELLED');
       expect(cancelEvent?.metadata).toMatchObject({
         isForced: true,
@@ -361,7 +361,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 이벤트 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
       expect(events.some((e) => e.eventType === 'REFUND_COMPLETED')).toBe(true);
     });
 
@@ -382,7 +382,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 이벤트가 중복 생성되지 않았는지 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
       const refundCompletedEvents = events.filter(
         (e) => e.eventType === 'REFUND_COMPLETED',
       );
@@ -398,7 +398,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 이벤트 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
       const failEvent = events.find((e) => e.eventType === 'REFUND_FAILED');
       expect(failEvent).toBeDefined();
       expect(failEvent?.metadata).toMatchObject({
@@ -435,7 +435,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 전체 이벤트 확인
       const events =
-        await contractEventService.getContractEvents(testContractId);
+        await contractEventManager.getContractEvents(testContractId);
 
       expect(events.length).toBeGreaterThanOrEqual(3);
       expect(events.some((e) => e.eventType === 'CANCELLED')).toBe(true);
