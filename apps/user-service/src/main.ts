@@ -25,7 +25,7 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
-  const port = configService.get('USER_SERVICE_URL') || 3030;
+  const port = configService.get('USER_SERVICE_PORT') || 3030;
 
   const corsOrigins =
     process.env.NODE_ENV === 'production'
