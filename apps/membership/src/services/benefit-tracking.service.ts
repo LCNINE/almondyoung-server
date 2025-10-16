@@ -1,30 +1,37 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { eq, and, sql, desc } from 'drizzle-orm';
-import { DbService } from '@app/db';
 import { SubscriptionService } from './subscription.service';
-import * as schema from '../shared/schemas/entities/schema';
-import { membershipSchema } from '../shared/schemas/entities/schema';
-import {
-  calculateCycleStart,
-  calculateCycleEnd,
-  calculateCycleNumber,
-  formatDate,
-  isCycleCompleted,
-} from '../utils/cycle.utils';
-import { differenceInDays, addDays } from 'date-fns';
+import { BenefitReader } from './benefit/benefit.reader';
+import { BenefitManager } from './benefit/benefit.manager';
 import { RecordDiscountDto } from '../shared/dto/benefit-tracking.dto';
 
+// 하위 호환성을 위한 타입 export
+export type {
+  CurrentCycleBenefit,
+  CycleBenefitHistory,
+} from './benefit/benefit.reader';
+
+/**
+ * 혜택 추적 서비스 (Business Layer)
+ *
+ * 역할: 비즈니스 흐름만 표현 (2-3줄)
+ * - 검증 로직 없음 (Manager가 담당)
+ * - 상세 구현 없음 (Manager가 담당)
+ * - 협력 도구 클래스들을 중계
+ */
 @Injectable()
 export class BenefitTrackingService {
   private readonly logger = new Logger(BenefitTrackingService.name);
 
   constructor(
-    private readonly db: DbService<typeof membershipSchema>,
     private readonly subscriptionService: SubscriptionService,
+    private readonly benefitReader: BenefitReader,
+    private readonly benefitManager: BenefitManager,
   ) {}
 
   /**
    * 주문 완료 시 혜택 기록 (외부 시스템에서 호출)
+   *
+   * ✅ 흐름만 표현: "구독 조회 → 혜택 기록"
    */
   async recordDiscount(dto: RecordDiscountDto): Promise<void> {
     const subscription = await this.subscriptionService.getActiveSubscription(
@@ -39,124 +46,37 @@ export class BenefitTrackingService {
       return;
     }
 
-    const orderDate = new Date(dto.orderDate);
-    const billingDate = subscription.billingDate;
-
-    const cycleStartDate = calculateCycleStart(billingDate, orderDate);
-    const cycleEndDate = calculateCycleEnd(cycleStartDate);
-    const cycleNumber = calculateCycleNumber(billingDate, cycleStartDate);
-
-    await this.db.db.transaction(async (tx) => {
-      // 멱등성 체크: onConflictDoNothing으로 중복 시 무시
-      const insertResult = await tx
-        .insert(schema.membershipDiscountEvents)
-        .values({
-          orderId: dto.orderId,
-          userId: dto.userId,
-          discountAmount: dto.membershipDiscountAmount,
-          tierId: dto.tierId,
-          cycleStartDate: formatDate(cycleStartDate),
-          subscriptionId: subscription.id,
-          orderDate: new Date(dto.orderDate),
-          isCancelled: false,
-        })
-        .onConflictDoNothing()
-        .returning();
-
-      // 중복 키로 인해 아무것도 삽입되지 않은 경우
-      if (insertResult.length === 0) {
-        this.logger.log('Duplicate order, skipping', {
-          orderId: dto.orderId,
-        });
-        return;
-      }
-
-      // UPSERT: 첫 주문이면 INSERT, 아니면 UPDATE
-      await tx
-        .insert(schema.membershipCycleBenefits)
-        .values({
-          userId: dto.userId,
-          cycleStartDate: formatDate(cycleStartDate),
-          cycleEndDate: formatDate(cycleEndDate),
-          totalDiscountAmount: dto.membershipDiscountAmount,
-          orderCount: 1,
-          subscriptionId: subscription.id,
-          cycleNumber,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.membershipCycleBenefits.userId,
-            schema.membershipCycleBenefits.cycleStartDate,
-          ],
-          set: {
-            totalDiscountAmount: sql`${schema.membershipCycleBenefits.totalDiscountAmount} + ${dto.membershipDiscountAmount}`,
-            orderCount: sql`${schema.membershipCycleBenefits.orderCount} + 1`,
-            updatedAt: new Date(),
-          },
-        });
-    });
-
-    this.logger.log('Discount recorded', {
+    await this.benefitManager.recordDiscount({
       orderId: dto.orderId,
-      cycleStartDate: formatDate(cycleStartDate),
-      amount: dto.membershipDiscountAmount,
+      userId: dto.userId,
+      membershipDiscountAmount: dto.membershipDiscountAmount,
+      tierId: dto.tierId,
+      orderDate: dto.orderDate,
+      subscriptionId: subscription.id,
+      billingDate: subscription.billingDate,
     });
   }
 
   /**
    * 주문 취소 시 혜택 차감 (외부 시스템에서 호출)
+   *
+   * ✅ 흐름만 표현: "이벤트 조회 → 혜택 취소"
    */
   async cancelDiscount(orderId: string): Promise<void> {
-    await this.db.db.transaction(async (tx) => {
-      const events = await tx
-        .select()
-        .from(schema.membershipDiscountEvents)
-        .where(eq(schema.membershipDiscountEvents.orderId, orderId))
-        .limit(1);
+    const event = await this.benefitReader.findDiscountEventByOrderId(orderId);
 
-      if (!events.length) {
-        this.logger.error('Event not found', { orderId });
-        throw new Error('DISCOUNT_EVENT_NOT_FOUND');
-      }
+    if (!event) {
+      this.logger.error('Event not found', { orderId });
+      throw new Error('DISCOUNT_EVENT_NOT_FOUND');
+    }
 
-      const event = events[0];
-
-      if (event.isCancelled) {
-        this.logger.log('Already cancelled', { orderId });
-        return;
-      }
-
-      await tx
-        .update(schema.membershipDiscountEvents)
-        .set({
-          isCancelled: true,
-          cancelledAt: new Date(),
-        })
-        .where(eq(schema.membershipDiscountEvents.orderId, orderId));
-
-      await tx
-        .update(schema.membershipCycleBenefits)
-        .set({
-          totalDiscountAmount: sql`${schema.membershipCycleBenefits.totalDiscountAmount} - ${event.discountAmount}`,
-          orderCount: sql`${schema.membershipCycleBenefits.orderCount} - 1`,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.membershipCycleBenefits.userId, event.userId),
-            eq(
-              schema.membershipCycleBenefits.cycleStartDate,
-              event.cycleStartDate,
-            ),
-          ),
-        );
-    });
-
-    this.logger.log('Discount cancelled', { orderId });
+    await this.benefitManager.cancelDiscount(orderId, event);
   }
 
   /**
    * 현재 주기 혜택 조회
+   *
+   * ✅ 흐름만 표현: "구독 조회 → 혜택 조회"
    */
   async getCurrentCycleBenefit(userId: string) {
     const subscription =
@@ -166,85 +86,19 @@ export class BenefitTrackingService {
       throw new Error('NO_ACTIVE_SUBSCRIPTION');
     }
 
-    const now = new Date();
-    const billingDate = subscription.billingDate;
-    const cycleStartDate = calculateCycleStart(billingDate, now);
-    const cycleEndDate = calculateCycleEnd(cycleStartDate);
-
-    const benefits = await this.db.db
-      .select()
-      .from(schema.membershipCycleBenefits)
-      .where(
-        and(
-          eq(schema.membershipCycleBenefits.userId, userId),
-          eq(
-            schema.membershipCycleBenefits.cycleStartDate,
-            formatDate(cycleStartDate),
-          ),
-        ),
-      )
-      .limit(1);
-
-    // row 없으면 0원 반환
-    if (!benefits.length) {
-      return {
-        userId,
-        cycleStartDate: formatDate(cycleStartDate),
-        cycleEndDate: formatDate(cycleEndDate),
-        totalDiscountAmount: 0,
-        orderCount: 0,
-        daysRemaining: differenceInDays(cycleEndDate, now),
-        daysElapsed: differenceInDays(now, cycleStartDate),
-        subscriptionType: subscription.type,
-        nextCycleStartDate: formatDate(addDays(cycleStartDate, 30)),
-      };
-    }
-
-    const benefit = benefits[0];
-    const endDate = new Date(benefit.cycleEndDate);
-
-    return {
-      userId: benefit.userId,
-      cycleStartDate: benefit.cycleStartDate,
-      cycleEndDate: benefit.cycleEndDate,
-      totalDiscountAmount: benefit.totalDiscountAmount,
-      orderCount: benefit.orderCount,
-      daysRemaining: differenceInDays(endDate, now),
-      daysElapsed: differenceInDays(now, cycleStartDate),
-      subscriptionType: subscription.type,
-      nextCycleStartDate: formatDate(addDays(cycleStartDate, 30)),
-    };
+    return this.benefitReader.findCurrentCycleBenefit(
+      userId,
+      subscription.billingDate,
+      subscription.type,
+    );
   }
 
   /**
    * 주기별 혜택 이력 조회
+   *
+   * ✅ 흐름만 표현: "이력 조회"
    */
   async getCycleBenefitHistory(userId: string, limit: number = 12) {
-    const benefits = await this.db.db
-      .select()
-      .from(schema.membershipCycleBenefits)
-      .where(eq(schema.membershipCycleBenefits.userId, userId))
-      .orderBy(desc(schema.membershipCycleBenefits.cycleStartDate))
-      .limit(limit);
-
-    const cycles = benefits.map((b) => ({
-      cycleStartDate: b.cycleStartDate,
-      cycleEndDate: b.cycleEndDate,
-      totalDiscountAmount: b.totalDiscountAmount,
-      orderCount: b.orderCount,
-      isCompleted: isCycleCompleted(new Date(b.cycleEndDate)),
-    }));
-
-    const totalDiscountAllTime = benefits.reduce(
-      (sum, b) => sum + b.totalDiscountAmount,
-      0,
-    );
-
-    return {
-      userId,
-      cycles,
-      totalCycles: benefits.length,
-      totalDiscountAllTime,
-    };
+    return this.benefitReader.findCycleBenefitHistory(userId, limit);
   }
 }
