@@ -45,7 +45,10 @@ export class PaymentAttemptRepository {
       amount: request.amount,
       status: result.success ? status : 'FAILED',
       transactionId: result.transactionId ?? null,
-      eventContext: JSON.stringify(request.metadata),
+      requestMetadata: request.metadata
+        ? JSON.stringify(request.metadata)
+        : null,
+      providerResponseSnapshot: result.raw ? JSON.stringify(result.raw) : null,
     });
 
     this.logger.log(
@@ -90,10 +93,96 @@ export class PaymentAttemptRepository {
         status,
         updatedAt: new Date(),
         transactionId: result.transactionId ?? undefined,
+        providerResponseSnapshot: result.raw
+          ? JSON.stringify(result.raw)
+          : undefined,
       })
       .where(eq(schema.paymentAttempts.id, attemptId));
 
     this.logger.log(`Attempt ${attemptId} status updated to ${status}`);
+  }
+
+  /**
+   * 여러 Attempt의 상태를 일괄 업데이트합니다.
+   */
+  async updateStatusBatch(
+    attemptIds: string[],
+    status: string,
+    tx?: any,
+  ): Promise<void> {
+    if (attemptIds.length === 0) return;
+
+    const executor = tx ?? this.db.db;
+
+    await executor
+      .update(schema.paymentAttempts)
+      .set({
+        status,
+        updatedAt: new Date(),
+      })
+      .where(inArray(schema.paymentAttempts.id, attemptIds));
+
+    this.logger.log(
+      `Batch updated ${attemptIds.length} attempts to status ${status}`,
+    );
+  }
+
+  /**
+   * Provider별 에러 메시지를 추출합니다.
+   * providerResponseSnapshot에서 에러 정보를 파싱합니다.
+   */
+  getErrorMessage(attempt: PaymentAttempt): string | null {
+    if (!attempt.providerResponseSnapshot) {
+      return null;
+    }
+
+    try {
+      const response =
+        typeof attempt.providerResponseSnapshot === 'string'
+          ? JSON.parse(attempt.providerResponseSnapshot)
+          : attempt.providerResponseSnapshot;
+
+      // Provider별 에러 메시지 추출
+      switch (attempt.provider) {
+        case 'HMS_CARD':
+          // HMS 카드 응답 형식: payment.result.message
+          return (
+            response?.payment?.result?.message ||
+            response?.errorMessage ||
+            response?.message ||
+            null
+          );
+
+        case 'HMS_BNPL':
+          // HMS BNPL 응답 형식: message 또는 errorMessage
+          return response?.message || response?.errorMessage || null;
+
+        case 'TOSS':
+        case 'KAKAOPAY':
+          // Toss/Kakao 응답 형식: message 또는 code
+          return response?.message || `Error code: ${response?.code}` || null;
+
+        case 'POINTS':
+          // 포인트 시스템 에러
+          return response?.error || response?.message || null;
+
+        default:
+          // 일반적인 에러 형식 fallback
+          if (response.errorMessage) return response.errorMessage;
+          if (response.message) return response.message;
+          if (response.error) {
+            return typeof response.error === 'string'
+              ? response.error
+              : response.error.message || JSON.stringify(response.error);
+          }
+          return null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to parse providerResponseSnapshot for attempt ${attempt.id}: ${error}`,
+      );
+      return null;
+    }
   }
 
   /**
