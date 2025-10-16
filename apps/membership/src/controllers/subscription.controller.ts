@@ -24,7 +24,7 @@ import {
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
-import { CancellationReasonService } from '../services/cancellation-reason.service';
+import { CancellationReasonReader } from '../services/subscription/cancellation-reason.reader';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
   CreateSubscriptionRequestSchema,
@@ -66,7 +66,7 @@ export class SubscriptionController {
   constructor(
     private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
-    private readonly cancellationReasonService: CancellationReasonService,
+    private readonly cancellationReasonReader: CancellationReasonReader,
   ) {}
 
   /**
@@ -319,7 +319,7 @@ export class SubscriptionController {
     type: CancellationReasonsResponseDto,
   })
   async getCancellationReasons() {
-    const reasons = await this.cancellationReasonService.getActiveReasons();
+    const reasons = await this.cancellationReasonReader.findActiveReasons();
     return {
       reasons,
     };
