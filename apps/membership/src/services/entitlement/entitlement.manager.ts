@@ -189,7 +189,7 @@ export class EntitlementManager {
   }
 
   /**
-   * 활성 권한 종료
+   * 활성 권한 종료 (public - 다른 Manager에서 사용)
    */
   async terminateActiveEntitlement(
     tx: DrizzleTransaction,
