@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionCancellationService } from '../subscription-cancellation.service';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
-import { ContractEventService } from '../contract-event.service';
+import { ContractEventManager } from '../subscription/contract-event.manager';
 import { EntitlementService } from '../entitlement.service';
 import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from '../subscription/subscription-cancellation.manager';
@@ -26,7 +26,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     },
   };
 
-  const mockContractEventService = {
+  const mockContractEventManager = {
     addEvent: jest.fn().mockResolvedValue({ id: 1 }),
   };
 
@@ -55,8 +55,8 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
           useValue: mockDbService,
         },
         {
-          provide: ContractEventService,
-          useValue: mockContractEventService,
+          provide: ContractEventManager,
+          useValue: mockContractEventManager,
         },
         {
           provide: EntitlementService,
