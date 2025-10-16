@@ -625,7 +625,7 @@ export const pointEvents = pgTable(
   'point_events',
   {
     id: serial('id').primaryKey(), // Supabase는 serial 사용
-    partnerId: integer('partner_id').notNull(), // partner 테이블 참조
+    partnerId: varchar('partner_id', { length: 36 }).notNull(), // UUIDv7 (customerId와 동일)
     eventType: pointActionEnum('event_type').notNull(), // "Point Action" enum
     amount: integer('amount').notNull(),
 
@@ -665,7 +665,7 @@ export const pointEventDetails = pgTable(
     pointEventId: integer('point_event_id')
       .notNull()
       .references(() => pointEvents.id),
-    partnerId: integer('partner_id').notNull(), // partner_id 중복 저장 (성능)
+    partnerId: varchar('partner_id', { length: 36 }).notNull(), // UUIDv7 (customerId와 동일)
     eventType: pointActionEnum('event_type').notNull(), // event_type 중복 저장
     amount: integer('amount').notNull(),
 

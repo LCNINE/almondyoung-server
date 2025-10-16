@@ -13,7 +13,7 @@ import {
   Logger, // ✨ 바로 이 부분이 @nestjs/common에서 온 것인지가 중요합니다.
 } from '@nestjs/common';
 import { PaymentService } from '../services/payment.service';
-import { PaymentIntentService } from '../services/intents/intent.service';
+import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplService } from '../services/bnpl/bnpl.service';
 
@@ -81,7 +81,7 @@ export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
   constructor(
     private readonly paymentService: PaymentService,
-    private readonly intentService: PaymentIntentService,
+    private readonly intentService: IntentService,
     private readonly profileService: PaymentProfileService,
     private readonly bnplService: BnplService,
     private readonly db: DbService<typeof walletSchema>,
@@ -216,7 +216,7 @@ export class PaymentController {
     try {
       this.logger.log(`Intent 조회 요청: ${intentId}`);
 
-      const intent = await this.intentService.findIntentById(intentId);
+      const intent = await this.intentService.findById(intentId);
 
       if (!intent) {
         throw new HttpException(
@@ -312,7 +312,7 @@ export class PaymentController {
         `결제 승인 요청: Intent ${intentId}, Provider ${dto.provider || '포인트 전액'}`,
       );
 
-      const intent = await this.intentService.findIntentById(intentId);
+      const intent = await this.intentService.findById(intentId);
       if (!intent) {
         throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
       }

@@ -3,19 +3,16 @@ import { DbService } from '@app/db';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
-import type { PaymentIntent } from '../../shared/database/types';
-import {
-  assertIntentIsPending,
-  assertIntentIsNotExpired,
-} from './intent.assets';
+import type {
+  PaymentIntent,
+  NewPaymentIntent,
+} from '../../shared/database/types';
+import type { WalletExecutor } from '../../shared/database';
 
 /**
- * IntentRepository
+ * IntentRepository (Data Access Layer)
  *
- * 책임:
- * - Intent 조회
- * - Intent 상태 업데이트
- * - Intent 검증 (상태, 만료)
+ * 책임: Intent 데이터 접근 (순수 DB 접근만)
  */
 @Injectable()
 export class IntentRepository {
@@ -23,75 +20,47 @@ export class IntentRepository {
 
   constructor(private readonly db: DbService<typeof walletSchema>) {}
 
-  /**
-   * Intent를 조회하고 기본 검증을 수행합니다.
-   */
-  async findById(intentId: string): Promise<PaymentIntent | undefined> {
-    return this.db.db.query.paymentIntents.findFirst({
+  async findById(intentId: string): Promise<PaymentIntent | null> {
+    const intent = await this.db.db.query.paymentIntents.findFirst({
       where: eq(schema.paymentIntents.id, intentId),
     });
+    return intent ?? null;
   }
 
-  /**
-   * Intent를 조회하고 존재하지 않으면 에러를 던집니다.
-   */
-  async findByIdOrFail(intentId: string): Promise<PaymentIntent> {
-    const intent = await this.findById(intentId);
-    if (!intent) {
-      throw new Error(`Intent not found: ${intentId}`);
-    }
-    return intent;
+  async create(
+    data: NewPaymentIntent,
+    tx?: WalletExecutor,
+  ): Promise<PaymentIntent> {
+    const executor = tx || this.db.db;
+    const [created] = await executor
+      .insert(schema.paymentIntents)
+      .values(data)
+      .returning();
+
+    this.logger.log(`Intent created: ${created.id}`);
+    return created;
   }
 
-  /**
-   * Intent를 조회하고 결제 가능한 상태인지 검증합니다.
-   * - 존재 여부
-   * - PENDING 상태 확인
-   * - 만료 여부 확인
-   */
-  async findAndValidateForPayment(intentId: string): Promise<PaymentIntent> {
-    const intent = await this.findByIdOrFail(intentId);
-
-    // 상태 및 만료 검증 (Assert 함수 사용)
-    assertIntentIsPending(intent);
-    assertIntentIsNotExpired(intent);
-
-    return intent;
-  }
-
-  /**
-   * Intent 상태를 업데이트합니다.
-   */
   async updateStatus(
     intentId: string,
     status: string,
-    tx?: any,
+    tx?: WalletExecutor,
   ): Promise<void> {
-    const executor = tx ?? this.db.db;
-
+    const executor = tx || this.db.db;
     await executor
       .update(schema.paymentIntents)
-      .set({
-        status: status as any,
-        updatedAt: new Date(),
-      })
+      .set({ status: status as any, updatedAt: new Date() })
       .where(eq(schema.paymentIntents.id, intentId));
-
-    this.logger.log(`Intent ${intentId} status updated to ${status}`);
   }
 
-  /**
-   * Intent에 할인 정보를 업데이트합니다.
-   */
   async updateDiscounts(
     intentId: string,
     discounts: any[],
-    discountsTotal: string,
-    finalAmount: string,
-    tx?: any,
+    discountsTotal: number,
+    finalAmount: number,
+    tx?: WalletExecutor,
   ): Promise<void> {
-    const executor = tx ?? this.db.db;
-
+    const executor = tx || this.db.db;
     await executor
       .update(schema.paymentIntents)
       .set({
@@ -101,16 +70,10 @@ export class IntentRepository {
         updatedAt: new Date(),
       })
       .where(eq(schema.paymentIntents.id, intentId));
-
-    this.logger.log(`Intent ${intentId} discounts updated`);
   }
 
-  /**
-   * Intent를 CAPTURED 상태로 업데이트합니다.
-   */
-  async markAsCaptured(intentId: string, tx?: any): Promise<void> {
-    const executor = tx ?? this.db.db;
-
+  async markAsCaptured(intentId: string, tx?: WalletExecutor): Promise<void> {
+    const executor = tx || this.db.db;
     await executor
       .update(schema.paymentIntents)
       .set({
@@ -120,23 +83,12 @@ export class IntentRepository {
         updatedAt: new Date(),
       })
       .where(eq(schema.paymentIntents.id, intentId));
-
-    this.logger.log(`Intent ${intentId} marked as CAPTURED`);
   }
 
-  /**
-   * Intent를 UNKNOWN 상태로 업데이트합니다.
-   * (외부 결제는 성공했지만 내부 처리 중 에러 발생 시)
-   */
   async markAsUnknown(intentId: string): Promise<void> {
     await this.db.db
       .update(schema.paymentIntents)
-      .set({
-        status: 'UNKNOWN' as any,
-        updatedAt: new Date(),
-      })
+      .set({ status: 'UNKNOWN' as any, updatedAt: new Date() })
       .where(eq(schema.paymentIntents.id, intentId));
-
-    this.logger.warn(`Intent ${intentId} marked as UNKNOWN for recovery`);
   }
 }

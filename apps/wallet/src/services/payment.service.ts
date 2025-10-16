@@ -1,4 +1,6 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
+import { walletSchema } from '../shared/database/schema';
 import {
   PaymentResult,
   RefundResult,
@@ -11,40 +13,46 @@ import {
 } from '../providers/payment-provider.interface';
 import { PaymentPolicy } from '../providers/payment-policy';
 import { ProviderRegistry } from '../providers/provider-registry';
-import { PaymentOrchestratorServiceImpl } from './payment/payment-orchestrator.service';
-// ✨ [CTO 스타일] Provider별 DTO는 더 이상 PaymentService에서 알 필요 없음
+import { PaymentReader } from './payment/payment.reader';
+import { PaymentManager } from './payment/payment.manager';
+import { PaymentPointManager } from './payment/payment-point.manager';
+import { PaymentProviderManager } from './payment/payment-provider.manager';
+import { PaymentAttemptRepository } from './payment/payment-attempt.repository';
+import { PaymentRequestBuilder } from './payment/payment-request.builder';
 
 /**
- * [리팩토링 완료] PaymentService - 최상위 통합 레이어 (Public Facade)
+ * PaymentService (Business Layer)
  *
- * 책임:
- * - 결제 모듈의 공식 API 엔드포인트 역할
- * - 외부 세계에 단순하고 일관된 인터페이스 제공
- * - 내부의 복잡한 서비스(Orchestrator, Registry 등)를 조합하여 기능 수행
- *
- * 의존성 주입:
- * - Port-Adapter 패턴을 통한 토큰 기반 주입 사용
- * - PaymentOrchestratorService는 인터페이스(Port)로 주입
+ * 책임: 비즈니스 흐름만 표현 (2-3줄)
+ * - Reader/Manager를 통해서만 접근
+ * - Provider 세부사항 모름
  */
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
 
   constructor(
+    private readonly db: DbService<typeof walletSchema>,
     private readonly providerRegistry: ProviderRegistry,
-    private readonly paymentOrchestrator: PaymentOrchestratorServiceImpl,
+    private readonly paymentReader: PaymentReader,
+    private readonly paymentManager: PaymentManager,
+    private readonly pointManager: PaymentPointManager,
+    private readonly providerManager: PaymentProviderManager,
+    private readonly attemptRepo: PaymentAttemptRepository,
+    private readonly requestBuilder: PaymentRequestBuilder,
   ) {}
 
   /**
-   * 결제 승인 - Intent 기반 (새로운 방식)
+   * 결제 승인 (5줄)
    */
   async authorizePaymentByIntent(
     intentId: string,
-    providerType: ProviderType | null, // ✅ 포인트 전액 결제 시 null 허용
+    providerType: ProviderType | null,
     options: {
       usePoints?: number;
       profileId?: string;
       instrumentRef?: string;
+      instrumentType?: string;
       actor?: string;
       source?: string;
     } = {},
@@ -53,15 +61,122 @@ export class PaymentService {
       `Authorizing payment for intent: ${intentId} with provider: ${providerType || '포인트 전액'}`,
     );
 
-    return this.paymentOrchestrator.authorizePayment(
-      intentId,
-      providerType,
-      options,
-    );
+    return this.db.db.transaction(async (tx) => {
+      // 1. Intent 조회 및 검증
+      const intent = await this.paymentReader.findIntent(intentId);
+      await this.paymentManager.prepareIntent(intent);
+
+      // 2. 기존 활성 결제 취소
+      await this.paymentManager.cancelActiveAttempts(intentId, tx);
+
+      // 3. 포인트 적용
+      const pointResult = await this.pointManager.applyPoints(
+        intent,
+        options.usePoints,
+        tx,
+      );
+
+      // 4. 포인트 전액 결제
+      if (pointResult.isFullPayment) {
+        return await this.pointManager.completePointOnlyPayment(
+          intent,
+          pointResult,
+          tx,
+        );
+      }
+
+      // 5. 외부 결제 (Provider 필수)
+      if (!providerType) {
+        throw new Error(
+          'Provider is required for non-point payments. External payment provider must be specified.',
+        );
+      }
+
+      // 6. PaymentRequest 조립
+      const paymentRequest = this.requestBuilder.build(
+        intent,
+        pointResult.finalAmount,
+        {
+          ...options,
+          pointEventId: pointResult.pointEventId,
+          pointsUsed: pointResult.pointsUsed,
+        },
+      );
+
+      try {
+        // 7. Provider 호출
+        const result = await this.providerManager.authorizeWithProvider(
+          intent,
+          providerType,
+          pointResult,
+          options,
+          tx,
+        );
+
+        // 8. 성공 기록
+        await this.attemptRepo.create(
+          paymentRequest,
+          result,
+          providerType,
+          'AUTHORIZED',
+          tx,
+        );
+        await this.paymentManager.updateStatus(
+          intentId,
+          paymentRequest.attemptId,
+          'AUTHORIZED',
+          result,
+          tx,
+        );
+
+        // 9. 포인트 정보 포함
+        result.attemptId = paymentRequest.attemptId;
+        result.pointEventId = pointResult.pointEventId;
+        result.breakdown = {
+          totalAmount: Number(intent.amount),
+          pointsUsed: pointResult.pointsUsed,
+          finalAmount: pointResult.finalAmount,
+        };
+
+        this.logger.log(
+          `Authorization successful for Intent: ${intent.id}, Success: ${result.success}`,
+        );
+        return result;
+      } catch (error: any) {
+        this.logger.error(
+          `Authorization failed for Intent: ${intent.id}`,
+          error.stack,
+        );
+
+        // UNKNOWN 상태 처리
+        if (error.pgApproved === true) {
+          this.logger.warn(
+            `External payment approved but internal processing failed for Intent: ${intent.id}. Setting status to UNKNOWN.`,
+          );
+          await this.paymentManager.markAsUnknown(intent.id);
+        }
+
+        // 실패 기록
+        const failedResult: PaymentResult = {
+          success: false,
+          code: error.code,
+          message: error.message,
+        };
+        await this.attemptRepo.create(
+          paymentRequest,
+          failedResult,
+          providerType,
+          'FAILED',
+          tx,
+        );
+
+        throw error;
+      }
+    });
   }
 
   /**
-   * 결제 캡처 - Intent 기반 (새로운 방식)
+   * 결제 캡처 (3줄)
    */
   async capturePaymentByIntent(
     intentId: string,
@@ -76,12 +191,62 @@ export class PaymentService {
       `Capturing payment for intent: ${intentId}, attempt: ${attemptId}`,
     );
 
-    return this.paymentOrchestrator.capturePayment(
-      intentId,
-      attemptId,
-      amount,
-      options,
-    );
+    return this.db.db.transaction(async (tx) => {
+      // 1. Attempt 조회
+      const attempt = await this.paymentReader.findAttempt(attemptId);
+
+      if (attempt.status !== 'AUTHORIZED') {
+        throw new Error(
+          `Attempt ${attemptId} is not in AUTHORIZED status: ${attempt.status}`,
+        );
+      }
+
+      const captureAmount = amount || attempt.amount;
+
+      try {
+        // 2. Provider 호출
+        const result = await this.providerManager.captureWithProvider(
+          attempt,
+          captureAmount,
+          options,
+        );
+
+        // 3. 성공 기록
+        await this.paymentManager.updateStatus(
+          intentId,
+          attemptId,
+          'CAPTURED',
+          result,
+          tx,
+        );
+
+        this.logger.log(
+          `Capture successful for Intent: ${intentId}, Attempt: ${attemptId}`,
+        );
+        return result;
+      } catch (error: any) {
+        this.logger.error(
+          `Capture failed for Intent: ${intentId}, Attempt: ${attemptId}`,
+          error.stack,
+        );
+
+        // 실패 기록
+        const failedResult: PaymentResult = {
+          success: false,
+          code: error.code,
+          message: error.message,
+        };
+
+        await this.attemptRepo.updateStatus(
+          attemptId,
+          'CAPTURE_FAILED',
+          failedResult,
+          tx,
+        );
+
+        throw error;
+      }
+    });
   }
 
   /**

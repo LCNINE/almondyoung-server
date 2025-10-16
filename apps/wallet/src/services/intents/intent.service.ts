@@ -1,102 +1,84 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { DbService } from '@app/db';
-import * as schema from '../../shared/database/schema';
-import { walletSchema } from '../../shared/database/schema';
-import { eq } from 'drizzle-orm';
-
-import { NewPaymentIntent, PaymentIntent } from '../../shared/database/types'; // Drizzle 타입
-import { generateUUIDv7 } from '../../shared/utils/id-generator';
-import { WalletExecutor } from '../../shared/database';
+import { Injectable } from '@nestjs/common';
+import { IntentReader } from './intent.reader';
+import { IntentCreator, CreateIntentParams } from './intent.creator';
+import { IntentManager } from './intent.manager';
+import type { PaymentIntent } from '../../shared/database/types';
+import type { ProviderType } from '../../providers/payment-provider.interface';
+import type { WalletExecutor } from '../../shared/database';
 
 /**
- * PaymentIntentService - 결제 의도(Intent)의 생명주기 관리
+ * IntentService (Business Layer)
  *
- * 책임:
- * - 새로운 결제 의도(Intent) 생성
- * - Intent 조회 및 상태 검증
- * - 만료된 Intent 처리 등
+ * 책임: 비즈니스 흐름만 표현 (2-3줄)
+ * - DB 직접 참조 제거
+ * - Reader/Manager를 통해서만 접근
  */
 @Injectable()
-export class PaymentIntentService {
-  private readonly logger = new Logger(PaymentIntentService.name);
-
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+export class IntentService {
+  constructor(
+    private readonly intentReader: IntentReader,
+    private readonly intentCreator: IntentCreator,
+    private readonly intentManager: IntentManager,
+  ) {}
 
   /**
-   * 새로운 결제 의도를 생성하고 DB에 저장합니다.
-   * @param params Intent 생성에 필요한 정보
-   * @returns 생성된 PaymentIntent 객체
+   * Intent 생성
    */
   async createIntent(
-    params: {
-      customerId: string;
-      amount: number;
-      type: schema.PaymentIntentType;
-      expiresInMinutes?: number;
-      metadata?: Record<string, any>;
-    },
-    tx?: WalletExecutor, // ✨ [개선] 트랜잭션 객체를 받을 수 있도록 tx 인자 추가
+    params: CreateIntentParams,
+    tx?: WalletExecutor,
   ): Promise<PaymentIntent> {
-    const executor = tx || this.db.db; // tx가 없으면 기본 DB 인스턴스 사용
-
-    const newIntent: NewPaymentIntent = {
-      id: generateUUIDv7(),
-      customerId: params.customerId,
-      amount: params.amount,
-      totalAmount: String(params.amount), // 포인트 통합: 초기에는 totalAmount = amount
-      finalAmount: String(params.amount), // 포인트 통합: 초기에는 finalAmount = amount
-      type: params.type,
-      status: 'PENDING',
-      expiresAt: new Date(
-        Date.now() + (params.expiresInMinutes || 30) * 60 * 1000,
-      ),
-      metadata: params.metadata,
-    };
-
-    const [createdIntent] = await executor
-      .insert(schema.paymentIntents)
-      .values(newIntent)
-      .returning();
-
-    this.logger.log(`New Payment Intent created: ${createdIntent.id}`);
-    return createdIntent;
+    return await this.intentCreator.create(params, tx);
   }
 
   /**
-   * Intent 상태를 업데이트합니다.
-   * @param intentId 업데이트할 Intent의 ID
-   * @param status 새로운 상태
-   * @param tx 트랜잭션 객체 (선택사항)
+   * 결제를 위한 Intent 준비
    */
-  async updateIntentStatus(
+  async prepareForPayment(
     intentId: string,
-    status: schema.PaymentSessionStatus,
+    providerType: ProviderType,
+  ): Promise<PaymentIntent> {
+    const intent = await this.intentReader.findById(intentId);
+    return await this.intentManager.prepareForPayment(intent, providerType);
+  }
+
+  /**
+   * Intent 상태 업데이트
+   */
+  async updateStatus(
+    intentId: string,
+    status: string,
     tx?: WalletExecutor,
   ): Promise<void> {
-    const executor = tx || this.db.db;
-
-    await executor
-      .update(schema.paymentIntents)
-      .set({
-        status: status,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.paymentIntents.id, intentId));
-
-    this.logger.log(`Intent ${intentId} status updated to: ${status}`);
+    await this.intentManager.updateStatus(intentId, status, tx);
   }
 
   /**
-   * ID로 Intent를 조회합니다.
-   * @param intentId 조회할 Intent의 ID
-   * @returns PaymentIntent 객체 또는 null
+   * 할인 적용
    */
-  async findIntentById(intentId: string): Promise<PaymentIntent | null> {
-    const intent = await this.db.db.query.paymentIntents.findFirst({
-      where: (intents, { eq }) => eq(intents.id, intentId),
-    });
-    return intent ?? null;
+  async applyDiscounts(
+    intentId: string,
+    discounts: any[],
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    const intent = await this.intentReader.findById(intentId);
+    await this.intentManager.applyDiscounts(intent, discounts, tx);
   }
 
-  // ... (만료된 Intent를 CANCELLED로 변경하는 스케줄링 잡 등 추가 기능 구현)
+  /**
+   * 포인트 전액 결제 완료
+   */
+  async completeAsPointOnly(
+    intentId: string,
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    await this.intentManager.completeAsPointOnly(intentId, tx);
+  }
+
+  /**
+   * Intent 조회
+   */
+  async findById(intentId: string): Promise<PaymentIntent | null> {
+    return await this.intentReader.findById(intentId);
+  }
 }

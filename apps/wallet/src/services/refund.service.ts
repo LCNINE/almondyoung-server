@@ -113,7 +113,7 @@ export class RefundService {
         const pointDiscount = discounts.find((d: any) => d.type === 'POINTS');
 
         if (pointDiscount) {
-          const partnerId = Number(intent.customerId);
+          const partnerId = intent.customerId; // UUIDv7 (customerId와 동일)
 
           // ⚠️ 중요: 포인트 복원을 동일 트랜잭션에서 실행
           // 외부 환불 실패 시 포인트 복원도 함께 롤백됨
@@ -124,6 +124,8 @@ export class RefundService {
               reason: 'REFUND',
               orderId: intentId,
               memo: reason,
+              expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1년 후
+              withdrawalAvailableAt: new Date(), // 즉시 출금 가능
             },
             tx, // ✅ 상위 트랜잭션 전파
           );
