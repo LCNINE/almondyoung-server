@@ -26,6 +26,8 @@ import { EntitlementReader } from './services/entitlement/entitlement.reader';
 import { EntitlementManager } from './services/entitlement/entitlement.manager';
 import { PauseReader } from './services/pause/pause.reader';
 import { PauseManager } from './services/pause/pause.manager';
+import { PlanReader } from './services/plan/plan.reader';
+import { PlanManager } from './services/plan/plan.manager';
 import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
@@ -79,6 +81,8 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     CancellationReasonReader,
     PauseReader,
     PauseManager,
+    PlanReader,
+    PlanManager,
 
     // Infrastructure
     PolicyGuard,
