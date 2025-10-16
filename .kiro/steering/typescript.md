@@ -1,9 +1,6 @@
 ---
-
-````yaml
+alwaysApply: true
 ---
-
-## alwaysApply: true
 
 # Cursor Prompt Rules – Sustainable Clean Code for NestJS
 
@@ -208,5 +205,32 @@ Controller → Service(Port) → Implementation(Adapter/Repository)
   `constructor(private readonly db: DbService<typeof walletSchema>)` 형태로 주입받을 것.
 - ❌ `provide: DB_CONNECTION` 형태의 중복 Provider를 생성하지 말 것.
 - ✅ AI는 `DbService`를 래핑하거나 override하지 않고 그대로 사용한다.
+
+---
+
+## 14) 레이어 아키텍처 핵심 규칙
+
+### Service는 2-3줄로 비즈니스 흐름만 표현
+
+```typescript
+// ✅ 좋은 예시 - 흐름만 표현
+async purchaseWithCredit(userId, amount, orderId, intentId, tx) {
+  const account = await this.accountReader.findByUserId(userId);
+  await this.creditManager.useCreditForPurchase(account, amount, orderId, intentId, tx);
+}
+```
+
+### 레이어 참조 규칙
+
+- ✅ Controller → Service → Reader/Manager → Repository (순방향만)
+- ❌ Service가 Repository 직접 참조 금지 (Reader를 통해야 함)
+- ❌ 검증 로직을 Service에 두지 않음 (Manager가 담당)
+
+### Implementation Layer 역할 분담
+
+- **Reader**: 데이터 조회 (Service와 Repository 사이 중간 레이어)
+- **Manager**: 검증 + 비즈니스 로직 + DB 접근 (모든 로직 담당)
+- **Creator**: 신규 엔티티 생성
+- **Repository**: 도메인당 1개 (테이블마다 만들지 않음)
 
 ---

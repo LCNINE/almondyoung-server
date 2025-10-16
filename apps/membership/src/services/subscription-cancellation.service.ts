@@ -25,6 +25,29 @@ export interface RefundEligibility {
   amount: number;
 }
 
+export interface RecurringCancellationResult {
+  type: 'RECURRING_CANCELLATION';
+  contractId: string;
+  status: 'RECURRING_CANCELLED';
+  recurringCancelledAt: Date;
+  nextBillingDate: null;
+  currentPeriodEndsAt: string;
+  autoRenewal: false;
+  refundEligible: false;
+  message: string;
+}
+
+export interface ImmediateCancellationResult {
+  type: 'IMMEDIATE_CANCELLATION';
+  contractId: string;
+  status: 'CANCELLED';
+  cancelledAt: Date;
+  refundEligible: boolean;
+  refundAmount: number;
+  refundStatus: 'PENDING' | 'NOT_APPLICABLE';
+  message: string;
+}
+
 @Injectable()
 export class SubscriptionCancellationService {
   constructor(

@@ -24,10 +24,11 @@ export class SubscriptionService {
   ) {}
 
   /**
-   * 사용자의 현재 구독 및 권한 상세 정보를 조회합니다.
+   * 사용자의 현재 구독 및 권한 상세 정보를 조회합니다 (Lazy Expiration 적용).
    * @param userId - 사용자 ID
    */
   async getCurrentSubscriptionDetails(userId: string) {
+    await this.entitlementService.checkAndUpdateSubscription(userId);
     return this.entitlementService.getUserEntitlement(userId);
   }
 
