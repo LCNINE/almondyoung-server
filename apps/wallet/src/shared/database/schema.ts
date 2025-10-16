@@ -787,6 +787,7 @@ export const overdueAccounts = pgTable('overdue_accounts', {
 export const bnplAccountsRelations = relations(bnplAccounts, ({ many }) => ({
   events: many(bnplEvents),
   bnplevents: many(bnplEvents),
+  cmsResponses: many(bnplCmsResponses),
 }));
 
 export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
@@ -795,7 +796,22 @@ export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
     references: [bnplAccounts.id],
   }),
   details: many(bnplEventDetails),
+  cmsResponses: many(bnplCmsResponses),
 }));
+
+export const bnplCmsResponsesRelations = relations(
+  bnplCmsResponses,
+  ({ one }) => ({
+    account: one(bnplAccounts, {
+      fields: [bnplCmsResponses.accountId],
+      references: [bnplAccounts.id],
+    }),
+    event: one(bnplEvents, {
+      fields: [bnplCmsResponses.eventId],
+      references: [bnplEvents.id],
+    }),
+  }),
+);
 
 // ③ 디테일 → 이벤트 / 디테일 자기참조
 export const bnplEventDetailsRelations = relations(
@@ -1423,6 +1439,7 @@ export const walletSchema = {
   // BNPL System
   bnplAccounts,
   bnplEvents,
+  bnplCmsResponses,
 
   // Refund System
   userRefundAccounts,

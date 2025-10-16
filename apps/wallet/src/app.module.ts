@@ -15,6 +15,7 @@ import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
 import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
+import { BnplCmsResponseRepository } from './services/bnpl/bnpl-cms-response.repository';
 import {
   CmsBatchProfilesRepository,
   CmsCardProfilesRepository,
@@ -86,6 +87,7 @@ import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.
     // --- Data Access Layer (Repository) ---
     IntentRepository,
     PaymentAttemptRepository,
+    BnplCmsResponseRepository,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
     CmsCardProfilesRepository,
