@@ -68,7 +68,7 @@ export class UsersController {
     description: '조회할 사용자 ID',
     required: false,
   })
-  @Get('/details')
+  @Get('/detail')
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
