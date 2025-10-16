@@ -19,6 +19,10 @@ import { BenefitTrackingService } from './services/benefit-tracking.service';
 import { ContractEventService } from './services/contract-event.service';
 import { SubscriptionCancellationService } from './services/subscription-cancellation.service';
 import { CancellationReasonService } from './services/cancellation-reason.service';
+import { SubscriptionContractReader } from './services/subscription/subscription-contract.reader';
+import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
+import { EntitlementReader } from './services/entitlement/entitlement.reader';
+import { EntitlementManager } from './services/entitlement/entitlement.manager';
 import { BillingController } from './controllers/billing.controller';
 import { AdminOperationsController } from './controllers/admin-operations.controller';
 import { SubscriptionController } from './controllers/subscription.controller';
@@ -51,19 +55,27 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     BenefitTrackingController,
   ],
   providers: [
+    // Business Layer (Services)
     PlanService,
     AdminOperationsService,
     PauseService,
-    EntitlementService,
-    PolicyValidationService,
-    PolicyGuard,
     SubscriptionService,
-    PaymentClientService,
     RecurringBillingService,
     BenefitTrackingService,
-    ContractEventService,
     SubscriptionCancellationService,
     CancellationReasonService,
+
+    // Implementation Layer (Readers & Managers)
+    EntitlementReader,
+    EntitlementManager,
+    PolicyValidationService,
+    ContractEventService,
+    SubscriptionContractReader,
+    SubscriptionCancellationManager,
+
+    // Infrastructure
+    PolicyGuard,
+    PaymentClientService,
   ],
 })
 export class AppModule {}
