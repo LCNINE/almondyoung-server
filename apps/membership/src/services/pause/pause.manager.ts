@@ -66,7 +66,31 @@ export class PauseManager {
       const originalEndsAt = new Date(entitlement.endsAt);
       const adjustedEndsAt = addDays(originalEndsAt, pauseDurationDays);
 
-      // 4. pause_events 레코드 생성
+      // 4. 정기결제 연동: Contract의 nextBillingDate도 연장
+      const [contract] = await tx
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.userId, userId))
+        .limit(1);
+
+      if (contract && contract.nextBillingDate) {
+        const originalNextBillingDate = new Date(contract.nextBillingDate);
+        const adjustedNextBillingDate = addDays(
+          originalNextBillingDate,
+          pauseDurationDays,
+        );
+
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({
+            nextBillingDate: adjustedNextBillingDate
+              .toISOString()
+              .split('T')[0],
+          })
+          .where(eq(schema.subscriptionContracts.id, contract.id));
+      }
+
+      // 5. pause_events 레코드 생성
       const [pauseEvent] = await tx
         .insert(schema.pauseEvents)
         .values({
@@ -78,7 +102,7 @@ export class PauseManager {
         })
         .returning();
 
-      // 5. pause_event_details 레코드 생성 (권한 조정 추적)
+      // 6. pause_event_details 레코드 생성 (권한 조정 추적)
       await tx.insert(schema.pauseEventDetails).values({
         pauseEventId: pauseEvent.id,
         userId,
@@ -88,7 +112,7 @@ export class PauseManager {
         endsAt: endDate.toISOString().split('T')[0],
       });
 
-      // 6. 기존 entitlement 닫기
+      // 7. 기존 entitlement 닫기
       await tx
         .update(schema.subscriptionEntitlement)
         .set({
@@ -98,7 +122,7 @@ export class PauseManager {
         })
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
-      // 7. 새로운 entitlement 생성 (일시정지 상태 + 연장된 종료일)
+      // 8. 새로운 entitlement 생성 (일시정지 상태 + 연장된 종료일)
       await tx.insert(schema.subscriptionEntitlement).values({
         userId,
         tierId: entitlement.tierId,

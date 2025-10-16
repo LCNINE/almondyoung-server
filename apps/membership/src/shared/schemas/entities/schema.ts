@@ -404,6 +404,7 @@ export const membershipDunningQueue = pgTable('membership_dunning_queue', {
   id: uuid('id').primaryKey().defaultRandom(),
   contractId: uuid('contract_id')
     .notNull()
+    .unique()
     .references(() => subscriptionContracts.id),
   nextRetryAt: timestamp('next_retry_at', { withTimezone: true }).notNull(),
   attempts: integer('attempts').notNull().default(0),
