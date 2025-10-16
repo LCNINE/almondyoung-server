@@ -8,6 +8,9 @@ import { BnplCmsResponseRepository } from '../../src/services/bnpl/bnpl-cms-resp
 import { BnplSettlementService } from '../../src/services/bnpl/bnpl-settlement.service';
 import { BnplAccountService } from '../../src/services/bnpl-account.service';
 import { ProviderType } from '../../src/providers/payment-provider.interface';
+import { BnplBatchCreatorImpl } from '../../src/services/bnpl/bnpl-batch-creator.impl';
+import { BnplCmsProcessorImpl } from '../../src/services/bnpl/bnpl-cms-processor.impl';
+import { BnplRetryManagerImpl } from '../../src/services/bnpl/bnpl-retry-manager.impl';
 
 /**
  * Payment Response Storage 통합 테스트
@@ -48,6 +51,9 @@ describe('Payment Response Storage (Integration)', () => {
         BnplCmsResponseRepository,
         BnplSettlementService,
         BnplAccountService,
+        BnplBatchCreatorImpl,
+        BnplCmsProcessorImpl,
+        BnplRetryManagerImpl,
       ],
     }).compile();
 

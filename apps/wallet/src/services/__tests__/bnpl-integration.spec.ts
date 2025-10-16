@@ -9,7 +9,7 @@ import { AppModule } from '../../app.module';
 import { PaymentService } from '../payment.service';
 import { PaymentIntentService } from '../intents/intent.service';
 import { PaymentProfileService } from '../profiles/payment-profile.service';
-import { BnplAccountService } from '../bnpl-account.service';
+import { BnplService } from '../bnpl/bnpl.service';
 import { PaymentExecutorService } from '../payment';
 
 import * as schema from '../../shared/database/schema';
@@ -27,7 +27,7 @@ describe('BNPL 통합 테스트 - 전체 플로우', () => {
   let paymentService: PaymentService;
   let intentService: PaymentIntentService;
   let profileService: PaymentProfileService;
-  let bnplAccountService: BnplAccountService;
+  let bnplService: BnplService;
   let paymentExecutorService: PaymentExecutorService;
 
   beforeAll(async () => {
@@ -51,7 +51,7 @@ describe('BNPL 통합 테스트 - 전체 플로우', () => {
     paymentService = module.get<PaymentService>(PaymentService);
     intentService = module.get<PaymentIntentService>(PaymentIntentService);
     profileService = module.get<PaymentProfileService>(PaymentProfileService);
-    bnplAccountService = module.get<BnplAccountService>(BnplAccountService);
+    bnplService = module.get<BnplService>(BnplService);
     paymentExecutorService = module.get<PaymentExecutorService>(
       PaymentExecutorService,
     );
@@ -103,10 +103,7 @@ describe('BNPL 통합 테스트 - 전체 플로우', () => {
       expect(profileId).toBeDefined();
 
       // 🔹 Step 2: BNPL 계정 생성 (신용 한도 설정)
-      const bnplAccount = await bnplAccountService.createBnplAccount(
-        userId,
-        creditLimit,
-      );
+      const bnplAccount = await bnplService.createAccount(userId, creditLimit);
       expect(bnplAccount).toBeDefined();
       expect(bnplAccount.creditLimit).toBe(creditLimit);
       expect(bnplAccount.availableLimit).toBe(creditLimit);
@@ -245,7 +242,7 @@ describe('BNPL 통합 테스트 - 전체 플로우', () => {
           userId,
           bnplProfileDto,
         );
-      await bnplAccountService.createBnplAccount(userId, creditLimit);
+      await bnplService.createAccount(userId, creditLimit);
 
       const intent = await intentService.createIntent({
         customerId: userId,
@@ -356,7 +353,7 @@ describe('BNPL 통합 테스트 - 전체 플로우', () => {
           userId,
           bnplProfileDto,
         );
-      await bnplAccountService.createBnplAccount(userId, creditLimit);
+      await bnplService.createAccount(userId, creditLimit);
 
       // 첫 번째 구매
       const firstIntent = await intentService.createIntent({

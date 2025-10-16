@@ -15,7 +15,11 @@ import { walletSchema } from './shared/database/schema';
 import { PaymentService } from './services/payment.service';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
 import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
-import { BnplCmsResponseRepository } from './services/bnpl/bnpl-cms-response.repository';
+import { BnplRepository } from './services/bnpl/bnpl.repository';
+import { BnplSettlementService } from './services/bnpl/bnpl-settlement.service';
+import { BnplBatchCreator } from './services/bnpl/bnpl-batch.creator';
+import { BnplCmsManager } from './services/bnpl/bnpl-cms.manager';
+import { BnplRetryManager } from './services/bnpl/bnpl-retry.manager';
 import {
   CmsBatchProfilesRepository,
   CmsCardProfilesRepository,
@@ -33,7 +37,10 @@ import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
 import { IdempotencyService } from './services/idempotency.service';
 import { TaxInvoiceService } from './services/tax-invoice.service';
-import { BnplAccountService } from './services/bnpl-account.service';
+import { BnplService } from './services/bnpl/bnpl.service';
+import { BnplAccountReader } from './services/bnpl/bnpl-account.reader';
+import { BnplAccountCreator } from './services/bnpl/bnpl-account.creator';
+import { BnplCreditManager } from './services/bnpl/bnpl-credit.manager';
 import { BnplBillingScheduler } from './services/bnpl-billing.scheduler';
 import { RefundService } from './services/refund.service';
 import { PointService } from './services/points/point.service';
@@ -67,7 +74,8 @@ import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.
     PaymentIntentService,
     PaymentProfileService,
     TaxInvoiceService,
-    BnplAccountService,
+    BnplService,
+    BnplSettlementService,
     BnplBillingScheduler,
     RefundService,
 
@@ -84,10 +92,18 @@ import { PaymentExecutorServiceImpl } from './services/payment/payment-executor.
 
     PaymentRequestBuilder,
 
+    // --- Implementation Layer ---
+    BnplAccountReader,
+    BnplAccountCreator,
+    BnplCreditManager,
+    BnplBatchCreator,
+    BnplCmsManager,
+    BnplRetryManager,
+
     // --- Data Access Layer (Repository) ---
     IntentRepository,
     PaymentAttemptRepository,
-    BnplCmsResponseRepository,
+    BnplRepository,
     // --- 데이터 접근 ---
     PaymentProfilesRepository,
     CmsCardProfilesRepository,
