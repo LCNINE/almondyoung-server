@@ -540,3 +540,46 @@ apps/membership/src/services/
 - Reader/Manager 역할 명확히 분리됨
 
 **다음 단계**: Phase 2 - SubscriptionService 리팩토링
+
+---
+
+## 📊 Phase 2 완료 보고서
+
+### ✅ Task 2.1-2.4 완료 (2025-10-16)
+
+**완료된 작업**:
+
+1. ✅ SubscriptionCreator 생성 완료
+2. ✅ SubscriptionManager 생성 완료
+3. ✅ SubscriptionService 리팩토링 완료 (2-3줄)
+4. ✅ 모듈 업데이트 및 테스트 통과
+
+**생성된 파일**:
+
+- `apps/membership/src/services/subscription/subscription.creator.ts`
+- `apps/membership/src/services/subscription/subscription.manager.ts`
+- `apps/membership/src/services/subscription.service.ts` (리팩토링)
+- `apps/membership/src/services/subscription/subscription-contract.reader.ts` (확장)
+
+**테스트 결과**:
+
+- 모든 단위 테스트 통과 (4/4)
+- 타입 에러 없음
+- 레이어 아키텍처 규칙 준수
+
+**코드 리뷰 결과**:
+
+- ✅ 코드 품질: 우수
+- ✅ 레이어 분리: 완벽
+- ✅ 타입 안정성: 확보
+- ✅ 테스트 커버리지: 양호
+
+**개선 사항**:
+
+1. SubscriptionManager의 fromTierId 처리 수정 필요
+   - 현재: `fromTierId: currentContract.planId` (잘못됨)
+   - 수정: 현재 티어 ID를 파라미터로 전달받아 사용
+2. Service 메서드가 2-3줄로 단순화됨
+3. Creator/Manager 역할 명확히 분리됨
+
+**다음 단계**: 개선사항 반영 후 커밋

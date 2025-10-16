@@ -21,6 +21,8 @@ import { SubscriptionCancellationService } from './services/subscription-cancell
 import { CancellationReasonService } from './services/cancellation-reason.service';
 import { SubscriptionContractReader } from './services/subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
+import { SubscriptionCreator } from './services/subscription/subscription.creator';
+import { SubscriptionManager } from './services/subscription/subscription.manager';
 import { EntitlementReader } from './services/entitlement/entitlement.reader';
 import { EntitlementManager } from './services/entitlement/entitlement.manager';
 import { BillingController } from './controllers/billing.controller';
@@ -71,6 +73,8 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     PolicyValidationService,
     ContractEventService,
     SubscriptionContractReader,
+    SubscriptionCreator,
+    SubscriptionManager,
     SubscriptionCancellationManager,
 
     // Infrastructure
