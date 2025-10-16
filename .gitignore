@@ -63,15 +63,6 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Test files and temporary files
-*.test.js
-*.spec.js
-*.test.ts
-*.spec.ts
-test-*.js
-test-*.ts
-*-test.js
-*-test.ts
-*-test.html
 fcm-token-generator.html
 real-fcm-token-generator.html
 simple-fcm-test.html
