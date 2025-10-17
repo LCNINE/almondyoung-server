@@ -148,6 +148,12 @@ export const subscriptionContracts = pgTable(
     refundCompletedAt: timestamp('refund_completed_at', { withTimezone: true }),
     walletReferenceId: text('wallet_reference_id'),
     lastEventId: integer('last_event_id'),
+    // 정기결제 중단 관련 필드
+    recurringCancelledAt: timestamp('recurring_cancelled_at', {
+      withTimezone: true,
+    }),
+    recurringCancellationReasonCode: text('recurring_cancellation_reason_code'),
+    autoRenewal: boolean('auto_renewal').notNull().default(true),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -398,6 +404,7 @@ export const membershipDunningQueue = pgTable('membership_dunning_queue', {
   id: uuid('id').primaryKey().defaultRandom(),
   contractId: uuid('contract_id')
     .notNull()
+    .unique()
     .references(() => subscriptionContracts.id),
   nextRetryAt: timestamp('next_retry_at', { withTimezone: true }).notNull(),
   attempts: integer('attempts').notNull().default(0),

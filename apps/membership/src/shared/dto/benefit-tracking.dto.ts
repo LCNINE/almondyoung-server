@@ -23,7 +23,7 @@ export const CycleBenefitSchema = z.object({
   orderCount: z.number().int().min(0),
   daysRemaining: z.number().int(),
   daysElapsed: z.number().int(),
-  subscriptionType: z.enum(['MONTHLY', 'ANNUAL']),
+  subscriptionType: z.enum(['MONTHLY', 'YEAR']),
   nextCycleStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
