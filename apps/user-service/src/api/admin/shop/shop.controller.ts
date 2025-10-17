@@ -10,7 +10,7 @@ import { ShopService } from './shop.service';
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}
 
-  @Get('info/:userId')
+  @Get('/:userId')
   @RequireScopes(['master', 'admin:users:read'])
   @ApiOperation({
     summary: '사용자 상점 정보 조회',
