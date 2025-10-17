@@ -240,6 +240,117 @@ export class SubscriptionCancellationManager {
   }
 
   /**
+   * 강제 구독 취소 (관리자 전용)
+   */
+  async forceCancelSubscription(
+    contract: Contract,
+    plan: Plan,
+    adminId: string,
+    reason: string,
+    refundType: 'FULL' | 'PARTIAL' | 'NONE',
+    partialRefundAmount?: number,
+    refundReason?: string,
+  ): Promise<{
+    contractId: string;
+    status: 'CANCELLED';
+    cancelledAt: Date;
+    refundEligible: boolean;
+    refundAmount: number;
+    refundStatus: 'PENDING' | 'NOT_APPLICABLE';
+  }> {
+    return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
+      // 1. 환불 금액 계산
+      let refundAmount = 0;
+      if (refundType === 'FULL') {
+        refundAmount = plan.price;
+      } else if (refundType === 'PARTIAL') {
+        if (!partialRefundAmount) {
+          throw new Error('Partial refund amount is required');
+        }
+        if (partialRefundAmount > plan.price) {
+          throw new Error('Refund amount exceeds plan price');
+        }
+        refundAmount = partialRefundAmount;
+      }
+
+      // 2. 이벤트 배치 생성
+      const [batch] = await tx
+        .insert(schema.eventBatches)
+        .values({
+          type: 'SUBSCRIPTION_CANCELLED',
+          adminId,
+          effectiveDate: new Date().toISOString().split('T')[0],
+        })
+        .returning();
+
+      // 3. 취소 이벤트 기록
+      const cancelEvent = await this.contractEventManager.addEvent(
+        tx,
+        contract.id,
+        'CANCELLED',
+        {
+          reason,
+          isForced: true,
+          adminId,
+          refundType,
+          refundAmount,
+          refundReason: refundReason || null,
+        },
+        'ADMIN',
+        adminId,
+        batch.id,
+        adminId,
+      );
+
+      // 4. 환불 요청 이벤트 기록 (환불이 있는 경우)
+      if (refundAmount > 0) {
+        await this.contractEventManager.addEvent(
+          tx,
+          contract.id,
+          'REFUND_REQUESTED',
+          {
+            amount: refundAmount,
+            reason: refundReason || reason,
+            isForced: true,
+            adminId,
+          },
+          'ADMIN',
+          adminId,
+          batch.id,
+          adminId,
+        );
+      }
+
+      // 5. 계약 상태 업데이트
+      await tx
+        .update(schema.subscriptionContracts)
+        .set({
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancellationReasonCode: 'ADMIN_FORCED',
+          refundRequested: refundAmount > 0,
+          refundRequestedAt: refundAmount > 0 ? new Date() : null,
+          eligibleRefundAmount: refundAmount,
+          lastEventId: cancelEvent.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+
+      // 6. Entitlement 종료
+      await this.terminateEntitlement(tx, contract.userId, batch.id);
+
+      return {
+        contractId: contract.id,
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: refundAmount > 0,
+        refundAmount,
+        refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE',
+      };
+    });
+  }
+
+  /**
    * 무료 체험 기간 확인
    */
   private isInTrialPeriod(contract: Contract, plan: Plan): boolean {
