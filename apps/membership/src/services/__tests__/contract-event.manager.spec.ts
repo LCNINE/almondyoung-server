@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ContractEventService } from '../contract-event.service';
+import { ContractEventManager } from '../subscription/contract-event.manager';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
-describe('ContractEventService', () => {
-  let service: ContractEventService;
+describe('ContractEventManager', () => {
+  let service: ContractEventManager;
   let mockDbService: any;
   let mockTx: any;
 
@@ -29,7 +29,7 @@ describe('ContractEventService', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        ContractEventService,
+        ContractEventManager,
         {
           provide: DbService,
           useValue: mockDbService,
@@ -37,7 +37,7 @@ describe('ContractEventService', () => {
       ],
     }).compile();
 
-    service = module.get<ContractEventService>(ContractEventService);
+    service = module.get<ContractEventManager>(ContractEventManager);
   });
 
   it('should be defined', () => {

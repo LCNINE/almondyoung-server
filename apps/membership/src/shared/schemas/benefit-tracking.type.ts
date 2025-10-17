@@ -23,5 +23,5 @@ export type ActiveSubscription = {
   id: string;
   userId: string;
   billingDate: Date; // 첫 결제일 (30일 주기 기준점)
-  type: 'MONTHLY' | 'ANNUAL';
+  type: 'MONTHLY' | 'YEAR';
 };

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { membershipSchema } from '../shared/schemas/entities/schema';
-import * as schema from '../shared/schemas/entities/schema';
+import { membershipSchema } from '../../shared/schemas/entities/schema';
+import * as schema from '../../shared/schemas/entities/schema';
 import { eq, desc, and } from 'drizzle-orm';
-import { DrizzleTransaction } from '../shared/schemas/types';
+import { DrizzleTransaction } from '../../shared/schemas/types';
 
 export interface ContractEvent {
   id: number;
@@ -17,8 +17,19 @@ export interface ContractEvent {
   createdAt: Date;
 }
 
+/**
+ * ContractEventManager (Implementation Layer)
+ *
+ * 역할: 구독 계약 이벤트 소싱
+ * - 계약 이벤트 기록
+ * - 계약 이벤트 조회
+ * - 이벤트 타입별 조회
+ *
+ * 참고: 이것은 Service가 아닌 Implementation Layer의 Manager입니다.
+ * 이벤트 소싱 패턴을 위한 유틸리티 클래스로, 다른 Manager들이 사용합니다.
+ */
 @Injectable()
-export class ContractEventService {
+export class ContractEventManager {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
 
   /**
