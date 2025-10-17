@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
+import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
@@ -36,11 +37,17 @@ export class SubscriptionCreator {
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
-      const endsAt = addDays(
-        startsAt,
-        plan.durationDays + (plan.trialDays || 0),
-      );
-      const billingDate = addDays(startsAt, plan.trialDays || 0);
+
+      // 1. 첫 구독 여부 확인 (무료 체험 악용 방지)
+      const isFirstTime = await this.isFirstTimeSubscriber(userId);
+      const effectiveTrialDays = isFirstTime ? plan.trialDays || 0 : 0;
+
+      // 2. 날짜 계산
+      // - endsAt: 구독 종료일 (무료 체험 포함, 30일 플랜이면 30일)
+      // - billingDate: 첫 결제일 (무료 체험 후)
+      // - nextBillingDate: 다음 결제일 (첫 결제 + 30일)
+      const endsAt = addDays(startsAt, plan.durationDays);
+      const billingDate = addDays(startsAt, effectiveTrialDays);
       const nextBillingDate = addDays(billingDate, plan.durationDays);
 
       // 1. 이벤트 배치 생성
@@ -72,6 +79,8 @@ export class SubscriptionCreator {
           planId: plan.id,
           billingDate: billingDate.toISOString().split('T')[0],
           trialDays: plan.trialDays || 0,
+          effectiveTrialDays, // 실제 적용된 무료 체험 기간
+          isFirstTimeSubscriber: isFirstTime, // 첫 구독 여부
         },
         'USER',
         userId,
@@ -94,5 +103,20 @@ export class SubscriptionCreator {
         entitlementId: entitlement.id,
       };
     });
+  }
+
+  /**
+   * 첫 구독 여부 확인 (무료 체험 악용 방지)
+   *
+   * 과거 구독 이력이 없으면 첫 구독으로 판단
+   */
+  private async isFirstTimeSubscriber(userId: string): Promise<boolean> {
+    const contracts = await this.dbService.db
+      .select()
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.userId, userId))
+      .limit(1);
+
+    return contracts.length === 0;
   }
 }
