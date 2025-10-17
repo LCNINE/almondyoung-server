@@ -70,7 +70,7 @@ export class SubscriptionCancellationService {
       throw new Error('Active subscription not found');
     }
 
-    const eligibility = this.cancellationManager.checkRefundEligibility(
+    const eligibility = await this.cancellationManager.checkRefundEligibility(
       data.contract,
       data.plan,
     );
@@ -104,7 +104,7 @@ export class SubscriptionCancellationService {
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new Error('Plan not found');
 
-    const eligibility = this.cancellationManager.checkRefundEligibility(
+    const eligibility = await this.cancellationManager.checkRefundEligibility(
       contract,
       plan,
     );
