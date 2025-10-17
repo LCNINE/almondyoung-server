@@ -66,6 +66,18 @@ export const policyRuleTypeEnum = pgEnum('policy_rule_type', [
   'PROMOTIONAL_PERIODS',
   'SEASONAL_RESTRICTIONS',
   'SPECIAL_EVENT_RULES',
+
+  // Refund policies
+  'TRIAL_REFUND_ENABLED',
+  'RESUBSCRIPTION_REFUND_WINDOW_HOURS',
+  'BENEFIT_USAGE_AFFECTS_REFUND',
+  'PARTIAL_REFUND_CALCULATION_METHOD',
+  'REFUND_PROCESSING_DAYS',
+
+  // Trial policies
+  'TRIAL_DURATION_DAYS',
+  'TRIAL_REUSE_PREVENTION',
+  'TRIAL_COOLDOWN_DAYS',
 ]);
 // =================================================================
 // Users (기존 유지)
@@ -511,6 +523,7 @@ export const membershipCycleBenefits = pgTable(
 
 /**
  * 주문별 할인 이벤트 테이블 - 멱등성 보장 및 취소 처리
+ * 추후 베네핏을 pk로 참조하는것도 고려해볼만함.
  */
 export const membershipDiscountEvents = pgTable(
   'membership_discount_events',

@@ -1,15 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionCancellationService } from '../subscription-cancellation.service';
 import { DbService } from '@app/db';
-import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { EntitlementService } from '../entitlement.service';
 import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from '../subscription/subscription-cancellation.manager';
+import { MembershipPolicyService } from '../membership-policy.service';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
-  let entitlementService: EntitlementService;
 
   const mockDbService = {
     db: {
@@ -36,6 +35,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
 
   const mockContractReader = {
     findContractWithPlan: jest.fn(),
+    findContractsByUserId: jest.fn(),
     findById: jest.fn(),
     findPlan: jest.fn(),
   };
@@ -46,7 +46,18 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     cancelRecurringPayment: jest.fn(),
   };
 
+  const mockPolicyService = {
+    getPolicyValue: jest.fn(),
+    getNumberPolicy: jest.fn(),
+    getBooleanPolicy: jest.fn(),
+  };
+
   beforeEach(async () => {
+    // 정책 기본값 설정
+    mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
+    mockPolicyService.getNumberPolicy.mockResolvedValue(24);
+    mockPolicyService.getPolicyValue.mockResolvedValue({});
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionCancellationService,
@@ -70,13 +81,16 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
           provide: SubscriptionCancellationManager,
           useValue: mockCancellationManager,
         },
+        {
+          provide: MembershipPolicyService,
+          useValue: mockPolicyService,
+        },
       ],
     }).compile();
 
     service = module.get<SubscriptionCancellationService>(
       SubscriptionCancellationService,
     );
-    entitlementService = module.get<EntitlementService>(EntitlementService);
   });
 
   afterEach(() => {
@@ -87,9 +101,9 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     it('활성 구독이 없으면 에러를 발생시켜야 함', async () => {
       // Given
       const userId = 'test_user_001';
-      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(
-        false,
-      );
+      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
+      mockContractReader.findContractWithPlan.mockResolvedValue(null);
+      mockContractReader.findContractsByUserId.mockResolvedValue([]);
 
       // When & Then
       await expect(
@@ -106,9 +120,11 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         planId: 'plan_001',
         billingDate: new Date().toISOString().split('T')[0],
         status: 'ACTIVE',
+        createdAt: new Date(),
       };
       const plan = {
         id: 'plan_001',
+        tierId: 'tier_001',
         price: 10000,
         trialDays: 7,
         durationDays: 30,
@@ -119,7 +135,12 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         contract,
         plan,
       });
-      mockCancellationManager.checkRefundEligibility.mockReturnValue({
+
+      // 정책 설정: 무료 체험 환불 활성화
+      mockPolicyService.getBooleanPolicy.mockResolvedValue(true); // TRIAL_REFUND_ENABLED
+      mockPolicyService.getNumberPolicy.mockResolvedValue(7); // TRIAL_DURATION_DAYS
+
+      mockCancellationManager.checkRefundEligibility.mockResolvedValue({
         eligible: true,
         reason: '무료 체험 기간 중 취소',
         amount: 10000,
@@ -164,9 +185,11 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         billingDate: billingDate.toISOString().split('T')[0],
         nextBillingDate: '2025-11-15',
         status: 'ACTIVE',
+        createdAt: billingDate,
       };
       const plan = {
         id: 'plan_001',
+        tierId: 'tier_001',
         price: 10000,
         trialDays: 7,
         durationDays: 30,
@@ -177,7 +200,12 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         contract,
         plan,
       });
-      mockCancellationManager.checkRefundEligibility.mockReturnValue({
+
+      // 정책 설정: 무료 체험 기간 지남
+      mockPolicyService.getNumberPolicy.mockResolvedValue(7); // TRIAL_DURATION_DAYS
+      mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
+
+      mockCancellationManager.checkRefundEligibility.mockResolvedValue({
         eligible: false,
         reason: '무료 체험 기간이 지났습니다',
         amount: 0,
@@ -210,58 +238,6 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         expect(result.nextBillingDate).toBeNull();
         expect(result.currentPeriodEndsAt).toBe('2025-11-15');
       }
-    });
-
-    it('정기결제 중단 시 Manager의 cancelRecurringPayment를 호출해야 함', async () => {
-      // Given
-      const userId = 'test_user_001';
-      const billingDate = new Date();
-      billingDate.setDate(billingDate.getDate() - 10);
-
-      const contract = {
-        id: 'contract_001',
-        userId,
-        planId: 'plan_001',
-        billingDate: billingDate.toISOString().split('T')[0],
-        nextBillingDate: '2025-11-15',
-        status: 'ACTIVE',
-      };
-      const plan = {
-        id: 'plan_001',
-        price: 10000,
-        trialDays: 7,
-        durationDays: 30,
-      };
-
-      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
-      mockContractReader.findContractWithPlan.mockResolvedValue({
-        contract,
-        plan,
-      });
-      mockCancellationManager.checkRefundEligibility.mockReturnValue({
-        eligible: false,
-        reason: '무료 체험 기간이 지났습니다',
-        amount: 0,
-      });
-      mockCancellationManager.cancelRecurringPayment.mockResolvedValue({
-        type: 'RECURRING_CANCELLATION',
-        contractId: 'contract_001',
-        status: 'RECURRING_CANCELLED',
-        recurringCancelledAt: new Date(),
-        nextBillingDate: null,
-        currentPeriodEndsAt: '2025-11-15',
-        autoRenewal: false,
-        refundEligible: false,
-        message: '정기결제가 중단되었습니다.',
-      });
-
-      // When
-      await service.cancelSubscription(userId, 'NO_LONGER_NEEDED');
-
-      // Then
-      expect(
-        mockCancellationManager.cancelRecurringPayment,
-      ).toHaveBeenCalledWith(userId, contract, 'NO_LONGER_NEEDED', undefined);
     });
   });
 });

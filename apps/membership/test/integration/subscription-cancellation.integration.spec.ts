@@ -15,6 +15,7 @@ import { EntitlementManager } from '../../src/services/entitlement/entitlement.m
 import { PlanService } from '../../src/services/plan.service';
 import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
+import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import {
   membershipSchema,
   type MembershipSchema,
@@ -73,6 +74,8 @@ describe('Subscription Cancellation Integration Tests', () => {
         PlanService,
         PlanReader,
         PlanManager,
+        // 정책 서비스
+        MembershipPolicyService,
       ],
     }).compile();
 
