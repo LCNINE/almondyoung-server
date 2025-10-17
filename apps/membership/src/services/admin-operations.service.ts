@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PlanService } from './plan.service';
 import { SubscriptionService } from './subscription.service';
+import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
 import { PauseService } from './pause.service';
 import {
@@ -29,6 +30,7 @@ export class AdminOperationsService {
   constructor(
     private readonly planService: PlanService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly cancellationService: SubscriptionCancellationService,
     private readonly entitlementService: EntitlementService,
     private readonly pauseService: PauseService,
   ) {}
@@ -72,16 +74,26 @@ export class AdminOperationsService {
   // =================================================================
 
   /**
-   * 예시: 특정 사용자의 구독을 강제로 취소하는 관리자 기능
+   * 강제 구독 취소 (관리자 전용)
+   *
+   * ✅ 흐름만 표현: "CancellationService 호출"
    */
   async forceCancelSubscription(
-    userId: string,
-    reason: string,
+    contractId: string,
     adminId: string,
+    reason: string,
+    refundType: 'FULL' | 'PARTIAL' | 'NONE',
+    partialRefundAmount?: number,
+    refundReason?: string,
   ) {
-    console.log(`Admin ${adminId} is forcing cancellation for user ${userId}`);
-    // SubscriptionService의 cancelSubscription 메소드를 호출합니다.
-    return this.subscriptionService.cancelSubscription(userId, reason);
+    return this.cancellationService.forceCancelSubscription(
+      contractId,
+      adminId,
+      reason,
+      refundType,
+      partialRefundAmount,
+      refundReason,
+    );
   }
 
   // =================================================================
