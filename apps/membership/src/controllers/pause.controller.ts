@@ -11,13 +11,17 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiSecurity,
+  ApiBody,
+} from '@nestjs/swagger';
 import { PauseService } from '../services/pause.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
-import { PolicyGuard } from '../services/policy/policy.guard';
-import { CheckPolicies } from '../services/policy/policy.decorator';
 import {
   PauseSubscriptionRequestSchema,
   PauseSubscriptionRequest,
@@ -53,29 +57,28 @@ export class PauseController {
    */
   @Post()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 일시정지',
-    description: '지정된 기간 동안 구독을 일시정지합니다.'
+    description: '지정된 기간 동안 구독을 일시정지합니다.',
   })
   @ApiSecurity('dev-user-id')
   @ApiBody({ type: PauseSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 일시정지 성공',
-    type: PauseOperationResponseDto
+    type: PauseOperationResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 일시정지 요청',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '일시정지할 활성 구독을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard, PolicyGuard)
-  @CheckPolicies('PAUSE_SUBSCRIPTION')
+  @UseGuards(DevAuthGuard)
   async pauseSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(PauseSubscriptionRequestSchema))
@@ -146,29 +149,28 @@ export class PauseController {
    */
   @Post('resume')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '구독 재개',
-    description: '일시정지된 구독을 재개합니다.'
+    description: '일시정지된 구독을 재개합니다.',
   })
   @ApiSecurity('dev-user-id')
   @ApiBody({ type: ResumeSubscriptionRequestDto })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '구독 재개 성공',
-    type: PauseOperationResponseDto
+    type: PauseOperationResponseDto,
   })
-  @ApiResponse({ 
-    status: 400, 
+  @ApiResponse({
+    status: 400,
     description: '잘못된 재개 요청',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '재개할 일시정지된 구독을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard, PolicyGuard)
-  @CheckPolicies('RESUME_SUBSCRIPTION')
+  @UseGuards(DevAuthGuard)
   async resumeSubscription(
     @Req() req: FastifyRequest,
     // 참고: resumeRequest DTO는 현재 사용되지 않지만, Zod 유효성 검사를 위해 유지합니다.
@@ -232,20 +234,20 @@ export class PauseController {
    * 일시정지 이력 조회
    */
   @Get('history')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '일시정지 이력 조회',
-    description: '사용자의 모든 일시정지 이력을 조회합니다.'
+    description: '사용자의 모든 일시정지 이력을 조회합니다.',
   })
   @ApiSecurity('dev-user-id')
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: '일시정지 이력 조회 성공',
-    type: PauseHistoryResponseDto
+    type: PauseHistoryResponseDto,
   })
-  @ApiResponse({ 
-    status: 404, 
+  @ApiResponse({
+    status: 404,
     description: '일시정지 이력을 찾을 수 없음',
-    type: ErrorResponseDto
+    type: ErrorResponseDto,
   })
   @UseGuards(DevAuthGuard)
   async getPauseHistory(@Req() req: FastifyRequest) {
