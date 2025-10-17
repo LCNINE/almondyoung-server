@@ -22,7 +22,7 @@ export class ConsentsService {
     return tx ?? this.dbService.db;
   }
 
-  async getUserConsent(
+  async getMyConsent(
     userId: string,
     tx?: DbTransaction,
   ): Promise<UserConsent | null> {
