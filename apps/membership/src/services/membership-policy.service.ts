@@ -1,104 +1,144 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PolicyReader } from './policy/policy.reader';
-import { PolicyManager } from './policy/policy.manager';
-import {
-  PolicyRuleType,
-  PolicyValue,
-  PolicyResult,
-} from '../shared/schemas/policy.type';
 
 // 하위 호환성을 위한 타입 export
-export type {
-  PolicyRuleType,
-  PolicyValue,
-  PolicyResult,
-} from '../shared/schemas/policy.type';
+export type PolicyRuleType =
+  // Pause-related policies
+  | 'MAX_PAUSES_PER_YEAR'
+  | 'MIN_PAUSE_DURATION_DAYS'
+  | 'MAX_PAUSE_DURATION_DAYS'
+  | 'PAUSE_COOLDOWN_DAYS'
+  | 'PAUSE_BLACKOUT_PERIODS'
+  // Plan change policies
+  | 'PLAN_CHANGE_COOLDOWN_DAYS'
+  | 'ALLOWED_PLAN_CHANGES'
+  | 'DOWNGRADE_RESTRICTIONS'
+  | 'UPGRADE_BENEFITS'
+  // Tier-specific policies
+  | 'TIER_SPECIFIC_LIMITS'
+  | 'VIP_USER_BENEFITS'
+  | 'NEW_USER_GRACE_PERIOD'
+  // Promotional policies
+  | 'PROMOTIONAL_PERIODS'
+  | 'SEASONAL_RESTRICTIONS'
+  | 'SPECIAL_EVENT_RULES'
+  // Refund policies
+  | 'TRIAL_REFUND_ENABLED'
+  | 'RESUBSCRIPTION_REFUND_WINDOW_HOURS'
+  | 'BENEFIT_USAGE_AFFECTS_REFUND'
+  | 'PARTIAL_REFUND_CALCULATION_METHOD'
+  | 'REFUND_PROCESSING_DAYS'
+  // Trial policies
+  | 'TRIAL_DURATION_DAYS'
+  | 'TRIAL_REUSE_PREVENTION'
+  | 'TRIAL_COOLDOWN_DAYS';
+
+export type PolicyValue = Record<string, any>;
+
+/**
+ * 하드코딩 정책 테이블
+ *
+ * 장점:
+ * - 빠른 조회 (메모리)
+ * - 배포 없이 코드로 관리
+ * - 타입 안전성
+ *
+ * 단점:
+ * - 런타임 변경 불가
+ * - 배포 필요
+ */
+const POLICY_TABLE: Record<string, PolicyValue> = {
+  // ===== 일시정지 정책 =====
+  MAX_PAUSES_PER_YEAR: { count: 2 },
+  MIN_PAUSE_DURATION_DAYS: { days: 7 },
+  MAX_PAUSE_DURATION_DAYS: { days: 90 },
+  PAUSE_COOLDOWN_DAYS: { days: 30 },
+
+  // ===== 환불 정책 =====
+  TRIAL_REFUND_ENABLED: { enabled: true },
+  RESUBSCRIPTION_REFUND_WINDOW_HOURS: { hours: 24 },
+  BENEFIT_USAGE_AFFECTS_REFUND: { enabled: true },
+
+  // ===== 체험 정책 =====
+  TRIAL_DURATION_DAYS: { days: 7 },
+  TRIAL_REUSE_PREVENTION: { enabled: true },
+
+  // ===== 플랜 변경 정책 =====
+  PLAN_CHANGE_COOLDOWN_DAYS: { days: 30 },
+};
+
+/**
+ * 티어별 정책 오버라이드 (선택적)
+ *
+ * 특정 티어에 다른 정책을 적용하고 싶을 때 사용
+ */
+const TIER_POLICY_OVERRIDES: Record<string, Record<string, PolicyValue>> = {
+  // 예시: PREMIUM 티어는 더 많은 일시정지 가능
+  // 'premium-tier-id': {
+  //   MAX_PAUSES_PER_YEAR: { count: 3 },
+  //   MAX_PAUSE_DURATION_DAYS: { days: 120 },
+  // },
+};
 
 /**
  * 멤버십 정책 서비스 (Business Layer)
  *
- * 역할: 비즈니스 흐름만 표현 (2-3줄)
- * - 검증 로직 없음 (Manager가 담당)
- * - 상세 구현 없음 (Reader/Manager가 담당)
- * - 협력 도구 클래스들을 중계
- * - 캐싱 레이어 제공
+ * 역할: 하드코딩된 정책 테이블 관리
+ * - 인메모리 정책 조회
+ * - 티어별 오버라이드 지원
+ * - 타입 안전한 정책 값 추출
  */
 @Injectable()
 export class MembershipPolicyService {
   private readonly logger = new Logger(MembershipPolicyService.name);
 
-  // 캐시 (성능 최적화)
-  private policyCache = new Map<string, PolicyResult>();
-  private cacheExpiry = new Map<string, number>();
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5분
-
-  constructor(
-    private readonly policyReader: PolicyReader,
-    private readonly policyManager: PolicyManager,
-  ) {}
-
   /**
-   * 정책 조회 (캐싱 포함)
+   * 정책 값 조회
    *
-   * ✅ 흐름만 표현: "캐시 확인 → Reader 조회 → 캐시 저장"
-   */
-  async getPolicy(
-    ruleType: PolicyRuleType,
-    tierId?: string,
-  ): Promise<PolicyResult | null> {
-    const cacheKey = this.getCacheKey(ruleType, tierId);
-
-    // 캐시 확인
-    if (this.isCacheValid(cacheKey)) {
-      return this.policyCache.get(cacheKey) || null;
-    }
-
-    // Reader 조회
-    const policy = await this.policyReader.findPolicy(ruleType, tierId);
-
-    // 캐시 저장
-    if (policy) {
-      this.setCache(cacheKey, policy);
-    }
-
-    return policy;
-  }
-
-  /**
-   * 정책 값 추출 (타입 안전)
-   *
-   * ✅ 흐름만 표현: "정책 조회 → 값 추출"
+   * 우선순위:
+   * 1. 티어별 오버라이드
+   * 2. 기본 정책 테이블
+   * 3. 기본값
    */
   async getPolicyValue<T = PolicyValue>(
     ruleType: PolicyRuleType,
     tierId?: string,
     defaultValue?: T,
   ): Promise<T> {
-    const policy = await this.getPolicy(ruleType, tierId);
-
-    if (!policy) {
-      if (defaultValue !== undefined) {
-        this.logger.warn('Policy not found, using default', {
-          ruleType,
-          tierId: tierId || 'global',
-          defaultValue,
-        });
-        return defaultValue;
-      }
-      this.logger.error('Policy not found and no default provided', {
+    // 1. 티어별 오버라이드 확인
+    if (tierId && TIER_POLICY_OVERRIDES[tierId]?.[ruleType]) {
+      this.logger.debug('Using tier-specific policy', {
         ruleType,
         tierId,
       });
-      throw new Error(`Policy not found: ${ruleType}`);
+      return TIER_POLICY_OVERRIDES[tierId][ruleType] as T;
     }
 
-    return policy.ruleValue as T;
+    // 2. 기본 정책 테이블 확인
+    const policyValue = POLICY_TABLE[ruleType];
+    if (policyValue) {
+      return policyValue as T;
+    }
+
+    // 3. 기본값 사용
+    if (defaultValue !== undefined) {
+      this.logger.warn('Policy not found, using default', {
+        ruleType,
+        tierId: tierId || 'global',
+        defaultValue,
+      });
+      return defaultValue;
+    }
+
+    // 4. 에러
+    this.logger.error('Policy not found and no default provided', {
+      ruleType,
+      tierId,
+    });
+    throw new Error(`Policy not found: ${ruleType}`);
   }
 
   /**
    * 숫자 정책 값 추출
-   *
-   * ✅ 흐름만 표현: "정책 값 조회 → 숫자 추출"
    */
   async getNumberPolicy(
     ruleType: PolicyRuleType,
@@ -129,8 +169,6 @@ export class MembershipPolicyService {
 
   /**
    * 불린 정책 값 추출
-   *
-   * ✅ 흐름만 표현: "정책 값 조회 → 불린 추출"
    */
   async getBooleanPolicy(
     ruleType: PolicyRuleType,
@@ -160,97 +198,38 @@ export class MembershipPolicyService {
   }
 
   /**
-   * 정책 생성/업데이트
+   * 정책 업데이트 (런타임)
    *
-   * ✅ 흐름만 표현: "Manager 호출 → 캐시 무효화"
+   * 주의: 서버 재시작 시 초기화됨
    */
-  async upsertPolicy(
+  updatePolicy(
     ruleType: PolicyRuleType,
-    ruleValue: PolicyValue,
+    value: PolicyValue,
     tierId?: string,
-    validFrom?: string,
-    validUntil?: string,
-  ): Promise<PolicyResult> {
-    const policy = await this.policyManager.upsertPolicy(
-      ruleType,
-      ruleValue,
-      tierId,
-      validFrom,
-      validUntil,
-    );
-
-    // 캐시 무효화
-    this.invalidateCache(ruleType, tierId);
-
-    return policy;
+  ): void {
+    if (tierId) {
+      if (!TIER_POLICY_OVERRIDES[tierId]) {
+        TIER_POLICY_OVERRIDES[tierId] = {};
+      }
+      TIER_POLICY_OVERRIDES[tierId][ruleType] = value;
+      this.logger.log('Tier policy updated (runtime)', { ruleType, tierId });
+    } else {
+      POLICY_TABLE[ruleType] = value;
+      this.logger.log('Global policy updated (runtime)', { ruleType });
+    }
   }
 
   /**
-   * 정책 비활성화
-   *
-   * ✅ 흐름만 표현: "Manager 호출 → 전체 캐시 무효화"
+   * 모든 정책 조회 (디버깅용)
    */
-  async deactivatePolicy(id: string): Promise<void> {
-    await this.policyManager.deactivatePolicy(id);
-
-    // 전체 캐시 무효화 (어떤 정책인지 모르므로)
-    this.clearAllCache();
+  getAllPolicies(): Record<string, PolicyValue> {
+    return { ...POLICY_TABLE };
   }
 
   /**
-   * 모든 활성 정책 조회
-   *
-   * ✅ 흐름만 표현: "Reader 조회"
+   * 티어별 오버라이드 조회 (디버깅용)
    */
-  async getAllActivePolicies(): Promise<PolicyResult[]> {
-    return this.policyReader.findAllActive();
-  }
-
-  /**
-   * 캐시 키 생성
-   */
-  private getCacheKey(ruleType: PolicyRuleType, tierId?: string): string {
-    return `${ruleType}:${tierId || 'global'}`;
-  }
-
-  /**
-   * 캐시 유효성 확인
-   */
-  private isCacheValid(key: string): boolean {
-    const expiry = this.cacheExpiry.get(key);
-    if (!expiry) return false;
-    return Date.now() < expiry;
-  }
-
-  /**
-   * 캐시 저장
-   */
-  private setCache(key: string, policy: PolicyResult): void {
-    this.policyCache.set(key, policy);
-    this.cacheExpiry.set(key, Date.now() + this.CACHE_TTL);
-  }
-
-  /**
-   * 특정 정책 캐시 무효화
-   */
-  private invalidateCache(ruleType: PolicyRuleType, tierId?: string): void {
-    const globalKey = this.getCacheKey(ruleType, undefined);
-    const tierKey = this.getCacheKey(ruleType, tierId);
-
-    this.policyCache.delete(globalKey);
-    this.policyCache.delete(tierKey);
-    this.cacheExpiry.delete(globalKey);
-    this.cacheExpiry.delete(tierKey);
-
-    this.logger.debug('Cache invalidated', { ruleType, tierId });
-  }
-
-  /**
-   * 전체 캐시 무효화
-   */
-  private clearAllCache(): void {
-    this.policyCache.clear();
-    this.cacheExpiry.clear();
-    this.logger.debug('All cache cleared');
+  getTierOverrides(tierId: string): Record<string, PolicyValue> | undefined {
+    return TIER_POLICY_OVERRIDES[tierId];
   }
 }
