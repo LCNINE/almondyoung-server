@@ -25,7 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
-import { ContractEventService } from '../services/contract-event.service';
+import { ContractEventManager } from '../services/subscription/contract-event.manager';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
@@ -82,7 +82,7 @@ export class AdminOperationsController {
   constructor(
     private readonly adminOperationsService: AdminOperationsService,
     private readonly cancellationService: SubscriptionCancellationService,
-    private readonly contractEventService: ContractEventService,
+    private readonly contractEventManager: ContractEventManager,
   ) {}
 
   /**
@@ -586,7 +586,7 @@ export class AdminOperationsController {
       this.logger.log(`계약 이벤트 이력 조회 - contractId: ${contractId}`);
 
       const events =
-        await this.contractEventService.getContractEvents(contractId);
+        await this.contractEventManager.getContractEvents(contractId);
 
       this.logger.log(
         `✅ 계약 이벤트 이력 조회 성공 - contractId: ${contractId}, events: ${events.length}`,
