@@ -44,7 +44,7 @@ export class SubscriptionCancellationService {
   /**
    * 통합 구독 취소 (자동 분기)
    *
-   * ✅ 흐름만 표현: "권한 체크 → 계약 조회 → 환불 판단 → 취소 실행"
+   * ✅ 흐름만 표현: "권한 체크 → 계약 조회 → 상태 검증 → 환불 판단 → 취소 실행"
    */
   async cancelSubscription(
     userId: string,
@@ -52,8 +52,23 @@ export class SubscriptionCancellationService {
     reasonText?: string,
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
     await this.entitlementService.checkAndUpdateSubscription(userId);
+
+    // 1. ACTIVE 계약 조회
     const data = await this.contractReader.findContractWithPlan(userId);
-    if (!data) throw new Error('Active subscription not found');
+    if (!data) {
+      // ACTIVE 계약이 없으면 취소된 계약이 있는지 확인
+      const allContracts =
+        await this.contractReader.findContractsByUserId(userId);
+      const hasCancelledContract = allContracts.some(
+        (c) => c.status === 'CANCELLED',
+      );
+
+      if (hasCancelledContract) {
+        throw new Error('Contract already cancelled');
+      }
+
+      throw new Error('Active subscription not found');
+    }
 
     const eligibility = this.cancellationManager.checkRefundEligibility(
       data.contract,
