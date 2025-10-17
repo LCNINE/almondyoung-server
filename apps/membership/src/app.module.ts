@@ -9,8 +9,6 @@ import { PlanService } from './services/plan.service';
 import { AdminOperationsService } from './services/admin-operations.service';
 import { PauseService } from './services/pause.service';
 import { EntitlementService } from './services/entitlement.service';
-import { PolicyValidationService } from './services/policy-validation.service';
-import { PolicyGuard } from './services/policy/policy.guard';
 import { SubscriptionService } from './services/subscription.service';
 import { PaymentClientService } from './services/billing/payment-client.service';
 import { RecurringBillingService } from './services/billing/recurring-billing.service';
@@ -38,6 +36,7 @@ import { PauseController } from './controllers/pause.controller';
 import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
+import { MembershipPolicyService } from './services/membership-policy.service';
 
 @Module({
   imports: [
@@ -76,13 +75,13 @@ import { BillingReader } from './services/billing/billing.reader';
     // Implementation Layer (Readers & Managers)
     EntitlementReader,
     EntitlementManager,
-    PolicyValidationService,
     ContractEventManager,
     SubscriptionContractReader,
     SubscriptionCreator,
     SubscriptionManager,
     SubscriptionCancellationManager,
     CancellationReasonReader,
+
     PauseReader,
     PauseManager,
     PlanReader,
@@ -92,8 +91,9 @@ import { BillingReader } from './services/billing/billing.reader';
     BillingManager,
     RecurringBillingService,
     BillingReader,
+    // Policy Layer (하드코딩 테이블)
+    MembershipPolicyService,
     // Infrastructure
-    PolicyGuard,
     PaymentClientService,
   ],
 })
