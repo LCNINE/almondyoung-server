@@ -36,6 +36,8 @@ import { SubscriptionController } from './controllers/subscription.controller';
 import { PlanController } from './controllers/plan.controller';
 import { PauseController } from './controllers/pause.controller';
 import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
+import { BillingManager } from './services/billing/billing.manager';
+import { BillingReader } from './services/billing/billing.reader';
 
 @Module({
   imports: [
@@ -87,7 +89,9 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
     PlanManager,
     BenefitReader,
     BenefitManager,
-
+    BillingManager,
+    RecurringBillingService,
+    BillingReader,
     // Infrastructure
     PolicyGuard,
     PaymentClientService,
