@@ -95,4 +95,43 @@ export class SubscriptionCancellationService {
     );
     return eligibility.amount;
   }
+
+  /**
+   * 강제 구독 취소 (관리자 전용)
+   *
+   * ✅ 흐름만 표현: "계약 조회 → 플랜 조회 → 강제 취소 실행"
+   */
+  async forceCancelSubscription(
+    contractId: string,
+    adminId: string,
+    reason: string,
+    refundType: 'FULL' | 'PARTIAL' | 'NONE',
+    partialRefundAmount?: number,
+    refundReason?: string,
+  ): Promise<CancellationResult> {
+    const contract = await this.contractReader.findById(contractId);
+    if (!contract) throw new Error('Contract not found');
+
+    const plan = await this.contractReader.findPlan(contract.planId);
+    if (!plan) throw new Error('Plan not found');
+
+    return this.cancellationManager.forceCancelSubscription(
+      contract,
+      plan,
+      adminId,
+      reason,
+      refundType,
+      partialRefundAmount,
+      refundReason,
+    );
+  }
+
+  /**
+   * 취소 이유 목록 조회
+   *
+   * ✅ 흐름만 표현: "Reader 호출"
+   */
+  async getCancellationReasons() {
+    return this.reasonReader.findActiveReasons();
+  }
 }
