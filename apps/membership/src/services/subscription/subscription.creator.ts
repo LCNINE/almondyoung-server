@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
+import { MembershipPolicyService } from '../membership-policy.service';
 
 type Plan = typeof schema.plan.$inferSelect;
 type Tier = typeof schema.tiers.$inferSelect;
@@ -24,6 +25,7 @@ export class SubscriptionCreator {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
     private readonly entitlementManager: EntitlementManager,
+    private readonly policyService: MembershipPolicyService,
   ) {}
 
   /**
@@ -40,9 +42,28 @@ export class SubscriptionCreator {
 
       // 1. 첫 구독 여부 확인 (무료 체험 악용 방지)
       const isFirstTime = await this.isFirstTimeSubscriber(userId);
-      const effectiveTrialDays = isFirstTime ? plan.trialDays || 0 : 0;
 
-      // 2. 날짜 계산
+      // 2. 정책에서 체험 기간 조회
+      const trialDays = await this.policyService.getNumberPolicy(
+        'TRIAL_DURATION_DAYS',
+        'days',
+        plan.tierId,
+        plan.trialDays || 0, // 기본값: 플랜의 체험 기간
+      );
+
+      // 3. 체험 재사용 방지 정책 확인
+      const trialReuseEnabled = await this.policyService.getBooleanPolicy(
+        'TRIAL_REUSE_PREVENTION',
+        'enabled',
+        plan.tierId,
+        true, // 기본값: 재사용 방지 활성화
+      );
+
+      // 4. 실제 적용할 체험 기간 계산
+      const effectiveTrialDays =
+        isFirstTime || !trialReuseEnabled ? trialDays : 0;
+
+      // 5. 날짜 계산
       // - endsAt: 구독 종료일 (무료 체험 포함, 30일 플랜이면 30일)
       // - billingDate: 첫 결제일 (무료 체험 후)
       // - nextBillingDate: 다음 결제일 (첫 결제 + 30일)
@@ -78,9 +99,10 @@ export class SubscriptionCreator {
         {
           planId: plan.id,
           billingDate: billingDate.toISOString().split('T')[0],
-          trialDays: plan.trialDays || 0,
+          trialDays, // 정책에서 조회한 체험 기간
           effectiveTrialDays, // 실제 적용된 무료 체험 기간
           isFirstTimeSubscriber: isFirstTime, // 첫 구독 여부
+          trialReusePreventionEnabled: trialReuseEnabled, // 재사용 방지 정책
         },
         'USER',
         userId,

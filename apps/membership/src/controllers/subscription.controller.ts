@@ -51,8 +51,6 @@ import {
   CancelSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { PolicyGuard } from '../services/policy/policy.guard';
-import { CheckPolicies } from '../services/policy/policy.decorator';
 import { FastifyRequest } from 'fastify';
 /**
  * 구독 관리 컨트롤러
@@ -178,8 +176,7 @@ export class SubscriptionController {
     description: '활성 구독 또는 플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
-  @CheckPolicies('CHANGE_PLAN')
+  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
   async upgradeSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
@@ -218,8 +215,7 @@ export class SubscriptionController {
     description: '활성 구독 또는 플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard, PolicyGuard) // 🚨 임시 가드 사용
-  @CheckPolicies('CHANGE_PLAN')
+  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
   async downgradeSubscription(
     @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))

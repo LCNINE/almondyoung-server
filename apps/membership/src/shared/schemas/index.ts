@@ -8,5 +8,4 @@ export * from './types';
 export * from './plan.type';
 export * from './subscription.type';
 export * from './pasue.type';
-export * from './policy.type';
 export * from './benefit-tracking.type';
