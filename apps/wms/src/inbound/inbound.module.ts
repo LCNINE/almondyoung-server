@@ -6,8 +6,10 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { SharedModule } from '../shared/shared.module';
 import { InboundController } from './controllers/inbound.controllers';
 import { PurchaseOrderController } from './controllers/purchase-order.controller';
+import { InboundListController } from './controllers/inbound-list.controller';
 import { InboundService } from './services/inbound.service';
 import { PurchaseOrderService } from './services/purchase-order.service';
+import { InboundListService } from './services/inbound-list.service';
 
 @Module({
   imports: [
@@ -21,8 +23,8 @@ import { PurchaseOrderService } from './services/purchase-order.service';
     InventoryModule,
     SharedModule,
   ],
-  controllers: [InboundController, PurchaseOrderController],
-  providers: [InboundService, PurchaseOrderService],
-  exports: [InboundService, PurchaseOrderService],
+  controllers: [InboundController, PurchaseOrderController, InboundListController],
+  providers: [InboundService, PurchaseOrderService, InboundListService],
+  exports: [InboundService, PurchaseOrderService, InboundListService],
 })
 export class InboundModule { }

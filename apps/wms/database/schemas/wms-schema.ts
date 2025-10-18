@@ -99,7 +99,12 @@ export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'varian
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
-export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
+export const inboundStatusEnum = pgEnum('inbound_status', [
+    'pending',      // 입고 대기 - Initial state
+    'applied',      // 입고신청 - Applied for inbound
+    'receiving',    // 입고 중 - Currently receiving
+    'confirmed',    // 입고 완료 - Completed
+]);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
 // 이중 입고 계획을 위한 새 enum

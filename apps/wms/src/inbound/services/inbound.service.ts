@@ -72,7 +72,7 @@ export class InboundService {
             // 회차(journal + receipt) 생성
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-            } as any).returning();
+            }).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
                 method: 'simple',
@@ -82,7 +82,7 @@ export class InboundService {
                 status: 'posted',
                 totalQuantity: 0,
                 journalId: journal.id,
-            } as any).returning();
+            }).returning();
 
             let totalQty = 0;
             for (const item of items) {
@@ -106,7 +106,7 @@ export class InboundService {
                     originLocationId: effectiveLocationId,
                     eventId: eventId ?? null,
                     memo: item.memo,
-                } as any);
+                });
 
                 totalQty += item.quantity;
             }
@@ -124,7 +124,7 @@ export class InboundService {
                 quantity: totalQty,
                 method: 'simple',
                 reason: 'simple_inbound',
-            } as any);
+            });
 
             return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
         }, tx);
@@ -141,7 +141,7 @@ export class InboundService {
 
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-            } as any).returning();
+            }).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
                 method: 'simple_fullscan',
@@ -151,7 +151,7 @@ export class InboundService {
                 status: 'posted',
                 totalQuantity: 0,
                 journalId: journal.id,
-            } as any).returning();
+            }).returning();
 
             let totalQty = 0;
             for (const item of items) {
@@ -173,7 +173,7 @@ export class InboundService {
                     originLocationId: effectiveLocationId,
                     eventId: eventId ?? null,
                     memo: item.memo,
-                } as any);
+                });
                 totalQty += item.quantity;
             }
             await tx.update(wmsTables.inboundReceipts)
@@ -187,7 +187,7 @@ export class InboundService {
                 quantity: totalQty,
                 method: 'simple_fullscan',
                 reason: 'simple_inbound_fullscan',
-            } as any);
+            });
             return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
         }, tx);
     }
@@ -206,7 +206,7 @@ export class InboundService {
 
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-            } as any).returning();
+            }).returning();
 
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
                 method: 'individual',
@@ -216,7 +216,7 @@ export class InboundService {
                 status: 'posted',
                 totalQuantity: 0,
                 journalId: journal.id,
-            } as any).returning();
+            }).returning();
 
             const sku = await this.inventoryService.findSkuById(skuId, tx);
             if (!sku) throw new NotFoundException(`SKU ${skuId} not found`);
@@ -238,7 +238,7 @@ export class InboundService {
                 originLocationId: effectiveLocationId,
                 eventId: eventId ?? null,
                 memo: dto.memo,
-            } as any);
+            });
 
             await tx.update(wmsTables.inboundReceipts)
                 .set({ totalQuantity: quantity })
@@ -252,7 +252,7 @@ export class InboundService {
                 quantity,
                 method: 'individual',
                 reason: 'individual_inbound',
-            } as any);
+            });
 
             return { success: true, receiptId: receipt.id };
         }, tx);
@@ -448,7 +448,7 @@ export class InboundService {
                 expectedDate: new Date(dto.expectedDate),
                 warehouseId: dto.warehouseId,
                 status: 'pending',
-            } as any).returning();
+            }).returning();
             return plan;
         }, tx);
     }
@@ -465,7 +465,7 @@ export class InboundService {
                     expectedQty: item.expectedQty,
                     receivedQty: 0,
                     status: 'pending',
-                } as any);
+                });
             }
             return { success: true };
         }, tx);
@@ -517,7 +517,7 @@ export class InboundService {
             // 회차(journal + receipt) 생성
             const [journal] = await tx.insert(wmsTables.stockJournals).values({
                 sourceType: 'inbound',
-            } as any).returning();
+            }).returning();
             const [receipt] = await tx.insert(wmsTables.inboundReceipts).values({
                 method: 'planned',
                 warehouseId: plan.warehouseId,
@@ -526,7 +526,7 @@ export class InboundService {
                 status: 'posted',
                 totalQuantity: 0,
                 journalId: journal.id,
-            } as any).returning();
+            }).returning();
 
             // 이벤트 생성 + 라인 생성
             const { eventId } = await this.commandService.receive({
@@ -545,7 +545,7 @@ export class InboundService {
                 originLocationId: effectiveLocationId,
                 eventId: eventId ?? null,
                 planItemId: item.id,
-            } as any);
+            });
 
             // 예정 누계/상태 갱신
             const newReceived = (item.receivedQty ?? 0) + dto.quantity;
@@ -568,7 +568,7 @@ export class InboundService {
                 quantity: dto.quantity,
                 method: 'planned',
                 reason: 'planned_inbound',
-            } as any);
+            });
 
             return { success: true, receiptId: receipt.id };
         }, tx);
@@ -637,7 +637,7 @@ export class InboundService {
                 toLocationId: dto.toLocationId,
                 quantity: dto.quantity,
                 eventId: moveResult.eventId ?? null,
-            } as any);
+            });
 
             return { success: true };
         }, tx);
@@ -699,7 +699,7 @@ export class InboundService {
                 quantity: dto.quantity,
                 reason: 'RETURN',
                 eventId: event?.id ?? null,
-            } as any);
+            });
 
             return { success: true };
         }, tx);
@@ -775,7 +775,7 @@ export class InboundService {
                 quantity: line.quantity,
                 reason: 'CANCEL',
                 eventId: rev?.id ?? null,
-            } as any);
+            });
 
             // 모든 라인이 취소되면 헤더를 voided 처리하여 receipts 기반 조회에서 제외
             const lines = await tx.query.inboundReceiptLines.findMany({
