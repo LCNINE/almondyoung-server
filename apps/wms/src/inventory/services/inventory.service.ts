@@ -225,6 +225,7 @@ export class InventoryService implements OnModuleInit {
                     deliveryProfileId: wmsTables.skus.deliveryProfileId,
                     sale1m: wmsTables.skus.sale1m,
                     sale3m: wmsTables.skus.sale3m,
+                    safetyStock: wmsTables.skus.safetyStock,
                     masterId: wmsTables.skus.masterId,
                     optionKey: wmsTables.skus.optionKey,
                     masterName: wmsTables.inventoryProductMasters.name,
@@ -240,7 +241,7 @@ export class InventoryService implements OnModuleInit {
                 )
                 .where(eq(wmsTables.skus.id, skuId))
                 .limit(1);
-            return row as any;
+            return row;
         }, tx);
 
         if (!sku) {
@@ -279,14 +280,14 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId ?? undefined,
             sale1m: sku.sale1m ?? undefined,
             sale3m: sku.sale3m ?? undefined,
-            safetyStock: sku.safetyStock ?? 0,
-            masterId: (sku as any).masterId,
-            optionKey: (sku as any).optionKey ?? undefined,
+            safetyStock: sku.safetyStock,
+            masterId: sku.masterId,
+            optionKey: (sku.optionKey as any) ?? undefined,
             master: {
-                id: (sku as any).masterId,
-                name: (sku as any).masterName,
-                code: (sku as any).masterCode,
-                hasOptions: !!(sku as any).masterOptionSchema,
+                id: sku.masterId,
+                name: sku.masterName,
+                code: sku.masterCode,
+                hasOptions: !!sku.masterOptionSchema,
             },
             barcodes: barcodes.map(b => ({
                 id: b.id,
@@ -296,8 +297,8 @@ export class InventoryService implements OnModuleInit {
             })),
             supplierNames: suppliers.map(s => s.name),
             categoryNames: categories.map(c => c.name),
-            createdAt: (sku as any).createdAt ?? new Date(),
-            updatedAt: (sku as any).updatedAt ?? new Date(),
+            createdAt: sku.createdAt,
+            updatedAt: sku.updatedAt,
         };
     }
 
