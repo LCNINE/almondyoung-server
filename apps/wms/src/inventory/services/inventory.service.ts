@@ -279,6 +279,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId ?? undefined,
             sale1m: sku.sale1m ?? undefined,
             sale3m: sku.sale3m ?? undefined,
+            safetyStock: sku.safetyStock ?? 0,
             masterId: (sku as any).masterId,
             optionKey: (sku as any).optionKey ?? undefined,
             master: {
@@ -385,6 +386,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId,
             sale1m: sku.sale1m,
             sale3m: sku.sale3m,
+            safetyStock: sku.safetyStock ?? 0,
             masterId: sku.masterId,
             optionKey: sku.optionKey,
             barcodes: Array.from(sku.barcodes.values()),
