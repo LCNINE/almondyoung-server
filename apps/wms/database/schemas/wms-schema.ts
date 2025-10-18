@@ -110,6 +110,14 @@ export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop
 // 이중 입고 계획을 위한 새 enum
 export const planTypeEnum = pgEnum('plan_type', ['source', 'destination']);
 
+// Stocktaking status enum
+export const stocktakingStatusEnum = pgEnum('stocktaking_status', [
+    'draft',        // 작성 중 - Being created
+    'in_progress',  // 진행 중 - Actively counting
+    'completed',    // 완료 - Counting finished
+    'cancelled',    // 취소 - Cancelled
+]);
+
 // Inbound domain enums
 export const inboundMethodEnum = pgEnum('inbound_method', [
     'individual',           // 개별입고
@@ -1068,6 +1076,73 @@ export const inboundLists = pgTable('inbound_lists', {
 });
 
 /*───────────────────────────
+ * STOCKTAKING (재고 실사)
+ *──────────────────────────*/
+// Stocktaking sessions table
+export const stocktakingSessions = pgTable('stocktaking_sessions', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(),
+    sessionName: varchar('session_name', { length: 255 }).notNull(),
+    status: stocktakingStatusEnum('status').notNull().default('draft'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    startedBy: uuid('started_by'), // FK to users (if available)
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Stocktaking lines table (individual count records)
+export const stocktakingLines = pgTable('stocktaking_lines', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+        .references(() => stocktakingSessions.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'restrict' })
+        .notNull(),
+    locationId: uuid('location_id')
+        .references(() => locations.id, { onDelete: 'restrict' }),
+    expectedQuantity: integer('expected_quantity').notNull(),
+    countedQuantity: integer('counted_quantity'),
+    variance: integer('variance'), // Calculated: countedQuantity - expectedQuantity
+    scannedBarcode: varchar('scanned_barcode', { length: 64 }),
+    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, counted, verified
+    countedAt: timestamp('counted_at', { withTimezone: true }),
+    countedBy: uuid('counted_by'), // FK to users
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
+    idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
+    idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+}));
+
+// Stocktaking adjustments table (generated from variances)
+export const stocktakingAdjustments = pgTable('stocktaking_adjustments', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+        .references(() => stocktakingSessions.id, { onDelete: 'restrict' })
+        .notNull(),
+    lineId: uuid('line_id')
+        .references(() => stocktakingLines.id, { onDelete: 'restrict' })
+        .notNull(),
+    stockEventId: uuid('stock_event_id')
+        .references(() => stockEvents.id, { onDelete: 'restrict' }),
+    adjustmentQuantity: integer('adjustment_quantity').notNull(),
+    adjustmentType: varchar('adjustment_type', { length: 20 }).notNull(), // 'INCREASE' or 'DECREASE'
+    reason: varchar('reason', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    appliedBy: uuid('applied_by'),
+}, t => ({
+    idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
+    idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+}));
+
+/*───────────────────────────
  * INBOUND RECEIPTS (헤더/라인)
  *──────────────────────────*/
 export const inboundReceipts = pgTable('inbound_receipts', {
@@ -1436,6 +1511,11 @@ export const wmsTables = {
     movementWorkLogs,
     auditLogs,
     outboxEvents,
+
+    // Stocktaking
+    stocktakingSessions,
+    stocktakingLines,
+    stocktakingAdjustments,
 
     // FOI 기반 확장 스키마
     productSkuMappings,
@@ -2110,6 +2190,46 @@ export const settingsRelations = relations(settings, ({ one }) => ({
     }),
 }));
 
+// Stocktaking Relations
+export const stocktakingSessionsRelations = relations(stocktakingSessions, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [stocktakingSessions.warehouseId],
+        references: [warehouses.id],
+    }),
+    lines: many(stocktakingLines),
+    adjustments: many(stocktakingAdjustments),
+}));
+
+export const stocktakingLinesRelations = relations(stocktakingLines, ({ one }) => ({
+    session: one(stocktakingSessions, {
+        fields: [stocktakingLines.sessionId],
+        references: [stocktakingSessions.id],
+    }),
+    sku: one(skus, {
+        fields: [stocktakingLines.skuId],
+        references: [skus.id],
+    }),
+    location: one(locations, {
+        fields: [stocktakingLines.locationId],
+        references: [locations.id],
+    }),
+}));
+
+export const stocktakingAdjustmentsRelations = relations(stocktakingAdjustments, ({ one }) => ({
+    session: one(stocktakingSessions, {
+        fields: [stocktakingAdjustments.sessionId],
+        references: [stocktakingSessions.id],
+    }),
+    line: one(stocktakingLines, {
+        fields: [stocktakingAdjustments.lineId],
+        references: [stocktakingLines.id],
+    }),
+    stockEvent: one(stockEvents, {
+        fields: [stocktakingAdjustments.stockEventId],
+        references: [stockEvents.id],
+    }),
+}));
+
 
 export const wmsRelations = {
     // 모든 관계들 - Core Master Data Relations
@@ -2195,6 +2315,11 @@ export const wmsRelations = {
 
     // Settings Relations
     settingsRelations,
+
+    // Stocktaking Relations
+    stocktakingSessionsRelations,
+    stocktakingLinesRelations,
+    stocktakingAdjustmentsRelations,
 } as const;
 
 // Complete schema for queries (includes both tables and views)
