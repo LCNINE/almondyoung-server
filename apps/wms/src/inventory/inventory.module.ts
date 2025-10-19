@@ -21,6 +21,17 @@ import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
 import { OptionEngineModule } from '@app/shared';
 import { MasterService } from './services/master.service';
 import { MastersController } from './controllers/masters.controller';
+// Phase 2 Step 6: New services and controllers
+import { SkuPricingService } from './services/sku-pricing.service';
+import { SkuManagersService } from './services/sku-managers.service';
+import { SkuLocationMovementService } from './services/sku-location-movement.service';
+import { SkuPricingController } from './controllers/sku-pricing.controller';
+import { SkuManagersController, ManagerSkusController } from './controllers/sku-managers.controller';
+import {
+  SkuLocationMovementController,
+  SkuMovementHistoryController,
+  LocationMovementHistoryController,
+} from './controllers/sku-location-movement.controller';
 
 @Module({
   imports: [
@@ -38,7 +49,14 @@ import { MastersController } from './controllers/masters.controller';
     InventoryController,
     ProductMatchingController,
     LocationController,
-    MastersController
+    MastersController,
+    // Phase 2 Step 6: New controllers
+    SkuPricingController,
+    SkuManagersController,
+    ManagerSkusController,
+    SkuLocationMovementController,
+    SkuMovementHistoryController,
+    LocationMovementHistoryController,
   ],
   providers: [
     InventoryService,
@@ -54,6 +72,10 @@ import { MastersController } from './controllers/masters.controller';
     OptionMatchingStrategy,
     VoidMatchingStrategy,
     MasterService,
+    // Phase 2 Step 6: New services
+    SkuPricingService,
+    SkuManagersService,
+    SkuLocationMovementService,
   ],
   exports: [
     InventoryService,
@@ -65,6 +87,10 @@ import { MastersController } from './controllers/masters.controller';
     InventoryCommandService,
     InventoryQueryService,
     MasterService,
+    // Phase 2 Step 6: Export new services
+    SkuPricingService,
+    SkuManagersService,
+    SkuLocationMovementService,
   ],
 })
 export class InventoryModule { }
