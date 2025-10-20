@@ -91,11 +91,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
-    try {
-      return this.authService.restoreToken(user, res);
-    } catch (error) {
-      console.log('토큰리프레시토큰 실패:', error);
-    }
+    return this.authService.restoreToken(user, res);
   }
 
   @ApiOperation({ summary: '비밀번호 변경' })
