@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { FastifyRequest } from 'fastify';
@@ -11,6 +11,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
   Strategy,
   'jwt-refresh',
 ) {
+  private readonly logger = new Logger(JwtRefreshStrategy.name);
+
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
@@ -30,6 +32,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
       },
       secretOrKey: refreshSecret,
       passReqToCallback: true,
+      ignoreExpiration: true,
     });
   }
 
@@ -38,6 +41,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
     payload: { sub: string; scopes: string[] },
   ) {
     const refreshToken = req.cookies?.refreshToken;
+
     if (!refreshToken) {
       throw new UnauthorizedException('refresh token not found');
     }
@@ -46,24 +50,15 @@ export class JwtRefreshStrategy extends PassportStrategy(
     try {
       await this.tokensService.validateRefreshToken(payload.sub, refreshToken);
     } catch (error) {
-      if (error.message === 'Refresh token not found') {
-        throw new UnauthorizedException(
-          '로그아웃되었거나 유효하지 않은 리프레시 토큰입니다.',
-        );
-      }
-      if (error.message === 'Refresh token revoked') {
-        throw new UnauthorizedException('무효화된 리프레시 토큰입니다.');
-      }
-      if (error.message === 'Refresh token expired') {
-        throw new UnauthorizedException('만료된 리프레시 토큰입니다.');
-      }
-      throw new UnauthorizedException('리프레시 토큰 검증에 실패했습니다.');
+      this.logger.error('리프레시 토큰 검증 실패:', error);
+      await this.tokensService.deleteAllTokens(payload.sub); // 해당 유저의 토큰 다 삭제
+      throw new Error('The refresh token is invalid');
     }
 
     const user = await this.usersService.findUserById(payload.sub);
 
     if (!user) {
-      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
+      throw new Error('User not found');
     }
 
     return {
