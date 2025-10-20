@@ -68,7 +68,7 @@ export class UsersController {
     description: '조회할 사용자 ID',
     required: false,
   })
-  @Get('/details')
+  @Get('/detail')
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
@@ -85,7 +85,7 @@ export class UsersController {
     type: UserRolesResponse,
   })
   @ApiParam({ name: 'userId', description: '사용자 ID' })
-  @Get('/roles/:userId')
+  @Get('/roles')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   async getUserRoles(@CurrentUser() user: User) {

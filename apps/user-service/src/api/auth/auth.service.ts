@@ -37,6 +37,7 @@ import {
 } from '../../constants/redirect-url.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { NotificationEventPublisher } from '../events/notification-event.publisher';
+import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
@@ -54,10 +55,18 @@ export class AuthService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly notificationPublisher: NotificationEventPublisher,
     private readonly consentsService: ConsentsService,
+    private readonly tokensService: TokensService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
+  }
+
+  private async inTx<T>(
+    fn: (tx: DbTransaction) => Promise<T>,
+    tx?: DbTransaction,
+  ) {
+    return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
   private getSocialRedirectUrl(provider: ProviderType): string {
@@ -135,18 +144,6 @@ export class AuthService {
         }
 
         // 미인증 이메일인 경우 기존 토큰 삭제 후 재발송
-        await this.dbService.db
-          .delete(userServiceSchema.tokens)
-          .where(
-            and(
-              eq(userServiceSchema.tokens.userId, existingUser.id),
-              eq(
-                userServiceSchema.tokens.type,
-                userServiceEnums.tokenTypeEnum.enumValues[2],
-              ),
-            ),
-          );
-
         const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
         // 새로운 인증 토큰 생성
@@ -158,14 +155,12 @@ export class AuthService {
           },
         );
 
-        // 새 토큰 저장
-        await this.dbService.db.insert(userServiceSchema.tokens).values({
-          type: userServiceEnums.tokenTypeEnum.enumValues[2],
-          userId: existingUser.id,
-          value: verificationToken,
-          scopes: '',
-          expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-        });
+        // 새 토큰 저장 (기존 토큰 자동 삭제)
+        await this.tokensService.saveVerificationToken(
+          existingUser.id,
+          verificationToken,
+          new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+        );
 
         // 이메일 재발송
         await this.notificationPublisher.publishUserVerificationEvent({
@@ -240,13 +235,12 @@ export class AuthService {
         );
 
         // 토큰 저장
-        await tx.insert(userServiceSchema.tokens).values({
-          type: userServiceEnums.tokenTypeEnum.enumValues[2],
-          userId: user.id,
-          value: verificationToken,
-          scopes: '',
-          expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-        });
+        await this.tokensService.saveVerificationToken(
+          user.id,
+          verificationToken,
+          new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+          tx,
+        );
 
         // 이메일 발송
         await this.notificationPublisher.publishUserVerificationEvent({
@@ -318,9 +312,7 @@ export class AuthService {
         .where(eq(userServiceSchema.users.id, verificationToken.user.id));
 
       //  사용된 인증 토큰 삭제
-      await this.dbService.db
-        .delete(userServiceSchema.tokens)
-        .where(eq(userServiceSchema.tokens.value, token));
+      await this.tokensService.deleteTokenByValue(token);
 
       // 기본 역할 설정을 'user'로 하고 기본권한 부여
       await this.usersService.assignDefaultRoleToUser(
@@ -378,13 +370,11 @@ export class AuthService {
     );
 
     // 새 토큰 저장
-    await this.dbService.db.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[2],
-      userId: user.id,
-      value: verificationToken,
-      scopes: '',
-      expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-    });
+    await this.tokensService.saveVerificationToken(
+      user.id,
+      verificationToken,
+      new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+    );
 
     // 이메일 재발송
     this.notificationPublisher.publishUserVerificationEvent({
@@ -604,50 +594,28 @@ export class AuthService {
   }
 
   async signOut(req: FastifyRequest, user: User, tx?: DbTransaction) {
-    const client = this.getClient(tx);
-    const authHeader = req.headers.authorization;
-    const accessToken = authHeader?.split(' ')[1];
+    return this.inTx(async (trx) => {
+      const accessToken = req.cookies?.accessToken;
 
-    try {
-      if (!accessToken) {
-        throw new UnauthorizedException('인증 토큰이 필요합니다.');
+      try {
+        if (!accessToken) {
+          throw new UnauthorizedException('인증 토큰이 필요합니다.');
+        }
+
+        // 사용자 ID로 accessToken 삭제
+        await this.tokensService.deleteToken(user.id, 'access', trx);
+
+        // 사용자 ID로 refreshToken 삭제
+        await this.tokensService.deleteToken(user.id, 'refresh', trx);
+
+        return { message: '로그아웃되었습니다.' };
+      } catch (error) {
+        if (error instanceof UnauthorizedException) {
+          throw error;
+        }
+        throw new BadRequestException('로그아웃 처리 중 오류가 발생했습니다.');
       }
-
-      //사용자 ID로 accessToken 삭제
-      await client
-        .delete(userServiceSchema.tokens)
-        .where(
-          and(
-            eq(userServiceSchema.tokens.userId, user.id),
-            eq(
-              userServiceSchema.tokens.type,
-              userServiceEnums.tokenTypeEnum.enumValues[0],
-            ),
-          ),
-        )
-        .returning();
-
-      //사용자 ID로 refreshToken 삭제
-      await client
-        .delete(userServiceSchema.tokens)
-        .where(
-          and(
-            eq(userServiceSchema.tokens.userId, user.id),
-            eq(
-              userServiceSchema.tokens.type,
-              userServiceEnums.tokenTypeEnum.enumValues[1],
-            ),
-          ),
-        )
-        .returning();
-
-      return { message: '로그아웃되었습니다.' };
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      throw new BadRequestException('로그아웃 처리 중 오류가 발생했습니다.');
-    }
+    }, tx);
   }
 
   private async getUserScopes(
@@ -723,27 +691,14 @@ export class AuthService {
       expiresIn,
     });
 
-    // 기존 액세스 토큰 삭제
-    await client
-      .delete(userServiceSchema.tokens)
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, user.id),
-          eq(
-            userServiceSchema.tokens.type,
-            userServiceEnums.tokenTypeEnum.enumValues[0],
-          ),
-        ),
-      );
-
-    // 새 액세스 토큰 저장
-    await client.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[0],
-      userId: user.id,
-      value: accessToken,
-      scopes: scopes.join(','),
-      expiresAt: new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-    });
+    // 액세스 토큰 저장 (기존 토큰 자동 삭제)
+    await this.tokensService.saveAccessToken(
+      user.id,
+      accessToken,
+      scopes,
+      new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+      tx,
+    );
 
     const cookieOptions = {
       path: '/',
@@ -788,27 +743,14 @@ export class AuthService {
 
     const expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
 
-    // 기존 리프레시 토큰 삭제 후 새로 생성 (기간이 바뀔 수 있으므로)
-    await client
-      .delete(userServiceSchema.tokens)
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, userId),
-          eq(
-            userServiceSchema.tokens.type,
-            userServiceEnums.tokenTypeEnum.enumValues[1],
-          ),
-        ),
-      );
-
-    // 새 리프레시 토큰 저장
-    await client.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[1],
+    // 리프레시 토큰 저장 (기존 토큰 자동 삭제)
+    await this.tokensService.saveRefreshToken(
       userId,
-      value: refreshToken,
-      scopes: scopes.join(','),
+      refreshToken,
+      scopes,
       expiresAt,
-    });
+      tx,
+    );
 
     // 쿠키 설정
     const cookieOptions = {
