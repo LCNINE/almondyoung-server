@@ -38,6 +38,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
     payload: { sub: string; scopes: string[] },
   ) {
     const refreshToken = req.cookies?.refreshToken;
+
+    console.log('refreshToken', refreshToken);
     if (!refreshToken) {
       throw new UnauthorizedException('refresh token not found');
     }
