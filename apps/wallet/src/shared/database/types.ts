@@ -50,6 +50,10 @@ export type DbTransaction = PostgresJsDatabase<WalletSchema>;
 // ===============================
 // Payment Intent 타입들
 // ===============================
+
+// DiscountLine 타입 (포인트 할인 정보)
+export type DiscountLine = schema.DiscountLine;
+
 export type PaymentIntent = InferSelectModel<typeof schema.paymentIntents>;
 export type NewPaymentIntent = InferInsertModel<typeof schema.paymentIntents>;
 export type UpdatePaymentIntent = Partial<

@@ -43,7 +43,7 @@ export class ReferralRewardService {
     }
 
     // 2) 보상 집행
-    const earnRes = await this.pointService.earn({
+    const earnRes = await this.pointService.addPoints({
       partnerId: params.partnerId,
       amount: params.amount,
       reason: params.reason ?? 'referral_reward',

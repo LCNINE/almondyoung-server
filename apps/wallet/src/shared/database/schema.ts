@@ -76,6 +76,7 @@ export const paymentSessionStatusEnum = pgEnum('payment_session_status', [
   'CANCELLED',
   'PARTIALLY_REFUNDED',
   'REFUNDED',
+  'UNKNOWN',
 ]);
 
 // TransactionStatus
@@ -427,7 +428,6 @@ export const bnplEvents = pgTable(
     // CMS 응답·상태
     cmsStatus: varchar('cms_status', { length: 32 }), // REQUESTED/PROCESSED/FAILED
     cmsErrorCode: varchar('cms_error_code', { length: 64 }),
-    cmsResponseSnapshot: jsonb('cms_response_snapshot'),
 
     // 상태·사유
     status: varchar('status', { length: 16 }).notNull().default('PENDING'),
@@ -451,6 +451,59 @@ export const bnplEvents = pgTable(
     index('idx_be_status').on(t.status),
   ],
 );
+
+// ────────────────────────────────────────────
+// BNPL CMS Responses - CMS 응답 이력 추적
+// ────────────────────────────────────────────
+
+export const bnplCmsResponses = pgTable(
+  'bnpl_cms_responses',
+  {
+    id: varchar('id', { length: 26 })
+      .primaryKey()
+      .$defaultFn(() => getTsid().toString()),
+
+    // 배치 단위 추적
+    batchId: varchar('batch_id', { length: 50 }).notNull(),
+    accountId: varchar('account_id', { length: 26 })
+      .notNull()
+      .references(() => bnplAccounts.id, { onDelete: 'cascade' }),
+
+    // 개별 이벤트 참조 (선택적 - 배치 전체 응답인 경우 null)
+    eventId: varchar('event_id', { length: 26 }).references(
+      () => bnplEvents.id,
+      { onDelete: 'cascade' },
+    ),
+
+    // 응답 타입
+    responseType: varchar('response_type', { length: 32 }).notNull(),
+    // 'BATCH_REQUEST_SUBMITTED' - 배치 출금 신청
+    // 'BATCH_RESULT_CONFIRMED' - 배치 결과 확인
+    // 'BATCH_RETRY_ATTEMPTED' - 배치 재시도
+
+    // HMS CMS 응답 원본
+    cmsResponseSnapshot: jsonb('cms_response_snapshot').notNull(),
+
+    // 상태 변화 추적
+    previousStatus: varchar('previous_status', { length: 32 }),
+    newStatus: varchar('new_status', { length: 32 }).notNull(),
+
+    // 메타데이터
+    metadata: jsonb('metadata'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index('idx_bnpl_cms_batch').on(t.batchId),
+    index('idx_bnpl_cms_account').on(t.accountId),
+    index('idx_bnpl_cms_event').on(t.eventId),
+    index('idx_bnpl_cms_type').on(t.responseType),
+    index('idx_bnpl_cms_created').on(t.createdAt),
+  ],
+);
+
 // 3️⃣ BNPL 이벤트 상세 (복식부기)
 // ────────────────────────────────────────────
 
@@ -572,7 +625,7 @@ export const pointEvents = pgTable(
   'point_events',
   {
     id: serial('id').primaryKey(), // Supabase는 serial 사용
-    partnerId: integer('partner_id').notNull(), // partner 테이블 참조
+    partnerId: varchar('partner_id', { length: 36 }).notNull(), // UUIDv7 (customerId와 동일)
     eventType: pointActionEnum('event_type').notNull(), // "Point Action" enum
     amount: integer('amount').notNull(),
 
@@ -612,7 +665,7 @@ export const pointEventDetails = pgTable(
     pointEventId: integer('point_event_id')
       .notNull()
       .references(() => pointEvents.id),
-    partnerId: integer('partner_id').notNull(), // partner_id 중복 저장 (성능)
+    partnerId: varchar('partner_id', { length: 36 }).notNull(), // UUIDv7 (customerId와 동일)
     eventType: pointActionEnum('event_type').notNull(), // event_type 중복 저장
     amount: integer('amount').notNull(),
 
@@ -736,6 +789,7 @@ export const overdueAccounts = pgTable('overdue_accounts', {
 export const bnplAccountsRelations = relations(bnplAccounts, ({ many }) => ({
   events: many(bnplEvents),
   bnplevents: many(bnplEvents),
+  cmsResponses: many(bnplCmsResponses),
 }));
 
 export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
@@ -744,7 +798,22 @@ export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
     references: [bnplAccounts.id],
   }),
   details: many(bnplEventDetails),
+  cmsResponses: many(bnplCmsResponses),
 }));
+
+export const bnplCmsResponsesRelations = relations(
+  bnplCmsResponses,
+  ({ one }) => ({
+    account: one(bnplAccounts, {
+      fields: [bnplCmsResponses.accountId],
+      references: [bnplAccounts.id],
+    }),
+    event: one(bnplEvents, {
+      fields: [bnplCmsResponses.eventId],
+      references: [bnplEvents.id],
+    }),
+  }),
+);
 
 // ③ 디테일 → 이벤트 / 디테일 자기참조
 export const bnplEventDetailsRelations = relations(
@@ -1128,6 +1197,16 @@ export const cashReceiptEventDetails = pgTable(
   (table) => [index('idx_cash_receipt_event_details_event').on(table.eventId)],
 );
 
+// ───────────────────────────────────────────
+// DiscountLine 타입 정의 (포인트 할인 정보)
+// ───────────────────────────────────────────
+export type DiscountLine = {
+  type: 'POINTS';
+  amount: number;
+  pointEventId: number;
+  appliedAt: Date;
+};
+
 /**
  * PaymentIntent 테이블 - 결제 의도 (provider 없음, 실행 시점에서 결정)
  */
@@ -1136,7 +1215,18 @@ export const paymentIntents = pgTable(
   {
     id: varchar('id', { length: 36 }).primaryKey(),
     customerId: varchar('customer_id', { length: 64 }).notNull(),
-    amount: bigint('amount', { mode: 'number' }).notNull(),
+
+    // 금액 필드 (포인트 통합 지원) - 모두 정수(원 단위)로 통일
+    amount: bigint('amount', { mode: 'number' }).notNull(), // 레거시 호환용 (totalAmount와 동일)
+    totalAmount: bigint('total_amount', { mode: 'number' }).notNull(), // 원래 금액
+    discounts: jsonb('discounts')
+      .default(sql`'[]'::jsonb`)
+      .$type<DiscountLine[]>(), // 할인 내역
+    discountsTotal: bigint('discounts_total', { mode: 'number' })
+      .notNull()
+      .default(0), // 할인 총액
+    finalAmount: bigint('final_amount', { mode: 'number' }).notNull(), // 실제 결제액 (totalAmount - discountsTotal)
+
     status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
     type: paymentIntentTypeEnum('type').notNull().default('ORDER'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -1183,14 +1273,14 @@ export const paymentAttempts = pgTable(
       .$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>()
       .notNull()
       .default('USER'),
-    eventContext: jsonb('event_context'),
+    requestMetadata: jsonb('request_metadata'),
+    providerResponseSnapshot: jsonb('provider_response_snapshot'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    errorMessage: text('error_message'),
     transactionId: varchar('transaction_id', { length: 255 }),
     approvalNumber: varchar('approval_number', { length: 255 }),
   },
@@ -1351,6 +1441,7 @@ export const walletSchema = {
   // BNPL System
   bnplAccounts,
   bnplEvents,
+  bnplCmsResponses,
 
   // Refund System
   userRefundAccounts,
@@ -1358,6 +1449,9 @@ export const walletSchema = {
   // Point System
   pointEvents,
   pointEventDetails,
+  partners,
+  referrals,
+  referralRewards,
 
   // Utility Tables (Tax Invoice)
   taxInvoices,

@@ -1,56 +1,64 @@
-// apps/wallet/src/services/point-v2.service.ts
-import { Injectable, Logger } from '@nestjs/common';
-import {
-  PointRepository,
-  EarnParams,
+import { Injectable } from '@nestjs/common';
+import { PointReader } from './point.reader';
+import { PointManager } from './point.manager';
+import type {
+  AddPointsParams,
   RedeemParams,
-  EarnCancelParams,
+  CancelPointsParams,
 } from './point.repository';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { walletSchema } from '../../shared/database/schema';
 
+type DbTx = Parameters<
+  Parameters<PostgresJsDatabase<typeof walletSchema>['transaction']>[0]
+>[0];
+
+/**
+ * PointService (Business Layer)
+ *
+ * 책임: 비즈니스 흐름만 표현 (2-3줄)
+ * - Reader/Manager를 통해서만 접근
+ * - Repository 직접 참조 금지
+ */
 @Injectable()
 export class PointService {
-  private readonly logger = new Logger(PointService.name);
+  constructor(
+    private readonly pointReader: PointReader,
+    private readonly pointManager: PointManager,
+  ) {}
 
-  constructor(private readonly repo: PointRepository) {}
-
-  /** 잔액 조회 */
-  async getBalance(partnerId: number) {
-    return this.repo.getBalance(partnerId);
+  /**
+   * 잔액 조회
+   */
+  async getBalance(partnerId: string): Promise<number> {
+    return await this.pointReader.getBalance(partnerId);
   }
 
-  /** 출금 가능 잔액 조회 */
-  async getWithdrawable(partnerId: number, now?: Date) {
-    return this.repo.getWithdrawable(partnerId, now);
+  /**
+   * 출금 가능 잔액 조회
+   */
+  async getWithdrawable(partnerId: string, now?: Date): Promise<number> {
+    return await this.pointReader.getWithdrawable(partnerId, now);
   }
 
-  /** 적립 */
-  async earn(params: EarnParams) {
-    if (params.amount <= 0) throw new Error('적립 금액은 양수여야 합니다.');
-    const res = await this.repo.earn(params);
-    this.logger.log(
-      `EARN: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
-    );
-    return res;
+  /**
+   * 포인트 적립
+   */
+  async addPoints(params: AddPointsParams, tx?: DbTx) {
+    return await this.pointManager.addPoints(params, tx);
   }
 
-  /** 사용(REDEEM) */
-  async redeem(params: RedeemParams) {
-    if (params.amount <= 0) throw new Error('사용 금액은 양수여야 합니다.');
-    const balance = await this.repo.getBalance(params.partnerId);
-    if (balance < params.amount) throw new Error('포인트가 부족합니다.');
-    const res = await this.repo.redeem(params);
-    this.logger.log(
-      `REDEEM: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
-    );
-    return res;
+  /**
+   * 포인트 사용
+   */
+  async redeem(params: RedeemParams, tx?: DbTx) {
+    return await this.pointManager.redeem(params, tx);
   }
 
-  /** 적립 취소 (부분/전량) */
-  async earnCancel(params: EarnCancelParams) {
-    const res = await this.repo.earnCancel(params);
-    this.logger.log(
-      `EARN_CANCEL: partner=${params.partnerId} cancel=${res.cancel} event=${res.eventId}`,
-    );
-    return res;
+  /**
+   * 포인트 적립 취소
+   */
+  async cancelPoints(params: CancelPointsParams, tx?: DbTx) {
+    return await this.pointManager.cancelPoints(params, tx);
   }
 }

@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PlanService } from './plan.service';
 import { SubscriptionService } from './subscription.service';
+import { SubscriptionCancellationService } from './subscription-cancellation.service';
 import { EntitlementService } from './entitlement.service';
-import { eq, desc } from 'drizzle-orm';
-import * as schema from '../shared/schemas/entities/schema';
-import { membershipSchema } from '../shared/schemas/entities/schema';
+import { PauseService } from './pause.service';
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -17,16 +16,23 @@ import {
 } from '../shared/schemas';
 
 /**
- * 관리자용 오케스트레이션 서비스
- * 각 도메인 서비스(Plan, Policy 등)를 호출하여 관리자 작업을 수행합니다.
- * 이 서비스는 자체적인 비즈니스 로직을 최소화하고, 각 서비스에 역할을 위임합니다.
+ * 관리자용 오케스트레이션 서비스 (Business Layer)
+ *
+ * 역할: 관리자 작업을 위한 서비스 오케스트레이션
+ * - 각 도메인 서비스를 호출하여 관리자 작업 수행
+ * - 자체 비즈니스 로직 최소화
+ * - 각 서비스에 역할 위임
+ *
+ * 참고: 이 서비스는 이미 올바른 패턴을 따르고 있습니다.
  */
 @Injectable()
 export class AdminOperationsService {
   constructor(
     private readonly planService: PlanService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly cancellationService: SubscriptionCancellationService,
     private readonly entitlementService: EntitlementService,
+    private readonly pauseService: PauseService,
   ) {}
 
   // =================================================================
@@ -68,16 +74,26 @@ export class AdminOperationsService {
   // =================================================================
 
   /**
-   * 예시: 특정 사용자의 구독을 강제로 취소하는 관리자 기능
+   * 강제 구독 취소 (관리자 전용)
+   *
+   * ✅ 흐름만 표현: "CancellationService 호출"
    */
   async forceCancelSubscription(
-    userId: string,
-    reason: string,
+    contractId: string,
     adminId: string,
+    reason: string,
+    refundType: 'FULL' | 'PARTIAL' | 'NONE',
+    partialRefundAmount?: number,
+    refundReason?: string,
   ) {
-    console.log(`Admin ${adminId} is forcing cancellation for user ${userId}`);
-    // SubscriptionService의 cancelSubscription 메소드를 호출합니다.
-    return this.subscriptionService.cancelSubscription(userId, reason);
+    return this.cancellationService.forceCancelSubscription(
+      contractId,
+      adminId,
+      reason,
+      refundType,
+      partialRefundAmount,
+      refundReason,
+    );
   }
 
   // =================================================================
@@ -100,35 +116,10 @@ export class AdminOperationsService {
 
   /**
    * 사용자의 일시정지 이력을 조회합니다.
-   * PauseService의 getPauseHistory 메서드를 직접 사용합니다.
-   * @param userId - 사용자 ID
+   *
+   * ✅ 흐름만 표현: "일시정지 이력 조회"
    */
   async getUserPauseHistory(userId: string) {
-    // PauseService 인젝션이 필요한데, 현재는 없으므로 직접 DB 조회를 유지하거나
-    // PauseService를 인젝션해야 합니다. 여기서는 직접 조회로 유지합니다.
-    const result = await this.planService['dbService'].db
-      .select({
-        eventId: schema.pauseEvents.id,
-        eventType: schema.pauseEvents.eventType,
-        effectiveAt: schema.pauseEvents.effectiveAt,
-        reason: schema.pauseEvents.reason,
-        createdAt: schema.pauseEvents.createdAt,
-        entitlementId: schema.pauseEvents.entitlementId,
-        // pause_event_details 데이터
-        detailId: schema.pauseEventDetails.id,
-        adjustmentDays: schema.pauseEventDetails.adjustmentDays,
-        startsAt: schema.pauseEventDetails.startsAt,
-        endsAt: schema.pauseEventDetails.endsAt,
-        originalDetailId: schema.pauseEventDetails.originalDetailId,
-      })
-      .from(schema.pauseEvents)
-      .leftJoin(
-        schema.pauseEventDetails,
-        eq(schema.pauseEvents.id, schema.pauseEventDetails.pauseEventId),
-      )
-      .where(eq(schema.pauseEvents.userId, userId))
-      .orderBy(desc(schema.pauseEvents.createdAt));
-
-    return result;
+    return this.pauseService.getPauseHistory(userId);
   }
 }

@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConsentsModule } from '../consents/consents.module';
 import { EventProcessorModule } from '../events/events.module';
+import { TokensModule } from '../tokens/tokens.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -21,12 +22,15 @@ export class AuthModule {
     const kakaoClientSecret = process.env.KAKAO_CLIENT_SECRET;
     const kakaoCallbackUrl = process.env.KAKAO_CALLBACK_URL;
 
-    const hasKakaoConfig = kakaoClientId && kakaoClientSecret && kakaoCallbackUrl;
+    const hasKakaoConfig =
+      kakaoClientId && kakaoClientSecret && kakaoCallbackUrl;
 
     if (hasKakaoConfig) {
       console.log('✅ Kakao OAuth Strategy 활성화');
     } else {
-      console.warn('⚠️  Kakao OAuth 환경 변수가 설정되지 않아 Kakao 로그인이 비활성화됩니다.');
+      console.warn(
+        '⚠️  Kakao OAuth 환경 변수가 설정되지 않아 Kakao 로그인이 비활성화됩니다.',
+      );
     }
 
     const providers: Provider[] = [
@@ -45,13 +49,17 @@ export class AuthModule {
       imports: [
         ConfigModule,
         UsersModule,
+        TokensModule,
         PassportModule.register({ defaultStrategy: 'jwt' }),
         JwtModule.registerAsync({
           imports: [ConfigModule],
           useFactory: async (configService: ConfigService) => ({
             secret: configService.get('JWT_VERIFICATION_TOKEN_SECRET'),
             signOptions: {
-              expiresIn: configService.get('JWT_ACCESS_TOKEN_EXPIRATION', '15m'),
+              expiresIn: configService.get(
+                'JWT_ACCESS_TOKEN_EXPIRATION',
+                '15m',
+              ),
             },
           }),
           inject: [ConfigService],

@@ -6,34 +6,27 @@ import {
   Param,
   HttpException,
   HttpStatus,
-  UsePipes,
   Headers,
   BadRequestException,
   Req,
   HttpCode,
   Logger, // ✨ 바로 이 부분이 @nestjs/common에서 온 것인지가 중요합니다.
 } from '@nestjs/common';
-
 import { PaymentService } from '../services/payment.service';
-import { PaymentIntentService } from '../services/intents/intent.service';
+import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
-import { BnplAccountService } from '../services/bnpl-account.service';
+import { BnplService } from '../services/bnpl/bnpl.service';
 
-import {
-  PaymentError,
-  PaymentType,
-  ProviderType,
-} from '../providers/payment-provider.interface';
+import { PaymentError } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
 import { DbService } from '@app/db';
-import * as schema from '../shared/database/schema';
+
 import { walletSchema } from '../shared/database/schema';
-import { eq } from 'drizzle-orm';
+
 import { FastifyRequest } from 'fastify';
-import { Multipart, MultipartFile } from '@fastify/multipart';
-import { HmsBnplRegisterInput } from '../providers/hms-bnpl.registrar';
+
 import {
   ApiTags,
   ApiBody,
@@ -43,9 +36,7 @@ import {
   ApiParam,
   ApiHeader,
 } from '@nestjs/swagger';
-import { UploadedFile } from '../shared/types/fastify-file';
-
-import { CheckoutSessionService } from '../services/checkout-session.service';
+import { RefundService } from '../services/refund.service';
 
 // Zod 스키마 및 DTO 임포트
 import {
@@ -55,37 +46,22 @@ import {
   CreateHmsCardProfileSchema,
   OnboardHmsBnplProfileSchema,
   CreateBnplAccountSchema,
-  CreateCheckoutSessionSchema,
-  ProcessIntentSchema,
+  RefundPaymentSchema,
   // DTO 클래스들
   CreateIntentDto,
   AuthorizePaymentDto,
   CapturePaymentDto,
   CreateHmsCardProfileDto,
-  OnboardHmsBnplProfileDto,
   CreateBnplAccountDto,
-  CreateCheckoutSessionDto,
-  ProcessIntentDto,
+  RefundPaymentDto,
   // Response DTO 클래스들
   IntentResponseDto,
   AuthorizePaymentResponseDto,
   CapturePaymentResponseDto,
-  ExecutePaymentResponseDto,
   HmsCardProfileResponseDto,
-  OnboardHmsBnplProfileResponseDto,
-  CreateBnplAccountResponseDto,
-  CreateCheckoutSessionResponseDto,
-  CheckoutUIDataResponseDto,
+  RefundPaymentResponseDto,
   ErrorResponseDto,
   // 타입들 (기존 호환성)
-  CreateIntentDtoType,
-  AuthorizePaymentDtoType,
-  CapturePaymentDtoType,
-  CreateHmsCardProfileDtoType,
-  OnboardHmsBnplProfileDtoType,
-  CreateBnplAccountDtoType,
-  CreateCheckoutSessionDtoType,
-  ProcessIntentDtoType,
 } from './payment.controller.zod';
 
 /**
@@ -105,12 +81,12 @@ export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
   constructor(
     private readonly paymentService: PaymentService,
-    private readonly intentService: PaymentIntentService,
+    private readonly intentService: IntentService,
     private readonly profileService: PaymentProfileService,
-    private readonly bnplAccountService: BnplAccountService,
+    private readonly bnplService: BnplService,
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
-    private readonly checkoutSessionService: CheckoutSessionService,
+    private readonly refundService: RefundService,
   ) {}
 
   @Post('intents')
@@ -240,7 +216,7 @@ export class PaymentController {
     try {
       this.logger.log(`Intent 조회 요청: ${intentId}`);
 
-      const intent = await this.intentService.findIntentById(intentId);
+      const intent = await this.intentService.findById(intentId);
 
       if (!intent) {
         throw new HttpException(
@@ -333,16 +309,53 @@ export class PaymentController {
       this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
       this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
       this.logger.log(
-        `결제 승인 요청: Intent ${intentId}, Provider ${dto.provider}`,
+        `결제 승인 요청: Intent ${intentId}, Provider ${dto.provider || '포인트 전액'}`,
       );
+
+      const intent = await this.intentService.findById(intentId);
+      if (!intent) {
+        throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
+      }
+
+      // ✅ 포인트 전액 결제 (provider 없음)
+      if (!dto.provider) {
+        this.logger.log('포인트 전액 결제 처리');
+
+        const result = await this.paymentService.authorizePaymentByIntent(
+          intentId,
+          null, // provider 없음
+          {
+            usePoints: dto.usePoints,
+            source: 'point_full_payment_api',
+            actor: 'frontend_user',
+          },
+        );
+
+        this.logger.log(`🎯 포인트 결제 결과:`, JSON.stringify(result));
+
+        if (result.success) {
+          return {
+            success: true,
+            intentId: intentId,
+            attemptId: result.attemptId,
+            status: 'AUTHORIZED',
+            provider: null,
+            amount: intent.amount,
+            paymentKey: null,
+            pointEventId: result.pointEventId,
+            breakdown: result.breakdown,
+            message: '포인트 전액 결제가 성공적으로 완료되었습니다.',
+          };
+        } else {
+          throw new HttpException(
+            `포인트 결제 실패: ${result.message}`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
 
       // Toss 결제 승인 처리
       if (dto.provider === 'TOSS') {
-        const intent = await this.intentService.findIntentById(intentId);
-        if (!intent) {
-          throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
-        }
-
         this.logger.log(`Toss 결제 승인 처리: paymentKey=${dto.paymentKey}`);
 
         // TOSS Provider에게 oneTimeToken으로 paymentKey 전달
@@ -352,6 +365,7 @@ export class PaymentController {
           {
             // paymentKey를 oneTimeToken으로 전달하기 위해 instrumentRef에 저장
             instrumentRef: dto.paymentKey, // 이것이 TossPayload.oneTimeToken이 됨
+            usePoints: dto.usePoints, // 포인트 사용 금액 전달
             source: 'toss_authorize_api',
             actor: 'frontend_user',
           },
@@ -368,6 +382,8 @@ export class PaymentController {
             provider: 'TOSS',
             amount: intent.amount,
             paymentKey: dto.paymentKey,
+            pointEventId: result.pointEventId, // ✅ 포인트 정보 추가
+            breakdown: result.breakdown, // ✅ 금액 분해 정보 추가
             message: 'Toss 결제 승인이 성공적으로 완료되었습니다.',
           };
 
@@ -592,6 +608,7 @@ export class PaymentController {
   async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
     try {
       // 1. Multipart 요청 파싱
+      // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
       if (!data) {
         throw new BadRequestException(
@@ -644,7 +661,7 @@ export class PaymentController {
     try {
       this.logger.log(`BNPL 계정 생성 요청: ${JSON.stringify(dto)}`);
 
-      const account = await this.bnplAccountService.createBnplAccount(
+      const account = await this.bnplService.createAccount(
         dto.userId,
         dto.creditLimit,
       );
@@ -662,39 +679,64 @@ export class PaymentController {
     }
   }
 
-  @Get('checkout/ui-data/:intentId')
+  @Post(':intentId/refund')
   @ApiOperation({
-    summary: '체크아웃 UI 데이터 조회',
-    description: `체크아웃 페이지 렌더링에 필요한 최소한의 데이터를 반환합니다.
+    summary: '결제 환불',
+    description: `결제를 환불합니다.
     
-**반환되는 정보:**
-- Intent 기본 정보 (ID, 금액, 주문명)
-- 지원 가능한 결제 제공자 목록
-- 각 제공자별 클라이언트 설정 (API 키 등)
+**환불 처리 방식:**
+- 포인트와 현금을 비율에 따라 환불
+- 포인트는 즉시 복원
+- 현금은 결제 수단에 따라 환불
 
-**보안 고려사항:**
-- 민감한 정보는 제외 (시크릿 키, 개인정보 등)
-- 클라이언트 측에서 안전하게 사용할 수 있는 정보만 포함
-- Intent 상태가 PENDING인 경우에만 조회 가능
+**부분 환불:**
+- amount 파라미터로 환불 금액 지정
+- 미지정 시 전액 환불
+- 포인트:현금 비율은 원래 결제 비율과 동일
 
-**사용 시나리오:**
-- 체크아웃 페이지 초기화
-- 결제 제공자별 SDK 초기화
-- 결제 UI 구성`,
+**환불 비율 계산:**
+- 비율 = 환불금액 / 총금액
+- 포인트 환불 = floor(총포인트 * 비율)
+- 현금 환불 = 환불금액 - 포인트환불
+
+**BNPL 처리:**
+- AUTHORIZED 상태: void 처리 (출금 취소)
+- CAPTURED 상태: refund 처리 (환불)`,
   })
   @ApiParam({
     name: 'intentId',
-    description: '결제 의도 ID',
+    description: '환불할 결제 의도 ID',
     example: 'intent_20250115_abc123',
+  })
+  @ApiBody({
+    description: '환불 요청',
+    type: RefundPaymentDto,
+    examples: {
+      full: {
+        summary: '전액 환불',
+        description: '결제 전체를 환불',
+        value: {
+          reason: 'CUSTOMER_REQUEST',
+        },
+      },
+      partial: {
+        summary: '부분 환불',
+        description: '결제 일부를 환불 (예: 29,900원 중 10,000원)',
+        value: {
+          amount: 10000,
+          reason: 'PARTIAL_CANCEL',
+        },
+      },
+    },
   })
   @ApiResponse({
     status: 200,
-    description: '체크아웃 UI 데이터 조회 성공',
-    type: CheckoutUIDataResponseDto,
+    description: '환불 성공',
+    type: RefundPaymentResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Intent 상태가 PENDING이 아님',
+    description: '환불 불가 상태 또는 잘못된 요청',
     type: ErrorResponseDto,
   })
   @ApiResponse({
@@ -707,137 +749,53 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
-  async getCheckoutUIData(@Param('intentId') intentId: string) {
-    try {
-      this.logger.log(`체크아웃 UI 데이터 요청: ${intentId}`);
-
-      const intent = await this.intentService.findIntentById(intentId);
-
-      if (!intent) {
-        throw new HttpException(
-          `Intent not found: ${intentId}`,
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      if (intent.status !== 'PENDING') {
-        throw new HttpException(
-          `Intent is not in PENDING status: ${intent.status}`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // 민감하지 않은 UI 정보만 반환
-      return {
-        intentId: intent.id,
-        amount: intent.amount,
-        orderName: (intent.metadata as any)?.orderName || '결제',
-        allowedProviders: ['TOSS'], // Toss 테스트 서버만 사용
-        clientConfig: {
-          TOSS: {
-            clientKey:
-              process.env.TOSS_CLIENT_KEY ||
-              'test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO', // 시크릿 키와 매칭되는 클라이언트 키
-          },
-        },
-      };
-    } catch (error) {
-      this.handleError(error, '체크아웃 UI 데이터 조회');
-    }
-  }
-
-  @Post('checkout/sessions')
-  @ApiOperation({
-    summary: '범용 체크아웃 세션 생성',
-    description: `결제 의도를 기반으로 체크아웃 세션을 생성합니다.
-    
-**체크아웃 세션이란?**
-- 결제 진행을 위한 임시 세션
-- 보안이 강화된 결제 전용 URL 제공
-- 세션 만료 시간 내에서만 유효
-
-**세션 기반 결제 플로우:**
-1. Intent 생성
-2. 체크아웃 세션 생성 (이 API)
-3. 반환된 paymentUrl로 사용자 리다이렉트
-4. Wallet 결제 페이지에서 결제 진행
-5. 완료 후 returnUrl 또는 cancelUrl로 리다이렉트
-
-**보안 특징:**
-- 세션 ID 기반 접근 제어
-- 만료 시간 설정 (기본 30분)
-- CSRF 보호
-- 결제 완료 후 세션 자동 무효화
-
-**URL 설정:**
-- returnUrl: 결제 성공 시 리다이렉트
-- cancelUrl: 결제 취소 시 리다이렉트`,
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: '멱등성 보장을 위한 고유 키 (선택사항)',
+    required: false,
+    example: 'refund_20250115_xyz789',
   })
-  @ApiBody({
-    description: '체크아웃 세션 생성 요청',
-    type: CreateCheckoutSessionDto,
-    examples: {
-      session: {
-        summary: '체크아웃 세션 생성',
-        value: {
-          intentId: 'intent_20250115_abc123',
-          returnUrl: 'https://mystore.com/payment/success',
-          cancelUrl: 'https://mystore.com/payment/cancel',
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description: '체크아웃 세션 생성 성공',
-    type: CreateCheckoutSessionResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 또는 Intent 상태 오류',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Intent를 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 500,
-    description: '세션 생성 중 서버 오류',
-    type: ErrorResponseDto,
-  })
-  async createSession(
-    @Body(new ZodValidationPipe(CreateCheckoutSessionSchema))
-    dto: CreateCheckoutSessionDto,
+  async refundPayment(
+    @Param('intentId') intentId: string,
+    @Body(new ZodValidationPipe(RefundPaymentSchema)) dto: RefundPaymentDto,
+    @Headers('Idempotency-Key') idemKey?: string,
   ) {
     try {
-      this.logger.log(`체크아웃 세션 생성 요청: Intent ID ${dto.intentId}`);
-
-      const session = await this.checkoutSessionService.createCheckoutSession(
-        dto.intentId,
-        {
-          returnUrl: dto.returnUrl,
-          cancelUrl: dto.cancelUrl,
-        },
+      this.logger.log(
+        `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
+          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
-      return session;
-    } catch (error) {
-      this.logger.error(
-        `체크아웃 세션 생성 실패: ${error.message}`,
-        error.stack,
-      );
-      if (error instanceof PaymentError) {
-        if (error.code === 'INTENT_NOT_FOUND') {
-          throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      return await runInTransaction(this.db, async (tx) => {
+        // 멱등성 키 체크
+        const { hit, response } = await this.idempotencyService.checkOrCreate(
+          tx,
+          idemKey,
+          intentId,
+          dto,
+          `v2/payments/${intentId}/refund`,
+        );
+
+        if (hit) {
+          this.logger.log(`멱등성 키 히트: ${idemKey}, 기존 결과 반환`);
+          return response;
         }
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        '세션 생성 중 서버 오류가 발생했습니다.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+
+        // 환불 처리
+        const result = await this.refundService.refundPayment(
+          intentId,
+          dto.amount,
+          dto.reason || 'CUSTOMER_REQUEST',
+        );
+
+        // 멱등성 키 완료 처리
+        await this.idempotencyService.complete(tx, idemKey, result);
+
+        this.logger.log(`🎯 환불 결과:`, JSON.stringify(result));
+        return result;
+      });
+    } catch (error) {
+      this.handleError(error, '결제 환불');
     }
   }
 
