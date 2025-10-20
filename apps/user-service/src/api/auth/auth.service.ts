@@ -593,7 +593,12 @@ export class AuthService {
     return { user: newUser };
   }
 
-  async signOut(req: FastifyRequest, user: User, tx?: DbTransaction) {
+  async signOut(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    user: User,
+    tx?: DbTransaction,
+  ) {
     return this.inTx(async (trx) => {
       const accessToken = req.cookies?.accessToken;
 
@@ -607,6 +612,22 @@ export class AuthService {
 
         // 사용자 ID로 refreshToken 삭제
         await this.tokensService.deleteToken(user.id, 'refresh', trx);
+
+        // 쿠키 삭제
+        reply.clearCookie('accessToken', {
+          path: '/',
+          domain: this.configService.get('COOKIE_DOMAIN'),
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        });
+        reply.clearCookie('refreshToken', {
+          path: '/',
+          domain: this.configService.get('COOKIE_DOMAIN'),
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        });
 
         return { message: '로그아웃되었습니다.' };
       } catch (error) {
