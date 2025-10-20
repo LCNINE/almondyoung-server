@@ -72,30 +72,37 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '로그아웃 성공' })
   @Post('signout')
   @UseGuards(AuthGuard('jwt'))
+  @Public()
   async signOut(
     @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
-    return this.authService.signOut(request, user);
+    return this.authService.signOut(request, reply, user);
   }
 
   @ApiOperation({ summary: '토큰 재발급' })
   @ApiResponse({ status: 200, description: '토큰 재발급 성공' })
+  @Public()
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(['user:modify'])
   async restoreToken(
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
-    return this.authService.restoreToken(user, res);
+    try {
+      return this.authService.restoreToken(user, res);
+    } catch (error) {
+      console.log('토큰리프레시토큰 실패:', error);
+    }
   }
 
   @ApiOperation({ summary: '비밀번호 변경' })
   @ApiResponse({ status: 200, description: '비밀번호 변경 성공' })
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
+  @RequireScopes(['user:modify', 'master', 'admin:access'])
   async changePassword(
     @Body(ValidationPipe) { password }: ChangePasswordDto,
     @CurrentUser() user: schema.User,
@@ -167,6 +174,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '비밀번호 확인 성공' })
   @Post('check-password')
   @UseGuards(AuthGuard('jwt'))
+  @RequireScopes(['user:modify', 'master', 'admin:access'])
   async checkPassword(
     @Body(ValidationPipe) { password }: { password: string },
     @CurrentUser() user: schema.User,

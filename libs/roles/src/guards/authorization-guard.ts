@@ -5,9 +5,18 @@ import { UserScope } from '../constants';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {
+  id: string;
+  loginId: string;
+  username: string;
+  email: string;
+  isEmailVerified: boolean;
+  lastActivityAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
   sub: string;
   scopes: string[];
 }
+
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
