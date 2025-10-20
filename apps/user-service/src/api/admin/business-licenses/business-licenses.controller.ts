@@ -31,7 +31,7 @@ export class BusinessLicensesController {
   ) {}
 
   @Get()
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:read'])
   @ApiOperation({
     summary: '사업자 등록 목록 조회',
     description: '사업자 등록 신청 목록을 페이지네이션하여 조회합니다.',
@@ -47,7 +47,7 @@ export class BusinessLicensesController {
 
   // 사업자 등록 정보 상세 조회 기능
   @Get(':id')
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:read'])
   @ApiOperation({
     summary: '사업자 등록 상세 조회',
     description: '특정 사업자 등록 신청의 상세 정보를 조회합니다.',
@@ -61,7 +61,7 @@ export class BusinessLicensesController {
   }
 
   @Put(':id')
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:modify'])
   @ApiOperation({
     summary: '사업자 등록 정보 수정',
     description: '사업자 등록 신청 정보를 수정하고 상태를 변경합니다.',
@@ -83,7 +83,7 @@ export class BusinessLicensesController {
   }
 
   @Delete(':id')
-  @RequireScopes(['master'])
+  @RequireScopes(['master', 'admin:users:archive', 'admin:users:purge'])
   @ApiOperation({
     summary: '사업자 등록 정보 삭제',
     description: '사업자 등록 신청 정보를 삭제합니다.',
