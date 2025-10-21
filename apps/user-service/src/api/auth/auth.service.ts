@@ -928,7 +928,7 @@ export class AuthService {
   }
 
   // 리프레시 토큰 만료 시간 결정
-  private getRefreshTokenExpiration(rememberMe: boolean): string {
+  private getRefreshTokenExpiration(rememberMe: boolean) {
     if (rememberMe) {
       // 자동 로그인 체크 = 90일
       return JWT_REFRESH_TOKEN_LONG_EXPIRATION;
