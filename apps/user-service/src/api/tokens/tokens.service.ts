@@ -249,25 +249,28 @@ export class TokensService {
   ) {
     const client = this.getClient(tx);
 
-    // 기존 액세스 토큰 삭제
-    await client.delete(userServiceSchema.tokens).where(
-      and(
-        eq(userServiceSchema.tokens.userId, userId),
-        eq(
+    // UPSERT: 기존 토큰이 있으면 업데이트, 없으면 삽입
+    await client
+      .insert(userServiceSchema.tokens)
+      .values({
+        type: userServiceEnums.tokenTypeEnum.enumValues[0],
+        userId,
+        value: tokenValue,
+        scopes: scopes.join(','),
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          userServiceSchema.tokens.userId,
           userServiceSchema.tokens.type,
-          userServiceEnums.tokenTypeEnum.enumValues[0], // 'access'
-        ),
-      ),
-    );
-
-    // 새 액세스 토큰 저장
-    await client.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[0],
-      userId,
-      value: tokenValue,
-      scopes: scopes.join(','),
-      expiresAt,
-    });
+        ],
+        set: {
+          value: tokenValue,
+          scopes: scopes.join(','),
+          expiresAt,
+          updatedAt: new Date(),
+        },
+      });
 
     this.logger.log(`Access token saved for userId=${userId}`);
   }
@@ -289,25 +292,28 @@ export class TokensService {
   ) {
     const client = this.getClient(tx);
 
-    // 기존 리프레시 토큰 삭제
-    await client.delete(userServiceSchema.tokens).where(
-      and(
-        eq(userServiceSchema.tokens.userId, userId),
-        eq(
+    // UPSERT: 기존 토큰이 있으면 업데이트, 없으면 삽입
+    await client
+      .insert(userServiceSchema.tokens)
+      .values({
+        type: userServiceEnums.tokenTypeEnum.enumValues[1],
+        userId,
+        value: tokenValue,
+        scopes: scopes.join(','),
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          userServiceSchema.tokens.userId,
           userServiceSchema.tokens.type,
-          userServiceEnums.tokenTypeEnum.enumValues[1], // 'refresh'
-        ),
-      ),
-    );
-
-    // 새 리프레시 토큰 저장
-    await client.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[1],
-      userId,
-      value: tokenValue,
-      scopes: scopes.join(','),
-      expiresAt,
-    });
+        ],
+        set: {
+          value: tokenValue,
+          scopes: scopes.join(','),
+          expiresAt,
+          updatedAt: new Date(),
+        },
+      });
 
     this.logger.log(`Refresh token saved for userId=${userId}`);
   }
