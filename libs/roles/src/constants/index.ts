@@ -5,6 +5,9 @@ export const USER_SCOPES = {
     MODIFY: { key: 'user:modify', desc: '사용자 - 사용자 정보 생성, 수정' },
     DELETE: { key: 'user:delete', desc: '사용자 - 사용자 정보 삭제' },
   },
+  WHOLESALE: {
+    READ: { key: 'wholesale:read', desc: '도매회원 - 도매 관련 정보 조회' },
+  },
   ADMIN: {
     ACCESS: { key: 'admin:access', desc: '관리자 페이지 접근 권한 (베이스라인)' },
     USERS: {
@@ -20,9 +23,6 @@ export const USER_SCOPES = {
     LOGS: {
       READ: { key: 'admin:logs:read', desc: '관리자 - 로그 조회' },
     },
-  },
-  WHOLESALE: {
-    READ: { key: 'wholesale:read', desc: '도매회원 - 도매 관련 정보 조회' },
   },
 } as const;
 
