@@ -393,7 +393,7 @@ export class AuthService {
     signInDto: SignInDto,
     reply: FastifyReply,
     redirectTo?: string,
-  ): Promise<void | { accessToken: string }> {
+  ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
@@ -411,7 +411,11 @@ export class AuthService {
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
-    await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
+    const { refreshToken } = await this.setRefreshToken(
+      user.id,
+      reply,
+      signInDto.rememberMe,
+    );
     const { accessToken } = await this.getAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
@@ -423,7 +427,7 @@ export class AuthService {
       return reply.status(302).redirect(redirectUrl.toString());
     }
 
-    return { accessToken };
+    return { accessToken, refreshToken };
   }
 
   async signInWithSocial(
@@ -707,6 +711,7 @@ export class AuthService {
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
+    // const expiresIn = '10s';
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('AUTH_SECRET'),
       expiresIn,
@@ -928,7 +933,7 @@ export class AuthService {
   }
 
   // 리프레시 토큰 만료 시간 결정
-  private getRefreshTokenExpiration(rememberMe: boolean): string {
+  private getRefreshTokenExpiration(rememberMe: boolean) {
     if (rememberMe) {
       // 자동 로그인 체크 = 90일
       return JWT_REFRESH_TOKEN_LONG_EXPIRATION;
