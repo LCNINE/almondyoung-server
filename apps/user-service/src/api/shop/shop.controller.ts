@@ -22,7 +22,7 @@ export class ShopController {
   @ApiOperation({ summary: '상점 정보 조회' })
   @ApiResponse({ status: 200, description: '상점 정보 조회 성공' })
   @Get('info')
-  @RequireScopes(['user:read'])
+  @RequireScopes(['user:read', 'master'])
   findOneByUserId(@CurrentUser() user: User) {
     return this.shopService.findOneByUserId(user.id);
   }
@@ -30,7 +30,7 @@ export class ShopController {
   @ApiOperation({ summary: '상점 정보 생성 및 수정' })
   @ApiResponse({ status: 201, description: '상점 정보 생성 성공' })
   @Post('info')
-  @RequireScopes(['user:modify'])
+  @RequireScopes(['user:modify', 'master'])
   modify(@Body() createShopDto: CreateShopInfoDto, @CurrentUser() user: User) {
     return this.shopService.modify(createShopDto, user);
   }
