@@ -1102,13 +1102,42 @@ export const returns = pgTable('returns', {
     id: uuid('id').primaryKey().defaultRandom(),
     orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
     status: returnStatusEnum('status').notNull().default('requested'),
-    qcReason: varchar('qc_reason', { length: 255 }),
-    restockQuantity: integer('restock_quantity'),
-    disposeQuantity: integer('dispose_quantity'),
+    returnReason: varchar('return_reason', { length: 500 }), // 반품 사유
+    qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
+    qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
+    qcNotes: text('qc_notes'), // QC 검사 노트
+    restockQuantity: integer('restock_quantity').default(0),
+    disposeQuantity: integer('dispose_quantity').default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => ({
+    warehouseIdx: index('returns_warehouse_idx').on(t.warehouseId),
+    statusIdx: index('returns_status_idx').on(t.status),
+    orderIdx: index('returns_order_idx').on(t.orderId),
+}));
+
+export const returnItems = pgTable('return_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnId: uuid('return_id').references(() => returns.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
+    receivedQuantity: integer('received_quantity').default(0), // 실제 입고 수량
+    qcPassedQuantity: integer('qc_passed_quantity').default(0), // QC 통과 수량
+    qcFailedQuantity: integer('qc_failed_quantity').default(0), // QC 실패 수량
+    restockedQuantity: integer('restocked_quantity').default(0), // 재입고 수량
+    disposedQuantity: integer('disposed_quantity').default(0), // 폐기 수량
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
+    qcStatus: varchar('qc_status', { length: 50 }).default('pending'), // pending, passed, failed
+    qcReason: text('qc_reason'), // QC 결과 사유
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    returnIdx: index('return_items_return_idx').on(t.returnId),
+    skuIdx: index('return_items_sku_idx').on(t.skuId),
+    qcStatusIdx: index('return_items_qc_status_idx').on(t.qcStatus),
+}));
 
 /*───────────────────────────
  * SETTINGS & HOLIDAYS
@@ -1635,6 +1664,7 @@ export const wmsTables = {
     shipments,
     shipmentTracking,
     returns,
+    returnItems,
     salesVariantPolicies,
     settings,
     holidays,

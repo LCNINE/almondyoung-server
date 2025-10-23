@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { SharedModule } from '../shared/shared.module';
 import { InventoryController } from './controllers/inventory.controller';
 import { ProductMatchingController } from './controllers/product-matching.controller';
@@ -32,10 +33,21 @@ import {
   SkuMovementHistoryController,
   LocationMovementHistoryController,
 } from './controllers/sku-location-movement.controller';
+// Phase 1 Step 1: Reservation & Allocation
+import { AllocationStrategyService } from './services/allocation-strategy.service';
+import { ReservationCronService } from './services/reservation-cron.service';
+import { ReservationController } from './controllers/reservation.controller';
+// Phase 1 Step 1.2: Returns Processing
+import { ReturnService } from './services/return.service';
+import { ReturnController } from './controllers/return.controller';
+// Phase 1 Step 1.3: Transfer Automation
+import { TransferService } from './services/transfer.service';
+import { TransferController } from './controllers/transfer.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
@@ -57,6 +69,12 @@ import {
     SkuLocationMovementController,
     SkuMovementHistoryController,
     LocationMovementHistoryController,
+    // Phase 1 Step 1: Reservation controller
+    ReservationController,
+    // Phase 1 Step 1.2: Returns controller
+    ReturnController,
+    // Phase 1 Step 1.3: Transfer controller
+    TransferController,
   ],
   providers: [
     InventoryService,
@@ -76,6 +94,13 @@ import {
     SkuPricingService,
     SkuManagersService,
     SkuLocationMovementService,
+    // Phase 1 Step 1: Reservation & Allocation services
+    AllocationStrategyService,
+    ReservationCronService,
+    // Phase 1 Step 1.2: Returns service
+    ReturnService,
+    // Phase 1 Step 1.3: Transfer service
+    TransferService,
   ],
   exports: [
     InventoryService,
@@ -91,6 +116,12 @@ import {
     SkuPricingService,
     SkuManagersService,
     SkuLocationMovementService,
+    // Phase 1 Step 1: Export reservation services
+    AllocationStrategyService,
+    // Phase 1 Step 1.2: Export returns service
+    ReturnService,
+    // Phase 1 Step 1.3: Export transfer service
+    TransferService,
   ],
 })
 export class InventoryModule { }
