@@ -611,9 +611,6 @@ export class AuthService {
           throw new UnauthorizedException('인증 토큰이 필요합니다.');
         }
 
-        // 사용자 ID로 accessToken 삭제
-        await this.tokensService.deleteToken(user.id, 'access', trx);
-
         // 사용자 ID로 refreshToken 삭제
         await this.tokensService.deleteToken(user.id, 'refresh', trx);
 
@@ -717,15 +714,7 @@ export class AuthService {
       expiresIn,
     });
 
-    // 액세스 토큰 저장 (기존 토큰 자동 삭제)
-    await this.tokensService.saveAccessToken(
-      user.id,
-      accessToken,
-      scopes,
-      new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-      tx,
-    );
-
+   
     const cookieOptions = {
       path: '/',
       httpOnly: true,
@@ -858,29 +847,7 @@ export class AuthService {
     return;
   }
 
-  async findValidToken(userId: string, tokenValue: string) {
-    const existingToken = await this.dbService.db
-      .select()
-      .from(userServiceSchema.tokens)
-      .where(
-        and(
-          eq(userServiceSchema.tokens.userId, userId),
-          eq(userServiceSchema.tokens.value, tokenValue),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0] || null);
 
-    if (
-      !existingToken ||
-      existingToken.expiresAt <= new Date() ||
-      existingToken.isRevoked
-    ) {
-      throw new UnauthorizedException('리프레시 토큰이 유효하지 않습니다.');
-    }
-
-    return;
-  }
 
   async changePassword(password: string, user: User) {
     const existingUser = await this.usersService.findUserById(user.id);
