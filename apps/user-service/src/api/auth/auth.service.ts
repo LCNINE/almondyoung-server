@@ -393,7 +393,7 @@ export class AuthService {
     signInDto: SignInDto,
     reply: FastifyReply,
     redirectTo?: string,
-  ): Promise<void | { accessToken: string }> {
+  ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
@@ -411,7 +411,11 @@ export class AuthService {
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
-    await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
+    const { refreshToken } = await this.setRefreshToken(
+      user.id,
+      reply,
+      signInDto.rememberMe,
+    );
     const { accessToken } = await this.getAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
@@ -423,7 +427,7 @@ export class AuthService {
       return reply.status(302).redirect(redirectUrl.toString());
     }
 
-    return { accessToken };
+    return { accessToken, refreshToken };
   }
 
   async signInWithSocial(
@@ -593,7 +597,12 @@ export class AuthService {
     return { user: newUser };
   }
 
-  async signOut(req: FastifyRequest, user: User, tx?: DbTransaction) {
+  async signOut(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    user: User,
+    tx?: DbTransaction,
+  ) {
     return this.inTx(async (trx) => {
       const accessToken = req.cookies?.accessToken;
 
@@ -607,6 +616,22 @@ export class AuthService {
 
         // 사용자 ID로 refreshToken 삭제
         await this.tokensService.deleteToken(user.id, 'refresh', trx);
+
+        // 쿠키 삭제
+        reply.clearCookie('accessToken', {
+          path: '/',
+          domain: this.configService.get('COOKIE_DOMAIN'),
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        });
+        reply.clearCookie('refreshToken', {
+          path: '/',
+          domain: this.configService.get('COOKIE_DOMAIN'),
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        });
 
         return { message: '로그아웃되었습니다.' };
       } catch (error) {
@@ -686,6 +711,7 @@ export class AuthService {
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
+    // const expiresIn = '10s';
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('AUTH_SECRET'),
       expiresIn,
@@ -907,7 +933,7 @@ export class AuthService {
   }
 
   // 리프레시 토큰 만료 시간 결정
-  private getRefreshTokenExpiration(rememberMe: boolean): string {
+  private getRefreshTokenExpiration(rememberMe: boolean) {
     if (rememberMe) {
       // 자동 로그인 체크 = 90일
       return JWT_REFRESH_TOKEN_LONG_EXPIRATION;
