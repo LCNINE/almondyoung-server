@@ -95,7 +95,7 @@ export class UsersController {
   @ApiOperation({ summary: '내 프로필 정보 수정' })
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
   @Patch('me')
-  @RequireScopes(['user:modify'])
+  @RequireScopes(['user:modify', 'master'])
   @HttpCode(HttpStatus.OK)
   async updateMyProfile(
     @CurrentUser() user: User,
