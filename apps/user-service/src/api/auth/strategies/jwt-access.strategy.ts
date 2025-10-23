@@ -42,31 +42,6 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
     }
 
-    // 쿠키에서 토큰 값 추출
-    const accessToken = req?.cookies?.accessToken;
-
-    if (!accessToken) {
-      throw new UnauthorizedException('token not found');
-    }
-
-    // DB에서 토큰 검증 (만료, revoke 체크)
-    try {
-      await this.tokensService.validateAccessToken(payload.sub, accessToken);
-    } catch (error) {
-      if (error.message === 'Token not found') {
-        throw new UnauthorizedException(
-          '로그아웃되었거나 유효하지 않은 토큰입니다.',
-        );
-      }
-      if (error.message === 'Token revoked') {
-        throw new UnauthorizedException('무효화된 토큰입니다.');
-      }
-      if (error.message === 'Token expired') {
-        throw new UnauthorizedException('만료된 토큰입니다.');
-      }
-      throw new UnauthorizedException('토큰 검증에 실패했습니다.');
-    }
-
     // JWT payload 정보 반환
     return {
       ...user,
