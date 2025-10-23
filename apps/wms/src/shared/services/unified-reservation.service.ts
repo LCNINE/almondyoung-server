@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { eq, and, inArray, sum } from 'drizzle-orm';
+import { eq, and, inArray, sum, sql } from 'drizzle-orm';
 
 export interface ReserveStockDto {
   targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
@@ -285,15 +285,17 @@ export class UnifiedReservationService {
    */
   async releaseExpiredReservations(tx?: DbTx): Promise<number> {
     return this.inTx(async (trx) => {
+      const now = new Date();
+      
       const result = await trx
         .update(wmsTables.stockReservations)
         .set({
           status: 'released',
-          updatedAt: new Date()
+          updatedAt: now
         })
         .where(and(
           eq(wmsTables.stockReservations.status, 'confirmed'),
-          // timeoutAt이 현재 시간보다 과거인 경우
+          sql`${wmsTables.stockReservations.timeoutAt} IS NOT NULL AND ${wmsTables.stockReservations.timeoutAt} < ${now}`
         ))
         .returning();
 
