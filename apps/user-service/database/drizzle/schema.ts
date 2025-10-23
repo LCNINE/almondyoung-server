@@ -82,10 +82,10 @@ export const userConsents = pgTable('user_consents', {
  */
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  loginId: varchar('login_id', { length: 255 }).notNull().unique(),
-  username: varchar('username', { length: 255 }).notNull(),
-  nickname: varchar('nickname', { length: 255 }).notNull(),
-  email: varchar('email', { length: 255 }).notNull().unique(),
+  loginId: varchar('login_id', { length: 30 }).notNull().unique(),
+  username: varchar('username', { length: 30 }).notNull(),
+  nickname: varchar('nickname', { length: 30 }).notNull(),
+  email: varchar('email', { length: 60 }).notNull().unique(),
   password: varchar('password', { length: 255 }),
   isEmailVerified: boolean('is_email_verified').notNull().default(false),
   lastActivityAt: timestamp('last_activity_at')
