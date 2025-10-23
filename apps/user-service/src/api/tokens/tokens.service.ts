@@ -5,7 +5,7 @@ import {
   userServiceSchema,
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DbTransaction } from '../../commons/types';
 
 @Injectable()
@@ -333,25 +333,27 @@ export class TokensService {
   ) {
     const client = this.getClient(tx);
 
-    // 기존 인증 토큰 삭제
-    await client.delete(userServiceSchema.tokens).where(
-      and(
-        eq(userServiceSchema.tokens.userId, userId),
-        eq(
+    // upsert: 존재하면 업데이트, 없으면 삽입
+    await client
+      .insert(userServiceSchema.tokens)
+      .values({
+        type: userServiceEnums.tokenTypeEnum.enumValues[2],
+        userId,
+        value: tokenValue,
+        scopes: '',
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          userServiceSchema.tokens.userId,
           userServiceSchema.tokens.type,
-          userServiceEnums.tokenTypeEnum.enumValues[2], // 'verification'
-        ),
-      ),
-    );
-
-    // 새 인증 토큰 저장
-    await client.insert(userServiceSchema.tokens).values({
-      type: userServiceEnums.tokenTypeEnum.enumValues[2],
-      userId,
-      value: tokenValue,
-      scopes: '',
-      expiresAt,
-    });
+        ],
+        set: {
+          value: tokenValue,
+          expiresAt: expiresAt,
+          updatedAt: sql`now()`,
+        },
+      });
 
     this.logger.log(`Verification token saved for userId=${userId}`);
   }
