@@ -17,7 +17,7 @@
  */
 
 import { HttpService } from '@nestjs/axios';
-import { CoupangStrategy } from './src/services/strategies/coupang.strategy';
+import { CoupangAdapter } from './src/services/adapters/coupang.adapter';
 
 async function testCoupangSingleOrderSheet() {
   // 환경변수 확인
@@ -56,13 +56,13 @@ async function testCoupangSingleOrderSheet() {
   console.log('');
 
   try {
-    // HttpService와 CoupangStrategy 인스턴스 생성
+    // HttpService와 CoupangAdapter 인스턴스 생성
     const httpService = new HttpService();
-    const coupangStrategy = new CoupangStrategy(httpService);
+    const coupangAdapter = new CoupangAdapter(httpService);
 
     // 단건 조회 실행
     console.log('🔍 쿠팡 발주서 단건 조회 실행 중...');
-    const orderEvent = await coupangStrategy.getSingleOrderSheet(shipmentBoxId);
+    const orderEvent = await coupangAdapter.getSingleOrderSheet(shipmentBoxId);
 
     console.log('\n✅ 쿠팡 발주서 단건 조회 성공!');
     console.log('📊 조회 결과:');

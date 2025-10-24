@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
-import { ChannelType } from '../services/strategies/channel-strategy.factory';
+import { ChannelType } from '../services/adapters/channel-adapter.factory';
 import {
   DataType,
   ChannelCommand,
