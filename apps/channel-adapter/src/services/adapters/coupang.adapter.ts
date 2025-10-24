@@ -930,20 +930,158 @@ export class CoupangAdapter implements ChannelAdapter {
   }
 
   /**
-   * 간단한 나머지 메서드들 (구현 생략)
+   * 🔄 이미출고처리 명령 실행
+   *
+   * 출고중지요청/반품접수미확인 상태에서 이미 발송한 경우 상태를 변경합니다.
+   *
+   * @param command 표준 명령 객체
+   * @returns 처리 결과
+   *
+   * @example
+   * ```typescript
+   * const result = await adapter.executeCommand({
+   *   type: 'return.process_already_shipped',
+   *   claimId: '12345678',
+   *   tracking: {
+   *     companyCode: 'CJ',
+   *     number: '123456789012'
+   *   }
+   * });
+   * ```
    */
   private async executeReturnProcessAlreadyShipped(
     command: any,
   ): Promise<SyncResult> {
-    // 표준 claimId + tracking → 쿠팡 completedShipment API 호출
-    throw new Error('구현 필요: return.process_already_shipped');
+    this.logger.log(`🔄 [쿠팡] 이미출고처리 실행: claimId=${command.claimId}`);
+
+    try {
+      // 1. 택배사 코드 변환 (표준 → 쿠팡)
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(
+        command.tracking.companyCode,
+      );
+
+      // 2. API 호출
+      const response = await this.coupangApiService.completedShipment({
+        vendorId: process.env.COUPANG_VENDOR_ID!,
+        receiptId: Number(command.claimId),
+        deliveryCompanyCode: coupangCompanyCode,
+        invoiceNumber: command.tracking.number,
+      });
+
+      // 3. 결과 확인
+      if (response.data.resultCode === 'SUCCESS') {
+        this.logger.log(
+          `✅ [쿠팡] 이미출고처리 성공: ${command.claimId} - ${response.data.resultMessage}`,
+        );
+        return {
+          success: true,
+          processedCount: 1,
+        };
+      } else {
+        throw new Error(response.data.resultMessage);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡] 이미출고처리 실패: ${command.claimId}`,
+        error.message,
+      );
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        errors: [
+          {
+            id: command.claimId,
+            message: error.message,
+          },
+        ],
+      };
+    }
   }
 
+  /**
+   * 🚚 회수송장 등록 명령 실행
+   *
+   * 반품/교환에 대한 회수송장을 직접 등록합니다.
+   *
+   * @param command 표준 명령 객체
+   * @returns 처리 결과
+   *
+   * @example
+   * ```typescript
+   * // 반품 회수송장 등록
+   * const result = await adapter.executeCommand({
+   *   type: 'return.register_collection_invoice',
+   *   claimId: '12345678',
+   *   collectionType: 'RETURN',
+   *   tracking: {
+   *     companyCode: 'HANJIN',
+   *     number: '987654321098'
+   *   }
+   * });
+   *
+   * // 교환 회수송장 등록
+   * const result = await adapter.executeCommand({
+   *   type: 'return.register_collection_invoice',
+   *   claimId: '87654321',
+   *   collectionType: 'EXCHANGE',
+   *   tracking: {
+   *     companyCode: 'LOTTE',
+   *     number: '555666777888'
+   *   }
+   * });
+   * ```
+   */
   private async executeReturnRegisterCollectionInvoice(
     command: any,
   ): Promise<SyncResult> {
-    // 표준 claimId + tracking → 쿠팡 registerReturnInvoice API 호출
-    throw new Error('구현 필요: return.register_collection_invoice');
+    this.logger.log(
+      `🚚 [쿠팡] 회수송장 등록 실행: claimId=${command.claimId}, type=${command.collectionType}`,
+    );
+
+    try {
+      // 1. 택배사 코드 변환 (표준 → 쿠팡)
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(
+        command.tracking.companyCode,
+      );
+
+      // 2. API 호출
+      const response = await this.coupangApiService.registerReturnInvoice({
+        returnExchangeDeliveryType: command.collectionType,
+        receiptId: Number(command.claimId),
+        deliveryCompanyCode: coupangCompanyCode,
+        invoiceNumber: command.tracking.number,
+      });
+
+      // 3. 결과 확인 (API 응답이 성공하면 code=200)
+      if (response.code === 200) {
+        this.logger.log(
+          `✅ [쿠팡] 회수송장 등록 성공: ${command.claimId} - receiptId=${response.data.receiptId}`,
+        );
+        return {
+          success: true,
+          processedCount: 1,
+        };
+      } else {
+        throw new Error(response.message || '회수송장 등록 실패');
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡] 회수송장 등록 실패: ${command.claimId}`,
+        error.message,
+      );
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        errors: [
+          {
+            id: command.claimId,
+            message: error.message,
+          },
+        ],
+      };
+    }
   }
 
   // =================================================================
@@ -1502,12 +1640,70 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔄 배송업체 코드 매핑 (내부 표준 → 쿠팡 표준)
    */
-  private mapDeliveryCompanyCode(internalCode: string): string {
-    const mapping: Record<string, string> = {
+  private mapDeliveryCompanyCode(
+    internalCode: string,
+  ):
+    | 'CJGLS'
+    | 'LOTTE'
+    | 'HANJIN'
+    | 'LOGEN'
+    | 'EPOST'
+    | 'KGB'
+    | 'HYUNDAI'
+    | 'DHL'
+    | 'FEDEX'
+    | 'UPS'
+    | 'EMS'
+    | 'KDEXP'
+    | 'GOODTOLUCK'
+    | 'DAELIM'
+    | 'DONGGANG'
+    | 'CHUNIL'
+    | 'HONAM'
+    | 'DAESIN'
+    | 'ILYANG'
+    | 'PANTOS'
+    | 'FRESH'
+    | 'CVSNET'
+    | 'OTHER' {
+    const mapping: Record<
+      string,
+      | 'CJGLS'
+      | 'LOTTE'
+      | 'HANJIN'
+      | 'LOGEN'
+      | 'EPOST'
+      | 'KGB'
+      | 'HYUNDAI'
+      | 'DHL'
+      | 'FEDEX'
+      | 'UPS'
+      | 'EMS'
+      | 'KDEXP'
+      | 'GOODTOLUCK'
+      | 'DAELIM'
+      | 'DONGGANG'
+      | 'CHUNIL'
+      | 'HONAM'
+      | 'DAESIN'
+      | 'ILYANG'
+      | 'PANTOS'
+      | 'FRESH'
+      | 'CVSNET'
+      | 'OTHER'
+    > = {
       CJ: 'CJGLS',
       LOTTE: 'LOTTE',
       HANJIN: 'HANJIN',
       LOGEN: 'LOGEN',
+      EPOST: 'EPOST',
+      KGB: 'KGB',
+      HYUNDAI: 'HYUNDAI',
+      DHL: 'DHL',
+      FEDEX: 'FEDEX',
+      UPS: 'UPS',
+      EMS: 'EMS',
+      KDEXP: 'KDEXP',
       // ... 기타 매핑
     };
     return mapping[internalCode] || 'OTHER';
