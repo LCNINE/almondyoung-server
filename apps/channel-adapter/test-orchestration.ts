@@ -24,9 +24,9 @@
 import * as dotenv from 'dotenv';
 import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
-import { NaverSmartstoreStrategy } from './src/services/strategies/naver-smartstore.strategy';
-import { CoupangStrategy } from './src/services/strategies/coupang.strategy';
-import { ChannelStrategyFactory } from './src/services/strategies/channel-strategy.factory';
+import { NaverSmartstoreAdapter } from './src/services/adapters/naver-smartstore.adapter';
+import { CoupangAdapter } from './src/services/adapters/coupang.adapter';
+import { ChannelAdapterFactory } from './src/services/adapters/channel-adapter.factory';
 import { AdapterOrchestrationService } from './src/services/adapter-orchestration.service';
 import { ChannelAdapterService } from './src/services/channel-adapter.service';
 import { SyncStatusService } from './src/services/sync-status.service';
@@ -49,9 +49,9 @@ class OrchestrationTester {
     // 의존성 수동 구성
     const httpService = new HttpService();
     const naverApiService = new NaverCommerceApiService(httpService);
-    const naverStrategy = new NaverSmartstoreStrategy(naverApiService);
-    const coupangStrategy = new CoupangStrategy(httpService);
-    const factory = new ChannelStrategyFactory(naverStrategy, coupangStrategy);
+    const naverAdapter = new NaverSmartstoreAdapter(naverApiService);
+    const coupangAdapter = new CoupangAdapter(httpService);
+    const factory = new ChannelAdapterFactory(naverAdapter, coupangAdapter);
 
     this.orchestrator = new AdapterOrchestrationService(
       factory,

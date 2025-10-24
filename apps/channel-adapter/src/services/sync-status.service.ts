@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChannelType } from './strategies/channel-strategy.factory';
+import { ChannelType } from './adapters/channel-adapter.factory';
 import {
   DataType,
   NewSyncStatus,
@@ -36,9 +36,7 @@ import { channelAdapterSchema } from '../schema';
 export class SyncStatusService {
   private readonly logger = new Logger(SyncStatusService.name);
 
-
   constructor(private readonly db: DbService<typeof channelAdapterSchema>) {
-
     this.logger.log('📊 동기화 상태 서비스 초기화 완료 (PostgreSQL 기반)');
   }
 
@@ -214,7 +212,9 @@ export class SyncStatusService {
    */
   async getAllChannelStats(): Promise<Record<string, ChannelStats>> {
     try {
-      const allRecords = await this.db.db.select().from(channelAdapterSchema.syncStatuses);
+      const allRecords = await this.db.db
+        .select()
+        .from(channelAdapterSchema.syncStatuses);
 
       const result: Record<string, ChannelStats> = {};
       const channelGroups = this.groupRecordsByChannel(allRecords);
@@ -312,7 +312,9 @@ export class SyncStatusService {
           ...updates,
         };
 
-        await this.db.db.insert(channelAdapterSchema.syncStatuses).values(newRecord);
+        await this.db.db
+          .insert(channelAdapterSchema.syncStatuses)
+          .values(newRecord);
       }
     } catch (error) {
       this.logger.error(

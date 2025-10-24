@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { EventsModule, StreamPublisher } from '@app/events';
-import { NaverSmartstoreStrategy } from './services/strategies/naver-smartstore.strategy';
-import { CoupangStrategy } from './services/strategies/coupang.strategy';
+import { NaverSmartstoreAdapter } from './services/adapters/naver-smartstore.adapter';
+import { CoupangAdapter } from './services/adapters/coupang.adapter';
 
-import { ChannelStrategyFactory } from './services/strategies/channel-strategy.factory';
+import { ChannelAdapterFactory } from './services/adapters/channel-adapter.factory';
 import { AdapterOrchestrationService } from './services/adapter-orchestration.service';
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
@@ -92,9 +92,9 @@ function createKafkaConfig() {
     ChannelAdapterService,
     AdapterOrchestrationService,
     SyncStatusService,
-    ChannelStrategyFactory,
-    NaverSmartstoreStrategy,
-    CoupangStrategy,
+    ChannelAdapterFactory,
+    NaverSmartstoreAdapter,
+    CoupangAdapter,
     NaverCommerceApiService,
     CoupangApiService,
     WmsApiService,

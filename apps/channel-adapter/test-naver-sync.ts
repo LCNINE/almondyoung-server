@@ -10,7 +10,7 @@
 
 import * as dotenv from 'dotenv';
 import { HttpService } from '@nestjs/axios';
-import { NaverSmartstoreStrategy } from './src/services/strategies/naver-smartstore.strategy';
+import { NaverSmartstoreAdapter } from './src/services/adapters/naver-smartstore.adapter';
 import { NaverCommerceApiService } from './src/services/apis/naver-commerce.api.service';
 import * as path from 'path';
 
@@ -18,13 +18,13 @@ import * as path from 'path';
 dotenv.config();
 
 class NaverSyncTester {
-  private readonly strategy: NaverSmartstoreStrategy;
+  private readonly adapter: NaverSmartstoreAdapter;
 
   constructor() {
     // HttpService와 NaverCommerceApiService 인스턴스 생성
     const httpService = new HttpService();
     const naverApiService = new NaverCommerceApiService(httpService);
-    this.strategy = new NaverSmartstoreStrategy(naverApiService);
+    this.adapter = new NaverSmartstoreAdapter(naverApiService);
 
     console.log('🔧 환경변수 확인:');
     console.log(
@@ -53,7 +53,7 @@ class NaverSyncTester {
       console.log('🚀 네이버 주문 동기화 테스트 시작...');
 
       // syncFromChannel 메서드 호출
-      const events = await this.strategy.syncFromChannel('orders');
+      const events = await this.adapter.syncFromChannel('orders');
 
       console.log(`📋 동기화 결과: ${events.length}건의 주문 이벤트`);
 
@@ -93,7 +93,7 @@ class NaverSyncTester {
       console.log('🔑 네이버 API 토큰 발급 테스트...');
 
       // private 메서드에 접근하기 위해 any로 캐스팅
-      const token = await (this.strategy as any).getAccessToken();
+      const token = await (this.adapter as any).getAccessToken();
 
       console.log(`✅ 토큰 발급 성공: ${token.substring(0, 20)}...`);
     } catch (error) {

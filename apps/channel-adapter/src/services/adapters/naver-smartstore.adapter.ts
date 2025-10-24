@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { ChannelStrategy } from './channel-strategy.interface';
+import { ChannelAdapter } from './channel-adapter.interface';
 import {
   DataType,
   SyncResult,
@@ -110,9 +110,15 @@ interface TypedProductOrderInfo extends ProductOrderInfo {
   productOrder: NaverProductOrderInfo;
 }
 
+/**
+ * 네이버 스마트스토어 채널 어댑터
+ *
+ * 네이버 커머스 API의 특수한 인터페이스를 내부 표준 인터페이스로 변환합니다.
+ * 어댑터 패턴을 적용하여 네이버 API 호출 방식을 내부 시스템에 적응시킵니다.
+ */
 @Injectable()
-export class NaverSmartstoreStrategy implements ChannelStrategy {
-  private readonly logger = new Logger(NaverSmartstoreStrategy.name);
+export class NaverSmartstoreAdapter implements ChannelAdapter {
+  private readonly logger = new Logger(NaverSmartstoreAdapter.name);
   constructor(
     private readonly naverApi: NaverCommerceApiService,
     private readonly wmsApi: WmsApiService,
