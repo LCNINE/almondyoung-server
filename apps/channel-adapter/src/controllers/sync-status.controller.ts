@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SyncStatusService } from '../services/sync-status.service';
 import { DataType } from '../types';
-import { ChannelType } from '../services/strategies/channel-strategy.factory';
+import { ChannelType } from '../services/adapters/channel-adapter.factory';
 
 /**
  * 동기화 상태 및 통계 조회 컨트롤러

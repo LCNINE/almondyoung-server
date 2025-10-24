@@ -1,9 +1,9 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { StreamPublisher } from '@app/events';
 import {
-  ChannelStrategyFactory,
+  ChannelAdapterFactory,
   ChannelType,
-} from './strategies/channel-strategy.factory';
+} from './adapters/channel-adapter.factory';
 import { SyncStatusService } from './sync-status.service';
 import {
   DataType,
@@ -26,7 +26,7 @@ import { channelAdapterSchema } from '../schema';
  * 판매채널 어댑터 오케스트레이션 서비스
  *
  * 외부 판매채널과 내부 시스템 간의 데이터 동기화를 조율하는 핵심 서비스입니다.
- * 각 채널별 전략을 통해 데이터를 수집, 변환, 발행하는 역할을 담당합니다.
+ * 각 채널별 어댑터를 통해 데이터를 수집, 변환, 발행하는 역할을 담당합니다.
  *
  * @example
  * ```typescript
@@ -49,12 +49,11 @@ export class AdapterOrchestrationService {
   private readonly logger = new Logger(AdapterOrchestrationService.name);
 
   constructor(
-    private readonly factory: ChannelStrategyFactory,
+    private readonly factory: ChannelAdapterFactory,
     private readonly syncStatusService: SyncStatusService,
     private readonly eventPublisher: StreamPublisher<ChannelAdapterEvents>,
 
     private readonly db: DbService<typeof channelAdapterSchema>,
-
   ) {
     this.logger.log(
       `🎼 어댑터 오케스트레이션 서비스 초기화 완료 (이벤트 발행 + DB 연동 + 멱등키 처리)`,
@@ -88,8 +87,8 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      const strategy = this.factory.getStrategy(channel);
-      const events = await strategy.syncFromChannel(dataType);
+      const adapter = this.factory.getAdapter(channel);
+      const events = await adapter.syncFromChannel(dataType);
       const duration = Date.now() - startTime;
       const completedAt = new Date();
 
@@ -236,11 +235,11 @@ export class AdapterOrchestrationService {
     });
 
     try {
-      // 1. 채널별 전략 가져오기
-      const strategy = this.factory.getStrategy(channel);
+      // 1. 채널별 어댑터 가져오기
+      const adapter = this.factory.getAdapter(channel);
 
       // 2. 외부 이벤트를 내부 표준 형식으로 변환
-      const events = await strategy.processIncomingEvent(payload);
+      const events = await adapter.processIncomingEvent(payload);
 
       this.logger.log(
         `✅ [${channel}] ${events.length}건의 웹훅 이벤트 처리 완료`,
@@ -315,7 +314,7 @@ export class AdapterOrchestrationService {
    * const exchangeRejectResult = await execute('coupang', {
    *   type: 'exchange.reject',
    *   claimId: 'EXCHANGE_20250915_002',
-   *   reason: '품절'  // Strategy에서 쿠팡 거부코드로 자동 번역
+   *   reason: '품절'  // Adapter에서 쿠팡 거부코드로 자동 번역
    * });
    *
    * // 교환 재발송 송장 업로드
@@ -343,7 +342,7 @@ export class AdapterOrchestrationService {
   ): Promise<SyncResult> {
     const startTime = Date.now();
 
-    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Strategy에서 처리)
+    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Adapter에서 처리)
     const logContext: any = {};
     if ('orderId' in command) logContext.orderId = command.orderId;
     if ('orderIds' in command) logContext.orderIds = command.orderIds;
@@ -356,11 +355,11 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략 가져오기
-      const strategy = this.factory.getStrategy(channel);
+      // 1. 채널별 어댑터 가져오기
+      const adapter = this.factory.getAdapter(channel);
 
       // 2. 명령 실행
-      const result = await strategy.executeCommand(command);
+      const result = await adapter.executeCommand(command);
       const duration = Date.now() - startTime;
 
       // 3. 명령 실행 완료 이벤트 발행 (표준 필드만 사용)
@@ -444,8 +443,8 @@ export class AdapterOrchestrationService {
     this.logger.log(`📤 [${channel}] ${payload.dataType} 송신 동기화 시작`);
 
     try {
-      const strategy = this.factory.getStrategy(channel);
-      const result = await strategy.syncToChannel(payload);
+      const adapter = this.factory.getAdapter(channel);
+      const result = await adapter.syncToChannel(payload);
       const duration = Date.now() - startTime;
       const completedAt = new Date();
 
@@ -641,10 +640,10 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      const strategy = this.factory.getStrategy(channel);
+      const adapter = this.factory.getAdapter(channel);
 
-      // 🎯 모든 전략이 findOrders를 구현하므로 바로 호출
-      const orderEvents = await strategy.findOrders(query);
+      // 🎯 모든 어댑터가 findOrders를 구현하므로 바로 호출
+      const orderEvents = await adapter.findOrders(query);
 
       this.logger.log(
         `✅ [${channel}] 주문 조회 성공: ${orderEvents.length}건 조회됨 (${query.by}=${query.id})`,
@@ -703,7 +702,7 @@ export class AdapterOrchestrationService {
   async executeQuery(channel: ChannelType, query: ChannelQuery): Promise<any> {
     const startTime = Date.now();
 
-    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Strategy에서 처리)
+    // 🎯 표준 필드만 로깅 (채널별 세부사항은 Adapter에서 처리)
     const logContext: any = { queryType: query.type };
     if ('orderId' in query) logContext.orderId = query.orderId;
     if ('claimId' in query) logContext.claimId = query.claimId;
@@ -715,11 +714,11 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략 가져오기
-      const strategy = this.factory.getStrategy(channel);
+      // 1. 채널별 어댑터 가져오기
+      const adapter = this.factory.getAdapter(channel);
 
-      // 2. 조회 실행 (Strategy에서 표준 내부 모델로 번역하여 반환)
-      const result = await strategy.executeQuery(query);
+      // 2. 조회 실행 (Adapter에서 표준 내부 모델로 번역하여 반환)
+      const result = await adapter.executeQuery(query);
       const duration = Date.now() - startTime;
 
       // 3. 조회 완료 이벤트 발행
@@ -1182,9 +1181,9 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략을 통해 WMS에 주문 생성
-      const strategy = this.factory.getStrategy(channel);
-      const wmsOrder = await strategy.createOrderInWms(orderEvent);
+      // 1. 채널별 어댑터를 통해 WMS에 주문 생성
+      const adapter = this.factory.getAdapter(channel);
+      const wmsOrder = await adapter.createOrderInWms(orderEvent);
 
       const duration = Date.now() - startTime;
 
@@ -1265,9 +1264,9 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략을 통해 WMS에 주문 취소
-      const strategy = this.factory.getStrategy(channel);
-      const wmsOrder = await strategy.cancelOrderInWms(orderEvent, reason);
+      // 1. 채널별 어댑터를 통해 WMS에 주문 취소
+      const adapter = this.factory.getAdapter(channel);
+      const wmsOrder = await adapter.cancelOrderInWms(orderEvent, reason);
 
       const duration = Date.now() - startTime;
 
@@ -1349,9 +1348,9 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략을 통해 WMS에 교환 처리
-      const strategy = this.factory.getStrategy(channel);
-      const wmsOrder = await strategy.processExchangeInWms(exchangeEvent);
+      // 1. 채널별 어댑터를 통해 WMS에 교환 처리
+      const adapter = this.factory.getAdapter(channel);
+      const wmsOrder = await adapter.processExchangeInWms(exchangeEvent);
 
       const duration = Date.now() - startTime;
 
@@ -1427,9 +1426,9 @@ export class AdapterOrchestrationService {
     );
 
     try {
-      // 1. 채널별 전략을 통해 WMS에 주문 상태 업데이트
-      const strategy = this.factory.getStrategy(channel);
-      const wmsOrder = await strategy.updateOrderInWms(orderEvent);
+      // 1. 채널별 어댑터를 통해 WMS에 주문 상태 업데이트
+      const adapter = this.factory.getAdapter(channel);
+      const wmsOrder = await adapter.updateOrderInWms(orderEvent);
 
       const duration = Date.now() - startTime;
 

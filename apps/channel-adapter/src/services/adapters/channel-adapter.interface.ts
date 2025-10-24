@@ -3,7 +3,16 @@ import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import { ChannelCommand, ChannelQuery } from '../../types';
 import { SalesOrder } from '../apis/wms.api.service';
 
-export interface ChannelStrategy {
+/**
+ * 채널 어댑터 인터페이스
+ *
+ * 어댑터 패턴을 적용하여 각 외부 판매채널의 서로 다른 API 인터페이스를
+ * 내부 시스템의 표준 인터페이스로 변환합니다.
+ *
+ * 각 채널(네이버, 쿠팡 등)은 이 인터페이스를 구현하여
+ * 채널별 특수한 API 호출 방식을 내부 표준 형식으로 적응(adapt)시킵니다.
+ */
+export interface ChannelAdapter {
   /**
    * 외부 이벤트를 내부 표준 이벤트로 변환 (웹훅 없이도, 폴링 결과를 이 함수에 태워도 됨)
    */
@@ -24,6 +33,8 @@ export interface ChannelStrategy {
   /**
    * 채널별 복잡한 액션(취소/반품/교환/발송 등)을 Command로 통합 처리
    * 표준 비즈니스 명령을 채널별 API 호출로 번역하는 어댑터의 핵심 역할
+   *
+   * 🔌 어댑터 패턴의 핵심: 표준 명령 → 채널별 API 호출로 변환
    */
   executeCommand(command: ChannelCommand): Promise<SyncResult>;
 
@@ -35,7 +46,7 @@ export interface ChannelStrategy {
 
   /**
    * 표준화된 쿼리 객체를 사용하여 외부 채널에서 주문 정보를 조회합니다.
-   * 모든 채널 전략에서 필수로 구현되어야 하는 통합 조회 인터페이스입니다.
+   * 모든 채널 어댑터에서 필수로 구현되어야 하는 통합 조회 인터페이스입니다.
    *
    * 🔍 구현 방식:
    * - 쿠팡: 직접 API 호출 (shipmentBoxId, orderId)

@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { ChannelStrategy } from './channel-strategy.interface';
+import { ChannelAdapter } from './channel-adapter.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import {
   InternalOrderEvent,
@@ -22,9 +22,15 @@ import {
   mapCoupangStatusToInternal,
 } from '../../zods/coupang.api.zod';
 
+/**
+ * 쿠팡 채널 어댑터
+ *
+ * 쿠팡 API의 특수한 인터페이스를 내부 표준 인터페이스로 변환합니다.
+ * 어댑터 패턴을 적용하여 쿠팡 API 호출 방식을 내부 시스템에 적응시킵니다.
+ */
 @Injectable()
-export class CoupangStrategy implements ChannelStrategy {
-  private readonly logger = new Logger(CoupangStrategy.name);
+export class CoupangAdapter implements ChannelAdapter {
+  private readonly logger = new Logger(CoupangAdapter.name);
 
   constructor(
     private readonly coupangApiService: CoupangApiService,
