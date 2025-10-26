@@ -8,7 +8,11 @@ import {
   OrderQuery,
 } from '../../types';
 import { ChannelCommand, ChannelQuery } from '../../types';
-import { CoupangApiService } from '../apis/coupang.api.service';
+import {
+  CoupangOrderClient,
+  CoupangReturnClient,
+  CoupangExchangeClient,
+} from '../clients/coupang';
 import {
   WmsApiService,
   SalesOrder,
@@ -20,7 +24,7 @@ import {
   CoupangExchangeRequest,
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
-} from '../../zods/coupang.api.zod';
+} from '../../zods/coupang';
 
 /**
  * 쿠팡 채널 어댑터
@@ -33,7 +37,9 @@ export class CoupangAdapter implements ChannelAdapter {
   private readonly logger = new Logger(CoupangAdapter.name);
 
   constructor(
-    private readonly coupangApiService: CoupangApiService,
+    private readonly coupangOrderClient: CoupangOrderClient,
+    private readonly coupangReturnClient: CoupangReturnClient,
+    private readonly coupangExchangeClient: CoupangExchangeClient,
     private readonly wmsApiService: WmsApiService,
   ) {}
 
@@ -82,7 +88,7 @@ export class CoupangAdapter implements ChannelAdapter {
         console.log(`📋 ${status} 상태 발주서 조회 중...`);
 
         const orderSheets =
-          await this.coupangApiService.getAllOrderSheetsByStatus(
+          await this.coupangOrderClient.getAllOrderSheetsByStatus(
             createdAtFrom,
             createdAtTo,
             status,
@@ -131,7 +137,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
       const response =
-        await this.coupangApiService.getSingleOrderSheet(shipmentBoxId);
+        await this.coupangOrderClient.getSingleOrderSheet(shipmentBoxId);
 
       console.log(`✅ 쿠팡 발주서 단건 조회 성공: ${shipmentBoxId}`);
 
@@ -346,7 +352,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
       const response =
-        await this.coupangApiService.getSingleOrderSheetByOrderId(orderId);
+        await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
 
       console.log(
         `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data?.length || 0}건)`,
@@ -427,7 +433,7 @@ export class CoupangAdapter implements ChannelAdapter {
 
       // API 서비스를 통한 배송상태 히스토리 조회
       const response =
-        await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
+        await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
 
       console.log(
         `✅ 쿠팡 배송상태 히스토리 조회 성공: ${shipmentBoxId} (${response.data?.histories?.length || 0}건)`,
@@ -581,7 +587,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.orderIds,
       );
 
-      const response = await this.coupangApiService.acknowledgeOrdersheets({
+      const response = await this.coupangOrderClient.acknowledgeOrdersheets({
         vendorId: this.getCoupangVendorId(),
         shipmentBoxIds,
       });
@@ -621,7 +627,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.items,
       );
 
-      const response = await this.coupangApiService.uploadInvoices({
+      const response = await this.coupangOrderClient.uploadInvoices({
         vendorId: this.getCoupangVendorId(),
         orderSheetInvoiceApplyDtos,
       });
@@ -657,7 +663,7 @@ export class CoupangAdapter implements ChannelAdapter {
           command.tracking,
         );
 
-      const response = await this.coupangApiService.updateInvoices({
+      const response = await this.coupangOrderClient.updateInvoices({
         vendorId: this.getCoupangVendorId(),
         orderSheetInvoiceApplyDtos,
       });
@@ -693,7 +699,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.approveReturnRequest({
+      const response = await this.coupangReturnClient.approveReturnRequest({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
         cancelCount: coupangClaimInfo.cancelCount,
@@ -728,7 +734,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.confirmReturnReceipt({
+      const response = await this.coupangReturnClient.confirmReturnReceipt({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
       });
@@ -762,7 +768,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.stoppedShipment({
+      const response = await this.coupangReturnClient.stoppedShipment({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
         cancelCount: coupangClaimInfo.cancelCount,
@@ -791,7 +797,7 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('🚛 쿠팡 이미출고처리 실행:', command);
 
-      const response = await this.coupangApiService.completedShipment({
+      const response = await this.coupangReturnClient.completedShipment({
         vendorId: command.vendorId,
         receiptId: command.receiptId,
         deliveryCompanyCode: command.deliveryCompanyCode,
@@ -821,7 +827,7 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📋 쿠팡 회수송장 등록 실행:', command);
 
-      const response = await this.coupangApiService.registerReturnInvoice({
+      const response = await this.coupangReturnClient.registerReturnInvoice({
         returnExchangeDeliveryType: command.returnExchangeDeliveryType,
         receiptId: command.receiptId,
         deliveryCompanyCode: command.deliveryCompanyCode,
@@ -852,12 +858,13 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📊 쿠팡 반품 철회 이력 조회 실행:', command);
 
-      const response = await this.coupangApiService.getReturnWithdrawalHistory({
-        dateFrom: command.dateFrom,
-        dateTo: command.dateTo,
-        pageIndex: command.pageIndex || 1,
-        sizePerPage: command.sizePerPage || 10,
-      });
+      const response =
+        await this.coupangReturnClient.getReturnWithdrawalHistory({
+          dateFrom: command.dateFrom,
+          dateTo: command.dateTo,
+          pageIndex: command.pageIndex || 1,
+          sizePerPage: command.sizePerPage || 10,
+        });
 
       return {
         success: true,
@@ -884,7 +891,7 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('🔍 쿠팡 반품 철회 이력(ID) 조회 실행:', command);
 
       const response =
-        await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+        await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
           cancelIds: command.cancelIds,
         });
 
@@ -910,7 +917,7 @@ export class CoupangAdapter implements ChannelAdapter {
     try {
       console.log('📋 쿠팡 배송상태 히스토리 조회 실행:', command);
 
-      const response = await this.coupangApiService.getDeliveryHistory(
+      const response = await this.coupangOrderClient.getDeliveryHistory(
         command.shipmentBoxId,
       );
 
@@ -961,7 +968,7 @@ export class CoupangAdapter implements ChannelAdapter {
       );
 
       // 2. API 호출
-      const response = await this.coupangApiService.completedShipment({
+      const response = await this.coupangReturnClient.completedShipment({
         vendorId: process.env.COUPANG_VENDOR_ID!,
         receiptId: Number(command.claimId),
         deliveryCompanyCode: coupangCompanyCode,
@@ -1046,7 +1053,7 @@ export class CoupangAdapter implements ChannelAdapter {
       );
 
       // 2. API 호출
-      const response = await this.coupangApiService.registerReturnInvoice({
+      const response = await this.coupangReturnClient.registerReturnInvoice({
         returnExchangeDeliveryType: command.collectionType,
         receiptId: Number(command.claimId),
         deliveryCompanyCode: coupangCompanyCode,
@@ -1104,7 +1111,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.confirmExchangeReceipt({
+      const response = await this.coupangExchangeClient.confirmExchangeReceipt({
         vendorId: this.getCoupangVendorId(),
         exchangeId,
       });
@@ -1146,7 +1153,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.reason,
       );
 
-      const response = await this.coupangApiService.rejectExchangeRequest({
+      const response = await this.coupangExchangeClient.rejectExchangeRequest({
         vendorId: this.getCoupangVendorId(),
         exchangeId,
         exchangeRejectCode,
@@ -1192,7 +1199,7 @@ export class CoupangAdapter implements ChannelAdapter {
         command.items,
       );
 
-      const response = await this.coupangApiService.uploadExchangeInvoice(
+      const response = await this.coupangExchangeClient.uploadExchangeInvoice(
         exchangeId,
         invoiceItems,
       );
@@ -1223,7 +1230,7 @@ export class CoupangAdapter implements ChannelAdapter {
     const shipmentBoxId = await this.translateOrderIdToShipmentBoxId(
       query.orderId,
     );
-    return await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
+    return await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
   }
 
   private async queryReturnWithdrawalHistory(query: {
@@ -1233,7 +1240,7 @@ export class CoupangAdapter implements ChannelAdapter {
     pageIndex?: number;
     sizePerPage?: number;
   }): Promise<any> {
-    return await this.coupangApiService.getReturnWithdrawalHistory({
+    return await this.coupangReturnClient.getReturnWithdrawalHistory({
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
       pageIndex: query.pageIndex || 1,
@@ -1246,7 +1253,7 @@ export class CoupangAdapter implements ChannelAdapter {
     claimIds: string[];
   }): Promise<any> {
     const cancelIds = await this.translateClaimIdsToCancelIds(query.claimIds);
-    return await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+    return await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
       cancelIds,
     });
   }
@@ -1261,13 +1268,14 @@ export class CoupangAdapter implements ChannelAdapter {
     sizePerPage?: number;
   }): Promise<InternalExchangeEvent[]> {
     // 🔄 쿠팡 API 호출
-    const coupangResponse = await this.coupangApiService.getExchangeRequests({
-      createdAtFrom: query.dateFrom,
-      createdAtTo: query.dateTo,
-      status: query.status,
-      orderId: query.orderId,
-      maxPerPage: query.sizePerPage || 10,
-    });
+    const coupangResponse =
+      await this.coupangExchangeClient.getExchangeRequests({
+        createdAtFrom: query.dateFrom,
+        createdAtTo: query.dateTo,
+        status: query.status,
+        orderId: query.orderId,
+        maxPerPage: query.sizePerPage || 10,
+      });
 
     // 🎯 SSOT 원칙: 쿠팡 응답을 표준 내부 모델로 번역
     return coupangResponse.data.map((coupangExchange) =>
