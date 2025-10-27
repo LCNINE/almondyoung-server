@@ -5,6 +5,7 @@ import { StockEventService } from '../services/stock-event.service';
 import { SafetyStockService } from '../services/safety-stock.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
+import { AdvancedInventoryFiltersDto } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
@@ -256,6 +257,48 @@ export class InventoryController {
             supplierName,
             masterId,
         });
+    }
+
+    @Get('/skus/search/advanced')
+    @ApiOperation({ summary: '고급 재고 검색 (Advanced inventory search with comprehensive filtering)' })
+    @ApiResponse({
+        status: 200,
+        description: '검색 결과 (Search results with pagination)',
+        schema: {
+            type: 'object',
+            properties: {
+                items: {
+                    type: 'array',
+                    items: { $ref: '#/components/schemas/SkuResponseDto' },
+                    description: 'SKU 목록'
+                },
+                total: {
+                    type: 'number',
+                    description: '전체 결과 수',
+                    example: 150
+                },
+                limit: {
+                    type: 'number',
+                    description: '페이지 크기',
+                    example: 50
+                },
+                offset: {
+                    type: 'number',
+                    description: '페이지 오프셋',
+                    example: 0
+                }
+            }
+        }
+    })
+    async searchInventoryAdvanced(
+        @Query() filters: AdvancedInventoryFiltersDto
+    ): Promise<{
+        items: SkuResponseDto[];
+        total: number;
+        limit: number;
+        offset: number;
+    }> {
+        return this.inventoryService.searchInventoryAdvanced(filters);
     }
 
     @Get('/skus/:id')
