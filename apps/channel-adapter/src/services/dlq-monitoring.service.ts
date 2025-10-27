@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { EventPublisherService } from '@app/events';
+import { StreamPublisher } from '@app/events';
 
 /**
  * DLQ 모니터링 및 알림 서비스
@@ -24,7 +24,7 @@ export class DlqMonitoringService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly eventPublisher: EventPublisherService,
+    private readonly eventPublisher: StreamPublisher<any>,
   ) {
     this.alertThreshold = this.configService.get<number>(
       'DLQ_ALERT_THRESHOLD',

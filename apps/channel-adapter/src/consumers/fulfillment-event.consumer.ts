@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
+import { ChannelAdapterService } from '../services/channel-adapter.service';
 import { FulfillmentUpdatedEvent } from '../types';
 import { RetryPolicy } from '../decorators/retry-policy.decorator';
 
@@ -28,7 +28,7 @@ import { RetryPolicy } from '../decorators/retry-policy.decorator';
 export class FulfillmentEventConsumer {
   private readonly logger = new Logger(FulfillmentEventConsumer.name);
 
-  constructor(private readonly orchestrator: AdapterOrchestrationService) {
+  constructor(private readonly channelAdapterService: ChannelAdapterService) {
     this.logger.log('🚚 WMS 이행 이벤트 Consumer 초기화 완료');
   }
 
@@ -292,10 +292,13 @@ export class FulfillmentEventConsumer {
     // 병렬로 모든 채널에 동기화
     const syncPromises = channels.map(async (channel) => {
       try {
-        const result = await this.orchestrator.syncToChannelOrAll(channel, {
-          dataType: 'order_status',
-          payload: fulfillmentData,
-        });
+        const result = await this.channelAdapterService.syncToChannelOrAll(
+          channel,
+          {
+            dataType: 'order_status',
+            payload: fulfillmentData,
+          },
+        );
 
         syncResults.push({ channel, success: result.success });
 

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AdapterOrchestrationService } from '../services/adapter-orchestration.service';
+import { ChannelAdapterService } from '../services/channel-adapter.service';
 import { StockChangedEvent } from '../types';
 import { RetryPolicy } from '../decorators/retry-policy.decorator';
 
@@ -7,7 +7,7 @@ import { RetryPolicy } from '../decorators/retry-policy.decorator';
 export class StockEventConsumer {
   private readonly logger = new Logger(StockEventConsumer.name);
 
-  constructor(private readonly orchestrator: AdapterOrchestrationService) {
+  constructor(private readonly channelAdapterService: ChannelAdapterService) {
     this.logger.log('📦 WMS 재고 이벤트 Consumer 초기화 완료');
   }
 
@@ -66,15 +66,18 @@ export class StockEventConsumer {
     const results = await Promise.all(
       all.map(async (channel) => {
         try {
-          const res = await this.orchestrator.syncToChannelOrAll(channel, {
-            dataType: 'inventory',
-            payload: {
-              productId: event.sku,
-              stockQuantity: currentStock,
-              isOptionProduct: false,
-              warehouseId: event.warehouseId,
+          const res = await this.channelAdapterService.syncToChannelOrAll(
+            channel,
+            {
+              dataType: 'inventory',
+              payload: {
+                productId: event.sku,
+                stockQuantity: currentStock,
+                isOptionProduct: false,
+                warehouseId: event.warehouseId,
+              },
             },
-          });
+          );
           return { channel, success: res.success };
         } catch (e: any) {
           return { channel, success: false, error: e.message };
