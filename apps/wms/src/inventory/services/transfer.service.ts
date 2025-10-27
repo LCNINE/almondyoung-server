@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, SQL } from 'drizzle-orm';
 import { StockEventService } from './stock-event.service';
 import { InventoryCommandService } from './inventory-command.service';
 
@@ -81,7 +81,7 @@ export class TransferService {
       this.logger.log(`Movement job created: ${movementJob.id}`);
 
       // 각 아이템에 대한 라인 생성 (아직 실행 안함)
-      const lines = [];
+      const lines: typeof wmsTables.movementJobLines.$inferSelect[] = [];
       for (const item of params.items) {
         const [line] = await trx
           .insert(wmsTables.movementJobLines)
@@ -209,7 +209,6 @@ export class TransferService {
             toLocationId: line.toLocationId,
             quantity: line.quantity,
             reason: line.memo || 'Internal movement',
-            journalId: movementJob.journalId || undefined,
           }, trx);
 
           // Line 업데이트
@@ -323,7 +322,7 @@ export class TransferService {
   }, tx?: DbTx) {
     const db = tx ?? this.db;
 
-    const conditions = [];
+    const conditions: SQL[] = [];
 
     if (filters.warehouseId) {
       conditions.push(eq(wmsTables.movementJobs.warehouseId, filters.warehouseId));

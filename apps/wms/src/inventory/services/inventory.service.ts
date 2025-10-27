@@ -508,17 +508,17 @@ export class InventoryService implements OnModuleInit {
                 switch (filters.displayMode) {
                     case StockDisplayMode.BELOW_SAFETY:
                         query = query.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) < ${wmsTables.skus.safetyStock}`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
                         ) as any;
                         break;
                     case StockDisplayMode.WITH_STOCK:
                         query = query.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) > 0`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
                         ) as any;
                         break;
                     case StockDisplayMode.OUT_OF_STOCK:
                         query = query.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) = 0`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
                         ) as any;
                         break;
                 }
@@ -560,17 +560,17 @@ export class InventoryService implements OnModuleInit {
                 switch (filters.displayMode) {
                     case StockDisplayMode.BELOW_SAFETY:
                         countQuery = countQuery.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) < ${wmsTables.skus.safetyStock}`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
                         ) as any;
                         break;
                     case StockDisplayMode.WITH_STOCK:
                         countQuery = countQuery.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) > 0`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
                         ) as any;
                         break;
                     case StockDisplayMode.OUT_OF_STOCK:
                         countQuery = countQuery.where(
-                            sql`COALESCE(${wmsSchema.stockSummary.onHand}, 0) = 0`
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
                         ) as any;
                         break;
                 }
