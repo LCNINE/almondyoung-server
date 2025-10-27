@@ -43,6 +43,9 @@ import { ReturnController } from './controllers/return.controller';
 // Phase 1 Step 1.3: Transfer Automation
 import { TransferService } from './services/transfer.service';
 import { TransferController } from './controllers/transfer.controller';
+// Phase 3 Week 7: SKU Groups Management
+import { SkuGroupService } from './services/sku-group.service';
+import { SkuGroupController } from './controllers/sku-group.controller';
 
 @Module({
   imports: [
@@ -75,6 +78,8 @@ import { TransferController } from './controllers/transfer.controller';
     ReturnController,
     // Phase 1 Step 1.3: Transfer controller
     TransferController,
+    // Phase 3 Week 7: SKU Groups controller
+    SkuGroupController,
   ],
   providers: [
     InventoryService,
@@ -101,6 +106,8 @@ import { TransferController } from './controllers/transfer.controller';
     ReturnService,
     // Phase 1 Step 1.3: Transfer service
     TransferService,
+    // Phase 3 Week 7: SKU Groups service
+    SkuGroupService,
   ],
   exports: [
     InventoryService,
@@ -122,6 +129,8 @@ import { TransferController } from './controllers/transfer.controller';
     ReturnService,
     // Phase 1 Step 1.3: Export transfer service
     TransferService,
+    // Phase 3 Week 7: Export SKU Groups service
+    SkuGroupService,
   ],
 })
 export class InventoryModule { }

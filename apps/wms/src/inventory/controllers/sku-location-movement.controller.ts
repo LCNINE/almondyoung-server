@@ -12,6 +12,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiProperty } f
 import { SkuLocationMovementService, MovementStatistics, MovementFilters } from '../services/sku-location-movement.service';
 import { CreateSkuLocationMovementDto } from '../dto/sku-location-movements/create-sku-location-movement.dto';
 import { SkuLocationMovementResponseDto } from '../dto/sku-location-movements/sku-location-movement-response.dto';
+import { BulkMoveSkuLocationDto, BulkMoveResultDto } from '../dto/sku-location-movements/bulk-move-sku-location.dto';
+import { MoveSkuByIdentifierDto, BulkMoveByIdentifierDto } from '../dto/sku-location-movements/move-sku-by-identifier.dto';
 import { Type } from 'class-transformer';
 import { IsOptional, IsInt, Min, IsEnum, IsDateString } from 'class-validator';
 
@@ -81,6 +83,101 @@ export class SkuLocationMovementController {
         @Body() dto: CreateSkuLocationMovementDto
     ): Promise<SkuLocationMovementResponseDto> {
         return this.skuLocationMovementService.recordMovement(dto);
+    }
+
+    @Post('bulk')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: '다중 SKU 위치 이동 기록 (Bulk record SKU location movements)',
+        description: 'Record multiple SKU location movements in a single transaction. Partial success is allowed.',
+    })
+    @ApiResponse({
+        status: 200,
+        description: 'Bulk movements processed',
+        schema: {
+            type: 'object',
+            properties: {
+                total: { type: 'number', example: 10 },
+                successCount: { type: 'number', example: 8 },
+                failCount: { type: 'number', example: 2 },
+                success: { type: 'boolean', example: true },
+                results: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            success: { type: 'boolean' },
+                            skuId: { type: 'string' },
+                            movementId: { type: 'string' },
+                            error: { type: 'string' },
+                        },
+                    },
+                },
+            },
+        },
+    })
+    @ApiResponse({ status: 400, description: 'Invalid input data' })
+    async bulkRecordMovements(
+        @Body() dto: BulkMoveSkuLocationDto
+    ): Promise<BulkMoveResultDto> {
+        return this.skuLocationMovementService.bulkRecordMovements(dto);
+    }
+
+    @Post('by-identifier')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({
+        summary: 'SKU 식별자로 위치 이동 기록 (Move SKU by identifier - UUID or barcode)',
+        description: 'Record SKU location movement using SKU identifier (UUID or barcode). SKU is resolved automatically.',
+    })
+    @ApiResponse({
+        status: 201,
+        description: 'Movement recorded successfully',
+        type: SkuLocationMovementResponseDto,
+    })
+    @ApiResponse({ status: 400, description: 'Invalid input data' })
+    @ApiResponse({ status: 404, description: 'SKU not found' })
+    async moveSkuByIdentifier(
+        @Body() dto: MoveSkuByIdentifierDto
+    ): Promise<SkuLocationMovementResponseDto> {
+        return this.skuLocationMovementService.moveSkuByIdentifier(dto);
+    }
+
+    @Post('bulk-by-identifier')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: '식별자로 다중 SKU 위치 이동 (Bulk move SKUs by identifier)',
+        description: 'Record multiple SKU location movements using identifiers (UUID or barcode). Each SKU is resolved automatically.',
+    })
+    @ApiResponse({
+        status: 200,
+        description: 'Bulk movements processed',
+        schema: {
+            type: 'object',
+            properties: {
+                total: { type: 'number', example: 10 },
+                successCount: { type: 'number', example: 8 },
+                failCount: { type: 'number', example: 2 },
+                success: { type: 'boolean', example: true },
+                results: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            success: { type: 'boolean' },
+                            skuId: { type: 'string' },
+                            movementId: { type: 'string' },
+                            error: { type: 'string' },
+                        },
+                    },
+                },
+            },
+        },
+    })
+    @ApiResponse({ status: 400, description: 'Invalid input data' })
+    async bulkMoveByIdentifier(
+        @Body() dto: BulkMoveByIdentifierDto
+    ): Promise<BulkMoveResultDto> {
+        return this.skuLocationMovementService.bulkMoveByIdentifier(dto);
     }
 
     @Get()

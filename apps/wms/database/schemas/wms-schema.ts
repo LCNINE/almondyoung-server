@@ -362,6 +362,11 @@ export const skus = pgTable('skus', {
     // 옵션 그룹
     variantGroupCode: varchar('variant_group_code', { length: 64 }),
     
+    // ===== WMS-Internal Grouping (Phase 3 - Week 7) =====
+    // Optional grouping for warehouse organization (nullable - most SKUs won't have a group)
+    // ON DELETE SET NULL: SKUs survive when group is deleted
+    groupId: uuid('group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
+    
     // ===== End Extended Metadata =====
     
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -375,6 +380,7 @@ export const skus = pgTable('skus', {
     idxSkusPrimaryLocation: index('idx_skus_primary_location').on(t.primaryLocationId),
     idxSkusWeight: index('idx_skus_weight').on(t.productWeight),
     idxSkusMoq: index('idx_skus_moq').on(t.moq),
+    idxSkusGroupId: index('idx_skus_group_id').on(t.groupId), // WMS-internal grouping
 }));
 
 export const skuSuppliers = pgTable('sku_suppliers', {
@@ -506,6 +512,51 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
 }, t => ({
     uqMasterCode: unique().on(t.masterCode),
 }));
+
+// ===== SKU GROUPS (WMS-internal warehouse organization) =====
+// Groups are metadata labels for organizing similar SKUs (e.g., color/size variants)
+// Key design: Groups do NOT cascade delete - SKUs survive when group is deleted (ON DELETE SET NULL)
+export const skuGroups = pgTable('sku_groups', {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    // Basic info
+    name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 100 }).notNull().unique(),
+    description: text('description'),
+
+    // Optional link to WMS inventory master for consistency
+    inventoryMasterId: uuid('inventory_master_id')
+        .references(() => inventoryProductMasters.id, { onDelete: 'set null' }),
+
+    // Metadata
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    idxSkuGroupsCode: index('idx_sku_groups_code').on(t.code),
+    idxSkuGroupsName: index('idx_sku_groups_name').on(t.name),
+    idxSkuGroupsMaster: index('idx_sku_groups_master').on(t.inventoryMasterId),
+}));
+
+/**
+ * Helper function to generate SKU group code
+ * Customize this function to change the naming convention
+ * 
+ * @param name - Group name
+ * @param masterId - Optional inventory master ID
+ * @returns Generated group code
+ * 
+ * Example output: "GROUP-LASH-20251027-ABC1" 
+ */
+export function generateSkuGroupCode(name: string, masterId?: string): string {
+    const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const sanitizedName = name
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '-')
+        .substring(0, 20);
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    return `GROUP-${sanitizedName}-${timestamp}-${random}`;
+}
 
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
@@ -1639,6 +1690,8 @@ export const wmsTables = {
     skuManagers,
     skuLocationMovements,
     inventoryProductMasters,
+    // Phase 3 Week 7: SKU Groups
+    skuGroups,
     deliveryProfiles,
     warehouses,
     locationColumns,
@@ -1759,6 +1812,11 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
         references: [skuManagers.skuId],
     }),
     locationMovements: many(skuLocationMovements),
+    // WMS-internal group relation (Phase 3 - Week 7)
+    group: one(skuGroups, {
+        fields: [skus.groupId],
+        references: [skuGroups.id],
+    }),
     // Location references
     primaryLocation: one(locations, {
         fields: [skus.primaryLocationId],
@@ -1868,6 +1926,16 @@ export const skuLocationMovementsRelations = relations(skuLocationMovements, ({ 
 export const inventoryProductMastersRelations = relations(inventoryProductMasters, ({ many }) => ({
     skus: many(skus),
     productMatchings: many(productMatchings),
+    skuGroups: many(skuGroups),
+}));
+
+// SKU Groups Relations (Phase 3 - Week 7)
+export const skuGroupsRelations = relations(skuGroups, ({ one, many }) => ({
+    inventoryMaster: one(inventoryProductMasters, {
+        fields: [skuGroups.inventoryMasterId],
+        references: [inventoryProductMasters.id],
+    }),
+    skus: many(skus),
 }));
 
 
