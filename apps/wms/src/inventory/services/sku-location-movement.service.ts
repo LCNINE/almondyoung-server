@@ -484,7 +484,7 @@ export class SkuLocationMovementService {
             // Record movement using resolved SKU ID
             return this.recordMovement({
                 skuId: resolvedSku.id,
-                barcode: resolvedSku.barcode ?? undefined,
+                barcode: resolvedSku.barcode || '',
                 fromLocationId: dto.fromLocationId,
                 toLocationId: dto.toLocationId,
                 quantity: dto.quantity,

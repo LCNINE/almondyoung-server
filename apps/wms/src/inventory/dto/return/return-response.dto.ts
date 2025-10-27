@@ -28,32 +28,37 @@ export class ReturnItemDto {
   @ApiProperty({
     description: '입고 수량',
     example: 5,
+    nullable: true,
   })
-  receivedQuantity: number;
+  receivedQuantity: number | null;
 
   @ApiProperty({
     description: 'QC 통과 수량',
     example: 4,
+    nullable: true,
   })
-  qcPassedQuantity: number;
+  qcPassedQuantity: number | null;
 
   @ApiProperty({
     description: 'QC 실패 수량',
     example: 1,
+    nullable: true,
   })
-  qcFailedQuantity: number;
+  qcFailedQuantity: number | null;
 
   @ApiProperty({
     description: '재입고 수량',
     example: 4,
+    nullable: true,
   })
-  restockedQuantity: number;
+  restockedQuantity: number | null;
 
   @ApiProperty({
     description: '폐기 수량',
     example: 1,
+    nullable: true,
   })
-  disposedQuantity: number;
+  disposedQuantity: number | null;
 
   @ApiProperty({
     description: '입고 위치 ID',
@@ -66,8 +71,9 @@ export class ReturnItemDto {
     description: 'QC 상태',
     enum: ['pending', 'passed', 'failed'],
     example: 'passed',
+    nullable: true,
   })
-  qcStatus: string;
+  qcStatus: string | null;
 
   @ApiProperty({
     description: 'QC 결과 사유',

@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, SQL } from 'drizzle-orm';
 import { InventoryCommandService } from './inventory-command.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 
@@ -125,7 +125,7 @@ export class ReturnService {
       const defaultReturnLocation = await trx.query.locations.findFirst({
         where: and(
           eq(wmsTables.locations.warehouseId, returnHeader.warehouseId),
-          eq(wmsTables.locations.locationType, 'return_default')
+          eq(wmsTables.locations.systemRole, 'return_default')
         ),
       });
 
@@ -249,6 +249,12 @@ export class ReturnService {
         const passedQty = item.qcPassedQuantity || 0;
         const failedQty = item.qcFailedQuantity || 0;
         const totalInspected = passedQty + failedQty;
+
+        if (returnItem.receivedQuantity === null) {
+          throw new BadRequestException(
+            `Return item ${item.returnItemId} has not been received yet`
+          );
+        }
 
         if (totalInspected > returnItem.receivedQuantity) {
           throw new BadRequestException(
@@ -374,7 +380,6 @@ export class ReturnService {
             toLocationId: item.targetLocationId,
             quantity: item.quantity,
             reason: `RESTOCK: ${item.reason || 'QC passed'}`,
-            journalId: journal.id,
           }, trx);
 
           totalRestocked += item.quantity;
@@ -482,7 +487,7 @@ export class ReturnService {
   }, tx?: DbTx) {
     const db = tx ?? this.db;
 
-    const conditions = [];
+    const conditions: SQL[] = [];
 
     if (filters.warehouseId) {
       conditions.push(eq(wmsTables.returns.warehouseId, filters.warehouseId));

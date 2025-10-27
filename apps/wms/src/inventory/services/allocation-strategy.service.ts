@@ -19,7 +19,7 @@ export interface AvailableLocation {
   locationCode?: string;
   zone?: string;
   availableQuantity: number;
-  createdAt?: Date; // FIFO용
+  updatedAt?: Date; // FIFO용 (stock ledger last update)
   expiryDate?: Date; // FEFO용
   priority?: number; // 위치 우선순위
 }
@@ -253,7 +253,7 @@ export class AllocationStrategyService {
         warehouseId: stockLedgers.warehouseId,
         locationId: stockLedgers.locationId,
         quantity: stockLedgers.qty,
-        createdAt: stockLedgers.createdAt,
+        updatedAt: stockLedgers.updatedAt,
       })
       .from(stockLedgers)
       .where(and(...ledgerConditions));
@@ -325,9 +325,9 @@ export class AllocationStrategyService {
           warehouseName: warehouse?.name,
           locationId: ledger.locationId,
           locationCode: location?.code || `LOC-${ledger.locationId.slice(-8)}`,
-          zone: location?.zone || undefined,
+          zone: location?.displayName || undefined,
           availableQuantity: availableQty,
-          createdAt: ledger.createdAt,
+          updatedAt: ledger.updatedAt,
           priority: 0, // Default priority
         });
       }
@@ -347,10 +347,10 @@ export class AllocationStrategyService {
 
     switch (strategy) {
       case 'FIFO':
-        // 가장 오래된 재고 우선 (createdAt 오름차순)
+        // 가장 오래된 재고 우선 (updatedAt 오름차순)
         sorted.sort((a, b) => {
-          const dateA = a.createdAt?.getTime() || 0;
-          const dateB = b.createdAt?.getTime() || 0;
+          const dateA = a.updatedAt?.getTime() || 0;
+          const dateB = b.updatedAt?.getTime() || 0;
           return dateA - dateB;
         });
         break;
@@ -377,8 +377,8 @@ export class AllocationStrategyService {
       default:
         // Default: FIFO
         sorted.sort((a, b) => {
-          const dateA = a.createdAt?.getTime() || 0;
-          const dateB = b.createdAt?.getTime() || 0;
+          const dateA = a.updatedAt?.getTime() || 0;
+          const dateB = b.updatedAt?.getTime() || 0;
           return dateA - dateB;
         });
     }

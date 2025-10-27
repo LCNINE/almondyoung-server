@@ -276,7 +276,7 @@ export class StockEventService {
                 const returnLocation = await executor.query.locations.findFirst({
                     where: and(
                         eq(wmsTables.locations.warehouseId, warehouseId),
-                        eq(wmsTables.locations.locationType, 'return_default')
+                        eq(wmsTables.locations.systemRole, 'return_default')
                     )
                 });
 
