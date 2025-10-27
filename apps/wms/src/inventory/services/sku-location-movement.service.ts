@@ -5,6 +5,8 @@ import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema
 import { eq, and, gte, lte, desc, sql, SQL } from 'drizzle-orm';
 import { CreateSkuLocationMovementDto } from '../dto/sku-location-movements/create-sku-location-movement.dto';
 import { SkuLocationMovementResponseDto } from '../dto/sku-location-movements/sku-location-movement-response.dto';
+import { BulkMoveSkuLocationDto, BulkMoveResultDto } from '../dto/sku-location-movements/bulk-move-sku-location.dto';
+import { MoveSkuByIdentifierDto, BulkMoveByIdentifierDto } from '../dto/sku-location-movements/move-sku-by-identifier.dto';
 
 export interface MovementStatistics {
     totalMovements: number;
@@ -411,6 +413,182 @@ export class SkuLocationMovementService {
 
             return this.mapToResponseDto(result[0]);
         }, tx);
+    }
+
+    /**
+     * Bulk record multiple SKU location movements
+     * Processes each movement independently - partial success is allowed
+     */
+    async bulkRecordMovements(
+        dto: BulkMoveSkuLocationDto,
+        tx?: DbTx
+    ): Promise<BulkMoveResultDto> {
+        return this.inTx(async (tx) => {
+            const results: Array<{
+                success: boolean;
+                skuId?: string;
+                movementId?: string;
+                error?: string;
+            }> = [];
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const movement of dto.movements) {
+                try {
+                    const result = await this.recordMovement(movement, tx);
+                    results.push({
+                        success: true,
+                        skuId: movement.skuId,
+                        movementId: result.id,
+                    });
+                    successCount++;
+                } catch (error) {
+                    results.push({
+                        success: false,
+                        skuId: movement.skuId,
+                        error: error.message,
+                    });
+                    failCount++;
+                }
+            }
+
+            return {
+                total: dto.movements.length,
+                successCount,
+                failCount,
+                success: successCount > 0,
+                results,
+            };
+        }, tx);
+    }
+
+    /**
+     * Move SKU using identifier (UUID or barcode)
+     * Resolves the SKU first, then records the movement
+     */
+    async moveSkuByIdentifier(
+        dto: MoveSkuByIdentifierDto,
+        tx?: DbTx
+    ): Promise<SkuLocationMovementResponseDto> {
+        return this.inTx(async (tx) => {
+            // Resolve SKU
+            const resolvedSku = await this.resolveSkuIdentifier(dto.skuIdentifier, tx);
+
+            if (!resolvedSku) {
+                throw new NotFoundException(
+                    `SKU with identifier ${dto.skuIdentifier} not found`
+                );
+            }
+
+            // Record movement using resolved SKU ID
+            return this.recordMovement({
+                skuId: resolvedSku.id,
+                barcode: resolvedSku.barcode ?? undefined,
+                fromLocationId: dto.fromLocationId,
+                toLocationId: dto.toLocationId,
+                quantity: dto.quantity,
+                reason: dto.reason,
+                movedBy: dto.movedBy,
+            }, tx);
+        }, tx);
+    }
+
+    /**
+     * Bulk move SKUs using identifiers (UUID or barcode)
+     * Each SKU is resolved first, then movement is recorded
+     */
+    async bulkMoveByIdentifier(
+        dto: BulkMoveByIdentifierDto,
+        tx?: DbTx
+    ): Promise<BulkMoveResultDto> {
+        return this.inTx(async (tx) => {
+            const results: Array<{
+                success: boolean;
+                skuId?: string;
+                movementId?: string;
+                error?: string;
+            }> = [];
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const movement of dto.movements) {
+                try {
+                    const result = await this.moveSkuByIdentifier(movement, tx);
+                    results.push({
+                        success: true,
+                        skuId: result.skuId,
+                        movementId: result.id,
+                    });
+                    successCount++;
+                } catch (error) {
+                    results.push({
+                        success: false,
+                        skuId: movement.skuIdentifier,
+                        error: error.message,
+                    });
+                    failCount++;
+                }
+            }
+
+            return {
+                total: dto.movements.length,
+                successCount,
+                failCount,
+                success: successCount > 0,
+                results,
+            };
+        }, tx);
+    }
+
+    /**
+     * Resolve SKU by ID or barcode
+     * Tries UUID format first, then falls back to barcode lookup
+     */
+    private async resolveSkuIdentifier(
+        identifier: string,
+        tx: DbTx
+    ): Promise<{ id: string; barcode: string | null } | null> {
+        const { skus } = wmsTables;
+
+        // Check if identifier is UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isUuid = uuidRegex.test(identifier);
+
+        if (isUuid) {
+            // Try to find by ID
+            const result = await tx
+                .select({
+                    id: skus.id,
+                    barcode: skus.defaultBarcode,
+                })
+                .from(skus)
+                .where(eq(skus.id, identifier))
+                .limit(1);
+
+            if (result[0]) {
+                return {
+                    id: result[0].id,
+                    barcode: result[0].barcode,
+                };
+            }
+        }
+
+        // Try to find by barcode
+        const barcodeResult = await tx
+            .select({
+                id: skus.id,
+                barcode: skus.defaultBarcode,
+            })
+            .from(skus)
+            .where(eq(skus.defaultBarcode, identifier))
+            .limit(1);
+
+        return barcodeResult[0] ? {
+            id: barcodeResult[0].id,
+            barcode: barcodeResult[0].barcode,
+        } : null;
     }
 
     /**
