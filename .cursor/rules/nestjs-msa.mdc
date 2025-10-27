@@ -20,7 +20,8 @@ alwaysApply: true
 
 # 📝 Cursor Prompt Rules – Nest.js Layer & Error Handling (CTO 스타일)
 
-## Controller
+`, `"Refund already processed"`, `"Refund amount exceeds limit"`)
+- 요청 데이터는 이미 컨트롤러 레벨에서 검증되었다고 가정한다.## Controller
 
 - API 엔드포인트를 제공한다.
 - 통신 수단(HTTP, GraphQL, WebSocket 등)에 종속된 책임을 가진다.

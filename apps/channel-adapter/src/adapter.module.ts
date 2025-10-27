@@ -2,25 +2,37 @@ import { Module } from '@nestjs/common';
 import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
 import { EventsModule, StreamPublisher } from '@app/events';
-import { NaverSmartstoreStrategy } from './services/strategies/naver-smartstore.strategy';
-import { CoupangStrategy } from './services/strategies/coupang.strategy';
+import { NaverSmartstoreAdapter } from './services/adapters/naver-smartstore.adapter';
+import { CoupangAdapter } from './services/adapters/coupang.adapter';
 
-import { ChannelStrategyFactory } from './services/strategies/channel-strategy.factory';
-import { AdapterOrchestrationService } from './services/adapter-orchestration.service';
+import { ChannelAdapterFactory } from './services/adapters/channel-adapter.factory';
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
-import { NaverCommerceApiService } from './services/apis/naver-commerce.api.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
 import { CHANNEL_ADAPTER_STREAM } from '@app/shared/streams';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
-import { CoupangApiService } from './services/apis/coupang.api.service';
+import {
+  CoupangOrderClient,
+  CoupangReturnClient,
+  CoupangExchangeClient,
+  CoupangProductClient,
+} from './services/clients/coupang';
+import { NaverOrderClient } from './services/clients/naver/naver-order.client';
+import { NaverClaimClient } from './services/clients/naver/naver-claim.client';
+import { NaverProductClient } from './services/clients/naver/naver-product.client';
+import { NaverAuthService } from './services/clients/naver/naver-auth.client';
 import { WmsApiService } from './services/apis/wms.api.service';
 import { DlqMonitoringService } from './services/dlq-monitoring.service';
 import { ConfigModule } from '@nestjs/config';
+import { ChannelDataReader } from './services/channel-data.reader';
+import { ChannelSyncManager } from './services/channel-sync.manager';
+import { ChannelCommandManager } from './services/channel-command.manager';
+import { WmsIntegrationManager } from './services/wms-integration.manager';
+import { ChannelAdapterRepository } from './services/channel-adapter.repository';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -90,15 +102,28 @@ function createKafkaConfig() {
   controllers: [ChannelAdapterController, SyncStatusController],
   providers: [
     ChannelAdapterService,
-    AdapterOrchestrationService,
     SyncStatusService,
-    ChannelStrategyFactory,
-    NaverSmartstoreStrategy,
-    CoupangStrategy,
-    NaverCommerceApiService,
-    CoupangApiService,
+    ChannelAdapterFactory,
+    NaverSmartstoreAdapter,
+    CoupangAdapter,
+
+    CoupangOrderClient,
+    CoupangReturnClient,
+    CoupangExchangeClient,
+    CoupangProductClient,
+    NaverOrderClient,
+    NaverClaimClient,
+    NaverProductClient,
+    NaverAuthService,
     WmsApiService,
     DlqMonitoringService,
+
+    // 🆕 리팩토링된 레이어 클래스들
+    ChannelDataReader,
+    ChannelSyncManager,
+    ChannelCommandManager,
+    WmsIntegrationManager,
+    ChannelAdapterRepository,
 
     // 환경별 EventPublisher 제공
     ...(process.env.NODE_ENV === 'production'

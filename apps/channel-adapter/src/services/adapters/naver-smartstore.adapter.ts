@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { ChannelStrategy } from './channel-strategy.interface';
+// import { HttpService } from '@nestjs/axios'; // BaseClient로 이동
+import { ChannelAdapter } from './channel-adapter.interface';
 import {
   DataType,
   SyncResult,
@@ -10,68 +10,145 @@ import {
 import { InternalOrderEvent, OrderQuery } from '../../types';
 import { ChannelCommand, ChannelQuery } from '../../types';
 
-import {
-  InternalDispatchCommandSchema,
-  transformInternalCommandToNaverRequest,
-  NaverDispatchRequestSchema,
-} from '../../zods/naver-dispatch.zod';
-import { NaverCommerceApiService } from '../apis/naver-commerce.api.service';
+// -----------------------------------------------------------------
+// 1. Zod Import 경로 변경 ( .ts 확장자 제거 및 경로 수정 )
+// -----------------------------------------------------------------
+import { z } from 'zod';
+
+// API 클라이언트 Import (리팩토링된 파일)
+
+// import { NaverAuthService } from '../apis/naver-auth.service'; // 제거
 import {
   WmsApiService,
   SalesOrder,
   CreateSalesOrderDto,
 } from '../apis/wms.api.service';
-import { z } from 'zod';
 
+// 신규 Zod 스키마 Import
 import {
-  ProductOrderInfo,
+  DeliveryCompanyCode,
+  DeliveryMethod,
+  DeliveryMethodSchema,
+  DeliveryCompanyCodeSchema,
+  NaverClaimProcessResponse, // naver-core.zod.ts에서 가져옴
+} from '../../zods/naver/naver-core.zod'; // .zod 제거, naver.core -> naver-core
+import {
+  DelayDispatchBody,
+  DispatchProductOrder,
+  NaverDispatchRequest,
+  NaverLastChangedStatusResponse,
+  NaverProductOrderDetailsResponse,
+  NaverProductOrderIdsResponse,
+  DispatchProductOrderSchema,
+  DelayDispatchBodySchema,
+} from '../../zods/naver/naver.order.zod'; // .zod.ts 제거
+import {} from // ApproveReturnBody, // 존재하지 않는 import 제거
+// ApproveCancelBody, // 존재하지 않는 import 제거
+'../../zods/naver/naver.claim.zod'; // .zod.ts 제거
+import {
   ChangeSaleStatusBody,
   UpdateOptionStockBody,
-} from '../../zods/naver-api.zod';
+  ChangeSaleStatusBodySchema,
+  UpdateOptionStockBodySchema,
+} from '../../zods/naver/naver.product.zod'; // .zod.ts 제거
+import { NaverOrderClient } from '../clients/naver/naver-order.client';
+import { NaverClaimClient } from '../clients/naver/naver-claim.client';
+import { NaverProductClient } from '../clients/naver/naver-product.client';
+import { CancelApproveCommandSchema, DispatchDelayCommandSchema, OrderConfirmCommandSchema, ReturnApproveCommandSchema } from '../../zods/naver/naver-adapter.zod';
 
-// 명령 검증용 Zod 스키마들
-const OrderConfirmCommandSchema = z.object({
-  type: z.literal('order.confirm'),
-  productOrderIds: z
-    .array(z.string())
-    .min(1, '최소 1개의 상품 주문 번호가 필요합니다'),
+// -----------------------------------------------------------------
+// 2. naver-dispatch.zod.ts에서 내부 변환 로직 이전
+// -----------------------------------------------------------------
+
+/**
+ * 내부 발송 명령 스키마 (Adapter 전용)
+ */
+const InternalDispatchCommandSchema = z.object({
+  type: z.literal('dispatch.ship'), // executeCommand와 일치시킴
+  orderId: z.string(),
+  productOrderIds: z.array(z.string()).optional(),
+  productOrderId: z.string().optional(), // 단일 상품 주문의 경우
+  tracking: z.object({
+    companyCode: z.string(),
+    number: z.string(),
+  }),
+  dispatchedAt: z.iso.datetime().optional(),
 });
+type InternalDispatchCommand = z.infer<typeof InternalDispatchCommandSchema>;
 
-const DispatchDelayCommandSchema = z.object({
-  type: z.literal('dispatch.delay'),
-  productOrderId: z.string().min(1, '상품 주문 번호는 필수입니다'),
-  dispatchDueDate: z.string().min(1, '발송 예정일은 필수입니다'),
-  reasonCode: z.string().min(1, '지연 사유 코드는 필수입니다'),
-  reasonText: z.string().min(1, '지연 사유 상세는 필수입니다'),
-});
+/**
+ * 택배사 코드를 네이버 API 형식으로 매핑 (Adapter 전용)
+ */
+const DELIVERY_COMPANY_MAPPING: Record<string, DeliveryCompanyCode> = {
+  CJ: 'CJGLS',
+  LOTTE: 'HYUNDAI',
+  HANJIN: 'HANJIN',
+  LOGEN: 'KGB',
+  EPOST: 'EPOST',
+  CU: 'CUPARCEL',
+  DHL: 'DHL',
+  FEDEX: 'FEDEX',
+  UPS: 'UPS',
+  EMS: 'EMS',
+  DEFAULT: 'CJGLS', // 기본값
+};
 
-const CancelApproveCommandSchema = z.union([
-  z.object({
-    type: z.literal('cancel.approve'),
-    claimId: z.string().min(1, '클레임 ID는 필수입니다'),
-  }),
-  z.object({
-    type: z.literal('cancel.approve'),
-    orderId: z.string().min(1, '주문 ID는 필수입니다'),
-  }),
-]);
+/**
+ * 내부 명령을 네이버 API 요청으로 변환하는 헬퍼 함수 (Adapter 전용)
+ */
+function transformInternalCommandToNaverRequest(
+  command: InternalDispatchCommand,
+): NaverDispatchRequest {
+  // productOrderIds 결정 (배열 또는 단일 값)
+  const productOrderIds =
+    command.productOrderIds ||
+    (command.productOrderId ? [command.productOrderId] : []);
 
-const ReturnApproveCommandSchema = z.union([
-  z.object({
-    type: z.literal('return.approve'),
-    claimId: z.string().min(1, '클레임 ID는 필수입니다'),
-  }),
-  z.object({
-    type: z.literal('return.approve'),
-    orderId: z.string().min(1, '주문 ID는 필수입니다'),
-  }),
-]);
+  if (productOrderIds.length === 0) {
+    throw new Error('productOrderIds 또는 productOrderId가 필요합니다');
+  }
 
-// 타입 정의
-type OrderConfirmCommand = z.infer<typeof OrderConfirmCommandSchema>;
-type DispatchDelayCommand = z.infer<typeof DispatchDelayCommandSchema>;
-type CancelApproveCommand = z.infer<typeof CancelApproveCommandSchema>;
-type ReturnApproveCommand = z.infer<typeof ReturnApproveCommandSchema>;
+  // 택배사 코드 매핑
+  const deliveryCompanyCode =
+    DELIVERY_COMPANY_MAPPING[command.tracking.companyCode] ||
+    DELIVERY_COMPANY_MAPPING.DEFAULT;
+
+  // 배송일 설정 (기본값: 현재 시간)
+  const dispatchDate = command.dispatchedAt || new Date().toISOString();
+
+  // Zod 스키마를 사용하여 개별 dispatchProductOrder 객체 생성
+  const dispatchOrders: DispatchProductOrder[] = productOrderIds.map(
+    (productOrderId) =>
+      DispatchProductOrderSchema.parse({
+        productOrderId,
+        deliveryMethod: 'DELIVERY' as const,
+        deliveryCompanyCode,
+        trackingNumber: command.tracking.number,
+        dispatchDate,
+      }),
+  );
+
+  return {
+    dispatchProductOrders: dispatchOrders,
+  };
+}
+// -----------------------------------------------------------------
+// 끝: 내부 변환 로직 이전
+// -----------------------------------------------------------------
+
+// ProductOrderInfo 타입 임시 정의 (원래 naver-api.zod.ts에 있던 것)
+// TODO: 이 타입도 응답 스키마와 함께 naver.order.zod.ts로 이동하는 것이 좋음
+interface ProductOrderInfo {
+  order: any;
+  productOrder: any;
+  cancel?: any;
+  return?: any;
+  exchange?: any;
+  beforeClaim: object;
+  currentClaim: any;
+  completedClaims: any[];
+  delivery: any;
+}
 
 // 내부 표준 명령 처리 결과 타입들
 interface InternalCommandResult {
@@ -110,11 +187,23 @@ interface TypedProductOrderInfo extends ProductOrderInfo {
   productOrder: NaverProductOrderInfo;
 }
 
+/**
+ * 네이버 스마트스토어 채널 어댑터
+ *
+ * 네이버 커머스 API의 특수한 인터페이스를 내부 표준 인터페이스로 변환합니다.
+ * 어댑터 패턴을 적용하여 네이버 API 호출 방식을 내부 시스템에 적응시킵니다.
+ */
 @Injectable()
-export class NaverSmartstoreStrategy implements ChannelStrategy {
-  private readonly logger = new Logger(NaverSmartstoreStrategy.name);
+export class NaverSmartstoreAdapter implements ChannelAdapter {
+  private readonly logger = new Logger(NaverSmartstoreAdapter.name);
+
+  // -----------------------------------------------------------------
+  // 3. 생성자(Constructor) 수정
+  // -----------------------------------------------------------------
   constructor(
-    private readonly naverApi: NaverCommerceApiService,
+    private readonly naverOrderClient: NaverOrderClient,
+    private readonly naverClaimClient: NaverClaimClient,
+    private readonly naverProductClient: NaverProductClient,
     private readonly wmsApi: WmsApiService,
   ) {}
 
@@ -125,9 +214,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 🔄 수신(Inbound) 동기화: 네이버에서 변경된 주문 정보를 가져와 내부 표준 이벤트로 변환
-   *
-   * @param dataType 동기화할 데이터 타입 (현재는 'orders'만 지원)
-   * @returns 변환된 내부 주문 이벤트 배열
    */
   async syncFromChannel(dataType: DataType): Promise<InternalOrderEvent[]> {
     if (dataType !== 'orders') {
@@ -138,9 +224,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     }
 
     try {
-      // 1. 인증 토큰 획득
-      const token = await this.naverApi.getAccessToken();
-
+      // 1. 인증 토큰 획득 (제거) - NaverOrderClient가 내부 처리
       // 2. 조회 시작 시점 설정 (지난 24시간)
       const lastChangedFrom = new Date(
         Date.now() - 24 * 60 * 60 * 1000,
@@ -150,11 +234,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         `📡 네이버 주문 상태 변경 내역 조회 시작 (${lastChangedFrom} 이후)`,
       );
 
-      // 3. 최근 변경된 주문 상태 목록 조회
-      const statusResponse = await this.naverApi.getLastChangedStatuses(
-        token,
-        lastChangedFrom,
-      );
+      // 3. 최근 변경된 주문 상태 목록 조회 (naverOrderClient 사용)
+      const statusResponse =
+        await this.naverOrderClient.getLastChangedStatuses(lastChangedFrom);
 
       const statusChanges = statusResponse.data?.lastChangeStatuses || [];
       this.logger.log(`📋 변경된 주문 상태 ${statusChanges.length}건 조회됨`);
@@ -169,21 +251,20 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         (status) => status.productOrderId,
       );
 
-      // 5. 상세 주문 정보 조회
+      // 5. 상세 주문 정보 조회 (naverOrderClient 사용)
       this.logger.log(
         `🔍 상세 주문 정보 조회 대상: ${productOrderIds.length}건`,
       );
-      const detailsResponse = await this.naverApi.getOrderDetails(
-        token,
-        productOrderIds,
-      );
+      const detailsResponse =
+        await this.naverOrderClient.getOrderDetails(productOrderIds);
 
-      const orderDetails = detailsResponse.data || [];
+      const orderDetails: NaverProductOrderDetailsResponse['data'] =
+        detailsResponse.data || [];
       this.logger.log(`✅ 상세 주문 정보 ${orderDetails.length}건 조회 완료`);
 
       // 6. 네이버 형식을 내부 표준 이벤트 형식으로 변환 (진정한 어댑터 역할)
       const internalEvents = this.transformProductInfosToInternalEvents(
-        orderDetails as any,
+        orderDetails as any, // ProductOrderInfo 타입 사용
       );
 
       this.logger.log(`🎯 내부 이벤트 변환 완료: ${internalEvents.length}건`);
@@ -199,30 +280,20 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 🔄 송신(Outbound) 동기화: 내부 시스템의 변경사항을 네이버 스마트스토어로 전송
-   *
-   * @param payload 동기화할 데이터와 타입을 포함한 페이로드
-   * @returns 동기화 처리 결과
    */
   async syncToChannel(payload: SyncToChannelPayload): Promise<SyncResult> {
     try {
-      const token = await this.naverApi.getAccessToken();
+      // 토큰 획득 로직 제거 (ProductClient가 내부 처리)
 
       switch (payload.dataType) {
         case 'products': {
-          // 🎯 TypeScript가 payload.payload를 InternalProductData로 자동 추론!
           const productData = payload.payload;
-
           console.log(
             `📦 네이버 상품 정보 동기화: ${productData.name} (${productData.id})`,
           );
-
-          // 내부 상품 데이터를 네이버 API 형식으로 변환
           const naverProductData =
             this.transformInternalProductToNaver(productData);
-
-          // TODO: 실제 네이버 상품 업데이트 API 호출 (현재 API 스펙 확인 필요)
-          // const response = await this.naverApi.updateProduct(token, naverProductData);
-
+          // TODO: await this.naverProductClient.updateProduct(naverProductData);
           console.log(`✅ 네이버 상품 정보 동기화 완료: ${productData.id}`);
           return {
             success: true,
@@ -232,9 +303,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         }
 
         case 'inventory': {
-          // 🎯 TypeScript가 payload.payload를 InternalInventoryData로 자동 추론!
           const inventoryData = payload.payload;
-
           console.log(
             `📦 네이버 재고 정보 동기화: ${inventoryData.productId} (${inventoryData.stockQuantity}개) - ${inventoryData.isOptionProduct ? '옵션 상품' : '단일 상품'}`,
           );
@@ -254,19 +323,16 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
           try {
             let response: any;
-
             if (!inventoryData.isOptionProduct) {
               // 🔹 단일 상품: changeSaleStatus API 사용
               const saleStatusBody =
                 this.transformToNaverSaleStatusBody(inventoryData);
-
               this.logger.log(`🔄 단일 상품 재고 업데이트 API 호출 중...`);
-              response = await this.naverApi.changeSaleStatus(
-                token,
+              // naverProductClient 사용
+              response = await this.naverProductClient.changeSaleStatus(
                 originProductNo,
                 saleStatusBody,
               );
-
               this.logger.log(`✅ 단일 상품 재고 업데이트 성공:`, response);
             } else {
               // 🔹 옵션 상품: updateOptionStock API 사용
@@ -277,17 +343,14 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
                   failedCount: 1,
                 };
               }
-
               const optionStockBody =
                 this.transformToNaverOptionStockBody(inventoryData);
-
               this.logger.log(`🔄 옵션 상품 재고 업데이트 API 호출 중...`);
-              response = await this.naverApi.updateOptionStock(
-                token,
+              // naverProductClient 사용
+              response = await this.naverProductClient.updateOptionStock(
                 originProductNo,
                 optionStockBody,
               );
-
               this.logger.log(`✅ 옵션 상품 재고 업데이트 성공:`, response);
             }
 
@@ -303,16 +366,13 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
               },
             };
           } catch (apiError: any) {
-            // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
             if (apiError instanceof BadRequestException) {
               throw apiError;
             }
-
             this.logger.error(`❌ 네이버 재고 업데이트 API 호출 실패:`, {
               productId: inventoryData.productId,
               error: apiError.response?.data || apiError.message,
             });
-
             return {
               success: false,
               errors: [
@@ -327,17 +387,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         }
 
         case 'order_status': {
-          // 🎯 TypeScript가 payload.payload를 InternalOrderStatusData로 자동 추론!
           const orderStatusData = payload.payload;
-
           console.log(
             `📦 네이버 주문 상태 동기화: ${orderStatusData.orderId} → ${orderStatusData.status}`,
           );
-
-          // TODO: 네이버는 보통 주문 상태를 직접 변경하는 API가 없고,
-          // 발송처리/취소승인 등의 액션을 통해 상태가 변경됨
-          // 필요시 executeCommand로 라우팅하거나 별도 로직 구현
-
+          // TODO: 로직 구현
           console.log(
             `✅ 네이버 주문 상태 동기화 완료: ${orderStatusData.orderId}`,
           );
@@ -352,7 +406,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         }
 
         default: {
-          // TypeScript exhaustiveness check - 새로운 dataType 추가시 컴파일 에러 발생
           const _exhaustiveCheck: never = payload;
           this.logger.warn(`[Naver] syncToChannel: 지원하지 않는 dataType`);
           return {
@@ -373,26 +426,23 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   async executeCommand(command: ChannelCommand): Promise<SyncResult> {
     try {
-      const token = await this.naverApi.getAccessToken();
+      // 토큰 획득 로직 제거 (각 Client가 내부 처리)
 
       switch (command.type) {
         case 'order.prepare':
-          // 네이버의 order.confirm과 매핑
-          return await this.executeOrderConfirm(token, command);
+          return await this.executeOrderConfirm(command);
 
         case 'dispatch.ship':
-          // 네이버의 dispatch.confirm과 매핑
-          return await this.executeDispatchConfirm(token, command);
+          return await this.executeDispatchConfirm(command);
 
         case 'dispatch.delay':
-          return await this.executeDispatchDelay(token, command);
+          return await this.executeDispatchDelay(command);
 
         case 'order.cancel':
-          // 네이버의 cancel.approve와 매핑
-          return await this.executeCancelApprove(token, command);
+          return await this.executeCancelApprove(command);
 
         case 'return.approve':
-          return await this.executeReturnApprove(token, command);
+          return await this.executeReturnApprove(command);
 
         default:
           return {
@@ -415,11 +465,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     try {
       switch (query.type) {
         case 'order.status':
-          // 네이버는 주문 상태 조회 지원
           return await this.queryOrderStatus(query);
 
         case 'claim.details':
-          // 네이버는 클레임 상세 조회 지원
           return await this.queryClaimDetails(query);
 
         default:
@@ -450,24 +498,17 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 네이버 발주확인 API 호출
-   * @param token 액세스 토큰
-   * @param command 발주확인 명령
    */
-  private async executeOrderConfirm(
-    token: string,
-    command: any, // executeCommand에서 any로 받아오므로 일단 any로 유지
-  ): Promise<SyncResult> {
+  private async executeOrderConfirm(command: any): Promise<SyncResult> {
     try {
       // 1. 명령 검증 및 타입 변환
       const validatedCommand = OrderConfirmCommandSchema.parse(command);
-
       console.log('✅ 네이버 발주확인 실행:', {
         productOrderIds: validatedCommand.productOrderIds,
       });
 
-      // 2. API 호출
-      const response = await this.naverApi.confirmOrders(
-        token,
+      // 2. API 호출 (naverOrderClient 사용)
+      const response = await this.naverOrderClient.confirmOrders(
         validatedCommand.productOrderIds,
       );
 
@@ -475,18 +516,21 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         `✅ 네이버 발주확인 완료: 성공 ${response.data?.successProductOrderIds?.length || 0}건, 실패 ${response.data?.failProductOrderInfos?.length || 0}건`,
       );
 
-      // 3. 네이버 응답을 내부 표준 데이터로 변환 (진정한 어댑터 역할)
+      // 3. 네이버 응답을 내부 표준 데이터로 변환
       return this.transformNaverResponseToInternalResult(
         response,
         'order.confirm',
         validatedCommand.productOrderIds.length,
       );
     } catch (error) {
-      if (error.name === 'ZodError') {
+      if (error instanceof z.ZodError) {
+        // -----------------------------------------------------------------
+        // 5. Zod 에러 핸들링 수정 (error.errors -> error.issues)
+        // -----------------------------------------------------------------
         return {
           success: false,
-          errors: error.errors.map((err: any) => ({
-            message: `명령 검증 실패 - ${err.path.join('.')}: ${err.message}`,
+          errors: error.issues.map((issue) => ({
+            message: `명령 검증 실패 - ${issue.path.join('.')}: ${issue.message}`,
           })),
           failedCount: 1,
         };
@@ -513,33 +557,26 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 🆕 네이버 발송지연 처리 API 호출
-   * @param token 액세스 토큰
-   * @param command 발송지연 처리 명령
    */
-  private async executeDispatchDelay(
-    token: string,
-    command: any, // executeCommand에서 any로 받아오므로 일단 any로 유지
-  ): Promise<SyncResult> {
+  private async executeDispatchDelay(command: any): Promise<SyncResult> {
     try {
       // 1. 명령 검증
       const validatedCommand = DispatchDelayCommandSchema.parse(command);
-
       console.log('⏳ 네이버 발송지연 처리 실행:', {
         productOrderId: validatedCommand.productOrderId,
         dispatchDueDate: validatedCommand.dispatchDueDate,
         reasonCode: validatedCommand.reasonCode,
       });
 
-      // 2. API 명세에 맞는 요청 본문 생성
-      const requestBody = {
+      // 2. API 명세에 맞는 요청 본문 생성 (Zod 스키마 사용)
+      const requestBody: DelayDispatchBody = DelayDispatchBodySchema.parse({
         dispatchDueDate: validatedCommand.dispatchDueDate,
         delayedDispatchReason: validatedCommand.reasonCode,
         dispatchDelayedDetailedReason: validatedCommand.reasonText,
-      };
+      });
 
-      // 3. API 호출
-      const response = await this.naverApi.delayDispatch(
-        token,
+      // 3. API 호출 (naverOrderClient 사용)
+      const response = await this.naverOrderClient.delayDispatch(
         validatedCommand.productOrderId,
         requestBody,
       );
@@ -561,17 +598,20 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         );
       }
 
-      // 4. 네이버 응답을 내부 표준 데이터로 변환 (진정한 어댑터 역할)
+      // 4. 네이버 응답을 내부 표준 데이터로 변환
       return this.transformNaverResponseToInternalResult(
         response,
         'dispatch.delay',
       );
     } catch (error) {
-      if (error.name === 'ZodError') {
+      if (error instanceof z.ZodError) {
+        // -----------------------------------------------------------------
+        // 5. Zod 에러 핸들링 수정 (error.errors -> error.issues)
+        // -----------------------------------------------------------------
         return {
           success: false,
-          errors: error.errors.map((err: any) => ({
-            message: `명령 검증 실패 - ${err.path.join('.')}: ${err.message}`,
+          errors: error.issues.map((issue) => ({
+            message: `명령 검증 실패 - ${issue.path.join('.')}: ${issue.message}`,
           })),
           failedCount: 1,
         };
@@ -596,10 +636,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
   /**
    * 네이버 발송처리 API 호출
    */
-  private async executeDispatchConfirm(
-    token: string,
-    command: any,
-  ): Promise<SyncResult> {
+  private async executeDispatchConfirm(command: any): Promise<SyncResult> {
     console.log('📦 네이버 발송처리 실행:', {
       orderId: command.orderId,
       productOrderIds: command.productOrderIds,
@@ -611,25 +648,21 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       const validatedCommand = InternalDispatchCommandSchema.parse(command);
       const naverRequest =
         transformInternalCommandToNaverRequest(validatedCommand);
-      const validatedNaverRequest =
-        NaverDispatchRequestSchema.parse(naverRequest);
 
-      // 2. API 호출
-      const response = await this.naverApi.dispatchOrders(
-        token,
-        validatedNaverRequest.dispatchProductOrders,
+      // 2. API 호출 (naverOrderClient 사용)
+      const response = await this.naverOrderClient.dispatchOrders(
+        naverRequest.dispatchProductOrders,
       );
 
       console.log('✅ 네이버 발송처리 성공:', response);
 
-      // 네이버 응답을 내부 표준 데이터로 변환 (진정한 어댑터 역할)
+      // 네이버 응답을 내부 표준 데이터로 변환
       return this.transformNaverResponseToInternalResult(
         response,
         'dispatch.confirm',
-        validatedNaverRequest.dispatchProductOrders.length,
+        naverRequest.dispatchProductOrders.length,
       );
     } catch (error) {
-      // 🎯 BadRequestException은 그대로 전달 (Zod 에러 보존)
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -639,9 +672,12 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         error.response?.data || error.message,
       );
 
-      if (error.name === 'ZodError') {
-        const zodErrors = error.errors.map((err: any) => ({
-          message: `${err.path.join('.')}: ${err.message}`,
+      if (error instanceof z.ZodError) {
+        // -----------------------------------------------------------------
+        // 5. Zod 에러 핸들링 수정 (error.errors -> error.issues)
+        // -----------------------------------------------------------------
+        const zodErrors = error.issues.map((issue) => ({
+          message: `${issue.path.join('.')}: ${issue.message}`,
         }));
         return { success: false, errors: zodErrors, failedCount: 1 };
       }
@@ -664,14 +700,10 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
   /**
    * 네이버 취소 승인 API 호출
    */
-  private async executeCancelApprove(
-    token: string,
-    command: any, // executeCommand에서 any로 받아오므로 일단 any로 유지
-  ): Promise<SyncResult> {
+  private async executeCancelApprove(command: any): Promise<SyncResult> {
     try {
       // 1. 명령 검증
       const validatedCommand = CancelApproveCommandSchema.parse(command);
-
       console.log('❌ 네이버 취소 승인 실행:', {
         productOrderId:
           'claimId' in validatedCommand
@@ -679,26 +711,30 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
             : validatedCommand.orderId,
       });
 
-      // 2. API 호출
+      // 2. API 호출 (naverClaimClient 사용)
       const productOrderId =
         'claimId' in validatedCommand
           ? validatedCommand.claimId
           : validatedCommand.orderId;
-      const response = await this.naverApi.approveCancel(token, productOrderId);
+      const response =
+        await this.naverClaimClient.approveCancel(productOrderId);
 
       console.log(`✅ 네이버 취소승인 성공:`, response);
 
-      // 3. 네이버 응답을 내부 표준 데이터로 변환 (진정한 어댑터 역할)
+      // 3. 네이버 응답을 내부 표준 데이터로 변환
       return this.transformNaverResponseToInternalResult(
         response,
         'cancel.approve',
       );
     } catch (error) {
-      if (error.name === 'ZodError') {
+      if (error instanceof z.ZodError) {
+        // -----------------------------------------------------------------
+        // 5. Zod 에러 핸들링 수정 (error.errors -> error.issues)
+        // -----------------------------------------------------------------
         return {
           success: false,
-          errors: error.errors.map((err: any) => ({
-            message: `명령 검증 실패 - ${err.path.join('.')}: ${err.message}`,
+          errors: error.issues.map((issue) => ({
+            message: `명령 검증 실패 - ${issue.path.join('.')}: ${issue.message}`,
           })),
           failedCount: 1,
         };
@@ -724,14 +760,10 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
   /**
    * 네이버 반품 승인 API 호출
    */
-  private async executeReturnApprove(
-    token: string,
-    command: any, // executeCommand에서 any로 받아오므로 일단 any로 유지
-  ): Promise<SyncResult> {
+  private async executeReturnApprove(command: any): Promise<SyncResult> {
     try {
       // 1. 명령 검증
       const validatedCommand = ReturnApproveCommandSchema.parse(command);
-
       console.log('🔄 네이버 반품 승인 실행:', {
         productOrderId:
           'claimId' in validatedCommand
@@ -739,26 +771,30 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
             : validatedCommand.orderId,
       });
 
-      // 2. API 호출
+      // 2. API 호출 (naverClaimClient 사용)
       const productOrderId =
         'claimId' in validatedCommand
           ? validatedCommand.claimId
           : validatedCommand.orderId;
-      const response = await this.naverApi.approveReturn(token, productOrderId);
+      const response =
+        await this.naverClaimClient.approveReturn(productOrderId);
 
       console.log(`✅ 네이버 반품승인 성공:`, response);
 
-      // 3. 네이버 응답을 내부 표준 데이터로 변환 (진정한 어댑터 역할)
+      // 3. 네이버 응답을 내부 표준 데이터로 변환
       return this.transformNaverResponseToInternalResult(
         response,
         'return.approve',
       );
     } catch (error) {
-      if (error.name === 'ZodError') {
+      if (error instanceof z.ZodError) {
+        // -----------------------------------------------------------------
+        // 5. Zod 에러 핸들링 수정 (error.errors -> error.issues)
+        // -----------------------------------------------------------------
         return {
           success: false,
-          errors: error.errors.map((err: any) => ({
-            message: `명령 검증 실패 - ${err.path.join('.')}: ${err.message}`,
+          errors: error.issues.map((issue) => ({
+            message: `명령 검증 실패 - ${issue.path.join('.')}: ${issue.message}`,
           })),
           failedCount: 1,
         };
@@ -793,10 +829,9 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 🔄 진정한 어댑터 역할: 네이버 API 응답을 내부 표준 결과로 변환
-   * 외부의 구체적인 응답 형태를 내부 시스템이 알 수 없게 차단하는 번역 계층
    */
   private transformNaverResponseToInternalResult(
-    naverResponse: any,
+    naverResponse: NaverClaimProcessResponse, // naver-core.zod.ts의 공통 타입 사용
     commandType: string,
     fallbackFailedCount: number = 1,
   ): SyncResult {
@@ -808,7 +843,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     const internalResult: InternalCommandResult = {
       success: failInfos.length === 0,
       processedItems: successIds,
-      failedItems: failInfos.map((fail: any) => ({
+      failedItems: failInfos.map((fail) => ({
         id: fail.productOrderId,
         reason: fail.message,
         errorCode: fail.code,
@@ -820,7 +855,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       },
     };
 
-    // SyncResult는 내부 표준 데이터만 포함 (네이버 구체 응답 제거)
+    // SyncResult는 내부 표준 데이터만 포함
     return {
       success: internalResult.success,
       processedCount: internalResult.processedItems.length,
@@ -831,7 +866,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         id: item.id,
         message: item.reason,
       })),
-      data: internalResult, // 외부 API 응답 대신 내부 표준 데이터만 전달
+      data: internalResult,
     };
   }
 
@@ -842,10 +877,8 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     productInfos: ProductOrderInfo[],
   ): InternalOrderEvent[] {
     return productInfos.map((info) => {
-      // 타입 안전성을 위한 타입 단언
       const typedInfo = info as TypedProductOrderInfo;
-
-      return {
+      const event: InternalOrderEvent = {
         channelType: 'naver_smartstore',
         externalOrderId: typedInfo.order?.orderId || '',
         externalProductOrderId: typedInfo.productOrder?.productOrderId || '',
@@ -857,7 +890,13 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         priceAmount: typedInfo.productOrder?.totalProductAmount || 0,
         createdAt: typedInfo.order?.paymentDate || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        // --- 추가된 필수/옵셔널 필드 (타입 정의에 따라 보강) ---
+        lastChangedType: typedInfo.productOrder?.lastChangedType || 'UNKNOWN',
+        lastChangedAt:
+          typedInfo.productOrder?.lastChangedDate || new Date().toISOString(),
+        // buyer, shippingAddress 등은 상세 스키마 확인 후 채워야 함
       };
+      return event;
     });
   }
 
@@ -883,7 +922,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     internalData: any,
     dataType: DataType,
   ): Promise<any> {
-    // 레거시 메서드 - 새로운 syncToChannel 방식 사용 권장
     this.logger.warn(
       'transformToExternal은 deprecated됩니다. syncToChannel을 사용하세요.',
     );
@@ -899,10 +937,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       productId: productData.id,
       productName: productData.name,
       salePrice: productData.price,
-      productDescription: productData.description,
-      categoryId: productData.categoryId,
-      brandName: productData.brand,
-      // 네이버 API 스펙에 맞는 추가 필드들...
+      // ...
     };
   }
 
@@ -912,10 +947,11 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
   private transformToNaverSaleStatusBody(
     inventoryData: InternalInventoryData,
   ): ChangeSaleStatusBody {
-    return {
-      statusType: 'SALE',
+    // naver.product.zod.ts의 ChangeSaleStatusBodySchema 사용
+    return ChangeSaleStatusBodySchema.parse({
+      statusType: 'SALE', // 재고 업데이트 시 SALE 고정
       stockQuantity: inventoryData.stockQuantity,
-    };
+    });
   }
 
   /**
@@ -928,7 +964,8 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       throw new Error('옵션 상품 데이터에 optionInfo가 필요합니다.');
     }
 
-    return {
+    // naver.product.zod.ts의 UpdateOptionStockBodySchema 사용
+    return UpdateOptionStockBodySchema.parse({
       productSalePrice: {
         salePrice: 0, // 기본값 (가격 변경 없이 재고만 업데이트)
       },
@@ -943,33 +980,24 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         optionCombinations: inventoryData.optionInfo.optionCombinations || [],
         optionStandards: inventoryData.optionInfo.optionStandards || [],
       },
-    };
+    });
   }
 
   /**
    * 🔍 표준화된 쿼리 객체를 사용하여 주문 정보를 조회합니다.
-   * 네이버는 API 조합을 통해 '진짜 조회' 기능을 구현합니다.
-   *
-   * @param query 조회 조건을 담은 표준 쿼리 객체
-   * @returns 변환된 내부 주문 이벤트 배열. 결과가 없으면 빈 배열을 반환합니다.
    */
   async findOrders(query: OrderQuery): Promise<InternalOrderEvent[]> {
     try {
       this.logger.log(`🔍 [네이버] 주문 조회 시작: ${query.by} = ${query.id}`);
-
-      // 실제 토큰을 가져옵니다
-      const token = await this.naverApi.getAccessToken();
+      // 토큰 획득 로직 제거 (OrderClient가 내부 처리)
 
       switch (query.by) {
         case 'channelProductOrderId':
-          // 네이버 productOrderId로 직접 조회 (의도: 단건)
           this.logger.log(`📋 [네이버] productOrderId 직접 조회: ${query.id}`);
-          const productOrderDetails = await this.naverApi.getOrderDetails(
-            token,
-            [query.id],
-          );
+          const productOrderDetails =
+            await this.naverOrderClient.getOrderDetails([query.id]);
           const directResult = await this.transformToInternal(
-            productOrderDetails,
+            productOrderDetails.data, // .data 추가
             'orders',
           );
           this.logger.log(
@@ -978,14 +1006,13 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           return directResult;
 
         case 'channelOrderId':
-          // 네이버 orderId → productOrderIds → 상세 조회 (API 조합의 핵심!)
           this.logger.log(
             `🔗 [네이버] orderId → productOrderIds 조합 조회: ${query.id}`,
           );
 
           // 1단계: orderId로 productOrderId 목록 조회
           const productOrderIdsResponse =
-            await this.naverApi.getProductOrderIdsByOrderId(token, query.id);
+            await this.naverOrderClient.getProductOrderIdsByOrderId(query.id);
           const productOrderIds = productOrderIdsResponse.data || [];
 
           if (productOrderIds.length === 0) {
@@ -1000,12 +1027,10 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           );
 
           // 2단계: productOrderId 목록으로 상세 정보 조회
-          const orderDetails = await this.naverApi.getOrderDetails(
-            token,
-            productOrderIds,
-          );
+          const orderDetails =
+            await this.naverOrderClient.getOrderDetails(productOrderIds);
           const combinedResult = await this.transformToInternal(
-            orderDetails,
+            orderDetails.data, // .data 추가
             'orders',
           );
           this.logger.log(
@@ -1014,7 +1039,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           return combinedResult;
 
         case 'channelShipmentId':
-          // 네이버는 shipmentId 개념이 없음
           this.logger.warn(
             `❌ [네이버] 'channelShipmentId' 조회는 지원하지 않습니다 (네이버 특성상 불가능)`,
           );
@@ -1038,14 +1062,10 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
   // ===== WMS 연동 메서드 (CTO SoT 원칙) =====
 
   /**
-   * 네이버 주문을 WMS에 전달 (어댑터가 SoT → 동기 요청)
-   *
-   * @param orderEvent 네이버에서 수신한 주문 이벤트
-   * @returns WMS에서 생성된 판매주문 정보
+   * 네이버 주문을 WMS에 전달
    */
   async createOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
     const startTime = Date.now();
-
     this.logger.log(
       `🏭 [네이버→WMS] 주문 생성 요청: ${orderEvent.externalOrderId}`,
       {
@@ -1058,7 +1078,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     try {
       // 1. 네이버 주문 이벤트를 WMS 주문 생성 형식으로 변환
       const wmsOrderData = this.transformToWmsOrderFormat(orderEvent);
-
       // 2. WMS API 호출
       const wmsOrder = await this.wmsApi.createSalesOrder(wmsOrderData);
 
@@ -1071,7 +1090,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           wmsStatus: wmsOrder.status,
         },
       );
-
       return wmsOrder;
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -1088,9 +1106,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 네이버 주문 상태 업데이트를 WMS에 반영
-   *
-   * @param orderEvent 주문 상태 변경 이벤트
-   * @returns 업데이트된 WMS 주문 정보
    */
   async updateOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
     this.logger.log(
@@ -1103,9 +1118,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     );
 
     try {
-      // 네이버 특화 상태 업데이트 데이터 생성
       const updateData = this.transformToWmsUpdateData(orderEvent);
-
       const wmsOrder = await this.wmsApi.updateSalesOrder(
         {
           salesChannel: 'naver_smartstore',
@@ -1133,10 +1146,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 네이버 주문 취소를 WMS에 반영
-   *
-   * @param orderEvent 주문 취소 이벤트
-   * @param reason 취소 사유
-   * @returns 취소된 WMS 주문 정보
    */
   async cancelOrderInWms(
     orderEvent: InternalOrderEvent,
@@ -1167,7 +1176,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           wmsStatus: wmsOrder.status,
         },
       );
-
       return wmsOrder;
     } catch (error) {
       this.logger.error(
@@ -1180,12 +1188,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 네이버 교환 요청을 WMS에 반영
-   *
-   * CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다"
-   * 따라서 기존 주문을 수정하는 방식으로 처리합니다.
-   *
-   * @param exchangeEvent 교환 요청 이벤트
-   * @returns 교환 처리된 WMS 주문 정보
    */
   async processExchangeInWms(
     exchangeEvent: InternalOrderEvent,
@@ -1203,7 +1205,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       // 1. 교환 요청 데이터를 주문 수정 형식으로 변환
       const exchangeUpdateData =
         this.transformExchangeToUpdateData(exchangeEvent);
-
       // 2. WMS에서 주문 수정으로 교환 처리
       const wmsOrder = await this.wmsApi.updateSalesOrder(
         {
@@ -1220,7 +1221,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
           exchangeType: exchangeEvent.claimInfo?.claimType,
         },
       );
-
       return wmsOrder;
     } catch (error) {
       this.logger.error(
@@ -1235,9 +1235,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
 
   /**
    * 네이버 주문 이벤트를 WMS 주문 생성 형식으로 변환
-   *
-   * @param orderEvent 네이버 주문 이벤트
-   * @returns WMS 주문 생성 DTO
    */
   private transformToWmsOrderFormat(
     orderEvent: InternalOrderEvent,
@@ -1254,7 +1251,7 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
         : undefined,
       shippingAddress: this.transformAddress(orderEvent.buyer?.address),
       totalAmount: orderEvent.priceAmount,
-      shippingFee: 0, // 네이버도 보통 무료배송이 많음
+      shippingFee: 0,
       orderDate:
         orderEvent.paymentDate ||
         orderEvent.createdAt ||
@@ -1268,7 +1265,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
    */
   private transformAddress(address: any): any {
     if (!address) return undefined;
-
     return {
       postalCode: address.postalCode || '',
       roadAddress: address.roadAddress || '',
@@ -1288,7 +1284,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     unitPrice?: number;
     totalPrice?: number;
   }> {
-    // 네이버의 경우 productOrderId가 핵심 식별자
     return [
       {
         variantId:
@@ -1324,7 +1319,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
     exchangeEvent: InternalOrderEvent,
   ): any {
     return {
-      // 교환 관련 정보를 주문 수정 형식으로 변환
       status: 'EXCHANGE_REQUESTED',
       exchangeInfo: {
         claimType: exchangeEvent.claimInfo?.claimType,
@@ -1344,7 +1338,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
    */
   private mapNaverStatusToWms(naverStatus: string): string {
     const statusMapping: Record<string, string> = {
-      // 네이버 주문 상태 → WMS 상태 매핑
       PAYMENT_WAITING: 'pending',
       PAYED: 'confirmed',
       PRODUCT_PREPARE: 'processing',
@@ -1355,7 +1348,6 @@ export class NaverSmartstoreStrategy implements ChannelStrategy {
       RETURNED: 'returned',
       EXCHANGED: 'exchanged',
     };
-
     return statusMapping[naverStatus] || 'unknown';
   }
 }
