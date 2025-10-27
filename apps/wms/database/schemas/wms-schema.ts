@@ -99,6 +99,12 @@ export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'varian
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
+export const poAuditStatusEnum = pgEnum('po_audit_status', [
+    'draft',           // 초안 - Not yet submitted
+    'pending_audit',   // 검토 대기 - Submitted for approval
+    'approved',        // 승인됨 - Approved
+    'rejected',        // 거부됨 - Rejected
+]);
 export const inboundStatusEnum = pgEnum('inbound_status', [
     'pending',      // 입고 대기 - Initial state
     'applied',      // 입고신청 - Applied for inbound
@@ -1250,6 +1256,14 @@ export const purchaseOrders = pgTable('purchase_orders', {
         .references(() => warehouses.id, { onDelete: 'restrict' })
         .notNull(), // 최종 목적지 창고 (보통 부천)
     requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
+
+    // Audit workflow fields
+    auditStatus: poAuditStatusEnum('audit_status').default('draft'),
+    submittedForAuditAt: timestamp('submitted_for_audit_at', { withTimezone: true }),
+    submittedForAuditBy: uuid('submitted_for_audit_by'),
+    auditedAt: timestamp('audited_at', { withTimezone: true }),
+    auditedBy: uuid('audited_by'),
+    auditNotes: text('audit_notes'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

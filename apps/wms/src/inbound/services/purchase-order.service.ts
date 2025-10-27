@@ -15,6 +15,7 @@ import {
     PurchaseOrderStatus,
     PurchaseOrderType
 } from '../dto/purchase-order.dto';
+import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
 
 @Injectable()
@@ -687,5 +688,171 @@ export class PurchaseOrderService {
             onOrderQty: row.on_order_qty,
             inTransferQty: row.in_transfer_qty,
         }));
+    }
+
+    // ========== Audit Workflow ==========
+
+    /**
+     * Submit PO for audit
+     */
+    async submitForAudit(
+        poId: string,
+        dto: SubmitForAuditDto,
+        userId?: string,
+        tx?: DbTx
+    ): Promise<{
+        id: string;
+        auditStatus: string;
+        submittedAt: Date;
+        message: string;
+    }> {
+        return this.inTx(async (trx) => {
+            // Get PO
+            const [po] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
+
+            if (!po) {
+                throw new NotFoundException(`Purchase order ${poId} not found`);
+            }
+
+            // Validate current status
+            if (po.auditStatus !== 'draft') {
+                throw new BadRequestException(
+                    `Cannot submit: current audit status is ${po.auditStatus}, expected 'draft'`
+                );
+            }
+
+            // Update status
+            await trx
+                .update(wmsTables.purchaseOrders)
+                .set({
+                    auditStatus: 'pending_audit',
+                    submittedForAuditAt: new Date(),
+                    submittedForAuditBy: userId ?? null,
+                    auditNotes: dto.notes ?? null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(wmsTables.purchaseOrders.id, poId));
+
+            return {
+                id: poId,
+                auditStatus: 'pending_audit',
+                submittedAt: new Date(),
+                message: '검토 요청이 제출되었습니다. (Submitted for audit)',
+            };
+        }, tx);
+    }
+
+    /**
+     * Approve PO
+     */
+    async approvePo(
+        poId: string,
+        dto: ApprovePoDto,
+        userId?: string,
+        tx?: DbTx
+    ): Promise<{
+        id: string;
+        auditStatus: string;
+        approvedAt: Date;
+        message: string;
+    }> {
+        return this.inTx(async (trx) => {
+            // Get PO
+            const [po] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
+
+            if (!po) {
+                throw new NotFoundException(`Purchase order ${poId} not found`);
+            }
+
+            // Validate current status
+            if (po.auditStatus !== 'pending_audit') {
+                throw new BadRequestException(
+                    `Cannot approve: current audit status is ${po.auditStatus}, expected 'pending_audit'`
+                );
+            }
+
+            // Update status
+            await trx
+                .update(wmsTables.purchaseOrders)
+                .set({
+                    auditStatus: 'approved',
+                    auditedAt: new Date(),
+                    auditedBy: userId ?? null,
+                    auditNotes: dto.approvalNotes ?? null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(wmsTables.purchaseOrders.id, poId));
+
+            return {
+                id: poId,
+                auditStatus: 'approved',
+                approvedAt: new Date(),
+                message: '발주가 승인되었습니다. (Purchase order approved)',
+            };
+        }, tx);
+    }
+
+    /**
+     * Reject PO
+     */
+    async rejectPo(
+        poId: string,
+        dto: RejectPoDto,
+        userId?: string,
+        tx?: DbTx
+    ): Promise<{
+        id: string;
+        auditStatus: string;
+        rejectedAt: Date;
+        reason: string;
+        message: string;
+    }> {
+        return this.inTx(async (trx) => {
+            // Get PO
+            const [po] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
+
+            if (!po) {
+                throw new NotFoundException(`Purchase order ${poId} not found`);
+            }
+
+            // Validate current status
+            if (po.auditStatus !== 'pending_audit') {
+                throw new BadRequestException(
+                    `Cannot reject: current audit status is ${po.auditStatus}, expected 'pending_audit'`
+                );
+            }
+
+            // Update status (back to draft so it can be revised)
+            await trx
+                .update(wmsTables.purchaseOrders)
+                .set({
+                    auditStatus: 'draft', // Reset to draft for revision
+                    auditedAt: new Date(),
+                    auditedBy: userId ?? null,
+                    auditNotes: `REJECTED: ${dto.rejectionReason}`,
+                    updatedAt: new Date(),
+                })
+                .where(eq(wmsTables.purchaseOrders.id, poId));
+
+            return {
+                id: poId,
+                auditStatus: 'draft',
+                rejectedAt: new Date(),
+                reason: dto.rejectionReason,
+                message: '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)',
+            };
+        }, tx);
     }
 }
