@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { ChannelStrategy } from './channel-strategy.interface';
+import { ChannelAdapter } from './channel-adapter.interface';
 import { DataType, SyncResult, SyncToChannelPayload } from '../../types';
 import {
   InternalOrderEvent,
@@ -8,7 +8,11 @@ import {
   OrderQuery,
 } from '../../types';
 import { ChannelCommand, ChannelQuery } from '../../types';
-import { CoupangApiService } from '../apis/coupang.api.service';
+import {
+  CoupangOrderClient,
+  CoupangReturnClient,
+  CoupangExchangeClient,
+} from '../clients/coupang';
 import {
   WmsApiService,
   SalesOrder,
@@ -20,14 +24,22 @@ import {
   CoupangExchangeRequest,
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
-} from '../../zods/coupang.api.zod';
+} from '../../zods/coupang';
 
+/**
+ * 쿠팡 채널 어댑터
+ *
+ * 쿠팡 API의 특수한 인터페이스를 내부 표준 인터페이스로 변환합니다.
+ * 어댑터 패턴을 적용하여 쿠팡 API 호출 방식을 내부 시스템에 적응시킵니다.
+ */
 @Injectable()
-export class CoupangStrategy implements ChannelStrategy {
-  private readonly logger = new Logger(CoupangStrategy.name);
+export class CoupangAdapter implements ChannelAdapter {
+  private readonly logger = new Logger(CoupangAdapter.name);
 
   constructor(
-    private readonly coupangApiService: CoupangApiService,
+    private readonly coupangOrderClient: CoupangOrderClient,
+    private readonly coupangReturnClient: CoupangReturnClient,
+    private readonly coupangExchangeClient: CoupangExchangeClient,
     private readonly wmsApiService: WmsApiService,
   ) {}
 
@@ -76,7 +88,7 @@ export class CoupangStrategy implements ChannelStrategy {
         console.log(`📋 ${status} 상태 발주서 조회 중...`);
 
         const orderSheets =
-          await this.coupangApiService.getAllOrderSheetsByStatus(
+          await this.coupangOrderClient.getAllOrderSheetsByStatus(
             createdAtFrom,
             createdAtTo,
             status,
@@ -125,7 +137,7 @@ export class CoupangStrategy implements ChannelStrategy {
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
       const response =
-        await this.coupangApiService.getSingleOrderSheet(shipmentBoxId);
+        await this.coupangOrderClient.getSingleOrderSheet(shipmentBoxId);
 
       console.log(`✅ 쿠팡 발주서 단건 조회 성공: ${shipmentBoxId}`);
 
@@ -340,7 +352,7 @@ export class CoupangStrategy implements ChannelStrategy {
 
       // 1. API 서비스를 통한 단건 조회 (네이버 스타일)
       const response =
-        await this.coupangApiService.getSingleOrderSheetByOrderId(orderId);
+        await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
 
       console.log(
         `✅ 쿠팡 발주서 단건 조회 (orderId) 성공: ${orderId} (${response.data?.length || 0}건)`,
@@ -421,7 +433,7 @@ export class CoupangStrategy implements ChannelStrategy {
 
       // API 서비스를 통한 배송상태 히스토리 조회
       const response =
-        await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
+        await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
 
       console.log(
         `✅ 쿠팡 배송상태 히스토리 조회 성공: ${shipmentBoxId} (${response.data?.histories?.length || 0}건)`,
@@ -575,7 +587,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.orderIds,
       );
 
-      const response = await this.coupangApiService.acknowledgeOrdersheets({
+      const response = await this.coupangOrderClient.acknowledgeOrdersheets({
         vendorId: this.getCoupangVendorId(),
         shipmentBoxIds,
       });
@@ -615,7 +627,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.items,
       );
 
-      const response = await this.coupangApiService.uploadInvoices({
+      const response = await this.coupangOrderClient.uploadInvoices({
         vendorId: this.getCoupangVendorId(),
         orderSheetInvoiceApplyDtos,
       });
@@ -651,7 +663,7 @@ export class CoupangStrategy implements ChannelStrategy {
           command.tracking,
         );
 
-      const response = await this.coupangApiService.updateInvoices({
+      const response = await this.coupangOrderClient.updateInvoices({
         vendorId: this.getCoupangVendorId(),
         orderSheetInvoiceApplyDtos,
       });
@@ -687,7 +699,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.approveReturnRequest({
+      const response = await this.coupangReturnClient.approveReturnRequest({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
         cancelCount: coupangClaimInfo.cancelCount,
@@ -722,7 +734,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.confirmReturnReceipt({
+      const response = await this.coupangReturnClient.confirmReturnReceipt({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
       });
@@ -756,7 +768,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.stoppedShipment({
+      const response = await this.coupangReturnClient.stoppedShipment({
         vendorId: this.getCoupangVendorId(),
         receiptId: coupangClaimInfo.receiptId,
         cancelCount: coupangClaimInfo.cancelCount,
@@ -785,7 +797,7 @@ export class CoupangStrategy implements ChannelStrategy {
     try {
       console.log('🚛 쿠팡 이미출고처리 실행:', command);
 
-      const response = await this.coupangApiService.completedShipment({
+      const response = await this.coupangReturnClient.completedShipment({
         vendorId: command.vendorId,
         receiptId: command.receiptId,
         deliveryCompanyCode: command.deliveryCompanyCode,
@@ -815,7 +827,7 @@ export class CoupangStrategy implements ChannelStrategy {
     try {
       console.log('📋 쿠팡 회수송장 등록 실행:', command);
 
-      const response = await this.coupangApiService.registerReturnInvoice({
+      const response = await this.coupangReturnClient.registerReturnInvoice({
         returnExchangeDeliveryType: command.returnExchangeDeliveryType,
         receiptId: command.receiptId,
         deliveryCompanyCode: command.deliveryCompanyCode,
@@ -846,12 +858,13 @@ export class CoupangStrategy implements ChannelStrategy {
     try {
       console.log('📊 쿠팡 반품 철회 이력 조회 실행:', command);
 
-      const response = await this.coupangApiService.getReturnWithdrawalHistory({
-        dateFrom: command.dateFrom,
-        dateTo: command.dateTo,
-        pageIndex: command.pageIndex || 1,
-        sizePerPage: command.sizePerPage || 10,
-      });
+      const response =
+        await this.coupangReturnClient.getReturnWithdrawalHistory({
+          dateFrom: command.dateFrom,
+          dateTo: command.dateTo,
+          pageIndex: command.pageIndex || 1,
+          sizePerPage: command.sizePerPage || 10,
+        });
 
       return {
         success: true,
@@ -878,7 +891,7 @@ export class CoupangStrategy implements ChannelStrategy {
       console.log('🔍 쿠팡 반품 철회 이력(ID) 조회 실행:', command);
 
       const response =
-        await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+        await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
           cancelIds: command.cancelIds,
         });
 
@@ -904,7 +917,7 @@ export class CoupangStrategy implements ChannelStrategy {
     try {
       console.log('📋 쿠팡 배송상태 히스토리 조회 실행:', command);
 
-      const response = await this.coupangApiService.getDeliveryHistory(
+      const response = await this.coupangOrderClient.getDeliveryHistory(
         command.shipmentBoxId,
       );
 
@@ -924,20 +937,158 @@ export class CoupangStrategy implements ChannelStrategy {
   }
 
   /**
-   * 간단한 나머지 메서드들 (구현 생략)
+   * 🔄 이미출고처리 명령 실행
+   *
+   * 출고중지요청/반품접수미확인 상태에서 이미 발송한 경우 상태를 변경합니다.
+   *
+   * @param command 표준 명령 객체
+   * @returns 처리 결과
+   *
+   * @example
+   * ```typescript
+   * const result = await adapter.executeCommand({
+   *   type: 'return.process_already_shipped',
+   *   claimId: '12345678',
+   *   tracking: {
+   *     companyCode: 'CJ',
+   *     number: '123456789012'
+   *   }
+   * });
+   * ```
    */
   private async executeReturnProcessAlreadyShipped(
     command: any,
   ): Promise<SyncResult> {
-    // 표준 claimId + tracking → 쿠팡 completedShipment API 호출
-    throw new Error('구현 필요: return.process_already_shipped');
+    this.logger.log(`🔄 [쿠팡] 이미출고처리 실행: claimId=${command.claimId}`);
+
+    try {
+      // 1. 택배사 코드 변환 (표준 → 쿠팡)
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(
+        command.tracking.companyCode,
+      );
+
+      // 2. API 호출
+      const response = await this.coupangReturnClient.completedShipment({
+        vendorId: process.env.COUPANG_VENDOR_ID!,
+        receiptId: Number(command.claimId),
+        deliveryCompanyCode: coupangCompanyCode,
+        invoiceNumber: command.tracking.number,
+      });
+
+      // 3. 결과 확인
+      if (response.data.resultCode === 'SUCCESS') {
+        this.logger.log(
+          `✅ [쿠팡] 이미출고처리 성공: ${command.claimId} - ${response.data.resultMessage}`,
+        );
+        return {
+          success: true,
+          processedCount: 1,
+        };
+      } else {
+        throw new Error(response.data.resultMessage);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡] 이미출고처리 실패: ${command.claimId}`,
+        error.message,
+      );
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        errors: [
+          {
+            id: command.claimId,
+            message: error.message,
+          },
+        ],
+      };
+    }
   }
 
+  /**
+   * 🚚 회수송장 등록 명령 실행
+   *
+   * 반품/교환에 대한 회수송장을 직접 등록합니다.
+   *
+   * @param command 표준 명령 객체
+   * @returns 처리 결과
+   *
+   * @example
+   * ```typescript
+   * // 반품 회수송장 등록
+   * const result = await adapter.executeCommand({
+   *   type: 'return.register_collection_invoice',
+   *   claimId: '12345678',
+   *   collectionType: 'RETURN',
+   *   tracking: {
+   *     companyCode: 'HANJIN',
+   *     number: '987654321098'
+   *   }
+   * });
+   *
+   * // 교환 회수송장 등록
+   * const result = await adapter.executeCommand({
+   *   type: 'return.register_collection_invoice',
+   *   claimId: '87654321',
+   *   collectionType: 'EXCHANGE',
+   *   tracking: {
+   *     companyCode: 'LOTTE',
+   *     number: '555666777888'
+   *   }
+   * });
+   * ```
+   */
   private async executeReturnRegisterCollectionInvoice(
     command: any,
   ): Promise<SyncResult> {
-    // 표준 claimId + tracking → 쿠팡 registerReturnInvoice API 호출
-    throw new Error('구현 필요: return.register_collection_invoice');
+    this.logger.log(
+      `🚚 [쿠팡] 회수송장 등록 실행: claimId=${command.claimId}, type=${command.collectionType}`,
+    );
+
+    try {
+      // 1. 택배사 코드 변환 (표준 → 쿠팡)
+      const coupangCompanyCode = this.mapDeliveryCompanyCode(
+        command.tracking.companyCode,
+      );
+
+      // 2. API 호출
+      const response = await this.coupangReturnClient.registerReturnInvoice({
+        returnExchangeDeliveryType: command.collectionType,
+        receiptId: Number(command.claimId),
+        deliveryCompanyCode: coupangCompanyCode,
+        invoiceNumber: command.tracking.number,
+      });
+
+      // 3. 결과 확인 (API 응답이 성공하면 code=200)
+      if (response.code === 200) {
+        this.logger.log(
+          `✅ [쿠팡] 회수송장 등록 성공: ${command.claimId} - receiptId=${response.data.receiptId}`,
+        );
+        return {
+          success: true,
+          processedCount: 1,
+        };
+      } else {
+        throw new Error(response.message || '회수송장 등록 실패');
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ [쿠팡] 회수송장 등록 실패: ${command.claimId}`,
+        error.message,
+      );
+      return {
+        success: false,
+        processedCount: 0,
+        failedCount: 1,
+        errors: [
+          {
+            id: command.claimId,
+            message: error.message,
+          },
+        ],
+      };
+    }
   }
 
   // =================================================================
@@ -960,7 +1111,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.claimId,
       );
 
-      const response = await this.coupangApiService.confirmExchangeReceipt({
+      const response = await this.coupangExchangeClient.confirmExchangeReceipt({
         vendorId: this.getCoupangVendorId(),
         exchangeId,
       });
@@ -1002,7 +1153,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.reason,
       );
 
-      const response = await this.coupangApiService.rejectExchangeRequest({
+      const response = await this.coupangExchangeClient.rejectExchangeRequest({
         vendorId: this.getCoupangVendorId(),
         exchangeId,
         exchangeRejectCode,
@@ -1048,7 +1199,7 @@ export class CoupangStrategy implements ChannelStrategy {
         command.items,
       );
 
-      const response = await this.coupangApiService.uploadExchangeInvoice(
+      const response = await this.coupangExchangeClient.uploadExchangeInvoice(
         exchangeId,
         invoiceItems,
       );
@@ -1079,7 +1230,7 @@ export class CoupangStrategy implements ChannelStrategy {
     const shipmentBoxId = await this.translateOrderIdToShipmentBoxId(
       query.orderId,
     );
-    return await this.coupangApiService.getDeliveryHistory(shipmentBoxId);
+    return await this.coupangOrderClient.getDeliveryHistory(shipmentBoxId);
   }
 
   private async queryReturnWithdrawalHistory(query: {
@@ -1089,7 +1240,7 @@ export class CoupangStrategy implements ChannelStrategy {
     pageIndex?: number;
     sizePerPage?: number;
   }): Promise<any> {
-    return await this.coupangApiService.getReturnWithdrawalHistory({
+    return await this.coupangReturnClient.getReturnWithdrawalHistory({
       dateFrom: query.dateFrom,
       dateTo: query.dateTo,
       pageIndex: query.pageIndex || 1,
@@ -1102,7 +1253,7 @@ export class CoupangStrategy implements ChannelStrategy {
     claimIds: string[];
   }): Promise<any> {
     const cancelIds = await this.translateClaimIdsToCancelIds(query.claimIds);
-    return await this.coupangApiService.getReturnWithdrawalHistoryByIds({
+    return await this.coupangReturnClient.getReturnWithdrawalHistoryByIds({
       cancelIds,
     });
   }
@@ -1117,13 +1268,14 @@ export class CoupangStrategy implements ChannelStrategy {
     sizePerPage?: number;
   }): Promise<InternalExchangeEvent[]> {
     // 🔄 쿠팡 API 호출
-    const coupangResponse = await this.coupangApiService.getExchangeRequests({
-      createdAtFrom: query.dateFrom,
-      createdAtTo: query.dateTo,
-      status: query.status,
-      orderId: query.orderId,
-      maxPerPage: query.sizePerPage || 10,
-    });
+    const coupangResponse =
+      await this.coupangExchangeClient.getExchangeRequests({
+        createdAtFrom: query.dateFrom,
+        createdAtTo: query.dateTo,
+        status: query.status,
+        orderId: query.orderId,
+        maxPerPage: query.sizePerPage || 10,
+      });
 
     // 🎯 SSOT 원칙: 쿠팡 응답을 표준 내부 모델로 번역
     return coupangResponse.data.map((coupangExchange) =>
@@ -1496,12 +1648,70 @@ export class CoupangStrategy implements ChannelStrategy {
   /**
    * 🔄 배송업체 코드 매핑 (내부 표준 → 쿠팡 표준)
    */
-  private mapDeliveryCompanyCode(internalCode: string): string {
-    const mapping: Record<string, string> = {
+  private mapDeliveryCompanyCode(
+    internalCode: string,
+  ):
+    | 'CJGLS'
+    | 'LOTTE'
+    | 'HANJIN'
+    | 'LOGEN'
+    | 'EPOST'
+    | 'KGB'
+    | 'HYUNDAI'
+    | 'DHL'
+    | 'FEDEX'
+    | 'UPS'
+    | 'EMS'
+    | 'KDEXP'
+    | 'GOODTOLUCK'
+    | 'DAELIM'
+    | 'DONGGANG'
+    | 'CHUNIL'
+    | 'HONAM'
+    | 'DAESIN'
+    | 'ILYANG'
+    | 'PANTOS'
+    | 'FRESH'
+    | 'CVSNET'
+    | 'OTHER' {
+    const mapping: Record<
+      string,
+      | 'CJGLS'
+      | 'LOTTE'
+      | 'HANJIN'
+      | 'LOGEN'
+      | 'EPOST'
+      | 'KGB'
+      | 'HYUNDAI'
+      | 'DHL'
+      | 'FEDEX'
+      | 'UPS'
+      | 'EMS'
+      | 'KDEXP'
+      | 'GOODTOLUCK'
+      | 'DAELIM'
+      | 'DONGGANG'
+      | 'CHUNIL'
+      | 'HONAM'
+      | 'DAESIN'
+      | 'ILYANG'
+      | 'PANTOS'
+      | 'FRESH'
+      | 'CVSNET'
+      | 'OTHER'
+    > = {
       CJ: 'CJGLS',
       LOTTE: 'LOTTE',
       HANJIN: 'HANJIN',
       LOGEN: 'LOGEN',
+      EPOST: 'EPOST',
+      KGB: 'KGB',
+      HYUNDAI: 'HYUNDAI',
+      DHL: 'DHL',
+      FEDEX: 'FEDEX',
+      UPS: 'UPS',
+      EMS: 'EMS',
+      KDEXP: 'KDEXP',
       // ... 기타 매핑
     };
     return mapping[internalCode] || 'OTHER';

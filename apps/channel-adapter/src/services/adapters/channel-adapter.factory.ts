@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChannelStrategy } from './channel-strategy.interface';
-import { NaverSmartstoreStrategy } from './naver-smartstore.strategy';
-import { CoupangStrategy } from './coupang.strategy';
+import { ChannelAdapter } from './channel-adapter.interface';
+import { NaverSmartstoreAdapter } from './naver-smartstore.adapter';
+import { CoupangAdapter } from './coupang.adapter';
 
 /**
  * 지원되는 판매채널 타입
@@ -12,16 +12,18 @@ import { CoupangStrategy } from './coupang.strategy';
 export type ChannelType = 'naver_smartstore' | 'coupang' | 'medusa';
 
 /**
- * 채널별 전략 팩토리 서비스
+ * 채널 어댑터 팩토리 서비스
  *
- * 팩토리 패턴을 사용하여 각 판매채널에 맞는 전략 객체를 생성하고 관리합니다.
- * 새로운 판매채널 추가 시 이 팩토리에 전략을 등록하면 됩니다.
+ * 팩토리 패턴을 사용하여 각 판매채널에 맞는 어댑터 객체를 생성하고 관리합니다.
+ * 새로운 판매채널 추가 시 이 팩토리에 어댑터를 등록하면 됩니다.
+ *
+ * 🔌 어댑터 패턴: 각 채널의 서로 다른 API 인터페이스를 내부 표준 인터페이스로 변환
  *
  * @example
  * ```typescript
- * // 네이버 스마트스토어 전략 가져오기
- * const naverStrategy = factory.getStrategy('naver_smartstore');
- * const events = await naverStrategy.syncFromChannel('orders');
+ * // 네이버 스마트스토어 어댑터 가져오기
+ * const naverAdapter = factory.getAdapter('naver_smartstore');
+ * const events = await naverAdapter.syncFromChannel('orders');
  *
  * // 지원되는 모든 채널 확인
  * const channels = factory.getSupportedChannels();
@@ -29,36 +31,36 @@ export type ChannelType = 'naver_smartstore' | 'coupang' | 'medusa';
  * ```
  */
 @Injectable()
-export class ChannelStrategyFactory {
-  private readonly logger = new Logger(ChannelStrategyFactory.name);
+export class ChannelAdapterFactory {
+  private readonly logger = new Logger(ChannelAdapterFactory.name);
 
   constructor(
-    private readonly naver: NaverSmartstoreStrategy,
-    private readonly coupang: CoupangStrategy,
+    private readonly naver: NaverSmartstoreAdapter,
+    private readonly coupang: CoupangAdapter,
   ) {
     this.logger.log(
-      `📦 채널 전략 팩토리 초기화 완료 (${this.getSupportedChannels().length}개 채널)`,
+      `📦 채널 어댑터 팩토리 초기화 완료 (${this.getSupportedChannels().length}개 채널)`,
     );
   }
 
   /**
-   * 채널 타입에 따른 전략 객체 반환
+   * 채널 타입에 따른 어댑터 객체 반환
    *
    * @param channelType - 대상 판매채널 타입
-   * @returns 해당 채널의 전략 객체
+   * @returns 해당 채널의 어댑터 객체
    * @throws {Error} 지원하지 않는 채널 타입인 경우
    *
    * @example
    * ```typescript
-   * // 네이버 스마트스토어 전략 가져오기
-   * const strategy = factory.getStrategy('naver_smartstore');
+   * // 네이버 스마트스토어 어댑터 가져오기
+   * const adapter = factory.getAdapter('naver_smartstore');
    *
-   * // 쿠팡 전략 가져오기
-   * const coupangStrategy = factory.getStrategy('coupang');
+   * // 쿠팡 어댑터 가져오기
+   * const coupangAdapter = factory.getAdapter('coupang');
    * ```
    */
-  getStrategy(channelType: ChannelType): ChannelStrategy {
-    this.logger.debug(`🔍 채널 전략 요청: ${channelType}`);
+  getAdapter(channelType: ChannelType): ChannelAdapter {
+    this.logger.debug(`🔍 채널 어댑터 요청: ${channelType}`);
 
     switch (channelType) {
       case 'naver_smartstore':
@@ -84,8 +86,8 @@ export class ChannelStrategyFactory {
    *
    * // 모든 채널에서 데이터 동기화
    * for (const channel of supportedChannels) {
-   *   const strategy = factory.getStrategy(channel);
-   *   const events = await strategy.syncFromChannel('orders');
+   *   const adapter = factory.getAdapter(channel);
+   *   const events = await adapter.syncFromChannel('orders');
    *   console.log(`${channel}: ${events.length}건 동기화`);
    * }
    * ```
@@ -126,7 +128,7 @@ export class ChannelStrategyFactory {
     return {
       supportedChannels,
       totalChannels: supportedChannels.length,
-      strategies: {
+      adapters: {
         naver_smartstore: !!this.naver,
         coupang: !!this.coupang,
       },

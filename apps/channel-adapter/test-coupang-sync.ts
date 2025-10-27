@@ -9,9 +9,9 @@
 import * as dotenv from 'dotenv';
 import { HttpService } from '@nestjs/axios';
 import { Logger } from '@nestjs/common';
-import { NaverSmartstoreStrategy } from './src/services/strategies/naver-smartstore.strategy';
-import { CoupangStrategy } from './src/services/strategies/coupang.strategy';
-import { ChannelStrategyFactory } from './src/services/strategies/channel-strategy.factory';
+import { NaverSmartstoreAdapter } from './src/services/adapters/naver-smartstore.adapter';
+import { CoupangAdapter } from './src/services/adapters/coupang.adapter';
+import { ChannelAdapterFactory } from './src/services/adapters/channel-adapter.factory';
 import { AdapterOrchestrationService } from './src/services/adapter-orchestration.service';
 import { ChannelAdapterService } from './src/services/channel-adapter.service';
 
@@ -28,14 +28,14 @@ class CoupangSyncTester {
   constructor() {
     // 의존성 수동 구성 (기존 테스트와 동일한 방식)
     const httpService = new HttpService();
-    const naverStrategy = new NaverSmartstoreStrategy(httpService);
-    const coupangStrategy = new CoupangStrategy(httpService);
-    const strategyFactory = new ChannelStrategyFactory(
-      naverStrategy,
-      coupangStrategy,
+    const naverAdapter = new NaverSmartstoreAdapter(httpService);
+    const coupangAdapter = new CoupangAdapter(httpService);
+    const adapterFactory = new ChannelAdapterFactory(
+      naverAdapter,
+      coupangAdapter,
     );
 
-    this.orchestrator = new AdapterOrchestrationService(strategyFactory);
+    this.orchestrator = new AdapterOrchestrationService(adapterFactory);
 
     this.logger.log('🏗️ 쿠팡 동기화 테스터 초기화 완료');
   }
