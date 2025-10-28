@@ -17,6 +17,35 @@ import { eq, sql } from 'drizzle-orm';
 
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+
+// ===== CATEGORY JSONB TYPE DEFINITIONS =====
+export type CategoryDisplaySettings = {
+  showOnMainCategory?: boolean;
+  pcAndMobile?: boolean;
+  mobileOnly?: boolean;
+  productDisplayOrder?: 'asc' | 'desc';
+  defaultSortField?: string;
+  menuPositions?: {
+    leftSide?: boolean;
+    topMenu?: boolean;
+    footerMenu?: boolean;
+  };
+};
+
+export type CategorySeoConfig = {
+  browserTitle?: string;
+  metaAuthor?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+  showInSearchEngines?: boolean;
+};
+
+export type CategoryTemplateConfig = {
+  templateType?: 'default' | 'custom';
+  htmlContent?: string;
+  customCss?: string;
+};
+
 // ===== 1. PRODUCT CATEGORIES =====
 export const productCategories = pgTable(
   'product_categories',
@@ -33,6 +62,14 @@ export const productCategories = pgTable(
     path: varchar('path', { length: 1000 }).notNull().default(''),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    
+    // ===== Phase 2 NEW FIELDS START =====
+    visibility: boolean('visibility').notNull().default(true),
+    displaySettings: jsonb('display_settings').$type<CategoryDisplaySettings>(),
+    seoConfig: jsonb('seo_config').$type<CategorySeoConfig>(),
+    templateConfig: jsonb('template_config').$type<CategoryTemplateConfig>(),
+    // ===== Phase 2 NEW FIELDS END =====
+    
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     createdBy: uuid('created_by'),
