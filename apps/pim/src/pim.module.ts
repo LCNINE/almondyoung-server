@@ -15,6 +15,13 @@ import { SalesChannelsService } from './services/sales-channels.service';
 import { FileUploadController } from './controllers/file-upload.controller';
 import { ImageService } from './services/image.service';
 
+// Phase 1 new imports
+import { ProductApprovalController } from './controllers/product-approval.controller';
+import { ProductApprovalService } from './services/product-approval.service';
+import { ProductSearchService } from './services/product-search.service';
+import { ProductBulkController } from './controllers/product-bulk.controller';
+import { ProductBulkService } from './services/product-bulk.service';
+
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
 import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
@@ -40,6 +47,9 @@ import { pimSchema } from './schema';
     ChannelProductsController,
     SalesChannelsController,
     FileUploadController,
+    // Phase 1 new controllers
+    ProductApprovalController,
+    ProductBulkController,
   ],
   providers: [
     PimService,
@@ -52,6 +62,10 @@ import { pimSchema } from './schema';
     PricingStrategyFactory,
     OptionBasedPricingStrategy,
     VariantBasedPricingStrategy,
+    // Phase 1 new services
+    ProductApprovalService,
+    ProductSearchService,
+    ProductBulkService,
   ],
 })
 export class PimModule {}
