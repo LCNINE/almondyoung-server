@@ -22,6 +22,14 @@ import { ProductSearchService } from './services/product-search.service';
 import { ProductBulkController } from './controllers/product-bulk.controller';
 import { ProductBulkService } from './services/product-bulk.service';
 
+// Phase 3 new imports
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ProductCsvService } from './services/product-csv.service';
+import { ProductCsvController } from './controllers/product-csv.controller';
+import { ProductAuditService } from './services/product-audit.service';
+import { ProductAuditController } from './controllers/product-audit.controller';
+import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
+
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
 import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
@@ -50,6 +58,9 @@ import { pimSchema } from './schema';
     // Phase 1 new controllers
     ProductApprovalController,
     ProductBulkController,
+    // Phase 3 new controllers
+    ProductCsvController,
+    ProductAuditController,
   ],
   providers: [
     PimService,
@@ -66,6 +77,13 @@ import { pimSchema } from './schema';
     ProductApprovalService,
     ProductSearchService,
     ProductBulkService,
+    // Phase 3 new services
+    ProductCsvService,
+    ProductAuditService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditLogInterceptor,
+    },
   ],
 })
 export class PimModule {}
