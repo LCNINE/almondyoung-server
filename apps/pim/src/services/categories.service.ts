@@ -16,8 +16,19 @@ import {
   ProductCategory,
   UpdateProductCategory,
 } from '../types';
-import { type PimSchema, pimSchema } from '../schema';
+import {
+  type PimSchema,
+  pimSchema,
+  CategoryDisplaySettings,
+  CategorySeoConfig,
+  CategoryTemplateConfig,
+} from '../schema';
 import { eq, isNull, like, inArray, and, or, sql } from 'drizzle-orm';
+import {
+  UpdateDisplaySettingsDto,
+  UpdateSeoConfigDto,
+  UpdateTemplateConfigDto,
+} from '../dto/category-config.dto';
 
 @Injectable()
 export class ProductCategoriesService {
@@ -1068,5 +1079,150 @@ export class ProductCategoriesService {
     } else {
       await this.db.db.transaction(executeRebuild);
     }
+  }
+
+  // ===== Phase 2: Category Configuration Methods =====
+
+  /**
+   * 카테고리 표시 설정 업데이트
+   */
+  async updateDisplaySettings(
+    categoryId: string,
+    dto: UpdateDisplaySettingsDto,
+    tx?: DbTransaction,
+  ): Promise<CategoryResponseDto> {
+    const client = this.getClient(tx);
+
+    const [category] = await client
+      .select()
+      .from(pimSchema.productCategories)
+      .where(eq(pimSchema.productCategories.id, categoryId));
+
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    const displaySettings: CategoryDisplaySettings = {
+      ...(category.displaySettings as CategoryDisplaySettings),
+      ...dto,
+    };
+
+    const [updated] = await client
+      .update(pimSchema.productCategories)
+      .set({
+        displaySettings,
+        updatedAt: new Date(),
+      })
+      .where(eq(pimSchema.productCategories.id, categoryId))
+      .returning();
+
+    const responseDto: CategoryResponseDto = updated;
+    return responseDto;
+  }
+
+  /**
+   * 카테고리 SEO 설정 업데이트
+   */
+  async updateSeoConfig(
+    categoryId: string,
+    dto: UpdateSeoConfigDto,
+    tx?: DbTransaction,
+  ): Promise<CategoryResponseDto> {
+    const client = this.getClient(tx);
+
+    const [category] = await client
+      .select()
+      .from(pimSchema.productCategories)
+      .where(eq(pimSchema.productCategories.id, categoryId));
+
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    const seoConfig: CategorySeoConfig = {
+      ...(category.seoConfig as CategorySeoConfig),
+      ...dto,
+    };
+
+    const [updated] = await client
+      .update(pimSchema.productCategories)
+      .set({
+        seoConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(pimSchema.productCategories.id, categoryId))
+      .returning();
+
+    const responseDto: CategoryResponseDto = updated;
+    return responseDto;
+  }
+
+  /**
+   * 카테고리 템플릿 설정 업데이트
+   */
+  async updateTemplateConfig(
+    categoryId: string,
+    dto: UpdateTemplateConfigDto,
+    tx?: DbTransaction,
+  ): Promise<CategoryResponseDto> {
+    const client = this.getClient(tx);
+
+    const [category] = await client
+      .select()
+      .from(pimSchema.productCategories)
+      .where(eq(pimSchema.productCategories.id, categoryId));
+
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    const templateConfig: CategoryTemplateConfig = {
+      ...(category.templateConfig as CategoryTemplateConfig),
+      ...dto,
+    };
+
+    const [updated] = await client
+      .update(pimSchema.productCategories)
+      .set({
+        templateConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(pimSchema.productCategories.id, categoryId))
+      .returning();
+
+    const responseDto: CategoryResponseDto = updated;
+    return responseDto;
+  }
+
+  /**
+   * 카테고리 표시 여부 업데이트
+   */
+  async updateVisibility(
+    categoryId: string,
+    visible: boolean,
+    tx?: DbTransaction,
+  ): Promise<CategoryResponseDto> {
+    const client = this.getClient(tx);
+
+    const [category] = await client
+      .select()
+      .from(pimSchema.productCategories)
+      .where(eq(pimSchema.productCategories.id, categoryId));
+
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    const [updated] = await client
+      .update(pimSchema.productCategories)
+      .set({
+        visibility: visible,
+        updatedAt: new Date(),
+      })
+      .where(eq(pimSchema.productCategories.id, categoryId))
+      .returning();
+
+    const responseDto: CategoryResponseDto = updated;
+    return responseDto;
   }
 }
