@@ -20,9 +20,10 @@ import {
   variantOptionValues,
   productImages,
   uploads,
+  productAuditLog,
 } from '../schema';
 import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
-import { eq, and, ilike, count, asc, desc, inArray } from 'drizzle-orm';
+import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 
 @Injectable()
 export class ProductMastersService {
@@ -180,6 +181,7 @@ export class ProductMastersService {
   async getMasterById(
     masterId: string,
     tx?: DbTransaction,
+    includeDeleted = false,
   ): Promise<ProductMaster | null> {
     if (!masterId) {
       throw new Error('Master ID is required');
@@ -187,10 +189,15 @@ export class ProductMastersService {
 
     const client = this.getClient(tx);
 
+    const conditions = [eq(productMasters.id, masterId)];
+    if (!includeDeleted) {
+      conditions.push(isNull(productMasters.deletedAt));
+    }
+
     const result = await client
       .select()
       .from(productMasters)
-      .where(eq(productMasters.id, masterId));
+      .where(and(...conditions));
 
     return result.length > 0 ? result[0] : null;
   }
@@ -304,6 +311,7 @@ export class ProductMastersService {
       search?: string;
       page?: number;
       limit?: number;
+      includeDeleted?: boolean;
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -330,6 +338,12 @@ export class ProductMastersService {
     const offset = (page - 1) * limit;
 
     const whereConditions: any[] = [];
+    
+    // Add soft delete filter (unless explicitly including deleted)
+    if (!filters?.includeDeleted) {
+      whereConditions.push(isNull(productMasters.deletedAt));
+    }
+    
     if (filters?.status) {
       whereConditions.push(eq(productMasters.status, filters.status));
     }
@@ -1096,5 +1110,150 @@ export class ProductMastersService {
     }));
 
     await this._generateVariants(masterId, optionGroupsWithValues, tx);
+  }
+
+  /**
+   * Soft delete a product
+   */
+  async softDelete(id: string, userId: string, tx?: DbTransaction): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // Check if product exists and is not already deleted
+    const product = await this.getMasterById(id, tx);
+    if (!product) {
+      throw new Error(`Product with ID ${id} not found`);
+    }
+
+    if (product.deletedAt) {
+      throw new Error('Product is already deleted');
+    }
+
+    const [deleted] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(productMasters.id, id))
+      .returning();
+
+    // Log audit event
+    await this.logAudit({
+      productId: id,
+      action: 'deleted',
+      changes: { deletedAt: deleted.deletedAt },
+      userId,
+    }, tx);
+
+    return deleted;
+  }
+
+  /**
+   * Restore a soft-deleted product
+   */
+  async restore(id: string, userId: string, tx?: DbTransaction): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // Find product including deleted ones
+    const [product] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, id));
+
+    if (!product) {
+      throw new Error(`Product with ID ${id} not found`);
+    }
+
+    if (!product.deletedAt) {
+      throw new Error('Product is not deleted');
+    }
+
+    const [restored] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: null,
+        deletedBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(productMasters.id, id))
+      .returning();
+
+    // Log audit event
+    await this.logAudit({
+      productId: id,
+      action: 'restored',
+      changes: { deletedAt: null },
+      userId,
+    }, tx);
+
+    return restored;
+  }
+
+  /**
+   * Get all soft-deleted products
+   */
+  async findDeleted(tx?: DbTransaction): Promise<ProductMaster[]> {
+    const client = this.getClient(tx);
+
+    return client
+      .select()
+      .from(productMasters)
+      .where(isNotNull(productMasters.deletedAt))
+      .orderBy(desc(productMasters.deletedAt));
+  }
+
+  /**
+   * Hard delete (permanent) - use with caution
+   */
+  async hardDelete(id: string, userId: string, tx?: DbTransaction): Promise<{ deleted: boolean }> {
+    const client = this.getClient(tx);
+
+    // Check if product exists
+    const [product] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, id));
+
+    if (!product) {
+      throw new Error(`Product with ID ${id} not found`);
+    }
+
+    // Log before deletion (orphaned record)
+    await this.logAudit({
+      productId: id,
+      action: 'hard_deleted',
+      changes: { permanent: true },
+      userId,
+    }, tx);
+
+    await client
+      .delete(productMasters)
+      .where(eq(productMasters.id, id));
+
+    return { deleted: true };
+  }
+
+  /**
+   * Log audit event
+   */
+  private async logAudit(
+    data: {
+      productId: string;
+      action: string;
+      changes: Record<string, any>;
+      userId: string;
+    },
+    tx?: DbTransaction,
+  ) {
+    const client = this.getClient(tx);
+    
+    await client.insert(productAuditLog).values({
+      productId: data.productId,
+      action: data.action,
+      changes: data.changes,
+      userId: data.userId,
+      timestamp: new Date(),
+    });
   }
 }
