@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/streams';
 import {
   BadRequestException,
@@ -791,23 +791,7 @@ export class AuthService {
   async restoreToken(user: User, reply: FastifyReply, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
-    const oldRefreshToken = await this.tokensService.findTokenByUserIdAndType(
-      user.id,
-      'refresh',
-      client,
-    );
-
-    await this.tokensService.deleteToken(user.id, 'refresh', client);
-
-    const { accessToken } = await this.getAccessToken(user, reply, client);
-    await this.setRefreshToken(
-      user.id,
-      reply,
-      oldRefreshToken?.autoLogin ?? false,
-      client,
-    );
-
-    return { accessToken };
+    return await this.getAccessToken(user, reply, client);
   }
 
   async forgetUserId(email: string) {
