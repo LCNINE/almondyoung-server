@@ -152,6 +152,7 @@ export const tokens = pgTable(
     value: text('value').notNull(),
     type: tokenTypeEnum('type').notNull(),
     scopes: varchar('scopes', { length: 65535 }).notNull(),
+    autoLogin: boolean('auto_login').default(false),
     issuedAt: timestamp('issued_at').defaultNow().notNull(),
     expiresAt: timestamp('expires_at').notNull(),
     isRevoked: boolean('is_revoked').default(false),

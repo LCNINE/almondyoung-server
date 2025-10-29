@@ -125,7 +125,7 @@ export class TokensService {
    */
   async findTokenByUserIdAndType(
     userId: string,
-    tokenType: 'access' | 'refresh' | 'verification',
+    tokenType: 'refresh' | 'verification',
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
@@ -152,7 +152,7 @@ export class TokensService {
    */
   async revokeToken(
     userId: string,
-    tokenType: 'access' | 'refresh' | 'verification',
+    tokenType: 'refresh' | 'verification',
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
@@ -174,25 +174,6 @@ export class TokensService {
   }
 
   /**
-   * 사용자의 모든 토큰을 무효화합니다.
-   * @param userId 사용자 ID
-   * @param tx 트랜잭션 객체 (선택)
-   */
-  async revokeAllTokens(userId: string, tx?: DbTransaction) {
-    const client = this.getClient(tx);
-
-    await client
-      .update(userServiceSchema.tokens)
-      .set({
-        isRevoked: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(userServiceSchema.tokens.userId, userId));
-
-    this.logger.log(`All tokens revoked for userId=${userId}`);
-  }
-
-  /**
    * 토큰을 삭제합니다.
    * @param userId 사용자 ID
    * @param tokenType 토큰 타입
@@ -200,7 +181,7 @@ export class TokensService {
    */
   async deleteToken(
     userId: string,
-    tokenType: 'access' | 'refresh' | 'verification',
+    tokenType: 'refresh' | 'verification',
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
@@ -288,6 +269,7 @@ export class TokensService {
     tokenValue: string,
     scopes: string[],
     expiresAt: Date,
+    autoLogin: boolean,
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
@@ -301,6 +283,7 @@ export class TokensService {
         value: tokenValue,
         scopes: scopes.join(','),
         expiresAt,
+        autoLogin,
       })
       .onConflictDoUpdate({
         target: [
@@ -311,6 +294,7 @@ export class TokensService {
           value: tokenValue,
           scopes: scopes.join(','),
           expiresAt,
+          autoLogin,
           updatedAt: new Date(),
         },
       });
