@@ -523,7 +523,7 @@ export class ProductCategoriesService {
     categoryId: string,
     includeSubcategories: boolean,
     tx?: DbTransaction,
-  ): Promise<ProductMaster[]> {
+  ) {
     const client = this.getClient(tx);
 
     // 카테고리 존재 확인

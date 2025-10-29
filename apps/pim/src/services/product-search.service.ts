@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql } from 'drizzle-orm';
+import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
 import {
   type PimSchema,
   productMasters,
@@ -21,7 +21,18 @@ export class ProductSearchService {
 
   async search(query: ProductQueryDto, tx?: DbTransaction) {
     const client = this.getClient(tx);
-    const conditions = [];
+    const conditions = this.buildConditions(query);
+
+    // Category가 있는 경우와 없는 경우를 명확하게 분리
+    if (query.categoryIds && query.categoryIds.length > 0) {
+      return this.searchWithCategory(client, query, conditions);
+    } else {
+      return this.searchWithoutCategory(client, query, conditions);
+    }
+  }
+
+  private buildConditions(query: ProductQueryDto): SQL[] {
+    const conditions: SQL[] = [];
 
     // Soft delete filter
     if (!query.includeDeleted) {
@@ -30,14 +41,15 @@ export class ProductSearchService {
 
     // Keyword search (name, description, product code)
     if (query.keyword) {
-      conditions.push(
-        or(
-          like(productMasters.name, `%${query.keyword}%`),
-          like(productMasters.description, `%${query.keyword}%`),
-          like(productMasters.productCode, `%${query.keyword}%`),
-          like(productMasters.brand, `%${query.keyword}%`),
-        ),
+      const keywordCondition = or(
+        like(productMasters.name, `%${query.keyword}%`),
+        like(productMasters.description, `%${query.keyword}%`),
+        like(productMasters.productCode, `%${query.keyword}%`),
+        like(productMasters.brand, `%${query.keyword}%`),
       );
+      if (keywordCondition) {
+        conditions.push(keywordCondition);
+      }
     }
 
     // Approval status filter
@@ -82,58 +94,93 @@ export class ProductSearchService {
       conditions.push(lte(productMasters.createdAt, endDate));
     }
 
-    // Base query
-    let baseQuery = client
-      .select()
-      .from(productMasters);
+    return conditions;
+  }
 
-    // Category filter
-    if (query.categoryIds && query.categoryIds.length > 0) {
-      baseQuery = baseQuery
-        .innerJoin(
-          productMasterCategories,
-          eq(productMasters.id, productMasterCategories.masterId),
-        )
-        .where(
-          and(
-            ...conditions,
-            inArray(productMasterCategories.categoryId, query.categoryIds),
-          ),
-        );
-    } else if (conditions.length > 0) {
-      baseQuery = baseQuery.where(and(...conditions));
-    }
+  private async searchWithCategory(
+    client: ReturnType<typeof this.getClient>,
+    query: ProductQueryDto,
+    conditions: SQL[],
+  ) {
+    const categoryCondition = inArray(
+      productMasterCategories.categoryId,
+      query.categoryIds!,
+    );
 
-    // Sorting
-    const sortField = query.sortBy || 'createdAt';
-    const sortDirection = query.sortOrder === 'asc' ? asc : desc;
-    baseQuery = baseQuery.orderBy(sortDirection(productMasters[sortField]));
-
-    // Pagination
+    // Main query
     const page = query.page || 1;
     const limit = query.limit || 20;
     const offset = (page - 1) * limit;
 
-    const results = await baseQuery.limit(limit).offset(offset);
+    const results = await client
+      .select()
+      .from(productMasters)
+      .innerJoin(
+        productMasterCategories,
+        eq(productMasters.id, productMasterCategories.masterId),
+      )
+      .where(and(...conditions, categoryCondition))
+      .orderBy(this.getSortOrder(query))
+      .limit(limit)
+      .offset(offset);
 
-    // Get total count
-    const countQuery = client
+    // Count query (동일한 조건 적용 + distinct!)
+    const [{ count }] = await client
+      .select({ count: sql<number>`count(distinct ${productMasters.id})` })
+      .from(productMasters)
+      .innerJoin(
+        productMasterCategories,
+        eq(productMasters.id, productMasterCategories.masterId),
+      )
+      .where(and(...conditions, categoryCondition));
+
+    return this.buildPaginationResponse(results, query, Number(count));
+  }
+
+  private async searchWithoutCategory(
+    client: ReturnType<typeof this.getClient>,
+    query: ProductQueryDto,
+    conditions: SQL[],
+  ) {
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const offset = (page - 1) * limit;
+
+    // Main query
+    const results = await client
+      .select()
+      .from(productMasters)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(this.getSortOrder(query))
+      .limit(limit)
+      .offset(offset);
+
+    // Count query
+    const [{ count }] = await client
       .select({ count: sql<number>`count(*)` })
-      .from(productMasters);
-    
-    if (conditions.length > 0) {
-      countQuery.where(and(...conditions));
-    }
+      .from(productMasters)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-    const [{ count }] = await countQuery;
+    return this.buildPaginationResponse(results, query, Number(count));
+  }
+
+  private getSortOrder(query: ProductQueryDto) {
+    const sortField = query.sortBy || 'createdAt';
+    const sortDirection = query.sortOrder === 'asc' ? asc : desc;
+    return sortDirection(productMasters[sortField]);
+  }
+
+  private buildPaginationResponse(results: any[], query: ProductQueryDto, total: number) {
+    const page = query.page || 1;
+    const limit = query.limit || 20;
 
     return {
       data: results,
       pagination: {
         page,
         limit,
-        total: Number(count),
-        totalPages: Math.ceil(Number(count) / limit),
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }

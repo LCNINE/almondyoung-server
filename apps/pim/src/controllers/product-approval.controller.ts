@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Param, Body, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ProductApprovalService } from '../services/product-approval.service';
+import { SubmitForApprovalDto, ApproveProductDto, RejectProductDto } from '../dto/product-approval.dto';
 
 @ApiTags('Product Approval')
 @Controller('masters')
@@ -13,16 +14,16 @@ export class ProductApprovalController {
     description: '제품을 승인 대기 상태로 전환합니다.',
   })
   @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiBody({ schema: { properties: { userId: { type: 'string' } } } })
+  @ApiBody({ type: SubmitForApprovalDto })
   @ApiResponse({ status: 200, description: '승인 요청 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 (제품이 draft 상태가 아님)' })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
   async submitForApproval(
     @Param('id') productId: string,
-    @Body('userId') userId: string,
+    @Body() body: SubmitForApprovalDto,
   ) {
     try {
-      return await this.approvalService.submitForApproval(productId, userId);
+      return await this.approvalService.submitForApproval(productId, body.userId);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Product not found', HttpStatus.NOT_FOUND);
@@ -37,20 +38,13 @@ export class ProductApprovalController {
     description: '제품을 승인하고 활성화합니다.',
   })
   @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiBody({ 
-    schema: { 
-      properties: { 
-        userId: { type: 'string' },
-        comment: { type: 'string', required: false }
-      } 
-    } 
-  })
+  @ApiBody({ type: ApproveProductDto })
   @ApiResponse({ status: 200, description: '제품 승인 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
   async approve(
     @Param('id') productId: string,
-    @Body() body: { userId: string; comment?: string },
+    @Body() body: ApproveProductDto,
   ) {
     try {
       return await this.approvalService.approve(productId, body.userId, body.comment);
@@ -68,20 +62,13 @@ export class ProductApprovalController {
     description: '제품을 거부하고 거부 사유를 기록합니다.',
   })
   @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiBody({ 
-    schema: { 
-      properties: { 
-        userId: { type: 'string' },
-        reason: { type: 'string' }
-      } 
-    } 
-  })
+  @ApiBody({ type: RejectProductDto })
   @ApiResponse({ status: 200, description: '제품 거부 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
   async reject(
     @Param('id') productId: string,
-    @Body() body: { userId: string; reason: string },
+    @Body() body: RejectProductDto,
   ) {
     try {
       return await this.approvalService.reject(productId, body.userId, body.reason);
