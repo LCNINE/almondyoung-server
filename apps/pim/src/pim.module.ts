@@ -30,6 +30,10 @@ import { ProductAuditService } from './services/product-audit.service';
 import { ProductAuditController } from './controllers/product-audit.controller';
 import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
 
+// Phase 4 new imports
+import { DashboardService } from './services/dashboard.service';
+import { DashboardController } from './controllers/dashboard.controller';
+
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
 import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
@@ -61,6 +65,8 @@ import { pimSchema } from './schema';
     // Phase 3 new controllers
     ProductCsvController,
     ProductAuditController,
+    // Phase 4 new controllers
+    DashboardController,
   ],
   providers: [
     PimService,
@@ -80,6 +86,8 @@ import { pimSchema } from './schema';
     // Phase 3 new services
     ProductCsvService,
     ProductAuditService,
+    // Phase 4 new services
+    DashboardService,
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditLogInterceptor,
