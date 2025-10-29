@@ -617,14 +617,14 @@ export class AuthService {
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: this.configService.get('COOKIE_DOMAIN'),
+          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: this.configService.get('COOKIE_DOMAIN'),
+          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
@@ -708,13 +708,13 @@ export class AuthService {
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
+    // const expiresIn = '10s';
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('AUTH_SECRET'),
       expiresIn,
     });
 
-   
     const cookieOptions = {
       path: '/',
       httpOnly: true,
@@ -764,6 +764,7 @@ export class AuthService {
       refreshToken,
       scopes,
       expiresAt,
+      rememberMe,
       tx,
     );
 
@@ -787,8 +788,26 @@ export class AuthService {
     return { refreshToken };
   }
 
-  async restoreToken(user: User, reply: FastifyReply) {
-    return this.getAccessToken(user, reply);
+  async restoreToken(user: User, reply: FastifyReply, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
+    const oldRefreshToken = await this.tokensService.findTokenByUserIdAndType(
+      user.id,
+      'refresh',
+      client,
+    );
+
+    await this.tokensService.deleteToken(user.id, 'refresh', client);
+
+    const { accessToken } = await this.getAccessToken(user, reply, client);
+    await this.setRefreshToken(
+      user.id,
+      reply,
+      oldRefreshToken?.autoLogin ?? false,
+      client,
+    );
+
+    return { accessToken };
   }
 
   async forgetUserId(email: string) {
@@ -846,8 +865,6 @@ export class AuthService {
 
     return;
   }
-
-
 
   async changePassword(password: string, user: User) {
     const existingUser = await this.usersService.findUserById(user.id);
