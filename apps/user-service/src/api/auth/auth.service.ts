@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { UserEvents } from '@app/shared/streams';
 import {
   BadRequestException,
@@ -617,14 +617,14 @@ export class AuthService {
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: this.configService.get('COOKIE_DOMAIN'),
+          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: this.configService.get('COOKIE_DOMAIN'),
+          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
@@ -714,7 +714,6 @@ export class AuthService {
       expiresIn,
     });
 
-   
     const cookieOptions = {
       path: '/',
       httpOnly: true,
@@ -764,6 +763,7 @@ export class AuthService {
       refreshToken,
       scopes,
       expiresAt,
+      rememberMe,
       tx,
     );
 
@@ -787,8 +787,10 @@ export class AuthService {
     return { refreshToken };
   }
 
-  async restoreToken(user: User, reply: FastifyReply) {
-    return this.getAccessToken(user, reply);
+  async restoreToken(user: User, reply: FastifyReply, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
+    return await this.getAccessToken(user, reply, client);
   }
 
   async forgetUserId(email: string) {
@@ -846,8 +848,6 @@ export class AuthService {
 
     return;
   }
-
-
 
   async changePassword(password: string, user: User) {
     const existingUser = await this.usersService.findUserById(user.id);
