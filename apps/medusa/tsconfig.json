@@ -31,7 +31,15 @@
       "@utils/*": ["src/utils/*"],
       "@scripts/*": ["src/scripts/*"],
       "@admin/*": ["src/admin/*"],
-      "@libs/*": ["../../libs/*"]
+      "@libs/*": ["../../libs/*"],
+      "@app/db": ["../../libs/db/src"],
+      "@app/db/*": ["../../libs/db/src/*"],
+      "@app/events": ["../../libs/events/src"],
+      "@app/events/*": ["../../libs/events/src/*"],
+      "@app/roles": ["../../libs/roles/src"],
+      "@app/roles/*": ["../../libs/roles/src/*"],
+      "@app/shared": ["../../libs/shared/src"],
+      "@app/shared/*": ["../../libs/shared/src/*"]
     }
   },
   "ts-node": {
