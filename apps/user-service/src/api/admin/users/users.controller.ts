@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   Patch,
@@ -16,7 +17,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { HttpStatus } from 'itdoc';
 import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
 import { UserResponseDto } from '../../users/dto/user.response.dto';
