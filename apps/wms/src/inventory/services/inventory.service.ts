@@ -2,8 +2,9 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
-import { and, eq, isNull, or, sql, asc } from 'drizzle-orm';
+import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
+import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto, SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
@@ -225,6 +226,7 @@ export class InventoryService implements OnModuleInit {
                     deliveryProfileId: wmsTables.skus.deliveryProfileId,
                     sale1m: wmsTables.skus.sale1m,
                     sale3m: wmsTables.skus.sale3m,
+                    safetyStock: wmsTables.skus.safetyStock,
                     masterId: wmsTables.skus.masterId,
                     optionKey: wmsTables.skus.optionKey,
                     masterName: wmsTables.inventoryProductMasters.name,
@@ -240,7 +242,7 @@ export class InventoryService implements OnModuleInit {
                 )
                 .where(eq(wmsTables.skus.id, skuId))
                 .limit(1);
-            return row as any;
+            return row;
         }, tx);
 
         if (!sku) {
@@ -279,13 +281,14 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId ?? undefined,
             sale1m: sku.sale1m ?? undefined,
             sale3m: sku.sale3m ?? undefined,
-            masterId: (sku as any).masterId,
-            optionKey: (sku as any).optionKey ?? undefined,
+            safetyStock: sku.safetyStock,
+            masterId: sku.masterId,
+            optionKey: (sku.optionKey as any) ?? undefined,
             master: {
-                id: (sku as any).masterId,
-                name: (sku as any).masterName,
-                code: (sku as any).masterCode,
-                hasOptions: !!(sku as any).masterOptionSchema,
+                id: sku.masterId,
+                name: sku.masterName,
+                code: sku.masterCode,
+                hasOptions: !!sku.masterOptionSchema,
             },
             barcodes: barcodes.map(b => ({
                 id: b.id,
@@ -295,8 +298,8 @@ export class InventoryService implements OnModuleInit {
             })),
             supplierNames: suppliers.map(s => s.name),
             categoryNames: categories.map(c => c.name),
-            createdAt: (sku as any).createdAt ?? new Date(),
-            updatedAt: (sku as any).updatedAt ?? new Date(),
+            createdAt: sku.createdAt,
+            updatedAt: sku.updatedAt,
         };
     }
 
@@ -385,6 +388,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: sku.deliveryProfileId,
             sale1m: sku.sale1m,
             sale3m: sku.sale3m,
+            safetyStock: sku.safetyStock ?? 0,
             masterId: sku.masterId,
             optionKey: sku.optionKey,
             barcodes: Array.from(sku.barcodes.values()),
@@ -393,6 +397,205 @@ export class InventoryService implements OnModuleInit {
             createdAt: sku.createdAt,
             updatedAt: sku.updatedAt,
         }));
+    }
+
+    /**
+     * Advanced inventory search with comprehensive filtering
+     */
+    async searchInventoryAdvanced(
+        filters: AdvancedInventoryFiltersDto,
+        tx?: DbTx
+    ): Promise<{
+        items: SkuResponseDto[];
+        total: number;
+        limit: number;
+        offset: number;
+    }> {
+        return this.inTx(async (trx) => {
+            // Build where conditions
+            const conditions: SQL[] = [];
+
+            // Search by name or code
+            if (filters.search) {
+                conditions.push(
+                    or(
+                        like(wmsTables.skus.name, `%${filters.search}%`),
+                        like(wmsTables.skus.code, `%${filters.search}%`)
+                    )!
+                );
+            }
+
+            // Barcode search
+            if (filters.barcode) {
+                conditions.push(eq(wmsTables.skus.defaultBarcode, filters.barcode));
+            }
+
+            // Stock type
+            if (filters.stockType) {
+                conditions.push(eq(wmsTables.skus.stockType, filters.stockType as any));
+            }
+
+            // ===== WMS-INTERNAL GROUPING FILTERS =====
+
+            // Group ID filter
+            if (filters.groupId) {
+                conditions.push(eq(wmsTables.skus.groupId, filters.groupId));
+            }
+
+            // Group Code filter (requires lookup to sku_groups)
+            if (filters.groupCode) {
+                const [group] = await trx
+                    .select({ id: wmsTables.skuGroups.id })
+                    .from(wmsTables.skuGroups)
+                    .where(eq(wmsTables.skuGroups.code, filters.groupCode))
+                    .limit(1);
+
+                if (group) {
+                    conditions.push(eq(wmsTables.skus.groupId, group.id));
+                } else {
+                    // No matching group code - return empty results
+                    return {
+                        items: [],
+                        total: 0,
+                        limit: filters.limit ?? 50,
+                        offset: filters.offset ?? 0,
+                    };
+                }
+            }
+
+            // Grouped/ungrouped filter
+            if (filters.isGrouped !== undefined) {
+                conditions.push(
+                    filters.isGrouped
+                        ? isNotNull(wmsTables.skus.groupId)  // Has group
+                        : isNull(wmsTables.skus.groupId)     // Standalone SKU
+                );
+            }
+
+            // Inventory Master filter (WMS-internal)
+            if (filters.inventoryMasterId) {
+                conditions.push(eq(wmsTables.skus.masterId, filters.inventoryMasterId));
+            }
+
+            // Location filter
+            if (filters.locationId) {
+                conditions.push(eq(wmsTables.skus.primaryLocationId, filters.locationId));
+            }
+
+            // Date range
+            if (filters.startDate) {
+                conditions.push(gte(wmsTables.skus.createdAt, new Date(filters.startDate)));
+            }
+            if (filters.endDate) {
+                conditions.push(lte(wmsTables.skus.createdAt, new Date(filters.endDate)));
+            }
+
+            // Build base query with stock summary join (for filtering only)
+            let query = trx
+                .select({
+                    sku: wmsTables.skus,
+                })
+                .from(wmsTables.skus)
+                .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId));
+
+            // Apply base conditions
+            if (conditions.length > 0) {
+                query = query.where(and(...conditions)) as any;
+            }
+
+            // Display mode filters (applied to joined stockSummary)
+            if (filters.displayMode) {
+                switch (filters.displayMode) {
+                    case StockDisplayMode.BELOW_SAFETY:
+                        query = query.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
+                        ) as any;
+                        break;
+                    case StockDisplayMode.WITH_STOCK:
+                        query = query.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
+                        ) as any;
+                        break;
+                    case StockDisplayMode.OUT_OF_STOCK:
+                        query = query.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
+                        ) as any;
+                        break;
+                }
+            }
+
+            // Warehouse filter (via stock summary)
+            if (filters.warehouseId) {
+                query = query.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
+            }
+
+            // Sorting
+            const sortField = filters.sortBy ?? 'createdAt';
+            const sortDirection = filters.sortOrder ?? 'desc';
+
+            if (sortDirection === 'asc') {
+                query = query.orderBy(asc(wmsTables.skus[sortField])) as any;
+            } else {
+                query = query.orderBy(sql`${wmsTables.skus[sortField]} DESC`) as any;
+            }
+
+            // Pagination
+            query = query.limit(filters.limit ?? 50).offset(filters.offset ?? 0) as any;
+
+            // Execute query
+            const results = await query;
+
+            // Count total (with same conditions)
+            let countQuery = trx
+                .select({ count: sql<number>`count(DISTINCT ${wmsTables.skus.id})` })
+                .from(wmsTables.skus)
+                .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId));
+
+            if (conditions.length > 0) {
+                countQuery = countQuery.where(and(...conditions)) as any;
+            }
+
+            // Apply display mode to count query
+            if (filters.displayMode) {
+                switch (filters.displayMode) {
+                    case StockDisplayMode.BELOW_SAFETY:
+                        countQuery = countQuery.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
+                        ) as any;
+                        break;
+                    case StockDisplayMode.WITH_STOCK:
+                        countQuery = countQuery.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
+                        ) as any;
+                        break;
+                    case StockDisplayMode.OUT_OF_STOCK:
+                        countQuery = countQuery.where(
+                            sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
+                        ) as any;
+                        break;
+                }
+            }
+
+            if (filters.warehouseId) {
+                countQuery = countQuery.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
+            }
+
+            const [countResult] = await countQuery;
+            const total = Number(countResult?.count ?? 0);
+
+            // Map to DTOs
+            const uniqueSkuIds = [...new Set(results.map(row => row.sku.id))];
+            const items = await Promise.all(
+                uniqueSkuIds.map(skuId => this.getSkuById(skuId, trx))
+            );
+
+            return {
+                items,
+                total,
+                limit: filters.limit ?? 50,
+                offset: filters.offset ?? 0,
+            };
+        }, tx);
     }
 
     async addBarcode(skuId: string, addBarcodeDto: AddBarcodeDto, tx?: DbTx): Promise<void> {
@@ -769,6 +972,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
+            safetyStock: data.safetyStock ?? 0,
         }).returning();
 
         if (!newSku) {
@@ -789,6 +993,7 @@ export class InventoryService implements OnModuleInit {
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
+            safetyStock: data.safetyStock,
             updatedAt: new Date(),
         };
 

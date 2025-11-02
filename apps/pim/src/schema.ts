@@ -17,6 +17,35 @@ import { eq, sql } from 'drizzle-orm';
 
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+
+// ===== CATEGORY JSONB TYPE DEFINITIONS =====
+export type CategoryDisplaySettings = {
+  showOnMainCategory?: boolean;
+  pcAndMobile?: boolean;
+  mobileOnly?: boolean;
+  productDisplayOrder?: 'asc' | 'desc';
+  defaultSortField?: string;
+  menuPositions?: {
+    leftSide?: boolean;
+    topMenu?: boolean;
+    footerMenu?: boolean;
+  };
+};
+
+export type CategorySeoConfig = {
+  browserTitle?: string;
+  metaAuthor?: string;
+  metaDescription?: string;
+  metaKeywords?: string[];
+  showInSearchEngines?: boolean;
+};
+
+export type CategoryTemplateConfig = {
+  templateType?: 'default' | 'custom';
+  htmlContent?: string;
+  customCss?: string;
+};
+
 // ===== 1. PRODUCT CATEGORIES =====
 export const productCategories = pgTable(
   'product_categories',
@@ -33,6 +62,14 @@ export const productCategories = pgTable(
     path: varchar('path', { length: 1000 }).notNull().default(''),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
+    
+    // ===== Phase 2 NEW FIELDS START =====
+    visibility: boolean('visibility').notNull().default(true),
+    displaySettings: jsonb('display_settings').$type<CategoryDisplaySettings>(),
+    seoConfig: jsonb('seo_config').$type<CategorySeoConfig>(),
+    templateConfig: jsonb('template_config').$type<CategoryTemplateConfig>(),
+    // ===== Phase 2 NEW FIELDS END =====
+    
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     createdBy: uuid('created_by'),
@@ -86,6 +123,57 @@ export const productMasters = pgTable(
     // 특별 가격 필드들
     membershipPrice: bigint('membership_price', { mode: 'number' }), // 멤버십 전용 가격
     wholesalePrice: bigint('wholesale_price', { mode: 'number' }), // 도매 전용 가격
+
+    // ===== Phase 1 NEW FIELDS START =====
+    // Product Type
+    productType: varchar('product_type', { length: 50 })
+      .notNull()
+      .default('regular_sale'), // 'limited_edition' | 'regular_sale'
+
+    // Product Identification
+    productCode: varchar('product_code', { length: 100 }).unique(),
+    alternativeName: varchar('alternative_name', { length: 255 }),
+    material: text('material'),
+
+    // Classification
+    salesClassification: varchar('sales_classification', { length: 100 }),
+    purchaseClassification: varchar('purchase_classification', { length: 100 }),
+
+    // Shipping
+    shippingMethodId: uuid('shipping_method_id'),
+
+    // Pricing (additional)
+    marketPrice: bigint('market_price', { mode: 'number' }),
+    supplyPrice: bigint('supply_price', { mode: 'number' }),
+    supplierId: uuid('supplier_id'),
+
+    // Purchase Restrictions
+    ageRestriction: integer('age_restriction').default(0),
+    minQuantity: integer('min_quantity').default(1),
+    maxQuantity: integer('max_quantity'),
+
+    // Sales Period
+    salesStartDate: timestamp('sales_start_date'),
+    salesEndDate: timestamp('sales_end_date'),
+
+    // Approval Workflow
+    approvalStatus: varchar('approval_status', { length: 20 })
+      .notNull()
+      .default('draft'), // 'draft', 'pending', 'approved', 'rejected'
+    approvedAt: timestamp('approved_at'),
+    approvedBy: uuid('approved_by'),
+    rejectionReason: text('rejection_reason'),
+
+    // Soft Delete
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    // Audit Fields
+    seller: varchar('seller', { length: 100 }),
+    registrationDate: timestamp('registration_date').defaultNow(),
+    lastEditDate: timestamp('last_edit_date'),
+    // ===== Phase 1 NEW FIELDS END =====
+
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
     createdBy: uuid('created_by'),
@@ -98,6 +186,13 @@ export const productMasters = pgTable(
     index('idx_masters_created_at').on(table.createdAt),
     index('idx_masters_base_price').on(table.basePrice),
     index('idx_masters_pricing_strategy').on(table.pricingStrategy),
+    // Phase 1 new indexes
+    index('idx_masters_product_type').on(table.productType),
+    index('idx_masters_product_code').on(table.productCode),
+    index('idx_masters_approval_status').on(table.approvalStatus),
+    index('idx_masters_deleted_at').on(table.deletedAt),
+    index('idx_masters_supplier').on(table.supplierId),
+    index('idx_masters_sales_dates').on(table.salesStartDate, table.salesEndDate),
   ],
 );
 
@@ -201,6 +296,11 @@ export const productVariants = pgTable(
     displayOrder: integer('display_order').default(0), // 표시 순서
     status: varchar('status', { length: 20 }).default('active'), // active, inactive
     isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
+    
+    // Phase 1 new fields
+    variantCode: varchar('variant_code', { length: 100 }).unique(),
+    variantImages: jsonb('variant_images').$type<string[]>(),
+    
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -210,6 +310,8 @@ export const productVariants = pgTable(
     index('idx_variants_is_default').on(table.isDefault),
     index('idx_variants_display_order').on(table.masterId, table.displayOrder),
     index('idx_variants_created_at').on(table.createdAt),
+    // Phase 1 new index
+    index('idx_variants_code').on(table.variantCode),
   ],
 );
 
@@ -385,6 +487,52 @@ export const productImages = pgTable(
   ],
 );
 
+// ===== 13. PRODUCT APPROVAL HISTORY =====
+export const productApprovalHistory = pgTable(
+  'product_approval_history',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    status: varchar('status', { length: 20 }).notNull(), // 'pending', 'approved', 'rejected'
+    comment: text('comment'),
+    approvedBy: uuid('approved_by').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_approval_history_product').on(table.productId),
+    index('idx_approval_history_status').on(table.status),
+    index('idx_approval_history_date').on(table.createdAt),
+  ],
+);
+
+// ===== 14. PRODUCT AUDIT LOG =====
+export const productAuditLog = pgTable(
+  'product_audit_log',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    productId: uuid('product_id').notNull(),
+    action: varchar('action', { length: 50 }).notNull(), // 'created', 'updated', 'deleted', 'restored'
+    changes: jsonb('changes').$type<Record<string, any>>(),
+    userId: uuid('user_id').notNull(),
+    userEmail: varchar('user_email', { length: 255 }),
+    timestamp: timestamp('timestamp').notNull().defaultNow(),
+    ipAddress: varchar('ip_address', { length: 45 }),
+    userAgent: text('user_agent'),
+  },
+  (table) => [
+    index('idx_audit_log_product').on(table.productId),
+    index('idx_audit_log_action').on(table.action),
+    index('idx_audit_log_timestamp').on(table.timestamp),
+    index('idx_audit_log_user').on(table.userId),
+  ],
+);
+
 // 추후 타임세일 구현을 위한 스키마. 10월 1일 이후 구현 예정 (혹은 메두사에 책임 이관)
 export const promotions = pgTable('promotions', {
   id: uuid('id')
@@ -427,6 +575,8 @@ export const pimSchema = {
   variantPrices,
   uploads,
   productImages,
+  productApprovalHistory,
+  productAuditLog,
 };
 
 // ===== RELATIONS =====

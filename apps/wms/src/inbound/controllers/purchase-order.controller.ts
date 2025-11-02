@@ -10,7 +10,7 @@ import {
     HttpCode,
     HttpStatus
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import {
     CreatePurchaseOrderDto,
@@ -24,6 +24,7 @@ import {
     PurchaseOrderStatus,
     PurchaseOrderType
 } from '../dto/purchase-order.dto';
+import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
 
 @ApiTags('Purchase Orders')
 @Controller('wms/purchase-orders')
@@ -171,5 +172,83 @@ export class PurchaseOrderController {
         @Query('warehouseId') warehouseId?: string
     ): Promise<StockReorderSuggestion[]> {
         return this.purchaseOrderService.getReorderSuggestions(warehouseId);
+    }
+
+    // ========== Audit Workflow ==========
+
+    @Put(':id/submit-for-audit')
+    @ApiOperation({ summary: '검토 제출 (Submit PO for audit)' })
+    @ApiParam({ name: 'id', description: 'Purchase Order ID' })
+    @ApiResponse({
+        status: 200,
+        description: '검토 요청 제출 완료',
+        schema: {
+            type: 'object',
+            properties: {
+                id: { type: 'string', example: 'uuid' },
+                auditStatus: { type: 'string', example: 'pending_audit' },
+                submittedAt: { type: 'string', format: 'date-time' },
+                message: { type: 'string', example: '검토 요청이 제출되었습니다. (Submitted for audit)' }
+            }
+        }
+    })
+    @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 draft가 아님)' })
+    @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+    async submitForAudit(
+        @Param('id') id: string,
+        @Body() dto: SubmitForAuditDto
+    ): Promise<any> {
+        return this.purchaseOrderService.submitForAudit(id, dto);
+    }
+
+    @Put(':id/approve')
+    @ApiOperation({ summary: '발주 승인 (Approve purchase order)' })
+    @ApiParam({ name: 'id', description: 'Purchase Order ID' })
+    @ApiResponse({
+        status: 200,
+        description: '발주 승인 완료',
+        schema: {
+            type: 'object',
+            properties: {
+                id: { type: 'string', example: 'uuid' },
+                auditStatus: { type: 'string', example: 'approved' },
+                approvedAt: { type: 'string', format: 'date-time' },
+                message: { type: 'string', example: '발주가 승인되었습니다. (Purchase order approved)' }
+            }
+        }
+    })
+    @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 pending_audit가 아님)' })
+    @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+    async approvePo(
+        @Param('id') id: string,
+        @Body() dto: ApprovePoDto
+    ): Promise<any> {
+        return this.purchaseOrderService.approvePo(id, dto);
+    }
+
+    @Put(':id/reject')
+    @ApiOperation({ summary: '발주 거부 (Reject purchase order)' })
+    @ApiParam({ name: 'id', description: 'Purchase Order ID' })
+    @ApiResponse({
+        status: 200,
+        description: '발주 거부 완료 (상태가 draft로 재설정됨)',
+        schema: {
+            type: 'object',
+            properties: {
+                id: { type: 'string', example: 'uuid' },
+                auditStatus: { type: 'string', example: 'draft' },
+                rejectedAt: { type: 'string', format: 'date-time' },
+                reason: { type: 'string', example: 'SKU quantities exceed budget limits' },
+                message: { type: 'string', example: '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)' }
+            }
+        }
+    })
+    @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 pending_audit가 아님)' })
+    @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+    async rejectPo(
+        @Param('id') id: string,
+        @Body() dto: RejectPoDto
+    ): Promise<any> {
+        return this.purchaseOrderService.rejectPo(id, dto);
     }
 }

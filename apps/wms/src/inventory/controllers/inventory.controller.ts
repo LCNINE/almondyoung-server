@@ -2,8 +2,10 @@ import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpS
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
 import { StockEventService } from '../services/stock-event.service';
+import { SafetyStockService } from '../services/safety-stock.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
+import { AdvancedInventoryFiltersDto } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
@@ -18,7 +20,8 @@ import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry
 export class InventoryController {
     constructor(
         private readonly inventoryService: InventoryService,
-        private readonly stockEventService: StockEventService
+        private readonly stockEventService: StockEventService,
+        private readonly safetyStockService: SafetyStockService
     ) { }
 
     // ═══════════════════════════════════════════════════════════════
@@ -256,6 +259,48 @@ export class InventoryController {
         });
     }
 
+    @Get('/skus/search/advanced')
+    @ApiOperation({ summary: '고급 재고 검색 (Advanced inventory search with comprehensive filtering)' })
+    @ApiResponse({
+        status: 200,
+        description: '검색 결과 (Search results with pagination)',
+        schema: {
+            type: 'object',
+            properties: {
+                items: {
+                    type: 'array',
+                    items: { $ref: '#/components/schemas/SkuResponseDto' },
+                    description: 'SKU 목록'
+                },
+                total: {
+                    type: 'number',
+                    description: '전체 결과 수',
+                    example: 150
+                },
+                limit: {
+                    type: 'number',
+                    description: '페이지 크기',
+                    example: 50
+                },
+                offset: {
+                    type: 'number',
+                    description: '페이지 오프셋',
+                    example: 0
+                }
+            }
+        }
+    })
+    async searchInventoryAdvanced(
+        @Query() filters: AdvancedInventoryFiltersDto
+    ): Promise<{
+        items: SkuResponseDto[];
+        total: number;
+        limit: number;
+        offset: number;
+    }> {
+        return this.inventoryService.searchInventoryAdvanced(filters);
+    }
+
     @Get('/skus/:id')
     @ApiOperation({ summary: 'SKU 상세 조회' })
     @ApiParam({ name: 'id', description: 'SKU ID' })
@@ -374,5 +419,73 @@ export class InventoryController {
     @ApiResponse({ status: 400, description: '기본 창고이거나 사용 중인 창고는 삭제할 수 없습니다.' })
     async removeWarehouse(@Param('id') id: string) {
         return this.inventoryService.removeWarehouse(id);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 안전 재고 관리 API
+    // ═══════════════════════════════════════════════════════════════
+
+    @Get('/safety-stock-warnings')
+    @ApiOperation({ summary: '안전 재고 미만 상품 조회 (Get items below safety stock)' })
+    @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID로 필터링' })
+    @ApiResponse({
+        status: 200,
+        description: 'List of SKUs below safety stock',
+        schema: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    skuId: { type: 'string', description: 'SKU ID' },
+                    skuName: { type: 'string', description: 'SKU 이름' },
+                    skuCode: { type: 'string', description: 'SKU 코드' },
+                    currentStock: { type: 'number', description: '현재 재고' },
+                    safetyStock: { type: 'number', description: '안전 재고' },
+                    shortfall: { type: 'number', description: '부족량' },
+                    warehouseId: { type: 'string', description: '창고 ID' }
+                }
+            }
+        }
+    })
+    async getSafetyStockWarnings(@Query('warehouseId') warehouseId?: string) {
+        return this.safetyStockService.getBelowSafetyStock(warehouseId);
+    }
+
+    @Get('/safety-stock-status/:skuId')
+    @ApiOperation({ summary: 'SKU의 안전 재고 상태 조회 (전체 창고)' })
+    @ApiParam({ name: 'skuId', description: 'SKU ID' })
+    @ApiResponse({
+        status: 200,
+        description: 'Safety stock status for SKU across all warehouses',
+        schema: {
+            type: 'object',
+            properties: {
+                skuId: { type: 'string' },
+                skuName: { type: 'string' },
+                skuCode: { type: 'string' },
+                safetyStock: { type: 'number' },
+                warehouses: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            warehouseId: { type: 'string' },
+                            warehouseName: { type: 'string' },
+                            currentStock: { type: 'number' },
+                            isBelowSafety: { type: 'boolean' },
+                            shortfall: { type: 'number' }
+                        }
+                    }
+                }
+            }
+        }
+    })
+    @ApiResponse({ status: 404, description: 'SKU not found' })
+    async getSafetyStockStatus(@Param('skuId') skuId: string) {
+        const status = await this.safetyStockService.getSafetyStockStatus(skuId);
+        if (!status) {
+            throw new Error(`SKU with ID ${skuId} not found`);
+        }
+        return status;
     }
 }
