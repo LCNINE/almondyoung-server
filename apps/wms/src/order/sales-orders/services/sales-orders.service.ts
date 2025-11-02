@@ -150,7 +150,6 @@ export class SalesOrdersService {
         .set({ status: 'confirmed', confirmedAt: new Date() })
         .where(eq(wmsTables.salesOrders.id, id));
       const updated = await this.getOne(id, trx);
-      try { await this.events?.publishEvent?.(ORDER_EVENTS.CONFIRMED as any, { orderId: id } as any); } catch {}
       await this.outbox?.enqueue({ eventType: ORDER_EVENTS.CONFIRMED, aggregateType: 'order', aggregateId: id, partitionKey: id, payload: { orderId: id } }, trx);
       return updated;
     }, tx);
@@ -219,12 +218,6 @@ export class SalesOrdersService {
         const updated = await this.getOne(id, trx);
 
         // 5. 이벤트 발행
-        try {
-          await this.events?.publishEvent?.(ORDER_EVENTS.CANCELLED as any, { orderId: id } as any);
-        } catch (eventError) {
-          this.logger.error('Failed to publish CANCELLED event:', eventError);
-        }
-
         await this.outbox.enqueue({
           eventType: ORDER_EVENTS.CANCELLED,
           aggregateType: 'order',

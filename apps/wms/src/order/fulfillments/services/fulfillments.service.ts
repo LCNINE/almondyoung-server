@@ -203,15 +203,14 @@ export class FulfillmentsService {
       }
       if (allFulfillable) {
         await trx.update(wmsTables.fulfillmentOrders).set({ status: 'ready' }).where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-        try { await this.events?.publishEvent?.(FULFILLMENT_EVENTS.READY as any, { fulfillmentOrderId: fo.id } as any); } catch {}
-          await this.outbox?.enqueue({
-            eventType: FULFILLMENT_EVENTS.READY,
-            aggregateType: 'fulfillment',
-            aggregateId: fo.id,
-            partitionKey: fo.id,
-            payload: { fulfillmentOrderId: fo.id }
-          }, trx);
-        }
+        await this.outbox?.enqueue({
+          eventType: FULFILLMENT_EVENTS.READY,
+          aggregateType: 'fulfillment',
+          aggregateId: fo.id,
+          partitionKey: fo.id,
+          payload: { fulfillmentOrderId: fo.id }
+        }, trx);
+      }
 
         this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ${allFulfillable ? 'ready' : 'created'}`);
         return this.getOne(fo.id, trx);
@@ -319,7 +318,6 @@ export class FulfillmentsService {
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'labeled' })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
-      try { await this.events?.publishEvent?.(FULFILLMENT_EVENTS.LABELLED as any, { fulfillmentOrderId: id } as any); } catch {}
       await this.outbox?.enqueue({ eventType: FULFILLMENT_EVENTS.LABELLED, aggregateType: 'fulfillment', aggregateId: id, partitionKey: id, payload: { fulfillmentOrderId: id } }, trx);
 
       return this.getOne(id, trx);
@@ -341,7 +339,6 @@ export class FulfillmentsService {
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'shipped' })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
-      try { await this.events?.publishEvent?.(FULFILLMENT_EVENTS.SHIPPED as any, { fulfillmentOrderId: id } as any); } catch {}
       await this.outbox?.enqueue({ eventType: FULFILLMENT_EVENTS.SHIPPED, aggregateType: 'fulfillment', aggregateId: id, partitionKey: id, payload: { fulfillmentOrderId: id } }, trx);
       return this.getOne(id, trx);
     }, tx);
@@ -353,7 +350,6 @@ export class FulfillmentsService {
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'canceled' })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
-      try { await this.events?.publishEvent?.(FULFILLMENT_EVENTS.CANCELLED as any, { fulfillmentOrderId: id } as any); } catch {}
       await this.outbox?.enqueue({ eventType: FULFILLMENT_EVENTS.CANCELLED, aggregateType: 'fulfillment', aggregateId: id, partitionKey: id, payload: { fulfillmentOrderId: id } }, trx);
       return this.getOne(id, trx);
     }, tx);
