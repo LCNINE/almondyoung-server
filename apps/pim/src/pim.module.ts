@@ -15,6 +15,25 @@ import { SalesChannelsService } from './services/sales-channels.service';
 import { FileUploadController } from './controllers/file-upload.controller';
 import { ImageService } from './services/image.service';
 
+// Phase 1 new imports
+import { ProductApprovalController } from './controllers/product-approval.controller';
+import { ProductApprovalService } from './services/product-approval.service';
+import { ProductSearchService } from './services/product-search.service';
+import { ProductBulkController } from './controllers/product-bulk.controller';
+import { ProductBulkService } from './services/product-bulk.service';
+
+// Phase 3 new imports
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ProductCsvService } from './services/product-csv.service';
+import { ProductCsvController } from './controllers/product-csv.controller';
+import { ProductAuditService } from './services/product-audit.service';
+import { ProductAuditController } from './controllers/product-audit.controller';
+import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
+
+// Phase 4 new imports
+import { DashboardService } from './services/dashboard.service';
+import { DashboardController } from './controllers/dashboard.controller';
+
 import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
 import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
 import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
@@ -40,6 +59,14 @@ import { pimSchema } from './schema';
     ChannelProductsController,
     SalesChannelsController,
     FileUploadController,
+    // Phase 1 new controllers
+    ProductApprovalController,
+    ProductBulkController,
+    // Phase 3 new controllers
+    ProductCsvController,
+    ProductAuditController,
+    // Phase 4 new controllers
+    DashboardController,
   ],
   providers: [
     PimService,
@@ -52,6 +79,19 @@ import { pimSchema } from './schema';
     PricingStrategyFactory,
     OptionBasedPricingStrategy,
     VariantBasedPricingStrategy,
+    // Phase 1 new services
+    ProductApprovalService,
+    ProductSearchService,
+    ProductBulkService,
+    // Phase 3 new services
+    ProductCsvService,
+    ProductAuditService,
+    // Phase 4 new services
+    DashboardService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditLogInterceptor,
+    },
   ],
 })
 export class PimModule {}

@@ -15,6 +15,8 @@ import {
   variantPrices,
   uploads,
   productImages,
+  productApprovalHistory,
+  productAuditLog,
   type PimSchema,
 } from './schema';
 
@@ -228,3 +230,11 @@ export interface PricePreviewDto {
     price: number;
   }[];
 }
+
+// ===== PRODUCT APPROVAL HISTORY 타입 =====
+export type ProductApprovalHistory = InferSelectModel<typeof productApprovalHistory>;
+export type NewProductApprovalHistory = InferInsertModel<typeof productApprovalHistory>;
+
+// ===== PRODUCT AUDIT LOG 타입 =====
+export type ProductAuditLog = InferSelectModel<typeof productAuditLog>;
+export type NewProductAuditLog = InferInsertModel<typeof productAuditLog>;

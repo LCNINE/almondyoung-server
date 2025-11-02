@@ -99,11 +99,30 @@ export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'varian
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
-export const inboundStatusEnum = pgEnum('inbound_status', ['pending', 'confirmed']);
+export const poAuditStatusEnum = pgEnum('po_audit_status', [
+    'draft',           // 초안 - Not yet submitted
+    'pending_audit',   // 검토 대기 - Submitted for approval
+    'approved',        // 승인됨 - Approved
+    'rejected',        // 거부됨 - Rejected
+]);
+export const inboundStatusEnum = pgEnum('inbound_status', [
+    'pending',      // 입고 대기 - Initial state
+    'applied',      // 입고신청 - Applied for inbound
+    'receiving',    // 입고 중 - Currently receiving
+    'confirmed',    // 입고 완료 - Completed
+]);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
 // 이중 입고 계획을 위한 새 enum
 export const planTypeEnum = pgEnum('plan_type', ['source', 'destination']);
+
+// Stocktaking status enum
+export const stocktakingStatusEnum = pgEnum('stocktaking_status', [
+    'draft',        // 작성 중 - Being created
+    'in_progress',  // 진행 중 - Actively counting
+    'completed',    // 완료 - Counting finished
+    'cancelled',    // 취소 - Cancelled
+]);
 
 // Inbound domain enums
 export const inboundMethodEnum = pgEnum('inbound_method', [
@@ -298,11 +317,76 @@ export const skus = pgTable('skus', {
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
+    safetyStock: integer('safety_stock').notNull().default(0), // 안전 재고
+    
+    // ===== Extended Metadata Fields (Phase 2 - Step 4) =====
+    
+    // 기본 정보 확장
+    businessProductName: varchar('business_product_name', { length: 255 }),
+    importDeclarationNumber: varchar('import_declaration_number', { length: 100 }),
+    logisticsPartnerId: uuid('logistics_partner_id').references(() => suppliers.id, { onDelete: 'set null' }),
+    discount: varchar('discount', { length: 100 }),
+    manufacturerStar: varchar('manufacturer_star', { length: 100 }),
+    
+    // 물리 속성
+    productWeight: integer('product_weight'), // in grams
+    dimensionWidth: integer('dimension_width'), // in cm
+    dimensionHeight: integer('dimension_height'), // in cm
+    dimensionDepth: integer('dimension_depth'), // in cm
+    productMaterial: text('product_material'),
+    
+    // 추가 메타데이터
+    koreanName: varchar('korean_name', { length: 255 }),
+    maxDiscountQuantity: integer('max_discount_quantity'),
+    packagingImporterName: varchar('packaging_importer_name', { length: 255 }),
+    
+    // 판매 정보
+    productDescription: text('product_description'),
+    moq: integer('moq'), // Minimum Order Quantity
+    memo2: text('memo2'),
+    memo3: text('memo3'),
+    
+    // 이미지 관리
+    mainImageUrl: varchar('main_image_url', { length: 512 }),
+    currentStock: integer('current_stock').default(0), // Calculated/cached
+    
+    // 유효기간 및 날짜 관리
+    expiryDateManagement: boolean('expiry_date_management').default(false),
+    expiryStartDate: timestamp('expiry_start_date', { withTimezone: true }),
+    expiryEndDate: timestamp('expiry_end_date', { withTimezone: true }),
+    manufacturingDateManagement: boolean('manufacturing_date_management').default(false),
+    isGeneralInventory: boolean('is_general_inventory').default(true),
+    
+    // 유효 기간
+    validityStartDate: timestamp('validity_start_date', { withTimezone: true }),
+    validityEndDate: timestamp('validity_end_date', { withTimezone: true }),
+    
+    // 로케이션 추적
+    primaryLocationId: uuid('primary_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    secondaryLocationId: uuid('secondary_location_id').references(() => locations.id, { onDelete: 'set null' }),
+    
+    // 옵션 그룹
+    variantGroupCode: varchar('variant_group_code', { length: 64 }),
+    
+    // ===== WMS-Internal Grouping (Phase 3 - Week 7) =====
+    // Optional grouping for warehouse organization (nullable - most SKUs won't have a group)
+    // ON DELETE SET NULL: SKUs survive when group is deleted
+    groupId: uuid('group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
+    
+    // ===== End Extended Metadata =====
+    
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     // (master_id, option_key) 유니크 제약으로 옵션 조합 중복 방지
     uqSkuMasterOption: unique().on(t.masterId, t.optionKey),
+    // 성능 최적화 인덱스
+    idxSkusSafetyStock: index('idx_skus_safety_stock').on(t.safetyStock),
+    idxSkusVariantGroup: index('idx_skus_variant_group').on(t.variantGroupCode),
+    idxSkusPrimaryLocation: index('idx_skus_primary_location').on(t.primaryLocationId),
+    idxSkusWeight: index('idx_skus_weight').on(t.productWeight),
+    idxSkusMoq: index('idx_skus_moq').on(t.moq),
+    idxSkusGroupId: index('idx_skus_group_id').on(t.groupId), // WMS-internal grouping
 }));
 
 export const skuSuppliers = pgTable('sku_suppliers', {
@@ -342,6 +426,85 @@ export const skuCategories = pgTable('sku_categories', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ===== Phase 2 Step 4: New SKU Related Tables =====
+
+// SKU Variant Pricing: 다단계 가격 관리
+export const skuVariantPricing = pgTable('sku_variant_pricing', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    
+    // 3단계 가격
+    retailPrice: integer('retail_price'), // 소매가
+    specialSalePrice: integer('special_sale_price'), // 특가
+    wholesalePrice: integer('wholesale_price'), // 도매가
+    sellingPrice: integer('selling_price'), // 현재 판매가
+    
+    // 가격 유효기간
+    priceEffectiveDate: timestamp('price_effective_date', { withTimezone: true }),
+    priceExpiryDate: timestamp('price_expiry_date', { withTimezone: true }),
+    
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    uniqueSkuPricing: unique().on(t.skuId),
+}));
+
+// SKU Managers: SKU별 담당자 관리
+export const skuManagers = pgTable('sku_managers', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    
+    // 담당자 역할 (모두 nullable - 모든 SKU에 담당자가 필요한 것은 아님)
+    designerId: uuid('designer_id'), // 상품디자이너
+    purchaseManagerId: uuid('purchase_manager_id'), // 발주담당자
+    registrationManagerId: uuid('registration_manager_id'), // 상품등록자
+    
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    uniqueSkuManager: unique().on(t.skuId),
+}));
+
+// SKU Location Movements: SKU 위치 이동 추적
+export const skuLocationMovements = pgTable('sku_location_movements', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'cascade' })
+        .notNull(),
+    
+    barcode: varchar('barcode', { length: 64 }).notNull(),
+    
+    // 위치 추적
+    fromLocationId: uuid('from_location_id')
+        .references(() => locations.id, { onDelete: 'restrict' })
+        .notNull(),
+    toLocationId: uuid('to_location_id')
+        .references(() => locations.id, { onDelete: 'restrict' })
+        .notNull(),
+    
+    // 이동 상세
+    quantity: integer('quantity'), // Nullable for full SKU moves
+    reason: text('reason'),
+    status: varchar('status', { length: 20 }).notNull().default('completed'),
+    
+    // 감사
+    movedBy: uuid('moved_by'),
+    movementTimestamp: timestamp('movement_timestamp', { withTimezone: true }).notNull().defaultNow(),
+    
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    idxMovementSku: index('idx_movement_sku').on(t.skuId),
+    idxMovementBarcode: index('idx_movement_barcode').on(t.barcode),
+    idxMovementTimestamp: index('idx_movement_timestamp').on(t.movementTimestamp),
+}));
+
+// ===== End Phase 2 Step 4 Tables =====
+
 // Inventory Product Masters: 상위 재고상품 설계 단위(옵션 스키마/정책 보유)
 export const inventoryProductMasters = pgTable('inventory_product_masters', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -355,6 +518,51 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
 }, t => ({
     uqMasterCode: unique().on(t.masterCode),
 }));
+
+// ===== SKU GROUPS (WMS-internal warehouse organization) =====
+// Groups are metadata labels for organizing similar SKUs (e.g., color/size variants)
+// Key design: Groups do NOT cascade delete - SKUs survive when group is deleted (ON DELETE SET NULL)
+export const skuGroups = pgTable('sku_groups', {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    // Basic info
+    name: varchar('name', { length: 255 }).notNull(),
+    code: varchar('code', { length: 100 }).notNull().unique(),
+    description: text('description'),
+
+    // Optional link to WMS inventory master for consistency
+    inventoryMasterId: uuid('inventory_master_id')
+        .references(() => inventoryProductMasters.id, { onDelete: 'set null' }),
+
+    // Metadata
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    idxSkuGroupsCode: index('idx_sku_groups_code').on(t.code),
+    idxSkuGroupsName: index('idx_sku_groups_name').on(t.name),
+    idxSkuGroupsMaster: index('idx_sku_groups_master').on(t.inventoryMasterId),
+}));
+
+/**
+ * Helper function to generate SKU group code
+ * Customize this function to change the naming convention
+ * 
+ * @param name - Group name
+ * @param masterId - Optional inventory master ID
+ * @returns Generated group code
+ * 
+ * Example output: "GROUP-LASH-20251027-ABC1" 
+ */
+export function generateSkuGroupCode(name: string, masterId?: string): string {
+    const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const sanitizedName = name
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '-')
+        .substring(0, 20);
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    
+    return `GROUP-${sanitizedName}-${timestamp}-${random}`;
+}
 
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
@@ -951,13 +1159,42 @@ export const returns = pgTable('returns', {
     id: uuid('id').primaryKey().defaultRandom(),
     orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
     shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
     status: returnStatusEnum('status').notNull().default('requested'),
-    qcReason: varchar('qc_reason', { length: 255 }),
-    restockQuantity: integer('restock_quantity'),
-    disposeQuantity: integer('dispose_quantity'),
+    returnReason: varchar('return_reason', { length: 500 }), // 반품 사유
+    qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
+    qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
+    qcNotes: text('qc_notes'), // QC 검사 노트
+    restockQuantity: integer('restock_quantity').default(0),
+    disposeQuantity: integer('dispose_quantity').default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => ({
+    warehouseIdx: index('returns_warehouse_idx').on(t.warehouseId),
+    statusIdx: index('returns_status_idx').on(t.status),
+    orderIdx: index('returns_order_idx').on(t.orderId),
+}));
+
+export const returnItems = pgTable('return_items', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnId: uuid('return_id').references(() => returns.id, { onDelete: 'cascade' }).notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+    requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
+    receivedQuantity: integer('received_quantity').default(0), // 실제 입고 수량
+    qcPassedQuantity: integer('qc_passed_quantity').default(0), // QC 통과 수량
+    qcFailedQuantity: integer('qc_failed_quantity').default(0), // QC 실패 수량
+    restockedQuantity: integer('restocked_quantity').default(0), // 재입고 수량
+    disposedQuantity: integer('disposed_quantity').default(0), // 폐기 수량
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
+    qcStatus: varchar('qc_status', { length: 50 }).default('pending'), // pending, passed, failed
+    qcReason: text('qc_reason'), // QC 결과 사유
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    returnIdx: index('return_items_return_idx').on(t.returnId),
+    skuIdx: index('return_items_sku_idx').on(t.skuId),
+    qcStatusIdx: index('return_items_qc_status_idx').on(t.qcStatus),
+}));
 
 /*───────────────────────────
  * SETTINGS & HOLIDAYS
@@ -1020,6 +1257,14 @@ export const purchaseOrders = pgTable('purchase_orders', {
         .notNull(), // 최종 목적지 창고 (보통 부천)
     requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
+    // Audit workflow fields
+    auditStatus: poAuditStatusEnum('audit_status').default('draft'),
+    submittedForAuditAt: timestamp('submitted_for_audit_at', { withTimezone: true }),
+    submittedForAuditBy: uuid('submitted_for_audit_by'),
+    auditedAt: timestamp('audited_at', { withTimezone: true }),
+    auditedBy: uuid('audited_by'),
+    auditNotes: text('audit_notes'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1060,6 +1305,73 @@ export const inboundLists = pgTable('inbound_lists', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/*───────────────────────────
+ * STOCKTAKING (재고 실사)
+ *──────────────────────────*/
+// Stocktaking sessions table
+export const stocktakingSessions = pgTable('stocktaking_sessions', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+        .references(() => warehouses.id, { onDelete: 'restrict' })
+        .notNull(),
+    sessionName: varchar('session_name', { length: 255 }).notNull(),
+    status: stocktakingStatusEnum('status').notNull().default('draft'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    startedBy: uuid('started_by'), // FK to users (if available)
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Stocktaking lines table (individual count records)
+export const stocktakingLines = pgTable('stocktaking_lines', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+        .references(() => stocktakingSessions.id, { onDelete: 'cascade' })
+        .notNull(),
+    skuId: uuid('sku_id')
+        .references(() => skus.id, { onDelete: 'restrict' })
+        .notNull(),
+    locationId: uuid('location_id')
+        .references(() => locations.id, { onDelete: 'restrict' }),
+    expectedQuantity: integer('expected_quantity').notNull(),
+    countedQuantity: integer('counted_quantity'),
+    variance: integer('variance'), // Calculated: countedQuantity - expectedQuantity
+    scannedBarcode: varchar('scanned_barcode', { length: 64 }),
+    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, counted, verified
+    countedAt: timestamp('counted_at', { withTimezone: true }),
+    countedBy: uuid('counted_by'), // FK to users
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
+    idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
+    idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+}));
+
+// Stocktaking adjustments table (generated from variances)
+export const stocktakingAdjustments = pgTable('stocktaking_adjustments', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+        .references(() => stocktakingSessions.id, { onDelete: 'restrict' })
+        .notNull(),
+    lineId: uuid('line_id')
+        .references(() => stocktakingLines.id, { onDelete: 'restrict' })
+        .notNull(),
+    stockEventId: uuid('stock_event_id')
+        .references(() => stockEvents.id, { onDelete: 'restrict' }),
+    adjustmentQuantity: integer('adjustment_quantity').notNull(),
+    adjustmentType: varchar('adjustment_type', { length: 20 }).notNull(), // 'INCREASE' or 'DECREASE'
+    reason: varchar('reason', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    appliedBy: uuid('applied_by'),
+}, t => ({
+    idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
+    idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+}));
 
 /*───────────────────────────
  * INBOUND RECEIPTS (헤더/라인)
@@ -1387,7 +1699,13 @@ export const wmsTables = {
     skuBarcodes,
     categories,
     skuCategories,
+    // Phase 2 Step 4: New SKU tables
+    skuVariantPricing,
+    skuManagers,
+    skuLocationMovements,
     inventoryProductMasters,
+    // Phase 3 Week 7: SKU Groups
+    skuGroups,
     deliveryProfiles,
     warehouses,
     locationColumns,
@@ -1413,6 +1731,7 @@ export const wmsTables = {
     shipments,
     shipmentTracking,
     returns,
+    returnItems,
     salesVariantPolicies,
     settings,
     holidays,
@@ -1430,6 +1749,11 @@ export const wmsTables = {
     movementWorkLogs,
     auditLogs,
     outboxEvents,
+
+    // Stocktaking
+    stocktakingSessions,
+    stocktakingLines,
+    stocktakingAdjustments,
 
     // FOI 기반 확장 스키마
     productSkuMappings,
@@ -1492,6 +1816,37 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
     skuSuppliers: many(skuSuppliers),
     skuCategories: many(skuCategories),
     skuBarcodes: many(skuBarcodes),
+    // Phase 2 Step 4: New relations
+    pricing: one(skuVariantPricing, {
+        fields: [skus.id],
+        references: [skuVariantPricing.skuId],
+    }),
+    managers: one(skuManagers, {
+        fields: [skus.id],
+        references: [skuManagers.skuId],
+    }),
+    locationMovements: many(skuLocationMovements),
+    // WMS-internal group relation (Phase 3 - Week 7)
+    group: one(skuGroups, {
+        fields: [skus.groupId],
+        references: [skuGroups.id],
+    }),
+    // Location references
+    primaryLocation: one(locations, {
+        fields: [skus.primaryLocationId],
+        references: [locations.id],
+        relationName: 'primaryLocation',
+    }),
+    secondaryLocation: one(locations, {
+        fields: [skus.secondaryLocationId],
+        references: [locations.id],
+        relationName: 'secondaryLocation',
+    }),
+    logisticsPartner: one(suppliers, {
+        fields: [skus.logisticsPartnerId],
+        references: [suppliers.id],
+        relationName: 'logisticsPartner',
+    }),
     // Stock relations
     stockEvents: many(stockEvents),
     stockLedgers: many(stockLedgers),
@@ -1546,10 +1901,55 @@ export const skuBarcodesRelations = relations(skuBarcodes, ({ one }) => ({
     }),
 }));
 
+// ===== Phase 2 Step 4: New Table Relations =====
+
+export const skuVariantPricingRelations = relations(skuVariantPricing, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuVariantPricing.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const skuManagersRelations = relations(skuManagers, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuManagers.skuId],
+        references: [skus.id],
+    }),
+}));
+
+export const skuLocationMovementsRelations = relations(skuLocationMovements, ({ one }) => ({
+    sku: one(skus, {
+        fields: [skuLocationMovements.skuId],
+        references: [skus.id],
+    }),
+    fromLocation: one(locations, {
+        fields: [skuLocationMovements.fromLocationId],
+        references: [locations.id],
+        relationName: 'movementFrom',
+    }),
+    toLocation: one(locations, {
+        fields: [skuLocationMovements.toLocationId],
+        references: [locations.id],
+        relationName: 'movementTo',
+    }),
+}));
+
+// ===== End Phase 2 Step 4 Relations =====
+
 // Inventory Master Relations
 export const inventoryProductMastersRelations = relations(inventoryProductMasters, ({ many }) => ({
     skus: many(skus),
     productMatchings: many(productMatchings),
+    skuGroups: many(skuGroups),
+}));
+
+// SKU Groups Relations (Phase 3 - Week 7)
+export const skuGroupsRelations = relations(skuGroups, ({ one, many }) => ({
+    inventoryMaster: one(inventoryProductMasters, {
+        fields: [skuGroups.inventoryMasterId],
+        references: [inventoryProductMasters.id],
+    }),
+    skus: many(skus),
 }));
 
 
@@ -2104,6 +2504,46 @@ export const settingsRelations = relations(settings, ({ one }) => ({
     }),
 }));
 
+// Stocktaking Relations
+export const stocktakingSessionsRelations = relations(stocktakingSessions, ({ one, many }) => ({
+    warehouse: one(warehouses, {
+        fields: [stocktakingSessions.warehouseId],
+        references: [warehouses.id],
+    }),
+    lines: many(stocktakingLines),
+    adjustments: many(stocktakingAdjustments),
+}));
+
+export const stocktakingLinesRelations = relations(stocktakingLines, ({ one }) => ({
+    session: one(stocktakingSessions, {
+        fields: [stocktakingLines.sessionId],
+        references: [stocktakingSessions.id],
+    }),
+    sku: one(skus, {
+        fields: [stocktakingLines.skuId],
+        references: [skus.id],
+    }),
+    location: one(locations, {
+        fields: [stocktakingLines.locationId],
+        references: [locations.id],
+    }),
+}));
+
+export const stocktakingAdjustmentsRelations = relations(stocktakingAdjustments, ({ one }) => ({
+    session: one(stocktakingSessions, {
+        fields: [stocktakingAdjustments.sessionId],
+        references: [stocktakingSessions.id],
+    }),
+    line: one(stocktakingLines, {
+        fields: [stocktakingAdjustments.lineId],
+        references: [stocktakingLines.id],
+    }),
+    stockEvent: one(stockEvents, {
+        fields: [stocktakingAdjustments.stockEventId],
+        references: [stockEvents.id],
+    }),
+}));
+
 
 export const wmsRelations = {
     // 모든 관계들 - Core Master Data Relations
@@ -2189,6 +2629,11 @@ export const wmsRelations = {
 
     // Settings Relations
     settingsRelations,
+
+    // Stocktaking Relations
+    stocktakingSessionsRelations,
+    stocktakingLinesRelations,
+    stocktakingAdjustmentsRelations,
 } as const;
 
 // Complete schema for queries (includes both tables and views)

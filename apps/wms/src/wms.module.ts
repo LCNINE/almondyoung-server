@@ -6,6 +6,7 @@ import { OrderModule } from './order/order.module';
 import { MovementModule } from './movement/movement.module';
 import { InboundModule } from './inbound/inbound.module';
 import { SharedModule } from './shared/shared.module';
+import { StocktakingModule } from './stocktaking/stocktaking.module';
 import { DbModule } from '@app/db';
 import { wmsSchema } from '../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
@@ -24,6 +25,7 @@ import { ConfigModule } from '@nestjs/config';
     InboundModule,
     SharedModule,
     OrderModule,
+    StocktakingModule,
   ],
   controllers: [WmsController],
   providers: [WmsService],
