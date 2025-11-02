@@ -9,6 +9,7 @@ import {
   Query,
   HttpException,
   HttpStatus,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,6 +31,11 @@ import {
   CategoryTreeResponseDto,
   CategoryPathResponseDto,
 } from '../schemas/categories.schema';
+import {
+  UpdateDisplaySettingsDto,
+  UpdateSeoConfigDto,
+  UpdateTemplateConfigDto,
+} from '../dto/category-config.dto';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -355,6 +361,152 @@ export class ProductCategoriesController {
       }
       throw new HttpException(
         `Failed to add products: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ===== Phase 2: Category Configuration Endpoints =====
+
+  @Patch(':id/display-settings')
+  @ApiOperation({
+    summary: '카테고리 표시 설정 업데이트',
+    description: '카테고리의 표시 관련 설정을 업데이트합니다.',
+  })
+  @ApiParam({ name: 'id', description: '카테고리 ID' })
+  @ApiBody({ type: UpdateDisplaySettingsDto })
+  @ApiResponse({
+    status: 200,
+    description: '표시 설정 업데이트 성공',
+    type: CategoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
+  async updateDisplaySettings(
+    @Param('id') categoryId: string,
+    @Body() dto: UpdateDisplaySettingsDto,
+  ): Promise<CategoryResponseDto> {
+    try {
+      return await this.productCategoriesService.updateDisplaySettings(
+        categoryId,
+        dto,
+      ) as unknown as Promise<CategoryResponseDto>;
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to update display settings: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Patch(':id/seo')
+  @ApiOperation({
+    summary: '카테고리 SEO 설정 업데이트',
+    description: '카테고리의 SEO 관련 설정을 업데이트합니다.',
+  })
+  @ApiParam({ name: 'id', description: '카테고리 ID' })
+  @ApiBody({ type: UpdateSeoConfigDto })
+  @ApiResponse({
+    status: 200,
+    description: 'SEO 설정 업데이트 성공',
+    type: CategoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
+  async updateSeoConfig(
+    @Param('id') categoryId: string,
+    @Body() dto: UpdateSeoConfigDto,
+  ): Promise<CategoryResponseDto> {
+    try {
+      return await this.productCategoriesService.updateSeoConfig(
+        categoryId,
+        dto,
+      ) as unknown as Promise<CategoryResponseDto>;
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to update SEO config: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Patch(':id/template')
+  @ApiOperation({
+    summary: '카테고리 템플릿 설정 업데이트',
+    description: '카테고리의 템플릿 관련 설정을 업데이트합니다.',
+  })
+  @ApiParam({ name: 'id', description: '카테고리 ID' })
+  @ApiBody({ type: UpdateTemplateConfigDto })
+  @ApiResponse({
+    status: 200,
+    description: '템플릿 설정 업데이트 성공',
+    type: CategoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
+  async updateTemplateConfig(
+    @Param('id') categoryId: string,
+    @Body() dto: UpdateTemplateConfigDto,
+  ): Promise<CategoryResponseDto> {
+    try {
+      return await this.productCategoriesService.updateTemplateConfig(
+        categoryId,
+        dto,
+      ) as unknown as Promise<CategoryResponseDto>;
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to update template config: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Patch(':id/visibility')
+  @ApiOperation({
+    summary: '카테고리 표시 여부 업데이트',
+    description: '카테고리의 표시 여부를 업데이트합니다.',
+  })
+  @ApiParam({ name: 'id', description: '카테고리 ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        visible: {
+          type: 'boolean',
+          description: '표시 여부',
+          example: true,
+        },
+      },
+      required: ['visible'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: '표시 여부 업데이트 성공',
+    type: CategoryResponseDto,
+  })
+  @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
+  async updateVisibility(
+    @Param('id') categoryId: string,
+    @Body('visible') visible: boolean,
+  ): Promise<CategoryResponseDto> {
+    try {
+      return await this.productCategoriesService.updateVisibility(
+        categoryId,
+        visible,
+      ) as unknown as Promise<CategoryResponseDto>;
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to update visibility: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

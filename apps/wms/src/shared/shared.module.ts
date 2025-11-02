@@ -13,6 +13,7 @@ import { UnifiedReservationService } from './services/unified-reservation.servic
 import { ReservationLifecycleService } from './services/reservation-lifecycle.service';
 import { MetricsController } from './controllers/metrics.controller';
 import { HealthController } from './controllers/health.controller';
+import { BarcodeGenerationController } from './controllers/barcode-generation.controller';
 
 @Module({
     imports: [
@@ -24,7 +25,7 @@ import { HealthController } from './controllers/health.controller';
             schema: wmsTables,
         }),
     ],
-    controllers: [MetricsController, HealthController],
+    controllers: [MetricsController, HealthController, BarcodeGenerationController],
     providers: [
         BarcodeService,
         FifoService,

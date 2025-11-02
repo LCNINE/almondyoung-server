@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
+import * as bwipjs from 'bwip-js';
 
 export interface BarcodeParseResult {
   type: 'sku' | 'location' | 'fulfillment_order' | 'fulfillment_order_item' | 'unknown';
@@ -305,5 +306,150 @@ export class BarcodeService {
       this.logger.log(`Location access validated: ${locationCode} in warehouse ${warehouseId}`);
       return true;
     }, tx);
+  }
+
+  /**
+   * 바코드 이미지를 Base64 PNG로 생성
+   */
+  async generateBarcodeImage(
+    value: string,
+    format: 'CODE128' | 'QR' | 'EAN13' | 'CODE39' = 'CODE128',
+    options?: {
+      scale?: number;
+      height?: number;
+      includetext?: boolean;
+      textxalign?: 'left' | 'center' | 'right' | 'offleft' | 'offright' | 'justify';
+      textsize?: number;
+    }
+  ): Promise<string> {
+    try {
+      const barcodeTypeMap: Record<string, string> = {
+        'CODE128': 'code128',
+        'QR': 'qrcode',
+        'EAN13': 'ean13',
+        'CODE39': 'code39',
+      };
+
+      const barcodeType = barcodeTypeMap[format] || 'code128';
+
+      this.logger.log(`Generating ${format} barcode for value: ${value}`);
+
+      const png = await bwipjs.toBuffer({
+        bcid: barcodeType,
+        text: value,
+        scale: options?.scale ?? 3,
+        height: options?.height ?? 10,
+        includetext: options?.includetext ?? true,
+        textxalign: options?.textxalign ?? 'center',
+        textsize: options?.textsize ?? 10,
+      } as any);
+
+      return Buffer.from(png).toString('base64');
+    } catch (error) {
+      this.logger.error(`Failed to generate barcode: ${error.message}`);
+      throw new BadRequestException(`Failed to generate barcode: ${error.message}`);
+    }
+  }
+
+  /**
+   * 바코드 포맷 검증
+   */
+  validateBarcodeFormat(value: string, format: string): boolean {
+    switch (format) {
+      case 'CODE128':
+        return value.length >= 1 && value.length <= 128;
+      case 'QR':
+        return value.length >= 1 && value.length <= 2000;
+      case 'EAN13':
+        return /^\d{13}$/.test(value);
+      case 'CODE39':
+        return /^[A-Z0-9\-\.\ \$\/\+\%]+$/.test(value) && value.length >= 1 && value.length <= 80;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * SKU용 바코드 이미지 생성
+   */
+  async generateSkuBarcodeImage(skuId: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+    barcodeValue: string;
+    format: string;
+    imageBase64: string;
+  }> {
+    const barcodeValue = this.generateSkuBarcode(skuId);
+    const imageBase64 = await this.generateBarcodeImage(barcodeValue, format);
+
+    return {
+      barcodeValue,
+      format,
+      imageBase64,
+    };
+  }
+
+  /**
+   * Location용 바코드 이미지 생성
+   */
+  async generateLocationBarcodeImage(locationCode: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+    barcodeValue: string;
+    format: string;
+    imageBase64: string;
+  }> {
+    const barcodeValue = this.generateLocationBarcode(locationCode);
+    const imageBase64 = await this.generateBarcodeImage(barcodeValue, format);
+
+    return {
+      barcodeValue,
+      format,
+      imageBase64,
+    };
+  }
+
+  /**
+   * Fulfillment Order용 바코드 이미지 생성
+   */
+  async generateFulfillmentOrderBarcodeImage(fulfillmentOrderId: string, format: 'CODE128' | 'QR' = 'CODE128'): Promise<{
+    barcodeValue: string;
+    format: string;
+    imageBase64: string;
+  }> {
+    const barcodeValue = this.generateFulfillmentOrderBarcode(fulfillmentOrderId);
+    const imageBase64 = await this.generateBarcodeImage(barcodeValue, format);
+
+    return {
+      barcodeValue,
+      format,
+      imageBase64,
+    };
+  }
+
+  /**
+   * 사용자 정의 바코드 이미지 생성
+   */
+  async generateCustomBarcodeImage(
+    value: string, 
+    format: 'CODE128' | 'QR' | 'EAN13' | 'CODE39' = 'CODE128',
+    options?: {
+      scale?: number;
+      height?: number;
+      includetext?: boolean;
+    }
+  ): Promise<{
+    barcodeValue: string;
+    format: string;
+    imageBase64: string;
+  }> {
+    // 포맷 검증
+    if (!this.validateBarcodeFormat(value, format)) {
+      throw new BadRequestException(`Invalid barcode value for format ${format}: ${value}`);
+    }
+
+    const imageBase64 = await this.generateBarcodeImage(value, format, options);
+
+    return {
+      barcodeValue: value,
+      format,
+      imageBase64,
+    };
   }
 }

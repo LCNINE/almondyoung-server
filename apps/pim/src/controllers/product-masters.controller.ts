@@ -321,33 +321,129 @@ export class ProductMastersController {
 
   @Delete(':id')
   @ApiOperation({
-    summary: '제품 마스터 삭제',
-    description: '제품 마스터를 삭제합니다.',
+    summary: '제품 마스터 소프트 삭제',
+    description: '제품 마스터를 소프트 삭제합니다. 실제로 데이터는 삭제되지 않으며 복원이 가능합니다.',
   })
   @ApiParam({ name: 'id', description: '삭제할 제품 마스터 ID' })
-  @ApiResponse({ status: 200, description: '제품 마스터 삭제 성공' })
+  @ApiResponse({ status: 200, description: '제품 마스터 소프트 삭제 성공' })
   @ApiResponse({ status: 400, description: '삭제 요구사항 불충족' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async deleteMaster(@Param('id') id: string): Promise<void> {
+  async deleteMaster(
+    @Param('id') id: string,
+    @Body('userId') userId: string,
+  ): Promise<ProductMasterDto> {
     try {
-      const deleted = await this.productMastersService.deleteMaster(id);
+      // TODO: Get userId from JWT auth
+      const userIdToUse = userId || 'system';
+      const deleted = await this.productMastersService.softDelete(id, userIdToUse);
 
-      if (!deleted) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
+      return {
+        ...deleted,
+        createdAt: deleted.createdAt?.toISOString() || null,
+        updatedAt: deleted.updatedAt?.toISOString() || null,
+      } as unknown as ProductMasterDto;
     } catch (error) {
       if (
-        error.message === 'Master not found' ||
+        error.message.includes('not found') ||
         error.status === HttpStatus.NOT_FOUND
       ) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      if (error.message.includes('already deleted')) {
+        throw new HttpException('Product is already deleted', HttpStatus.BAD_REQUEST);
       }
       throw new HttpException(
-        'Failed to delete master',
+        `Failed to delete master: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('deleted')
+  @ApiOperation({
+    summary: '삭제된 제품 마스터 목록 조회',
+    description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async getDeleted(): Promise<ProductMasterDto[]> {
+    try {
+      const deleted = await this.productMastersService.findDeleted();
+      return deleted.map(master => ({
+        ...master,
+        createdAt: master.createdAt?.toISOString() || null,
+        updatedAt: master.updatedAt?.toISOString() || null,
+      })) as unknown as ProductMasterDto[];
+    } catch (error) {
+      throw new HttpException(
+        'Failed to get deleted masters',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post(':id/restore')
+  @ApiOperation({
+    summary: '제품 마스터 복원',
+    description: '소프트 삭제된 제품 마스터를 복원합니다.',
+  })
+  @ApiParam({ name: 'id', description: '복원할 제품 마스터 ID' })
+  @ApiResponse({ status: 200, description: '제품 마스터 복원 성공' })
+  @ApiResponse({ status: 400, description: '제품이 삭제되지 않았음' })
+  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async restore(
+    @Param('id') id: string,
+    @Body('userId') userId: string,
+  ): Promise<ProductMasterDto> {
+    try {
+      // TODO: Get userId from JWT auth
+      const userIdToUse = userId || 'system';
+      const restored = await this.productMastersService.restore(id, userIdToUse);
+
+      return {
+        ...restored,
+        createdAt: restored.createdAt?.toISOString() || null,
+        updatedAt: restored.updatedAt?.toISOString() || null,
+      } as unknown as ProductMasterDto;
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('not deleted')) {
+        throw new HttpException('Product is not deleted', HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to restore master: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Delete(':id/permanent')
+  @ApiOperation({
+    summary: '제품 마스터 영구 삭제',
+    description: '제품 마스터를 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다.',
+  })
+  @ApiParam({ name: 'id', description: '영구 삭제할 제품 마스터 ID' })
+  @ApiResponse({ status: 200, description: '제품 마스터 영구 삭제 성공' })
+  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async hardDelete(
+    @Param('id') id: string,
+    @Body('userId') userId: string,
+  ): Promise<{ deleted: boolean }> {
+    try {
+      // TODO: Get userId from JWT auth
+      const userIdToUse = userId || 'system';
+      return await this.productMastersService.hardDelete(id, userIdToUse);
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to hard delete master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
