@@ -25,7 +25,12 @@ export class OutboxDispatcherService {
       .limit(limit);
     for (const ev of rows) {
       try {
-        await this.publisher?.publishEvent?.(ev.eventType as any, ev.payload as any, { partitionKey: ev.partitionKey } as any);
+        await this.publisher?.publishEvent?.({
+          eventType: ev.eventType as any,
+          aggregateId: ev.aggregateId,
+          payload: ev.payload as any,
+          metadata: { partitionKey: ev.partitionKey }
+        });
         await this.db.db.update(wmsTables.outboxEvents).set({ status: 'published', publishedAt: new Date(), attempts: ev.attempts + 1 }).where(eq(wmsTables.outboxEvents.id, ev.id));
       } catch (err) {
         this.logger.warn(`Failed to publish ${ev.id}: ${String(err)}`);
