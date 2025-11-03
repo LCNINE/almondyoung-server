@@ -81,7 +81,7 @@ export class AuthService {
     // 서버쪽 주소
     const baseUrl = process.env.production
       ? AUTH_EMAIL_VERIFY_CALLBACK_URL
-      : 'http://localhost:5000/auth/callback/signup';
+      : 'http://localhost:3030/auth/callback/signup';
 
     return new URL(
       `/auth/callback/signup?redirect_to=${redirectTo}`,
@@ -129,6 +129,9 @@ export class AuthService {
       thirdPartySharing,
       marketingConsent,
     } = signUpDto;
+
+    // let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
+    let expiresIn = '90d';
     try {
       // 이메일로 기존 사용자 조회
       const existingUser = await this.usersService.findUserByEmail(
@@ -142,9 +145,6 @@ export class AuthService {
             '이미 가입된 이메일입니다. 로그인을 시도해주세요.',
           );
         }
-
-        // 미인증 이메일인 경우 기존 토큰 삭제 후 재발송
-        const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
         // 새로운 인증 토큰 생성
         const verificationToken = this.jwtService.sign(
@@ -163,14 +163,14 @@ export class AuthService {
         );
 
         // 이메일 재발송
-        await this.notificationPublisher.publishUserVerificationEvent({
-          userId: existingUser.id,
-          email: existingUser.email,
-          name: existingUser.username,
-          verificationToken: verificationToken,
-          callbackUrl: this.getEmailVerifyCallbackUrl(),
-          redirectTo: this.getEmailVerifyRedirectUrl(),
-        });
+        // await this.notificationPublisher.publishUserVerificationEvent({
+        //   userId: existingUser.id,
+        //   email: existingUser.email,
+        //   name: existingUser.username,
+        //   verificationToken: verificationToken,
+        //   callbackUrl: this.getEmailVerifyCallbackUrl(),
+        //   redirectTo: this.getEmailVerifyRedirectUrl(),
+        // });
 
         return {
           message:
@@ -221,8 +221,6 @@ export class AuthService {
           marketingConsent,
         });
 
-        const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
-
         // 이메일 인증용 토큰 생성
         const verificationToken = this.jwtService.sign(
           { sub: user.id },
@@ -242,15 +240,15 @@ export class AuthService {
           tx,
         );
 
-        // 이메일 발송
-        await this.notificationPublisher.publishUserVerificationEvent({
-          userId: user.id,
-          email: user.email,
-          name: user.username,
-          verificationToken: verificationToken,
-          callbackUrl: this.getEmailVerifyCallbackUrl(),
-          redirectTo: this.getEmailVerifyRedirectUrl(redirect_to),
-        });
+        // // 이메일 발송
+        // await this.notificationPublisher.publishUserVerificationEvent({
+        //   userId: user.id,
+        //   email: user.email,
+        //   name: user.username,
+        //   verificationToken: verificationToken,
+        //   callbackUrl: this.getEmailVerifyCallbackUrl(),
+        //   redirectTo: this.getEmailVerifyRedirectUrl(redirect_to),
+        // });
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
@@ -328,15 +326,15 @@ export class AuthService {
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(verificationToken.user);
 
-      await this.eventPublisher.publishEvent({
-        eventType: 'UserCreated',
-        aggregateId: verificationToken.user.id,
-        payload: {
-          userId: verificationToken.user.id,
-          email: verificationToken.user.email,
-          name: verificationToken.user.username,
-        },
-      });
+      // await this.eventPublisher.publishEvent({
+      //   eventType: 'UserCreated',
+      //   aggregateId: verificationToken.user.id,
+      //   payload: {
+      //     userId: verificationToken.user.id,
+      //     email: verificationToken.user.email,
+      //     name: verificationToken.user.username,
+      //   },
+      // });
 
       return reply.status(302).redirect(redirectTo);
     } catch (error) {
@@ -707,7 +705,8 @@ export class AuthService {
       email: user.email,
     };
 
-    const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
+    // const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
+    const expiresIn = '90d';
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('AUTH_SECRET'),

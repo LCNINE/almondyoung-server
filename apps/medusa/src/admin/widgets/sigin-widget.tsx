@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { sdk } from '../lib/sdk';
 
 const USER_SERVICE_URL =
-  import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:5000';
+  import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:3030';
 
 const STORAGE_KEY = 'almondyoung_saved_id';
 
