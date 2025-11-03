@@ -27,11 +27,12 @@ FROM base AS builder
 # 의존성 복사
 COPY --from=deps /app/node_modules ./node_modules
 
-# 소스 코드 복사
-COPY . .
-
-# TypeScript 설정 및 라이브러리 복사
+# 필요한 설정 파일들만 복사
+COPY package*.json ./
 COPY tsconfig*.json ./
+COPY nest-cli.json ./
+
+# 라이브러리와 WMS 앱만 복사 (변경 감지 최적화)
 COPY libs/ ./libs/
 COPY apps/wms/ ./apps/wms/
 
