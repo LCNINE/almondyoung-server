@@ -4,8 +4,11 @@ const {
   Modules,
   ContainerRegistrationKeys,
 } = require('@medusajs/framework/utils');
+const path = require('path');
 
-loadEnv(process.env.NODE_ENV || 'development', process.cwd());
+// Monorepo 루트에서 .env 파일 로드
+const rootDir = path.resolve(__dirname, '../..');
+loadEnv(process.env.NODE_ENV || 'development', rootDir);
 
 module.exports = defineConfig({
   projectConfig: {
