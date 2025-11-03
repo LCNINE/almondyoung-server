@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and, lte, asc } from 'drizzle-orm';
-import { StreamPublisher } from '@app/events';
 
 
 @Injectable()
@@ -10,10 +9,13 @@ export class OutboxDispatcherService {
   private readonly logger = new Logger(OutboxDispatcherService.name);
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly publisher?: StreamPublisher<any>,
   ) {}
 
   async dispatchBatch(limit = 100) {
+    // TODO: 이벤트 시스템 구축 시 활성화
+    // 현재는 outbox에 저장만 하고 발행하지 않음
+    this.logger.debug('OutboxDispatcher is currently disabled. Events are stored but not published.');
+
     const now = new Date();
     const rows = await this.db.db.select()
       .from(wmsTables.outboxEvents)
@@ -23,21 +25,27 @@ export class OutboxDispatcherService {
       ))
       .orderBy(asc(wmsTables.outboxEvents.nextAttemptAt))
       .limit(limit);
-    for (const ev of rows) {
-      try {
-        await this.publisher?.publishEvent?.({
-          eventType: ev.eventType as any,
-          aggregateId: ev.aggregateId,
-          payload: ev.payload as any,
-          metadata: { partitionKey: ev.partitionKey }
-        });
-        await this.db.db.update(wmsTables.outboxEvents).set({ status: 'published', publishedAt: new Date(), attempts: ev.attempts + 1 }).where(eq(wmsTables.outboxEvents.id, ev.id));
-      } catch (err) {
-        this.logger.warn(`Failed to publish ${ev.id}: ${String(err)}`);
-        const next = new Date(Date.now() + Math.min(60000, Math.pow(2, Math.min(6, ev.attempts)) * 1000));
-        await this.db.db.update(wmsTables.outboxEvents).set({ status: 'pending', attempts: ev.attempts + 1, nextAttemptAt: next }).where(eq(wmsTables.outboxEvents.id, ev.id));
-      }
+
+    if (rows.length > 0) {
+      this.logger.log(`Found ${rows.length} pending outbox events (not publishing yet)`);
     }
+
+    // 나중에 이벤트 시스템 구축 시 아래 주석 해제
+    // for (const ev of rows) {
+    //   try {
+    //     await this.publisher.publishEvent({
+    //       eventType: ev.eventType as any,
+    //       aggregateId: ev.aggregateId,
+    //       payload: ev.payload as any,
+    //       metadata: { partitionKey: ev.partitionKey }
+    //     });
+    //     await this.db.db.update(wmsTables.outboxEvents).set({ status: 'published', publishedAt: new Date(), attempts: ev.attempts + 1 }).where(eq(wmsTables.outboxEvents.id, ev.id));
+    //   } catch (err) {
+    //     this.logger.warn(`Failed to publish ${ev.id}: ${String(err)}`);
+    //     const next = new Date(Date.now() + Math.min(60000, Math.pow(2, Math.min(6, ev.attempts)) * 1000));
+    //     await this.db.db.update(wmsTables.outboxEvents).set({ status: 'pending', attempts: ev.attempts + 1, nextAttemptAt: next }).where(eq(wmsTables.outboxEvents.id, ev.id));
+    //   }
+    // }
   }
 }
 
