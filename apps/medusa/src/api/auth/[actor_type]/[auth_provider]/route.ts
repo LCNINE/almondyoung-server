@@ -47,7 +47,10 @@ export const GET = async (
     if (success && authIdentity) {
       const { http } = config.projectConfig;
 
-      if (!http?.jwtSecret) {
+      if (
+        !http?.jwtSecret ||
+        (typeof http.jwtSecret === 'string' && http.jwtSecret.trim() === '')
+      ) {
         throw new MedusaError(
           MedusaError.Types.INVALID_DATA,
           'JWT secret is not configured',
