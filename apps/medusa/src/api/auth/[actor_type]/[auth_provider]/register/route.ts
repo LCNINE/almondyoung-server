@@ -84,6 +84,15 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     }
   } catch (error) {
     console.error('Registration 에러:', error);
+
+    // 이미 존재하는 이메일인 경우 409 Conflict로 처리
+    if (error.message?.includes('already exists')) {
+      return res.status(409).json({
+        error: error.message,
+        type: 'CONFLICT',
+      });
+    }
+
     if (error instanceof MedusaError) {
       return res
         .status(error.type === MedusaError.Types.INVALID_DATA ? 400 : 500)
