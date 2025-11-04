@@ -3,7 +3,6 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { AxiosResponse } from 'axios';
-import { DlqMonitoringService } from '../dlq-monitoring.service';
 
 @Injectable()
 export class WmsApiService {
@@ -15,7 +14,6 @@ export class WmsApiService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-    private readonly dlqMonitoring: DlqMonitoringService,
   ) {
     this.baseUrl = this.configService.get<string>(
       'WMS_API_URL',
@@ -238,12 +236,8 @@ export class WmsApiService {
     }
 
     if (lastError) {
-      await this.dlqMonitoring.recordDlqEntry(
-        operationId,
-        { operation: operationId },
-        lastError,
-        { maxRetries: this.maxRetries },
-      );
+      // NOTE: DlqMonitoringService 제거됨 (메모리 기반 MVP 코드였음)
+      // WMS API 호출 실패 시 DLQ 처리가 필요하다면 @app/events 기반으로 구현 권장
       throw lastError;
     }
 

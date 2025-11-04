@@ -25,7 +25,7 @@ export class ReferralRewardService {
   async rewardIfEligible(params: {
     mallId: string;
     memberId: string;
-    partnerId: number; // 포인트 소유자(지급 대상) partner.id
+    partnerId: string; // 포인트 소유자(지급 대상) partner.id
     amount: number;
     reason?: string; // 예: 'referral_bonus'
     memo?: string; // 로깅용

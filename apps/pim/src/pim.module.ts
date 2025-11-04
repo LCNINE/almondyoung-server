@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { PimController } from './pim.controller';
 import { PimService } from './pim.service';
@@ -14,6 +15,7 @@ import { SalesChannelsController } from './controllers/sales-channels.controller
 import { SalesChannelsService } from './services/sales-channels.service';
 import { FileUploadController } from './controllers/file-upload.controller';
 import { ImageService } from './services/image.service';
+import { validatePimEnv } from './config/env.validation';
 
 // Phase 1 new imports
 import { ProductApprovalController } from './controllers/product-approval.controller';
@@ -41,6 +43,10 @@ import { pimSchema } from './schema';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validatePimEnv,
+    }),
     // PIM 전체 스키마를 한 곳에서 관리
     DbModule.forRoot({
       config: {

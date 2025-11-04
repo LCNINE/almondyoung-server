@@ -26,8 +26,8 @@ import { NaverClaimClient } from './services/clients/naver/naver-claim.client';
 import { NaverProductClient } from './services/clients/naver/naver-product.client';
 import { NaverAuthService } from './services/clients/naver/naver-auth.client';
 import { WmsApiService } from './services/apis/wms.api.service';
-import { DlqMonitoringService } from './services/dlq-monitoring.service';
 import { ConfigModule } from '@nestjs/config';
+import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
 import { ChannelSyncManager } from './services/channel-sync.manager';
 import { ChannelCommandManager } from './services/channel-command.manager';
@@ -74,7 +74,10 @@ function createKafkaConfig() {
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateChannelAdapterEnv,
+    }),
     HttpModule,
     DbModule.forRoot({
       config: {
@@ -116,7 +119,7 @@ function createKafkaConfig() {
     NaverProductClient,
     NaverAuthService,
     WmsApiService,
-    DlqMonitoringService,
+    // NOTE: DlqMonitoringService 제거됨 (메모리 기반 MVP 코드였음)
 
     // 🆕 리팩토링된 레이어 클래스들
     ChannelDataReader,

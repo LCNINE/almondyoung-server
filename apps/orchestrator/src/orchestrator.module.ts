@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
+import { validateOrchestratorEnv } from './config/env.validation';
 import { WorkflowController } from './controllers/workflow.controller';
 import { UnifiedMasterWorkflow } from './workflows/unified-master.workflow';
 import { PimApiService } from './services/pim.api.service';
@@ -10,6 +11,7 @@ import { WmsApiService } from './services/wms.api.service';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateOrchestratorEnv,
       envFilePath: 'apps/orchestrator/.env',
     }),
     HttpModule.register({

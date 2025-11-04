@@ -83,7 +83,7 @@ export class OrderEventsListener {
     try {
       // 3. 포인트 적립
       const result = await this.pointService.addPoints({
-        partnerId: Number(event.customerId),
+        partnerId: event.customerId,
         amount: event.earnPoints,
         reason: 'PURCHASE',
         orderId: event.orderId,
