@@ -91,7 +91,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
     @CurrentUser() user: schema.User,
   ) {
-    return this.authService.restoreToken(user, res);
+    return await this.authService.restoreToken(user, res);
   }
 
   @ApiOperation({ summary: '비밀번호 변경' })
