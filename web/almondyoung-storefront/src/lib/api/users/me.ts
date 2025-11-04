@@ -14,15 +14,12 @@ export const fetchCurrentUser = cache(async (): Promise<UserDetail | null> => {
   const countryCode = pathname.split("/")[1] || "kr"
 
   try {
-    const dto = await serverApi(
+    return await serverApi(
       USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.USER_DETAILS,
       {
         cache: "no-store",
       }
     )
-
-    console.log("dto", dto)
-    return dto
   } catch (error) {
     throw error
   }
