@@ -1,0 +1,142 @@
+{
+  "data": [
+    {
+      "id": "01999bef-42b5-76ec-b93e-f12051e1af62",
+      "name": "[웰컴 멤버십] 옐로우 색소컵 소형 100개입",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/6a59216bec6d8dc723157aed3d959456.png",
+      "basePrice": 3900,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:52.722Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-3ade-7283-9852-122c6a99534a",
+      "name": "[웰컴 멤버십] 소형 우드 스파츌라 100매입",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/fbffbbe2244df9938bf66bdc6d3ec282.png",
+      "basePrice": 4800,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:50.715Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-2d14-71d8-8b03-ea081bedca43",
+      "name": "[웰컴 멤버십] 브라질리언 비키니 라인 왁싱 다우니 커터",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/effb1f30254a9997d76a58fc7acfd576.png",
+      "basePrice": 1200,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:47.187Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-2621-76ed-ab9f-2680e2b9f22c",
+      "name": "[웰컴 멤버십] 실리콘 색소컵 홀더 1EA 랜덤",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/500ef66a1e7619fa040ba6dc405d31c9.png",
+      "basePrice": 2300,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:45.406Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-1866-706d-8d3e-8283c7e8d52f",
+      "name": "[웰컴 멤버십] 뉴 마이크로 브러쉬 100개입",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/bc7c458a1fdc3abeb64a2d1c6cf5856f.png",
+      "basePrice": 2300,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:41.890Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-c5cb-7179-83e9-c200e29e7520",
+      "name": "트위지스트랩 트위저",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/ebc971608ec99b92f8fa57e68e11ae82.jpg",
+      "basePrice": 12000,
+      "membershipPrice": 11000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:13.373Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bd7-be93-74a1-acfa-6ef9673fddd4",
+      "name": "트위지스트랩 올인원 워머기 1구",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202310/a2226a33c1aee89e084e529a0fe18032.jpg",
+      "basePrice": 28000,
+      "membershipPrice": 26000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:17:11.523Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-e80e-71ac-b2dd-c1cad99e45f5",
+      "name": "노몬드 엠보 & 수지 니들",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/31e8a34d26c8a00eee9ed5a86cdb63bd.png",
+      "basePrice": 4990,
+      "membershipPrice": 3000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:40.148Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-aca2-7131-abb0-0190d8fddd39",
+      "name": "MAST 마스트 AIRBOT WQ4913 + P320 펜 머신",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202411/95aa5a7c014ad9ec68354848293e5ebe.jpg",
+      "basePrice": 150000,
+      "membershipPrice": 120000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:24.933Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 9,
+  "page": 1,
+  "limit": 99999
+}

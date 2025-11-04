@@ -1,0 +1,574 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
+
+@import "./font.css";
+@import "tailwindcss";
+
+/* 상품 상세 HTML 스타일 */
+.product-detail-html {
+  line-height: 1.6;
+}
+
+.product-detail-html img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.product-detail-html div {
+  margin: 8px 0;
+}
+
+.product-detail-html p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.product-detail-html br {
+  line-height: 1.6;
+}
+
+/*
+* css 유틸리티 클래스 
+* ex) bg-primary
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-header-background: var(--header-background);
+  --color-header-foreground: var(--header-foreground);
+  --color-header-border: var(--header-border);
+  --color-button-accent: var(--button-accent);
+  --color-button-accent-foreground: var(--button-accent-foreground);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-border-muted: var(--border-muted);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-white: var(--white);
+  --color-tab-background: var(--tab-background);
+  --color-tab-foreground: var(--tab-foreground);
+  --color-tab-border: var(--tab-border);
+  --color-tab-accent: var(--tab-accent);
+  --color-tab-accent-foreground: var(--tab-accent-foreground);  
+
+  /* Grayscale */
+  --color-gray-0: var(--gray-0);
+  --color-gray-10: var(--gray-10);
+  --color-gray-20: var(--gray-20);
+  --color-gray-30: var(--gray-30);
+  --color-gray-40: var(--gray-40);
+  --color-gray-50: var(--gray-50);
+  --color-gray-60: var(--gray-60);
+  --color-gray-70: var(--gray-70);
+  --color-gray-80: var(--gray-80);
+  --color-gray-90: var(--gray-90);
+
+  /* Yellow  */
+  --color-yellow-10: var(--yellow-10);
+  --color-yellow-20: var(--yellow-20);
+  --color-yellow-30: var(--yellow-30);
+  --color-yellow-40: var(--yellow-40);
+  --color-yellow-50: var(--yellow-50);
+
+  /* Orange */
+  --color-orange-600: var(--orange-600);
+
+  /* Red */
+  --color-red-30: var(--red-30);
+  --color-red-40: var(--red-40);
+  --color-red-50: var(--red-50);
+
+  /* Green  */
+  --color-green-30: var(--green-30);
+  --color-green-40: var(--green-40);
+
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 17px;
+  --font-size-3xl: 18px;
+  --font-size-4xl: 24px;
+  --font-size-5xl: 36px;
+}
+
+/* 단순 css 정의 */
+:root {
+  /* Grayscale 팔레트 */
+  --white: #ffffff;
+  --gray-0: #ffffff;
+  --gray-10: #f5f5f5;
+  --gray-20: #e2e2e2;
+  --gray-30: #c4c4c4;
+  --gray-40: #8e8e93;
+  --gray-50: #636366;
+  --gray-60: #48484a;
+  --gray-70: #363639;
+  --gray-80: #2c2c2e;
+  --gray-90: #1c1c1e;
+
+  /* Yellow 팔레트 */
+  --yellow-10: #fff7e5;
+  --yellow-20: #ffe8b3;
+  --yellow-30: #ffa500;
+  --yellow-40: #e08f00;
+  --yellow-50: #a86500;
+
+  /* Red 팔레트 */
+  --red-30: #f54527;
+  --red-40: #c7321f;
+  --red-50: #981c14;
+
+  /* Orange 팔레트 */
+  --orange-600: #ff5722;
+
+  /* Green 팔레트 */
+  --green-30: #34c759;
+  --green-40: #22a343;
+
+  --radius: 0.5rem;
+  --background: var(--gray-0);
+  --foreground: var(--gray-90);
+  --card: var(--gray-0);
+  --card-foreground: var(--gray-90);
+  --popover: var(--gray-0);
+  --popover-foreground: var(--gray-90);
+  --primary: var(--yellow-30);
+  --primary-foreground: var(--gray-0);
+  --secondary: var(--gray-60);
+  --secondary-foreground: var(--gray-90);
+  --muted: var(--gray-10);
+  --muted-hover: var(--gray-20);
+  --muted-foreground: var(--gray-50);
+  --accent: var(--orange-600);
+  --accent-foreground: var(--gray-0);
+  --destructive: var(--red-30);
+  --destructive-foreground: var(--gray-0);
+  --border: var(--gray-30);
+  --border-muted: var(--gray-10);
+  --input: var(--gray-10);
+  --ring: var(--yellow-20);
+
+  /* 차트 */
+  --chart-1: var(--yellow-30);
+  --chart-2: var(--red-30);
+  --chart-3: var(--green-30);
+  --chart-4: var(--gray-50);
+  --chart-5: var(--gray-40);
+
+  /* 사이드바 */
+  --sidebar: var(--gray-0);
+  --sidebar-foreground: var(--gray-90);
+  --sidebar-primary: var(--yellow-30);
+  --sidebar-primary-foreground: var(--gray-0);
+  --sidebar-accent: var(--yellow-10);
+  --sidebar-accent-foreground: var(--yellow-40);
+  --sidebar-border: var(--gray-30);
+  --sidebar-ring: var(--yellow-30);
+
+  /* 헤더 */
+  --header-background: #57534e; /* stone-600 */
+  --header-foreground: var(--foreground);
+  --header-border: #44403c; /* stone-700 */
+
+  /* 버튼 액센트 */
+  --button-accent: var(--yellow-30); /* 기본 액센트와 동일 */
+  --button-accent-foreground: var(--gray-0);
+
+  /* 카테고리 탭 */
+  --tab-background: var(--white);
+  --tab-foreground: var(--gray-90);
+  --tab-border: var(--gray-10);
+  --tab-accent: var(--gray-90);
+  --tab-accent-foreground: var(--white);
+
+  
+}
+
+/* 블랙프라이데이 테마 */
+.black-friday {
+  /* 블랙프라이데이 색상 팔레트 */
+  --white: #ffffff;
+  --black-friday-bg: #000000;
+  --black-friday-surface: #1a1a1a;
+  --black-friday-accent: #db1829;
+  --black-friday-gold: #ffa500;
+  --black-friday-text: #ffffff;
+  --black-friday-text-muted: #cccccc;
+
+  /* 블랙프라이데이 Gray 스케일 */
+  --gray-0: #000000;  /* 완전한 검은색 */
+  --gray-10: #1a1a1a; /* 매우 어두운 회색 */
+  --gray-20: #2d2d2d; /* 어두운 회색 */
+  --gray-30: #404040; /* 중간 어두운 회색 */
+  --gray-40: #525252; /* 중간 회색 */
+  --gray-50: #737373; /* 중간 밝은 회색 */
+  --gray-60: #a3a3a3; /* 밝은 회색 */
+  --gray-70: #d4d4d4; /* 매우 밝은 회색 */
+  --gray-80: #e5e5e5; /* 거의 흰색 */
+  --gray-90: #ffffff; /* 완전한 흰색 */
+
+  /* 기본 색상 오버라이드 */
+  --background: var(--black-friday-bg);
+  --foreground: var(--black-friday-text);
+  --card: var(--black-friday-surface);
+  --card-foreground: var(--black-friday-text);
+  --popover: var(--black-friday-surface);
+  --popover-foreground: var(--black-friday-text);
+  --primary: var(--black-friday-accent);
+  --primary-foreground: var(--black-friday-text);
+  --secondary: var(--black-friday-surface);
+  --secondary-foreground: var(--black-friday-text);
+  --muted: var(--black-friday-surface);
+  --muted-foreground: var(--black-friday-text-muted);
+  --accent: var(--black-friday-accent);
+  --accent-foreground: var(--black-friday-bg);
+  --destructive: var(--black-friday-accent);
+  --destructive-foreground: var(--black-friday-text);
+  --border: #333333;
+  --input: var(--black-friday-surface);
+  --ring: var(--black-friday-accent);
+
+  /* 헤더 (블랙프라이데이) */
+  --header-background: #1d1a1a; /* 완전한 검은색 */
+  --header-foreground: var(--foreground);
+  --header-border: #ff0000; /* 빨간 테두리 */
+
+  /* 버튼 액센트 (블랙프라이데이) */
+  --button-accent: var(--black-friday-gold); /* 골드 색상 사용 */
+  --button-accent-foreground: var(--black-friday-bg);
+
+  /* 카테고리 탭 (블랙프라이데이) */
+  --tab-background: var(--black-friday-surface);
+  --tab-foreground: var(--black-friday-text);
+  --tab-border: var(--black-friday-surface);
+  --tab-accent: var(--black-friday-accent);
+  --tab-accent-foreground: var(--black-friday-text);
+}
+
+/* 발렌타인 테마 */
+.valentine {
+  /* 발렌타인 색상 팔레트 */
+  --white: #ffffff;
+  --valentine-bg: #fef7f7;
+  --valentine-surface: #ffffff;
+  --valentine-accent: #e91e63;
+  --valentine-pink: #f8bbd9;
+  --valentine-text: #2d1b1b;
+  --valentine-text-muted: #8b5a5a;
+
+  /* 발렌타인 Gray 스케일 (따뜻한 톤) */
+  --gray-0: #fef7f7;  /* 매우 밝은 핑크 */
+  --gray-10: #f8bbd9; /* 밝은 핑크 */
+  --gray-20: #f2a0c7; /* 중간 밝은 핑크 */
+  --gray-30: #ec85b5; /* 중간 핑크 */
+  --gray-40: #e66ba3; /* 중간 어두운 핑크 */
+  --gray-50: #e05091; /* 어두운 핑크 */
+  --gray-60: #d4357f; /* 매우 어두운 핑크 */
+  --gray-70: #c82a6d; /* 매우 어두운 핑크 */
+  --gray-80: #bc1f5b; /* 거의 빨간 핑크 */
+  --gray-90: #2d1b1b; /* 어두운 갈색 */
+
+  /* 기본 색상 오버라이드 */
+  --background: var(--valentine-bg);
+  --foreground: var(--valentine-text);
+  --card: var(--valentine-surface);
+  --card-foreground: var(--valentine-text);
+  --popover: var(--valentine-surface);
+  --popover-foreground: var(--valentine-text);
+  --primary: var(--valentine-accent);
+  --primary-foreground: var(--valentine-surface);
+  --secondary: var(--valentine-pink);
+  --secondary-foreground: var(--valentine-text);
+  --muted: var(--valentine-pink);
+  --muted-foreground: var(--valentine-text-muted);
+  --accent: var(--valentine-pink);
+  --accent-foreground: var(--valentine-text);
+  --destructive: var(--valentine-accent);
+  --destructive-foreground: var(--valentine-surface);
+  --border: #f8bbd9;
+  --input: var(--valentine-surface);
+  --ring: var(--valentine-accent);
+
+  /* 헤더 (발렌타인) */
+  --header-background: #f8bbd9; /* 핑크 배경 */
+  --header-foreground: var(--foreground);
+  --header-border: #e91e63; /* 핑크 테두리 */
+
+  /* 버튼 액센트 (발렌타인) */
+  --button-accent: var(--valentine-accent); /* 핑크 액센트 사용 */
+  --button-accent-foreground: var(--valentine-surface);
+
+  /* 카테고리 탭 (발렌타인) */
+  --tab-background: var(--valentine-surface);
+  --tab-foreground: var(--valentine-text);
+  --tab-border: var(--valentine-surface);
+  --tab-accent: var(--valentine-accent);
+  --tab-accent-foreground: var(--valentine-text);
+}
+
+/* 크리스마스 테마 */
+.christmas {
+  /* 크리스마스 색상 팔레트 */
+  --white: #ffffff;
+  --christmas-bg: #0f1419;
+  --christmas-surface: #1a2332;
+  --christmas-red: #dc2626;
+  --christmas-green: #16a34a;
+  --christmas-gold: #fbbf24;
+  --christmas-text: #ffffff;
+  --christmas-text-muted: #a1a1aa;
+
+  /* 크리스마스 Gray 스케일 (차가운 톤) */
+  --gray-0: #0f1419;  /* 매우 어두운 파란 회색 */
+  --gray-10: #1a2332; /* 어두운 파란 회색 */
+  --gray-20: #25324b; /* 중간 어두운 파란 회색 */
+  --gray-30: #304164; /* 중간 파란 회색 */
+  --gray-40: #3b507d; /* 중간 밝은 파란 회색 */
+  --gray-50: #465f96; /* 밝은 파란 회색 */
+  --gray-60: #516eaf; /* 매우 밝은 파란 회색 */
+  --gray-70: #5c7dc8; /* 거의 파란색 */
+  --gray-80: #678ce1; /* 파란색 */
+  --gray-90: #ffffff; /* 완전한 흰색 */
+
+  /* 기본 색상 오버라이드 */
+  --background: var(--christmas-bg);
+  --foreground: var(--christmas-text);
+  --card: var(--christmas-surface);
+  --card-foreground: var(--christmas-text);
+  --popover: var(--christmas-surface);
+  --popover-foreground: var(--christmas-text);
+  --primary: var(--christmas-red);
+  --primary-foreground: var(--christmas-text);
+  --secondary: var(--christmas-green);
+  --secondary-foreground: var(--christmas-text);
+  --muted: var(--christmas-surface);
+  --muted-foreground: var(--christmas-text-muted);
+  --accent: var(--christmas-gold);
+  --accent-foreground: var(--christmas-bg);
+  --destructive: var(--christmas-red);
+  --destructive-foreground: var(--christmas-text);
+  --border: var(--christmas-green);
+  --input: var(--christmas-surface);
+  --ring: var(--christmas-red);
+
+  /* 헤더 (크리스마스) */
+  --header-background: #16a34a; /* 초록 배경 */
+  --header-foreground: var(--foreground);
+  --header-border: #dc2626; /* 빨간 테두리 */
+
+  /* 버튼 액센트 (크리스마스) */
+  --button-accent: var(--christmas-gold); /* 골드 색상 사용 */
+  --button-accent-foreground: var(--christmas-bg);
+
+  /* 카테고리 탭 (크리스마스) */
+  --tab-background: var(--christmas-surface);
+  --tab-foreground: var(--christmas-text);
+  --tab-border: var(--christmas-surface);
+  --tab-accent: var(--christmas-red);
+  --tab-accent-foreground: var(--christmas-text);
+}
+
+@layer components {
+  /* 버튼 베이스 스타일 */
+  .ay-btn-base {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all 
+      disabled:pointer-events-none disabled:opacity-50 
+      [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 
+      outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] 
+      aria-invalid:ring-destructive/20 aria-invalid:border-destructive;
+  }
+
+  /* 버튼 variant 기본 */
+  .ay-btn-primary {
+    @apply bg-primary text-primary-foreground shadow-xs border border-transparent hover:bg-yellow-40;
+  }
+
+  /* 버튼 variant outline */
+  .ay-btn-outline {
+    @apply border border-primary text-primary hover:border-yellow-40 hover:bg-yellow-10
+      active:bg-yellow-10 active:text-yellow-30 active:border-yellow-30 
+      disabled:text-muted-foreground disabled:border-muted;
+  }
+
+  /* 버튼 variant destructive */
+  .ay-btn-destructive {
+    @apply bg-destructive text-white shadow-xs hover:bg-red-40 border border-transparent 
+      hover:border-yellow-20 disabled:bg-transparent disabled:text-muted-foreground disabled:shadow-none;
+  }
+
+  /* 버튼 variant secondary */
+  .ay-btn-secondary {
+    @apply bg-background text-secondary-foreground border border-border hover:bg-secondary/80 
+      disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10;
+  }
+
+  /* 버튼 variant ghost */
+  .ay-btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+
+  /* 버튼 variant link */
+  .ay-btn-link {
+    @apply text-primary underline-offset-4 underline hover:underline hover:text-yellow-40 
+      disabled:text-muted-foreground disabled:no-underline;
+  }
+
+  /* 버튼 사이즈 */
+  .ay-btn-size-md {
+    @apply h-9 px-4 py-2 has-[>svg]:px-3;
+  }
+
+  .ay-btn-size-sm {
+    @apply h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5;
+  }
+
+  .ay-btn-size-lg {
+    @apply h-11 rounded-md px-6 has-[>svg]:px-4;
+  }
+
+  .ay-btn-size-icon {
+    @apply size-9;
+  }
+}
+
+
+@layer base {
+  *,  
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+  
+  body {
+    @apply bg-background text-foreground text-sm;
+  }
+
+ 
+
+  /* Tailwind의 text- 클래스가 적용된 요소는 해당 색상 사용 */
+  [class*="text-"] {
+    color: inherit;
+  }
+
+  /* 기본 HTML 태그 스타일 */
+  h1 {
+    @apply text-5xl font-medium;
+  }
+
+  h2 {
+    @apply text-4xl font-medium;
+  }
+
+  h3 {
+    @apply text-3xl font-bold;
+  }
+
+  h4 {
+    @apply text-xl font-normal;
+  }
+
+  p {
+    @apply text-base;
+  }
+
+  .section-title {
+    @apply text-[25px] leading-[31px] font-bold;
+  }
+
+  /* 모바일 반응형 */
+  @media (max-width: 768px) {
+    h1 {
+      @apply text-[25px] font-bold;
+    }
+
+    h2 {
+      @apply text-xl font-bold;
+    }
+
+    h3 {
+      @apply text-lg font-normal;
+    }
+
+    .text-3xl {
+      @apply text-[18px] font-bold;
+    }
+
+    .text-2xl {
+      @apply text-[17px] font-bold;
+    }
+
+    .text-xl {
+      @apply text-[16px] font-bold;
+    }
+
+    .text-lg {
+      @apply text-[14px] font-normal;
+    }
+
+    .text-base,
+    p {
+      @apply text-[13px] font-normal;
+    }
+
+    .text-sm {
+      @apply text-[12px] font-medium;
+    }
+
+    .text-xs {
+      @apply text-[11px] font-normal;
+    }
+
+    .section-title {
+      @apply text-xl leading-[1.4] font-bold;
+    }
+
+    /* 스크롤바 숨김 */
+    .scrollbar-hide {
+      -ms-overflow-style: none; /* Internet Explorer 10+ */
+      scrollbar-width: none; /* Firefox */
+    }
+
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none; /* Safari and Chrome */
+    }
+  }
+}

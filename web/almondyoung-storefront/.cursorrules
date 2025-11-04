@@ -1,0 +1,10 @@
+# 이 프로젝트는 yarn을 사용합니다
+- 패키지 설치: yarn add [package]
+- 개발 의존성: yarn add -D [package]
+- npm 사용 금지
+
+# 파일 및 폴더 명명 규칙
+- 모든 폴더명: kebab-case (예: user-profile, auth-modal)
+- 모든 파일명: kebab-case (예: custom-input.tsx, form-text-field.tsx)
+- 컴포넌트 파일도 kebab-case 사용
+- 파일 생성 시 camelCase나 PascalCase 사용 금지

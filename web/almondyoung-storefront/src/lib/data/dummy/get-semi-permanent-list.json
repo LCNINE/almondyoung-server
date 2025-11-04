@@ -1,0 +1,187 @@
+{
+  "data": [
+    {
+      "id": "01999b22-a25c-722e-8918-a2dfb1cde063",
+      "name": "[서울 역삼] 움뷰티 아카데미 패디플래닝 속눈썹펌 반영구 원데이 수강 클래스",
+      "thumbnail": "https://almondyoung.com/web/product/big/202506/832ca2c73b88d2980aa69fbc19f1a966.jpg",
+      "basePrice": 300000,
+      "membershipPrice": null,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-10-21T02:37:14.286Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-546b-75c0-a22e-1d42af8bdcfa",
+      "name": "메소드메이크업 분장용 콤비펜슬 듀얼펜슬 블랙/브라운 아이브로우 아이라인",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/a037295cd7b4651bf69ffbf24aa7716f.jpg",
+      "basePrice": 2900,
+      "membershipPrice": 1900,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:44:02.795Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-49b7-760f-9067-468de2e3c964",
+      "name": "[웰컴 멤버십] 팔각 크리스탈 글루판",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/52b8bbab0f4a41b4ea97f19fdfe72c81.png",
+      "basePrice": 2300,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:54.514Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-33e4-774d-a7fe-13ad66279f3f",
+      "name": "[웰컴 멤버십] 훅 엠보 수지 펜대 1EA 랜덤",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202311/4121b356969b03e52d76e2be45e22979.png",
+      "basePrice": 4700,
+      "membershipPrice": 100,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:48.928Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-197a-72de-ae38-2acd37df98f3",
+      "name": "Drawy make 반영구 옴브레 엠보 수지 겸용 색소 15ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/fccb3bfb0d5736692a0753428ff818f0.jpg",
+      "basePrice": 50000,
+      "membershipPrice": 38000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:52.801Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-15a0-77f5-aec2-8c1dba5b5d8c",
+      "name": "Drawy make 믹싱 중화 색소 12ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/dae56d58c4b19a3ac3cf66281519bc10.jpg",
+      "basePrice": 35000,
+      "membershipPrice": 35000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:51.813Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-11ac-76d8-abef-a1c2096dca92",
+      "name": "Drawy make 헤어스트록 색소 12ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/0215cea8021e62f3cf9100cfb43abb45.jpg",
+      "basePrice": 50000,
+      "membershipPrice": 40000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:50.802Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-0dd3-734d-b8a1-e9124229c2cf",
+      "name": "Drawy make 립 입술 색소 12ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/14a5043e057ec613465bc14b6c2557a9.jpg",
+      "basePrice": 35000,
+      "membershipPrice": 35000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:49.816Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-09fb-75c9-9f18-e365a6da7093",
+      "name": "래쉬몬스터 Organic 오가닉 색소 10ml",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
+      "basePrice": 25000,
+      "membershipPrice": 25000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:48.833Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-e428-7193-b3b4-cc8de967be7e",
+      "name": "노몬드 색소 (에멀젼)",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202409/b84f3d09cc04d83d05d345efc3e29560.png",
+      "basePrice": 15000,
+      "membershipPrice": 15000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:39.143Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-d87d-72d9-8beb-817c31a3d93c",
+      "name": "[캔바] 반영구(PMU) 아이라인 수강 교재 템플릿",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202411/288ce5aded18d72a09ce5015c64ab939.png",
+      "basePrice": 99000,
+      "membershipPrice": 99000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:36.155Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b22-b847-716e-8062-c5ea5da36983",
+      "name": "노몬드 색소 (리퀴드)",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202410/a75a3aa383cb75376045b6b64b32d0f5.png",
+      "basePrice": 15000,
+      "membershipPrice": 15000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:27.917Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 12,
+  "page": 1,
+  "limit": 99999
+}

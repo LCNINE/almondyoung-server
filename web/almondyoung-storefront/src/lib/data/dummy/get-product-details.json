@@ -1,0 +1,42 @@
+{
+  "id": "01999bef-d5c0-743f-b9eb-cff7e6da05cd",
+  "name": "제이시스 티나스타일링 에센스",
+  "description": "제이시스 티나스타일링 에센스",
+  "brand": "티나스타일",
+  "thumbnail": "https://almondyoung.com/web/product/medium/202501/38ddc4ccd1e0005e4ffa5275e1d5d033.jpg",
+  "basePrice": 25000,
+  "pricingStrategy": "option_based",
+  "tags": ["신상품", "헤어"],
+  "images": { "primary": null, "additional": [] },
+  "attributes": null,
+  "seoTitle": null,
+  "seoDescription": null,
+  "seoKeywords": null,
+  "descriptionHtml": "<img src=\"/web/upload/NNEditor/20250117/1.jpg\" data-result=\"success\" data-name=\"1.jpg\" data-size=\"1000px/1260px\" data-filesize=\"133,93 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/2.jpg\" data-result=\"success\" data-name=\"2.jpg\" data-size=\"1000px/2150px\" data-filesize=\"66,76 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/3.jpg\" data-result=\"success\" data-name=\"3.jpg\" data-size=\"1000px/2650px\" data-filesize=\"115,71 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/4.jpg\" data-result=\"success\" data-name=\"4.jpg\" data-size=\"1000px/2460px\" data-filesize=\"119,34 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/5.jpg\" data-result=\"success\" data-name=\"5.jpg\" data-size=\"1000px/3750px\" data-filesize=\"159,47 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/6.jpg\" data-result=\"success\" data-name=\"6.jpg\" data-size=\"1000px/2600px\" data-filesize=\"160,21 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/7.jpg\" data-result=\"success\" data-name=\"7.jpg\" data-size=\"1000px/1940px\" data-filesize=\"65,85 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/8.jpg\" data-result=\"success\" data-name=\"8.jpg\" data-size=\"1000px/4250px\" data-filesize=\"258,69 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/9.jpg\" data-result=\"success\" data-name=\"9.jpg\" data-size=\"1000px/6520px\" data-filesize=\"274,32 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/10.gif\" data-result=\"success\" data-name=\"10.gif\" data-size=\"1000px/1000px\" data-filesize=\"2,93 MB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/11.jpg\" data-result=\"success\" data-name=\"11.jpg\" data-size=\"1000px/8414px\" data-filesize=\"475,21 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/12.jpg\" data-result=\"success\" data-name=\"12.jpg\" data-size=\"1000px/670px\" data-filesize=\"19,00 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/13.png\" data-result=\"success\" data-name=\"13.png\" data-size=\"1186px/557px\" data-filesize=\"578,74 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/14.png\" data-result=\"success\" data-name=\"14.png\" data-size=\"1209px/566px\" data-filesize=\"573,98 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/copy-1737097226-15.png\" data-result=\"success\" data-name=\"copy-1737097226-15.png\" data-size=\"1209px/580px\" data-filesize=\"635,54 kB\" data-error=\"\" style=\"display: block; float: none; vertical-align: top; margin: 0px auto; text-align: center;\"><img src=\"/web/upload/NNEditor/20250117/copy-1737097226-16.png\" data-result=\"success\" data-name=\"copy-1737097226-16.png\" data-size=\"1102px/522px\" data-filesize=\"86,69 kB\" data-error=\"\" style=\"display: block; vertical-align: top; margin: 0px auto; text-align: center; width: 1201px;\"><img src=\"/web/upload/NNEditor/20250117/copy-1737097226-17.jpg\" data-result=\"success\" data-name=\"copy-1737097226-17.jpg\" data-size=\"1000px/3000px\" data-filesize=\"124,18 kB\" data-error=\"\" style=\"display: block; vertical-align: top; margin: 0px auto; text-align: center;\">",
+  "status": "active",
+  "isWholesaleOnly": false,
+  "isMembershipOnly": false,
+  "membershipPrice": 25000,
+  "wholesalePrice": null,
+  "createdAt": "2025-09-30T18:43:30.367Z",
+  "updatedAt": "2025-09-30T18:43:30.367Z",
+  "createdBy": null,
+  "updatedBy": null,
+  "optionGroups": [],
+  "variants": [
+    {
+      "id": "01999bef-d752-74f9-bf9d-33c1166c0beb",
+      "masterId": "01999bef-d5c0-743f-b9eb-cff7e6da05cd",
+      "variantName": null,
+      "images": null,
+      "priceAdjustment": 0,
+      "displayOrder": 0,
+      "status": "active",
+      "isDefault": true,
+      "createdAt": "2025-09-30T18:43:30.768Z",
+      "updatedAt": "2025-09-30T18:43:30.768Z",
+      "optionValues": []
+    }
+  ],
+  "channelProducts": []
+}

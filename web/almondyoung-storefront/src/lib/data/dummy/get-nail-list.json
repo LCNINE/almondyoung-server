@@ -1,0 +1,307 @@
+{
+  "data": [
+    {
+      "id": "01999bf0-3119-74f9-9c4c-acecb30fc56a",
+      "name": "블랙 투웨이 트위저 꾹꾹이 네일 핀셋",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202503/739858f499dacfa9125df93ac0dd0737.jpg",
+      "basePrice": 1000,
+      "membershipPrice": 1000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:53.753Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-2a1a-71fc-9256-a53a882a0b6d",
+      "name": "핑크 투웨이 트위저 꾹꾹이 네일 핀셋",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202503/ce0d0f118e098fe9b080ba0d3764f053.jpg",
+      "basePrice": 1000,
+      "membershipPrice": 1000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:51.961Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-155a-7149-a3b1-ac968e83f24a",
+      "name": "고급 크리스탈 브러쉬꽂이 보관함 정리함",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202503/2e215e186ed6caf756c29393b521a871.jpg",
+      "basePrice": 4000,
+      "membershipPrice": 4000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:46.650Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-0e65-75d3-ad28-48d2475b12d9",
+      "name": "네일 브러쉬 세척 전용 디스펜서",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202504/cb3246038aa5b385036b2bc91edfab55.jpg",
+      "basePrice": 2500,
+      "membershipPrice": 2500,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:44.866Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-078d-720b-ac03-321e1eed844a",
+      "name": "그라시아 네일 국가고시 자격증 실기 세트",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/9a562b51408f76e44b4674dda19a27dd.jpg",
+      "basePrice": 506700,
+      "membershipPrice": 506700,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:43.114Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bf0-008e-73ff-bf5c-7b4ce231d861",
+      "name": "엔리안 네일 국가고시 자격증 실기 세트",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/0bf1471b66d8ddf88e516a7b68603ab3.jpg",
+      "basePrice": 483700,
+      "membershipPrice": 483700,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:41.325Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-f90a-74a2-bae3-ce67319f60c7",
+      "name": "코코네일 네일 국가고시 시험세트 A",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202507/25ca9a5c9b206760f451c4ec3b5aa326.jpg",
+      "basePrice": 420000,
+      "membershipPrice": 420000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:39.401Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-eac8-735c-b448-ba406a5a0638",
+      "name": "브러쉬 세척기 붓 세척 클리너 도구",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/0f55c4d0f20dc2da22fdfd88a7c21747.jpg",
+      "basePrice": 2000,
+      "membershipPrice": 2000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:43:35.750Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bef-02fc-70a2-aa25-1463864545c0",
+      "name": "[웰컴 멤버십] 네일아트 네일팁 리필팁 작품용 롱커브 포인트팁 12개입 네츄럴",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202504/5f653943be107b072a55b5309b50122b.png",
+      "basePrice": 5000,
+      "membershipPrice": 100,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:36.409Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-fc05-71a0-be40-605b3e7afb1e",
+      "name": "[웰컴 멤버십] 네일아트 네일팁 리필팁 작품용 롱커브 포인트팁 12개입 클리어",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202504/fabd714aa0084b05d487c4fa8b49de2e.png",
+      "basePrice": 3200,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:34.623Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-f517-775e-928e-ccd1744b73a3",
+      "name": "[웰컴 멤버십] 젤네일 전용 엠보 화장솜 200매 젤와이퍼",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/760c637e35df3da9be8135bb18052aac.png",
+      "basePrice": 5000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:32.852Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-ee2e-73b9-b63a-4ddd736e11d0",
+      "name": "[웰컴 멤버십] 젤와이퍼 대용량 400매 클렌저 솜 먼지 보풀 없는 네일 화장솜",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/e637acd8a17fe42f9668c86749e5265d.png",
+      "basePrice": 3000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:31.079Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-e74c-710f-8bb4-7b3bbeb01415",
+      "name": "[웰컴 멤버십] 멘다 펌프 네일 리무버 디스펜서 랜덤",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/2e86a914a07476442ac5789b8e6a4dc2.png",
+      "basePrice": 4000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:29.321Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-e054-7379-942e-970dcd45e038",
+      "name": "[웰컴 멤버십] 키티 네일 몰드 리본 십자가 파츠 만들기 재료",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/d80e909f63f792ae254c50438138d2aa.png",
+      "basePrice": 2500,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:27.535Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-d974-77dd-8c1b-edc9590acf02",
+      "name": "[웰컴 멤버십] 3D 크롬하츠 네일파츠몰드 레진몰드 실리콘몰드",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/b5bed645cece8b2ff09d59d2834dd382.png",
+      "basePrice": 4000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:25.776Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-d262-7633-997d-a410ecc6ff8c",
+      "name": "[웰컴 멤버십] 파스텔 십자가 크롬하츠 네일 파츠 30개입 랜덤",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/5685021746915467eb8df2d67476a00f.png",
+      "basePrice": 4000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:23.963Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-cb87-760c-965d-1623dcd51174",
+      "name": "[웰컴 멤버십] 56칸 분리형 스톤 파츠 보관함",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/01e208f3391baae124cb27172d5d0883.png",
+      "basePrice": 6000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:22.211Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999bee-c488-7458-825f-b4351d3763b6",
+      "name": "[웰컴 멤버십] 네일 드릴 비트 샌딩 밴드 풀세트",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202508/0e043ac044267ec63ecc2a3228393093.png",
+      "basePrice": 5000,
+      "membershipPrice": 100,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T18:42:20.414Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-28d1-7109-8061-f264bc7fe57b",
+      "name": "노몬드 네일 국가고시 실기 풀세트 68종",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202407/58f08cccc3984fcdbef95f2e152d6274.jpg",
+      "basePrice": 159000,
+      "membershipPrice": 159000,
+      "isMembershipOnly": true,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:56.725Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    },
+    {
+      "id": "01999b23-1d4b-76bc-b2f8-55cdcc6ddc64",
+      "name": "젤로젤로 필오프 베이스젤 원킬 리무버 우드스틱 세트",
+      "thumbnail": "https://almondyoung.com/web/product/medium/202502/549e2d580d66a60db46ed302711effa9.jpg",
+      "basePrice": 19000,
+      "membershipPrice": 19000,
+      "isMembershipOnly": false,
+      "status": "active",
+      "createdAt": "2025-09-30T14:59:53.778Z",
+      "rating": 4.5,
+      "reviewCount": 128,
+      "optionMeta": {
+        "isSingle": true
+      }
+    }
+  ],
+  "total": 20,
+  "page": 1,
+  "limit": 99999
+}
