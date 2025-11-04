@@ -9,7 +9,7 @@ export default Module(WMS_MODULE, {
   loaders: [
     async ({ options }) => {
       if (!options.apiKey) {
-        throw new Error('WMS Module requires an apiKey option.');
+        console.warn('WMS Module requires an apiKey option.');
       }
     },
   ],
