@@ -1,7 +1,6 @@
 "use client"
 
 import { ApiAuthError, ApiError } from "./api-error"
-import { USE_API_GATEWAY } from "./app-config"
 import { USER_API_CONFIG, USER_API_ENDPOINTS } from "./api/users/config"
 
 let refreshPromise: Promise<boolean> | null = null
@@ -40,11 +39,6 @@ export async function clientApi<T = any>(
   options?: RequestInit
 ): Promise<T> {
   async function executeRequest(retry = true): Promise<T> {
-    // API Gateway 사용 여부에 따라 URL 생성
-    const fullUrl = USE_API_GATEWAY
-      ? process.env.NEXT_PUBLIC_BACKEND_URL!
-      : `/api/${url}`
-
     const hasBody = options?.body && options.body !== ""
     const headers: Record<string, string> = {
       ...((options?.headers as Record<string, string>) || {}),
@@ -55,13 +49,11 @@ export async function clientApi<T = any>(
     }
 
     try {
-      const res = await fetch(fullUrl, {
+      const res = await fetch(url, {
         ...options,
         headers,
         credentials: "include",
       })
-
-      console.log("fullUrl::", fullUrl)
 
       if (res.status === 401 && retry) {
         const refreshed = await refreshToken()

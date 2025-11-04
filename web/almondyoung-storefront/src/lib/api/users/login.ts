@@ -103,9 +103,7 @@ export async function login(
   }
 
   // redirectTo 처리: 기본값은 홈
-  const targetPath =
-    `/${countryCode}/${redirectTo}` ||
-    `/${countryCode}/${appConfig.auth.redirect_to}`
+  const targetPath = redirectTo ?? `${appConfig.auth.redirect_to}`
 
   // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
   revalidatePath("/", "layout")
