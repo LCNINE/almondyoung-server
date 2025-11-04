@@ -11,6 +11,7 @@ import { Metadata } from "next"
 import { Toaster } from "sonner"
 import "styles/globals.css"
 import categoriesData from "@lib/data/dummy/get-categories.json"
+import { UserProvider } from "contexts/user-context"
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
@@ -19,27 +20,30 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
   // 개발 중에는 static JSON 사용
   const categories = categoriesData.categories
 
-  const initialUser = await fetchCurrentUser().catch(() => null)
+  const user = await fetchCurrentUser().catch(() => null)
+
   return (
     <html lang="ko" suppressHydrationWarning>
       <body className="overflow-x-clip [scrollbar-gutter:stable_both-edges]">
         <CategoryProvider initialCategories={categories}>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="light"
-            enableSystem={false}
-            disableTransitionOnChange
-          >
-            <CustomThemeProvider>
-              <div className="relative">
-                {props.children}
+          <UserProvider initialUser={user}>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="light"
+              enableSystem={false}
+              disableTransitionOnChange
+            >
+              <CustomThemeProvider>
+                <div className="relative">
+                  {props.children}
 
-                <CartQuickButton />
-                <FloatingButtons />
-              </div>
-              <Toaster />
-            </CustomThemeProvider>
-          </ThemeProvider>
+                  <CartQuickButton />
+                  <FloatingButtons />
+                </div>
+                <Toaster />
+              </CustomThemeProvider>
+            </ThemeProvider>
+          </UserProvider>
           <ConditionalFooter />
         </CategoryProvider>
         {renderSchemaTags()}

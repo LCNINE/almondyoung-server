@@ -1,10 +1,13 @@
 "use server"
 
 import { ApiError } from "@lib/api-error"
-import { serverApi } from "@lib/server-api"
-import { setTokenCookies } from "../../data/cookies"
-import { redirect } from "next/navigation"
 import { appConfig } from "@lib/app-config"
+import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
+import { medusaLogin, transferCart } from "@lib/data/customer"
+import { serverApi } from "@lib/server-api"
+import { USER_API_CONFIG, USER_API_ENDPOINTS } from "@lib/api/users/config"
+import { revalidatePath, revalidateTag } from "next/cache"
+import { redirect } from "next/navigation"
 
 type LoginState =
   | { success: true }
@@ -20,11 +23,14 @@ export async function login(
   const redirectTo = formData.get("redirect_to") as string
 
   try {
-    // 2. 사용자 서비스 로그인
-    const result = await serverApi("/auth/signin", {
-      method: "POST",
-      body: JSON.stringify({ loginId, password }),
-    })
+    //  사용자 서비스 로그인
+    const result = await serverApi(
+      USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.LOGIN,
+      {
+        method: "POST",
+        body: JSON.stringify({ loginId, password }),
+      }
+    )
 
     // 응답에서 토큰을 받아서 쿠키로 설정
     // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)
@@ -33,7 +39,6 @@ export async function login(
     console.error("User service login error:", error)
 
     if (error instanceof ApiError) {
-      // 상태 코드별 에러 메시지
       if (error.status === 400) {
         return {
           success: false,
@@ -84,77 +89,26 @@ export async function login(
     }
   }
 
-  redirect(
+  await medusaLogin()
+
+  const customerCacheTag = await getCacheTag("customers")
+  revalidateTag(customerCacheTag)
+
+  try {
+    await transferCart()
+  } catch (error) {
+    console.error("Cart transfer error:", error)
+    // 장바구니 이전 실패는 치명적이지 않으므로 로그인은 성공으로 처리
+    console.warn("장바구니 이전 실패, 하지만 로그인은 성공")
+  }
+
+  // redirectTo 처리: 기본값은 홈
+  const targetPath =
     `/${countryCode}/${redirectTo}` ||
-      `/${countryCode}/${appConfig.auth.redirect_to}`
-  )
+    `/${countryCode}/${appConfig.auth.redirect_to}`
 
-  // try {
-  //   // 3. Medusa 인증 토큰 생성
-  //   const headers = await getAuthHeaders("accessToken")
-
-  //   const res = await fetch(
-  //     `${process.env.MEDUSA_BACKEND_URL}/auth/customer/my-auth`,
-  //     {
-  //       method: "POST",
-  //       headers: {
-  //         "Content-Type": "application/json",
-  //         ...headers,
-  //       },
-  //     }
-  //   )
-
-  //   const result = await res.json()
-
-  //   if (!res.ok) {
-  //     console.error("Medusa auth error:", result)
-
-  //     // Medusa 에러 처리
-  //     if (res.status === 404) {
-  //       return {
-  //         success: false,
-  //         error:
-  //           "사용자 정보를 찾을 수 없습니다. 고객 계정을 먼저 생성해주세요",
-  //         code: "CUSTOMER_NOT_FOUND",
-  //       }
-  //     }
-
-  //     if (result.type === "unauthorized") {
-  //       return {
-  //         success: false,
-  //         error: "해당 사용자 정보가 존재하지 않습니다.",
-  //         code: "MEDUSA_AUTH_ERROR",
-  //       }
-  //     }
-
-  //     return {
-  //       success: false,
-  //       error: result.error || "인증 처리 중 오류가 발생했습니다",
-  //       code: "MEDUSA_AUTH_ERROR",
-  //     }
-  //   }
-
-  //   // 4. 토큰 저장 및 캐시 무효화
-  //   await setAuthToken(result.token as string)
-  //   const customerCacheTag = await getCacheTag("customers")
-  //   revalidateTag(customerCacheTag)
-  // } catch (error) {
-  //   console.error("Medusa auth process error:", error)
-  //   return {
-  //     success: false,
-  //     error: "인증 토큰 처리 중 오류가 발생했습니다",
-  //     code: "TOKEN_PROCESS_ERROR",
-  //   }
-  // }
-
-  // try {
-  //   // 5. 장바구니 이전
-  //   await transferCart()
-  //   return { success: true }
-  // } catch (error) {
-  //   console.error("Cart transfer error:", error)
-  //   // 장바구니 이전 실패는 치명적이지 않으므로 로그인은 성공으로 처리
-  //   console.warn("장바구니 이전 실패, 하지만 로그인은 성공")
-  //   return { success: true }
-  // }
+  // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
+  revalidatePath("/", "layout")
+  revalidatePath(targetPath)
+  redirect(targetPath)
 }

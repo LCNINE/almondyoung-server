@@ -70,7 +70,6 @@ export function WithHeaderLayout({ children, config }: WithHeaderLayoutProps) {
     showMobileHeader = false,
     showMobileSubBackHeader = false,
     mobileSubBackHeaderTitle = "",
-    user = null,
   } = config || {}
 
   return (
@@ -78,14 +77,14 @@ export function WithHeaderLayout({ children, config }: WithHeaderLayoutProps) {
       {/* 데스크탑 글로벌 헤더 */}
       {showDesktopHeader && (
         <div className="hidden md:block">
-          <DesktopHeader user={user} />
+          <DesktopHeader />
         </div>
       )}
 
       {/* 모바일 글로벌 헤더 (메뉴 + 검색 + 카테고리 리스트) */}
       {showMobileHeader && (
         <div className="block md:hidden">
-          <MobileGlobalHeader user={user} />
+          <MobileGlobalHeader />
         </div>
       )}
 

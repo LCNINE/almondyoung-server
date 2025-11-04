@@ -1,36 +1,28 @@
-import { cookies as nextCookies } from "next/headers"
 import "server-only"
-import { ApiError } from "./api-error"
 
-if (!process.env.NEXT_PUBLIC_BACKEND_URL) {
-  throw new Error("NEXT_PUBLIC_BACKEND_URL is not defined")
-}
+import { cookies as nextCookies } from "next/headers"
+import { ApiAuthError, ApiError } from "./api-error"
 
 export async function serverApi<T = any>(
-  endpoint: string,
+  url: string,
   options?: RequestInit
 ): Promise<T> {
   try {
     const cookies = await nextCookies()
 
-    // ⚡ 3초 타임아웃 설정 (서버 블로킹 방지)
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-    
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}${endpoint}`,
-      {
-        ...options,
-        signal: options?.signal || AbortSignal.timeout(3000),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookies.toString(),
-          ...options?.headers,
-        },
-      }
-    )
+    // 3.5초 타임아웃 설정 (서버 블로킹 방지)
+    const res = await fetch(`${url}`, {
+      ...options,
+      signal: options?.signal || AbortSignal.timeout(35000),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookies.toString(),
+        ...options?.headers,
+      },
+    })
 
     if (res.status === 401) {
-      throw new ApiError("UNAUTHORIZED", 401, "UNAUTHORIZED")
+      throw new ApiAuthError()
     }
 
     const body = await res.json()

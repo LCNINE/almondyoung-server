@@ -1,11 +1,12 @@
 "use client"
 
-import { ChevronRight, User, Crown, Coins } from "lucide-react"
 import { CustomButton } from "@components/common/custom-buttons/custom-button"
-import { signout } from "@lib/data/customer"
-import { useParams } from "next/navigation"
-import { useTransition } from "react"
 import { Spinner } from "@components/common/spinner"
+import { signout } from "@lib/data/customer"
+import { useUser } from "contexts/user-context"
+import { ChevronRight, Coins, Crown, User } from "lucide-react"
+import { useParams, useRouter } from "next/navigation"
+import { useTransition } from "react"
 
 interface UserProfileSectionProps {
   userName: string
@@ -20,10 +21,18 @@ interface UserProfileSectionProps {
 export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const { countryCode } = useParams() as { countryCode: string }
   const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+  const { setUser } = useUser()
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     startTransition(async () => {
-      await signout(countryCode)
+      try {
+        await signout(countryCode)
+        setUser(null)
+        router.push("/")
+      } catch (error) {
+        console.error("로그아웃 중 오류가 발생했습니다:", error)
+      }
     })
   }
 

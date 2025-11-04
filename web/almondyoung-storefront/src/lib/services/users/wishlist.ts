@@ -1,10 +1,10 @@
-import { 
-  addToWishlist, 
-  getWishlist, 
-  removeFromWishlist 
+import {
+  addToWishlist,
+  getWishlist,
+  removeFromWishlist,
 } from "@lib/api/users/wishlist"
 import { WishlistItem } from "@lib/api/users/wishlist"
-import { USER_API_CONFIG } from "@lib/constants/user-api"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 import { emitWishlistChange } from "./wishlist-events"
 
 // 서비스 옵션 타입
@@ -27,21 +27,21 @@ const getCacheKey = (userId: string) => `wishlist_${userId}`
 
 // 캐시 읽기
 function readCache(userId: string): CachedWishlist | null {
-  if (typeof window === 'undefined') return null
-  
+  if (typeof window === "undefined") return null
+
   try {
     const cached = localStorage.getItem(getCacheKey(userId))
     if (!cached) return null
-    
+
     const data = JSON.parse(cached) as CachedWishlist
     const now = Date.now()
-    
+
     // 캐시 유효성 검사
     if (now - data.lastFetched > USER_API_CONFIG.CACHE_TTL) {
       localStorage.removeItem(getCacheKey(userId))
       return null
     }
-    
+
     return data
   } catch {
     return null
@@ -50,13 +50,13 @@ function readCache(userId: string): CachedWishlist | null {
 
 // 캐시 쓰기
 function writeCache(userId: string, items: WishlistItem[]): void {
-  if (typeof window === 'undefined') return
-  
+  if (typeof window === "undefined") return
+
   try {
     const data: CachedWishlist = {
       items,
       lastFetched: Date.now(),
-      userId
+      userId,
     }
     localStorage.setItem(getCacheKey(userId), JSON.stringify(data))
   } catch {
@@ -66,7 +66,7 @@ function writeCache(userId: string, items: WishlistItem[]): void {
 
 // 캐시 무효화
 function invalidateCache(userId: string): void {
-  if (typeof window === 'undefined') return
+  if (typeof window === "undefined") return
   localStorage.removeItem(getCacheKey(userId))
 }
 
@@ -93,7 +93,7 @@ export async function getWishlistService(
 
   try {
     const items = await getWishlist()
-    
+
     // 캐시에 저장
     if (useCache) {
       writeCache(userId, items)
@@ -116,7 +116,7 @@ export async function addToWishlistService(
   try {
     await addToWishlist(productId)
     // 이벤트 발생
-    emitWishlistChange('add')
+    emitWishlistChange("add")
   } catch (error) {
     console.error("위시리스트 추가 실패:", error)
     throw error
@@ -133,7 +133,7 @@ export async function removeFromWishlistService(
   try {
     await removeFromWishlist(wishlistId)
     // 이벤트 발생
-    emitWishlistChange('remove')
+    emitWishlistChange("remove")
   } catch (error) {
     console.error("위시리스트 제거 실패:", error)
     throw error
@@ -149,7 +149,7 @@ export async function isProductInWishlistService(
 ): Promise<boolean> {
   try {
     const wishlist = await getWishlistService(opts)
-    return wishlist.some(item => item.productId === productId)
+    return wishlist.some((item) => item.productId === productId)
   } catch (error) {
     console.error("위시리스트 확인 실패:", error)
     return false
@@ -168,7 +168,7 @@ export async function toggleWishlistService(
   try {
     // 현재 위시리스트 상태 확인
     const wishlist = await getWishlistService({ ...opts, useCache: false })
-    const existingItem = wishlist.find(item => item.productId === productId)
+    const existingItem = wishlist.find((item) => item.productId === productId)
 
     if (existingItem) {
       // 이미 있으면 제거
