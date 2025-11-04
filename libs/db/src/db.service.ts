@@ -1,7 +1,7 @@
 // src/common/db/db.service.ts
 import { Injectable, Inject, OnApplicationShutdown, OnModuleDestroy } from '@nestjs/common';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import postgres, { Sql } from 'postgres';
+import * as postgres from 'postgres';
 import { DrizzleSchema } from './types';
 
 export const DB_CONNECTION = 'DB_CONNECTION';
@@ -17,7 +17,7 @@ export class DbService<
   TSchema extends DrizzleSchema = Record<string, never>,
 > implements OnModuleDestroy, OnApplicationShutdown {
   private _db: PostgresJsDatabase<TSchema>;
-  private _client: Sql | null = null;
+  private _client: postgres.Sql | null = null;
 
   constructor(
     @Inject(DB_CONNECTION) private readonly config: DbConfig,
