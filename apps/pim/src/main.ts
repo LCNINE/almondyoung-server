@@ -37,7 +37,10 @@ async function bootstrap() {
   //     validationError: { target: false, value: false },
   //   }),
   // );
-  app.enableCors();
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('PIM API')
