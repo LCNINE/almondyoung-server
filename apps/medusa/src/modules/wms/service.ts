@@ -12,7 +12,7 @@ export class WmsModuleService {
 
   constructor({}, options: ModuleOptions) {
     this.options_ = options || {
-      apiKey: process.env.WMS_SERVICE_URL,
+      apiKey: process.env.WMS_API_URL || 'http://localhost:3001',
     };
 
     this.client = axios.create({
