@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { StreamPublisher } from '@app/events';
+import { StreamPublisher, InjectStreamPublisher } from '@app/events';
 import { ChannelAdapterEvents } from '@app/shared/streams';
 import { ChannelAdapterRepository } from './channel-adapter.repository';
 import {
@@ -35,6 +35,7 @@ export class ChannelSyncManager {
 
   constructor(
     private readonly repo: ChannelAdapterRepository,
+    @InjectStreamPublisher('channel-adapter.events.v1')
     private readonly eventPublisher: StreamPublisher<ChannelAdapterEvents>,
     private readonly adapterFactory: ChannelAdapterFactory,
   ) {}
