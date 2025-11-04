@@ -17,6 +17,10 @@ RUN yarn install --frozen-lockfile --non-interactive
 
 # 3) 소스 복사: 메두사, 공용 libs, 채널 어댑터 타입(경로 참조용)
 COPY apps/medusa/ ./
+COPY libs /app/libs
+RUN rm -rf /app/libs/db
+RUN mkdir -p /app/apps/channel-adapter/src
+COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
