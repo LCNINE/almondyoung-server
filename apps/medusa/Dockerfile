@@ -25,9 +25,9 @@ COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
 
-# 5) 런타임 최적화: 메두사 프로덕션 의존성만 남기기
+# 5) 프로덕션 환경 설정 및 캐시 정리
 ENV NODE_ENV=production
-RUN yarn install --production --frozen-lockfile --non-interactive && yarn cache clean
+RUN yarn cache clean
 
 EXPOSE 9000
 
