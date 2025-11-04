@@ -143,7 +143,7 @@ export type ProviderPayloadMap = {
 
 // ✅ 포인트 결제를 위한 Payload 타입 정의
 export type PointsPayload = {
-  partnerId: number;
+  partnerId: string;
   amount: number;
   reason?: string;
 };

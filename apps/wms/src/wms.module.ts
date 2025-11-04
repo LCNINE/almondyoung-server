@@ -10,10 +10,14 @@ import { StocktakingModule } from './stocktaking/stocktaking.module';
 import { DbModule } from '@app/db';
 import { wmsSchema } from '../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
+import { validateWmsEnv } from './config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateWmsEnv,
+    }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',

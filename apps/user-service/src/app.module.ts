@@ -7,6 +7,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
+import { validateUserServiceEnv } from './config/env.validation';
 import { userServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
@@ -60,6 +61,7 @@ function createKafkaConfig() {
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateUserServiceEnv,
       envFilePath: process.env.NODE_ENV === 'development' ? '.env.dev' : '.env',
     }),
     DbModule.forRoot({

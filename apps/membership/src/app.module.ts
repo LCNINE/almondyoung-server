@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { DbModule } from '@app/db';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
+import { validateMembershipEnv } from './config/env.validation';
 import { DevAuthModule } from './auth/dev-auth-module';
 import { PlanService } from './services/plan.service';
 import { AdminOperationsService } from './services/admin-operations.service';
@@ -42,6 +43,7 @@ import { MembershipPolicyService } from './services/membership-policy.service';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateMembershipEnv,
       envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
     }),
     HttpModule,
