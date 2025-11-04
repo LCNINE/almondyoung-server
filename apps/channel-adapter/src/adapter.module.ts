@@ -128,16 +128,15 @@ function createKafkaConfig() {
     WmsIntegrationManager,
     ChannelAdapterRepository,
 
-    // 환경별 EventPublisher 제공
-    ...(process.env.NODE_ENV === 'production'
-      ? [] // 운영 환경: EventsModule에서 제공하는 StreamPublisher 사용
-      : [
-          // 개발/테스트 환경: NullEventPublisher로 대체
+    // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
+    ...(process.env.NODE_ENV !== 'production'
+      ? [
           {
-            provide: StreamPublisher,
+            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
             useClass: NullEventPublisher,
           },
-        ]),
+        ]
+      : []),
   ],
 })
 export class AdapterModule {}
