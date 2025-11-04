@@ -705,30 +705,37 @@ export class AuthService {
       email: user.email,
     };
 
-    // const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
-    const expiresIn = '90d';
+    const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('AUTH_SECRET'),
       expiresIn,
     });
 
+    // domain에서 프로토콜과 포트 모두 제거
+    const getDomain = (url: string) => {
+      return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+    };
+
     const cookieOptions = {
       path: '/',
       httpOnly: true,
       ...(process.env.NODE_ENV === 'production'
         ? {
-            domain: process.env.CORS_ORIGIN_DOMAIN,
+            domain: getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || ''),
             sameSite: 'none' as const,
             secure: true,
           }
         : {
+            domain: getDomain(process.env.CORS_ORIGIN_DOMAIN_DEV || ''),
             sameSite: 'lax' as const,
             secure: false,
           }),
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
+
+    this.logger.log(`Access token issued for user: ${user.email}`);
 
     return { accessToken };
   }
