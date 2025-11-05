@@ -37,7 +37,7 @@ export default async function SignupCallbackPage({
         first_name: currentUser.username,
         last_name: currentUser.username,
         almond_user_id: currentUser.id,
-        almond_login_id: currentUser.id,
+        almond_login_id: currentUser.loginId,
       })
     } catch (error) {
       console.error("medusaRes error:", error)
