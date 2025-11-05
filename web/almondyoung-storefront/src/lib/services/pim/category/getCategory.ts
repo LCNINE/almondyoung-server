@@ -1,10 +1,10 @@
+import { PIM_API_CONFIG } from "@lib/api/pim/config"
 import type { PimCategory } from "@lib/types/dto/pim"
 
 // 메모리 캐시 타입
 type MemCache = { data: PimCategory[]; at: number }
 const _mem: { categories?: MemCache } = {}
 
-const PIM_API_BASE_URL = process.env.NEXT_PUBLIC_PIM_API_BASE_URL
 // 캐시 TTL (5분)
 const MEM_TTL_MS = 1000 * 60 * 5
 
@@ -35,22 +35,19 @@ export async function getAllCategoriesCached(): Promise<PimCategory[]> {
 async function fetchCategoriesWithISR(): Promise<PimCategory[]> {
   try {
     // ⚡ 3초 타임아웃 설정 (RootLayout 블로킹 방지)
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_PIM_API_BASE_URL || "https://unvenially-dutiable-marvella.ngrok-free.dev"}/categories`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        signal: AbortSignal.timeout(3000), // Next.js 15 권장
-        next: {
-          revalidate: 60 * 60 * 6, // 6시간
-          tags: ["categories"],
-        },
-        cache: "no-store", // 브라우저 새로고침시 실제 API 호출
-      }
-    )
+    const res = await fetch(`${PIM_API_CONFIG.BASE_URL}/categories`, {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+      signal: AbortSignal.timeout(3000), // Next.js 15 권장
+      next: {
+        revalidate: 60 * 60 * 6, // 6시간
+        tags: ["categories"],
+      },
+      cache: "no-store", // 브라우저 새로고침시 실제 API 호출
+    })
 
     if (!res.ok) {
       console.warn(
