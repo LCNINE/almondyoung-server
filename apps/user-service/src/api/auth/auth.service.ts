@@ -130,8 +130,8 @@ export class AuthService {
       marketingConsent,
     } = signUpDto;
 
-    // let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
-    let expiresIn = '90d';
+    let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
+
     try {
       // 이메일로 기존 사용자 조회
       const existingUser = await this.usersService.findUserByEmail(
