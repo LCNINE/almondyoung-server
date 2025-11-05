@@ -1,4 +1,4 @@
-import { ApiAuthError } from "@lib/api-error"
+import { ApiAuthError, ApiNetworkError } from "@lib/api-error"
 import { fetchCurrentUser } from "@lib/api/users"
 import HeroBannerSlider from "../components/banner/heroBannerSlider"
 import { HomeLoggedIn } from "../home-loggedin"
@@ -14,8 +14,12 @@ export default async function HomeTemplate({
   try {
     user = await fetchCurrentUser()
   } catch (e) {
-    // ApiAuthError는 무시 (비로그인 상태)
-    if (!(e instanceof ApiAuthError)) {
+    // ApiAuthError와 ApiNetworkError는 무시 (비로그인 상태 또는 네트워크 문제)
+    // ProtectedRoute에서 이미 네트워크 에러 토스트를 처리함
+    if (e instanceof ApiAuthError || e instanceof ApiNetworkError) {
+      // user는 null로 유지
+    } else {
+      // 그 외 에러는 상위로 전달
       throw e
     }
   }

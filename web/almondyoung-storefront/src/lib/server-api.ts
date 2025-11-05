@@ -1,7 +1,7 @@
 import "server-only"
 
 import { cookies as nextCookies } from "next/headers"
-import { ApiAuthError, ApiError } from "./api-error"
+import { ApiAuthError, ApiError, ApiNetworkError } from "./api-error"
 
 export async function serverApi<T = any>(
   url: string,
@@ -54,7 +54,7 @@ export async function serverApi<T = any>(
 
     // 네트워크 에러
     if (error instanceof TypeError && error.message.includes("fetch failed")) {
-      throw new ApiError("Network Error", 500, "Network Error")
+      throw new ApiNetworkError()
     }
     throw error
   }

@@ -28,3 +28,18 @@ export class ApiAuthError extends ApiError {
     this.digest = "UNAUTHORIZED"
   }
 }
+
+/**
+ * 네트워크 에러 전용 클래스
+ */
+export class ApiNetworkError extends ApiError {
+  constructor(
+    message = "NETWORK_ERROR",
+    status = 500,
+    statusText = "NETWORK_ERROR",
+    data?: any
+  ) {
+    super(message, status, statusText, data)
+    this.name = "ApiNetworkError"
+  }
+}

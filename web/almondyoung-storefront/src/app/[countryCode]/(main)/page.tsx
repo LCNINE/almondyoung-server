@@ -1,4 +1,3 @@
-import ClientToast from "@components/common/client-toast"
 import { ThemeManager } from "@components/common/theme-manager"
 import { WithHeaderLayout } from "@components/layout"
 import ProtectedRoute from "@components/protected-route"
@@ -10,8 +9,6 @@ export default async function Home(props: {
 }) {
   const { countryCode } = await props.params
 
-  let serverErrorMessage: string | null = null
-
   return (
     <ProtectedRoute>
       <WithHeaderLayout
@@ -20,8 +17,6 @@ export default async function Home(props: {
           showMobileHeader: true,
         }}
       >
-        <ClientToast message={serverErrorMessage} type="error" />
-
         <HomeTemplate countryCode={countryCode} />
         <CategorySelectSection countryCode={countryCode} />
 
