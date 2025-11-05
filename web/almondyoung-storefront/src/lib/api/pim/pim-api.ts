@@ -3,7 +3,7 @@ import {
   PimListResponse,
   PimProductDetail,
 } from "@lib/types/dto/pim"
-import { PIM_API_CONFIG, PIM_API_ENDPOINTS } from "./config"
+import { PIM_API_CONFIG } from "./config"
 
 type CategoriesResp = { categories: PimCategory[]; totalCount?: number }
 
