@@ -10,31 +10,25 @@ type LocalSignupResponse = {
 export const createUser = async (
   data: LocalSignupRequest
 ): Promise<LocalSignupResponse> => {
-  return clientApi(USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.SIGNUP, {
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/signup", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export const findIdByEmail = async (email: string) => {
-  return clientApi(
-    USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.FIND_ID_BY_EMAIL,
-    {
-      method: "POST",
-      body: JSON.stringify({ email }),
-    }
-  )
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/forget-userid", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  })
 }
 
 export const findPwByEmailAndLoginId = async (
   email: string,
   loginId: string
 ) => {
-  return clientApi(
-    USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.FIND_PW_BY_EMAIL_AND_LOGIN_ID,
-    {
-      method: "POST",
-      body: JSON.stringify({ email, loginId }),
-    }
-  )
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/forget-password", {
+    method: "POST",
+    body: JSON.stringify({ email, loginId }),
+  })
 }

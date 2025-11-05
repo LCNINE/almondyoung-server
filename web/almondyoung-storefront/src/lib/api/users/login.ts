@@ -5,7 +5,7 @@ import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { medusaLogin, transferCart } from "@lib/data/customer"
 import { serverApi } from "@lib/server-api"
-import { USER_API_CONFIG, USER_API_ENDPOINTS } from "@lib/api/users/config"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 
@@ -24,13 +24,10 @@ export async function login(
 
   try {
     //  사용자 서비스 로그인
-    const result = await serverApi(
-      USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.LOGIN,
-      {
-        method: "POST",
-        body: JSON.stringify({ loginId, password }),
-      }
-    )
+    const result = await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signin", {
+      method: "POST",
+      body: JSON.stringify({ loginId, password }),
+    })
 
     // 응답에서 토큰을 받아서 쿠키로 설정
     // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)

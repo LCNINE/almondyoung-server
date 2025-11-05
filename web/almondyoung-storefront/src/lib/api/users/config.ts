@@ -1,34 +1,5 @@
 import { USE_API_GATEWAY } from "@lib/app-config"
 
-// User API 관련 상수
-export const USER_API_ENDPOINTS = {
-  // auth
-  LOGIN: "/auth/signin",
-  SIGNUP: "/auth/signup",
-  LOGOUT: "/auth/signout",
-  FIND_ID_BY_EMAIL: "/auth/forget-userid",
-  FIND_PW_BY_EMAIL_AND_LOGIN_ID: "/auth/forget-password",
-  RESTORE_TOKEN: "/auth/restore-token",
-
-  // 최근 본 상품
-  RECENT_VIEWS: "/recent-views",
-  RECENT_VIEWS_BY_ID: (id: string) => `/recent-views/${id}`,
-
-  // 사용자 정보
-  USERS: "/me",
-  USER_DETAILS: "/users/detail",
-  USER_PROFILE: "/users/profile",
-
-  // 상점 정보
-  SHOP_INFO: "/shop",
-
-  // 위시리스트
-  WISHLIST: "/wishlist",
-
-  // 동의사항
-  CONSENTS: "/consents",
-} as const
-
 export const USER_API_CONFIG = {
   // API 기본 URL (환경 변수에서 가져옴)
   BASE_URL: USE_API_GATEWAY

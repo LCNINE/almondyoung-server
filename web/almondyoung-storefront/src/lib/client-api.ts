@@ -1,7 +1,7 @@
 "use client"
 
 import { ApiAuthError, ApiError } from "./api-error"
-import { USER_API_CONFIG, USER_API_ENDPOINTS } from "./api/users/config"
+import { USER_API_CONFIG } from "./api/users/config"
 
 let refreshPromise: Promise<boolean> | null = null
 
@@ -13,7 +13,7 @@ async function refreshToken(): Promise<boolean> {
   refreshPromise = (async () => {
     try {
       const res = await fetch(
-        `${USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.RESTORE_TOKEN}`,
+        `${USER_API_CONFIG.BASE_URL}/auth/restore-token`,
         {
           method: "POST",
           credentials: "include",

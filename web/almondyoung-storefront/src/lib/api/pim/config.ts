@@ -1,11 +1,5 @@
 import { USE_API_GATEWAY } from "@lib/app-config"
 
-// PIM API 관련 상수
-export const PIM_API_ENDPOINTS = {
-  CATEGORIES: "/categories",
-  MASTERS: "/masters",
-} as const
-
 export const PIM_API_CONFIG = {
   // API 기본 URL (환경 변수에서 가져옴)
   BASE_URL: USE_API_GATEWAY

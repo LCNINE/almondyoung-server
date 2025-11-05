@@ -1,6 +1,6 @@
 "use server"
 
-import { USER_API_CONFIG, USER_API_ENDPOINTS } from "@lib/api/users/config"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 import { sdk } from "@lib/app-config"
 import { serverApi } from "@lib/server-api"
 import medusaError from "@lib/utils/medusa-error"
@@ -173,7 +173,7 @@ export async function medusaLogin(): Promise<{
 }
 
 export async function signout(countryCode: string) {
-  await serverApi(USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.LOGOUT, {
+  await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signout", {
     method: "POST",
     body: JSON.stringify({}),
   })

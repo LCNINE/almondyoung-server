@@ -11,19 +11,16 @@ type CategoriesResp = { categories: PimCategory[]; totalCount?: number }
 export async function fetchCategories(): Promise<PimCategory[]> {
   console.log("🌐 [fetchCategories] API 호출 시작")
 
-  const res = await fetch(
-    `${PIM_API_CONFIG.BASE_URL}${PIM_API_ENDPOINTS.CATEGORIES}`,
-    {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "ngrok-skip-browser-warning": "true",
-      },
-      mode: "cors",
-      cache: "no-store", // 캐시는 서비스 레이어에서 담당
-    }
-  )
+  const res = await fetch(`${PIM_API_CONFIG.BASE_URL}/categories`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "ngrok-skip-browser-warning": "true",
+    },
+    mode: "cors",
+    cache: "no-store", // 캐시는 서비스 레이어에서 담당
+  })
 
   if (!res.ok) {
     console.error(
@@ -77,7 +74,7 @@ export async function getAllProductList(
   if (params?.tags?.length) searchParams.set("tags", params.tags.join(","))
   if (params?.stock?.length) searchParams.set("stock", params.stock.join(","))
 
-  const url = `${PIM_API_CONFIG.BASE_URL}${PIM_API_ENDPOINTS.MASTERS}?${searchParams.toString()}`
+  const url = `${PIM_API_CONFIG.BASE_URL}/masters?${searchParams.toString()}`
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), PIM_API_CONFIG.TIMEOUT)
@@ -136,7 +133,7 @@ export async function getAllProductList(
 export async function getPimProductDetail(
   id: string
 ): Promise<PimProductDetail> {
-  const url = `${PIM_API_CONFIG.BASE_URL}${PIM_API_ENDPOINTS.MASTERS}/${id}`
+  const url = `${PIM_API_CONFIG.BASE_URL}/masters/${id}`
   console.log("🌐 [getPimProductDetail] 요청 URL:", url)
 
   const res = await fetch(url, {
@@ -212,7 +209,7 @@ export async function getPimCategoryProducts(
   if (params?.tags?.length) sp.set("tags", params.tags.join(","))
   if (params?.stock?.length) sp.set("stock", params.stock.join(","))
 
-  const url = `${PIM_API_CONFIG.BASE_URL}${PIM_API_ENDPOINTS.MASTERS}?${categoryId}`
+  const url = `${PIM_API_CONFIG.BASE_URL}/masters?${categoryId}`
   console.log("🌐 [getPimCategoryProducts] 요청 URL:", url)
   // 필요 시 /categories/:id/masters 형태를 쓰는 백엔드라면 위 URL만 바꾸면 됨.
 

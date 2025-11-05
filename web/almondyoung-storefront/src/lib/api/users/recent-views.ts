@@ -4,7 +4,7 @@ import {
   RecentViewsResponseDto,
 } from "@lib/types/dto/user"
 import { clientApi } from "@lib/client-api"
-import { USER_API_CONFIG, USER_API_ENDPOINTS } from "@lib/api/users/config"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 
 /**
  * 최근 본 상품 추가
@@ -15,13 +15,10 @@ export async function addToRecentViews(
   console.log("🌐 [addToRecentViews] API 호출 시작:", { productId })
 
   try {
-    const data = await clientApi(
-      USER_API_CONFIG.BASE_URL + USER_API_ENDPOINTS.RECENT_VIEWS,
-      {
-        method: "POST",
-        body: JSON.stringify({ productId }),
-      }
-    )
+    const data = await clientApi(USER_API_CONFIG.BASE_URL + "/recent-views", {
+      method: "POST",
+      body: JSON.stringify({ productId }),
+    })
 
     console.log("✅ [addToRecentViews] 성공:", data)
     return data
@@ -41,9 +38,7 @@ export async function getRecentViews(
 
   try {
     const data = await clientApi(
-      USER_API_CONFIG.BASE_URL +
-        USER_API_ENDPOINTS.RECENT_VIEWS +
-        `?limit=${limit}`
+      USER_API_CONFIG.BASE_URL + "/recent-views" + `?limit=${limit}`
     )
 
     console.log("✅ [getRecentViews] 성공:", data)
@@ -74,8 +69,7 @@ export async function removeFromRecentViews(
 
   try {
     const data = await clientApi(
-      USER_API_CONFIG.BASE_URL +
-        USER_API_ENDPOINTS.RECENT_VIEWS_BY_ID(recentViewId),
+      USER_API_CONFIG.BASE_URL + "/recent-views/" + recentViewId,
       {
         method: "DELETE",
       }
