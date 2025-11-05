@@ -10,11 +10,12 @@ import MembershipStatusSection from "../../../../../domains/membership/component
 import { useRouter } from "next/navigation"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
-import CommonButton from "@components/common/custom-buttons/common-button"
+
 import MembershipRequestBanner from "domains/membership/home/components/membership-request-banner"
 import MembershipBenefitsCard from "domains/membership/home/components/membership-benefit-card"
 import MembershipBenefitsHorizontal from "domains/membership/home/components/membership-benefit"
 import MembershipPlanCard from "domains/membership/home/components/membership-benefit-card"
+import { CustomButton } from "@components/common/custom-buttons"
 
 // 멤버십 관리페이지
 export default function MembershipPage() {
@@ -56,18 +57,16 @@ export default function MembershipPage() {
             </>
           ) : (
             <>
-              <CommonButton
-                variant="orange"
-                appearance="filled"
+              <CustomButton
+                variant="primary"
                 size="lg"
-                height={44}
                 fullWidth={true}
                 onClick={() =>
                   router.push("/kr/mypage/membership/subscribe/payment")
                 }
               >
                 아몬드영 멤버십 신청하기
-              </CommonButton>
+              </CustomButton>
             </>
           )}
         </div>
