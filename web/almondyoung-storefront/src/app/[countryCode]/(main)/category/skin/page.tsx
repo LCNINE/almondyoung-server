@@ -1,6 +1,4 @@
-"use client"
 import Link from "next/link"
-import SkinCategoryPage from "../_legacy-main/[section]/components/skin-category-page"
 
 export default function SkinPage() {
   return (

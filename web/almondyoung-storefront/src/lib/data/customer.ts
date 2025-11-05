@@ -1,6 +1,8 @@
 "use server"
 
+import { USER_API_CONFIG } from "@lib/api/users/config"
 import { sdk } from "@lib/app-config"
+import { serverApi } from "@lib/server-api"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -16,7 +18,6 @@ import {
   removeRefreshToken,
   setMedusaAuthToken,
 } from "./cookies"
-import { serverApi } from "@lib/server-api"
 
 type MedusaSignupRequest = {
   email: string
@@ -171,17 +172,15 @@ export async function medusaLogin(): Promise<{
   }
 }
 
-export async function signout(countryCode: string) {
-  await serverApi("/auth/signout", {
+export async function signout() {
+  await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signout", {
     method: "POST",
     body: JSON.stringify({}),
   })
 
-  // await sdk.auth.logout()
-
+  await removeMedusaAuthToken()
   await removeAccessToken()
   await removeRefreshToken()
-  await removeMedusaAuthToken()
 
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)
@@ -190,8 +189,7 @@ export async function signout(countryCode: string) {
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
-
-  redirect(`/${countryCode}/`)
+  redirect("/")
 }
 
 export async function transferCart() {

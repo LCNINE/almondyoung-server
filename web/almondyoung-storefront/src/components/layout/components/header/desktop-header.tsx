@@ -18,6 +18,7 @@ import type { PimCategory } from "@lib/types/dto/pim"
 import { UserBasicInfo } from "@lib/types/ui/user"
 //search input
 import { SearchInput } from "./search-input"
+import { useUser } from "contexts/user-context"
 
 // 기본 카테고리 (서버가 없을 때 사용)
 const DEFAULT_CATEGORIES: PimCategory[] = [
@@ -152,9 +153,7 @@ function buildAncestors(
 }
 
 // 사용자 전문 분야별 네비 강조용
-const getSpecialtyCategories = (
-  specialties: { id: string; name: string }[]
-): string[] => {
+const getSpecialtyCategories = (specialties: string[]): string[] => {
   const map: Record<string, string[]> = {
     속눈썹: ["속눈썹", "속눈썹 연장", "속눈썹 펌", "속눈썹 영양제"],
     네일: ["네일", "네일아트", "네일 도구", "네일 케어"],
@@ -166,18 +165,16 @@ const getSpecialtyCategories = (
   // 사용자의 전문분야 배열에서 매칭되는 키워드들을 찾아서 반환
   const result: string[] = []
   specialties.forEach((specialty) => {
-    const keywords = map[specialty.name] || []
+    const keywords = map[specialty] || []
     result.push(...keywords)
   })
 
   return result
 }
 
-export function DesktopHeader({
-  user,
-}: {
-  user: UserBasicInfo | null | undefined
-}) {
+export function DesktopHeader() {
+  const { user } = useUser()
+
   const { categories } = useCategories() // ★ 전역 주입된 실데이터
   const pathname = usePathname()
   const params = useParams() as { countryCode?: string }
@@ -221,8 +218,7 @@ export function DesktopHeader({
     // 1. 사용자 전문분야와 직접 매칭 (name으로 비교)
     const directMatch = userSpecialties.some(
       (specialty) =>
-        specialty?.name &&
-        (name.includes(specialty.name) || specialty.name.includes(name))
+        specialty && (name.includes(specialty) || specialty.includes(name))
     )
 
     // 2. 키워드와 매칭

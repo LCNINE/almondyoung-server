@@ -3,14 +3,14 @@
 import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
 import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { BasicProductCard } from "@components/products/product-card"
-import { UserBasicInfo as User } from "@lib/types/ui/user"
+import { UserDetail } from "domains/auth/types"
+import MembershipBanner from "domains/home/components/banner/membership-banner"
+import ProductIntrestSection from "domains/home/components/report/product-intrest-section"
 import PurchaseReportDashboard from "domains/home/components/report/purchase-report-section"
-import SectionHeader from "./components/list/section-header"
 import ProductList from "./components/list/product-list"
 import { ProductListSection } from "./components/list/product-list-section"
-import MembershipBanner from "domains/home/components/banner/membership-banner"
+import SectionHeader from "./components/list/section-header"
 import UserReport from "./components/report/user-report"
-import ProductIntrestSection from "domains/home/components/report/product-intrest-section"
 
 // 전문 분야 한글명 매핑 (이미 한글이므로 그대로 반환)
 const getSpecialtyFieldName = (specialty: string): string => {
@@ -18,7 +18,7 @@ const getSpecialtyFieldName = (specialty: string): string => {
   return specialty || "일반"
 }
 // 로그인한 사용자용 홈페이지 섹션들
-export const HomeLoggedIn = ({ user }: { user: User | null }) => {
+export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
   return (
     <>
       {/* 검색 결과 및 구매 리포트 섹션 */}
@@ -41,7 +41,7 @@ export const HomeLoggedIn = ({ user }: { user: User | null }) => {
       {/* 추천제품 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title={`${user?.name || "고객"}님을 위한 추천제품`}
+          title={`${user?.username || "고객"}님을 위한 추천제품`}
           description="#시즌제품 #스마트케어 #머신신제품"
         />
         <ProductList

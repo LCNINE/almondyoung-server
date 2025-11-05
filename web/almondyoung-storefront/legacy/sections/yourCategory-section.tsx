@@ -9,7 +9,7 @@ export const CategorySelectSection = async (props: { countryCode: string }) => {
     <div>
       {/* 카테고리 선택 섹션 - PIM 카테고리 데이터 사용 */}
       <div>
-        <section className="bg-muted w-full border-t border-muted py-12 lg:py-20">
+        <section className="bg-muted border-muted w-full border-t py-12 lg:py-20">
           <div className="px-4 md:mx-auto md:max-w-[1360px] md:px-[40px]">
             <div className="mb-8 text-center lg:mb-12">
               <h2 className="mb-3 text-2xl font-bold text-gray-900 md:text-3xl">
@@ -26,7 +26,7 @@ export const CategorySelectSection = async (props: { countryCode: string }) => {
                 <Link
                   key={category.id}
                   href={`/${props.countryCode}/main/${category.slug}`}
-                  className="hover:border-yellow-30 flex flex-wrap items-center justify-center gap-2 rounded-sm border border-white bg-white md:px-4 px-2 py-2 transition-all duration-300 hover:border hover:shadow-md md:rounded-xl lg:px-6"
+                  className="hover:border-yellow-30 flex flex-wrap items-center justify-center gap-2 rounded-sm border border-white bg-white px-2 py-2 transition-all duration-300 hover:border hover:shadow-md md:rounded-xl md:px-4 lg:px-6"
                 >
                   <Image
                     src={category.imageUrl || ""}

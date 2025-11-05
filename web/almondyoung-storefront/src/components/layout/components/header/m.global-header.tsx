@@ -9,6 +9,7 @@ import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 import React, { useMemo, useState } from "react"
 import CartSheet from "../../../cart/cart-sheet"
+import { useUser } from "contexts/user-context"
 
 // 기본 카테고리 (서버가 없을 때 사용)
 const DEFAULT_CATEGORIES: PimCategory[] = [
@@ -119,9 +120,7 @@ const DEFAULT_CATEGORIES: PimCategory[] = [
 ]
 
 // 사용자 전문 분야 하이라이트용
-const getSpecialtyCategories = (
-  specialties: { id: string; name: string }[]
-): string[] => {
+const getSpecialtyCategories = (specialties: string[]): string[] => {
   const map: Record<string, string[]> = {
     속눈썹: ["속눈썹", "속눈썹 연장", "속눈썹 펌"],
     네일: ["네일", "네일아트", "네일 도구"],
@@ -135,7 +134,7 @@ const getSpecialtyCategories = (
 
   const result: string[] = []
   specialties.forEach((specialty) => {
-    const keywords = map[specialty.name] || []
+    const keywords = map[specialty] || []
     result.push(...keywords)
   })
 
@@ -153,9 +152,8 @@ const getSpecialtyCategories = (
  *
  * 사용처: 홈, 검색, 베스트 등 최상위 페이지
  */
-export const MobileGlobalHeader: React.FC<{
-  user: UserBasicInfo | null | undefined
-}> = ({ user }) => {
+export const MobileGlobalHeader: React.FC = () => {
+  const { user } = useUser()
   const pathname = usePathname()
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
@@ -190,8 +188,8 @@ export const MobileGlobalHeader: React.FC<{
 
     const directMatch = userSpecialties.some(
       (specialty) =>
-        specialty?.name &&
-        (category.includes(specialty.name) || specialty.name.includes(category))
+        specialty &&
+        (category.includes(specialty) || specialty.includes(category))
     )
 
     const keywordMatch = specialtyKeywords.some(
