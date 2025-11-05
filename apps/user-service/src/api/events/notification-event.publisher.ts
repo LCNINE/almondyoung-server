@@ -1,7 +1,7 @@
 // apps/user-service/src/events/notification-event.publisher.ts
 import { Injectable } from '@nestjs/common';
 import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/streams';
+import { UserEvents } from '@packages/event-contracts/streams';
 
 interface UserVerificationEvent {
   userId: string;

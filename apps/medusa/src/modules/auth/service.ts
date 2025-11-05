@@ -1,4 +1,4 @@
-import { USER_SCOPES } from '@libs/roles/src';
+import { USER_SCOPES } from '@packages/auth-constants';
 import { jwtVerify } from '@medusa/utils/jwt-verify';
 import {
   AuthIdentityProviderService,

@@ -12,7 +12,7 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM } from '@app/shared/streams';
+import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {

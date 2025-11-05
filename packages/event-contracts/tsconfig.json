@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/packages/event-contracts",
+    "rootDir": "."
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

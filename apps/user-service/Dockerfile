@@ -20,6 +20,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 COPY tsconfig*.json ./
 COPY libs/ ./libs/
+COPY packages/ ./packages/
 COPY apps/user-service/ ./apps/user-service/
 
 RUN npm run build:user-service
