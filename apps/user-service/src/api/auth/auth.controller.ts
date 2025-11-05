@@ -71,14 +71,12 @@ export class AuthController {
   @ApiOperation({ summary: '로그아웃' })
   @ApiResponse({ status: 200, description: '로그아웃 성공' })
   @Post('signout')
-  @UseGuards(AuthGuard('jwt'))
   @Public()
   async signOut(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-    @CurrentUser() user: schema.User,
   ) {
-    return this.authService.signOut(request, reply, user);
+    return this.authService.signOut(request, reply);
   }
 
   @ApiOperation({ summary: '토큰 재발급' })
