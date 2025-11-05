@@ -1,11 +1,14 @@
 "use client"
 
 import { CustomButton } from "@components/common/custom-buttons"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 import Image from "next/image"
 
 export function KakaoLoginBtn() {
   const handleKakaoLogin = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/kakao/signin`
+    const baseUrl = USER_API_CONFIG.BASE_URL
+
+    window.location.href = `${baseUrl}/auth/kakao/signin`
   }
 
   return (
