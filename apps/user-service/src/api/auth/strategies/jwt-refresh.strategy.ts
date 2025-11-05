@@ -51,7 +51,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
       await this.tokensService.validateRefreshToken(payload.sub, refreshToken);
     } catch (error) {
       this.logger.error('리프레시 토큰 검증 실패:', error);
-      await this.tokensService.deleteAllTokens(payload.sub); // 해당 유저의 토큰 다 삭제
+      // await this.tokensService.deleteAllTokens(payload.sub); // 해당 유저의 토큰 다 삭제
       throw new Error('The refresh token is invalid');
     }
 
