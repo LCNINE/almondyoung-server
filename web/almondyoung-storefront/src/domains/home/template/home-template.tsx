@@ -14,17 +14,6 @@ export default async function HomeTemplate({
   return (
     <>
       <HeroBannerSlider slides={[]} />
-      {/* 
-      {() => {
-        switch (true) {
-          case !!user:
-            return <HomeLoggedIn user={user} />
-          case !user:
-            return <HomeLogout categories={[]} />
-          default:
-            return <HomeLogout categories={[]} />
-        }
-      }} */}
 
       {user ? <HomeLoggedIn user={user} /> : <HomeLogout categories={[]} />}
       <CategorySelectSection countryCode={countryCode} />
