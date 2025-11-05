@@ -2,7 +2,7 @@ import { Suspense } from "react"
 // import ProductDetailClient from "domains/products/product-details/productDetail.client" // 원본 보존
 import { ProductDetailPageNew } from "domains/products/product-details" // 새 버전
 import { ProductDetail } from "@lib/types/ui/product"
-
+import productDetailData from "@lib/data/dummy/get-product-details.json"
 // 더미 JSON 데이터 import (서버 데이터 구조 그대로)
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import { ProductDetailReview } from "./components"

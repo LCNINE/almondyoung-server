@@ -1,5 +1,5 @@
 import { MoreVertical } from "lucide-react"
-import CommonButton from "@components/common/custom-buttons/common-button"
+import { CustomButton } from "@components/common/custom-buttons"
 
 /** ============================================
  * 반품 카드 컴포넌트
@@ -108,31 +108,27 @@ export function ReturnOrderCard({
                   ))}
                 </div>
 
-                <CommonButton
-                  type="button"
-                  appearance="outline"
-                  variant="gray"
-                  size="xs"
+                <CustomButton
+                  variant="secondary"
+                  size="md"
                   onClick={onAddToCartClick}
                 >
                   장바구니 담기
-                </CommonButton>
+                </CustomButton>
               </div>
             </div>
           </div>
 
           {/* 하단 버튼 */}
           <div className="flex gap-2.5">
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
-              size="lg"
-              fullWidth={true}
+            <CustomButton
+              variant="secondary"
+              size="md"
               onClick={onReturnDetailClick}
+              fullWidth={true}
             >
               반품 상세보기
-            </CommonButton>
+            </CustomButton>
           </div>
         </div>
       </div>
@@ -187,15 +183,14 @@ export function ReturnOrderCard({
                     ))}
                   </div>
 
-                  <CommonButton
-                    type="button"
+                  <CustomButton
+                    variant="secondary"
                     onClick={onAddToCartClick}
-                    appearance="outline"
-                    variant="gray"
                     size="md"
+                    fullWidth={true}
                   >
                     장바구니 담기
-                  </CommonButton>
+                  </CustomButton>
                 </div>
               </div>
             </div>
@@ -204,26 +199,22 @@ export function ReturnOrderCard({
           <div className="h-[145px] w-px bg-[#d9d9d9]" aria-hidden="true" />
 
           <aside className="flex w-[126px] flex-col gap-2.5">
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
-              size="lg"
+            <CustomButton
+              variant="secondary"
+              size="md"
               fullWidth={true}
               onClick={onTrackingClick}
             >
               회수 조회
-            </CommonButton>
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
-              size="lg"
+            </CustomButton>
+            <CustomButton
+              variant="secondary"
+              size="md"
               fullWidth={true}
               onClick={onCancelReturnClick}
             >
               반품 철회
-            </CommonButton>
+            </CustomButton>
           </aside>
         </section>
       </div>

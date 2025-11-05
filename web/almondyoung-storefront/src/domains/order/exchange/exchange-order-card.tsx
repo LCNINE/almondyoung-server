@@ -1,4 +1,4 @@
-import CommonButton from "@components/common/custom-buttons/common-button"
+import { CustomButton } from "@components/common/custom-buttons"
 import { MoreVertical } from "lucide-react"
 
 interface ExchangeOrderCardProps {
@@ -98,52 +98,44 @@ export function ExchangeOrderCard({
                   ))}
                 </div>
 
-                <CommonButton
-                  type="button"
+                <CustomButton
+                  variant="secondary"
+                  size="lg"
                   onClick={onAddToCartClick}
-                  appearance="outline"
-                  variant="gray"
-                  size="xs"
                 >
                   장바구니 담기
-                </CommonButton>
+                </CustomButton>
               </div>
             </div>
           </div>
 
           {/* 하단 버튼 */}
           <div className="flex flex-col gap-2.5">
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
+            <CustomButton
+              variant="secondary"
               size="lg"
-              fullWidth={true}
               onClick={onExchangeDetailClick}
+              fullWidth={true}
             >
               교환 상세보기
-            </CommonButton>
+            </CustomButton>
             <div className="flex gap-2.5">
-              <CommonButton
-                type="button"
-                appearance="outline"
-                variant="gray"
+              <CustomButton
+                variant="secondary"
                 size="lg"
-                fullWidth={true}
                 onClick={onTrackingClick}
+                fullWidth={true}
               >
                 회수조회
-              </CommonButton>
-              <CommonButton
-                type="button"
-                appearance="outline"
-                variant="gray"
+              </CustomButton>
+              <CustomButton
+                variant="secondary"
                 size="lg"
-                fullWidth={true}
                 onClick={onDeliveryTrackingClick}
+                fullWidth={true}
               >
                 배송조회
-              </CommonButton>
+              </CustomButton>
             </div>
           </div>
         </div>
@@ -199,15 +191,13 @@ export function ExchangeOrderCard({
                     ))}
                   </div>
 
-                  <CommonButton
-                    type="button"
+                  <CustomButton
+                    variant="secondary"
+                    size="lg"
                     onClick={onAddToCartClick}
-                    appearance="outline"
-                    variant="gray"
-                    size="md"
                   >
                     장바구니 담기
-                  </CommonButton>
+                  </CustomButton>
                 </div>
               </div>
             </div>
@@ -216,36 +206,30 @@ export function ExchangeOrderCard({
           <div className="h-[164px] w-px bg-[#d9d9d9]" aria-hidden="true" />
 
           <aside className="flex w-[126px] flex-col gap-2.5">
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="orange"
+                <CustomButton
+              variant="secondary"
               size="lg"
-              fullWidth={true}
               onClick={onExchangeDetailClick}
+              fullWidth={true}
             >
               교환 상세
-            </CommonButton>
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
+            </CustomButton>
+            <CustomButton
+              variant="secondary"
               size="lg"
-              fullWidth={true}
               onClick={onTrackingClick}
+              fullWidth={true}
             >
               회수 조회
-            </CommonButton>
-            <CommonButton
-              type="button"
-              appearance="outline"
-              variant="gray"
+            </CustomButton>
+            <CustomButton
+              variant="secondary"
               size="lg"
-              fullWidth={true}
               onClick={onDeliveryTrackingClick}
+              fullWidth={true}
             >
               배송 조회
-            </CommonButton>
+            </CustomButton>
           </aside>
         </section>
       </div>

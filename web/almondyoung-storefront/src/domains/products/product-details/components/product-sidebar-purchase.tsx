@@ -221,7 +221,7 @@ export function ProductSidebarPurchase({
         {/* 총 상품 금액 */}
         <section className="border-gray-20 mb-4 border-t pt-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-gray-600">총 상품 금액</h3>
+            <span className="text-sm text-gray-600">총 상품 금액</span>
             <div className="flex items-center gap-4 text-right">
               <p className="text-sm text-gray-500">
                 총 수량 {getTotalQuantity()}개
