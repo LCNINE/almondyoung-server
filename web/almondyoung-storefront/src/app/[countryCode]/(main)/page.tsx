@@ -1,8 +1,5 @@
-// --- Layout & Module Components ---
-// --- API & Types ---
 import ClientToast from "@components/common/client-toast"
 import { ThemeManager } from "@components/common/theme-manager"
-
 import { WithHeaderLayout } from "@components/layout"
 import ProtectedRoute from "@components/protected-route"
 import HomeTemplate from "domains/home/template/home-template"
