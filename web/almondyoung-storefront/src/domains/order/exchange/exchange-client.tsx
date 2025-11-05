@@ -5,6 +5,8 @@ import { PageTitle } from "@components/common/page-title"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import OrderCard from "@components/orders/order-card/order-card"
 
+import { ReturnOrderCard } from "./return-order-card"
+import { ExchangeOrderCard } from "./exchange-order-card"
 /**
  * (가상) Order 타입을 정의합니다.
  * OrderCardsList와 OrderCard의 props를 기반으로 재구성했습니다.
@@ -33,18 +35,26 @@ export function ExchangeClient() {
       <PageTitle>반품/교환/환불 목록</PageTitle>
 
       <section className="space-y-6">
-        <OrderCard orderDate={"6월 15일"}>
-          <OrderCardContent
-            status={"취소/교환/반품"}
-            deliveryInfo={"6/18(화) 도착"}
-            productName={"노몬드 속눈썹 영양제 블랙"}
-            productImage={"/images/sample-cosmetic.png"}
-            price={"9,000원"}
-            quantity={2}
-            options={["- 브러쉬 타입 1개", "- 마스카라 타입 1개"]}
-            showInquiry={false}
-          />
-        </OrderCard>
+        <ReturnOrderCard
+          status={"반품완료"}
+          statusInfo={"2025. 05. 12 반품"}
+          productName={"노몬드 속눈썹 영양제 블랙"}
+          productImage={"/images/sample-cosmetic.png"}
+          price={"9,000원"}
+          quantity={2}
+          options={["- 브러쉬 타입 1개", "- 마스카라 타입 1개"]}
+          returnDate={"2025. 05. 12"}
+        />
+        <ExchangeOrderCard
+          exchangeDate={"2025. 05. 12"}
+          status={"교환완료"}
+          productName={"노몬드 속눈썹 영양제 블랙"}
+          productImage={"/images/sample-cosmetic.png"}
+          price={"9,000원"}
+          quantity={2}
+          options={["- 브러쉬 타입 1개", "- 마스카라 타입 1개"]}
+          orderDate={"2025. 05. 12"}
+        />
       </section>
     </div>
   )
