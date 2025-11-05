@@ -113,9 +113,9 @@ export function CartMainClient({ user, isLoggedIn }: CartMainClientProps) {
           id: product.id,
           image: product.thumbnail || "",
           name: product.name,
-          price: product.price.original || 0,
-          membershipPrice: product.price.member || 0,
-          discountRate: product.price.discountRate || 0,
+          price: product.basePrice || 0,
+          membershipPrice: product.membershipPrice || 0,
+          discountRate: product.basePrice || 0, // todo: 정확한 타입 확인해봐야함
           rating: 4.5,
           reviewCount: Math.floor(Math.random() * 200) + 50,
           isSoldOut: false,

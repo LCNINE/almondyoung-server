@@ -1,9 +1,10 @@
-import { 
-  RecentViewDto, 
-  AddToRecentViewsDto, 
-  RecentViewsResponseDto 
+import {
+  RecentViewDto,
+  AddToRecentViewsDto,
+  RecentViewsResponseDto,
 } from "@lib/types/dto/user"
 import { clientApi } from "@lib/client-api"
+import { USER_API_CONFIG } from "@lib/api/users/config"
 
 /**
  * 최근 본 상품 추가
@@ -11,18 +12,18 @@ import { clientApi } from "@lib/client-api"
 export async function addToRecentViews(
   productId: string
 ): Promise<RecentViewDto> {
-  console.log('🌐 [addToRecentViews] API 호출 시작:', { productId })
-  
+  console.log("🌐 [addToRecentViews] API 호출 시작:", { productId })
+
   try {
-    const data = await clientApi("/recent-views", {
+    const data = await clientApi(USER_API_CONFIG.BASE_URL + "/recent-views", {
       method: "POST",
       body: JSON.stringify({ productId }),
     })
-    
-    console.log('✅ [addToRecentViews] 성공:', data)
+
+    console.log("✅ [addToRecentViews] 성공:", data)
     return data
   } catch (err) {
-    console.error('❌ [addToRecentViews] 에러:', err)
+    console.error("❌ [addToRecentViews] 에러:", err)
     throw err
   }
 }
@@ -33,25 +34,27 @@ export async function addToRecentViews(
 export async function getRecentViews(
   limit: number = 10
 ): Promise<RecentViewDto[]> {
-  console.log('🌐 [getRecentViews] API 호출 시작:', { limit })
-  
+  console.log("🌐 [getRecentViews] API 호출 시작:", { limit })
+
   try {
-    const data = await clientApi(`/recent-views?limit=${limit}`)
-    
-    console.log('✅ [getRecentViews] 성공:', data)
-    
+    const data = await clientApi(
+      USER_API_CONFIG.BASE_URL + "/recent-views" + `?limit=${limit}`
+    )
+
+    console.log("✅ [getRecentViews] 성공:", data)
+
     // API가 배열을 반환하거나 items 속성이 있는 경우 처리
     if (Array.isArray(data)) {
       return data
     }
-    
-    if (data && typeof data === 'object' && 'items' in data) {
+
+    if (data && typeof data === "object" && "items" in data) {
       return (data as RecentViewsResponseDto).items
     }
-    
+
     return []
   } catch (err) {
-    console.error('❌ [getRecentViews] 에러:', err)
+    console.error("❌ [getRecentViews] 에러:", err)
     throw err
   }
 }
@@ -62,17 +65,20 @@ export async function getRecentViews(
 export async function removeFromRecentViews(
   recentViewId: string
 ): Promise<{ success: boolean; message: string }> {
-  console.log('🌐 [removeFromRecentViews] API 호출 시작:', { recentViewId })
-  
+  console.log("🌐 [removeFromRecentViews] API 호출 시작:", { recentViewId })
+
   try {
-    const data = await clientApi(`/recent-views/${recentViewId}`, {
-      method: "DELETE",
-    })
-    
-    console.log('✅ [removeFromRecentViews] 성공:', data)
+    const data = await clientApi(
+      USER_API_CONFIG.BASE_URL + "/recent-views/" + recentViewId,
+      {
+        method: "DELETE",
+      }
+    )
+
+    console.log("✅ [removeFromRecentViews] 성공:", data)
     return data
   } catch (err) {
-    console.error('❌ [removeFromRecentViews] 에러:', err)
+    console.error("❌ [removeFromRecentViews] 에러:", err)
     throw err
   }
 }

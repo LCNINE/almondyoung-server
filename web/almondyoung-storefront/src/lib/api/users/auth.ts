@@ -1,13 +1,6 @@
 import { clientApi } from "@lib/client-api"
-// import { SignupSchema } from "@modules/auth/schemas/signup-schema"
-
-// 임시 타입 정의
-type SignupSchema = {
-  email: string
-  password: string
-  passwordConfirm: string
-  marketingAll: boolean
-}
+import { SignupSchema } from "domains/auth/schemas/signup-schema"
+import { USER_API_CONFIG, USER_API_ENDPOINTS } from "@lib/api/users/config"
 
 type LocalSignupRequest = Omit<SignupSchema, "passwordConfirm" | "marketingAll">
 type LocalSignupResponse = {
@@ -17,14 +10,14 @@ type LocalSignupResponse = {
 export const createUser = async (
   data: LocalSignupRequest
 ): Promise<LocalSignupResponse> => {
-  return clientApi("/auth/signup", {
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/signup", {
     method: "POST",
     body: JSON.stringify(data),
   })
 }
 
 export const findIdByEmail = async (email: string) => {
-  return clientApi("/auth/forget-userid", {
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/forget-userid", {
     method: "POST",
     body: JSON.stringify({ email }),
   })
@@ -34,7 +27,7 @@ export const findPwByEmailAndLoginId = async (
   email: string,
   loginId: string
 ) => {
-  return clientApi("/auth/forget-password", {
+  return clientApi(USER_API_CONFIG.BASE_URL + "/auth/forget-password", {
     method: "POST",
     body: JSON.stringify({ email, loginId }),
   })
