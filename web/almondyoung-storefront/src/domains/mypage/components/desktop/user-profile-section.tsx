@@ -5,11 +5,12 @@ import { Spinner } from "@components/common/spinner"
 import { signout } from "@lib/data/customer"
 import { useUser } from "contexts/user-context"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
-import { useParams, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 
 interface UserProfileSectionProps {
   userName: string
+  userId: string
 }
 
 /**
@@ -18,8 +19,10 @@ interface UserProfileSectionProps {
  * - 액션 버튼은 <nav><ul><li> 구조로 단순화
  * - 반복 클래스 최소화, 재사용 가능한 버튼 클래스 추출
  */
-export function UserProfileSection({ userName }: UserProfileSectionProps) {
-  const { countryCode } = useParams() as { countryCode: string }
+export function UserProfileSection({
+  userName,
+  userId,
+}: UserProfileSectionProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
@@ -27,7 +30,7 @@ export function UserProfileSection({ userName }: UserProfileSectionProps) {
   const handleLogout = () => {
     startTransition(async () => {
       try {
-        await signout(countryCode)
+        await signout()
         setUser(null)
         router.push("/")
       } catch (error) {

@@ -19,14 +19,13 @@ export const metadata: Metadata = {
 export default async function RootLayout(props: { children: React.ReactNode }) {
   // 개발 중에는 static JSON 사용
   const categories = categoriesData.categories
-
-  const user = await fetchCurrentUser().catch(() => null)
+  const currentUser = await fetchCurrentUser().catch(() => null)
 
   return (
     <html lang="ko" suppressHydrationWarning>
       <body className="overflow-x-clip [scrollbar-gutter:stable_both-edges]">
         <CategoryProvider initialCategories={categories}>
-          <UserProvider initialUser={user}>
+          <UserProvider initialUser={currentUser}>
             <ThemeProvider
               attribute="class"
               defaultTheme="light"

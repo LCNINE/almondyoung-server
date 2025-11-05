@@ -172,7 +172,7 @@ export async function medusaLogin(): Promise<{
   }
 }
 
-export async function signout(countryCode: string) {
+export async function signout() {
   await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signout", {
     method: "POST",
     body: JSON.stringify({}),
@@ -189,7 +189,7 @@ export async function signout(countryCode: string) {
 
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
-  redirect(`/${countryCode}/`)
+  redirect("/")
 }
 
 export async function transferCart() {

@@ -1,19 +1,25 @@
 "use client"
 
 import { USER_API_CONFIG } from "@lib/api/users/config"
+import { signout } from "@lib/data/customer"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef } from "react"
 
 const MAX_ATTEMPTS = 2
 
-export default function AuthRestore() {
+export default function AuthRestore({
+  hasRefreshToken,
+}: {
+  hasRefreshToken: boolean
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const attemptsRef = useRef(0)
   const hasRunRef = useRef(false)
 
   useEffect(() => {
-    if (hasRunRef.current) return
+    if (hasRunRef.current || !hasRefreshToken) return
+
     hasRunRef.current = true
 
     const restoreToken = async () => {
@@ -58,7 +64,21 @@ export default function AuthRestore() {
     restoreToken()
   }, [pathname, router])
 
-  const handleAuthFail = () => {
+  const handleAuthFail = async () => {
+    // 메인 페이지인지 확인 (경로: /kr, /us 등)
+    const isMainPage = /^\/[a-z]{2}$/i.test(pathname)
+
+    if (isMainPage && hasRefreshToken) {
+      // 메인 페이지: 로그아웃만 처리 (쿠키 삭제 후 새로고침)
+      console.log("메인 페이지에서 토큰 복구 실패 - 로그아웃 처리")
+
+      await signout()
+
+      window.location.reload()
+      return
+    }
+
+    // 다른 페이지: 로그인 페이지로 리다이렉트
     router.replace(`/auth/login?redirect_to=${encodeURIComponent(pathname)}`)
   }
 

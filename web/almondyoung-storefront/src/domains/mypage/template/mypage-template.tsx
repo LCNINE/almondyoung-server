@@ -10,13 +10,13 @@ export async function MyPageTemplate() {
     <>
       {/* 모바일 콘텐츠 - md 미만 */}
       <div className="block md:hidden">
-        <MyPageMobileContent userName={currentUser?.username!} />
+        <MyPageMobileContent currentUser={currentUser!} />
       </div>
 
       {/* 데스크탑 콘텐츠 - md 이상 */}
       <div className="hidden md:block">
         <MypageLayout>
-          <MyPageDesktopContent userName={currentUser?.username!} />
+          <MyPageDesktopContent currentUser={currentUser!} />
         </MypageLayout>
       </div>
     </>

@@ -1,11 +1,12 @@
+import { UserDetail } from "domains/auth/types"
+import { MENU_ITEMS, QUICK_LINKS } from "../constants/mypage-constants"
+import { MenuList } from "./menu-list"
 import { MobileHeader } from "./mobile-header"
-import { SavingsBanner } from "./savings-banner"
+import { PaymentBanner } from "./payment-banner"
 import { PointsBanner } from "./points-banner"
 import { QuickLinks } from "./quick-links"
+import { SavingsBanner } from "./savings-banner"
 import { ShippingItem } from "./shipping-item"
-import { PaymentBanner } from "./payment-banner"
-import { MenuList } from "./menu-list"
-import { MENU_ITEMS, QUICK_LINKS } from "../constants/mypage-constants"
 
 /**
  * 마이페이지 모바일 콘텐츠
@@ -15,13 +16,13 @@ import { MENU_ITEMS, QUICK_LINKS } from "../constants/mypage-constants"
  * - 모바일에 최적화된 섹션 구성
  */
 interface MyPageMobileContentProps {
-  userName: string
+  currentUser: UserDetail
 }
 
-export function MyPageMobileContent({ userName }: MyPageMobileContentProps) {
+export function MyPageMobileContent({ currentUser }: MyPageMobileContentProps) {
   return (
     <div className="bg-muted mx-auto space-y-4 px-4 py-4">
-      <MobileHeader userName={userName} />
+      <MobileHeader userName={currentUser?.username} />
       <SavingsBanner />
       <PointsBanner />
       <QuickLinks links={QUICK_LINKS} />
