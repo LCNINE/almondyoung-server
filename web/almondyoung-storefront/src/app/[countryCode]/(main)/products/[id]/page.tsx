@@ -1,10 +1,13 @@
-import { ProductDetail } from "@lib/types/ui/product"
-import ProductDetailClient from "domains/products/product-details/productDetail.client"
 import { Suspense } from "react"
+// import ProductDetailClient from "domains/products/product-details/productDetail.client" // 원본 보존
+import { ProductDetailPageNew } from "domains/products/product-details" // 새 버전
+import { ProductDetail } from "@lib/types/ui/product"
 
 // 더미 JSON 데이터 import (서버 데이터 구조 그대로)
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
-import productDetailData from "@lib/data/dummy/get-product-details.json"
+import { ProductDetailReview } from "./components"
+import { ReviewCardList } from "domains/reviews/summary/review-card-list"
+import ProductDetailClient from "domains/products/product-details/productDetail.client"
 
 /**
  * 서버 데이터를 ProductDetail 타입으로 변환
@@ -129,7 +132,7 @@ export default async function Page({
     >
       <div className="md:bg-muted/50 min-h-screen bg-white">
         <Suspense fallback={<div className="p-8">로딩 중…</div>}>
-          <ProductDetailClient
+          <ProductDetailPageNew
             params={Promise.resolve({ id, countryCode })}
             product={product}
             error={error}

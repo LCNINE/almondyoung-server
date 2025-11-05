@@ -1,0 +1,5 @@
+export { StarRating } from "./star-rating"
+export { ReviewAuthor } from "./review-author"
+export { ReviewText } from "./review-text"
+export { ReviewThumbnailGallery } from "./review-thumbnail-gallery"
+export { ReviewHelpfulButton } from "./review-helpful-button"

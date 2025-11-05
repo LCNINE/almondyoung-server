@@ -31,6 +31,12 @@ import { getRecommendedProducts } from "app/data/__mocks__/recommended-products.
 import MembershipTagIcon from "icons/membership-tag-icon"
 import Image from "next/image"
 import { ProductRecommandSlider } from "components/product-recommand-slider"
+import {
+  ReviewCardList,
+  ReviewSummary,
+  ProductReviewThumbnailGallery,
+} from "domains/reviews/summary"
+import { ReviewDetailCard } from "domains/reviews/details"
 
 interface ProductDetailPageProps {
   params: Promise<{
@@ -41,7 +47,29 @@ interface ProductDetailPageProps {
   error?: string | null
   user: UserBasicInfo | null
 }
-
+const reviewListData = {
+  reviews: [
+    {
+      id: "r1",
+      author: "이*희",
+      rating: 5,
+      date: "2025-05-09T00:00:00Z",
+      tags: ["10년차 원장님", "재구매"],
+      text: "얇고 촥 붙어요 좋습니다!\n언제나 믿고 사는 제품이에요. 가격이나 품질이나 모두 괜찮습니다",
+      thumbnail: { src: "rectangle-29.png", alt: "리뷰 첨부 사진", count: 5 },
+    },
+    {
+      id: "r2",
+      author: "강*희",
+      rating: 4,
+      date: "2025-05-09T00:00:00Z",
+      tags: ["10년차 원장님"],
+      text: "촉촉하고 유통기한 넉넉해서 좋네요!",
+      thumbnail: { src: "rectangle-29.png", alt: "리뷰 첨부 사진", count: 5 },
+    },
+    // ... (더 많은 리뷰 데이터)
+  ],
+}
 const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   params,
   product,
@@ -770,110 +798,78 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               {/* 리뷰 섹션 */}
               <div ref={reviewRef} className="mb-8 rounded-lg bg-white py-6">
                 <div>
-                  <div>
-                    <div className="mb-6 flex items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <Star
-                              key={star}
-                              className="h-5 w-5 fill-yellow-400 text-yellow-400"
-                            />
-                          ))}
-                        </div>
-                        <span className="text-2xl font-bold">
-                          {product?.rating}
-                        </span>
-                      </div>
-                      <span className="text-gray-500">
-                        평균 {product?.rating}
-                      </span>
-                    </div>
+                  {/* 리뷰 통계 및 키워드 요약 */}
+                  <ReviewSummary
+                    totalReviews={4617}
+                    averageRating={product?.rating || 4.7}
+                    summaryTags={[
+                      "촉촉해요",
+                      "얇아요",
+                      "잘 마르지 않아요",
+                      "마음에 들어요",
+                      "항상 사용해요",
+                      "자극적이지 않아요",
+                      "가성비가 좋아요",
+                      "건조하지 않아요",
+                      "재구매 했어요",
+                    ]}
+                  />
 
-                    <div className="mb-6">
-                      <div className="mb-3 flex items-center gap-2">
-                        <h4 className="font-bold">리뷰요약</h4>
-                        <span className="text-sm text-gray-500">
-                          구매하신 분들의 리뷰를 분석했어요!
-                        </span>
-                      </div>
-                      {/* <div className="flex flex-wrap gap-2">
-                        {reviewKeywords.map((keyword, idx) => (
-                          <span
-                            key={idx}
-                            className="rounded-full bg-muted0 px-3 py-1 text-sm"
-                          >
-                            {keyword}
-                          </span>
-                        ))}
-                      </div> */}
-                    </div>
-
-                    {/* Review Images */}
-                    <div className="mb-6 flex gap-2 overflow-x-auto">
-                      {[1, 2, 3, 4, 5, 6, 7].map((img) => (
-                        <div
-                          key={img}
-                          className="h-24 w-24 flex-shrink-0 rounded-lg bg-gray-200"
-                        />
-                      ))}
-                      <button className="bg-muted0 flex h-24 w-24 flex-shrink-0 flex-col items-center justify-center rounded-lg">
-                        <span className="font-bold">100</span>
-                        <span className="text-xs">더보기</span>
-                      </button>
-                    </div>
-
-                    {/* Review List */}
-                    <div className="space-y-6">
-                      {[].map((review: any) => (
-                        <div key={review.id} className="border-b pb-6">
-                          <div className="mb-2 flex items-center gap-2">
-                            <span className="font-medium">{review.author}</span>
-                            <span className="bg-muted0 rounded px-2 py-1 text-xs">
-                              {review.authorType}
-                            </span>
-                            {review.isRepurchase && (
-                              <span className="bg-muted0 rounded px-2 py-1 text-xs">
-                                재구매
-                              </span>
-                            )}
-                          </div>
-                          <div className="mb-2 flex items-center gap-2">
-                            <div className="flex">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className={`h-4 w-4 ${star <= review.rating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}`}
-                                />
-                              ))}
-                            </div>
-                            <span className="text-sm text-gray-500">
-                              {review.date}
-                            </span>
-                          </div>
-                          <div className="mb-3 rounded bg-gray-50 p-2">
-                            <span className="text-sm">
-                              {review.productVariant}
-                            </span>
-                          </div>
-                          <p className="mb-3 text-sm">{review.content}</p>
-                          {review.images && review.images.length > 0 && (
-                            <div className="mb-3 flex gap-2">
-                              {review.images.map((img: string, idx: number) => (
-                                <div
-                                  key={idx}
-                                  className="h-16 w-16 rounded bg-gray-200"
-                                />
-                              ))}
-                            </div>
-                          )}
-                          <button className="text-sm text-gray-500">
-                            ♥ {review.likes}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                  {/* 리뷰 썸네일 갤러리 */}
+                  <div className="my-6">
+                    <ProductReviewThumbnailGallery
+                      thumbnails={[
+                        {
+                          id: "t1",
+                          src: "/images/review-1.jpg",
+                          alt: "리뷰 사진 1",
+                        },
+                        {
+                          id: "t2",
+                          src: "/images/review-2.jpg",
+                          alt: "리뷰 사진 2",
+                        },
+                        {
+                          id: "t3",
+                          src: "/images/review-3.jpg",
+                          alt: "리뷰 사진 3",
+                        },
+                        {
+                          id: "t4",
+                          src: "/images/review-4.jpg",
+                          alt: "리뷰 사진 4",
+                        },
+                        {
+                          id: "t5",
+                          src: "/images/review-5.jpg",
+                          alt: "리뷰 사진 5",
+                        },
+                        {
+                          id: "t6",
+                          src: "/images/review-6.jpg",
+                          alt: "리뷰 사진 6",
+                        },
+                        {
+                          id: "t7",
+                          src: "/images/review-7.jpg",
+                          alt: "리뷰 사진 7",
+                        },
+                        {
+                          id: "t8",
+                          src: "/images/review-8.jpg",
+                          alt: "리뷰 사진 8",
+                        },
+                      ]}
+                      moreCount={4100}
+                      onMoreClick={() => {
+                        // TODO: 리뷰 갤러리 페이지로 이동
+                        console.log("더보기 클릭")
+                      }}
+                    />
                   </div>
+
+                  {/* 리뷰 카드 리스트 */}
+                  <ReviewCardList reviews={reviewListData.reviews} />
                 </div>
               </div>
 
@@ -1010,7 +1006,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 <div className="flex gap-2">
                   <CustomButton
                     variant="secondary"
-                    size="default"
+                    size="md"
                     onClick={handleWishlistToggle}
                     disabled={wishlistLoading}
                   >
@@ -1023,7 +1019,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     />{" "}
                     찜
                   </CustomButton>
-                  <CustomButton variant="secondary" size="default">
+                  <CustomButton variant="secondary" size="md">
                     <MessageCircle className="h-7 w-7" />
                     챗봇
                   </CustomButton>

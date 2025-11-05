@@ -19,7 +19,7 @@ export default function MypageLayout({ children }: MypageLayoutProps) {
   return (
     <main className="md:bg-muted w-full bg-white">
       <div className="container mx-auto max-w-[1360px]">
-        <div className="inner px-4 md:px-[40px] md:py-10">
+        <div className="inner md:px-[40px] md:py-10">
           <div className="flex flex-row gap-8">
             <aside className="sidebar hidden w-[280px] flex-shrink-0 lg:block">
               <MypageSidebar />

@@ -1,4 +1,6 @@
 import { ButtonHTMLAttributes, ReactNode } from "react"
+import { cva, type VariantProps } from "class-variance-authority"
+import { cn } from "@lib/utils" // CustomButton에서 사용하는 cn 유틸리티를 가져옵니다.
 
 /**
  * 버튼 variant 타입 (색상 기준)
@@ -31,9 +33,63 @@ export type ResponsiveSize = {
   lg?: ButtonSize
 }
 
-interface CommonButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant
-  appearance?: ButtonAppearance
+// 1. CVA 정의: variant와 appearance의 조합을 선언적으로 관리합니다.
+const commonButtonVariants = cva(
+  // 기본 스타일
+  "flex items-center justify-center rounded-[5px] leading-none transition-colors disabled:cursor-not-allowed",
+  {
+    variants: {
+      variant: {
+        orange: "", // 기본 variant는 compoundVariants에서 처리
+        gray: "",
+      },
+      appearance: {
+        filled: "",
+        outline: "",
+      },
+    },
+    // 2. 조합 스타일: hover, active, disabled 상태를 여기서 모두 처리
+    compoundVariants: [
+      // Orange Filled
+      {
+        variant: "orange",
+        appearance: "filled",
+        className:
+          "bg-[#f29219] text-white border-0 font-semibold hover:bg-[#d67e15] active:bg-[#c97113] disabled:bg-[#ffa500]/40",
+      },
+      // Gray Filled
+      {
+        variant: "gray",
+        appearance: "filled",
+        className:
+          "bg-gray-600 text-white border-0 hover:bg-gray-700 active:bg-gray-800 disabled:bg-gray-300 disabled:text-gray-500",
+      },
+      // Orange Outline
+      {
+        variant: "orange",
+        appearance: "outline",
+        className:
+          "bg-white border border-amber-500 text-amber-500 hover:bg-amber-50 active:bg-amber-100 disabled:border-amber-300 disabled:text-amber-300",
+      },
+      // Gray Outline
+      {
+        variant: "orange",
+        appearance: "outline",
+        className:
+          "bg-white border border-zinc-400 text-gray-900 hover:bg-gray-50 active:bg-gray-100 disabled:border-zinc-300 disabled:text-gray-400",
+      },
+    ],
+    defaultVariants: {
+      variant: "orange",
+      appearance: "filled",
+    },
+  }
+)
+
+// 3. Props 인터페이스: CVA의 VariantProps를 상속
+interface CommonButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof commonButtonVariants> {
   size?: ButtonSize | ResponsiveSize
   /** 커스텀 높이 (px 단위) - 지정하면 size보다 우선 적용 */
   height?: number
@@ -42,21 +98,11 @@ interface CommonButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * CommonButton - 공통 버튼 컴포넌트
- *
- * @example
- * // 고정 크기
- * <CommonButton size="lg">배송 조회</CommonButton>
- *
- * // 반응형 크기
- * <CommonButton size={{ base: "sm", lg: "md" }}>배송 조회</CommonButton>
- *
- * // 커스텀 높이
- * <CommonButton height={50}>배송 조회</CommonButton>
+ * CommonButton - 공통 버튼 컴포넌트 (CVA 적용)
  */
 const CommonButton = ({
-  variant = "orange",
-  appearance = "filled",
+  variant, // cva가 기본값(orange) 처리
+  appearance, // cva가 기본값(filled) 처리
   size = "md",
   height,
   fullWidth = false,
@@ -65,81 +111,45 @@ const CommonButton = ({
   children,
   ...props
 }: CommonButtonProps) => {
-  // ===== Appearance + Variant 조합 스타일 =====
-  const getVariantStyles = (): string => {
-    if (appearance === "filled") {
-      const filledStyles = {
-        orange: disabled
-          ? "bg-[#ffa500]/40 text-white border-0"
-          : "bg-[#f29219] text-white border-0 font-semibold hover:bg-[#d67e15] active:bg-[#c97113]",
-        gray: disabled
-          ? "bg-gray-300 text-gray-500 border-0"
-          : "bg-gray-600 text-white border-0 hover:bg-gray-700 active:bg-gray-800",
-      }
-      return filledStyles[variant]
-    }
-
-    const outlineStyles = {
-      orange: disabled
-        ? "bg-white border border-amber-300 text-amber-300"
-        : "bg-white border border-amber-500 text-amber-500 hover:bg-amber-50 active:bg-amber-100",
-      gray: disabled
-        ? "bg-white border border-zinc-300 text-gray-400"
-        : "bg-white border border-zinc-400 text-gray-900 hover:bg-gray-50 active:bg-gray-100",
-    }
-    return outlineStyles[variant]
-  }
-
-  // ===== Size 스타일 처리 =====
-  const baseSizeStyles: Record<ButtonSize, string> = {
+  const sizeStyles: Record<ButtonSize, string> = {
     xs: "h-[27px] px-2.5 py-2.5 text-xs",
     sm: "h-9 px-4 py-2.5 text-sm",
     md: "h-[38px] px-4 py-2.5 text-xs",
-    lg: "h-[40px] px-4 py-3 text-sm", // h-auto → h-11 (44px 고정)
+    lg: "h-[44px] px-4 py-3 text-sm",
   }
 
-  const lgSizeStyles: Record<ButtonSize, string> = {
-    xs: "lg:h-[27px] lg:px-2.5 lg:py-2.5 lg:text-xs",
-    sm: "lg:h-9 lg:px-4 lg:py-2.5 lg:text-sm",
-    md: "lg:h-[38px] lg:px-4 lg:py-2.5 lg:text-xs",
-    lg: "lg:h-[40px] lg:px-4 lg:py-3 lg:text-sm", // lg:h-auto → lg:h-11
-  }
-
-  // size 처리 - 문자열이면 고정, 객체면 반응형
   const getSizeClasses = (): string => {
     // 0. 커스텀 높이가 지정되면 우선 적용
     if (height !== undefined) {
       return `h-[${height}px] px-4 py-2.5 text-sm`
     }
 
-    // 1. 문자열 = 고정 크기
+    // 1. 문자열 = 고정 크기 (단일 객체 참조)
     if (typeof size === "string") {
-      return baseSizeStyles[size]
+      return sizeStyles[size]
     }
 
     // 2. 객체 = 반응형 크기
-    const baseClass = baseSizeStyles[size.base]
-    const lgClass = size.lg ? lgSizeStyles[size.lg] : ""
+    const baseClass = sizeStyles[size.base]
+
+    // 3. lg: 접두사를 동적으로 추가합니다.
+    const lgClass = size.lg
+      ? sizeStyles[size.lg] // "h-[38px] px-4 text-xs"
+          .split(" ") // ["h-[38px]", "px-4", "text-xs"]
+          .map((cls) => `lg:${cls}`) // ["lg:h-[38px]", "lg:px-4", "lg:text-xs"]
+          .join(" ") // "lg:h-[38px] lg:px-4 lg:text-xs"
+      : ""
+
     return `${baseClass} ${lgClass}`.trim()
   }
 
-  // ===== Width 스타일 =====
-  const widthStyle = fullWidth ? "w-full" : ""
-
-  // ===== 조합 =====
-  const combinedClassName = `
-    flex items-center justify-center
-    rounded-[5px]
-    leading-none
-    transition-colors
-    disabled:cursor-not-allowed
-    ${getVariantStyles()}
-    ${getSizeClasses()}
-    ${widthStyle}
-    ${className}
-  `
-    .trim()
-    .replace(/\s+/g, " ")
+  // ===== 클래스 조합 (cn 유틸리티 사용) =====
+  const combinedClassName = cn(
+    commonButtonVariants({ variant, appearance }),
+    getSizeClasses(), // 리팩토링된 함수 호출
+    fullWidth && "w-full",
+    className
+  )
 
   return (
     <button

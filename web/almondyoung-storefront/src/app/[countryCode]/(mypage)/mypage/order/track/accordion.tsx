@@ -79,7 +79,7 @@ function Trigger({ children, value, className = "" }: TriggerProps) {
     <button
       type="button"
       onClick={() => toggle(value)}
-      className={`relative flex h-[50px] w-full cursor-pointer items-center px-4 text-left text-[15px] hover:bg-gray-50 ${className}`}
+      className={`relative flex h-[50px] w-full cursor-pointer items-center px-4 text-left text-[15px] ${className}`}
     >
       <span className="mr-5 text-lg font-bold text-blue-600">Q</span>
       <span className="flex-1">{children}</span>
@@ -106,12 +106,12 @@ function Content({ children, value, className = "" }: ContentProps) {
   if (!isOpen) return null
 
   return (
-    <div className={`border-gray-30 border-t bg-gray-50 pt-5 ${className}`}>
+    <div className={`border-gray-30 border-t pt-5 ${className}`}>
       <div className="flex px-4 pb-5">
         <span className="mr-2.5 ml-4 w-4 text-lg font-bold text-red-900">
           A
         </span>
-        <div className="mr-4 flex-1 space-y-4 rounded border border-gray-300 bg-gray-50 p-6 text-sm leading-relaxed tracking-tight text-gray-900">
+        <div className="mr-4 flex-1 space-y-4 rounded border border-gray-300 p-6 text-sm leading-relaxed tracking-tight text-gray-900">
           {children}
         </div>
       </div>
