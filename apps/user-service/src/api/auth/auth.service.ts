@@ -454,15 +454,15 @@ export class AuthService {
           transaction,
         );
 
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserCreated',
-          aggregateId: newUser.user.id,
-          payload: {
-            userId: newUser.user.id,
-            email: newUser.user.email,
-            name: newUser.user.username,
-          },
-        });
+        // await this.eventPublisher.publishEvent({
+        //   eventType: 'UserCreated',
+        //   aggregateId: newUser.user.id,
+        //   payload: {
+        //     userId: newUser.user.id,
+        //     email: newUser.user.email,
+        //     name: newUser.user.username,
+        //   },
+        // });
 
         return newUser;
       }
@@ -595,12 +595,7 @@ export class AuthService {
     return { user: newUser };
   }
 
-  async signOut(
-    req: FastifyRequest,
-    reply: FastifyReply,
-    user: User,
-    tx?: DbTransaction,
-  ) {
+  async signOut(req: FastifyRequest, reply: FastifyReply, tx?: DbTransaction) {
     return this.inTx(async (trx) => {
       const accessToken = req.cookies?.accessToken;
 
@@ -608,9 +603,7 @@ export class AuthService {
         if (!accessToken) {
           throw new UnauthorizedException('인증 토큰이 필요합니다.');
         }
-
-        // 사용자 ID로 refreshToken 삭제
-        await this.tokensService.deleteToken(user.id, 'refresh', trx);
+        this.logger.log(`logout 진행중...`);
 
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
@@ -627,6 +620,8 @@ export class AuthService {
           secure: true,
           sameSite: 'lax',
         });
+
+        this.logger.log(`logout 완료...`);
 
         return { message: '로그아웃되었습니다.' };
       } catch (error) {
