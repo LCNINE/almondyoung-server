@@ -14,13 +14,13 @@ import {
 import { Observable } from 'rxjs';
 import { KafkaContext } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
-import { MessageEnvelope } from '../envelope.types';
-import { StreamConfig, StreamEventTypes } from '../stream-config.types';
+import { MessageEnvelope } from '@packages/event-contracts/types';
+import { StreamConfig, StreamEventTypes } from '@packages/event-contracts/types';
 import {
   SchemaValidationOptions,
   DEFAULT_SCHEMA_VALIDATION_OPTIONS,
   SchemaValidationError,
-} from '../validation/schema-validation.types';
+} from '@packages/event-contracts/types';
 import {
   validateSchemaOrThrow,
   isZodSchema,

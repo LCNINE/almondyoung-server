@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ChannelAdapterEvents } from '@app/shared/streams';
+import { ChannelAdapterEvents } from '@packages/event-contracts/streams';
 import { ExtractPayloadType } from '@app/events';
 
 /**

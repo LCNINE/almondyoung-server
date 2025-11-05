@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { EventPattern, Payload, Ctx } from '@nestjs/microservices';
 import { KafkaContext } from '@nestjs/microservices';
-import { MessageEnvelope, DomainEvent, DomainCommand } from '../envelope.types';
+import { MessageEnvelope, DomainEvent, DomainCommand } from '@packages/event-contracts/types';
 
 export const STREAM_EVENT_METADATA = 'STREAM_EVENT_METADATA';
 export const EVENT_TYPE_FILTER = 'EVENT_TYPE_FILTER';

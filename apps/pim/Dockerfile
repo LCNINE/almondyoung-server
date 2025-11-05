@@ -20,6 +20,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 COPY tsconfig*.json ./
 COPY libs/ ./libs/
+COPY packages/ ./packages/
 COPY apps/pim/ ./apps/pim/
 
 RUN npm run build:pim

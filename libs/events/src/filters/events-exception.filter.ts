@@ -19,7 +19,7 @@ import { BaseRpcExceptionFilter } from '@nestjs/microservices';
 import { KafkaContext } from '@nestjs/microservices';
 import { Reflector } from '@nestjs/core';
 import { DLQHandler } from '../dlq/dlq-handler.service';
-import { MessageEnvelope } from '../envelope.types';
+import { MessageEnvelope } from '@packages/event-contracts/types';
 import {
   RETRY_POLICY_METADATA,
   DISABLE_DLQ_METADATA,
@@ -33,7 +33,7 @@ import {
   createRetryContext,
   updateRetryContext,
 } from '../retry/retry.util';
-import { SchemaValidationError } from '../validation/schema-validation.types';
+import { SchemaValidationError } from '@packages/event-contracts/types';
 
 @Catch()
 @Injectable()

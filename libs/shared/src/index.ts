@@ -6,4 +6,6 @@ export * from './pim/pim.port';
 export * from './pim/pim.client';
 export * from './pim/pim.orchestrator';
 export * from './streams';
-export * from './channel-adapter.types';
+
+// Re-export from packages for backward compatibility
+export * from '@packages/domain-types';

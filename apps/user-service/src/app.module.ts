@@ -2,7 +2,7 @@ import * as os from 'os';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { AuthorizationGuard } from '@app/roles';
-import { USER_STREAM, UserEvents } from '@app/shared/streams';
+import { USER_STREAM, UserEvents } from '@packages/event-contracts/streams';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';

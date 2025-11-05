@@ -17,8 +17,8 @@ import {
   StreamConfig,
   StreamEventTypes,
   getDLQTopicName,
-} from './stream-config.types';
-import { SchemaValidationOptions } from './validation/schema-validation.types';
+} from '@packages/event-contracts/types';
+import { SchemaValidationOptions } from '@packages/event-contracts/types';
 
 /**
  * EventsModule 설정 옵션 (Publisher용)

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { ChannelAdapterEvents } from '@app/shared/streams';
+import { ChannelAdapterEvents } from '@packages/event-contracts/streams';
 import {
   ChannelAdapterFactory,
   ChannelType,

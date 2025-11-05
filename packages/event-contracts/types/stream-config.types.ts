@@ -4,7 +4,7 @@
  * 도메인 스트림 기반 토픽 설정 타입들
  */
 
-import type { ZodSchema } from './validation/schema-validation.types';
+import type { ZodSchema } from './schema-validation.types';
 
 /**
  * Kafka 토픽 설정
