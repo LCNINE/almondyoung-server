@@ -1,4 +1,5 @@
 import { fetchCurrentUser } from "@lib/api/users"
+import { appConfig } from "@lib/app-config"
 import { medusaSignup, retrieveCustomer } from "@lib/data/customer"
 import { AuthCallback } from "domains/auth/components/auth-callback"
 import { cookies as nextCookies } from "next/headers"
@@ -16,7 +17,7 @@ export default async function SignupCallbackPage({
   const almondToken = cookies.get("accessToken")
 
   const params = await searchParams
-  const redirectTo = params?.redirect_to ?? "/"
+  const redirectTo = params?.redirect_to ?? appConfig.auth.redirect_to
   let result = null
 
   if (!almondToken) {
