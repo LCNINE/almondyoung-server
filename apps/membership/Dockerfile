@@ -17,6 +17,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 COPY tsconfig*.json ./
 COPY libs/ ./libs/
+COPY packages/ ./packages/
 COPY apps/membership/ ./apps/membership/
 
 RUN npm run build:membership

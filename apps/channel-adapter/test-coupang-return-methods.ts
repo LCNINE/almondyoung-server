@@ -13,7 +13,6 @@ import { ConfigService } from '@nestjs/config';
 import { CoupangAdapter } from './src/services/adapters/coupang.adapter';
 import { CoupangApiService } from './src/services/apis/coupang.api.service';
 import { WmsApiService } from './src/services/apis/wms.api.service';
-import { DlqMonitoringService } from './src/services/dlq-monitoring.service';
 
 // 환경변수 로드
 dotenv.config();
@@ -29,23 +28,9 @@ class CoupangReturnMethodsTester {
     // ConfigService 생성 (환경변수 기반)
     const configService = new ConfigService();
 
-    // Mock EventPublisher 생성
-    const mockEventPublisher = {
-      publishEvent: async () => {},
-    } as any;
-
-    // DlqMonitoringService 생성
-    const dlqMonitoring = new DlqMonitoringService(
-      configService,
-      mockEventPublisher,
-    );
-
-    // WmsApiService는 3개의 인수가 필요합니다
-    const wmsApiService = new WmsApiService(
-      httpService,
-      configService,
-      dlqMonitoring,
-    );
+    // NOTE: DlqMonitoringService 제거됨 (메모리 기반 MVP 코드였음)
+    // WmsApiService는 이제 2개의 인수만 필요합니다
+    const wmsApiService = new WmsApiService(httpService, configService);
 
     this.adapter = new CoupangAdapter(coupangApiService, wmsApiService);
 

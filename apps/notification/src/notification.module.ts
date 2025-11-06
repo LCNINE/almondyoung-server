@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
+import { validateNotificationEnv } from './config/env.validation';
 import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
 
 // Core modules
@@ -17,6 +18,7 @@ import { EventHandlersModule } from './event-handlers/event-handlers.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateNotificationEnv,
     }),
     BullModule.forRoot({
       redis: {

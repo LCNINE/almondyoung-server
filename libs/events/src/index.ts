@@ -4,10 +4,8 @@
  * Stream 기반 Kafka 이벤트 시스템
  */
 
-// Core Types
-export * from './envelope.types';
-export * from './stream-config.types';
-export * from './stream-builder';
+// Core Types (re-exported from packages for backward compatibility)
+export * from '@packages/event-contracts/types';
 
 // Module
 export * from './events.module';
@@ -28,8 +26,7 @@ export * from './retry/retry-policy.types';
 export * from './retry/retry-policy.decorator';
 export * from './filters/events-exception.filter';
 
-// Schema Validation
-export * from './validation/schema-validation.types';
+// Schema Validation (util and interceptor only, types are in packages)
 export * from './validation/schema-validation.util';
 export * from './interceptors/schema-validation.interceptor';
 

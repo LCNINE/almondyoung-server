@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { UserEvents } from '@app/shared/streams';
+import { UserEvents } from '@packages/event-contracts/streams';
 import {
   BadRequestException,
   Injectable,

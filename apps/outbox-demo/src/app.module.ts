@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { EventsModule } from '@app/events';
+import { validateOutboxDemoEnv } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
 import { TestModule } from './test/test.module';
 import { TEST_STREAM } from './test/test-stream.config';
@@ -10,6 +11,7 @@ import { TEST_STREAM } from './test/test-stream.config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateOutboxDemoEnv,
       envFilePath: ['apps/outbox-demo/.env.local', 'apps/outbox-demo/.env'],
     }),
     ScheduleModule.forRoot(),

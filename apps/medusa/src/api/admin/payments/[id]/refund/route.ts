@@ -1,4 +1,4 @@
-import { requestRefundPaymentWorkFlow } from '@medusa/workflows/payments/workflows/request-refund-payment';
+import { requestRefundPaymentWorkFlow } from '../../../../../workflows/payments/workflows/request-refund-payment';
 import {
   AuthenticatedMedusaRequest,
   MedusaResponse,

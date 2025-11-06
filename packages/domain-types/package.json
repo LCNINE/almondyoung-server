@@ -1,0 +1,8 @@
+{
+  "name": "@packages/domain-types",
+  "version": "0.0.1",
+  "description": "Framework-independent domain type definitions",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}

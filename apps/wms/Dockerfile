@@ -32,8 +32,9 @@ COPY package*.json ./
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
 
-# 라이브러리와 WMS 앱만 복사 (변경 감지 최적화)
+# 라이브러리, 패키지, WMS 앱 복사 (변경 감지 최적화)
 COPY libs/ ./libs/
+COPY packages/ ./packages/
 COPY apps/wms/ ./apps/wms/
 
 # WMS 서비스 빌드

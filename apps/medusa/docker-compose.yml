@@ -18,6 +18,35 @@ services:
     volumes:
       - medusa_redis_data:/data
 
+  medusa:
+    build:
+      context: ../..
+      dockerfile: apps/medusa/Dockerfile
+    ports:
+      - '9000:9000'
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379
+      # Kafka 설정 (선택적 - Kafka 서비스 추가 시)
+      # KAFKA_BROKERS: kafka:9092
+      # KAFKA_CLIENT_ID: medusa-service
+      # KAFKA_GROUP_ID: medusa-consumer
+      # WMS API 설정
+      WMS_API_URL: http://host.docker.internal:3001
+      # Kafka 경고 숨기기
+      KAFKAJS_NO_PARTITIONER_WARNING: "1"
+      # 기타 설정
+      NODE_ENV: production
+      JWT_SECRET: supersecret
+      COOKIE_SECRET: supersecret
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://localhost:9000
+      AUTH_CORS: http://localhost:9000
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
   pgadmin:
     image: dpage/pgadmin4
     ports:

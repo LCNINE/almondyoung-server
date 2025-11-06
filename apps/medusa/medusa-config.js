@@ -76,7 +76,7 @@ module.exports = defineConfig({
     {
       resolve: './src/modules/wms',
       options: {
-        apiKey: process.env.WMS_SERVICE_URL,
+        apiKey: process.env.WMS_API_URL || 'http://localhost:3001',
       },
     },
     {

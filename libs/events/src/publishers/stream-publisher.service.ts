@@ -12,13 +12,13 @@ import {
   DomainEvent,
   DomainCommand,
   MessageEnvelope,
-} from '../envelope.types';
-import { StreamConfig, StreamEventTypes, EventType } from '../stream-config.types';
+} from '@packages/event-contracts/types';
+import { StreamConfig, StreamEventTypes, EventType } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
 import {
   SchemaValidationOptions,
   DEFAULT_SCHEMA_VALIDATION_OPTIONS,
-} from '../validation/schema-validation.types';
+} from '@packages/event-contracts/types';
 import {
   validateSchemaOrThrow,
   logValidationError,
