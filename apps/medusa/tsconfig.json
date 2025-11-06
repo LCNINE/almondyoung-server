@@ -20,17 +20,12 @@
     "strictNullChecks": true,
     "baseUrl": ".",
     "paths": {
-      "@packages/event-contracts": ["../../packages/event-contracts"],
-      "@packages/event-contracts/*": ["../../packages/event-contracts/*"],
-      "@packages/auth-constants": ["../../packages/auth-constants"],
-      "@packages/auth-constants/*": ["../../packages/auth-constants/*"],
-      "@packages/domain-types": ["../../packages/domain-types"],
-      "@packages/domain-types/*": ["../../packages/domain-types/*"]
+      "@packages/*": ["../../packages/*"]
     }
   },
   "ts-node": {
     "swc": true
   },
-  "include": ["src/**/*", "../../libs/**/*"],
+  "include": ["src/**/*", "../../packages/**/*"],
   "exclude": ["node_modules", "dist"]
 }
