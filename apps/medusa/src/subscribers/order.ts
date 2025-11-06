@@ -1,8 +1,8 @@
 import { SubscriberArgs, type SubscriberConfig } from '@medusajs/framework';
 import { Modules } from '@medusajs/framework/utils';
-import EventModuleService from '@modules/events/service';
+import EventModuleService from '../modules/events/service';
 import { ORDER_EVENTS } from '@packages/event-contracts/streams';
-import { EVENT_MODULE } from '@modules/events';
+import { EVENT_MODULE } from '../modules/events';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
