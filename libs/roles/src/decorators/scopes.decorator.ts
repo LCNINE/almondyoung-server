@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import { UserScope } from '@packages/auth-constants';
+import { UserScope } from '../../../../packages/auth-constants';
 
 export const SCOPES_KEY = 'required_scopes';
 

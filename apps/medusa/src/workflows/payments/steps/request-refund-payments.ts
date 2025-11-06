@@ -1,4 +1,4 @@
-import { PAYMENT_EVENTS } from '../../../../../packages/event-contracts/streams';
+import { PAYMENT_EVENTS } from '../../../../../../packages/event-contracts/streams';
 import { EVENT_MODULE } from '../../../modules/events';
 import EventModuleService from '../../../modules/events/service';
 import { IPaymentModuleService, Logger } from '@medusajs/framework/types';

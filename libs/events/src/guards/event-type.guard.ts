@@ -10,7 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { KafkaContext } from '@nestjs/microservices';
 import { Observable, of } from 'rxjs';
 import { EVENT_TYPE_FILTER } from '../consumers/decorators';
-import { MessageEnvelope } from '@packages/event-contracts/types';
+import { MessageEnvelope } from '../../../../packages/event-contracts/types';
 
 @Injectable()
 export class EventTypeGuard implements NestInterceptor {

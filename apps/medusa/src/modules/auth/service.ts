@@ -1,4 +1,4 @@
-import { USER_SCOPES } from '../../../../packages/auth-constants';
+import { USER_SCOPES } from '../../../../../packages/auth-constants';
 import { jwtVerify } from '../../utils/jwt-verify';
 import {
   AuthIdentityProviderService,
