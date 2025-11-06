@@ -1,4 +1,4 @@
-import { refundCompletedWorkFlow } from '../workflows/payments/workflows/refund-completed';
+import { refundCompletedWorkFlow } from '@medusa/workflows/payments/workflows/refund-completed';
 import { IPaymentModuleService } from '@medusajs/framework/types';
 import { Modules } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';

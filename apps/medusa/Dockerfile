@@ -24,8 +24,6 @@ RUN mkdir -p /app/apps/channel-adapter/src
 COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
-# 메모리 제한 증가 (프론트엔드 빌드에 필요)
-ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN yarn build
 
 # DEBUG: 빌드 후 디렉토리 구조 확인

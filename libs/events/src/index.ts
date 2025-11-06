@@ -5,7 +5,7 @@
  */
 
 // Core Types (re-exported from packages for backward compatibility)
-export * from '../../../../packages/event-contracts/types';
+export * from '@packages/event-contracts/types';
 
 // Module
 export * from './events.module';

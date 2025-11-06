@@ -8,4 +8,4 @@ export * from './pim/pim.orchestrator';
 export * from './streams';
 
 // Re-export from packages for backward compatibility
-export * from '../../../packages/domain-types';
+export * from '@packages/domain-types';

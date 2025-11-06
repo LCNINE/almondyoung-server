@@ -10,7 +10,7 @@ import {
   ZodSchema,
   SchemaValidationError,
   ValidationResult,
-} from '../../../../packages/event-contracts/types';
+} from '@packages/event-contracts/types';
 
 const logger = new Logger('SchemaValidation');
 
