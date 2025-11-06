@@ -197,27 +197,10 @@ export const WmsOrderResponseSchema = z.object({
   timestamp: z.string(),
 });
 
-// DLQ 관리
-export const DlqStatusResponseSchema = z.object({
-  success: z.boolean(),
-  dlqStatus: z.any(),
-  timestamp: z.string(),
-});
-
-export const DlqRetryResponseSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
-  dlqId: z.string(),
-  timestamp: z.string(),
-});
-
-export const DlqRemoveResponseSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
-  dlqId: z.string(),
-  reason: z.string(),
-  timestamp: z.string(),
-});
+// NOTE: DLQ 관리 스키마 제거됨 (DlqMonitoringService 제거에 따라)
+// - DlqStatusResponseSchema
+// - DlqRetryResponseSchema
+// - DlqRemoveResponseSchema
 
 // ═══════════════════════════════════════════════════════════════
 // DTO 클래스 생성
@@ -244,10 +227,7 @@ export class WmsExchangeRequestDto extends createZodDto(
   WmsExchangeRequestSchema,
 ) {}
 export class WmsOrderResponseDto extends createZodDto(WmsOrderResponseSchema) {}
-export class DlqStatusResponseDto extends createZodDto(
-  DlqStatusResponseSchema,
-) {}
-export class DlqRetryResponseDto extends createZodDto(DlqRetryResponseSchema) {}
-export class DlqRemoveResponseDto extends createZodDto(
-  DlqRemoveResponseSchema,
-) {}
+// NOTE: DLQ DTO 클래스 제거됨 (DlqMonitoringService 제거에 따라)
+// - DlqStatusResponseDto
+// - DlqRetryResponseDto
+// - DlqRemoveResponseDto

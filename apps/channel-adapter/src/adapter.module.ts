@@ -12,7 +12,7 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM } from '@app/shared/streams';
+import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {
@@ -26,8 +26,8 @@ import { NaverClaimClient } from './services/clients/naver/naver-claim.client';
 import { NaverProductClient } from './services/clients/naver/naver-product.client';
 import { NaverAuthService } from './services/clients/naver/naver-auth.client';
 import { WmsApiService } from './services/apis/wms.api.service';
-import { DlqMonitoringService } from './services/dlq-monitoring.service';
 import { ConfigModule } from '@nestjs/config';
+import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
 import { ChannelSyncManager } from './services/channel-sync.manager';
 import { ChannelCommandManager } from './services/channel-command.manager';
@@ -74,7 +74,10 @@ function createKafkaConfig() {
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateChannelAdapterEnv,
+    }),
     HttpModule,
     DbModule.forRoot({
       config: {
@@ -116,7 +119,7 @@ function createKafkaConfig() {
     NaverProductClient,
     NaverAuthService,
     WmsApiService,
-    DlqMonitoringService,
+    // NOTE: DlqMonitoringService 제거됨 (메모리 기반 MVP 코드였음)
 
     // 🆕 리팩토링된 레이어 클래스들
     ChannelDataReader,
@@ -125,16 +128,15 @@ function createKafkaConfig() {
     WmsIntegrationManager,
     ChannelAdapterRepository,
 
-    // 환경별 EventPublisher 제공
-    ...(process.env.NODE_ENV === 'production'
-      ? [] // 운영 환경: EventsModule에서 제공하는 StreamPublisher 사용
-      : [
-          // 개발/테스트 환경: NullEventPublisher로 대체
+    // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
+    ...(process.env.NODE_ENV !== 'production'
+      ? [
           {
-            provide: StreamPublisher,
+            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
             useClass: NullEventPublisher,
           },
-        ]),
+        ]
+      : []),
   ],
 })
 export class AdapterModule {}

@@ -1,0 +1,11 @@
+{
+  "name": "@packages/event-contracts",
+  "version": "0.0.1",
+  "description": "Framework-independent event contracts and type system",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "zod": "^4.1.11"
+  }
+}

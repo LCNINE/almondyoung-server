@@ -4,7 +4,7 @@
  * 결제 도메인 이벤트 스트림 정의
  */
 
-import { event, stream, EventType, StreamConfig } from '@app/events';
+import { event, stream, EventType, StreamConfig } from '../types';
 import { z } from 'zod';
 
 // ===== Payload 타입 정의 =====

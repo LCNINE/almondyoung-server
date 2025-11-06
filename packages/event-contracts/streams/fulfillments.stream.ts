@@ -4,7 +4,7 @@
  * 이행/배송 도메인 이벤트 스트림
  */
 
-import { event, stream } from '@app/events';
+import { event, stream } from '../types';
 import { z } from 'zod';
 
 // ===== Common Types =====

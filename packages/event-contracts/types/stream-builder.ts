@@ -5,7 +5,7 @@
  */
 
 import type { EventType, StreamConfig, StreamEventTypes } from './stream-config.types';
-import type { ZodSchema } from './validation/schema-validation.types';
+import type { ZodSchema } from './schema-validation.types';
 
 /**
  * 타입 안전한 이벤트 정의 헬퍼

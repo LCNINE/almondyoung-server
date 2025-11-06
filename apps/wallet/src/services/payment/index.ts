@@ -12,5 +12,6 @@
  */
 
 // Adapters (구현체) - 클래스 export
-export { PaymentExecutorServiceImpl } from './payment-executor.service';
-export { PaymentOrchestratorServiceImpl } from './payment-orchestrator.service';
+// export { PaymentExecutorServiceImpl } from './payment-executor.service';
+// export { PaymentOrchestratorServiceImpl } from './payment-orchestrator.service';
+// 존재하지 않는 클래스를 export하고 있어 팀장이 주석 처리

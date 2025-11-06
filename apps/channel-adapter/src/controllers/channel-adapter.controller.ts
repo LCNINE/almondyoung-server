@@ -26,7 +26,6 @@ import {
   OrderQuery,
 } from '../types';
 import { ChannelAdapterService } from '../services/channel-adapter.service';
-import { DlqMonitoringService } from '../services/dlq-monitoring.service';
 import {
   PollResponseDto,
   SyncResponseDto,
@@ -37,9 +36,6 @@ import {
   WmsOrderCancelRequestDto,
   WmsExchangeRequestDto,
   WmsOrderResponseDto,
-  DlqStatusResponseDto,
-  DlqRetryResponseDto,
-  DlqRemoveResponseDto,
   SyncToChannelPayloadSchema,
   WmsOrderRequestSchema,
   WmsOrderCancelRequestSchema,
@@ -51,7 +47,6 @@ import {
 export class ChannelAdapterController {
   constructor(
     private readonly channelAdapterService: ChannelAdapterService,
-    private readonly dlqMonitoringService: DlqMonitoringService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════
@@ -329,71 +324,15 @@ export class ChannelAdapterController {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // DLQ 관리 API
+  // DLQ 관리 API (제거됨)
   // ═══════════════════════════════════════════════════════════════
-
-  @Get('wms/dlq/status')
-  @ApiOperation({ summary: 'DLQ 현황 조회' })
-  @ApiResponse({
-    status: 200,
-    description: 'DLQ 현황 조회 성공',
-    type: DlqStatusResponseDto,
-  })
-  async getDlqStatus(): Promise<DlqStatusResponseDto> {
-    const dlqStatus = await this.dlqMonitoringService.getDlqStatus();
-    return {
-      success: true,
-      dlqStatus,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Post('wms/dlq/:dlqId/retry')
-  @ApiOperation({ summary: 'DLQ 항목 재처리' })
-  @ApiResponse({
-    status: 200,
-    description: 'DLQ 재처리 성공',
-    type: DlqRetryResponseDto,
-  })
-  async retryDlqEntry(
-    @Param('dlqId') dlqId: string,
-  ): Promise<DlqRetryResponseDto> {
-    const success = await this.dlqMonitoringService.retryDlqEntry(dlqId);
-
-    return {
-      success,
-      message: success
-        ? 'DLQ 항목이 성공적으로 재처리되었습니다'
-        : 'DLQ 항목 재처리에 실패했습니다',
-      dlqId,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Delete('wms/dlq/:dlqId')
-  @ApiOperation({ summary: 'DLQ 항목 수동 제거' })
-  @ApiResponse({
-    status: 200,
-    description: 'DLQ 항목 제거 성공',
-    type: DlqRemoveResponseDto,
-  })
-  async removeDlqEntry(
-    @Param('dlqId') dlqId: string,
-    @Body('reason') reason?: string,
-  ): Promise<DlqRemoveResponseDto> {
-    await this.dlqMonitoringService.removeDlqEntry(
-      dlqId,
-      reason || '관리자 수동 제거',
-    );
-
-    return {
-      success: true,
-      message: 'DLQ 항목이 성공적으로 제거되었습니다',
-      dlqId,
-      reason: reason || '관리자 수동 제거',
-      timestamp: new Date().toISOString(),
-    };
-  }
+  // NOTE: DlqMonitoringService 및 관련 REST API 제거됨
+  // - GET /adapter/wms/dlq/status (DLQ 현황 조회)
+  // - POST /adapter/wms/dlq/:dlqId/retry (DLQ 재처리)
+  // - DELETE /adapter/wms/dlq/:dlqId (DLQ 수동 제거)
+  //
+  // 이유: 메모리 기반 MVP 코드로 실제 DLQ 저장/재처리 기능 없었음
+  // DLQ가 필요하다면 @app/events 모듈의 DLQHandler 사용 권장
 
   // ═══════════════════════════════════════════════════════════════
   // Helper Methods

@@ -4,7 +4,7 @@
  * Zod 스키마를 사용한 런타임 검증 예시
  */
 
-import { StreamConfig, EventType } from '@app/events';
+import { StreamConfig, EventType } from '../types';
 import { z } from 'zod';
 
 // ===== Zod Schemas (런타임 검증용) =====

@@ -4,7 +4,7 @@
  * 사용자 도메인 이벤트 스트림 정의
  */
 
-import { event, stream } from '@app/events';
+import { event, stream } from '../types';
 import { z } from 'zod';
 
 // ===== Payload 타입 정의 =====

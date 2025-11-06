@@ -4,7 +4,7 @@
  * 테스트용 간단한 이벤트 스트림
  */
 
-import { event, stream } from '@app/events';
+import { event, stream } from '../types';
 
 // ===== Payload 타입 정의 =====
 
