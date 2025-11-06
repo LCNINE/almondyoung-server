@@ -2,7 +2,7 @@
  * DLQ (Dead Letter Queue) Types
  */
 
-import { MessageEnvelope } from '../../../../packages/event-contracts/types';
+import { MessageEnvelope } from '@packages/event-contracts/types';
 
 /**
  * DLQ에 저장되는 메시지 구조

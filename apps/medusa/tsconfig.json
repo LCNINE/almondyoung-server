@@ -17,7 +17,36 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "checkJs": false,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "baseUrl": ".",
+    "paths": {
+      "@medusa/*": ["src/*"],
+      "@medusa": ["src"],
+      "@modules/*": ["src/modules/*"],
+      "@api/*": ["src/api/*"],
+      "@workflows/*": ["src/workflows/*"],
+      "@subscribers/*": ["src/subscribers/*"],
+      "@loaders/*": ["src/loaders/*"],
+      "@types/*": ["src/types/*"],
+      "@utils/*": ["src/utils/*"],
+      "@scripts/*": ["src/scripts/*"],
+      "@admin/*": ["src/admin/*"],
+      "@libs/*": ["../../libs/*"],
+      "@app/db": ["../../libs/db/src"],
+      "@app/db/*": ["../../libs/db/src/*"],
+      "@app/events": ["../../libs/events/src"],
+      "@app/events/*": ["../../libs/events/src/*"],
+      "@app/roles": ["../../libs/roles/src"],
+      "@app/roles/*": ["../../libs/roles/src/*"],
+      "@app/shared": ["../../libs/shared/src"],
+      "@app/shared/*": ["../../libs/shared/src/*"],
+      "@packages/event-contracts": ["../../packages/event-contracts"],
+      "@packages/event-contracts/*": ["../../packages/event-contracts/*"],
+      "@packages/auth-constants": ["../../packages/auth-constants"],
+      "@packages/auth-constants/*": ["../../packages/auth-constants/*"],
+      "@packages/domain-types": ["../../packages/domain-types"],
+      "@packages/domain-types/*": ["../../packages/domain-types/*"]
+    }
   },
   "ts-node": {
     "swc": true

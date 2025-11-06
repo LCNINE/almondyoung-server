@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FastifyRequest } from 'fastify';
-import { UserScope } from '../../../../packages/auth-constants';
+import { UserScope } from '@packages/auth-constants';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {

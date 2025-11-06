@@ -1,6 +1,6 @@
 import { MedusaError } from '@medusajs/framework/utils';
-import { WMS_MODULE } from '../modules/wms';
-import { WmsModuleService } from '../modules/wms/service';
+import { WMS_MODULE } from '@modules/wms';
+import { WmsModuleService } from '@modules/wms/service';
 
 export type ValidateInventoryInput = {
   items: {
