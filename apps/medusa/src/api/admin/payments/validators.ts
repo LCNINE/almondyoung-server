@@ -1,4 +1,4 @@
-import { createSelectParams } from '@medusa/utils/validators';
+import { createSelectParams } from '../../../utils/validators';
 import { z } from 'zod';
 
 export type AdminGetPaymentParamsType = z.infer<typeof AdminGetPaymentParams>;
