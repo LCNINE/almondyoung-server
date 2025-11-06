@@ -1,5 +1,5 @@
 import { USER_SCOPES } from '@packages/auth-constants';
-import { jwtVerify } from '@medusa/utils/jwt-verify';
+import { jwtVerify } from '../../utils/jwt-verify';
 import {
   AuthIdentityProviderService,
   AuthenticationInput,
@@ -9,7 +9,7 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import CustomUserModuleService from '@modules/custom-user/service';
+import CustomUserModuleService from '../custom-user/service';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
