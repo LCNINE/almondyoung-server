@@ -10,8 +10,8 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
-import { MessageEnvelope } from '@packages/event-contracts/types';
-import { getDLQTopicName } from '@packages/event-contracts/types';
+import { MessageEnvelope } from '../../../../packages/event-contracts/types';
+import { getDLQTopicName } from '../../../../packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
 import { DLQMessage } from './dlq.types';
 

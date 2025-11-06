@@ -8,4 +8,4 @@
  */
 
 // Re-export from packages for backward compatibility
-export * from '@packages/event-contracts/streams';
+export * from '../../../../packages/event-contracts/streams';
