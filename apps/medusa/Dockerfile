@@ -26,6 +26,14 @@ COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
 
+# DEBUG: 빌드 후 디렉토리 구조 확인
+RUN echo "===== Build output structure =====" && \
+    ls -la /app/apps/medusa/ && \
+    echo "===== .medusa directory =====" && \
+    ls -la /app/apps/medusa/.medusa/ && \
+    echo "===== .medusa/server directory =====" && \
+    ls -la /app/apps/medusa/.medusa/server/
+
 # 5) 커스텀 모듈 및 소스를 빌드 디렉토리로 복사
 RUN cp -r /app/apps/medusa/src /app/apps/medusa/.medusa/server/src
 
