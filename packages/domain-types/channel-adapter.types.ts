@@ -3,18 +3,9 @@
  *
  * 이 파일은 channel-adapter 앱과 다른 서비스들이 공유하는 타입들을 정의합니다.
  *
- * @deprecated 이 타입들은 @app/shared/streams/adapter.stream.ts로 이동되었습니다.
- * 하위 호환성을 위해 re-export만 수행합니다.
+ * @deprecated 채널 어댑터 관련 이벤트 타입들은 @packages/event-contracts/streams/adapter.stream으로 이동되었습니다.
+ * ChannelType, ClaimType, ClaimInfo, DispatchInfo, BuyerInfo, InternalOrderEvent는 event-contracts에서 직접 import하세요.
  */
-
-export type {
-  ChannelType,
-  ClaimType,
-  ClaimInfo,
-  DispatchInfo,
-  BuyerInfo,
-  InternalOrderEvent,
-} from '@packages/event-contracts/streams/adapter.stream';
 
 /**
  * 내부 상품 데이터 형식
