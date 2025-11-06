@@ -13,8 +13,8 @@ import {
   MedusaRequest,
   MedusaResponse,
 } from '@medusajs/framework/http';
-import { generateJwtTokenForAuthIdentity } from '@utils/generate-jwt-token';
-import { setAuthCookie } from '@utils/set-auth-cookie';
+import { generateJwtTokenForAuthIdentity } from '../../../utils/generate-jwt-token';
+import { setAuthCookie } from '../../../utils/set-auth-cookie';
 
 export const GET = async (
   req: AuthenticatedMedusaRequest,
