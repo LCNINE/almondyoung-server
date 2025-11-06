@@ -26,13 +26,18 @@ COPY apps/channel-adapter/src/types.ts /app/apps/channel-adapter/src/types.ts
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 RUN yarn build
 
-# 5) 프로덕션 환경 설정 및 캐시 정리
+# 5) 빌드 산출물 디렉토리로 이동 및 프로덕션 의존성 설치
+WORKDIR /app/apps/medusa/.medusa/server
+RUN yarn install --frozen-lockfile --non-interactive --production
+
+# 6) 프로덕션 환경 설정 및 캐시 정리
 ENV NODE_ENV=production
 RUN yarn cache clean
 
 EXPOSE 9000
 
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
+# .medusa/server 디렉토리에서 실행
 CMD ["yarn", "start"]
 
 
