@@ -245,7 +245,7 @@ export interface InternalFulfillmentData {
 }
 
 // InternalOrderEvent는 이제 @app/shared/channel-adapter.types에서 import
-export type { InternalOrderEvent } from '@app/shared/channel-adapter.types';
+export type { InternalOrderEvent } from '@packages/domain-types';
 
 // =================================================================
 // == 표준 내부 교환 이벤트 모델 (SSOT - Single Source of Truth)

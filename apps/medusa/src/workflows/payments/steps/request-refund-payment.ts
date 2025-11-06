@@ -1,6 +1,6 @@
-import { PAYMENT_EVENTS } from '@libs/shared/src/streams';
-import { EVENT_MODULE } from '@medusa/modules/events';
-import EventModuleService from '@medusa/modules/events/service';
+import { PAYMENT_EVENTS } from '@packages/event-contracts/streams';
+import { EVENT_MODULE } from '../../../modules/events';
+import EventModuleService from '../../../modules/events/service';
 import { IPaymentModuleService, Logger } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';

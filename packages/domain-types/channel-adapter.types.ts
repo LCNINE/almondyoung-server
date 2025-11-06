@@ -14,7 +14,7 @@ export type {
   DispatchInfo,
   BuyerInfo,
   InternalOrderEvent,
-} from './streams/adapter.stream';
+} from '@packages/event-contracts/streams/adapter.stream';
 
 /**
  * 내부 상품 데이터 형식
