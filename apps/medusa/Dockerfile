@@ -34,12 +34,14 @@ RUN echo "===== Build output structure =====" && \
     echo "===== .medusa/server directory =====" && \
     ls -la /app/apps/medusa/.medusa/server/
 
-# 5) medusa-config.js를 올바른 경로에 복사 (monorepo 구조 유지)
-RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/apps/medusa/medusa-config.js
+# 5) medusa-config.js를 .medusa/server 루트에 복사
+RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/medusa-config.js
 
 # DEBUG: 복사 후 확인
 RUN echo "===== After copying config =====" && \
-    ls -la /app/apps/medusa/.medusa/server/apps/medusa/
+    ls -la /app/apps/medusa/.medusa/server/ && \
+    echo "===== Checking if config file exists =====" && \
+    cat /app/apps/medusa/.medusa/server/medusa-config.js | head -5
 
 # 6) 빌드 산출물 디렉토리로 이동 및 프로덕션 의존성 설치
 WORKDIR /app/apps/medusa/.medusa/server
