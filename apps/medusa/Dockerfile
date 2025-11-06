@@ -34,14 +34,15 @@ RUN echo "===== Build output structure =====" && \
     echo "===== .medusa/server directory =====" && \
     ls -la /app/apps/medusa/.medusa/server/
 
-# 5) medusa-config.js를 .medusa/server 루트에 복사
-RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/medusa-config.js
+# 5) medusa-config.js와 src 디렉토리를 .medusa/server에 복사
+RUN cp /app/apps/medusa/medusa-config.js /app/apps/medusa/.medusa/server/medusa-config.js && \
+    cp -r /app/apps/medusa/src /app/apps/medusa/.medusa/server/src
 
 # DEBUG: 복사 후 확인
-RUN echo "===== After copying config =====" && \
+RUN echo "===== After copying config and src =====" && \
     ls -la /app/apps/medusa/.medusa/server/ && \
-    echo "===== Checking if config file exists =====" && \
-    cat /app/apps/medusa/.medusa/server/medusa-config.js | head -5
+    echo "===== Checking src/modules =====" && \
+    ls -la /app/apps/medusa/.medusa/server/src/modules/
 
 # 6) 빌드 산출물 디렉토리로 이동 및 프로덕션 의존성 설치
 WORKDIR /app/apps/medusa/.medusa/server
