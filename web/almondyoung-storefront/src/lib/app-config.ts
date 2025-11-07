@@ -24,7 +24,7 @@ export const appConfig = {
   supportEmail: "support@amondyoung.com",
   auth: {
     // 로그인 경로. 개인 경로 보호 및 401 오류 처리에 사용
-    loginUrl: "/auth/login",
+    loginUrl: "/login",
     // 로그인 성공 후 리다이렉트될 경로.
     redirect_to: "/", // 좀 더 고민이 필요함 일단 기본값은 홈으로 설정했음
   },

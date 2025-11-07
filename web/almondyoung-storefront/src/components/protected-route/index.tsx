@@ -1,8 +1,10 @@
+import ClientToast from "@components/common/client-toast"
 import { ApiAuthError, ApiNetworkError } from "@lib/api-error"
 import { fetchCurrentUser } from "@lib/api/users/me"
-import AuthRestore from "../auth-restore"
 import { cookies } from "next/headers"
-import ClientToast from "@components/common/client-toast"
+import { redirect } from "next/navigation"
+import AuthRestore from "../auth-restore"
+import { headers } from "next/headers"
 
 export default async function ProtectedRoute({
   children,
@@ -13,6 +15,8 @@ export default async function ProtectedRoute({
   const cookieStore = await cookies()
   const refreshToken = cookieStore.get("refreshToken")?.value
 
+  const headersList = await headers()
+  const pathname = headersList.get("x-pathname")
   try {
     await fetchCurrentUser()
     return <>{children}</>
@@ -22,6 +26,13 @@ export default async function ProtectedRoute({
       if (refreshToken) {
         return <AuthRestore hasRefreshToken={true} />
       }
+
+      if (!refreshToken && pathname !== "/" && pathname !== "/kr") {
+        return redirect(
+          `/login/?redirect_to=${encodeURIComponent(pathname || "")}`
+        )
+      }
+
       // refreshToken이 없으면 비로그인 상태로 페이지 표시
       return <>{children}</>
     }

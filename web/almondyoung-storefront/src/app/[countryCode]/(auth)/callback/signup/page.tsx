@@ -21,7 +21,7 @@ export default async function SignupCallbackPage({
   let result = null
 
   if (!almondToken) {
-    redirect("/auth/login")
+    redirect("/login")
   }
 
   const customer = await retrieveCustomer()

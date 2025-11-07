@@ -146,7 +146,7 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
         errorMessage.includes("authentication")
       ) {
         if (confirm("로그인이 필요합니다. 로그인 페이지로 이동하시겠습니까?")) {
-          window.location.href = `/${countryCode}/auth/login`
+          window.location.href = `/${countryCode}/login`
         }
         return
       }

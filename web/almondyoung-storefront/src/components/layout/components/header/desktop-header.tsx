@@ -340,7 +340,7 @@ export function DesktopHeader() {
                 </Link>
               ) : (
                 <Link
-                  href={`/${countryCode}/auth/login`}
+                  href={`/${countryCode}/login`}
                   className="flex flex-col items-center gap-1 text-white"
                 >
                   <User className="h-8 w-8" strokeWidth={2.2} color="white" />

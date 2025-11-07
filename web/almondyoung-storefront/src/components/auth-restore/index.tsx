@@ -79,7 +79,7 @@ export default function AuthRestore({
     }
 
     // 다른 페이지: 로그인 페이지로 리다이렉트
-    router.replace(`/auth/login?redirect_to=${encodeURIComponent(pathname)}`)
+    router.replace(`/login?redirect_to=${encodeURIComponent(pathname)}`)
   }
 
   return (

@@ -66,7 +66,7 @@ export async function clientApi<T = any>(
         if (typeof window !== "undefined") {
           const currentPath = window.location.pathname
           const countryCode = currentPath.split("/")[1] || "kr"
-          window.location.href = `/${countryCode}/auth/login`
+          window.location.href = `/${countryCode}/login`
         }
 
         // ApiAuthError 던지기

@@ -18,7 +18,7 @@ export default async function SocialCallbackPage({
   let result
 
   if (!almondToken) {
-    redirect("/auth/login")
+    redirect("/login")
   }
 
   const customer = await retrieveCustomer()
