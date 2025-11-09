@@ -43,8 +43,14 @@ export class SkuResponseDto {
     @ApiProperty({ required: true })
     masterId: string;
 
-    @ApiProperty({ required: false, type: Object })
-    optionKey?: Record<string, string>;
+    @ApiProperty({
+        required: false,
+        type: String,
+        description: '옵션 식별자',
+        example: "M / 흰색",
+        nullable: true
+    })
+    optionKey?: string | null;
 
     @ApiProperty({ required: false, type: Object })
     master?: {

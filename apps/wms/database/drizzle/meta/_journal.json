@@ -50,6 +50,13 @@
       "when": 1761556907257,
       "tag": "0006_ancient_miek",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1762713423212,
+      "tag": "0007_jazzy_the_fallen",
+      "breakpoints": true
     }
   ]
 }
