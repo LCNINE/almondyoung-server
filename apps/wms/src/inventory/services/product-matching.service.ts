@@ -10,7 +10,6 @@ import { SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
-import { OptionMatchingStrategy } from '../strategies/option-matching.strategy';
 
 // 안전한 SKU ID 기반 PIM 인터페이스
 interface PimSkuComponent {
@@ -44,7 +43,7 @@ export class ProductMatchingService {
         this.strategies = new Map();
         this.strategies.set('void', new VoidMatchingStrategy(dbService));
         this.strategies.set('variant', new VariantMatchingStrategy(dbService));
-        this.strategies.set('option', new OptionMatchingStrategy(dbService));
+        // 'option' strategy는 제거됨 - 1차원 optionKey로 전환
     }
 
     private get db() {
@@ -58,7 +57,9 @@ export class ProductMatchingService {
     private getStrategy(strategyType: string): MatchingStrategy {
         const strategy = this.strategies.get(strategyType);
         if (!strategy) {
-            throw new BadRequestException(`Unknown matching strategy: ${strategyType}`);
+            throw new BadRequestException(
+                `Unsupported strategy: ${strategyType}. Only 'void' and 'variant' are supported.`
+            );
         }
         return strategy;
     }
@@ -430,7 +431,7 @@ export class ProductMatchingService {
         }, tx);
     }
 
-    async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant' | 'option', tx?: DbTx) {
+    async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant', tx?: DbTx) {
         const productMatching = await this.inTx(async (trx) => {
             const [row] = await trx
                 .select()
@@ -477,53 +478,10 @@ export class ProductMatchingService {
             skuId: string;
         }>
     , tx?: DbTx) {
-        const productMatching = await this.inTx(async (trx) => {
-            const [row] = await trx
-                .select()
-                .from(wmsTables.productMatchings)
-                .where(eq(wmsTables.productMatchings.id, matchingId))
-                .limit(1);
-            return row;
-        }, tx);
-
-        if (!productMatching) {
-            throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
-        }
-
-        return this.inTx(async (trx) => {
-            const strategy = this.getStrategy('option');
-
-            for (const optionMapping of optionMappings) {
-                const context: MatchingContext = {
-                    variantId: productMatching.variantId,
-                    productMatchingId: productMatching.id,
-                    optionData: [{
-                        optionName: optionMapping.optionName,
-                        optionValue: optionMapping.optionValue
-                    }]
-                };
-
-                const mappings: SkuQuantityMapping[] = [{
-                    skuId: optionMapping.skuId,
-                    quantity: 1
-                }];
-
-                await strategy.update(context, mappings, trx);
-            }
-
-            const [updatedMatching] = await trx.update(wmsTables.productMatchings)
-                .set({
-                    status: 'matched',
-                    strategy: 'option',
-                    isResolved: true,
-                    updatedAt: new Date()
-                })
-                .where(eq(wmsTables.productMatchings.id, matchingId))
-                .returning();
-
-            this.logger.log(`Option matching resolved for ${matchingId} with ${optionMappings.length} option mappings`);
-            return updatedMatching;
-        }, tx);
+        // DEPRECATED: Option matching strategy is no longer supported
+        throw new BadRequestException(
+            'Option matching strategy is deprecated. Please use variant strategy with 1D optionKey instead.'
+        );
     }
 
     async getSkusForVariant(
