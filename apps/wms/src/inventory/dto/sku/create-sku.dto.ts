@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum SkuCreationSource {
@@ -23,9 +23,30 @@ export class CreateSkuDto {
     @IsNotEmpty()
     name: string;
 
-    @ApiProperty({ description: '옵션 조합 키 (예: {"색상":"퍼플","용량":"256GB"})', required: false, type: Object })
+    @ApiProperty({
+        description: '옵션 식별자 (1차원 문자열)',
+        required: false,
+        type: String,
+        example: "S / 검정",
+        examples: {
+            simple: {
+                value: "M / 블랙",
+                summary: "사이즈와 색상"
+            },
+            complex: {
+                value: "256GB / 퍼플 / Wi-Fi",
+                summary: "용량, 색상, 연결"
+            },
+            none: {
+                value: null,
+                summary: "옵션 없음"
+            }
+        }
+    })
     @IsOptional()
-    optionKey?: Record<string, string>;
+    @IsString()
+    @MaxLength(255)
+    optionKey?: string;
 
     @ApiProperty({ description: 'SKU 생성 맥락', enum: SkuCreationSource, required: false })
     @IsEnum(SkuCreationSource)

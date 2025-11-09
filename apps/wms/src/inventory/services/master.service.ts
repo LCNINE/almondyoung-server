@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { OptionEngineService, OptionSchema } from '@app/shared/option-engine/option-engine.service';
 import { InventoryService } from './inventory.service';
 import { PimOrchestrator, PimHttpClient } from '@app/shared';
 import { ConfigService } from '@nestjs/config';
 import { and, eq } from 'drizzle-orm';
+
+// DEPRECATED: OptionSchema는 UI 호환성을 위해 타입만 유지
+type OptionSchema = { options?: Array<{ name: string; values: string[] }> };
 
 @Injectable()
 export class MasterService {
@@ -13,7 +15,6 @@ export class MasterService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly optionEngine: OptionEngineService,
     private readonly inventoryService: InventoryService,
     private readonly configService: ConfigService,
   ) {}
@@ -34,7 +35,7 @@ export class MasterService {
   }, tx?: DbTx) {
     // 1) 내부 저장 (트랜잭션)
     const master = await this.inTx(async (trx) => {
-      if (params.optionSchema) this.optionEngine.validateSchema(params.optionSchema);
+      // optionSchema 검증은 제거됨 - UI 호환성만 유지
       const [created] = await trx.insert(wmsTables.inventoryProductMasters).values({
         name: params.name,
         masterCode: params.masterCode,
@@ -105,7 +106,7 @@ export class MasterService {
     status: 'active' | 'archived';
   }>, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      if (params.optionSchema) this.optionEngine.validateSchema(params.optionSchema);
+      // optionSchema 검증은 제거됨
       const [updated] = await trx.update(wmsTables.inventoryProductMasters)
         .set({
           name: params.name,
@@ -134,29 +135,10 @@ export class MasterService {
     }, tx);
   }
 
-  async generateSkusFromOptions(masterId: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
-      const master = await trx.query.inventoryProductMasters.findFirst({ where: eq(wmsTables.inventoryProductMasters.id, masterId) });
-      if (!master) return [];
-      const schema = (master.optionSchema || { options: [] }) as OptionSchema;
-      const combos = this.optionEngine.generateCombinations(schema);
-
-      const createdSkuIds: string[] = [];
-      for (const combo of combos) {
-        // (master_id, option_key) 유니크 제약을 사용해 존재 검사
-        const existing = await trx.query.skus.findFirst({ where: and(eq(wmsTables.skus.masterId, masterId), eq(wmsTables.skus.optionKey, combo as any)) });
-        if (existing) continue;
-        const skuName = `${master.name} ${Object.values(combo).join(' / ')}`;
-        const sku = await this.inventoryService.createSku({ name: skuName, masterId, optionKey: combo as any } as any, trx);
-        createdSkuIds.push(sku.id);
-      }
-      return createdSkuIds;
-    }, tx);
-  }
 
   async updateMasterOptions(masterId: string, optionSchema: OptionSchema, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      this.optionEngine.validateSchema(optionSchema);
+      // optionSchema 검증은 제거됨
       const [updated] = await trx.update(wmsTables.inventoryProductMasters)
         .set({ optionSchema: optionSchema as any, updatedAt: new Date() })
         .where(eq(wmsTables.inventoryProductMasters.id, masterId))

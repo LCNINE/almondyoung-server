@@ -2,7 +2,9 @@ import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common'
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MasterService } from '../services/master.service';
 import { ConfigService } from '@nestjs/config';
-import { OptionSchema } from '@app/shared/option-engine/option-engine.service';
+
+// DEPRECATED: OptionSchema는 UI 호환성을 위해 타입만 유지
+type OptionSchema = { options?: Array<{ name: string; values: string[] }> };
 
 @ApiTags('Masters')
 @Controller('wms/masters')
@@ -25,12 +27,6 @@ export class MastersController {
   @ApiOperation({ summary: '마스터 삭제' })
   remove(@Param('id') id: string) {
     return this.masterService.deleteMaster(id);
-  }
-
-  @Post(':id/generate-skus')
-  @ApiOperation({ summary: '옵션 조합으로 SKU 생성' })
-  generateSkus(@Param('id') id: string) {
-    return this.masterService.generateSkusFromOptions(id);
   }
 
   @Post(':id/pim-sync')
