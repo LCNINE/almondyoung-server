@@ -17,9 +17,7 @@ import { InventoryCommandService } from './services/inventory-command.service';
 import { InventoryQueryService } from './services/inventory-query.service';
 import { PimEventHandler } from './handlers/pim-event.hadler';
 import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
-import { OptionMatchingStrategy } from './strategies/option-matching.strategy';
 import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
-import { OptionEngineModule } from '@app/shared';
 import { MasterService } from './services/master.service';
 import { MastersController } from './controllers/masters.controller';
 // Phase 2 Step 6: New services and controllers
@@ -58,7 +56,6 @@ import { SkuGroupController } from './controllers/sku-group.controller';
       schema: wmsTables,
     }),
     SharedModule,
-    OptionEngineModule,
   ],
   controllers: [
     InventoryController,
@@ -92,7 +89,6 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     InventoryQueryService,
     PimEventHandler,
     VariantMatchingStrategy,
-    OptionMatchingStrategy,
     VoidMatchingStrategy,
     MasterService,
     // Phase 2 Step 6: New services

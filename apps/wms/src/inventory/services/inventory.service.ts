@@ -968,7 +968,7 @@ export class InventoryService implements OnModuleInit {
             masterId: data.masterId,
             name: skuName,
             code: skuCode,
-            optionKey: (data as any).optionKey as any,
+            optionKey: data.optionKey ?? null,
             deliveryProfileId: data.deliveryProfileId,
             sale1m: data.sale1m,
             sale3m: data.sale3m,
@@ -982,7 +982,9 @@ export class InventoryService implements OnModuleInit {
         const generatedBarcode = await this._generateAndSetDefaultBarcode(newSku.id, db);
         newSku.defaultBarcode = generatedBarcode;
 
-        this.logger.log(`SKU created internally: ${newSku.id} (Name: ${newSku.name})`);
+        this.logger.log(
+            `SKU created internally: ${newSku.id} (Name: ${newSku.name}, OptionKey: ${newSku.optionKey || 'N/A'})`
+        );
         return newSku;
     }
 

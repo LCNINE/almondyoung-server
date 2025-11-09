@@ -94,7 +94,7 @@ export const matchingStatusEnum = pgEnum('matching_status', ['pending', 'matched
 export const matchingPriorityEnum = pgEnum('matching_priority', ['normal', 'high']);
 
 // 매칭 전략 enum 추가
-export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'variant', 'option']);
+export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'variant']);
 
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
@@ -310,8 +310,8 @@ export const skus = pgTable('skus', {
     masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'restrict' }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     code: varchar('code', { length: 64 }).notNull().unique(),
-    // 옵션 조합 키 (마스터별 유니크)
-    optionKey: jsonb('option_key'),
+    // 옵션 식별자 (1차원 문자열, 예: "M / 블랙")
+    optionKey: varchar('option_key', { length: 255 }),
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     stockType: stockTypeEnum('stock_type').notNull().default('physical'),
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
@@ -510,6 +510,8 @@ export const inventoryProductMasters = pgTable('inventory_product_masters', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
     masterCode: varchar('master_code', { length: 64 }).notNull(),
+    // DEPRECATED: WMS는 더 이상 옵션 조합을 생성하지 않음
+    // UI 호환성을 위해 유지, 향후 제거 예정
     optionSchema: json('option_schema'),
     defaultPolicy: json('default_policy'),
     status: inventoryMasterStatusEnum('status').notNull().default('active'),
@@ -863,22 +865,6 @@ export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     pk: primaryKey(t.productMatchingId, t.skuId),
-}));
-
-// 옵션별 매칭을 위한 테이블 추가
-export const productOptionMatchings = pgTable('product_option_matchings', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    productMatchingId: uuid('product_matching_id')
-        .references(() => productMatchings.id, { onDelete: 'cascade' })
-        .notNull(),
-    optionName: varchar('option_name', { length: 255 }).notNull(), // 예: 'CPU', 'RAM'
-    optionValue: varchar('option_value', { length: 255 }).notNull(), // 예: 'i7', '16GB'
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => ({
-    uniqueOptionMatching: unique().on(t.productMatchingId, t.optionName, t.optionValue),
 }));
 
 /*───────────────────────────
@@ -1716,7 +1702,6 @@ export const wmsTables = {
     stockLedgers,
     productMatchings,
     productVariantSkuLinks,
-    productOptionMatchings,
     salesOrders,
     salesOrderLines,
     orderEvents,
@@ -1866,7 +1851,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
     movementJobLines: many(movementJobLines),
     // Matching relations
     productVariantSkuLinks: many(productVariantSkuLinks),
-    productOptionMatchings: many(productOptionMatchings),
     // Mapping relations
     productSkuMappingItems: many(productSkuMappingItems),
     productSkuMappingSnapshots: many(productSkuMappingSnapshots),
@@ -2084,7 +2068,6 @@ export const productMatchingsRelations = relations(productMatchings, ({ one, man
         references: [inventoryProductMasters.id],
     }),
     productVariantSkuLinks: many(productVariantSkuLinks),
-    productOptionMatchings: many(productOptionMatchings),
     salesOrderLines: many(salesOrderLines),
 }));
 
@@ -2095,17 +2078,6 @@ export const productVariantSkuLinksRelations = relations(productVariantSkuLinks,
     }),
     sku: one(skus, {
         fields: [productVariantSkuLinks.skuId],
-        references: [skus.id],
-    }),
-}));
-
-export const productOptionMatchingsRelations = relations(productOptionMatchings, ({ one }) => ({
-    productMatching: one(productMatchings, {
-        fields: [productOptionMatchings.productMatchingId],
-        references: [productMatchings.id],
-    }),
-    sku: one(skus, {
-        fields: [productOptionMatchings.skuId],
         references: [skus.id],
     }),
 }));
@@ -2577,7 +2549,6 @@ export const wmsRelations = {
     // Product Matching Relations
     productMatchingsRelations,
     productVariantSkuLinksRelations,
-    productOptionMatchingsRelations,
 
     // Sales Order Relations
     salesOrdersRelations,
