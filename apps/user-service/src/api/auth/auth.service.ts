@@ -769,6 +769,9 @@ export class AuthService {
       return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
     };
 
+    const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
+    console.log('테스트:::::::::', isRailway);
+
     const isProd = process.env.NODE_ENV === 'production';
 
     const cookieOptions = {
