@@ -712,13 +712,14 @@ export class AuthService {
       return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
     };
 
+    const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
 
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: isProd ? ('none' as const) : ('lax' as const),
-      secure: isProd,
+      sameSite: isRailway ? ('none' as const) : ('lax' as const),
+      secure: isRailway,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
@@ -770,15 +771,13 @@ export class AuthService {
     };
 
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
-    console.log('테스트:::::::::', isRailway);
-
     const isProd = process.env.NODE_ENV === 'production';
 
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: isProd ? ('none' as const) : ('lax' as const),
-      secure: isProd,
+      sameSite: isRailway ? ('none' as const) : ('lax' as const),
+      secure: isRailway,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
