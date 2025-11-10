@@ -725,6 +725,8 @@ export class AuthService {
         : {}), // 로컬/테스트 시 domain 제거
     };
 
+    console.log('cookieOptions:::::::::', cookieOptions);
+
     reply.setCookie('accessToken', accessToken, cookieOptions);
 
     this.logger.log(`Access token issued for user: ${user.email}`);
