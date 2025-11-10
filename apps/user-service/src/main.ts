@@ -15,7 +15,6 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
-import { writeFileSync } from 'fs';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -38,7 +37,7 @@ async function bootstrap() {
 
   logger.log('CORS:', corsOrigins);
 
-  // Swagger 설정
+  // swagger 설정
   const config = new DocumentBuilder()
     .setTitle('User Service API')
     .setDescription('The User Service API description')
@@ -65,52 +64,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  // Swagger JSON 파일로 저장 (개발 환경에서만)
-  // if (process.env.NODE_ENV !== 'production') {
-  //   writeFileSync(
-  //     'apps/user-service/swagger-spec.json',
-  //     JSON.stringify(document),
-  //   );
-  // }
-
-  // Passport와 Fastify 호환성을 위한 훅 추가
-  app
-    .getHttpAdapter()
-    .getInstance()
-    .addHook('onRequest', (request, reply, done) => {
-      (reply as any).setHeader = function (key, value) {
-        return this.raw.setHeader(key, value);
-      };
-      (reply as any).end = function () {
-        this.raw.end();
-      };
-      (request as any).res = reply;
-      done();
-    });
-
-  await app.register(fastifyHelmet);
-  await app.register(fastifyCookie);
-
-  // Multipart 설정 추가
-  await app.register(fastifyMultipart, {
-    limits: {
-      fileSize: FILE_SIZE_LIMIT,
-    },
-  });
-
-  // 세션 설정(카카오 로그인을 위해 필요)
-  await app.register(fastifySession, {
-    secret: configService.get('KAKAO_CLIENT_SECRET') as string,
-    cookieName: 'sessionId',
-    saveUninitialized: false,
-    cookie: {
-      sameSite: 'none',
-      secure: process.env.NODE_ENV === 'production',
-      httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24,
-    },
-  });
-
   await app.register(fastifyCors, {
     origin:
       process.env.NODE_ENV === 'production'
@@ -133,6 +86,44 @@ async function bootstrap() {
     exposedHeaders: ['Set-Cookie'],
   });
 
+  await app.register(fastifyHelmet);
+
+  await app.register(fastifyCookie);
+
+  await app.register(fastifySession, {
+    secret: configService.get('KAKAO_CLIENT_SECRET') as string,
+    cookieName: 'sessionId',
+    saveUninitialized: false,
+    cookie: {
+      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 1000 * 60 * 60 * 24, // 1일
+    },
+  });
+
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: FILE_SIZE_LIMIT,
+    },
+  });
+
+  // Passport와 Fastify 호환성을 위한 훅
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', (request, reply, done) => {
+      (reply as any).setHeader = function (key, value) {
+        return this.raw.setHeader(key, value);
+      };
+      (reply as any).end = function () {
+        this.raw.end();
+      };
+      (request as any).res = reply;
+      done();
+    });
+
+  // 전역 설정
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalPipes(
@@ -140,9 +131,7 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
