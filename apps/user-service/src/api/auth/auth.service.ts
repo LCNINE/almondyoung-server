@@ -712,20 +712,16 @@ export class AuthService {
       return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
     };
 
+    const isProd = process.env.NODE_ENV === 'production';
+
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      ...(process.env.NODE_ENV === 'production'
-        ? {
-            domain: getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || ''),
-            sameSite: 'none' as const,
-            secure: true,
-          }
-        : {
-            domain: getDomain(process.env.CORS_ORIGIN_DOMAIN_DEV || ''),
-            sameSite: 'lax' as const,
-            secure: false,
-          }),
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
+      ...(isProd
+        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
+        : {}), // 로컬/테스트 시 domain 제거
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
@@ -768,21 +764,23 @@ export class AuthService {
       tx,
     );
 
-    // 쿠키 설정
+    // domain에서 프로토콜과 포트 모두 제거
+    const getDomain = (url: string) => {
+      return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+    };
+
+    const isProd = process.env.NODE_ENV === 'production';
+
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      ...(process.env.NODE_ENV === 'production'
-        ? {
-            domain: process.env.CORS_ORIGIN_DOMAIN,
-            sameSite: 'none' as const,
-            secure: true,
-          }
-        : {
-            sameSite: 'lax' as const,
-            secure: false,
-          }),
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
+      ...(isProd
+        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
+        : {}), // 로컬/테스트 시 domain 제거
     };
+
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
     return { refreshToken };
