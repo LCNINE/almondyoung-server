@@ -718,7 +718,7 @@ export class AuthService {
       path: '/',
       httpOnly: true,
       sameSite: 'none' as const,
-      secure: isProd,
+      secure: true,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
@@ -775,7 +775,7 @@ export class AuthService {
       path: '/',
       httpOnly: true,
       sameSite: 'none' as const,
-      secure: isProd,
+      secure: true,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
