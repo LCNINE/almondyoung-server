@@ -781,6 +781,8 @@ export class AuthService {
         : {}), // 로컬/테스트 시 domain 제거
     };
 
+    console.log('cookieOptions 로그값 확인하기:::::::', cookieOptions);
+
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
     return { refreshToken };
