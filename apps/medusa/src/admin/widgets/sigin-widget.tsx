@@ -69,7 +69,7 @@ const SigninWidget = () => {
 
       const { data: userData } = await userResponse.json();
 
-      await sdk.auth.login('user', 'my-auth', {
+      await sdk(accessToken).auth.login('user', 'my-auth', {
         email: userData?.email,
         password,
       });
