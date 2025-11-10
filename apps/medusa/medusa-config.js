@@ -9,6 +9,7 @@ const path = require('path');
 // Monorepo 루트에서 .env 파일 로드
 const rootDir = path.resolve(__dirname, '../..');
 loadEnv(process.env.NODE_ENV || 'development', rootDir);
+console.log('JWT_SECRET:', process.env.JWT_SECRET);
 
 module.exports = defineConfig({
   projectConfig: {
@@ -21,6 +22,7 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || 'supersecret',
       jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
     },
+
     // 개발 환경에서 API 키 검증 비활성화 (테스트용)
     ...(process.env.NODE_ENV === 'development' && {
       apiKeyAuthentication: false,
@@ -61,7 +63,7 @@ module.exports = defineConfig({
             resolve: './src/modules/auth',
             id: 'my-auth',
             options: {
-              // provider options...
+              jwtSecret: process.env.JWT_SECRET,
             },
           },
         ],
