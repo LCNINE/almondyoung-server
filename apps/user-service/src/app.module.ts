@@ -1,13 +1,12 @@
-import * as os from 'os';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { AuthorizationGuard } from '@app/roles';
-import { USER_STREAM, UserEvents } from '@packages/event-contracts/streams';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { validateUserServiceEnv } from './config/env.validation';
+import { USER_STREAM } from '@packages/event-contracts/streams';
+import * as os from 'os';
 import { userServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
@@ -21,7 +20,7 @@ import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
-import { UserMainModule } from './api/user-main.module';
+import { validateUserServiceEnv } from './config/env.validation';
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
@@ -96,7 +95,6 @@ function createKafkaConfig() {
     FileModule,
     BusinessLicensesModule,
     AdminModule,
-    UserMainModule,
   ],
   providers: [
     {
