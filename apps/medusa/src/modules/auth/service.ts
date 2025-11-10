@@ -80,6 +80,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         }
       }
 
+      console.log('almond_token:::::::::', almond_token);
+
       if (!almond_token) {
         return {
           success: false,
