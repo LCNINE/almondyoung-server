@@ -21,6 +21,7 @@ import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
+import { UserMainModule } from './api/user-main.module';
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
@@ -49,11 +50,14 @@ function createKafkaConfig() {
       initialRetryTime: 300,
     },
     ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
-      mechanism: 'plain' as const,
-      username: process.env.KAFKA_API_KEY,
-      password: process.env.KAFKA_API_SECRET,
-    } : undefined,
+    sasl:
+      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
+        ? {
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
+        : undefined,
   };
 }
 
@@ -92,6 +96,7 @@ function createKafkaConfig() {
     FileModule,
     BusinessLicensesModule,
     AdminModule,
+    UserMainModule,
   ],
   providers: [
     {
