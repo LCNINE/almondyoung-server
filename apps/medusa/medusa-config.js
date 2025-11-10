@@ -6,10 +6,9 @@ const {
 } = require('@medusajs/framework/utils');
 const path = require('path');
 
-// Monorepo 루트에서 .env 파일 로드
-const rootDir = path.resolve(__dirname, '../..');
-loadEnv(process.env.NODE_ENV || 'development', rootDir);
-console.log('JWT_SECRET:', process.env.JWT_SECRET);
+// apps/medusa/ 폴더
+const medusaDir = __dirname;
+loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 
 module.exports = defineConfig({
   projectConfig: {
