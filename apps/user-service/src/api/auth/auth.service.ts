@@ -717,8 +717,8 @@ export class AuthService {
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: 'none' as const,
-      secure: true,
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
@@ -774,8 +774,8 @@ export class AuthService {
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: 'none' as const,
-      secure: true,
+      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      secure: isProd,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
