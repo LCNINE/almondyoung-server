@@ -717,7 +717,7 @@ export class AuthService {
     const cookieOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: isProd ? ('none' as const) : ('lax' as const),
+      sameSite: 'none' as const,
       secure: isProd,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
