@@ -18,3 +18,6 @@ export * from './payment.stream';
 
 // Channel Adapter Stream
 export * from './adapter.stream';
+
+// Product Stream
+export * from './product.stream';
