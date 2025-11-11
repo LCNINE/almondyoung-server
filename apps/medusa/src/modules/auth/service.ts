@@ -80,8 +80,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         }
       }
 
-      console.log('almond_token:::::::::', almond_token);
-
       if (!almond_token) {
         return {
           success: false,
@@ -97,6 +95,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
       }
 
       const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
+
+      console.log('payload:::::::::', payload);
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({

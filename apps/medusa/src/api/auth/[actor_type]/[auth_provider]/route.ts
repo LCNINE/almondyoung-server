@@ -27,8 +27,6 @@ export const GET = async (
       ContainerRegistrationKeys.CONFIG_MODULE,
     );
 
-    console.log('config:::::::::', config);
-
     const service: IAuthModuleService = req.scope.resolve(Modules.AUTH);
 
     const authData = {
@@ -39,11 +37,10 @@ export const GET = async (
       protocol: req.protocol,
     } as AuthenticationInput;
 
-    console.log('authData:::::::::', authData);
     const { success, error, authIdentity, location } =
       await service.authenticate(auth_provider, authData);
 
-    console.log('authIdentity:::::', authIdentity);
+    console.log('authIdentity:::::', authIdentity); // 언디파인뜸
 
     if (location) {
       return res.status(200).json({ location });
