@@ -1,4 +1,4 @@
-import { clientApi } from "@lib/client-api"
+import { clientApi } from "@lib/api/client-api"
 // import { ShopSurveySchema } from "@modules/shop-survey/schemas/suvery-schema"
 
 // 임시 타입 정의

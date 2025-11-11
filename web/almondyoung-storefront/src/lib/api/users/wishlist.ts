@@ -1,7 +1,7 @@
 "use client"
 
-import { clientApi } from "@lib/client-api"
-import { USER_API_CONFIG } from "@lib/api/users/config"
+import { clientApi } from "@lib/api/client-api"
+import { USER_SERVICE_BASE_URL } from "../api.config"
 
 export interface WishlistItem {
   id: string
@@ -26,7 +26,7 @@ export const addToWishlist = async (
 ): Promise<WishlistResponse> => {
   try {
     return await clientApi<WishlistResponse>(
-      USER_API_CONFIG.BASE_URL + "/wishlist",
+      USER_SERVICE_BASE_URL + "/wishlist",
       {
         method: "POST",
         body: JSON.stringify({ productId }),
@@ -43,9 +43,7 @@ export const addToWishlist = async (
  */
 export const getWishlist = async (): Promise<WishlistItem[]> => {
   try {
-    return await clientApi<WishlistItem[]>(
-      USER_API_CONFIG.BASE_URL + "/wishlist"
-    )
+    return await clientApi<WishlistItem[]>(USER_SERVICE_BASE_URL + "/wishlist")
   } catch (error) {
     console.error("위시리스트 조회 실패:", error)
     throw error
@@ -60,7 +58,7 @@ export const removeFromWishlist = async (
 ): Promise<WishlistResponse> => {
   try {
     return await clientApi<WishlistResponse>(
-      USER_API_CONFIG.BASE_URL + "/wishlist" + `/${wishlistId}`,
+      USER_SERVICE_BASE_URL + "/wishlist" + `/${wishlistId}`,
       {
         method: "DELETE",
       }

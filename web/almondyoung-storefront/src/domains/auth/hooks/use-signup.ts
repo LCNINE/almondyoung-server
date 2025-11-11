@@ -1,4 +1,4 @@
-import { ApiError } from "@lib/api-error"
+import { ApiError } from "@lib/api/api-error"
 import { createUser } from "@lib/api/users"
 import { useRouter } from "next/navigation"
 import { useState } from "react"

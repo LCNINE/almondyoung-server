@@ -19,21 +19,6 @@ const nextConfig = {
     optimizePackageImports: ["@components", "@lib"],
   },
 
-  // 캐싱 설정
-  async headers() {
-    return [
-      {
-        source: "/api/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=60, stale-while-revalidate=300",
-          },
-        ],
-      },
-    ]
-  },
-
   async redirects() {
     return [
       // payment 관련

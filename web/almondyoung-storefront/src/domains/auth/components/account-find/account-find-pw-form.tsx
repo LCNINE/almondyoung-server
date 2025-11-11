@@ -1,8 +1,5 @@
 "use client"
 
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForgetPw } from "@components/auth/hooks/use-forget-pw"
-import { useForgetUserId } from "@components/auth/hooks/use-forget-userid"
 import { CustomButton } from "@components/common/custom-buttons"
 import { CustomInput } from "@components/common/inputs/custom-input"
 import { Spinner } from "@components/common/spinner"
@@ -13,6 +10,8 @@ import {
   FormItem,
   FormMessage,
 } from "@components/common/ui/form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForgetPw } from "domains/auth/hooks/use-forget-pw"
 import { IdCardLanyard, Mail } from "lucide-react"
 import { useForm } from "react-hook-form"
 import z from "zod"

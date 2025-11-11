@@ -3,8 +3,8 @@ import {
   AddToRecentViewsDto,
   RecentViewsResponseDto,
 } from "@lib/types/dto/user"
-import { clientApi } from "@lib/client-api"
-import { USER_API_CONFIG } from "@lib/api/users/config"
+import { clientApi } from "@lib/api/client-api"
+import { USER_SERVICE_BASE_URL } from "../api.config"
 
 /**
  * 최근 본 상품 추가
@@ -15,7 +15,7 @@ export async function addToRecentViews(
   console.log("🌐 [addToRecentViews] API 호출 시작:", { productId })
 
   try {
-    const data = await clientApi(USER_API_CONFIG.BASE_URL + "/recent-views", {
+    const data = await clientApi(USER_SERVICE_BASE_URL + "/recent-views", {
       method: "POST",
       body: JSON.stringify({ productId }),
     })
@@ -38,7 +38,7 @@ export async function getRecentViews(
 
   try {
     const data = await clientApi(
-      USER_API_CONFIG.BASE_URL + "/recent-views" + `?limit=${limit}`
+      USER_SERVICE_BASE_URL + "/recent-views" + `?limit=${limit}`
     )
 
     console.log("✅ [getRecentViews] 성공:", data)
@@ -69,7 +69,7 @@ export async function removeFromRecentViews(
 
   try {
     const data = await clientApi(
-      USER_API_CONFIG.BASE_URL + "/recent-views/" + recentViewId,
+      USER_SERVICE_BASE_URL + "/recent-views/" + recentViewId,
       {
         method: "DELETE",
       }

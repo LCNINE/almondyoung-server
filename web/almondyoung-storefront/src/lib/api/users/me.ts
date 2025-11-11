@@ -1,10 +1,10 @@
 "use server"
 
-import { USER_API_CONFIG } from "@lib/api/users/config"
-import { serverApi } from "@lib/server-api"
 import { UserDetail } from "domains/auth/types"
 import { cookies, headers } from "next/headers"
 import { cache } from "react"
+import { serverApi } from "../server-api"
+import { USER_SERVICE_BASE_URL } from "../api.config"
 
 export const fetchCurrentUser = cache(async (): Promise<UserDetail | null> => {
   const cookieStore = await cookies()
@@ -13,7 +13,7 @@ export const fetchCurrentUser = cache(async (): Promise<UserDetail | null> => {
   const countryCode = pathname.split("/")[1] || "kr"
 
   try {
-    return await serverApi(USER_API_CONFIG.BASE_URL + "/users/detail", {
+    return await serverApi(USER_SERVICE_BASE_URL + "/users/detail", {
       cache: "no-store",
     })
   } catch (error) {
