@@ -40,16 +40,12 @@ export const GET = async (
     const { success, error, authIdentity, location } =
       await service.authenticate(auth_provider, authData);
 
-    console.log('authIdentity:::::', authIdentity); // 언디파인뜸
-
     if (location) {
       return res.status(200).json({ location });
     }
 
     if (success && authIdentity) {
       const { http } = config.projectConfig;
-
-      console.log('http:::::::::', http);
 
       if (
         !http?.jwtSecret ||
