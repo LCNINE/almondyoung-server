@@ -5,7 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
-import os from 'os';
+import * as os from 'os';
 
 function createKafkaConfig() {
   const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
