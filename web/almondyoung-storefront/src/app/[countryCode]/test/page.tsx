@@ -1,269 +1,219 @@
-"use client"
+import React from "react"
+import {
+  ChevronLeft,
+  ChevronDown,
+  ChevronRight,
+  Home,
+  Menu, // '카테고리' 아이콘으로 Menu 사용
+  Search,
+  ShoppingCart,
+  User, // '마이' 아이콘으로 User 사용
+} from "lucide-react"
 
-import React, { useEffect } from "react"
+// (BankVerifyForm 임포트는 원본 코드에 있었으나 실제 사용되지 않아 주석 처리합니다.)
+// import BankVerifyForm from "domains/verify/bank"
 
-// --- 아이콘 Placeholder (lucide-react 등 라이브러리로 대체) ---
-const CalendarIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-    <line x1="16" y1="2" x2="16" y2="6"></line>
-    <line x1="8" y1="2" x2="8" y2="6"></line>
-    <line x1="3" y1="10" x2="21" y2="10"></line>
-  </svg>
-)
-const SearchIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="11" cy="11" r="8"></circle>
-    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-  </svg>
-)
-
-// --- 재사용 UI 컴포넌트 ---
-// 1. 폼 필드 그룹 (라벨 + 입력 요소)
-const FormField = ({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) => (
-  <div className="flex flex-col gap-1">
-    <label className="text-sm font-semibold text-gray-700">{label}</label>
-    {children}
-  </div>
-)
-// 2. 커스텀 라디오 버튼
-const CustomRadio = ({
-  name,
-  value,
-  label,
-  checked,
-  onChange,
-}: {
-  name: string
-  value: string
-  label: string
-  checked: boolean
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-}) => (
-  <label className="flex cursor-pointer items-center gap-1.5">
-    <input
-      type="radio"
-      name={name}
-      value={value}
-      checked={checked}
-      onChange={onChange}
-      className="peer sr-only"
-    />
-    <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-gray-300 peer-checked:border-blue-500">
-      <span className="hidden h-2 w-2 rounded-full bg-blue-500 peer-checked:block"></span>
-    </span>
-    <span className="text-sm">{label}</span>
-  </label>
-)
-
-// =================================================================================================
-// 페이지 컴포넌트
-// =================================================================================================
-
-function AdvancedSearchFormPage() {
-  const statusOptions = [
-    "전체",
-    "출고지시",
-    "출고작업",
-    "출고완료",
-    "출고 취소",
-  ]
-  async function fetchData() {
-    const Response = await fetch("https://localhost:3000/masters?limit=50")
-    const data = await Response.json()
-
-    return data
-  }
-
-  useEffect(() => {
-    fetchData().then((data) => {
-      console.log(data)
-    })
-  }, [])
-
+/**
+ * 페이지 전체 레이아웃
+ */
+export default function TestPage() {
   return (
-    <main className="bg-white p-4 font-sans">
-      <form className="space-y-4 rounded-lg bg-muted p-6 shadow-md">
-        {/* --- 상단 필터 그룹 --- */}
-        <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-3 lg:grid-cols-6">
-          <FormField label="판매처 분류">
-            <select className="w-full rounded-md border border-gray-300 bg-white p-2">
-              <option>웹사이트</option>
-            </select>
-          </FormField>
-          <FormField label="판매처 전체">
-            <select className="w-full rounded-md border border-gray-300 bg-white p-2">
-              <option>판매처 전체</option>
-            </select>
-          </FormField>
-          <FormField label="조회기간">
-            <div className="flex items-center gap-2">
-              <select className="rounded-md border border-gray-300 bg-white p-2">
-                <option>출고요청 일</option>
-              </select>
-              <div className="relative">
-                <input
-                  type="text"
-                  defaultValue="2025-08-05"
-                  className="w-full rounded-md border border-gray-300 bg-white p-2 pr-8"
-                />
-                <span className="absolute top-1/2 right-2 -translate-y-1/2 text-gray-400">
-                  <CalendarIcon />
-                </span>
-              </div>
-              <span className="text-gray-400">~</span>
-              <div className="relative">
-                <input
-                  type="text"
-                  defaultValue="2025-08-05"
-                  className="w-full rounded-md border border-gray-300 bg-white p-2 pr-8"
-                />
-                <span className="absolute top-1/2 right-2 -translate-y-1/2 text-gray-400">
-                  <CalendarIcon />
-                </span>
-              </div>
-            </div>
-          </FormField>
-          <FormField label="출고방식">
-            <select className="w-full rounded-md border border-gray-300 bg-white p-2">
-              <option>택배</option>
-            </select>
-          </FormField>
-          <FormField label="출고회차">
-            <select className="w-full rounded-md border border-gray-300 bg-white p-2">
-              <option>1회차</option>
-            </select>
-          </FormField>
-        </div>
+    <div className="mx-auto flex w-full max-w-md flex-col bg-white">
+      {/* 1. 페이지 헤더 */}
 
-        {/* --- 중간 필터 그룹 --- */}
-        <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <div className="flex gap-2 md:col-span-2 lg:col-span-2">
-            <FormField label="조건검색">
-              <select className="w-32 rounded-md border border-gray-300 bg-white p-2">
-                <option>선택</option>
-              </select>
-            </FormField>
-            <input
-              type="text"
-              className="w-full self-end rounded-md border border-gray-300 bg-white p-2"
-            />
-          </div>
-          <FormField label="받는분 이름">
-            <input
-              type="text"
-              className="w-full rounded-md border border-gray-300 bg-white p-2"
-            />
-          </FormField>
-          <FormField label="상품 수">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                className="w-full rounded-md border border-gray-300 bg-white p-2"
-              />
-              <span className="text-gray-400">~</span>
-              <input
-                type="number"
-                className="w-full rounded-md border border-gray-300 bg-white p-2"
-              />
-            </div>
-          </FormField>
-          <FormField label="진행상태">
-            <div className="flex h-10 items-center gap-3 p-2">
-              {statusOptions.map((opt) => (
-                <label key={opt} className="flex items-center gap-1.5 text-sm">
-                  <input
-                    type="checkbox"
-                    defaultChecked={opt === "전체"}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          </FormField>
-        </div>
+      {/* 2. 메인 콘텐츠 (스크롤 영역) */}
+      <div className="p-4">
+        <form className="flex flex-col gap-8">
+          {/* 결제 신청인 정보 섹션 */}
+          <section aria-labelledby="applicant-info">
+            <h2 id="applicant-info" className="sr-only">
+              결제 신청인 정보
+            </h2>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-3 text-xs">
+              <dt className="text-black">결제 신청인</dt>
+              <dd className="text-black">이연정</dd>
 
-        {/* --- 하단 검색 그룹 --- */}
-        <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-3">
-          <div className="flex items-end gap-4 md:col-span-2">
-            <FormField label="상품 지정 검색">
-              <div className="flex h-10 items-center gap-3 p-2">
-                <CustomRadio
-                  name="searchType"
-                  value="exact"
-                  label="완전일치"
-                  checked={true}
-                  onChange={() => {}}
-                />
-                <CustomRadio
-                  name="searchType"
-                  value="contains"
-                  label="포함"
-                  checked
-                  onChange={() => {}}
-                />
-              </div>
-            </FormField>
-            <div className="relative flex-grow">
+              <dt className="text-black">회사명</dt>
+              <dd className="text-black">블랙속눈썹</dd>
+
+              <dt className="text-black">결제자 휴대폰 번호</dt>
+              <dd className="text-black">010-2020-2020</dd>
+
+              <dt className="text-black">계좌번호</dt>
+              <dd className="text-[#1e1e1e]">우리은행 1239-*******-****23</dd>
+
+              <dt className="text-black">예금주(소유주)명</dt>
+              <dd className="text-black">이연정</dd>
+            </dl>
+          </section>
+
+          {/* 입력 필드 섹션 */}
+          <section aria-labelledby="payment-info" className="space-y-5">
+            <h2 id="payment-info" className="sr-only">
+              결제 정보 입력
+            </h2>
+
+            <div>
+              <label
+                htmlFor="birthdate"
+                className="mb-1.5 block text-xs text-black"
+              >
+                결제자 생년월일
+              </label>
               <input
                 type="text"
-                className="w-full rounded-md border border-gray-300 bg-white p-2 pr-10"
+                id="birthdate"
+                placeholder="YYMMDD"
+                className="h-9 w-full bg-[#f4f4f4] px-4 py-3 text-xs text-gray-500 placeholder:text-[#d9d9d9] focus:border-[#8e8e93] focus:ring-0"
               />
-              <button
-                type="button"
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-gray-400"
-              >
-                <SearchIcon />
-              </button>
             </div>
-          </div>
-        </div>
 
-        {/* --- 액션 버튼 --- */}
-        <div className="flex justify-center gap-4 pt-4">
-          <button
-            type="submit"
-            className="rounded-md bg-orange-500 px-10 py-2 font-bold text-white"
-          >
-            검색
-          </button>
-          <button
-            type="reset"
-            className="rounded-md border border-gray-300 bg-white px-10 py-2 font-bold text-gray-700"
-          >
-            초기화
-          </button>
-        </div>
-      </form>
-    </main>
+            <div>
+              <label
+                htmlFor="payment-day"
+                className="mb-1.5 block text-xs text-black"
+              >
+                결제일
+              </label>
+              <div className="relative">
+                <select
+                  id="payment-day"
+                  className="h-9 w-full appearance-none rounded-none border border-[#d9d9d9] bg-white py-2 pr-8 pl-4 text-xs text-[#1e1e1e]"
+                >
+                  <option>매월 10일</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3">
+                  {/* [아이콘 교체] IconChevronDown -> ChevronDown */}
+                  <ChevronDown className="h-4 w-4" />
+                </div>
+              </div>
+            </div>
+
+            <fieldset>
+              <legend className="mb-2 text-[11px] text-black">
+                현금영수증 신청
+              </legend>
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="auto-issue"
+                    defaultChecked
+                    className="h-4 w-4 rounded-sm border-gray-300 text-[#F29219] focus:ring-[#F29219]"
+                  />
+                  <label
+                    htmlFor="auto-issue"
+                    className="text-xs text-[#1c1c1e]"
+                  >
+                    은행자동 이체 시 자동 발행
+                  </label>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="same-as-biz"
+                    defaultChecked
+                    className="h-4 w-4 rounded-sm border-gray-300 text-[#F29219] focus:ring-[#F29219]"
+                  />
+                  <label
+                    htmlFor="same-as-biz"
+                    className="text-xs text-[#1c1c1e]"
+                  >
+                    사업자번호 동일
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <div>
+              <label
+                htmlFor="receipt-email"
+                className="mb-1.5 block text-xs text-black"
+              >
+                현금영수증 수신 email
+              </label>
+              <input
+                type="email"
+                id="receipt-email"
+                placeholder="example@gmail.com"
+                className="h-9 w-full bg-[#f4f4f4] px-4 py-3 text-xs text-gray-500 placeholder:text-[#d9d9d9] focus:border-[#8e8e93] focus:ring-0"
+              />
+            </div>
+          </section>
+
+          {/* 약관 동의 섹션 */}
+          <section aria-labelledby="terms-agreement" className="space-y-3 pt-4">
+            <h2 id="terms-agreement" className="sr-only">
+              약관 동의
+            </h2>
+            <AgreementItem text="[필수] 개인정보 수집 및 이용 동의" />
+            <AgreementItem text="[필수] 개인정보 제3자 제공 동의" />
+          </section>
+
+          {/* 최종 동의 및 제출 */}
+          <div className="space-y-3 pt-2">
+            <p className="text-center text-[13px] text-[#1c1c1e]">
+              위와 같이 정기결제 신청에 동의합니다.
+            </p>
+            <button
+              type="submit"
+              className="w-full rounded-[5px] bg-[#f29219] py-3 text-center text-sm font-semibold text-white transition-colors hover:bg-[#e08616] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f29219]"
+            >
+              전자서명
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 
-export default AdvancedSearchFormPage
+// --- 하위 컴포넌트 ---
+
+/**
+ * 앱 상단 헤더
+ */
+function AppHeader() {
+  return (
+    <header className="relative flex h-11 w-full flex-shrink-0 items-center justify-center border-b border-[#d9d9d9] px-4">
+      <button
+        type="button"
+        aria-label="뒤로 가기"
+        className="absolute top-1/2 left-4 -translate-y-1/2"
+      >
+        {/* [아이콘 교체] IconBack -> ChevronLeft */}
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <h1 className="text-center text-base font-bold text-black">
+        정기결제 동의서
+      </h1>
+    </header>
+  )
+}
+
+/**
+
+ * 약관 동의 아이템
+ */
+function AgreementItem({ text }: { text: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center justify-start gap-2.5">
+        <input
+          type="checkbox"
+          aria-label={text}
+          className="h-4 w-4 flex-shrink-0 rounded-sm border border-[#1c1c1e] focus:ring-blue-500"
+        />
+        <span className="text-left text-[13px] text-[#1c1c1e]">{text}</span>
+      </div>
+      <button type="button" aria-label={`${text} 상세보기`}>
+        {/* [아이콘 교체] IconChevronRight -> ChevronRight */}
+        <ChevronRight className="h-5 w-5" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 하단 내비게이션 아이템
+ */

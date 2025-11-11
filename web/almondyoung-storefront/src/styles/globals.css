@@ -82,7 +82,7 @@
   --color-tab-foreground: var(--tab-foreground);
   --color-tab-border: var(--tab-border);
   --color-tab-accent: var(--tab-accent);
-  --color-tab-accent-foreground: var(--tab-accent-foreground);  
+  --color-tab-accent-foreground: var(--tab-accent-foreground);
 
   /* Grayscale */
   --color-gray-0: var(--gray-0);
@@ -215,8 +215,6 @@
   --tab-border: var(--gray-10);
   --tab-accent: var(--gray-90);
   --tab-accent-foreground: var(--white);
-
-  
 }
 
 /* 블랙프라이데이 테마 */
@@ -231,7 +229,7 @@
   --black-friday-text-muted: #cccccc;
 
   /* 블랙프라이데이 Gray 스케일 */
-  --gray-0: #000000;  /* 완전한 검은색 */
+  --gray-0: #000000; /* 완전한 검은색 */
   --gray-10: #1a1a1a; /* 매우 어두운 회색 */
   --gray-20: #2d2d2d; /* 어두운 회색 */
   --gray-30: #404040; /* 중간 어두운 회색 */
@@ -292,7 +290,7 @@
   --valentine-text-muted: #8b5a5a;
 
   /* 발렌타인 Gray 스케일 (따뜻한 톤) */
-  --gray-0: #fef7f7;  /* 매우 밝은 핑크 */
+  --gray-0: #fef7f7; /* 매우 밝은 핑크 */
   --gray-10: #f8bbd9; /* 밝은 핑크 */
   --gray-20: #f2a0c7; /* 중간 밝은 핑크 */
   --gray-30: #ec85b5; /* 중간 핑크 */
@@ -354,7 +352,7 @@
   --christmas-text-muted: #a1a1aa;
 
   /* 크리스마스 Gray 스케일 (차가운 톤) */
-  --gray-0: #0f1419;  /* 매우 어두운 파란 회색 */
+  --gray-0: #0f1419; /* 매우 어두운 파란 회색 */
   --gray-10: #1a2332; /* 어두운 파란 회색 */
   --gray-20: #25324b; /* 중간 어두운 파란 회색 */
   --gray-30: #304164; /* 중간 파란 회색 */
@@ -406,35 +404,27 @@
 @layer components {
   /* 버튼 베이스 스타일 */
   .ay-btn-base {
-    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all 
-      disabled:pointer-events-none disabled:opacity-50 
-      [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 
-      outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] 
-      aria-invalid:ring-destructive/20 aria-invalid:border-destructive;
+    @apply focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4;
   }
 
   /* 버튼 variant 기본 */
   .ay-btn-primary {
-    @apply bg-primary text-primary-foreground shadow-xs border border-transparent hover:bg-yellow-40;
+    @apply bg-primary text-primary-foreground hover:bg-yellow-40 border border-transparent shadow-xs;
   }
 
   /* 버튼 variant outline */
   .ay-btn-outline {
-    @apply border border-primary text-primary hover:border-yellow-40 hover:bg-yellow-10
-      active:bg-yellow-10 active:text-yellow-30 active:border-yellow-30 
-      disabled:text-muted-foreground disabled:border-muted;
+    @apply border-primary text-primary hover:border-yellow-40 hover:bg-yellow-10 active:bg-yellow-10 active:text-yellow-30 active:border-yellow-30 disabled:text-muted-foreground disabled:border-muted border;
   }
 
   /* 버튼 variant destructive */
   .ay-btn-destructive {
-    @apply bg-destructive text-white shadow-xs hover:bg-red-40 border border-transparent 
-      hover:border-yellow-20 disabled:bg-transparent disabled:text-muted-foreground disabled:shadow-none;
+    @apply bg-destructive hover:bg-red-40 hover:border-yellow-20 disabled:text-muted-foreground border border-transparent text-white shadow-xs disabled:bg-transparent disabled:shadow-none;
   }
 
   /* 버튼 variant secondary */
   .ay-btn-secondary {
-    @apply bg-background text-secondary-foreground border border-border hover:bg-secondary/80 
-      disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10;
+    @apply bg-background text-secondary-foreground border-border hover:bg-secondary/80 disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10 border;
   }
 
   /* 버튼 variant ghost */
@@ -444,8 +434,7 @@
 
   /* 버튼 variant link */
   .ay-btn-link {
-    @apply text-primary underline-offset-4 underline hover:underline hover:text-yellow-40 
-      disabled:text-muted-foreground disabled:no-underline;
+    @apply text-primary hover:text-yellow-40 disabled:text-muted-foreground underline underline-offset-4 hover:underline disabled:no-underline;
   }
 
   /* 버튼 사이즈 */
@@ -454,7 +443,7 @@
   }
 
   .ay-btn-size-sm {
-    @apply h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5;
+    @apply h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5;
   }
 
   .ay-btn-size-lg {
@@ -466,9 +455,8 @@
   }
 }
 
-
 @layer base {
-  *,  
+  *,
   *::before,
   *::after {
     box-sizing: border-box;
@@ -477,12 +465,10 @@
   * {
     @apply border-border outline-ring/50;
   }
-  
+
   body {
     @apply bg-background text-foreground text-sm;
   }
-
- 
 
   /* Tailwind의 text- 클래스가 적용된 요소는 해당 색상 사용 */
   [class*="text-"] {
@@ -569,6 +555,43 @@
 
     .scrollbar-hide::-webkit-scrollbar {
       display: none; /* Safari and Chrome */
+    }
+  }
+
+  /* 모바일 터치 시에만 스크롤바 표시 */
+  .scroll-touch-only {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+
+  .scroll-touch-only::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 터치/드래그 중일 때만 스크롤바 표시 (모바일) */
+  @media (max-width: 768px) {
+    .scroll-touch-only:active::-webkit-scrollbar {
+      display: block;
+      width: 4px;
+      height: 4px;
+    }
+
+    .scroll-touch-only:active::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+    }
+
+    .scroll-touch-only:active {
+      scrollbar-width: thin; /* Firefox */
+      scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+    }
+  }
+
+  /* 모바일에서 화살표 버튼 강제 숨김 */
+  @media (max-width: 767px) {
+    .carousel-nav-btn {
+      display: none !important;
     }
   }
 }

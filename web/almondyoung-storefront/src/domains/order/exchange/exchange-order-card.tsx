@@ -99,8 +99,10 @@ export function ExchangeOrderCard({
                 </div>
 
                 <CustomButton
-                  variant="secondary"
-                  size="lg"
+                  variant="outline"
+                  color="secondary"
+                  size="xs"
+                  fullWidth={false}
                   onClick={onAddToCartClick}
                 >
                   장바구니 담기
@@ -112,8 +114,9 @@ export function ExchangeOrderCard({
           {/* 하단 버튼 */}
           <div className="flex flex-col gap-2.5">
             <CustomButton
-              variant="secondary"
-              size="lg"
+              variant="outline"
+              color="primary"
+              size="md"
               onClick={onExchangeDetailClick}
               fullWidth={true}
             >
@@ -121,18 +124,20 @@ export function ExchangeOrderCard({
             </CustomButton>
             <div className="flex gap-2.5">
               <CustomButton
-                variant="secondary"
-                size="lg"
+                variant="outline"
+                color="secondary"
+                size="md"
                 onClick={onTrackingClick}
                 fullWidth={true}
               >
                 회수조회
               </CustomButton>
               <CustomButton
-                variant="secondary"
-                size="lg"
+                variant="outline"
+                color="secondary"
+                size="md"
+                fullWidth={false}
                 onClick={onDeliveryTrackingClick}
-                fullWidth={true}
               >
                 배송조회
               </CustomButton>
@@ -192,8 +197,10 @@ export function ExchangeOrderCard({
                   </div>
 
                   <CustomButton
-                    variant="secondary"
-                    size="lg"
+                    variant="outline"
+                    color="secondary"
+                    size="md"
+                    fullWidth={false}
                     onClick={onAddToCartClick}
                   >
                     장바구니 담기
@@ -206,25 +213,28 @@ export function ExchangeOrderCard({
           <div className="h-[164px] w-px bg-[#d9d9d9]" aria-hidden="true" />
 
           <aside className="flex w-[126px] flex-col gap-2.5">
-                <CustomButton
-              variant="secondary"
-              size="lg"
+            <CustomButton
+              variant="outline"
+              color="primary"
+              size="md"
               onClick={onExchangeDetailClick}
               fullWidth={true}
             >
               교환 상세
             </CustomButton>
             <CustomButton
-              variant="secondary"
-              size="lg"
+              variant="outline"
+              color="secondary"
+              size="md"
               onClick={onTrackingClick}
               fullWidth={true}
             >
               회수 조회
             </CustomButton>
             <CustomButton
-              variant="secondary"
-              size="lg"
+              variant="outline"
+              color="secondary"
+              size="md"
               onClick={onDeliveryTrackingClick}
               fullWidth={true}
             >

@@ -1,5 +1,5 @@
 "use client"
-import { WishCard } from "@components/wish-card/wish-card"
+import { ProductRowCard } from "@components/product-row-card/product-row-card"
 import { PageTitle } from "@components/common/page-title"
 import MypageLayout from "@components/layout/mypage-layout"
 import { WithHeaderLayout } from "@components/layout"
@@ -141,10 +141,15 @@ export default function WishlistPage() {
 
             {/* 상품 목록 (고정 데이터) */}
             {MOCK_WISHLIST_ITEMS.map((item) => (
-              <WishCard
+              <ProductRowCard
                 key={item.id}
                 item={item}
-                onRemove={() => {}}
+                onRemove={(id) => {
+                  console.log("찜한 상품 삭제:", id)
+                }}
+                onAddToCart={(item) => {
+                  console.log("장바구니에 추가:", item)
+                }}
                 isLoading={false}
               />
             ))}

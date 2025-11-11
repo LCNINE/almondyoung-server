@@ -58,7 +58,8 @@ export default function MembershipPage() {
           ) : (
             <>
               <CustomButton
-                variant="primary"
+                variant="fill"
+                color="primary"
                 size="lg"
                 fullWidth={true}
                 onClick={() =>
