@@ -1,6 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import { UserEvents } from '@packages/event-contracts/streams';
 import {
   BadRequestException,
   ConflictException,
@@ -14,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { UserEvents } from '@packages/event-contracts/streams';
 import {
   User,
   userServiceEnums,
@@ -31,10 +31,6 @@ import {
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
 } from '../../constants/auth.constant';
-import {
-  AUTH_EMAIL_VERIFY_CALLBACK_URL,
-  AUTH_SOCIAL_LOGIN_REDIRECT_URL,
-} from '../../constants/redirect-url.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { NotificationEventPublisher } from '../events/notification-event.publisher';
 import { TokensService } from '../tokens/tokens.service';
@@ -71,7 +67,7 @@ export class AuthService {
 
   private getSocialRedirectUrl(provider: ProviderType): string {
     const frontBaseUrl = process.env.production
-      ? AUTH_SOCIAL_LOGIN_REDIRECT_URL
+      ? this.configService.get('CORS_ORIGIN_DOMAIN') // 프론트쪽 콜백 URL
       : 'http://localhost:8000';
 
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
@@ -80,8 +76,8 @@ export class AuthService {
   private getEmailVerifyCallbackUrl(redirectTo?: string): string {
     // 서버쪽 주소
     const baseUrl = process.env.production
-      ? AUTH_EMAIL_VERIFY_CALLBACK_URL
-      : 'http://localhost:3030/auth/callback/signup';
+      ? this.configService.get('USER_SERVICE_URL')
+      : this.configService.get('USER_SERVICE_URL') || 'http://localhost:3030';
 
     return new URL(
       `/auth/callback/signup?redirect_to=${redirectTo}`,
@@ -160,6 +156,11 @@ export class AuthService {
           existingUser.id,
           verificationToken,
           new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+        );
+
+        // todo: 이벤트 redirectTo에 넣어야함
+        const redirectTo = this.getRedirectUrl(
+          redirect_to ? `${redirect_to}/callback/signup` : '/callback/signup',
         );
 
         // 이메일 재발송
@@ -721,7 +722,7 @@ export class AuthService {
       sameSite: isRailway ? ('none' as const) : ('lax' as const),
       secure: isRailway,
       ...(isProd
-        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
+        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
     };
 
@@ -779,7 +780,7 @@ export class AuthService {
       sameSite: isRailway ? ('none' as const) : ('lax' as const),
       secure: isRailway,
       ...(isProd
-        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN_PROD || '')}` }
+        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
         : {}), // 로컬/테스트 시 domain 제거
     };
 
