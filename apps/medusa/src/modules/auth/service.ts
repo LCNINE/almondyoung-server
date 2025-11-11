@@ -80,6 +80,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         }
       }
 
+      console.log('almond_token:::::::::', almond_token);
+
       if (!almond_token) {
         return {
           success: false,
@@ -93,6 +95,8 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
           error: 'JWT_SECRET is not defined',
         };
       }
+
+      console.log('process.env.AUTH_SECRET:::::::::', process.env.AUTH_SECRET);
 
       const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
 
