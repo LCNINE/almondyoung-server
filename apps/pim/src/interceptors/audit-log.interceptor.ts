@@ -35,9 +35,27 @@ export class AuditLogInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const userId = body.userId || headers['x-user-id'] || 'system';
+    // Skip audit log for multipart/form-data requests (file uploads)
+    // Fastify headers are case-insensitive, check both lowercase and original
+    const contentType = 
+      headers['content-type'] || 
+      headers['Content-Type'] || 
+      request.headers?.['content-type'] || 
+      '';
+    if (contentType.includes('multipart/form-data')) {
+      return next.handle();
+    }
+
+    // Skip audit log for image upload endpoints
+    if (url.includes('/uploads/images') || url.includes('/uploads/url')) {
+      return next.handle();
+    }
+
+    // Safely access body (may be undefined for multipart requests)
+    const safeBody = body || {};
+    const userId = safeBody.userId || headers['x-user-id'] || 'system';
     const userEmail = headers['x-user-email'] || 'unknown';
-    const productId = request.params.id || body.productId;
+    const productId = request.params.id || safeBody.productId;
 
     return next.handle().pipe(
       tap(async (response) => {
@@ -46,7 +64,7 @@ export class AuditLogInterceptor implements NestInterceptor {
             await this.db.insert(productAuditLog).values({
               productId,
               action: this.mapMethodToAction(method, url),
-              changes: this.sanitizeChanges(body),
+              changes: this.sanitizeChanges(safeBody),
               userId,
               userEmail,
               ipAddress: ip,
