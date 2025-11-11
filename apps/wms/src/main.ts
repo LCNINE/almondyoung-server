@@ -29,6 +29,20 @@ function createKafkaConfig() {
   logger.log(`  - KAFKA_API_SECRET: ${maskString(apiSecret, 0)} (length: ${apiSecret?.length || 0})`);
   logger.log(`  - Hostname: ${os.hostname()}`);
   
+  // 추가 디버깅: 숨겨진 문자 확인
+  if (apiKey) {
+    const hasLineBreak = apiKey.includes('\n') || apiKey.includes('\r');
+    const hasSpaces = apiKey.trim() !== apiKey;
+    const trimmedLength = apiKey.trim().length;
+    logger.warn(`  ⚠️  API Key 상세 분석:`);
+    logger.warn(`     - 원본 길이: ${apiKey.length}`);
+    logger.warn(`     - trim() 후 길이: ${trimmedLength}`);
+    logger.warn(`     - 줄바꿈 포함: ${hasLineBreak}`);
+    logger.warn(`     - 앞뒤 공백 포함: ${hasSpaces}`);
+    logger.warn(`     - 시작 4자: "${apiKey.substring(0, 4)}"`);
+    logger.warn(`     - 끝 4자: "***${apiKey.substring(apiKey.length - 4)}"`);
+  }
+  
   if (!prefix) {
     throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
   }
@@ -38,8 +52,12 @@ function createKafkaConfig() {
   }
 
   const clientId = `${prefix}_${os.hostname()}`;
-  const brokerList = brokers.split(',');
-  const hasSasl = !!(apiKey && apiSecret);
+  const brokerList = brokers.split(',').map(b => b.trim());
+  
+  // 환경변수 trim 처리 (줄바꿈/공백 제거)
+  const cleanApiKey = apiKey?.trim();
+  const cleanApiSecret = apiSecret?.trim();
+  const hasSasl = !!(cleanApiKey && cleanApiSecret);
   
   logger.log(`✅ [Kafka Config] 생성 완료`);
   logger.log(`  - ClientId: ${clientId}`);
@@ -48,7 +66,8 @@ function createKafkaConfig() {
   logger.log(`  - SASL: ${hasSasl ? 'PLAIN' : 'disabled'}`);
   
   if (hasSasl) {
-    logger.log(`  - SASL Username (first 4 chars): ${apiKey?.substring(0, 4)}***`);
+    logger.log(`  - SASL Username (first 4 chars): ${cleanApiKey?.substring(0, 4)}***`);
+    logger.log(`  - SASL Username (trimmed length): ${cleanApiKey?.length}`);
   }
 
   const config = {
@@ -63,8 +82,8 @@ function createKafkaConfig() {
     ssl: hasSasl,
     sasl: hasSasl ? {
       mechanism: 'plain' as const,
-      username: apiKey!,
-      password: apiSecret!,
+      username: cleanApiKey!,
+      password: cleanApiSecret!,
     } : undefined,
   };
   
