@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
+import { EventsModule } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { PimController } from './pim.controller';
 import { PimService } from './pim.service';
 import { ProductCategoriesController } from './controllers/categories.controller';
@@ -55,6 +57,12 @@ import { pimSchema } from './schema';
           'postgresql://neondb_owner:npg_uZH3erzXIdR6@ep-plain-tooth-a1jtqmyb-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
       },
       schema: pimSchema,
+    }),
+    // EventsModule Publisher 등록
+    EventsModule.forRoot({
+      streams: [PRODUCT_STREAM],
+      serviceName: 'pim',
+      enableDLQ: true,
     }),
   ],
   controllers: [
