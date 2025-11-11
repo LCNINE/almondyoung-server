@@ -35,18 +35,18 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @ApiOperation({ summary: '사용자 기본 정보 조회' })
+  @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
     status: 200,
-    description: '사용자 기본 정보 조회 성공',
+    description: '사용자 조회 성공',
     type: UserResponseDto,
   })
-  @ApiParam({ name: 'id', description: '사용자 ID' })
-  @Get(':id')
+  @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
+  @Get('find-by-email')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async getUserInfo(@Param('id') id: string) {
-    return this.usersService.findUserById(id);
+  async findUserByEmail(@Query('email') email: string) {
+    return this.usersService.findUserByEmail(email);
   }
 
   @ApiOperation({ summary: '사용자 상세 정보 조회' })
@@ -68,7 +68,7 @@ export class UsersController {
     description: '조회할 사용자 ID',
     required: false,
   })
-  @Get('/detail')
+  @Get('detail')
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
@@ -84,12 +84,20 @@ export class UsersController {
     description: '사용자 권한 정보 조회 성공',
     type: UserRolesResponse,
   })
-  @ApiParam({ name: 'userId', description: '사용자 ID' })
-  @Get('/roles')
+  @Get('roles')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   async getUserRoles(@CurrentUser() user: User) {
     return this.usersService.getUserRoles(user.id);
+  }
+
+  @ApiOperation({ summary: '현재 사용자 정보 조회' })
+  @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
+  @Get('me')
+  @RequireScopes(['user:read', 'master', 'admin:users:read'])
+  @HttpCode(HttpStatus.OK)
+  async getMe(@CurrentUser() user: User) {
+    return this.usersService.retrieveMe(user.id);
   }
 
   @ApiOperation({ summary: '내 프로필 정보 수정' })
@@ -105,26 +113,17 @@ export class UsersController {
     return;
   }
 
-  @ApiOperation({ summary: '이메일로 사용자 찾기' })
+  @ApiOperation({ summary: '사용자 기본 정보 조회' })
   @ApiResponse({
     status: 200,
-    description: '사용자 조회 성공',
+    description: '사용자 기본 정보 조회 성공',
     type: UserResponseDto,
   })
-  @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
-  @Get('find-by-email')
+  @ApiParam({ name: 'id', description: '사용자 ID' })
+  @Get(':id')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async findUserByEmail(@Query('email') email: string) {
-    return this.usersService.findUserByEmail(email);
-  }
-
-  @ApiOperation({ summary: '현재 사용자 정보 조회' })
-  @ApiResponse({ status: 200, description: '현재 사용자 정보 조회 성공' })
-  @Get('me')
-  @RequireScopes(['user:read', 'master', 'admin:users:read'])
-  @HttpCode(HttpStatus.OK)
-  async getMe(@CurrentUser() user: User) {
-    return this.usersService.retrieveMe(user.id);
+  async getUserInfo(@Param('id') id: string) {
+    return this.usersService.findUserById(id);
   }
 }

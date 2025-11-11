@@ -28,12 +28,10 @@ async function bootstrap() {
 
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? (process.env.CORS_ORIGIN_DOMAIN_PROD?.split(',').map((origin) =>
+      ? (process.env.CORS_ORIGIN_DOMAIN?.split(',').map((origin) =>
           origin.trim(),
         ) ?? [])
-      : (process.env.CORS_ORIGIN_DOMAIN_DEV?.split(',').map((origin) =>
-          origin.trim(),
-        ) ?? ['http://localhost:8000']);
+      : ['http://localhost:8000'];
 
   logger.log('CORS:', corsOrigins);
 

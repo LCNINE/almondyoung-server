@@ -53,12 +53,11 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   // Railway는 PORT 환경변수를 제공하므로 우선 사용
-  const port = parseInt(
-    process.env.PORT || process.env.PIM_SERVICE_PORT || '3020',
-    10,
-  );
+  const port = process.env.PORT ?? 3020;
+
   // Fastify는 기본적으로 127.0.0.1에만 바인딩하므로, Railway에서 접근 가능하도록 0.0.0.0 명시
-  await app.listen({ port, host: '0.0.0.0' });
+  await app.listen(port, '0.0.0.0');
+
   console.log(`🚀 PIM 서비스가 0.0.0.0:${port}에서 실행 중입니다.`);
 }
 bootstrap();
