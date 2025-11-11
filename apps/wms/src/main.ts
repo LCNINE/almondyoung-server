@@ -5,6 +5,36 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
+import os from 'os';
+
+function createKafkaConfig() {
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+  if (!prefix) {
+    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+  }
+
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) {
+    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+  }
+
+  return {
+    clientId: `${prefix}_${os.hostname()}`,
+    brokers: brokers.split(','),
+    retry: {
+      retries: 5,
+      initialRetryTime: 300,
+      multiplier: 2,
+      maxRetryTime: 30000,
+    },
+    ssl: process.env.KAFKA_API_KEY ? true : false,
+    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+      mechanism: 'plain' as const,
+      username: process.env.KAFKA_API_KEY,
+      password: process.env.KAFKA_API_SECRET,
+    } : undefined,
+  };
+}
 
 async function bootstrap() {
   const app = await NestFactory.create(WmsModule);
@@ -19,6 +49,7 @@ async function bootstrap() {
   const consumerOptions = EventsModule.forConsumer({
     streams: [PRODUCT_STREAM],
     groupId: 'wms-product-consumer',
+    kafka: createKafkaConfig(),
   });
 
   app.connectMicroservice(consumerOptions);
