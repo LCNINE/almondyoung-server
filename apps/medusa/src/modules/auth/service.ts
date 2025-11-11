@@ -80,8 +80,6 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         }
       }
 
-      console.log('almond_token:::::::::', almond_token);
-
       if (!almond_token) {
         return {
           success: false,
@@ -89,18 +87,21 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         };
       }
 
-      if (process.env.NODE_ENV !== 'production' && !process.env.JWT_SECRET) {
+      if (!process.env.JWT_SECRET) {
         return {
           success: false,
           error: 'JWT_SECRET is not defined',
         };
       }
 
-      console.log('process.env.AUTH_SECRET:::::::::', process.env.AUTH_SECRET);
+      if (!process.env.AUTH_SECRET) {
+        return {
+          success: false,
+          error: 'AUTH_SECRET is not defined',
+        };
+      }
 
       const payload = jwtVerify(almond_token, process.env.AUTH_SECRET!);
-
-      console.log('payload:::::::::', payload);
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({
