@@ -1,16 +1,20 @@
 "use client"
 
-import { zodResolver } from "@hookform/resolvers/zod"
 import { CustomButton } from "@components/common/custom-buttons"
 import { Spinner } from "@components/common/spinner"
 import { Form } from "@components/common/ui/form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useSignup } from "domains/auth/hooks"
+import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
+import { useSearchParams } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { AgreementsSection } from "./agreement"
 import { SignupFormFields } from "./signup-form-fields"
-import { signupSchema, SignupSchema } from "domains/auth/schemas/signup-schema"
-import { useSignup } from "domains/auth/hooks"
 
 export function SignupForm() {
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get("redirect_to") || undefined
+
   const form = useForm<SignupSchema>({
     resolver: zodResolver(signupSchema),
     mode: "onChange",
@@ -37,7 +41,7 @@ export function SignupForm() {
   const { signup, isLoading } = useSignup(form)
 
   const onSubmit = async (data: SignupSchema) => {
-    await signup(data)
+    await signup(data, redirectTo)
   }
 
   return (

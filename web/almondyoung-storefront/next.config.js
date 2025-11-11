@@ -19,21 +19,6 @@ const nextConfig = {
     optimizePackageImports: ["@components", "@lib"],
   },
 
-  // 캐싱 설정
-  async headers() {
-    return [
-      {
-        source: "/api/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=60, stale-while-revalidate=300",
-          },
-        ],
-      },
-    ]
-  },
-
   async redirects() {
     return [
       // payment 관련
@@ -83,15 +68,10 @@ const nextConfig = {
   },
 
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-    if (!backendUrl) {
-      return []
-    }
-
     return [
       {
         source: "/api/:path*",
-        destination: `${backendUrl}/:path*`,
+        destination: process.env.BACKEND_URL + "/:path*",
       },
     ]
   },

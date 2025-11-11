@@ -3,7 +3,7 @@ import {
   PimListResponse,
   PimProductDetail,
 } from "@lib/types/dto/pim"
-import { PIM_API_CONFIG } from "./config"
+import { PIM_BASE_URL } from "../api.config"
 
 type CategoriesResp = { categories: PimCategory[]; totalCount?: number }
 
@@ -11,7 +11,7 @@ type CategoriesResp = { categories: PimCategory[]; totalCount?: number }
 export async function fetchCategories(): Promise<PimCategory[]> {
   console.log("🌐 [fetchCategories] API 호출 시작")
 
-  const res = await fetch(`${PIM_API_CONFIG.BASE_URL}/categories`, {
+  const res = await fetch(`${PIM_BASE_URL}/categories`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
@@ -74,10 +74,10 @@ export async function getAllProductList(
   if (params?.tags?.length) searchParams.set("tags", params.tags.join(","))
   if (params?.stock?.length) searchParams.set("stock", params.stock.join(","))
 
-  const url = `${PIM_API_CONFIG.BASE_URL}/masters?${searchParams.toString()}`
+  const url = `${PIM_BASE_URL}/masters?${searchParams.toString()}`
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), PIM_API_CONFIG.TIMEOUT)
+  const timeoutId = setTimeout(() => controller.abort(), 10000)
 
   try {
     const res = await fetch(url, {
@@ -133,7 +133,7 @@ export async function getAllProductList(
 export async function getPimProductDetail(
   id: string
 ): Promise<PimProductDetail> {
-  const url = `${PIM_API_CONFIG.BASE_URL}/masters/${id}`
+  const url = `${PIM_BASE_URL}/masters/${id}`
   console.log("🌐 [getPimProductDetail] 요청 URL:", url)
 
   const res = await fetch(url, {
@@ -196,8 +196,7 @@ export async function getPimCategoryProducts(
     params,
   })
 
-  if (!PIM_API_CONFIG.BASE_URL)
-    throw new Error("PIM API URL이 설정되지 않았습니다.")
+  if (!PIM_BASE_URL) throw new Error("PIM API URL이 설정되지 않았습니다.")
   if (!categoryId) throw new Error("카테고리 ID가 제공되지 않았습니다.")
 
   const sp = new URLSearchParams()
@@ -209,12 +208,12 @@ export async function getPimCategoryProducts(
   if (params?.tags?.length) sp.set("tags", params.tags.join(","))
   if (params?.stock?.length) sp.set("stock", params.stock.join(","))
 
-  const url = `${PIM_API_CONFIG.BASE_URL}/masters?${categoryId}`
+  const url = `${PIM_BASE_URL}/masters?${categoryId}`
   console.log("🌐 [getPimCategoryProducts] 요청 URL:", url)
   // 필요 시 /categories/:id/masters 형태를 쓰는 백엔드라면 위 URL만 바꾸면 됨.
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), PIM_API_CONFIG.TIMEOUT)
+  const timeoutId = setTimeout(() => controller.abort(), 3500)
 
   try {
     console.log("📡 [getPimCategoryProducts] fetch 요청 시작")

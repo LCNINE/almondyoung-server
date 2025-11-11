@@ -4,7 +4,6 @@ import {
   removeFromWishlist,
 } from "@lib/api/users/wishlist"
 import { WishlistItem } from "@lib/api/users/wishlist"
-import { USER_API_CONFIG } from "@lib/api/users/config"
 import { emitWishlistChange } from "./wishlist-events"
 
 // 서비스 옵션 타입
@@ -36,8 +35,8 @@ function readCache(userId: string): CachedWishlist | null {
     const data = JSON.parse(cached) as CachedWishlist
     const now = Date.now()
 
-    // 캐시 유효성 검사
-    if (now - data.lastFetched > USER_API_CONFIG.CACHE_TTL) {
+    // 캐시 유효성 검사 5분
+    if (now - data.lastFetched > 5 * 60 * 1000) {
       localStorage.removeItem(getCacheKey(userId))
       return null
     }

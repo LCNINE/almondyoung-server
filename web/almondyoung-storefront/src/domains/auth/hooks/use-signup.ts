@@ -1,4 +1,4 @@
-import { ApiError } from "@lib/api-error"
+import { ApiError } from "@lib/api/api-error"
 import { createUser } from "@lib/api/users"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -10,12 +10,12 @@ export const useSignup = (form: UseFormReturn<SignupSchema>) => {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
-  const signup = async (data: SignupSchema) => {
+  const signup = async (data: SignupSchema, redirectTo?: string) => {
     setIsLoading(true)
 
     try {
       const { passwordConfirm, ...submitData } = data
-      const response = await createUser(submitData)
+      const response = await createUser(submitData, redirectTo)
 
       if (response) {
         toast(response.message, {
