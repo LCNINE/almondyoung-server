@@ -29,10 +29,6 @@ const envPath = join(process.cwd(), 'apps', 'user-service', envFile);
 config({ path: envPath });
 
 const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
-console.log(
-  'process.env.KAFKA_CLIENT_ID_PREFIX:',
-  process.env.KAFKA_CLIENT_ID_PREFIX,
-);
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
