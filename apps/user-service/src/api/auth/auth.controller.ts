@@ -216,15 +216,4 @@ export class AuthController {
       throw error;
     }
   }
-
-  // @ApiOperation({ summary: '소셜 회원가입' })
-  // @ApiResponse({ status: 201, description: '소셜 회원가입 성공' })
-  // @Post('social-signup')
-  // @Public()
-  // async socialSignUp(
-  //   @Body(ValidationPipe) socialSignUpDto: SocialSignUpDto,
-  //   @Res() reply: FastifyReply,
-  // ) {
-  //   return this.authService.socialSignUp(socialSignUpDto, reply);
-  // }
 }

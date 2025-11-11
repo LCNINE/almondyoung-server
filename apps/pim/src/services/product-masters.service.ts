@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
   CreateMasterDto,
   MasterDetailDto,
@@ -27,9 +29,14 @@ import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'dr
 
 @Injectable()
 export class ProductMastersService {
+  private readonly logger = new Logger(ProductMastersService.name);
+
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly pricingStrategyFactory: PricingStrategyFactory,
+
+    @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
+    private readonly productPublisher: StreamPublisher<ProductEvents>,
   ) {}
 
   private async _linkImages(
@@ -63,6 +70,52 @@ export class ProductMastersService {
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
+  }
+
+  /**
+   * ProductVariantCreated 이벤트 발행
+   *
+   * variant 생성 시 WMS에 매칭 생성을 위한 이벤트를 발행합니다.
+   * 이벤트 발행 실패해도 트랜잭션은 커밋됩니다 (Orchestrator가 WMS에 직접 요청하므로 복원력 보장).
+   */
+  private async publishVariantCreatedEvent(
+    master: ProductMaster,
+    variant: any,
+    optionCombination: Array<{ name: string; value: string }> | null,
+  ): Promise<void> {
+    try {
+      await this.productPublisher.publishEvent({
+        eventType: 'ProductVariantCreated',
+        aggregateId: master.id,
+        payload: {
+          productId: master.id,
+          productName: master.name,
+          variantId: variant.id,
+          variantName: variant.variantName,
+          isDefault: variant.isDefault ?? false,
+          status: variant.status ?? 'active',
+
+          // 재고 관리 설정 (현재는 기본값, 추후 master 테이블에 필드 추가)
+          inventoryManagement: true,
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+
+          optionCombination: optionCombination ?? undefined,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      this.logger.log(
+        `📤 Published ProductVariantCreated: ${variant.id} (${master.name})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to publish ProductVariantCreated: ${variant.id}`,
+        error.stack,
+      );
+      // 이벤트 발행 실패해도 트랜잭션은 커밋
+      // Orchestrator가 WMS에 직접 요청하므로 복원력 보장
+    }
   }
 
   async createMaster(
@@ -143,16 +196,24 @@ export class ProductMastersService {
 
   private async _generateVariants(
     masterId: string,
+    master: ProductMaster,
     optionGroups: any[],
     tx: DbTransaction,
   ): Promise<void> {
     if (!optionGroups || optionGroups.length === 0) {
-      await tx.insert(productVariants).values({
-        masterId,
-        variantName: null,
-        isDefault: true,
-        status: 'active',
-      });
+      const [variant] = await tx
+        .insert(productVariants)
+        .values({
+          masterId,
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+        })
+        .returning();
+
+      // 이벤트 발행
+      await this.publishVariantCreatedEvent(master, variant, null);
+
       return;
     }
 
@@ -175,6 +236,16 @@ export class ProductMastersService {
           optionValueId: optionValue.id,
         });
       }
+
+      // 이벤트 발행 (옵션 조합 포함)
+      await this.publishVariantCreatedEvent(
+        master,
+        variant,
+        combination.map((opt) => ({
+          name: opt.groupName || opt.name,
+          value: opt.displayName,
+        })),
+      );
     }
   }
 
@@ -647,6 +718,12 @@ export class ProductMastersService {
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
     }
+
+    const master = await this.getMasterById(masterId, tx);
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
     const existingVariants = await client
       .select()
       .from(productVariants)
@@ -676,10 +753,10 @@ export class ProductMastersService {
       } as any);
     }
     if (tx) {
-      await this._generateVariants(masterId, optionGroupsWithValues, tx);
+      await this._generateVariants(masterId, master, optionGroupsWithValues, tx);
     } else {
       await this.db.db.transaction(async (txn) => {
-        await this._generateVariants(masterId, optionGroupsWithValues, txn);
+        await this._generateVariants(masterId, master, optionGroupsWithValues, txn);
       });
     }
   }
@@ -741,6 +818,12 @@ export class ProductMastersService {
     if (!exists) {
       throw new Error(`Master not found: ${masterId}`);
     }
+
+    const master = await this.getMasterById(masterId, tx);
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
     const executeRegeneration = async (txn: DbTransaction) => {
       await txn
         .delete(productVariants)
@@ -763,7 +846,7 @@ export class ProductMastersService {
           values,
         } as any);
       }
-      await this._generateVariants(masterId, optionGroupsWithValues, txn);
+      await this._generateVariants(masterId, master, optionGroupsWithValues, txn);
     };
 
     if (tx) {
@@ -1042,29 +1125,52 @@ export class ProductMastersService {
     masterId: string,
     data: CreateMasterDto,
   ): Promise<void> {
-    if (
-      !(data as any).optionGroups ||
-      (data as any).optionGroups.length === 0
-    ) {
-      // 옵션이 없으면 기본 variant 생성
-      await this.db.db.transaction(async (tx) => {
-        await tx.insert(productVariants).values({
-          masterId,
-          variantName: null,
-          isDefault: true,
-          status: 'active',
-        });
-      });
-      return;
-    }
+    try {
+      // master 조회 추가
+      const master = await this.getMasterById(masterId);
+      if (!master) {
+        this.logger.error(`Master not found: ${masterId}`);
+        return;
+      }
 
-    await this.db.db.transaction(async (tx) => {
-      await this._bulkInsertOptions(masterId, (data as any).optionGroups, tx);
-    });
+      if (
+        !(data as any).optionGroups ||
+        (data as any).optionGroups.length === 0
+      ) {
+        // 옵션이 없으면 기본 variant 생성
+        await this.db.db.transaction(async (tx) => {
+          const [variant] = await tx
+            .insert(productVariants)
+            .values({
+              masterId,
+              variantName: null,
+              isDefault: true,
+              status: 'active',
+            })
+            .returning();
+
+          // 이벤트 발행
+          await this.publishVariantCreatedEvent(master, variant, null);
+        });
+        return;
+      }
+
+      await this.db.db.transaction(async (tx) => {
+        await this._bulkInsertOptions(
+          masterId,
+          master,
+          (data as any).optionGroups,
+          tx,
+        );
+      });
+    } catch (error) {
+      this.logger.error('옵션 처리 실패:', error.message);
+    }
   }
 
   private async _bulkInsertOptions(
     masterId: string,
+    master: ProductMaster,
     optionGroups: any[],
     tx: DbTransaction,
   ): Promise<void> {
@@ -1109,7 +1215,7 @@ export class ProductMastersService {
       values: insertedValues.filter((v) => v.optionGroupId === group.id),
     }));
 
-    await this._generateVariants(masterId, optionGroupsWithValues, tx);
+    await this._generateVariants(masterId, master, optionGroupsWithValues, tx);
   }
 
   /**
