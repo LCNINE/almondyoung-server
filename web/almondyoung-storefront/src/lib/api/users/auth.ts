@@ -8,12 +8,18 @@ type LocalSignupResponse = {
 }
 
 export const createUser = async (
-  data: LocalSignupRequest
+  data: LocalSignupRequest,
+  redirectTo?: string
 ): Promise<LocalSignupResponse> => {
-  return clientApi(USER_SERVICE_BASE_URL + "/auth/signup", {
-    method: "POST",
-    body: JSON.stringify(data),
-  })
+  const encodedRedirectTo = encodeURIComponent(redirectTo || "/mypage")
+
+  return clientApi(
+    USER_SERVICE_BASE_URL + "/auth/signup?redirect_to=" + encodedRedirectTo,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  )
 }
 
 export const findIdByEmail = async (email: string) => {

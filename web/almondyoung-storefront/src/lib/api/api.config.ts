@@ -2,9 +2,9 @@ function API_BASE_URL() {
   const isServer = typeof window === "undefined"
 
   if (isServer) {
-    return process.env.API_BASE_URL
+    return process.env.BACKEND_URL
   } else {
-    return ""
+    return "/api"
   }
 }
 

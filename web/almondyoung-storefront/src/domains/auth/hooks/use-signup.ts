@@ -10,12 +10,12 @@ export const useSignup = (form: UseFormReturn<SignupSchema>) => {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
-  const signup = async (data: SignupSchema) => {
+  const signup = async (data: SignupSchema, redirectTo?: string) => {
     setIsLoading(true)
 
     try {
       const { passwordConfirm, ...submitData } = data
-      const response = await createUser(submitData)
+      const response = await createUser(submitData, redirectTo)
 
       if (response) {
         toast(response.message, {
