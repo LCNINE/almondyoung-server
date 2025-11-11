@@ -7,8 +7,6 @@ export const userServiceEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
 
   // CORS Configuration
-  CORS_ORIGIN_DOMAIN_PROD: z.string().optional(),
-  CORS_ORIGIN_DOMAIN_DEV: z.string().optional(),
   CORS_ORIGIN_DOMAIN: z.string().optional(),
 
   // JWT Configuration
