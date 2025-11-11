@@ -24,10 +24,6 @@ import { validateUserServiceEnv } from './config/env.validation';
 import { config } from 'dotenv';
 import { join } from 'path';
 
-const envFile = process.env.NODE_ENV === 'development' ? '.env.dev' : '.env';
-const envPath = join(process.cwd(), 'apps', 'user-service', envFile);
-config({ path: envPath });
-
 const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
 
 // Kafka 설정 생성 함수
