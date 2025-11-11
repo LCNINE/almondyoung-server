@@ -11,16 +11,17 @@ import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strate
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
 
-// 안전한 SKU ID 기반 PIM 인터페이스
 interface PimSkuComponent {
-    skuId: string;     // ✅ skuName → skuId 변경 (필수)
-    skuName?: string;  // 표시용으로만 유지 (옵셔널)
+    skuId: string;
+    skuName?: string;
 }
 
 interface PimVariantPayload {
     id: string;
     name: string;
     inventoryManagement: boolean;
+    preStockSellable?: boolean;
+    alwaysSellableZeroStock?: boolean;
     components: PimSkuComponent[];
 }
 
@@ -64,7 +65,7 @@ export class ProductMatchingService {
         return strategy;
     }
 
-    async handleManualMatchingRequest(payload: PimProductPayload, tx?: DbTx) {
+    async handleManualMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
         if (!payload || !payload.productId || !Array.isArray(payload.variants)) {
             throw new BadRequestException('Invalid payload: productId and variants array are required');
         }
@@ -72,13 +73,14 @@ export class ProductMatchingService {
         this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
 
         return this.inTx(async (trx) => {
-            const results: Array<{ variantId: string; status: 'created' | 'exists' | 'error'; error?: string }> = [];
+            let created = 0;
+            let skipped = 0;
 
             for (const variant of payload.variants) {
                 try {
                     if (!variant.id) {
                         this.logger.error(`Variant missing ID in product ${payload.productId}`);
-                        results.push({ variantId: 'unknown', status: 'error', error: 'Variant ID is required' });
+                        skipped++;
                         continue;
                     }
 
@@ -90,7 +92,7 @@ export class ProductMatchingService {
 
                     if (existingMatching) {
                         this.logger.warn(`Product matching already exists for variant ${variant.id}, skipping creation.`);
-                        results.push({ variantId: variant.id, status: 'exists' });
+                        skipped++;
                         continue;
                     }
 
@@ -107,95 +109,118 @@ export class ProductMatchingService {
                     }
 
                     this.logger.log(`Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`);
-                    results.push({ variantId: variant.id, status: 'created' });
+                    created++;
 
                 } catch (error) {
                     this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
-                    results.push({
-                        variantId: variant.id,
-                        status: 'error',
-                        error: error instanceof Error ? error.message : 'Unknown error'
-                    });
+                    skipped++;
                 }
             }
 
-            const successCount = results.filter(r => r.status === 'created').length;
-            const errorCount = results.filter(r => r.status === 'error').length;
-
-            if (errorCount > 0) {
-                this.logger.warn(`Manual matching request completed with ${errorCount} errors out of ${payload.variants.length} variants`);
-            }
-
-            this.logger.log(`Manual matching request completed: ${successCount} created, ${errorCount} errors`);
-            return results;
+            this.logger.log(`Manual matching request completed: ${created} created, ${skipped} skipped`);
+            return { created, skipped };
         }, tx);
     }
 
-    async handleAutomaticMatchingRequest(payload: PimProductPayload, tx?: DbTx) {
+    async handleAutomaticMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
         this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
         return this.inTx(async (trx) => {
+            let created = 0;
+            let skipped = 0;
+
             for (const variant of payload.variants) {
-                if (!variant.inventoryManagement) {
-                    await trx.insert(wmsTables.productMatchings).values({
+                try {
+                    if (!variant.inventoryManagement) {
+                        const [existing] = await trx
+                            .select()
+                            .from(wmsTables.productMatchings)
+                            .where(eq(wmsTables.productMatchings.variantId, variant.id))
+                            .limit(1);
+
+                        if (existing) {
+                            this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
+                            skipped++;
+                            continue;
+                        }
+
+                        await trx.insert(wmsTables.productMatchings).values({
+                            variantId: variant.id,
+                            status: 'ignored',
+                            priority: 'normal',
+                            strategy: 'void',
+                            isResolved: true,
+                            inventoryManagement: false,
+                            preStockSellable: true,
+                            alwaysSellableZeroStock: false,
+                        });
+                        this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
+                        created++;
+                        continue;
+                    }
+
+                    const [existing] = await trx
+                        .select()
+                        .from(wmsTables.productMatchings)
+                        .where(eq(wmsTables.productMatchings.variantId, variant.id))
+                        .limit(1);
+
+                    if (existing) {
+                        this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
+                        skipped++;
+                        continue;
+                    }
+
+                    const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
                         variantId: variant.id,
-                        status: 'ignored',
+                        status: 'matched',
                         priority: 'normal',
-                        strategy: 'void',
+                        strategy: 'variant',
                         isResolved: true,
-                        // 디지털 상품의 재고 정책
-                        inventoryManagement: false,
+                        inventoryManagement: true,
                         preStockSellable: true,
                         alwaysSellableZeroStock: false,
-                    }).onConflictDoNothing();
-                    this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
-                    continue;
-                }
+                    }).returning();
 
-                const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
-                    variantId: variant.id,
-                    status: 'matched',
-                    priority: 'normal',
-                    strategy: 'variant',
-                    isResolved: true,
-                    // 물리적 상품의 기본 재고 정책
-                    inventoryManagement: true,
-                    preStockSellable: true,
-                    alwaysSellableZeroStock: false,
-                }).returning();
+                    if (!newProductMatching) {
+                        throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
+                    }
 
-                if (!newProductMatching) {
-                    throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
-                }
+                    const warehouseId = this.inventoryService.getDefaultWarehouseId();
+                    const strategy = this.getStrategy('variant');
+                    const mappings: SkuQuantityMapping[] = [];
 
-                const warehouseId = this.inventoryService.getDefaultWarehouseId();
-                const strategy = this.getStrategy('variant');
-                const mappings: SkuQuantityMapping[] = [];
+                    for (const component of variant.components) {
+                        const newStock = await this.stockEventService.createStockEntryBySkuId({
+                            skuId: component.skuId,
+                            variantId: variant.id,
+                            warehouseId,
+                            quantity: 0,
+                            stockType: 'physical',
+                            reason: `auto_matching_for_variant_${variant.id}`,
+                        }, trx);
 
-                for (const component of variant.components) {
-                    // ✅ 안전한 SKU ID 기반 재고 입고
-                    const newStock = await this.stockEventService.createStockEntryBySkuId({
-                        skuId: component.skuId,  // ✅ skuName → skuId 변경
+                        mappings.push({
+                            skuId: newStock.skuId,
+                            quantity: 1
+                        });
+                    }
+
+                    const context: MatchingContext = {
                         variantId: variant.id,
-                        warehouseId,
-                        quantity: 0,
-                        stockType: 'physical',
-                        reason: `auto_matching_for_variant_${variant.id}`,
-                    }, trx);
+                        productMatchingId: newProductMatching.id
+                    };
+                    await strategy.create(context, mappings, trx);
 
-                    mappings.push({
-                        skuId: newStock.skuId,
-                        quantity: 1
-                    });
+                    this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`);
+                    created++;
+                } catch (error) {
+                    this.logger.error(`Failed to auto-match variant ${variant.id}:`, error);
+                    skipped++;
                 }
-
-                const context: MatchingContext = {
-                    variantId: variant.id,
-                    productMatchingId: newProductMatching.id
-                };
-                await strategy.create(context, mappings, trx);
-
-                this.logger.log(`Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`);
             }
+
+            this.logger.log(`Automatic matching request completed: ${created} created, ${skipped} skipped`);
+            return { created, skipped };
         }, tx);
     }
 
@@ -263,7 +288,6 @@ export class ProductMatchingService {
                 status: 'ignored',
                 strategy: 'void',
                 isResolved: true,
-                // 무시된 매칭의 기본 재고 정책
                 inventoryManagement: false,
                 preStockSellable: true,
                 alwaysSellableZeroStock: false,
@@ -303,7 +327,6 @@ export class ProductMatchingService {
 
                 await matchingStrategy.create(context, mappings, trx);
 
-                // 재고 정책 설정 (기본값 또는 제공된 값)
                 const finalStockPolicy = {
                     inventoryManagement: stockPolicy?.inventoryManagement ?? true,
                     preStockSellable: stockPolicy?.preStockSellable ?? true,
@@ -400,7 +423,6 @@ export class ProductMatchingService {
         alwaysSellableZeroStock?: boolean;
     }, tx?: DbTx) {
         return this.inTx(async (trx) => {
-            // productMatching에서 masterId 조회
             const productMatching = await trx.query.productMatchings.findFirst({
                 where: eq(wmsTables.productMatchings.variantId, variantId)
             });
@@ -412,13 +434,13 @@ export class ProductMatchingService {
             const newSku = await this.inventoryService._createSkuInternal({
                 name: skuData.name,
                 source: SkuCreationSource.MANUAL_MATCHING,
-                masterId: productMatching.masterId, // masterId 추가
+                masterId: productMatching.masterId,
             }, trx);
 
             if (skuData.inventoryManagement) {
                 const warehouseId = this.inventoryService.getDefaultWarehouseId();
                 await this.stockEventService.createStockEntryBySkuId({
-                    skuId: newSku.id,  // ✅ SKU ID로 직접 사용
+                    skuId: newSku.id,
                     variantId,
                     warehouseId,
                     quantity: 0,
