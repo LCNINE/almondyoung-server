@@ -48,6 +48,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
     // DB에서 리프레시 토큰 검증 (만료, revoke 체크)
     try {
+      console.log('페이로드 sub :::"', payload.sub);
+      console.log('리프레시 토큰 :::"', refreshToken);
       await this.tokensService.validateRefreshToken(payload.sub, refreshToken);
     } catch (error) {
       this.logger.error('리프레시 토큰 검증 실패:', error);
