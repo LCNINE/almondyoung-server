@@ -12,6 +12,7 @@ import { Toaster } from "sonner"
 import "styles/globals.css"
 import categoriesData from "@lib/data/dummy/get-categories.json"
 import { UserProvider } from "contexts/user-context"
+import { OverlayProvider } from "overlay-kit"
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
@@ -24,28 +25,30 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
   return (
     <html lang="ko" suppressHydrationWarning>
       <body className="overflow-x-clip [scrollbar-gutter:stable_both-edges]">
-        <CategoryProvider initialCategories={categories}>
-          <UserProvider initialUser={currentUser}>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="light"
-              enableSystem={false}
-              disableTransitionOnChange
-            >
-              <CustomThemeProvider>
-                <div className="relative">
-                  {props.children}
+        <OverlayProvider>
+          <CategoryProvider initialCategories={categories}>
+            <UserProvider initialUser={currentUser}>
+              <ThemeProvider
+                attribute="class"
+                defaultTheme="light"
+                enableSystem={false}
+                disableTransitionOnChange
+              >
+                <CustomThemeProvider>
+                  <div className="relative">
+                    {props.children}
 
-                  <CartQuickButton />
-                  <FloatingButtons />
-                </div>
-                <Toaster />
-              </CustomThemeProvider>
-            </ThemeProvider>
-          </UserProvider>
-          <ConditionalFooter />
-        </CategoryProvider>
-        {renderSchemaTags()}
+                    <CartQuickButton />
+                    <FloatingButtons />
+                  </div>
+                  <Toaster />
+                </CustomThemeProvider>
+              </ThemeProvider>
+            </UserProvider>
+            <ConditionalFooter />
+          </CategoryProvider>
+          {renderSchemaTags()}
+        </OverlayProvider>
       </body>
     </html>
   )

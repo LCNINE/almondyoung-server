@@ -1,4 +1,5 @@
 // 아이콘 라이브러리 (예: lucide-react)
+import { CustomButton } from "@components/common/custom-buttons"
 import CommonButton from "@components/common/custom-buttons/common-button"
 import { MoreVertical } from "lucide-react"
 
@@ -124,55 +125,58 @@ export default function OrderCardContent({
       {/* 우측: 액션 버튼 영역 - 조건부 렌더링 */}
       {/* 모바일 버튼 (2개 가로) */}
       <div className="mt-5 flex items-center gap-2.5 md:hidden">
-        <CommonButton
+        <CustomButton
           type="button"
-          appearance="outline"
-          variant="gray"
+          // (수정) "outline" "secondary" -> "solid" "secondary" (회색 버튼)
+          variant="outline"
+          color="secondary"
           size="lg"
           fullWidth={true}
         >
           주문 취소 / 반품 신청
-        </CommonButton>
-        <CommonButton
+        </CustomButton>
+        <CustomButton
           type="button"
-          appearance="outline"
-          variant="orange"
+          // (유지) "outline" "primary" (노란색 외곽선)
+          variant="outline"
+          color="primary"
           size="lg"
           fullWidth={true}
         >
           배송 조회
-        </CommonButton>
+        </CustomButton>
       </div>
 
       {/* 데스크탑 버튼 (3개 세로) */}
       <aside className="hidden max-w-48 min-w-28 flex-1 flex-col gap-2.5 md:flex">
-        <CommonButton
-          appearance="outline"
-          variant="orange"
-          size="lg"
+        <CustomButton
+          // (유지) "outline" "primary" (노란색 외곽선)
+          variant="outline"
+          color="primary"
+          size="md"
           fullWidth={true}
         >
           배송 조회
-        </CommonButton>
-        <CommonButton
-          type="button"
-          appearance="outline"
-          variant="gray"
-          size="lg"
+        </CustomButton>
+        <CustomButton
+          // (수정) "secondary" -> "solid" "secondary" (회색 버튼)
+          variant="outline"
+          color="secondary"
+          size="md"
           fullWidth={true}
         >
           주문취소
-        </CommonButton>
+        </CustomButton>
         {showInquiry && (
-          <CommonButton
+          <CustomButton
             type="button"
-            appearance="outline"
-            variant="gray"
-            size="lg"
+            variant="outline"
+            color="secondary"
+            size="md"
             fullWidth={true}
           >
             문의
-          </CommonButton>
+          </CustomButton>
         )}
       </aside>
     </div>

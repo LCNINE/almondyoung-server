@@ -1,4 +1,6 @@
 "use client"
+import { CustomButton } from "@components/common/custom-buttons"
+import { Input } from "@components/common/ui/input"
 import { useRouter } from "next/navigation"
 
 export default function AddBankForm() {
@@ -33,29 +35,32 @@ export default function AddBankForm() {
         {/* 계좌번호 */}
         <div className="flex flex-col">
           <label className="mb-2 text-sm font-medium">계좌번호</label>
-          <input
-            type="text"
-            placeholder="계좌번호 입력"
-            className="rounded-md border border-gray-300 px-4 py-3"
-          />
+          <Input placeholder="계좌번호 입력" />
         </div>
 
         {/* 예금주명 */}
         <div className="flex flex-col">
           <label className="mb-2 text-sm font-medium">예금주명</label>
-          <input
-            type="text"
-            placeholder="홍길동"
-            className="rounded-md border border-gray-300 px-4 py-3"
-          />
+          <Input placeholder="홍길동" />
         </div>
-
+        <div className="flex justify-end">
+          <div className="w-[150px]">
+            <CustomButton
+              variant="fill"
+              color="primary"
+              size="lg"
+              fullWidth={true}
+            >
+              계좌 조회
+            </CustomButton>
+          </div>
+        </div>
         {/* 제출 버튼 */}
         <button
           type="submit"
           className="mt-4 w-full rounded-md bg-amber-500 py-3 font-semibold text-white"
         >
-          등록
+          다음
         </button>
       </form>
     </div>

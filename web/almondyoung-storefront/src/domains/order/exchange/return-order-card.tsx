@@ -109,8 +109,10 @@ export function ReturnOrderCard({
                 </div>
 
                 <CustomButton
-                  variant="secondary"
-                  size="md"
+                  variant="outline"
+                  color="secondary"
+                  size="xs"
+                  fullWidth={false}
                   onClick={onAddToCartClick}
                 >
                   장바구니 담기
@@ -122,7 +124,8 @@ export function ReturnOrderCard({
           {/* 하단 버튼 */}
           <div className="flex gap-2.5">
             <CustomButton
-              variant="secondary"
+              variant="outline"
+              color="secondary"
               size="md"
               onClick={onReturnDetailClick}
               fullWidth={true}
@@ -184,10 +187,11 @@ export function ReturnOrderCard({
                   </div>
 
                   <CustomButton
-                    variant="secondary"
-                    onClick={onAddToCartClick}
+                    variant="outline"
+                    color="secondary"
                     size="md"
-                    fullWidth={true}
+                    fullWidth={false}
+                    onClick={onAddToCartClick}
                   >
                     장바구니 담기
                   </CustomButton>
@@ -200,7 +204,8 @@ export function ReturnOrderCard({
 
           <aside className="flex w-[126px] flex-col gap-2.5">
             <CustomButton
-              variant="secondary"
+              variant="fill"
+              color="secondary"
               size="md"
               fullWidth={true}
               onClick={onTrackingClick}
@@ -208,7 +213,8 @@ export function ReturnOrderCard({
               회수 조회
             </CustomButton>
             <CustomButton
-              variant="secondary"
+              variant="fill"
+              color="secondary"
               size="md"
               fullWidth={true}
               onClick={onCancelReturnClick}
