@@ -1,6 +1,6 @@
 "use client"
 
-import { USER_API_CONFIG } from "@lib/api/users/config"
+import { USER_SERVICE_BASE_URL } from "@lib/api/api.config"
 import { signout } from "@lib/data/customer"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef } from "react"
@@ -31,14 +31,9 @@ export default function AuthRestore({
       }
 
       try {
-        const backendUrl = USER_API_CONFIG.BASE_URL
-        if (!backendUrl) {
-          throw new Error("USER_API_CONFIG.BASE_URL is not defined")
-        }
-
         console.log(`토큰 복구 시도 ${attemptsRef.current + 1}/${MAX_ATTEMPTS}`)
 
-        const res = await fetch(`${backendUrl}/auth/restore-token`, {
+        const res = await fetch(`${USER_SERVICE_BASE_URL}/auth/restore-token`, {
           method: "POST",
           signal: AbortSignal.timeout(3000),
           credentials: "include",

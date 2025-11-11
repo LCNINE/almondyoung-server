@@ -99,7 +99,8 @@ export function LoginForm() {
                 <CustomInput
                   type="text"
                   required
-                  placeholder="아이디"
+                  // placeholder="아이디"
+                  placeholder="test"
                   onClear={() => {
                     form.setValue("loginId", "")
                     form.clearErrors("loginId")
@@ -123,7 +124,8 @@ export function LoginForm() {
                 <CustomInput
                   type="password"
                   required
-                  placeholder="패스워드"
+                  // placeholder="패스워드"
+                  placeholder="123123123"
                   onClear={() => {
                     form.setValue("password", "")
                     form.clearErrors("password")

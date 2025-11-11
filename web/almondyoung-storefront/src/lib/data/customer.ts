@@ -1,12 +1,12 @@
 "use server"
 
-import { USER_API_CONFIG } from "@lib/api/users/config"
+import { serverApi } from "@lib/api/server-api"
 import { sdk } from "@lib/app-config"
-import { serverApi } from "@lib/server-api"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
+import { MEDUSA_BASE_URL, USER_SERVICE_BASE_URL } from "../api/api.config"
 import {
   getAuthHeaders,
   getCacheOptions,
@@ -39,22 +39,19 @@ type MedusaSignupResponse = {
 export const medusaSignup = async (
   data: MedusaSignupRequest
 ): Promise<MedusaSignupResponse> => {
-  const res = await fetch(
-    `${process.env.MEDUSA_BACKEND_URL}/auth/customer/my-auth/register`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: data.email,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        almond_user_id: data.almond_user_id,
-        almond_login_id: data.almond_login_id,
-      }),
-    }
-  )
+  const res = await fetch(`${MEDUSA_BASE_URL}/auth/customer/my-auth/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email: data.email,
+      first_name: data.first_name,
+      last_name: data.last_name,
+      almond_user_id: data.almond_user_id,
+      almond_login_id: data.almond_login_id,
+    }),
+  })
 
   const result = await res.json()
 
@@ -63,16 +60,13 @@ export const medusaSignup = async (
 
 // 메두사 jwt 토큰 발급
 export const customerAuthCallback = async (almondToken: string) => {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/medusa/callback`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${almondToken}`,
-      },
-    }
-  )
+  const res = await fetch(`${MEDUSA_BASE_URL}/api/auth/medusa/callback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${almondToken}`,
+    },
+  })
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}))
     throw new Error(errorData.message || `HTTP error! status: ${res.status}`)
@@ -137,16 +131,13 @@ export async function medusaLogin(): Promise<{
       ...(await getAuthHeaders("accessToken")),
     }
 
-    const res = await fetch(
-      `${process.env.MEDUSA_BACKEND_URL}/auth/customer/my-auth`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-      }
-    )
+    const res = await fetch(`${MEDUSA_BASE_URL}/auth/customer/my-auth`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+    })
 
     const result = await res.json()
 
@@ -173,7 +164,7 @@ export async function medusaLogin(): Promise<{
 }
 
 export async function signout() {
-  await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signout", {
+  await serverApi(USER_SERVICE_BASE_URL + "/auth/signout", {
     method: "POST",
     body: JSON.stringify({}),
   })

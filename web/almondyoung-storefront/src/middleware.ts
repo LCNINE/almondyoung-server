@@ -2,7 +2,7 @@
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.MEDUSA_BACKEND_URL
+const BACKEND_URL = process.env.BACKEND_URL
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
 // 기본 리전을 'kr'로 설정
 const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
@@ -28,7 +28,7 @@ async function getRegionMap(cacheId: string) {
   ) {
     try {
       // Fetch regions from Medusa. We can't use the JS client here because middleware is running on Edge and the client needs a Node environment.
-      const { regions } = await fetch(`${BACKEND_URL}/store/regions`, {
+      const { regions } = await fetch(`${BACKEND_URL}/medusa/store/regions`, {
         headers: {
           "x-publishable-api-key": PUBLISHABLE_API_KEY!,
         },
@@ -161,7 +161,7 @@ export async function middleware(request: NextRequest) {
         headers: requestHeaders,
       },
     })
-    
+
     nextResponse.cookies.set("_medusa_cache_id", cacheId, {
       maxAge: 60 * 60 * 24,
     })

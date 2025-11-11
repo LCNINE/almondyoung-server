@@ -1,4 +1,4 @@
-import { ApiError } from "@lib/api-error"
+import { ApiError } from "@lib/api/api-error"
 import { getShopSurveyApi, modifyShopSurveyApi } from "@lib/data/shop-suvery"
 import { useState } from "react"
 import { toast } from "sonner"

@@ -1,16 +1,10 @@
 import Medusa from "@medusajs/js-sdk"
-
-// Defaults to standard port for Medusa server
-let MEDUSA_BACKEND_URL = "http://localhost:9000"
-
-if (process.env.MEDUSA_BACKEND_URL) {
-  MEDUSA_BACKEND_URL = process.env.MEDUSA_BACKEND_URL
-}
+import { MEDUSA_BASE_URL } from "@lib/api/api.config"
 
 export const sdk = new Medusa({
-  baseUrl: MEDUSA_BACKEND_URL,
+  baseUrl: MEDUSA_BASE_URL,
   debug: process.env.NODE_ENV === "development",
-  publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY, // NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY 이거 railway에서 medusa에 변수 추가해줘야함
+  publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY,
   auth: {
     type: "session",
   },

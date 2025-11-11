@@ -3,7 +3,7 @@
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, TrendingUp, Minus } from "lucide-react"
-import BasicProductCard from "@components/products/product-card"
+import { BasicProductCard } from "@components/products/product-card"
 import { v4 as uuidv4 } from "uuid"
 // 서버 데이터 구조를 그대로 사용
 export interface Product {

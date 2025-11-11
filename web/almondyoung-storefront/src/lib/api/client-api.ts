@@ -1,7 +1,7 @@
 "use client"
 
 import { ApiAuthError, ApiError } from "./api-error"
-import { USER_API_CONFIG } from "./api/users/config"
+import { USER_SERVICE_BASE_URL } from "./api.config"
 
 let refreshPromise: Promise<boolean> | null = null
 
@@ -12,14 +12,11 @@ async function refreshToken(): Promise<boolean> {
 
   refreshPromise = (async () => {
     try {
-      const res = await fetch(
-        `${USER_API_CONFIG.BASE_URL}/auth/restore-token`,
-        {
-          method: "POST",
-          credentials: "include",
-          signal: AbortSignal.timeout(5000),
-        }
-      )
+      const res = await fetch(`${USER_SERVICE_BASE_URL}/auth/restore-token`, {
+        method: "POST",
+        credentials: "include",
+        signal: AbortSignal.timeout(5000),
+      })
       return res.ok
     } catch (error) {
       console.error("Token refresh failed:", error)

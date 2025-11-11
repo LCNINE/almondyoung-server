@@ -1,13 +1,13 @@
 "use server"
 
-import { ApiError } from "@lib/api-error"
+import { ApiError } from "@lib/api/api-error"
 import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { medusaLogin, transferCart } from "@lib/data/customer"
-import { serverApi } from "@lib/server-api"
-import { USER_API_CONFIG } from "@lib/api/users/config"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
+import { serverApi } from "../server-api"
+import { USER_SERVICE_BASE_URL } from "../api.config"
 
 type LoginState =
   | { success: true }
@@ -24,7 +24,7 @@ export async function login(
 
   try {
     //  사용자 서비스 로그인
-    const result = await serverApi(USER_API_CONFIG.BASE_URL + "/auth/signin", {
+    const result = await serverApi(USER_SERVICE_BASE_URL + "/auth/signin", {
       method: "POST",
       body: JSON.stringify({ loginId, password }),
     })

@@ -1,5 +1,5 @@
 import ClientToast from "@components/common/client-toast"
-import { ApiAuthError, ApiNetworkError } from "@lib/api-error"
+import { ApiAuthError, ApiNetworkError } from "@lib/api/api-error"
 import { fetchCurrentUser } from "@lib/api/users/me"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
