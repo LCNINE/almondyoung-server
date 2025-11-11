@@ -4,6 +4,8 @@ import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SharedModule } from '../shared/shared.module';
+import { EventsModule } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { InventoryController } from './controllers/inventory.controller';
 import { ProductMatchingController } from './controllers/product-matching.controller';
 import { LocationController } from './controllers/location.controller';
@@ -15,7 +17,7 @@ import { LocationService } from './services/location.service';
 import { StockEventStore } from './repositories/stock-event.store';
 import { InventoryCommandService } from './services/inventory-command.service';
 import { InventoryQueryService } from './services/inventory-query.service';
-import { PimEventHandler } from './handlers/pim-event.hadler';
+import { ProductEventConsumer } from './handlers/product-event.consumer';
 import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
 import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
 import { MasterService } from './services/master.service';
@@ -56,6 +58,11 @@ import { SkuGroupController } from './controllers/sku-group.controller';
       schema: wmsTables,
     }),
     SharedModule,
+    EventsModule.forConsumerModule({
+      streams: [PRODUCT_STREAM],
+      groupId: 'wms-product-consumer',
+      enableAutoDLQ: true,
+    }),
   ],
   controllers: [
     InventoryController,
@@ -77,6 +84,8 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     TransferController,
     // Phase 3 Week 7: SKU Groups controller
     SkuGroupController,
+    // Phase 3: Product Event Consumer (Kafka)
+    ProductEventConsumer,
   ],
   providers: [
     InventoryService,
@@ -87,7 +96,6 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     StockEventStore,
     InventoryCommandService,
     InventoryQueryService,
-    PimEventHandler,
     VariantMatchingStrategy,
     VoidMatchingStrategy,
     MasterService,
