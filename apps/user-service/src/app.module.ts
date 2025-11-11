@@ -21,11 +21,14 @@ import { WishlistModule } from './api/wishlist/wishlist.module';
 import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
+import { config } from 'dotenv';
+import { join } from 'path';
+
+const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
   // 필수 환경변수 검증
-  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
   if (!prefix) {
     throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
   }
@@ -65,7 +68,12 @@ function createKafkaConfig() {
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateUserServiceEnv,
-      envFilePath: process.env.NODE_ENV === 'development' ? '.env.dev' : '.env',
+      envFilePath: join(
+        process.cwd(),
+        'apps',
+        'user-service',
+        process.env.NODE_ENV === 'development' ? '.env.dev' : '.env',
+      ),
     }),
     DbModule.forRoot({
       config: {

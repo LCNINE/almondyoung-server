@@ -1,7 +1,7 @@
 import { DbService } from '@app/db';
 import { NestFactory } from '@nestjs/core';
 import { DatabaseModule } from './database.module';
-import * as schema from './drizzle/schema';
+import { UserServiceSchema } from './drizzle/schema';
 import { seedDatabase } from './seed';
 
 async function bootstrap() {
@@ -10,7 +10,7 @@ async function bootstrap() {
 
   try {
     // Get the database service
-    const dbService = app.get(DbService<schema.User>);
+    const dbService = app.get(DbService<UserServiceSchema>);
 
     console.log('===============================');
     console.log('🌱 시드 CLI 도구 실행 중...');
