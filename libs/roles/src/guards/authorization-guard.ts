@@ -5,18 +5,12 @@ import { UserScope } from '@packages/auth-constants';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {
-  id: string;
-  loginId: string;
-  username: string;
   email: string;
-  isEmailVerified: boolean;
-  lastActivityAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  sub: string;
+  id: string;
   scopes: string[];
 }
 
+//todo 룰 가드로 변경
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -37,7 +31,7 @@ export class AuthorizationGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const user = request['user'] as JwtPayload;
 
-    if (!user || !user.sub || !user.scopes) {
+    if (!user || !user.id || !user.scopes) {
       return false;
     }
 

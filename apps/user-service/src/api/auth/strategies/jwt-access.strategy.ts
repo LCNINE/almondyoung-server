@@ -2,7 +2,6 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { TokensService } from '../../tokens/tokens.service';
 import { UsersService } from '../../users/users.service';
 
 @Injectable()
@@ -10,15 +9,12 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private usersService: UsersService,
-    private tokensService: TokensService,
   ) {
-    const jwtSecret = configService.get<string>(
-      'JWT_VERIFICATION_TOKEN_SECRET',
-    );
+    const jwtSecret = configService.get<string>('AUTH_SECRET');
 
     if (!jwtSecret) {
       throw new Error(
-        'JWT_VERIFICATION_TOKEN_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.',
+        'AUTH_SECRET 환경 변수가 설정되지 않았습니다. JWT 인증을 위해 이 환경 변수를 설정하세요.',
       );
     }
 
@@ -35,17 +31,14 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: any, payload: { sub: string; scopes: string[] }) {
-    const user = await this.usersService.findUserById(payload.sub);
-
-    if (!user) {
-      throw new UnauthorizedException('사용자를 찾을 수 없습니다.');
-    }
-
+  async validate(
+    req: any,
+    payload: { sub: string; email: string; scopes: string[] },
+  ) {
     // JWT payload 정보 반환
     return {
-      ...user,
-      sub: payload.sub,
+      id: payload.sub,
+      email: payload.email,
       scopes: payload.scopes,
     };
   }
