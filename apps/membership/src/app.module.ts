@@ -47,7 +47,9 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
         envFilePath: ['.env'],
       }),
     }),
-    AuthCoreModule.forRootAsync(),
+    AuthCoreModule.forRootAsync({
+      secret: process.env.AUTH_SECRET || '',
+    }),
     HttpModule,
     DbModule.forRoot({
       config: {
