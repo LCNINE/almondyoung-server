@@ -7,6 +7,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import * as os from 'os';
+import { join } from 'path';
 import { userServiceSchema } from '../database/drizzle/schema';
 import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
@@ -22,13 +23,16 @@ import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
 import { config } from 'dotenv';
-import { join } from 'path';
 
-const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+config({
+  path: join(process.cwd(), 'apps', 'user-service', '.env.dev'),
+});
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
   // 필수 환경변수 검증
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+
   if (!prefix) {
     throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
   }

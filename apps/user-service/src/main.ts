@@ -133,8 +133,8 @@ async function bootstrap() {
     }),
   );
 
-  logger.log(`Application running on port ${port}`);
   await app.listen(port, '0.0.0.0');
+  console.log(`🌙 whisper... your app just woke up on port ${port} 💭`);
 }
 
 bootstrap();
