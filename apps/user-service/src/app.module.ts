@@ -18,6 +18,7 @@ import { EventProcessorModule } from './api/events/events.module';
 import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
+import { TwilioModule } from './api/twilio/twilio.module';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
@@ -105,6 +106,7 @@ function createKafkaConfig() {
     FileModule,
     BusinessLicensesModule,
     AdminModule,
+    TwilioModule,
   ],
   providers: [
     {
