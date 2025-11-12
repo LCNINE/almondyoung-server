@@ -1,11 +1,9 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
-
 import { DbModule } from '@app/db';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
 import { validateMembershipEnv } from './config/env.validation';
-import { DevAuthModule } from './auth/dev-auth-module';
 import { PlanService } from './services/plan.service';
 import { AdminOperationsService } from './services/admin-operations.service';
 import { PauseService } from './services/pause.service';
@@ -38,20 +36,21 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
+import { AuthCoreModule } from '../../../libs/auth-core/src';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateMembershipEnv,
-      envFilePath: `.env.${process.env.NODE_ENV || 'development'}`,
+      envFilePath: ['apps/membership/.env', '.env'], // membership .env 우선, 루트 .env는 fallback
+      expandVariables: true,
     }),
+    AuthCoreModule.forRootAsync(),
     HttpModule,
-    DevAuthModule,
     DbModule.forRoot({
       config: {
-        connectionString:
-          'postgresql://neondb_owner:npg_VR7yj1uOfPTs@ep-divine-hill-a1nspuc3-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+        connectionString: process.env.DATABASE_URL || '',
       },
       schema: { ...membershipSchema },
     }),
@@ -65,6 +64,7 @@ import { MembershipPolicyService } from './services/membership-policy.service';
     BenefitTrackingController,
   ],
   providers: [
+    // Auth
     // Business Layer (Services)
     PlanService,
     AdminOperationsService,
@@ -99,4 +99,4 @@ import { MembershipPolicyService } from './services/membership-policy.service';
     PaymentClientService,
   ],
 })
-export class AppModule {}
+export class AppModule { }

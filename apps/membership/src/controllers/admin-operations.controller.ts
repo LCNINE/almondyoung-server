@@ -28,7 +28,6 @@ import { SubscriptionCancellationService } from '../services/subscription-cancel
 import { ContractEventManager } from '../services/subscription/contract-event.manager';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import {
   CreateTierRequest,
   UpdateTierRequest,
@@ -66,6 +65,8 @@ import {
   ForceCancelSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
+import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
 /**
  * 관리자 운영 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -74,7 +75,7 @@ import { FastifyRequest } from 'fastify';
 @ApiBearerAuth('JWT-auth')
 @ApiSecurity('dev-user-id')
 @Controller('admin')
-@UseGuards(DevAuthGuard) // 모든 API에 관리자 인증 가드 적용
+@UseGuards(JwtAuthGuard) // 모든 API에 관리자 인증 가드 적용
 @UseFilters(SubscriptionExceptionFilter)
 export class AdminOperationsController {
   private readonly logger = new Logger(AdminOperationsController.name);
@@ -83,7 +84,7 @@ export class AdminOperationsController {
     private readonly adminOperationsService: AdminOperationsService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
-  ) {}
+  ) { }
 
   /**
    * 공통 에러 처리 헬퍼 메서드
@@ -145,13 +146,14 @@ export class AdminOperationsController {
     description: '잘못된 요청 데이터',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async createTier(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(CreateTierRequestSchema))
     dto: CreateTierRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(`티어 생성 요청: ${dto.code} (관리자: ${adminId})`);
 
       const result = await this.adminOperationsService.createTier(dto, adminId);
@@ -199,14 +201,15 @@ export class AdminOperationsController {
     description: '티어를 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async updateTier(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Param('tierId') tierId: string,
     @Body(new ZodValidationPipe(UpdateTierRequestSchema))
     dto: UpdateTierRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(`티어 수정 요청: ${tierId} (관리자: ${adminId})`);
 
       const result = await this.adminOperationsService.updateTier(
@@ -233,6 +236,7 @@ export class AdminOperationsController {
   }
 
   @Post('plans')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: '새 플랜 생성',
@@ -254,13 +258,14 @@ export class AdminOperationsController {
     description: '티어를 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async createPlan(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(CreatePlanRequestSchema))
     dto: CreatePlanRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(
         `플랜 생성 요청: 티어 ${dto.tierId} (관리자: ${adminId})`,
       );
@@ -310,14 +315,15 @@ export class AdminOperationsController {
     description: '플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async updatePlan(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(UpdatePlanRequestSchema))
     dto: UpdatePlanRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(`플랜 수정 요청: ${planId} (관리자: ${adminId})`);
 
       const result = await this.adminOperationsService.updatePlan(
@@ -369,14 +375,15 @@ export class AdminOperationsController {
     description: '플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async deactivatePlan(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(DeactivatePlanRequestSchema))
     dto: DeactivatePlanRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(`플랜 비활성화 요청: ${planId} (관리자: ${adminId})`);
 
       const result = await this.adminOperationsService.deactivatePlan(
@@ -429,13 +436,14 @@ export class AdminOperationsController {
     description: '사용자 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async adjustUserEntitlement(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(ExtendEntitlementRequestSchema))
     dto: ExtendEntitlementRequest,
   ) {
     try {
-      const adminId = req.user!.userId;
+      const adminId = userId;
       this.logger.log(
         `구독 기간 조정 요청: ${dto.userId} (${dto.days}일, 관리자: ${adminId})`,
       );
@@ -581,6 +589,7 @@ export class AdminOperationsController {
     description: '계약을 찾을 수 없음',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async getContractEvents(@Param('contractId') contractId: string) {
     try {
       this.logger.log(`계약 이벤트 이력 조회 - contractId: ${contractId}`);
@@ -632,14 +641,15 @@ export class AdminOperationsController {
     description: '잘못된 요청',
     type: ErrorResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   async forceCancelSubscription(
+    @CurrentUser('userId') userId: string,
     @Param('contractId') contractId: string,
-    @Req() req: FastifyRequest,
     @Body(new ZodValidationPipe(ForceCancelSubscriptionRequestSchema))
     dto: ForceCancelSubscriptionRequest,
   ) {
     try {
-      const adminId = req.user?.userId || 'admin';
+      const adminId = userId;
 
       this.logger.log(
         `강제 구독 취소 요청 - contractId: ${contractId}, adminId: ${adminId}, refundType: ${dto.refundType}`,
