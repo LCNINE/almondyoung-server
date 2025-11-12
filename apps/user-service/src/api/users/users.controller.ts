@@ -19,7 +19,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { Public } from '../../constants/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -27,6 +26,7 @@ import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
 import { UsersService } from './users.service';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('Users')
 @ApiBearerAuth()

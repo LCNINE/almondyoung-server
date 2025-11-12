@@ -6,10 +6,10 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
 import { ShopService } from './shop.service';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('Shop')
 @ApiBearerAuth('access-token')
