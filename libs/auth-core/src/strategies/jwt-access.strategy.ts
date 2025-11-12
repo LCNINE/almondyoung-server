@@ -26,13 +26,14 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     const options: StrategyOptions = {
       jwtFromRequest: ExtractJwt.fromExtractors([
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
         (request: any) => {
+          // User Service와 동일하게 쿠키만 사용
           const token = request?.cookies?.accessToken;
           console.log('🍪 [JwtAccessStrategy] Extracting token:', {
             hasCookie: !!token,
             hasAuthHeader: !!request?.headers?.authorization,
             tokenPreview: token ? token.substring(0, 20) + '...' : 'none',
+            cookiesObject: request?.cookies,
           });
           return token;
         },
