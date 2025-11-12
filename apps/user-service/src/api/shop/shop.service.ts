@@ -1,9 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import {
-  User,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
+import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
@@ -14,7 +11,10 @@ export class ShopService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
   ) {}
 
-  async modify(createShopDto: CreateShopInfoDto, user: User): Promise<void> {
+  async modify(
+    createShopDto: CreateShopInfoDto,
+    userId: string,
+  ): Promise<void> {
     const shopData = {
       shopType: createShopDto.shopType,
       categories: createShopDto.categories,
@@ -28,7 +28,7 @@ export class ShopService {
     await this.dbService.db
       .insert(schema.shops)
       .values({
-        userId: user.id,
+        userId: userId,
         ...shopData,
       })
       .onConflictDoUpdate({

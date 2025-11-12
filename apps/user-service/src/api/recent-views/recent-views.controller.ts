@@ -23,6 +23,7 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
+import { JwtPayload } from '@app/roles';
 
 @ApiTags('최근 본 상품')
 @ApiBearerAuth()
@@ -53,7 +54,7 @@ export class RecentViewsController {
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   async addToRecentViews(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Body() addToRecentViewsDto: AddToRecentViewsDto,
   ) {
     return this.recentViewsService.addToRecentViews(
@@ -91,7 +92,7 @@ export class RecentViewsController {
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   async getRecentViews(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Query('limit') limit?: string,
   ) {
     return this.recentViewsService.getRecentViews(
@@ -121,7 +122,7 @@ export class RecentViewsController {
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   async removeFromRecentViews(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Param('recentViewId') recentViewId: string,
   ) {
     return this.recentViewsService.removeRecentViewByUserIdAndRecentViewId(
