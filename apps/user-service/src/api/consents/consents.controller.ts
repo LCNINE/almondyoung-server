@@ -1,5 +1,5 @@
 import { RequireScopes } from '@app/roles';
-import { AuthorizationGuard } from '@app/roles/guards/authorization-guard';
+import { AuthorizationGuard, JwtPayload } from '@app/roles/guards/authorization-guard';
 import {
   Body,
   Controller,
@@ -15,7 +15,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { User } from 'apps/user-service/database/drizzle/schema';
 import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { ConsentsService } from './consents.service';
@@ -41,7 +40,7 @@ export class ConsentsController {
   })
   @Get()
   @RequireScopes(['user:read'])
-  async getMyConsent(@CurrentUser() user: User): Promise<UserConsent | null> {
+  async getMyConsent(@CurrentUser() user: JwtPayload): Promise<UserConsent | null> {
     return await this.consentsService.getMyConsent(user.id);
   }
 
@@ -53,7 +52,7 @@ export class ConsentsController {
   @Post()
   @RequireScopes(['user:modify'])
   async createConsent(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Body() createConsentDto: CreateConsentDto,
   ): Promise<void> {
     return this.consentsService.createConsent(user.id, createConsentDto);

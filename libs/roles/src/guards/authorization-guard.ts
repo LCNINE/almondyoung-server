@@ -6,7 +6,7 @@ import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {
   email: string;
-  sub: string;
+  id: string;
   scopes: string[];
 }
 
@@ -31,7 +31,7 @@ export class AuthorizationGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const user = request['user'] as JwtPayload;
 
-    if (!user || !user.sub || !user.scopes) {
+    if (!user || !user.id || !user.scopes) {
       return false;
     }
 

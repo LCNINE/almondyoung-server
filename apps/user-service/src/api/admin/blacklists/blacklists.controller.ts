@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -90,7 +90,7 @@ export class BlacklistsController {
   @RequireScopes(['master', 'admin:users:modify'])
   async createBlacklist(
     @Body() blacklistsCreateDto: BlacklistsCreateDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     const adminId = user.id;
     return await this.blacklistsService.createBlacklist(
@@ -110,7 +110,7 @@ export class BlacklistsController {
   @RequireScopes(['master', 'admin:users:modify'])
   async deleteBlacklist(
     @Param('userId') userId: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     const adminId = user.id;
     return await this.blacklistsService.deleteBlacklist(userId, adminId);
