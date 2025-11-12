@@ -8,7 +8,7 @@ export const membershipEnvSchema = z.object({
 
   // Payment Service Integration
   PAYMENT_SERVER_URL: z.string().url().optional(),
-    // JWT Authentication (user-service uses AUTH_SECRET)
+  // JWT Authentication (user-service uses AUTH_SECRET)
   AUTH_SECRET: z.string().min(1),
   JWT_ISSUER: z.string().optional(),
 });
@@ -16,6 +16,25 @@ export const membershipEnvSchema = z.object({
 export type MembershipEnvConfig = z.infer<typeof membershipEnvSchema>;
 
 export function validateMembershipEnv(config: Record<string, unknown>) {
+  // 디버깅: 실제 환경 변수 확인
+  console.log('🔍 [Membership] Environment variables check:');
+  console.log(
+    '  - DATABASE_URL:',
+    config.DATABASE_URL ? '✅ exists' : '❌ missing',
+  );
+  console.log(
+    '  - AUTH_SECRET:',
+    config.AUTH_SECRET ? '✅ exists' : '❌ missing',
+  );
+  console.log(
+    '  - JWT_ISSUER:',
+    config.JWT_ISSUER ? '✅ exists' : '❌ missing',
+  );
+  console.log(
+    '  - All env keys:',
+    Object.keys(config).filter((k) => k.includes('AUTH') || k.includes('JWT')),
+  );
+
   const parsed = membershipEnvSchema.safeParse(config);
 
   if (!parsed.success) {
