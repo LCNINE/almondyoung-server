@@ -126,9 +126,7 @@
       "sourceRoot": "apps/wallet/src",
       "compilerOptions": {
         "tsConfigPath": "apps/wallet/tsconfig.app.json",
-        "assets": [
-          "html/**/*"
-        ]
+        "assets": ["html/**/*"]
       }
     },
     "wms": {

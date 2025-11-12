@@ -8,6 +8,9 @@ export const membershipEnvSchema = z.object({
 
   // Payment Service Integration
   PAYMENT_SERVER_URL: z.string().url().optional(),
+    // JWT Authentication (user-service uses AUTH_SECRET)
+  AUTH_SECRET: z.string().min(1),
+  JWT_ISSUER: z.string().optional(),
 });
 
 export type MembershipEnvConfig = z.infer<typeof membershipEnvSchema>;
