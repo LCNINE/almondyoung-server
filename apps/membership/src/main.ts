@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import fastifyCookie from '@fastify/cookie';
 
 /**
  * 애플리케이션 부트스트랩 함수
@@ -19,18 +20,36 @@ async function bootstrap(): Promise<void> {
 
   console.log('🚀 Starting Membership API...');
   console.log('NODE_ENV:', process.env.NODE_ENV);
-  console.log(
-    'Platform:',
-    isDev ? 'Express (Development)' : 'Fastify (Production)',
-  );
+  console.log('Platform: Fastify');
 
   // 개발환경: Express, 운영환경: Fastify
   const app = isDev
-    ? await NestFactory.create(AppModule)
+    ? await NestFactory.create<NestFastifyApplication>(
+        AppModule,
+        new FastifyAdapter(),
+      )
     : await NestFactory.create<NestFastifyApplication>(
         AppModule,
         new FastifyAdapter(),
       );
+
+  // 쿠키 파서 등록 (Fastify)
+  await app.register(fastifyCookie);
+
+  // Passport와 Fastify 호환성을 위한 훅 (중요!)
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', (request, reply, done) => {
+      (reply as any).setHeader = function (key: string, value: string) {
+        return this.raw.setHeader(key, value);
+      };
+      (reply as any).end = function () {
+        this.raw.end();
+      };
+      (request as any).res = reply;
+      done();
+    });
 
   // CORS 설정 - 개발 환경에서는 모든 origin 허용
   app.enableCors({
