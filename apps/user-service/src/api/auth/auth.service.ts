@@ -723,7 +723,7 @@ export class AuthService {
       secure: isRailway,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
-        : { domain: 'http://localhost:3001' }), // 로컬/테스트 시 domain 제거
+        : {}), // 로컬/테스트 시 domain 제거
     };
 
     reply.setCookie('accessToken', accessToken, cookieOptions);
@@ -781,7 +781,7 @@ export class AuthService {
       secure: isRailway,
       ...(isProd
         ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
-        : { domain: 'http://localhost:3001' }), // 로컬/테스트 시 domain 제거
+        : {}), // 로컬/테스트 시 domain 제거
     };
 
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
