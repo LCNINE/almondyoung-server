@@ -263,6 +263,7 @@
       "<rootDir>/libs/"
     ],
     "moduleNameMapper": {
+      "^@app/auth-core(|/.*)$": "<rootDir>/libs/auth-core/src/$1",
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/roles(|/.*)$": "<rootDir>/libs/roles/src/$1",
