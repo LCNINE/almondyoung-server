@@ -8,7 +8,7 @@ export const CurrentUser = createParamDecorator(
     const request = context
       .switchToHttp()
       .getRequest<FastifyRequest & { user: JwtPayload }>();
-    console.log('request.user:', request.user);
+
     return request.user;
   },
 );
