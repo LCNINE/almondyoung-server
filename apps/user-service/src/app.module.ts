@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { USER_STREAM } from '@packages/event-contracts/streams';
+import { config } from 'dotenv';
 import * as os from 'os';
 import { join } from 'path';
 import { userServiceSchema } from '../database/drizzle/schema';
@@ -19,15 +20,12 @@ import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
-import { PublicPrivateGuard } from './commons/guards/auth.guard';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
-import { config } from 'dotenv';
 
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env.dev'),
 });
-
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
   // 필수 환경변수 검증
@@ -109,10 +107,6 @@ function createKafkaConfig() {
     AdminModule,
   ],
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: PublicPrivateGuard,
-    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
