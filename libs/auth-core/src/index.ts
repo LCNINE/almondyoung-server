@@ -16,5 +16,5 @@ export * from './strategies/jwt-access.strategy';
 export * from './guards/jwt-auth.guard';
 
 // Decorators
-export * from './decorators/current-user.decorator';
+export * from './decorators/user.decorator';
 export * from './decorators/public.decorator';

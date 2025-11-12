@@ -52,7 +52,7 @@ import {
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
+import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
 /**
  * 구독 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -101,10 +101,8 @@ export class SubscriptionController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async getCurrentSubscriptionDetails(@CurrentUser('userId') userId: string) {
-    console.log('userId', userId);
-    return userId
-    // return this.subscriptionService.getCurrentSubscriptionDetails(userId);
+  async getCurrentSubscriptionDetails(@User('userId') userId: string) {
+    return this.subscriptionService.getCurrentSubscriptionDetails(userId);
   }
   /**
    * 구독 생성
@@ -139,7 +137,7 @@ export class SubscriptionController {
   })
   // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
   async createSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
   ) {
@@ -177,7 +175,7 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async upgradeSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
     upgradeSubscriptionDto: UpgradeSubscriptionRequest,
   ) {
@@ -215,7 +213,7 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async downgradeSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
   ) {
@@ -248,7 +246,7 @@ export class SubscriptionController {
   })
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async cancelSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
   ) {
@@ -289,7 +287,7 @@ export class SubscriptionController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
-  async getSubscriptionHistory(@CurrentUser('userId') userId: string) {
+  async getSubscriptionHistory(@User('userId') userId: string) {
     return this.subscriptionService.getSubscriptionHistory(userId);
   }
 
@@ -307,7 +305,7 @@ export class SubscriptionController {
     type: CancellationReasonsResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async getCancellationReasons(@CurrentUser('userId') userId: string) {
+  async getCancellationReasons(@User('userId') userId: string) {
     const reasons = await this.cancellationReasonReader.findActiveReasons();
     return {
       reasons,
