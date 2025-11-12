@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import {
   Body,
   ConflictException,
@@ -87,9 +87,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async restoreToken(
     @Res({ passthrough: true }) res: FastifyReply,
-    @CurrentUser() user: schema.User,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return await this.authService.restoreToken(user, res);
+    return await this.authService.restoreToken(user.id, res);
   }
 
   @ApiOperation({ summary: '비밀번호 변경' })
@@ -99,9 +99,9 @@ export class AuthController {
   @RequireScopes(['user:modify', 'master', 'admin:access'])
   async changePassword(
     @Body(ValidationPipe) { password }: ChangePasswordDto,
-    @CurrentUser() user: schema.User,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.authService.changePassword(password, user);
+    return this.authService.changePassword(password, user.id);
   }
 
   @ApiOperation({ summary: '아이디 찾기' })
@@ -160,8 +160,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원 탈퇴 성공' })
   @Delete('account')
   @UseGuards(AuthGuard('jwt'))
-  async deleteAccount(@CurrentUser() user: schema.User) {
-    return this.authService.deleteAccount(user);
+  async deleteAccount(@CurrentUser() user: JwtPayload) {
+    return this.authService.deleteAccount(user.id);
   }
 
   @ApiOperation({ summary: '비밀번호 확인' })
@@ -171,9 +171,9 @@ export class AuthController {
   @RequireScopes(['user:modify', 'master', 'admin:access'])
   async checkPassword(
     @Body(ValidationPipe) { password }: { password: string },
-    @CurrentUser() user: schema.User,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.authService.checkPassword(password, user);
+    return this.authService.checkPassword(password, user.id);
   }
 
   @ApiOperation({ summary: '카카오 로그인' })
