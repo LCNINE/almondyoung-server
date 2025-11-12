@@ -20,10 +20,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
 import { JwtPayload } from '@app/roles';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('최근 본 상품')
 @ApiBearerAuth()

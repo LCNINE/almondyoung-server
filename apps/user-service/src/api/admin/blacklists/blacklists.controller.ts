@@ -1,4 +1,5 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
   Controller,
@@ -18,8 +19,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { User } from 'apps/user-service/database/drizzle/schema';
-import { CurrentUser } from 'apps/user-service/src/commons/decorators/current-user.decorator';
 import { JwtAuthGuard } from 'apps/user-service/src/commons/guards/jwt-auth.guard';
 import { BlacklistsService } from './blacklists.service';
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
