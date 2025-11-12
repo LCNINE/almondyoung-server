@@ -39,7 +39,7 @@ import {
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
+import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
 /**
  * 일시정지 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -79,7 +79,7 @@ export class PauseController {
   })
   @UseGuards(JwtAuthGuard)
   async pauseSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(PauseSubscriptionRequestSchema))
     pauseDto: PauseSubscriptionRequest,
   ) {
@@ -167,7 +167,7 @@ export class PauseController {
   })
   @UseGuards(JwtAuthGuard)
   async resumeSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     // 참고: resumeRequest DTO는 현재 사용되지 않지만, Zod 유효성 검사를 위해 유지합니다.
     @Body(new ZodValidationPipe(ResumeSubscriptionRequestSchema))
     resumeRequest: ResumeSubscriptionRequest,
@@ -241,7 +241,7 @@ export class PauseController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
-  async getPauseHistory(@CurrentUser('userId') userId: string) {
+  async getPauseHistory(@User('userId') userId: string) {
     try {
       this.logger.log(`일시정지 이력 조회 요청: ${userId}`);
 

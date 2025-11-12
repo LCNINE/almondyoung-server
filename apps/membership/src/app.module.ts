@@ -44,7 +44,7 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
       isGlobal: true,
       validate: validateMembershipEnv,
       ...(process.env.NODE_ENV !== 'production' && {
-        envFilePath: ['.env'],
+        envFilePath: ['apps/membership/.env'],
       }),
     }),
     AuthCoreModule.forRootAsync({
