@@ -5,18 +5,12 @@ import { UserScope } from '@packages/auth-constants';
 import { SCOPES_KEY } from '../decorators/scopes.decorator';
 
 export interface JwtPayload {
-  id: string;
-  loginId: string;
-  username: string;
   email: string;
-  isEmailVerified: boolean;
-  lastActivityAt: Date;
-  createdAt: Date;
-  updatedAt: Date;
   sub: string;
   scopes: string[];
 }
 
+//todo 룰 가드로 변경
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
