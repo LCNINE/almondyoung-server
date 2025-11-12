@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -51,7 +51,7 @@ export class BusinessLicensesController {
   @Get()
   @RequireScopes(['user:read'])
   async findBusinessLicenseByUserId(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ): Promise<BusinessLicense | null> {
     const registration =
       await this.businessLicensesService.findBusinessLicenseByUserId(user.id);
@@ -74,7 +74,7 @@ export class BusinessLicensesController {
   @RequireScopes(['user:modify'])
   async createWithFile(
     @Body() data: CreateBusinessLicenseWithFileDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     return this.businessLicensesService.createWithFile(data, user.id);
   }
@@ -99,7 +99,7 @@ export class BusinessLicensesController {
   @RequireScopes(['user:modify'])
   async createBusinessLicenseWithInfo(
     @Body() data: CreateBusinessLicenseWithInfoDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     return this.businessLicensesService.createBusinessLicenseWithInfo(
       data,
@@ -127,7 +127,7 @@ export class BusinessLicensesController {
   async updateBusinessLicenseByBusinessLicenseId(
     @Param('business-license-id') businessLicenseId: string,
     @Body() data: UpdateBusinessLicenseDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     return this.businessLicensesService.updateBusinessLicenseByBusinessLicenseId(
       businessLicenseId,
@@ -149,7 +149,7 @@ export class BusinessLicensesController {
   @RequireScopes(['user:delete'])
   async deleteBusinessLicenseByBusinessLicenseId(
     @Param('id') businessLicenseId: string,
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
   ) {
     return this.businessLicensesService.deleteBusinessLicenseByBusinessLicenseId(
       businessLicenseId,

@@ -23,7 +23,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { DbTransaction, ProviderType } from '../../commons/types';
+import { DbTransaction, IUser, ProviderType } from '../../commons/types';
 import {
   JWT_ACCESS_TOKEN_EXPIRATION,
   JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION,
@@ -682,7 +682,7 @@ export class AuthService {
   }
 
   private async getAccessToken(
-    user: User,
+    user: IUser,
     reply: FastifyReply,
     tx?: DbTransaction,
   ): Promise<{ accessToken: string }> {
@@ -789,8 +789,10 @@ export class AuthService {
     return { refreshToken };
   }
 
-  async restoreToken(user: User, reply: FastifyReply, tx?: DbTransaction) {
+  async restoreToken(userId: string, reply: FastifyReply, tx?: DbTransaction) {
     const client = this.getClient(tx);
+
+    const user = await this.usersService.findUserById(userId, client);
 
     return await this.getAccessToken(user, reply, client);
   }
@@ -851,8 +853,11 @@ export class AuthService {
     return;
   }
 
-  async changePassword(password: string, user: User) {
-    const existingUser = await this.usersService.findUserById(user.id);
+  async changePassword(password: string, userId: string, tx?: DbTransaction) {
+    const existingUser = await this.usersService.findUserById(userId);
+
+    if (!existingUser)
+      throw new NotFoundException('존재하지 않는 사용자입니다');
 
     try {
       const saltOrRounds = 10;
@@ -860,7 +865,7 @@ export class AuthService {
       await this.dbService.db
         .update(userServiceSchema.users)
         .set({ password: hash })
-        .where(eq(userServiceSchema.users.id, user.id));
+        .where(eq(userServiceSchema.users.id, userId));
 
       return;
     } catch (error) {
@@ -870,7 +875,22 @@ export class AuthService {
     }
   }
 
-  async checkPassword(password: string, user: User): Promise<void> {
+  async checkPassword(
+    password: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = await this.getClient(tx);
+
+    const user = await client
+      .select()
+      .from(userServiceSchema.users)
+      .where(eq(userServiceSchema.users.id, userId))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+
     const isAuth = await bcrypt.compare(password, user.password);
     if (!isAuth)
       throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
@@ -878,23 +898,23 @@ export class AuthService {
     return;
   }
 
-  async deleteAccount(user: User): Promise<void> {
+  async deleteAccount(userId: string): Promise<void> {
     const deletedUser = await this.dbService.db
       .delete(userServiceSchema.users)
-      .where(eq(userServiceSchema.users.id, user.id))
+      .where(eq(userServiceSchema.users.id, userId))
       .returning();
 
     if (deletedUser.length > 0) {
       await this.eventPublisher.publishEvent({
         eventType: 'UserDeleted',
-        aggregateId: user.id,
+        aggregateId: userId,
         payload: {
-          userId: user.id,
+          userId,
         },
       });
     } else {
       throw new NotFoundException(
-        `User with id ${user.id} not found or already deleted.`,
+        `User with id ${userId} not found or already deleted.`,
       );
     }
 

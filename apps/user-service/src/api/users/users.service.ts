@@ -38,18 +38,21 @@ export class UsersService {
   }
 
   // 기본 사용자 정보를 가져오는 메서드
-  private async getUserBaseInfo(userId: string) {
+  private async getUserBaseInfo(userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
     try {
       // UUID 형식 검증
       if (!isValidUUID(userId)) {
         throw new BadRequestException('유효하지 않은 사용자 ID 형식입니다.');
       }
 
-      const [user] = await this.dbService.db
+      const [user] = await client
         .select({
           id: schema.users.id,
           loginId: schema.users.loginId,
           username: schema.users.username,
+          nickname: schema.users.nickname,
           email: schema.users.email,
           isEmailVerified: schema.users.isEmailVerified,
           lastActivityAt: schema.users.lastActivityAt,
@@ -210,8 +213,9 @@ export class UsersService {
   }
 
   // 공개 API용 기본 정보
-  async findUserById(id: string) {
-    return this.getUserBaseInfo(id);
+  async findUserById(id: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    return this.getUserBaseInfo(id, client);
   }
 
   // 사용자 프로필 정보 업데이트

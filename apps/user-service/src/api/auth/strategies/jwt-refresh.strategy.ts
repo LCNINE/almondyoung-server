@@ -63,7 +63,7 @@ export class JwtRefreshStrategy extends PassportStrategy(
 
     return {
       ...user,
-      sub: payload.sub,
+      id: payload.sub,
       scopes: payload.scopes,
     };
   }
