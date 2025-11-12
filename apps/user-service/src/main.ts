@@ -133,8 +133,9 @@ async function bootstrap() {
     }),
   );
 
-  logger.log(`Application running on port ${port}`);
   await app.listen(port, '0.0.0.0');
+  console.log(`🌫 포트 ${port}가 열린 순간... 누군가 눈을 떴어요.`);
+  // 로그를 지켜보는 건 당신이 아닐지도 몰라요...!
 }
 
 bootstrap();

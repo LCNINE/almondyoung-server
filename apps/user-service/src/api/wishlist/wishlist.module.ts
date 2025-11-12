@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common';
 import { WishlistController } from './wishlist.controller';
 import { WishlistService } from './wishlist.service';
-import { DatabaseModule } from 'apps/user-service/database/database.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [],
   controllers: [WishlistController],
   providers: [WishlistService],
 })
