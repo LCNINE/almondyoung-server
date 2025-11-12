@@ -241,12 +241,14 @@ export class EventsModule {
         ]),
       ],
       providers,
-      // exports: providers.filter((p) => p.provide !== APP_FILTER).map((p) => p.provide),
       exports: providers
-        .filter(
-          (p) => p.provide !== APP_FILTER && p.provide !== APP_INTERCEPTOR,
-        )
+        .filter((p) => p.provide !== APP_FILTER)
         .map((p) => p.provide),
+      // exports: providers
+      //   .filter(
+      //     (p) => p.provide !== APP_FILTER && p.provide !== APP_INTERCEPTOR,
+      //   )
+      //   .map((p) => p.provide),
     };
   }
 
