@@ -1,5 +1,8 @@
 import { RequireScopes } from '@app/roles';
-import { AuthorizationGuard, JwtPayload } from '@app/roles/guards/authorization-guard';
+import {
+  AuthorizationGuard,
+  JwtPayload,
+} from '@app/roles/guards/authorization-guard';
 import {
   Body,
   Controller,
@@ -15,11 +18,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { ConsentsService } from './consents.service';
 import { CreateConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('동의 관리')
 @Controller('consents')
@@ -40,7 +43,9 @@ export class ConsentsController {
   })
   @Get()
   @RequireScopes(['user:read'])
-  async getMyConsent(@CurrentUser() user: JwtPayload): Promise<UserConsent | null> {
+  async getMyConsent(
+    @CurrentUser() user: JwtPayload,
+  ): Promise<UserConsent | null> {
     return await this.consentsService.getMyConsent(user.id);
   }
 
