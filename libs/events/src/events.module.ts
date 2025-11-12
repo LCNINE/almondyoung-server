@@ -4,7 +4,14 @@
  * Stream 기반 이벤트 시스템을 위한 NestJS 모듈
  */
 
-import { DynamicModule, Global, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
+import {
+  DynamicModule,
+  Global,
+  Inject,
+  Module,
+  OnApplicationShutdown,
+  Logger,
+} from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { StreamPublisher } from './publishers/stream-publisher.service';
@@ -24,10 +31,10 @@ import { SchemaValidationOptions } from '@packages/event-contracts/types';
  * EventsModule 설정 옵션 (Publisher용)
  */
 export interface EventsModuleOptions {
-  streams: StreamConfig[];             // 여러 stream 지원
-  kafka?: KafkaConfig;                 // 선택: 없으면 환경변수에서 생성
-  serviceName?: string;                // 선택: 기본값은 환경변수 SERVICE_NAME
-  enableDLQ?: boolean;                 // DLQ 활성화 (기본: true)
+  streams: StreamConfig[]; // 여러 stream 지원
+  kafka?: KafkaConfig; // 선택: 없으면 환경변수에서 생성
+  serviceName?: string; // 선택: 기본값은 환경변수 SERVICE_NAME
+  enableDLQ?: boolean; // DLQ 활성화 (기본: true)
   validation?: SchemaValidationOptions; // 스키마 검증 옵션
 }
 
@@ -35,19 +42,19 @@ export interface EventsModuleOptions {
  * Consumer 설정 옵션
  */
 export interface ConsumerModuleOptions {
-  streams: StreamConfig[];             // 여러 stream 구독 지원
+  streams: StreamConfig[]; // 여러 stream 구독 지원
   groupId: string;
-  kafka?: KafkaConfig;                 // 선택: 없으면 환경변수에서 생성
+  kafka?: KafkaConfig; // 선택: 없으면 환경변수에서 생성
 
   // Consumer 세부 설정
-  sessionTimeout?: number;             // ms (기본: 30000)
-  heartbeatInterval?: number;          // ms (기본: 3000)
-  maxPollInterval?: number;            // ms (기본: 300000)
-  autoCommit?: boolean;                // 기본: false
+  sessionTimeout?: number; // ms (기본: 30000)
+  heartbeatInterval?: number; // ms (기본: 3000)
+  maxPollInterval?: number; // ms (기본: 300000)
+  autoCommit?: boolean; // 기본: false
 
   // DLQ 및 재시도 설정
-  enableAutoDLQ?: boolean;             // 자동 DLQ 처리 활성화 (기본: true)
-  
+  enableAutoDLQ?: boolean; // 자동 DLQ 처리 활성화 (기본: true)
+
   // 스키마 검증 설정
   validation?: SchemaValidationOptions; // 스키마 검증 옵션
 }
@@ -69,7 +76,8 @@ export class EventsModule {
   static forRoot(options: EventsModuleOptions): DynamicModule {
     // Kafka 설정 (환경변수 또는 명시적)
     const kafka = options.kafka || this.createKafkaConfigFromEnv();
-    const serviceName = options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
+    const serviceName =
+      options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
     const enableDLQ = options.enableDLQ ?? true;
 
     // 각 stream별 StreamPublisher 제공자 생성
@@ -131,7 +139,7 @@ export class EventsModule {
               producer: {
                 allowAutoTopicCreation: false,
                 transactionTimeout: 30000,
-                idempotent: true,               // 중복 방지
+                idempotent: true, // 중복 방지
                 maxInFlightRequests: 5,
               },
             },
@@ -233,7 +241,12 @@ export class EventsModule {
         ]),
       ],
       providers,
-      exports: providers.filter((p) => p.provide !== APP_FILTER).map((p) => p.provide),
+      // exports: providers.filter((p) => p.provide !== APP_FILTER).map((p) => p.provide),
+      exports: providers
+        .filter(
+          (p) => p.provide !== APP_FILTER && p.provide !== APP_INTERCEPTOR,
+        )
+        .map((p) => p.provide),
     };
   }
 
@@ -315,8 +328,9 @@ export class EventsModule {
     // Confluent Cloud / SASL 설정
     // KAFKA_API_KEY/SECRET (신규 표준) 또는 KAFKA_SASL_USERNAME/PASSWORD (하위 호환)
     const apiKey = process.env.KAFKA_API_KEY || process.env.KAFKA_SASL_USERNAME;
-    const apiSecret = process.env.KAFKA_API_SECRET || process.env.KAFKA_SASL_PASSWORD;
-    
+    const apiSecret =
+      process.env.KAFKA_API_SECRET || process.env.KAFKA_SASL_PASSWORD;
+
     if (apiKey && apiSecret) {
       config.ssl = true;
       config.sasl = {
@@ -359,6 +373,5 @@ export class EventsModule {
 /**
  * Publisher 주입 데코레이터 (단축)
  */
-export const InjectStreamPublisher = EventsModule.InjectStreamPublisher.bind(
-  EventsModule,
-);
+export const InjectStreamPublisher =
+  EventsModule.InjectStreamPublisher.bind(EventsModule);
