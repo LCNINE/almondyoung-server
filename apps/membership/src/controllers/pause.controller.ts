@@ -21,7 +21,6 @@ import {
 import { PauseService } from '../services/pause.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import {
   PauseSubscriptionRequestSchema,
   PauseSubscriptionRequest,
@@ -39,7 +38,8 @@ import {
   ResumeSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
-
+import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
 /**
  * 일시정지 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -61,7 +61,6 @@ export class PauseController {
     summary: '구독 일시정지',
     description: '지정된 기간 동안 구독을 일시정지합니다.',
   })
-  @ApiSecurity('dev-user-id')
   @ApiBody({ type: PauseSubscriptionRequestDto })
   @ApiResponse({
     status: 200,
@@ -78,14 +77,13 @@ export class PauseController {
     description: '일시정지할 활성 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async pauseSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(PauseSubscriptionRequestSchema))
     pauseDto: PauseSubscriptionRequest,
   ) {
     try {
-      const userId = req.user!.userId;
       this.logger.log(`구독 일시정지 요청: ${userId}`);
 
       const result = await this.pauseService.pauseSubscription(
@@ -109,10 +107,7 @@ export class PauseController {
         },
       };
     } catch (error) {
-      this.logger.error(
-        `❌ 구독 일시정지 실패 (${req.user!.userId}):`,
-        error.message,
-      );
+      this.logger.error(`❌ 구독 일시정지 실패 (${userId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
       if (
@@ -170,15 +165,14 @@ export class PauseController {
     description: '재개할 일시정지된 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async resumeSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     // 참고: resumeRequest DTO는 현재 사용되지 않지만, Zod 유효성 검사를 위해 유지합니다.
     @Body(new ZodValidationPipe(ResumeSubscriptionRequestSchema))
     resumeRequest: ResumeSubscriptionRequest,
   ) {
     try {
-      const userId = req.user!.userId;
       this.logger.log(`구독 재개 요청: ${userId}`);
 
       const result = await this.pauseService.resumeSubscription(userId);
@@ -195,10 +189,7 @@ export class PauseController {
         },
       };
     } catch (error) {
-      this.logger.error(
-        `❌ 구독 재개 실패 (${req.user!.userId}):`,
-        error.message,
-      );
+      this.logger.error(`❌ 구독 재개 실패 (${userId}):`, error.message);
 
       // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
       if (
@@ -249,10 +240,9 @@ export class PauseController {
     description: '일시정지 이력을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard)
-  async getPauseHistory(@Req() req: FastifyRequest) {
+  @UseGuards(JwtAuthGuard)
+  async getPauseHistory(@CurrentUser('userId') userId: string) {
     try {
-      const userId = req.user!.userId;
       this.logger.log(`일시정지 이력 조회 요청: ${userId}`);
 
       const history = await this.pauseService.getPauseHistory(userId);
@@ -273,7 +263,7 @@ export class PauseController {
       };
     } catch (error) {
       this.logger.error(
-        `❌ 일시정지 이력 조회 실패 (${req.user!.userId}):`,
+        `❌ 일시정지 이력 조회 실패 (${userId}):`,
         error.message,
       );
 

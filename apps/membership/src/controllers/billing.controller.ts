@@ -13,15 +13,15 @@ import {
   RecurringBillingService,
 } from '../services/billing/recurring-billing.service';
 import { PaymentClientService } from '../services/billing/payment-client.service';
-import { DevAuthGuard } from '../auth/dev-auth.guard';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';
-
+import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
 /**
  * 정기결제 관리 컨트롤러 (관리자 전용)
  */
 @Controller('admin/billing')
-@UseGuards(DevAuthGuard) // 관리자 권한 필요
+
 @UseFilters(SubscriptionExceptionFilter)
 export class BillingController {
   constructor(
