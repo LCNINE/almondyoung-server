@@ -66,7 +66,7 @@ import {
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
+import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
 /**
  * 관리자 운영 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -84,7 +84,7 @@ export class AdminOperationsController {
     private readonly adminOperationsService: AdminOperationsService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
-  ) { }
+  ) {}
 
   /**
    * 공통 에러 처리 헬퍼 메서드
@@ -148,7 +148,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async createTier(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(CreateTierRequestSchema))
     dto: CreateTierRequest,
   ) {
@@ -203,7 +203,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async updateTier(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Param('tierId') tierId: string,
     @Body(new ZodValidationPipe(UpdateTierRequestSchema))
     dto: UpdateTierRequest,
@@ -260,7 +260,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async createPlan(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(CreatePlanRequestSchema))
     dto: CreatePlanRequest,
   ) {
@@ -317,7 +317,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async updatePlan(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(UpdatePlanRequestSchema))
     dto: UpdatePlanRequest,
@@ -377,7 +377,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async deactivatePlan(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Param('planId') planId: string,
     @Body(new ZodValidationPipe(DeactivatePlanRequestSchema))
     dto: DeactivatePlanRequest,
@@ -438,7 +438,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async adjustUserEntitlement(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(ExtendEntitlementRequestSchema))
     dto: ExtendEntitlementRequest,
   ) {
@@ -643,7 +643,7 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   async forceCancelSubscription(
-    @CurrentUser('userId') userId: string,
+    @User('userId') userId: string,
     @Param('contractId') contractId: string,
     @Body(new ZodValidationPipe(ForceCancelSubscriptionRequestSchema))
     dto: ForceCancelSubscriptionRequest,

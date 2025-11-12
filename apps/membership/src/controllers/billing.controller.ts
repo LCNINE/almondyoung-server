@@ -15,8 +15,6 @@ import {
 import { PaymentClientService } from '../services/billing/payment-client.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
 /**
  * 정기결제 관리 컨트롤러 (관리자 전용)
  */
