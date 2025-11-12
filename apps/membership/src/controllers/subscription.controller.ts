@@ -21,7 +21,6 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 // import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
-import { DevAuthGuard } from '../auth/dev-auth.guard'; // 🚨 개발용 임시 가드
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { CancellationReasonReader } from '../services/subscription/cancellation-reason.reader';
@@ -52,6 +51,8 @@ import {
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { FastifyRequest } from 'fastify';
+import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../../libs/auth-core/src/decorators/current-user.decorator';
 /**
  * 구독 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -99,11 +100,11 @@ export class SubscriptionController {
     description: '활성 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
-  async getCurrentSubscriptionDetails(@Req() req: FastifyRequest) {
-    // 임시로 쿼리 파라미터에서 userId 가져오기
-    const userId = (req.query as any).userId || 'test_user_001';
-    return this.subscriptionService.getCurrentSubscriptionDetails(userId);
+  @UseGuards(JwtAuthGuard)
+  async getCurrentSubscriptionDetails(@CurrentUser('userId') userId: string) {
+    console.log('userId', userId);
+    return userId
+    // return this.subscriptionService.getCurrentSubscriptionDetails(userId);
   }
   /**
    * 구독 생성
@@ -138,12 +139,10 @@ export class SubscriptionController {
   })
   // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
   async createSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
   ) {
-    // 임시로 쿼리 파라미터에서 userId 가져오기
-    const userId = (req.query as any).userId || 'test_user_001';
     return this.subscriptionService.createSubscription(
       userId,
       createSubscriptionDto.planId,
@@ -176,13 +175,12 @@ export class SubscriptionController {
     description: '활성 구독 또는 플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
+  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async upgradeSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
     upgradeSubscriptionDto: UpgradeSubscriptionRequest,
   ) {
-    const userId = req.user!.userId;
     return this.subscriptionService.upgradeSubscription(
       userId,
       upgradeSubscriptionDto.newPlanId,
@@ -215,13 +213,12 @@ export class SubscriptionController {
     description: '활성 구독 또는 플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
+  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async downgradeSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
   ) {
-    const userId = req.user!.userId;
     // 참고: 서비스 로직에 downgradeSubscription 메소드가 필요합니다.
     return this.subscriptionService.upgradeSubscription(
       userId,
@@ -238,7 +235,6 @@ export class SubscriptionController {
     summary: '구독 취소',
     description: '현재 활성 구독을 취소합니다.',
   })
-  @ApiSecurity('dev-user-id')
   @ApiBody({ type: CancelSubscriptionRequestDto })
   @ApiResponse({
     status: 200,
@@ -250,14 +246,12 @@ export class SubscriptionController {
     description: '취소할 활성 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
+  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async cancelSubscription(
-    @Req() req: FastifyRequest,
+    @CurrentUser('userId') userId: string,
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
   ) {
-    const userId = req.user!.userId;
-
     try {
       return await this.cancellationService.cancelSubscription(
         userId,
@@ -284,7 +278,6 @@ export class SubscriptionController {
     summary: '구독 이력 조회',
     description: '사용자의 모든 구독 이력을 조회합니다.',
   })
-  @ApiSecurity('dev-user-id')
   @ApiResponse({
     status: 200,
     description: '구독 이력 조회 성공',
@@ -295,9 +288,8 @@ export class SubscriptionController {
     description: '구독 이력을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(DevAuthGuard) // 🚨 임시 가드 사용
-  async getSubscriptionHistory(@Req() req: FastifyRequest) {
-    const userId = req.user!.userId;
+  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
+  async getSubscriptionHistory(@CurrentUser('userId') userId: string) {
     return this.subscriptionService.getSubscriptionHistory(userId);
   }
 
@@ -314,7 +306,8 @@ export class SubscriptionController {
     description: '취소 이유 목록 조회 성공',
     type: CancellationReasonsResponseDto,
   })
-  async getCancellationReasons() {
+  @UseGuards(JwtAuthGuard)
+  async getCancellationReasons(@CurrentUser('userId') userId: string) {
     const reasons = await this.cancellationReasonReader.findActiveReasons();
     return {
       reasons,
