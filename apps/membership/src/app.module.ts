@@ -43,7 +43,8 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateMembershipEnv,
-      envFilePath: ['apps/membership/.env', '.env'], // membership .env 우선, 루트 .env는 fallback
+      ignoreEnvFile: process.env.NODE_ENV === 'production', // 프로덕션에서는 Railway 환경 변수 사용
+      envFilePath: ['apps/membership/.env', '.env'], // 로컬 개발용
       expandVariables: true,
     }),
     AuthCoreModule.forRootAsync(),
@@ -99,4 +100,4 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     PaymentClientService,
   ],
 })
-export class AppModule { }
+export class AppModule {}
