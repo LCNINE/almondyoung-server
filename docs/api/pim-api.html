@@ -73,14 +73,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CreateCategoryDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "카테고리 생성 성공"
+            "description": "카테고리 생성 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -110,7 +117,14 @@
         ],
         "responses": {
           "200": {
-            "description": "카테고리 트리 조회 성공"
+            "description": "카테고리 트리 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryTreeResponseDto"
+                }
+              }
+            }
           }
         },
         "summary": "카테고리 트리 조회",
@@ -140,14 +154,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateCategoryDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "카테고리 수정 성공"
+            "description": "카테고리 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -216,7 +237,14 @@
         ],
         "responses": {
           "200": {
-            "description": "카테고리 조회 성공"
+            "description": "카테고리 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryDetailResponseDto"
+                }
+              }
+            }
           },
           "404": {
             "description": "카테고리를 찾을 수 없음"
@@ -245,7 +273,17 @@
         ],
         "responses": {
           "200": {
-            "description": "하위 카테고리 조회 성공"
+            "description": "하위 카테고리 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryResponseDto"
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "부모 카테고리를 찾을 수 없음"
@@ -274,7 +312,14 @@
         ],
         "responses": {
           "200": {
-            "description": "카테고리 경로 조회 성공"
+            "description": "카테고리 경로 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryPathResponseDto"
+                }
+              }
+            }
           },
           "404": {
             "description": "카테고리를 찾을 수 없음"
@@ -312,7 +357,14 @@
         ],
         "responses": {
           "200": {
-            "description": "카테고리 이동 성공"
+            "description": "카테고리 이동 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "순환 참조 또는 자기 자신으로 이동 시도"
@@ -327,9 +379,321 @@
         ]
       }
     },
+    "/categories/{id}/products": {
+      "put": {
+        "description": "여러 상품을 특정 카테고리로 일괄 이동시킵니다. 기존 카테고리 관계는 삭제되고 새로운 카테고리로 대체됩니다.",
+        "operationId": "ProductCategoriesController_moveProductsToCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "대상 카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "description": "이동시킬 상품 마스터 ID 배열",
+                    "example": [
+                      "550e8400-e29b-41d4-a716-446655440000",
+                      "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                    ]
+                  }
+                },
+                "required": [
+                  "productIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "상품 이동 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "404": {
+            "description": "카테고리 또는 상품을 찾을 수 없음"
+          }
+        },
+        "summary": "상품들을 카테고리로 이동",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
+    "/categories/{id}/products/add": {
+      "post": {
+        "description": "여러 상품을 특정 카테고리에 추가로 연결합니다. 기존 카테고리 관계는 유지됩니다 (다대다 관계 지원).",
+        "operationId": "ProductCategoriesController_addProductsToCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "대상 카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "productIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "description": "추가할 상품 마스터 ID 배열",
+                    "example": [
+                      "550e8400-e29b-41d4-a716-446655440000",
+                      "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                    ]
+                  }
+                },
+                "required": [
+                  "productIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "상품 추가 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "404": {
+            "description": "카테고리 또는 상품을 찾을 수 없음"
+          }
+        },
+        "summary": "상품들을 카테고리에 추가",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
+    "/categories/{id}/display-settings": {
+      "patch": {
+        "description": "카테고리의 표시 관련 설정을 업데이트합니다.",
+        "operationId": "ProductCategoriesController_updateDisplaySettings",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDisplaySettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "표시 설정 업데이트 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "카테고리를 찾을 수 없음"
+          }
+        },
+        "summary": "카테고리 표시 설정 업데이트",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
+    "/categories/{id}/seo": {
+      "patch": {
+        "description": "카테고리의 SEO 관련 설정을 업데이트합니다.",
+        "operationId": "ProductCategoriesController_updateSeoConfig",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSeoConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SEO 설정 업데이트 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "카테고리를 찾을 수 없음"
+          }
+        },
+        "summary": "카테고리 SEO 설정 업데이트",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
+    "/categories/{id}/template": {
+      "patch": {
+        "description": "카테고리의 템플릿 관련 설정을 업데이트합니다.",
+        "operationId": "ProductCategoriesController_updateTemplateConfig",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "템플릿 설정 업데이트 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "카테고리를 찾을 수 없음"
+          }
+        },
+        "summary": "카테고리 템플릿 설정 업데이트",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
+    "/categories/{id}/visibility": {
+      "patch": {
+        "description": "카테고리의 표시 여부를 업데이트합니다.",
+        "operationId": "ProductCategoriesController_updateVisibility",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "카테고리 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "visible": {
+                    "type": "boolean",
+                    "description": "표시 여부",
+                    "example": true
+                  }
+                },
+                "required": [
+                  "visible"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "표시 여부 업데이트 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "카테고리를 찾을 수 없음"
+          }
+        },
+        "summary": "카테고리 표시 여부 업데이트",
+        "tags": [
+          "Categories"
+        ]
+      }
+    },
     "/masters": {
       "post": {
-        "description": "새로운 제품 마스터를 생성합니다.",
+        "description": "새로운 제품 마스터를 생성합니다. 상품 마스터는 즉시 생성되고, 옵션 처리는 백그라운드에서 비동기로 처리됩니다.",
         "operationId": "ProductMastersController_createMaster",
         "parameters": [],
         "requestBody": {
@@ -338,14 +702,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CreateMasterDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "제품 마스터 생성 성공"
+            "description": "제품 마스터 생성 성공 (옵션 처리는 백그라운드에서 진행)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductMasterDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터 (name, basePrice, pricingStrategy 필수)"
@@ -354,7 +725,7 @@
             "description": "서버 오류"
           }
         },
-        "summary": "제품 마스터 생성",
+        "summary": "제품 마스터 생성 (최적화됨)",
         "tags": [
           "Product Masters"
         ]
@@ -429,7 +800,14 @@
         ],
         "responses": {
           "200": {
-            "description": "제품 마스터 목록 조회 성공"
+            "description": "제품 마스터 목록 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterListResponseDto"
+                }
+              }
+            }
           },
           "500": {
             "description": "서버 오류"
@@ -443,7 +821,7 @@
     },
     "/masters/{id}": {
       "get": {
-        "description": "특정 제품 마스터의 상세 정보를 조회합니다.",
+        "description": "특정 제품 마스터의 상세 정보와 연결된 이미지들을 조회합니다.",
         "operationId": "ProductMastersController_getMasterDetail",
         "parameters": [
           {
@@ -458,7 +836,110 @@
         ],
         "responses": {
           "200": {
-            "description": "제품 마스터 상세 조회 성공"
+            "description": "제품 마스터 상세 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "brand": {
+                      "type": "string"
+                    },
+                    "basePrice": {
+                      "type": "number"
+                    },
+                    "pricingStrategy": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "isWholesaleOnly": {
+                      "type": "boolean"
+                    },
+                    "isMembershipOnly": {
+                      "type": "boolean"
+                    },
+                    "membershipPrice": {
+                      "type": "number"
+                    },
+                    "wholesalePrice": {
+                      "type": "number"
+                    },
+                    "images": {
+                      "type": "object",
+                      "properties": {
+                        "primary": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            },
+                            "originalName": {
+                              "type": "string"
+                            },
+                            "fileName": {
+                              "type": "string"
+                            },
+                            "mimeType": {
+                              "type": "string"
+                            },
+                            "size": {
+                              "type": "number"
+                            }
+                          },
+                          "nullable": true
+                        },
+                        "additional": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "originalName": {
+                                "type": "string"
+                              },
+                              "fileName": {
+                                "type": "string"
+                              },
+                              "sortOrder": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "optionGroups": {
+                      "type": "array"
+                    },
+                    "variants": {
+                      "type": "array"
+                    },
+                    "channelProducts": {
+                      "type": "array"
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "제품 마스터를 찾을 수 없음"
@@ -467,7 +948,7 @@
             "description": "서버 오류"
           }
         },
-        "summary": "제품 마스터 상세 조회",
+        "summary": "제품 마스터 상세 조회 (이미지 포함)",
         "tags": [
           "Product Masters"
         ]
@@ -492,14 +973,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateProductMasterDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "제품 마스터 수정 성공"
+            "description": "제품 마스터 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterUpdateResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -517,7 +1005,7 @@
         ]
       },
       "delete": {
-        "description": "제품 마스터를 삭제합니다.",
+        "description": "제품 마스터를 소프트 삭제합니다. 실제로 데이터는 삭제되지 않으며 복원이 가능합니다.",
         "operationId": "ProductMastersController_deleteMaster",
         "parameters": [
           {
@@ -532,7 +1020,7 @@
         ],
         "responses": {
           "200": {
-            "description": "제품 마스터 삭제 성공"
+            "description": "제품 마스터 소프트 삭제 성공"
           },
           "400": {
             "description": "삭제 요구사항 불충족"
@@ -544,7 +1032,93 @@
             "description": "서버 오류"
           }
         },
-        "summary": "제품 마스터 삭제",
+        "summary": "제품 마스터 소프트 삭제",
+        "tags": [
+          "Product Masters"
+        ]
+      }
+    },
+    "/masters/deleted": {
+      "get": {
+        "description": "소프트 삭제된 제품 마스터 목록을 조회합니다.",
+        "operationId": "ProductMastersController_getDeleted",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "삭제된 제품 마스터 목록 조회 성공"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "삭제된 제품 마스터 목록 조회",
+        "tags": [
+          "Product Masters"
+        ]
+      }
+    },
+    "/masters/{id}/restore": {
+      "post": {
+        "description": "소프트 삭제된 제품 마스터를 복원합니다.",
+        "operationId": "ProductMastersController_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "복원할 제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "제품 마스터 복원 성공"
+          },
+          "400": {
+            "description": "제품이 삭제되지 않았음"
+          },
+          "404": {
+            "description": "제품 마스터를 찾을 수 없음"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "제품 마스터 복원",
+        "tags": [
+          "Product Masters"
+        ]
+      }
+    },
+    "/masters/{id}/permanent": {
+      "delete": {
+        "description": "제품 마스터를 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+        "operationId": "ProductMastersController_hardDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "영구 삭제할 제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "제품 마스터 영구 삭제 성공"
+          },
+          "404": {
+            "description": "제품 마스터를 찾을 수 없음"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "제품 마스터 영구 삭제",
         "tags": [
           "Product Masters"
         ]
@@ -567,7 +1141,14 @@
         ],
         "responses": {
           "200": {
-            "description": "가격 미리보기 성공"
+            "description": "가격 미리보기 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricePreviewDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -606,19 +1187,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "pricingStrategy": {
-                    "type": "string",
-                    "description": "새로운 가격 전략"
-                  },
-                  "migrationData": {
-                    "description": "마이그레이션 데이터 (선택사항)"
-                  }
-                },
-                "required": [
-                  "pricingStrategy"
-                ]
+                "$ref": "#/components/schemas/ChangePricingStrategyDto"
               }
             }
           }
@@ -696,7 +1265,14 @@
         ],
         "responses": {
           "200": {
-            "description": "제품 변형 목록 조회 성공"
+            "description": "제품 변형 목록 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VariantListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -728,7 +1304,14 @@
         ],
         "responses": {
           "200": {
-            "description": "제품 변형 상세 조회 성공"
+            "description": "제품 변형 상세 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VariantWithPriceDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -765,14 +1348,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateProductVariantDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "제품 변형 수정 성공"
+            "description": "제품 변형 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VariantUpdateResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -801,7 +1391,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateVariantBulkDto"
               }
             }
           }
@@ -847,15 +1437,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "variantId": {
-                      "type": "string"
-                    },
-                    "price": {
-                      "type": "number"
-                    }
-                  }
+                  "$ref": "#/components/schemas/VariantPriceResponseDto"
                 }
               }
             }
@@ -897,16 +1479,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "description": "새로운 상태"
-                  }
-                },
-                "required": [
-                  "status"
-                ]
+                "$ref": "#/components/schemas/UpdateVariantStatusDto"
               }
             }
           }
@@ -942,14 +1515,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/CreateChannelProductDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "채널별 제품 생성 성공"
+            "description": "채널별 제품 생성 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelProductDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터 (masterId, channelId 필수)"
@@ -984,7 +1564,17 @@
         ],
         "responses": {
           "200": {
-            "description": "마스터별 채널 제품 조회 성공"
+            "description": "마스터별 채널 제품 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelProductWithChannelDto"
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1052,7 +1642,14 @@
         ],
         "responses": {
           "200": {
-            "description": "채널별 제품 조회 성공"
+            "description": "채널별 제품 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelProductListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1084,7 +1681,14 @@
         ],
         "responses": {
           "200": {
-            "description": "채널 제품 상세 조회 성공"
+            "description": "채널 제품 상세 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelProductDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1121,14 +1725,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateChannelProductDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "채널 제품 수정 성공"
+            "description": "채널 제품 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelProductDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -1205,7 +1816,14 @@
         ],
         "responses": {
           "200": {
-            "description": "병합된 채널 제품 조회 성공"
+            "description": "병합된 채널 제품 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergedChannelProductDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1244,16 +1862,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "description": "새로운 제품 이름"
-                  }
-                },
-                "required": [
-                  "name"
-                ]
+                "$ref": "#/components/schemas/OverrideProductNameDto"
               }
             }
           }
@@ -1299,16 +1908,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "isActive": {
-                    "type": "boolean",
-                    "description": "활성 여부"
-                  }
-                },
-                "required": [
-                  "isActive"
-                ]
+                "$ref": "#/components/schemas/SetChannelProductActiveDto"
               }
             }
           }
@@ -1344,14 +1944,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/NewSalesChannelDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "판매 채널 생성 성공"
+            "description": "판매 채널 생성 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesChannelDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터 (type, name 필수)"
@@ -1417,7 +2024,14 @@
         ],
         "responses": {
           "200": {
-            "description": "판매 채널 목록 조회 성공"
+            "description": "판매 채널 목록 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelListResponseDto"
+                }
+              }
+            }
           },
           "500": {
             "description": "서버 오류"
@@ -1436,7 +2050,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "활성 판매 채널 조회 성공"
+            "description": "활성 판매 채널 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SalesChannelDto"
+                  }
+                }
+              }
+            }
           },
           "500": {
             "description": "서버 오류"
@@ -1465,7 +2089,14 @@
         ],
         "responses": {
           "200": {
-            "description": "판매 채널 상세 조회 성공"
+            "description": "판매 채널 상세 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesChannelDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1502,14 +2133,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/UpdateSalesChannelDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "판매 채널 수정 성공"
+            "description": "판매 채널 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesChannelDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청 데이터"
@@ -1584,16 +2222,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "isActive": {
-                    "type": "boolean",
-                    "description": "활성 여부"
-                  }
-                },
-                "required": [
-                  "isActive"
-                ]
+                "$ref": "#/components/schemas/SetChannelActiveDto"
               }
             }
           }
@@ -1635,7 +2264,14 @@
         ],
         "responses": {
           "200": {
-            "description": "타입별 판매 채널 조회 성공"
+            "description": "타입별 판매 채널 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesChannelDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "잘못된 요청"
@@ -1664,19 +2300,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "description": "채널 타입"
-                  },
-                  "config": {
-                    "description": "채널 설정 데이터"
-                  }
-                },
-                "required": [
-                  "type"
-                ]
+                "$ref": "#/components/schemas/ValidateChannelConfigDto"
               }
             }
           }
@@ -1687,18 +2311,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "isValid": {
-                      "type": "boolean"
-                    },
-                    "errors": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/ChannelValidationResponseDto"
                 }
               }
             }
@@ -1715,6 +2328,872 @@
           "Sales Channels"
         ]
       }
+    },
+    "/uploads/images": {
+      "post": {
+        "description": "Fastify multipart를 사용한 이미지 파일 업로드",
+        "operationId": "FileUploadController_uploadImage",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "이미지 업로드 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "uploadId": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "fileName": {
+                          "type": "string"
+                        },
+                        "originalName": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 파일 형식 또는 크기"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "이미지 파일 업로드",
+        "tags": [
+          "File Upload"
+        ]
+      }
+    },
+    "/uploads/url": {
+      "post": {
+        "description": "URL에서 이미지를 다운로드하여 저장",
+        "operationId": "FileUploadController_uploadFromUrl",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "URL 이미지 다운로드 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "uploadId": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "fileName": {
+                          "type": "string"
+                        },
+                        "originalName": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 URL 또는 이미지 형식"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "URL에서 이미지 다운로드",
+        "tags": [
+          "File Upload"
+        ]
+      }
+    },
+    "/masters/{id}/submit-approval": {
+      "post": {
+        "description": "제품을 승인 대기 상태로 전환합니다.",
+        "operationId": "ProductApprovalController_submitForApproval",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitForApprovalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "승인 요청 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 (제품이 draft 상태가 아님)"
+          },
+          "404": {
+            "description": "제품을 찾을 수 없음"
+          }
+        },
+        "summary": "제품 승인 요청",
+        "tags": [
+          "Product Approval"
+        ]
+      }
+    },
+    "/masters/{id}/approve": {
+      "post": {
+        "description": "제품을 승인하고 활성화합니다.",
+        "operationId": "ProductApprovalController_approve",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "제품 승인 성공"
+          },
+          "400": {
+            "description": "잘못된 요청"
+          },
+          "404": {
+            "description": "제품을 찾을 수 없음"
+          }
+        },
+        "summary": "제품 승인",
+        "tags": [
+          "Product Approval"
+        ]
+      }
+    },
+    "/masters/{id}/reject": {
+      "post": {
+        "description": "제품을 거부하고 거부 사유를 기록합니다.",
+        "operationId": "ProductApprovalController_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "제품 거부 성공"
+          },
+          "400": {
+            "description": "잘못된 요청"
+          },
+          "404": {
+            "description": "제품을 찾을 수 없음"
+          }
+        },
+        "summary": "제품 거부",
+        "tags": [
+          "Product Approval"
+        ]
+      }
+    },
+    "/masters/pending-approval": {
+      "get": {
+        "description": "승인 대기 중인 제품 마스터 목록을 조회합니다.",
+        "operationId": "ProductApprovalController_getPendingApprovals",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "목록 조회 성공"
+          }
+        },
+        "summary": "승인 대기 중인 제품 목록",
+        "tags": [
+          "Product Approval"
+        ]
+      }
+    },
+    "/masters/{id}/approval-history": {
+      "get": {
+        "description": "제품의 승인 이력을 조회합니다.",
+        "operationId": "ProductApprovalController_getApprovalHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "이력 조회 성공"
+          }
+        },
+        "summary": "제품 승인 이력",
+        "tags": [
+          "Product Approval"
+        ]
+      }
+    },
+    "/masters/bulk/update": {
+      "post": {
+        "description": "여러 제품을 한 번에 수정합니다.",
+        "operationId": "ProductBulkController_bulkUpdate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "일괄 수정 성공"
+          },
+          "400": {
+            "description": "잘못된 요청"
+          }
+        },
+        "summary": "제품 일괄 수정",
+        "tags": [
+          "Product Bulk Operations"
+        ]
+      }
+    },
+    "/masters/bulk/delete": {
+      "post": {
+        "description": "여러 제품을 한 번에 소프트 삭제합니다.",
+        "operationId": "ProductBulkController_bulkDelete",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkDeleteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "일괄 삭제 성공"
+          },
+          "400": {
+            "description": "잘못된 요청"
+          }
+        },
+        "summary": "제품 일괄 소프트 삭제",
+        "tags": [
+          "Product Bulk Operations"
+        ]
+      }
+    },
+    "/masters/bulk/restore": {
+      "post": {
+        "description": "여러 삭제된 제품을 한 번에 복원합니다.",
+        "operationId": "ProductBulkController_bulkRestore",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRestoreDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "일괄 복원 성공"
+          },
+          "400": {
+            "description": "잘못된 요청"
+          }
+        },
+        "summary": "제품 일괄 복원",
+        "tags": [
+          "Product Bulk Operations"
+        ]
+      }
+    },
+    "/api/pim/products/csv/template": {
+      "get": {
+        "description": "제품 일괄 등록을 위한 CSV 템플릿 파일을 다운로드합니다.",
+        "operationId": "ProductCsvController_downloadTemplate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "CSV 템플릿 파일 다운로드 성공",
+            "headers": {
+              "Content-Type": {
+                "description": "text/csv; charset=utf-8",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "attachment; filename=product-import-template.csv",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "CSV 템플릿 다운로드",
+        "tags": [
+          "Product CSV"
+        ]
+      }
+    },
+    "/api/pim/products/bulk-import": {
+      "post": {
+        "description": "CSV 파일을 업로드하여 여러 제품을 한 번에 등록합니다.",
+        "operationId": "ProductCsvController_bulkImport",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "CSV 파일 (product-import-template.csv 형식)"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "작업을 수행하는 사용자 ID"
+                  }
+                },
+                "required": [
+                  "file",
+                  "userId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "제품 일괄 등록 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "imported": {
+                      "type": "number"
+                    },
+                    "failed": {
+                      "type": "number"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "파일이 없거나 userId가 없음"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "CSV 파일로 제품 일괄 등록",
+        "tags": [
+          "Product CSV"
+        ]
+      }
+    },
+    "/api/pim/products/export": {
+      "get": {
+        "description": "제품 목록을 CSV 파일로 내보냅니다. productIds를 지정하면 해당 제품만, 없으면 전체 제품을 내보냅니다.",
+        "operationId": "ProductCsvController_exportProducts",
+        "parameters": [
+          {
+            "name": "productIds",
+            "required": false,
+            "in": "query",
+            "description": "내보낼 제품 ID 목록 (쉼표로 구분)",
+            "schema": {
+              "example": "550e8400-e29b-41d4-a716-446655440000,6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV 파일 다운로드 성공",
+            "headers": {
+              "Content-Type": {
+                "description": "text/csv; charset=utf-8",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "attachment; filename=products-export-YYYY-MM-DD.csv",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "제품 목록 CSV 내보내기",
+        "tags": [
+          "Product CSV"
+        ]
+      }
+    },
+    "/api/pim/audit/products/{id}": {
+      "get": {
+        "description": "특정 제품의 모든 변경 이력을 조회합니다.",
+        "operationId": "ProductAuditController_getProductAuditHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "제품 마스터 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "감사 이력 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "productId": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": "string"
+                      },
+                      "changes": {
+                        "type": "object"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "제품을 찾을 수 없음"
+          }
+        },
+        "summary": "제품 감사 이력 조회",
+        "tags": [
+          "Product Audit"
+        ]
+      }
+    },
+    "/api/pim/audit/recent": {
+      "get": {
+        "description": "최근 변경된 감사 로그를 조회합니다.",
+        "operationId": "ProductAuditController_getRecentAuditLogs",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "조회할 로그 수 (기본값: 100)",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "최근 감사 로그 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "productId": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "최근 감사 로그 조회",
+        "tags": [
+          "Product Audit"
+        ]
+      }
+    },
+    "/api/pim/audit/by-user/{userId}": {
+      "get": {
+        "description": "특정 사용자가 수행한 모든 변경 이력을 조회합니다.",
+        "operationId": "ProductAuditController_getAuditLogsByUser",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "사용자 ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "조회할 로그 수 (기본값: 100)",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "사용자별 감사 로그 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "productId": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "사용자별 감사 로그 조회",
+        "tags": [
+          "Product Audit"
+        ]
+      }
+    },
+    "/api/pim/audit/by-action/{action}": {
+      "get": {
+        "description": "특정 액션(생성, 수정, 삭제 등)에 대한 감사 로그를 조회합니다.",
+        "operationId": "ProductAuditController_getAuditLogsByAction",
+        "parameters": [
+          {
+            "name": "action",
+            "required": true,
+            "in": "path",
+            "description": "액션 타입 (예: CREATE, UPDATE, DELETE)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "조회할 로그 수 (기본값: 100)",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "액션별 감사 로그 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "productId": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "액션별 감사 로그 조회",
+        "tags": [
+          "Product Audit"
+        ]
+      }
+    },
+    "/dashboard/metrics": {
+      "get": {
+        "description": "제품 통계 정보를 조회합니다. 전체 제품 수, 오늘 등록 제품 수, 상태별/승인상태별 제품 수 등을 포함합니다.",
+        "operationId": "DashboardController_getMetrics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "메트릭 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardMetricsResponseDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "대시보드 메트릭 조회",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/dashboard/top-products": {
+      "get": {
+        "description": "활성화된 제품 중 상위 N개를 조회합니다. 현재는 최근 등록순이며, 향후 주문 서비스 연동 시 판매량 기준으로 변경됩니다.",
+        "operationId": "DashboardController_getTopProducts",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "조회할 제품 수 (기본값: 5)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 5,
+              "example": 5,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "상위 제품 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TopProductItemDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 (limit 값이 유효하지 않음)"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "상위 제품 목록 조회",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/dashboard/sales-trends": {
+      "get": {
+        "description": "지정된 기간 동안의 매출 트렌드 데이터를 조회합니다. 현재는 주문 서비스 연동 대기중으로 빈 구조를 반환합니다.",
+        "operationId": "DashboardController_getSalesTrends",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "조회할 기간 (일 단위, 기본값: 30)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 365,
+              "default": 30,
+              "example": 30,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "매출 트렌드 조회 성공 (현재는 빈 데이터)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesTrendResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 (days 값이 유효하지 않음)"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "매출 트렌드 조회",
+        "tags": [
+          "Dashboard"
+        ]
+      }
     }
   },
   "info": {
@@ -1726,7 +3205,3505 @@
   "tags": [],
   "servers": [],
   "components": {
-    "schemas": {}
+    "schemas": {
+      "CreateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "description": "카테고리 설명",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL 슬러그",
+            "type": "string"
+          },
+          "imageUrl": {
+            "description": "카테고리 이미지 URL",
+            "type": "string",
+            "format": "uri"
+          },
+          "parentId": {
+            "description": "부모 카테고리 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "sortOrder": {
+            "description": "정렬 순서",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CategoryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "카테고리 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string",
+            "x-nestjs_zod-has-null": true
+          },
+          "description": {
+            "description": "카테고리 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "slug": {
+            "description": "URL 슬러그",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "imageUrl": {
+            "description": "카테고리 이미지 URL",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "parentId": {
+            "description": "부모 카테고리 ID (UUID 형식)",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "sortOrder": {
+            "description": "정렬 순서",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "createdAt": {
+            "description": "생성일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "updatedAt": {
+            "description": "수정일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "slug",
+          "imageUrl",
+          "parentId",
+          "sortOrder",
+          "isActive",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "description": "카테고리 설명",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL 슬러그",
+            "type": "string"
+          },
+          "imageUrl": {
+            "description": "카테고리 이미지 URL",
+            "type": "string",
+            "format": "uri"
+          },
+          "sortOrder": {
+            "description": "정렬 순서",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean"
+          }
+        }
+      },
+      "CategoryDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "카테고리 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "카테고리 이름",
+            "type": "string",
+            "x-nestjs_zod-has-null": true
+          },
+          "description": {
+            "description": "카테고리 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "slug": {
+            "description": "URL 슬러그",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "imageUrl": {
+            "description": "카테고리 이미지 URL",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "parentId": {
+            "description": "부모 카테고리 ID (UUID 형식)",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "sortOrder": {
+            "description": "정렬 순서",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "createdAt": {
+            "description": "생성일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "updatedAt": {
+            "description": "수정일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "children": {
+            "description": "하위 카테고리 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "카테고리 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "name": {
+                  "description": "카테고리 이름",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "카테고리 설명",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "description": "URL 슬러그",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "imageUrl": {
+                  "description": "카테고리 이미지 URL",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "parentId": {
+                  "description": "부모 카테고리 ID (UUID 형식)",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sortOrder": {
+                  "description": "정렬 순서",
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "isActive": {
+                  "description": "활성 상태",
+                  "type": "boolean"
+                },
+                "createdAt": {
+                  "description": "생성일시 (ISO 8601 형식)",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "updatedAt": {
+                  "description": "수정일시 (ISO 8601 형식)",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "description",
+                "slug",
+                "imageUrl",
+                "parentId",
+                "sortOrder",
+                "isActive",
+                "createdAt",
+                "updatedAt"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "productCount": {
+            "description": "해당 카테고리의 제품 수",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "slug",
+          "imageUrl",
+          "parentId",
+          "sortOrder",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+          "children",
+          "productCount"
+        ]
+      },
+      "CategoryTreeResponseDto": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "description": "카테고리 트리",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "x-nestjs_zod-parent-has-refs": true,
+            "x-nestjs_zod-$defs": {
+              "__schema0": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "description": "카테고리 ID (UUID 형식)",
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "description": "카테고리 이름",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "카테고리 설명",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "description": "URL 슬러그",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "imageUrl": {
+                    "description": "카테고리 이미지 URL",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentId": {
+                    "description": "부모 카테고리 ID (UUID 형식)",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sortOrder": {
+                    "description": "정렬 순서",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "isActive": {
+                    "description": "활성 상태",
+                    "type": "boolean"
+                  },
+                  "children": {
+                    "description": "하위 카테고리 목록",
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "description",
+                  "slug",
+                  "imageUrl",
+                  "parentId",
+                  "sortOrder",
+                  "isActive",
+                  "children"
+                ]
+              }
+            }
+          },
+          "maxDepth": {
+            "description": "최대 깊이",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-parent-has-refs": true,
+            "x-nestjs_zod-$defs": {
+              "__schema0": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "description": "카테고리 ID (UUID 형식)",
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "name": {
+                    "description": "카테고리 이름",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "카테고리 설명",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "description": "URL 슬러그",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "imageUrl": {
+                    "description": "카테고리 이미지 URL",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentId": {
+                    "description": "부모 카테고리 ID (UUID 형식)",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sortOrder": {
+                    "description": "정렬 순서",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "isActive": {
+                    "description": "활성 상태",
+                    "type": "boolean"
+                  },
+                  "children": {
+                    "description": "하위 카테고리 목록",
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "description",
+                  "slug",
+                  "imageUrl",
+                  "parentId",
+                  "sortOrder",
+                  "isActive",
+                  "children"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "categories"
+        ]
+      },
+      "CategoryPathResponseDto": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "description": "카테고리 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "path": {
+            "description": "루트부터 현재 카테고리까지의 경로",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "카테고리 ID",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "name": {
+                  "description": "카테고리 이름",
+                  "type": "string"
+                },
+                "slug": {
+                  "description": "URL 슬러그",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "slug"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "depth": {
+            "description": "카테고리 깊이",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "categoryId",
+          "path",
+          "depth"
+        ]
+      },
+      "MenuPositionsDto": {
+        "type": "object",
+        "properties": {
+          "leftSide": {
+            "type": "boolean",
+            "description": "좌측 메뉴에 표시 여부",
+            "example": true
+          },
+          "topMenu": {
+            "type": "boolean",
+            "description": "상단 메뉴에 표시 여부",
+            "example": true
+          },
+          "footerMenu": {
+            "type": "boolean",
+            "description": "푸터 메뉴에 표시 여부",
+            "example": false
+          }
+        }
+      },
+      "UpdateDisplaySettingsDto": {
+        "type": "object",
+        "properties": {
+          "showOnMainCategory": {
+            "type": "boolean",
+            "description": "메인 카테고리에 표시 여부",
+            "example": true
+          },
+          "pcAndMobile": {
+            "type": "boolean",
+            "description": "PC와 모바일 모두 표시",
+            "example": true
+          },
+          "mobileOnly": {
+            "type": "boolean",
+            "description": "모바일 전용 표시",
+            "example": false
+          },
+          "productDisplayOrder": {
+            "type": "string",
+            "description": "상품 표시 순서",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "example": "asc"
+          },
+          "defaultSortField": {
+            "type": "string",
+            "description": "기본 정렬 필드",
+            "example": "createdAt"
+          },
+          "menuPositions": {
+            "description": "메뉴 위치 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MenuPositionsDto"
+              }
+            ]
+          }
+        }
+      },
+      "UpdateSeoConfigDto": {
+        "type": "object",
+        "properties": {
+          "browserTitle": {
+            "type": "string",
+            "description": "브라우저 제목",
+            "example": "뷰티 제품 - 알몬드영"
+          },
+          "metaAuthor": {
+            "type": "string",
+            "description": "Meta 작성자",
+            "example": "알몬드영"
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Meta 설명",
+            "example": "최고급 뷰티 제품을 만나보세요"
+          },
+          "metaKeywords": {
+            "description": "Meta 키워드 배열",
+            "example": [
+              "뷰티",
+              "화장품",
+              "스킨케어"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "showInSearchEngines": {
+            "type": "boolean",
+            "description": "검색 엔진에 노출 여부",
+            "example": true
+          }
+        }
+      },
+      "UpdateTemplateConfigDto": {
+        "type": "object",
+        "properties": {
+          "templateType": {
+            "type": "string",
+            "description": "템플릿 타입",
+            "enum": [
+              "default",
+              "custom"
+            ],
+            "example": "default"
+          },
+          "htmlContent": {
+            "type": "string",
+            "description": "커스텀 HTML 컨텐츠",
+            "example": "<div class=\"custom-category\">Custom content</div>"
+          },
+          "customCss": {
+            "type": "string",
+            "description": "커스텀 CSS",
+            "example": ".custom-category { padding: 20px; }"
+          }
+        }
+      },
+      "CreateMasterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "제품 마스터 이름",
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "description": "제품 설명",
+            "type": "string"
+          },
+          "brand": {
+            "description": "브랜드명",
+            "type": "string"
+          },
+          "thumbnail": {
+            "description": "썸네일 이미지 URL (내부 또는 외부)",
+            "type": "string"
+          },
+          "thumbnailUploadId": {
+            "description": "썸네일 이미지 업로드 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "additionalImageUploadIds": {
+            "description": "부가 이미지 업로드 ID 배열 (최대 5개)",
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "basePrice": {
+            "description": "기본 가격",
+            "type": "number"
+          },
+          "pricingStrategy": {
+            "description": "가격 전략",
+            "type": "string",
+            "enum": [
+              "option_based",
+              "variant_based"
+            ]
+          },
+          "tags": {
+            "description": "마케팅 태그",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "images": {
+            "description": "제품 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attributes": {
+            "description": "제품 속성 (키-값 쌍)",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "seoTitle": {
+            "description": "SEO 제목",
+            "type": "string"
+          },
+          "seoDescription": {
+            "description": "SEO 설명",
+            "type": "string"
+          },
+          "seoKeywords": {
+            "description": "SEO 키워드",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "descriptionHtml": {
+            "description": "상품 상세설명 HTML",
+            "type": "string"
+          },
+          "thumbnailUrl": {
+            "description": "썸네일 이미지 URL (외부 URL 직접 사용)",
+            "type": "string",
+            "format": "uri"
+          },
+          "isWholesaleOnly": {
+            "description": "도매회원 전용 여부",
+            "default": false,
+            "type": "boolean"
+          },
+          "isMembershipOnly": {
+            "description": "멤버십회원 전용 여부",
+            "default": false,
+            "type": "boolean"
+          },
+          "membershipPrice": {
+            "description": "멤버십 전용 가격 (원 단위)",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "wholesalePrice": {
+            "description": "도매 전용 가격 (원 단위)",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "optionGroups": {
+            "description": "옵션 그룹들",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "옵션 그룹명",
+                  "type": "string"
+                },
+                "displayName": {
+                  "description": "옵션 그룹 표시명",
+                  "type": "string"
+                },
+                "sortOrder": {
+                  "description": "정렬 순서",
+                  "type": "number"
+                },
+                "values": {
+                  "description": "옵션 값들",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "description": "옵션 값",
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "description": "옵션 값 표시명",
+                        "type": "string"
+                      },
+                      "sortOrder": {
+                        "description": "정렬 순서",
+                        "type": "number"
+                      },
+                      "price": {
+                        "description": "옵션별 가격",
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "displayName"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "displayName",
+                "values"
+              ]
+            }
+          },
+          "variantPrices": {
+            "description": "옵션 조합별 가격",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "basePrice",
+          "pricingStrategy"
+        ]
+      },
+      "ProductMasterDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "제품 마스터 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "제품 마스터 이름",
+            "type": "string",
+            "x-nestjs_zod-has-null": true
+          },
+          "description": {
+            "description": "제품 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "brand": {
+            "description": "브랜드명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "basePrice": {
+            "description": "기본 가격",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "pricingStrategy": {
+            "description": "가격 전략",
+            "type": "string",
+            "x-nestjs_zod-has-null": true
+          },
+          "tags": {
+            "description": "마케팅 태그",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "images": {
+            "description": "제품 이미지 (JSONB)",
+            "type": "",
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "attributes": {
+            "description": "제품 속성 (JSONB)",
+            "type": "",
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "seoTitle": {
+            "description": "SEO 제목",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "seoDescription": {
+            "description": "SEO 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "seoKeywords": {
+            "description": "SEO 키워드",
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "status": {
+            "description": "제품 상태",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "isWholesaleOnly": {
+            "description": "도매회원 전용 여부",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "isMembershipOnly": {
+            "description": "멤버십회원 전용 여부",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "membershipPrice": {
+            "description": "멤버십 전용 가격",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "wholesalePrice": {
+            "description": "도매 전용 가격",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "createdAt": {
+            "description": "생성일시",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "updatedAt": {
+            "description": "수정일시",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "createdBy": {
+            "description": "생성자",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "updatedBy": {
+            "description": "수정자",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "brand",
+          "basePrice",
+          "pricingStrategy",
+          "tags",
+          "images",
+          "attributes",
+          "seoTitle",
+          "seoDescription",
+          "seoKeywords",
+          "status",
+          "isWholesaleOnly",
+          "isMembershipOnly",
+          "membershipPrice",
+          "wholesalePrice",
+          "createdAt",
+          "updatedAt",
+          "createdBy",
+          "updatedBy"
+        ]
+      },
+      "MasterListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "제품 마스터 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "제품 마스터 ID",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "제품 마스터 이름",
+                  "type": "string"
+                },
+                "thumbnail": {
+                  "description": "썸네일 이미지 URL",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "basePrice": {
+                  "description": "기본 가격",
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "membershipPrice": {
+                  "description": "멤버십 전용 가격",
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isMembershipOnly": {
+                  "description": "멤버십회원 전용 여부",
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "description": "제품 상태",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "description": "생성일시",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "thumbnail",
+                "basePrice",
+                "membershipPrice",
+                "isMembershipOnly",
+                "status",
+                "createdAt"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "page": {
+            "description": "현재 페이지 번호",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "limit": {
+            "description": "페이지당 아이템 수",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "total": {
+            "description": "전체 아이템 수",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "data",
+          "page",
+          "limit",
+          "total"
+        ]
+      },
+      "UpdateProductMasterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "제품 마스터 이름",
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "description": "제품 설명",
+            "type": "string"
+          },
+          "categoryId": {
+            "description": "카테고리 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "brand": {
+            "description": "브랜드명",
+            "type": "string"
+          },
+          "basePrice": {
+            "description": "기본 가격",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "images": {
+            "description": "제품 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "attributes": {
+            "description": "제품 속성 (키-값 쌍)",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "status": {
+            "description": "제품 상태",
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "draft"
+            ]
+          }
+        }
+      },
+      "MasterUpdateResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "description": "수정 성공 여부",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "data": {
+            "description": "수정된 제품 마스터 정보",
+            "type": "object",
+            "properties": {
+              "id": {
+                "description": "제품 마스터 ID (UUID 형식)",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "description": "제품 마스터 이름",
+                "type": "string"
+              },
+              "description": {
+                "description": "제품 설명",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "brand": {
+                "description": "브랜드명",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "basePrice": {
+                "description": "기본 가격",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingStrategy": {
+                "description": "가격 전략",
+                "type": "string"
+              },
+              "tags": {
+                "description": "마케팅 태그",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "images": {
+                "description": "제품 이미지 (JSONB)"
+              },
+              "attributes": {
+                "description": "제품 속성 (JSONB)"
+              },
+              "seoTitle": {
+                "description": "SEO 제목",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "seoDescription": {
+                "description": "SEO 설명",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "seoKeywords": {
+                "description": "SEO 키워드",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "description": "제품 상태",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "isWholesaleOnly": {
+                "description": "도매회원 전용 여부",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "isMembershipOnly": {
+                "description": "멤버십회원 전용 여부",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "membershipPrice": {
+                "description": "멤버십 전용 가격",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "wholesalePrice": {
+                "description": "도매 전용 가격",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "description": "생성일시",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "description": "수정일시",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdBy": {
+                "description": "생성자",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedBy": {
+                "description": "수정자",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "description",
+              "brand",
+              "basePrice",
+              "pricingStrategy",
+              "tags",
+              "images",
+              "attributes",
+              "seoTitle",
+              "seoDescription",
+              "seoKeywords",
+              "status",
+              "isWholesaleOnly",
+              "isMembershipOnly",
+              "membershipPrice",
+              "wholesalePrice",
+              "createdAt",
+              "updatedAt",
+              "createdBy",
+              "updatedBy"
+            ],
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ]
+      },
+      "PricePreviewDto": {
+        "type": "object",
+        "properties": {
+          "masterId": {
+            "description": "제품 마스터 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "variants": {
+            "description": "변형별 가격 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variantId": {
+                  "description": "변형 ID",
+                  "type": "string"
+                },
+                "optionCombination": {
+                  "description": "옵션 조합",
+                  "type": "string"
+                },
+                "price": {
+                  "description": "계산된 가격",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "variantId",
+                "optionCombination",
+                "price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "masterId",
+          "variants"
+        ]
+      },
+      "ChangePricingStrategyDto": {
+        "type": "object",
+        "properties": {
+          "pricingStrategy": {
+            "description": "새로운 가격 전략",
+            "type": "string",
+            "enum": [
+              "option_based",
+              "variant_based"
+            ]
+          },
+          "migrationData": {
+            "description": "마이그레이션 데이터 (선택사항)",
+            "type": "",
+            "x-nestjs_zod-empty-type": true
+          }
+        },
+        "required": [
+          "pricingStrategy"
+        ]
+      },
+      "VariantListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "제품 변형 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "제품 변형 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "masterId": {
+                  "description": "제품 마스터 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "variantName": {
+                  "description": "변형명",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "images": {
+                  "description": "변형 이미지 (JSONB)"
+                },
+                "priceAdjustment": {
+                  "description": "가격 조정",
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "displayOrder": {
+                  "description": "표시 순서",
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "description": "변형 상태",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isDefault": {
+                  "description": "기본 변형 여부",
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "createdAt": {
+                  "description": "생성일시",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "updatedAt": {
+                  "description": "수정일시",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "price": {
+                  "description": "계산된 가격",
+                  "type": "number"
+                },
+                "optionValues": {
+                  "description": "옵션 값들",
+                  "type": "array",
+                  "items": {}
+                }
+              },
+              "required": [
+                "id",
+                "masterId",
+                "variantName",
+                "images",
+                "priceAdjustment",
+                "displayOrder",
+                "status",
+                "isDefault",
+                "createdAt",
+                "updatedAt",
+                "price",
+                "optionValues"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "total": {
+            "description": "전체 아이템 수",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "page": {
+            "description": "현재 페이지 번호",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "limit": {
+            "description": "페이지당 아이템 수",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "VariantWithPriceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "제품 변형 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "masterId": {
+            "description": "제품 마스터 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "variantName": {
+            "description": "변형명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "images": {
+            "description": "변형 이미지 (JSONB)",
+            "type": "",
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "priceAdjustment": {
+            "description": "가격 조정",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "displayOrder": {
+            "description": "표시 순서",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "status": {
+            "description": "변형 상태",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "isDefault": {
+            "description": "기본 변형 여부",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "createdAt": {
+            "description": "생성일시",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "updatedAt": {
+            "description": "수정일시",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "price": {
+            "description": "계산된 가격",
+            "type": "number",
+            "x-nestjs_zod-has-null": true
+          },
+          "optionValues": {
+            "description": "옵션 값들",
+            "type": "array",
+            "items": {},
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "id",
+          "masterId",
+          "variantName",
+          "images",
+          "priceAdjustment",
+          "displayOrder",
+          "status",
+          "isDefault",
+          "createdAt",
+          "updatedAt",
+          "price",
+          "optionValues"
+        ]
+      },
+      "UpdateProductVariantDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "제품 변형 이름",
+            "type": "string",
+            "minLength": 1
+          },
+          "sku": {
+            "description": "SKU 코드",
+            "type": "string"
+          },
+          "attributes": {
+            "description": "변형 속성 (색상, 사이즈 등)",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "images": {
+            "description": "변형별 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "status": {
+            "description": "변형 상태",
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "weight": {
+            "description": "무게 (g)",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "dimensions": {
+            "description": "치수 정보",
+            "type": "object",
+            "properties": {
+              "length": {
+                "description": "길이 (cm)",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "width": {
+                "description": "너비 (cm)",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "description": "높이 (cm)",
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "length",
+              "width",
+              "height"
+            ]
+          }
+        }
+      },
+      "VariantUpdateResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "description": "수정 성공 여부",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "data": {
+            "description": "수정된 제품 변형 정보",
+            "type": "object",
+            "properties": {
+              "id": {
+                "description": "제품 변형 ID (UUID 형식)",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "masterId": {
+                "description": "제품 마스터 ID (UUID 형식)",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "variantName": {
+                "description": "변형명",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "images": {
+                "description": "변형 이미지 (JSONB)"
+              },
+              "priceAdjustment": {
+                "description": "가격 조정",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "displayOrder": {
+                "description": "표시 순서",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "description": "변형 상태",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "isDefault": {
+                "description": "기본 변형 여부",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "description": "생성일시",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "description": "수정일시",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "price": {
+                "description": "계산된 가격",
+                "type": "number"
+              },
+              "optionValues": {
+                "description": "옵션 값들",
+                "type": "array",
+                "items": {}
+              }
+            },
+            "required": [
+              "id",
+              "masterId",
+              "variantName",
+              "images",
+              "priceAdjustment",
+              "displayOrder",
+              "status",
+              "isDefault",
+              "createdAt",
+              "updatedAt",
+              "price",
+              "optionValues"
+            ],
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ]
+      },
+      "UpdateVariantBulkDto": {
+        "type": "object",
+        "properties": {
+          "variantIds": {
+            "description": "변형 ID 목록",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updates": {
+            "description": "수정할 정보",
+            "type": "object",
+            "properties": {
+              "status": {
+                "description": "상태",
+                "type": "string"
+              },
+              "displayOrder": {
+                "description": "표시 순서",
+                "type": "number"
+              },
+              "images": {
+                "description": "이미지 목록",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "variantIds",
+          "updates"
+        ]
+      },
+      "VariantPriceResponseDto": {
+        "type": "object",
+        "properties": {
+          "variantId": {
+            "description": "제품 변형 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "price": {
+            "description": "계산된 가격",
+            "type": "number"
+          }
+        },
+        "required": [
+          "variantId",
+          "price"
+        ]
+      },
+      "UpdateVariantStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "description": "새로운 변형 상태",
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CreateChannelProductDto": {
+        "type": "object",
+        "properties": {
+          "masterId": {
+            "description": "제품 마스터 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "channelId": {
+            "description": "판매 채널 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "name": {
+            "description": "채널별 제품명 (미지정시 마스터명 사용)",
+            "type": "string"
+          },
+          "description": {
+            "description": "채널별 제품 설명",
+            "type": "string"
+          },
+          "images": {
+            "description": "채널별 제품 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "isActive": {
+            "description": "채널에서의 활성 상태",
+            "default": true,
+            "type": "boolean"
+          },
+          "channelSpecificData": {
+            "description": "채널별 특화 데이터",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "masterId",
+          "channelId"
+        ]
+      },
+      "ChannelProductDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "채널 제품 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "masterId": {
+            "description": "제품 마스터 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "channelId": {
+            "description": "판매 채널 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "채널별 제품명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "isActive": {
+            "description": "채널에서의 활성 상태",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "channelSpecificData": {
+            "description": "채널별 특화 데이터",
+            "type": "",
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "createdAt": {
+            "description": "생성일시 (ISO 8601)",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "updatedAt": {
+            "description": "수정일시 (ISO 8601)",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          }
+        },
+        "required": [
+          "id",
+          "masterId",
+          "channelId",
+          "name",
+          "isActive",
+          "channelSpecificData",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ChannelProductWithChannelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "채널 제품 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "masterId": {
+            "description": "제품 마스터 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "channelId": {
+            "description": "판매 채널 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "채널별 제품명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "description": {
+            "description": "채널별 제품 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "images": {
+            "description": "채널별 제품 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "isActive": {
+            "description": "채널에서의 활성 상태",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "channelSpecificData": {
+            "description": "채널별 특화 데이터",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "x-nestjs_zod-has-null": true
+          },
+          "createdAt": {
+            "description": "생성일시",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "updatedAt": {
+            "description": "수정일시",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "channel": {
+            "description": "판매 채널 정보",
+            "type": "object",
+            "properties": {
+              "id": {
+                "description": "채널 ID",
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "name": {
+                "description": "채널명",
+                "type": "string"
+              },
+              "type": {
+                "description": "채널 타입",
+                "type": "string"
+              },
+              "isActive": {
+                "description": "채널 활성 상태",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "type",
+              "isActive"
+            ],
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "id",
+          "masterId",
+          "channelId",
+          "name",
+          "description",
+          "images",
+          "isActive",
+          "channelSpecificData",
+          "createdAt",
+          "updatedAt",
+          "channel"
+        ]
+      },
+      "ChannelProductListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "채널 제품 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "채널 제품 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "masterId": {
+                  "description": "제품 마스터 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "channelId": {
+                  "description": "판매 채널 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "name": {
+                  "description": "채널별 제품명",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": {
+                  "description": "채널별 제품 설명",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "images": {
+                  "description": "채널별 제품 이미지 URL 배열",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "isActive": {
+                  "description": "채널에서의 활성 상태",
+                  "type": "boolean"
+                },
+                "channelSpecificData": {
+                  "description": "채널별 특화 데이터",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "createdAt": {
+                  "description": "생성일시",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "updatedAt": {
+                  "description": "수정일시",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "master": {
+                  "description": "제품 마스터 정보",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "description": "마스터 ID",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "name": {
+                      "description": "마스터 제품명",
+                      "type": "string"
+                    },
+                    "brand": {
+                      "description": "브랜드명",
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "basePrice": {
+                      "description": "기본 가격",
+                      "type": "number"
+                    },
+                    "status": {
+                      "description": "마스터 상태",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "brand",
+                    "basePrice",
+                    "status"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "masterId",
+                "channelId",
+                "name",
+                "description",
+                "images",
+                "isActive",
+                "channelSpecificData",
+                "createdAt",
+                "updatedAt",
+                "master"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "total": {
+            "description": "전체 아이템 수",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "page": {
+            "description": "현재 페이지 번호",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "limit": {
+            "description": "페이지당 아이템 수",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "UpdateChannelProductDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "채널별 제품명",
+            "type": "string",
+            "maxLength": 255
+          },
+          "isActive": {
+            "description": "채널에서의 활성 상태",
+            "type": "boolean"
+          },
+          "channelSpecificData": {
+            "description": "채널별 특화 데이터",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        }
+      },
+      "MergedChannelProductDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "채널 제품 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "masterId": {
+            "description": "제품 마스터 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "channelId": {
+            "description": "판매 채널 ID",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "name": {
+            "description": "제품명 (채널별 또는 마스터)",
+            "type": "string"
+          },
+          "description": {
+            "description": "제품 설명 (채널별 또는 마스터)",
+            "type": "string"
+          },
+          "images": {
+            "description": "제품 이미지 URL 배열",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean"
+          },
+          "basePrice": {
+            "description": "기본 가격",
+            "type": "number"
+          },
+          "channelSpecificData": {
+            "description": "채널별 특화 데이터",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "masterId",
+          "channelId",
+          "name",
+          "description",
+          "images",
+          "isActive",
+          "basePrice"
+        ]
+      },
+      "OverrideProductNameDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "새로운 제품 이름",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "SetChannelProductActiveDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "description": "활성 여부",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isActive"
+        ]
+      },
+      "NewSalesChannelDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "판매 채널 타입",
+            "type": "string",
+            "enum": [
+              "ONLINE",
+              "OFFLINE",
+              "MARKETPLACE",
+              "MOBILE_APP",
+              "SOCIAL_COMMERCE"
+            ]
+          },
+          "name": {
+            "description": "판매 채널 이름",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "description": "채널 설명",
+            "type": "string"
+          },
+          "config": {
+            "description": "채널별 설정 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "default": true,
+            "type": "boolean"
+          },
+          "apiEndpoint": {
+            "description": "API 엔드포인트 URL",
+            "type": "string",
+            "format": "uri"
+          },
+          "credentials": {
+            "description": "인증 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ]
+      },
+      "SalesChannelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "판매 채널 ID (UUID 형식)",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "x-nestjs_zod-has-null": true
+          },
+          "type": {
+            "description": "판매 채널 타입",
+            "type": "string",
+            "enum": [
+              "ONLINE",
+              "OFFLINE",
+              "MARKETPLACE",
+              "MOBILE_APP",
+              "SOCIAL_COMMERCE"
+            ],
+            "x-nestjs_zod-has-null": true
+          },
+          "name": {
+            "description": "판매 채널 이름",
+            "type": "string",
+            "x-nestjs_zod-has-null": true
+          },
+          "description": {
+            "description": "채널 설명",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "config": {
+            "description": "채널별 설정 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "x-nestjs_zod-has-null": true
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean",
+            "x-nestjs_zod-has-null": true
+          },
+          "apiEndpoint": {
+            "description": "API 엔드포인트 URL",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-nestjs_zod-has-null": true,
+            "x-nestjs_zod-empty-type": true
+          },
+          "credentials": {
+            "description": "인증 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "x-nestjs_zod-has-null": true
+          },
+          "createdAt": {
+            "description": "생성일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          },
+          "updatedAt": {
+            "description": "수정일시 (ISO 8601 형식)",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "description",
+          "config",
+          "isActive",
+          "apiEndpoint",
+          "credentials",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ChannelListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "판매 채널 목록",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "판매 채널 ID (UUID 형식)",
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "type": {
+                  "description": "판매 채널 타입",
+                  "type": "string",
+                  "enum": [
+                    "ONLINE",
+                    "OFFLINE",
+                    "MARKETPLACE",
+                    "MOBILE_APP",
+                    "SOCIAL_COMMERCE"
+                  ]
+                },
+                "name": {
+                  "description": "판매 채널 이름",
+                  "type": "string"
+                },
+                "description": {
+                  "description": "채널 설명",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "config": {
+                  "description": "채널별 설정 정보",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "isActive": {
+                  "description": "활성 상태",
+                  "type": "boolean"
+                },
+                "apiEndpoint": {
+                  "description": "API 엔드포인트 URL",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "credentials": {
+                  "description": "인증 정보",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "createdAt": {
+                  "description": "생성일시 (ISO 8601 형식)",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "updatedAt": {
+                  "description": "수정일시 (ISO 8601 형식)",
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "name",
+                "description",
+                "config",
+                "isActive",
+                "apiEndpoint",
+                "credentials",
+                "createdAt",
+                "updatedAt"
+              ]
+            },
+            "x-nestjs_zod-has-null": true
+          },
+          "total": {
+            "description": "전체 아이템 수",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "page": {
+            "description": "현재 페이지 번호",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          },
+          "limit": {
+            "description": "페이지당 아이템 수",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-nestjs_zod-has-null": true
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "UpdateSalesChannelDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "판매 채널 이름",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "description": {
+            "description": "채널 설명",
+            "type": "string"
+          },
+          "config": {
+            "description": "채널별 설정 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "isActive": {
+            "description": "활성 상태",
+            "type": "boolean"
+          },
+          "apiEndpoint": {
+            "description": "API 엔드포인트 URL",
+            "type": "string",
+            "format": "uri"
+          },
+          "credentials": {
+            "description": "인증 정보",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        }
+      },
+      "SetChannelActiveDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "description": "활성 여부",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isActive"
+        ]
+      },
+      "ValidateChannelConfigDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "채널 타입",
+            "type": "string",
+            "enum": [
+              "ONLINE",
+              "OFFLINE",
+              "MARKETPLACE",
+              "MOBILE_APP",
+              "SOCIAL_COMMERCE"
+            ]
+          },
+          "config": {
+            "description": "검증할 채널 설정 데이터",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ChannelValidationResponseDto": {
+        "type": "object",
+        "properties": {
+          "isValid": {
+            "description": "설정 유효성 여부",
+            "type": "boolean"
+          },
+          "errors": {
+            "description": "검증 오류 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "isValid",
+          "errors"
+        ]
+      },
+      "SubmitForApprovalDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "User ID who submits for approval"
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "ApproveProductDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "User ID who approves the product"
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional approval comment"
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "RejectProductDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "User ID who rejects the product"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for rejection"
+          }
+        },
+        "required": [
+          "userId",
+          "reason"
+        ]
+      },
+      "BulkUpdateDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "BulkDeleteDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "BulkRestoreDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "StatusBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "제품 상태 (active/inactive)",
+            "example": "active"
+          },
+          "count": {
+            "type": "number",
+            "description": "해당 상태의 제품 수",
+            "example": 150,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "status",
+          "count"
+        ]
+      },
+      "ApprovalBreakdownDto": {
+        "type": "object",
+        "properties": {
+          "approvalStatus": {
+            "type": "string",
+            "description": "승인 상태 (draft/pending/approved/rejected)",
+            "example": "approved"
+          },
+          "count": {
+            "type": "number",
+            "description": "해당 승인 상태의 제품 수",
+            "example": 120,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "approvalStatus",
+          "count"
+        ]
+      },
+      "DashboardMetricsResponseDto": {
+        "type": "object",
+        "properties": {
+          "totalProducts": {
+            "type": "number",
+            "description": "전체 제품 수 (소프트 삭제 제외)",
+            "example": 250,
+            "minimum": 0
+          },
+          "createdToday": {
+            "type": "number",
+            "description": "오늘 등록된 제품 수",
+            "example": 15,
+            "minimum": 0
+          },
+          "outOfStock": {
+            "type": "number",
+            "description": "재고 부족 제품 수 (WMS 연동 대기중)",
+            "example": 0,
+            "minimum": 0
+          },
+          "byStatus": {
+            "description": "상태별 제품 수",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusBreakdownDto"
+            }
+          },
+          "byApproval": {
+            "description": "승인 상태별 제품 수",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalBreakdownDto"
+            }
+          }
+        },
+        "required": [
+          "totalProducts",
+          "createdToday",
+          "outOfStock",
+          "byStatus",
+          "byApproval"
+        ]
+      },
+      "TopProductItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "제품 ID",
+            "example": "01JCQX1234567890ABCDEFGH"
+          },
+          "name": {
+            "type": "string",
+            "description": "제품명",
+            "example": "Premium T-Shirt"
+          },
+          "brand": {
+            "type": "object",
+            "description": "브랜드명",
+            "example": "BrandX",
+            "nullable": true
+          },
+          "basePrice": {
+            "type": "number",
+            "description": "기본 가격 (원)",
+            "example": 29900,
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "제품 상태",
+            "example": "active"
+          },
+          "approvalStatus": {
+            "type": "string",
+            "description": "승인 상태",
+            "example": "approved"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "등록일",
+            "example": "2025-10-28T12:00:00Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "basePrice",
+          "status",
+          "approvalStatus",
+          "createdAt"
+        ]
+      },
+      "SalesTrendResponseDto": {
+        "type": "object",
+        "properties": {
+          "labels": {
+            "description": "날짜 레이블 배열 (주문 서비스 연동 대기중)",
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data": {
+            "description": "매출 데이터 배열 (주문 서비스 연동 대기중)",
+            "example": [],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "labels",
+          "data"
+        ]
+      }
+    }
   }
 },
         dom_id: '#swagger-ui',
