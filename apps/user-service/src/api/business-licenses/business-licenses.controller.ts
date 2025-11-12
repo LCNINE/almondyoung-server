@@ -18,7 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { BusinessLicense, User } from '../../../database/drizzle/schema';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
+
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
@@ -27,6 +27,7 @@ import {
   CreateBusinessLicenseWithFileDto,
 } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')

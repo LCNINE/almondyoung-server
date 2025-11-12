@@ -18,9 +18,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
-import { CurrentUser } from '../../commons/decorators/current-user.decorator';
 import { WishlistService } from './wishlist.service';
 import { AddToWishlistDto } from './dto/wishlist.dto';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('찜하기')
 @ApiBearerAuth('access-token')
