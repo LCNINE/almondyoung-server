@@ -45,9 +45,24 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('PIM API')
     .setDescription(
-      '상품 정보 관리 시스템 (Product Information Management) API',
+      '상품 정보 관리 시스템 (Product Information Management) API\n\n' +
+        '제품 마스터, 변형, 카테고리, 판매 채널, 채널별 제품 정보를 관리하는 API입니다.',
     )
     .setVersion('1.0.0')
+    .addTag('PIM Health', '서비스 헬스체크')
+    .addTag('Categories', '제품 카테고리 관리')
+    .addTag('Product Masters', '제품 마스터 관리')
+    .addTag('Product Variants', '제품 변형 관리')
+    .addTag('Channel Products', '채널별 제품 관리')
+    .addTag('Sales Channels', '판매 채널 관리')
+    .addTag('File Upload', '파일 업로드')
+    .addTag('Product Approval', '제품 승인 관리')
+    .addTag('Product Bulk Operations', '제품 일괄 작업')
+    .addTag('Product CSV', 'CSV 가져오기/내보내기')
+    .addTag('Product Audit', '제품 감사 로그')
+    .addTag('Dashboard', '대시보드 통계')
+    .addServer('http://localhost:3020', '로컬 개발 서버')
+    .addServer('https://pim.almondyoung.com', '프로덕션 서버')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
