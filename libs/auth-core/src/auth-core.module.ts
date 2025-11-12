@@ -23,10 +23,10 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 @Module({})
 export class AuthCoreModule {
   /**
-   * Register module asynchronously with ConfigService
-   * Reads AUTH_SECRET and JWT_ISSUER from environment variables
+   * Register module with direct secret injection (for Railway compatibility)
+   * @param options.secret - JWT secret (빌드 시점에 주입)
    */
-  static forRootAsync(): DynamicModule {
+  static forRootAsync(options?: { secret?: string }): DynamicModule {
     return {
       module: AuthCoreModule,
       imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
@@ -34,14 +34,17 @@ export class AuthCoreModule {
         {
           provide: AUTH_CONFIG,
           useFactory: (configService: ConfigService) => {
-            // user-service는 AUTH_SECRET으로 토큰을 생성하므로 동일한 키로 검증
-            const secret = configService.get<string>('AUTH_SECRET');
+            // 직접 주입된 secret 우선, 없으면 ConfigService에서 읽기
+            const secret =
+              options?.secret || configService.get<string>('AUTH_SECRET');
             if (!secret) {
               throw new Error(
                 'AUTH_SECRET is not defined in environment variables',
               );
             }
-            console.log('🔑 [AuthCoreModule] Using AUTH_SECRET for JWT validation');
+            console.log(
+              '🔑 [AuthCoreModule] Using AUTH_SECRET for JWT validation',
+            );
             return {
               secret,
               issuer: configService.get<string>(
