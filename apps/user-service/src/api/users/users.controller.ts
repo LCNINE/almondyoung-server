@@ -1,4 +1,4 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
+import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
 import {
   Body,
   Controller,
@@ -72,7 +72,7 @@ export class UsersController {
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
   async getUserDetails(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Query('userId') userId?: string,
   ): Promise<UserDetailsResponseDto> {
     return this.usersService.getUserDetails(userId ?? user.id);
@@ -87,7 +87,7 @@ export class UsersController {
   @Get('roles')
   @HttpCode(HttpStatus.OK)
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
-  async getUserRoles(@CurrentUser() user: User) {
+  async getUserRoles(@CurrentUser() user: JwtPayload) {
     return this.usersService.getUserRoles(user.id);
   }
 
@@ -96,7 +96,7 @@ export class UsersController {
   @Get('me')
   @RequireScopes(['user:read', 'master', 'admin:users:read'])
   @HttpCode(HttpStatus.OK)
-  async getMe(@CurrentUser() user: User) {
+  async getMe(@CurrentUser() user: JwtPayload) {
     return this.usersService.retrieveMe(user.id);
   }
 
@@ -106,7 +106,7 @@ export class UsersController {
   @RequireScopes(['user:modify', 'master'])
   @HttpCode(HttpStatus.OK)
   async updateMyProfile(
-    @CurrentUser() user: User,
+    @CurrentUser() user: JwtPayload,
     @Body() updateUserDto: UpdateUserDto,
   ) {
     await this.usersService.updateMyProfile(user.id, updateUserDto);

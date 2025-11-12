@@ -37,7 +37,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
   ) {
     // JWT payload 정보 반환
     return {
-      sub: payload.sub,
+      id: payload.sub,
       email: payload.email,
       scopes: payload.scopes,
     };
