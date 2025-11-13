@@ -1,4 +1,5 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
   Controller,
@@ -17,17 +18,12 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { BusinessLicense, User } from '../../../database/drizzle/schema';
-
+import { BusinessLicense } from '../../../database/drizzle/schema';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
-import {
-  CreateBusinessLicenseWithInfoDto,
-  CreateBusinessLicenseWithFileDto,
-} from './dto/create-business-license.dto';
+import { CreateBusinessLicenseWithFileDto } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
-import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
@@ -78,34 +74,6 @@ export class BusinessLicensesController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.businessLicensesService.createWithFile(data, user.id);
-  }
-
-  /**
-   * 정보로 사업자 등록요청할 때 사용
-   */
-  @ApiOperation({
-    summary: '사업자 등록 정보 생성',
-    description: '새로운 사업자 등록 정보를 생성합니다.',
-  })
-  @ApiBody({ type: CreateBusinessLicenseWithInfoDto })
-  @ApiResponse({ status: 201, description: '사업자 등록 정보 생성 성공' })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  @ApiResponse({
-    status: 409,
-    description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-  })
-  @Post()
-  @RequireScopes(['user:modify'])
-  async createBusinessLicenseWithInfo(
-    @Body() data: CreateBusinessLicenseWithInfoDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.businessLicensesService.createBusinessLicenseWithInfo(
-      data,
-      user.id,
-    );
   }
 
   @ApiOperation({

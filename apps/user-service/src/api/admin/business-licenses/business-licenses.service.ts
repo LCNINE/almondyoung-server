@@ -83,9 +83,7 @@ export class BusinessLicensesService {
         whereConditions.push(inArray(schema.businessLicenses.status, status));
       }
       if (hasVerificationFile) {
-        whereConditions.push(
-          isNotNull(schema.businessLicenses.verificationFile),
-        );
+        whereConditions.push(isNotNull(schema.businessLicenses.file));
       }
       if (Daterange) {
         whereConditions.push(

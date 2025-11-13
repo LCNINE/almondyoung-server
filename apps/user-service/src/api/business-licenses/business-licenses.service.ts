@@ -6,16 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import * as schema from '../../../database/drizzle/schema';
 import {
   BusinessLicense,
   businessLicenses,
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
-import {
-  CreateBusinessLicenseWithFileDto,
-  CreateBusinessLicenseWithInfoDto,
-} from './dto/create-business-license.dto';
+import { CreateBusinessLicenseWithFileDto } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 
 @Injectable()
@@ -43,7 +39,7 @@ export class BusinessLicensesService {
     }
   }
 
-  async findBusinessLicenseByBusinessNumber(
+  private async findBusinessLicenseByBusinessNumber(
     businessNumber: string,
   ): Promise<BusinessLicense | null> {
     try {
@@ -81,49 +77,7 @@ export class BusinessLicensesService {
           userId,
           shopId: data.shopId ?? null,
           status: 'under_review',
-          verificationFile: data.verificationFile,
-          metadata: data.metadata ? JSON.parse(data.metadata) : null,
-        })
-        .returning();
-    } catch (error: any) {
-      console.error('error::', error);
-
-      throw new BadRequestException(
-        error.message ??
-          '사업자 등록 정보를 생성하는 중 알 수 없는 오류가 발생했습니다.',
-      );
-    }
-  }
-
-  // 정보로 사업자 등록요청
-  async createBusinessLicenseWithInfo(
-    data: CreateBusinessLicenseWithInfoDto,
-    userId: string,
-  ): Promise<void> {
-    try {
-      const existingBusinessUser =
-        await this.findBusinessLicenseByUserId(userId);
-      if (existingBusinessUser) {
-        throw new ConflictException(
-          '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-        );
-      }
-
-      if (data.businessNumber) {
-        const existingBusinessNumber =
-          await this.findBusinessLicenseByBusinessNumber(data.businessNumber);
-        if (existingBusinessNumber) {
-          throw new ConflictException('이미 등록된 사업자 등록 번호입니다.');
-        }
-      }
-
-      await this.dbService.db
-        .insert(businessLicenses)
-        .values({
-          userId,
-          businessNumber: data.businessNumber,
-          representativeName: data.representativeName,
-          status: 'approved',
+          file: data.file,
           metadata: data.metadata ? JSON.parse(data.metadata) : null,
         })
         .returning();
@@ -160,7 +114,7 @@ export class BusinessLicensesService {
         await this.dbService.db
           .update(businessLicenses)
           .set({
-            verificationFile: data.verificationFile,
+            file: data.file,
             status: 'under_review',
           })
           .where(eq(businessLicenses.id, businessLicenseId))

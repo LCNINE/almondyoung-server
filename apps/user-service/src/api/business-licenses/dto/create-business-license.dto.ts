@@ -1,4 +1,4 @@
-import { OmitType, PickType } from '@nestjs/swagger';
+import { PickType } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsOptional,
@@ -10,7 +10,7 @@ import {
 export class BusinessLicenseBaseDto {
   @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
   @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
-  verificationFile: string;
+  file: string;
 
   @IsOptional({ message: '상점ID는 선택사항입니다.' })
   @IsUUID('4', { message: '상점ID는 UUID 형식이어야 합니다.' })
@@ -31,11 +31,5 @@ export class BusinessLicenseBaseDto {
 // 파일 업로드용 dto
 export class CreateBusinessLicenseWithFileDto extends PickType(
   BusinessLicenseBaseDto,
-  ['verificationFile', 'shopId', 'metadata'] as const,
-) {}
-
-// 정보 입력용 dto
-export class CreateBusinessLicenseWithInfoDto extends PickType(
-  BusinessLicenseBaseDto,
-  ['businessNumber', 'representativeName', 'metadata'] as const,
+  ['file', 'shopId', 'metadata'] as const,
 ) {}
