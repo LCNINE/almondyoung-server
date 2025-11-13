@@ -8,6 +8,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
+import fastifyCookie from '@fastify/cookie';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -17,6 +18,9 @@ async function bootstrap() {
 
   // ZodValidationPipe와 충돌하므로 글로벌 ValidationPipe 비활성화
   // app.useGlobalPipes(new ValidationPipe());
+
+  // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
+  await app.register(fastifyCookie);
 
   await app.register(require('@fastify/multipart'), {
     attachFieldsToBody: true,
