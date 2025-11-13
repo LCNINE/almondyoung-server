@@ -39,24 +39,6 @@ export class BusinessLicensesService {
     }
   }
 
-  private async findBusinessLicenseByBusinessNumber(
-    businessNumber: string,
-  ): Promise<BusinessLicense | null> {
-    try {
-      const [result] = await this.dbService.db
-        .select()
-        .from(businessLicenses)
-        .where(eq(businessLicenses.businessNumber, businessNumber))
-        .limit(1);
-
-      return result ?? null;
-    } catch (error) {
-      throw new BadRequestException(
-        '사업자 등록 정보를 조회하는 중 오류가 발생했습니다.',
-      );
-    }
-  }
-
   // 파일로 사업자 등록요청
   async createWithFile(
     data: CreateBusinessLicenseWithFileDto,
