@@ -20,7 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
-import { Public } from '../../constants/public.decorator';
+import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
