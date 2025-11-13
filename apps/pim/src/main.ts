@@ -61,7 +61,7 @@ async function bootstrap() {
     .addTag('Product CSV', 'CSV 가져오기/내보내기')
     .addTag('Product Audit', '제품 감사 로그')
     .addTag('Dashboard', '대시보드 통계')
-    .addServer('http://localhost:3020', '로컬 개발 서버')
+    .addServer('https://pim-development.up.railway.app', '로컬 개발 서버')
     .addServer('https://pim.almondyoung.com', '프로덕션 서버')
     .build();
   const document = SwaggerModule.createDocument(app, config);
