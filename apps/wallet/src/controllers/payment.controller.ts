@@ -576,8 +576,10 @@ export class PaymentController {
 
       const profiles = await this.profileService.getPaymentProfiles(userId);
 
+      this.logger.log(`✅ 프로필 조회 성공: ${profiles.length}개`);
       return profiles;
     } catch (error) {
+      this.logger.error(`❌ 프로필 조회 실패:`, error);
       this.handleError(error, '결제 프로필 조회');
     }
   }
