@@ -12,7 +12,6 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
 
@@ -34,33 +33,6 @@ async function bootstrap() {
       : ['http://localhost:8000'];
 
   logger.log('CORS:', corsOrigins);
-
-  // swagger 설정
-  const config = new DocumentBuilder()
-    .setTitle('User Service API')
-    .setDescription('The User Service API description')
-    .setVersion('1.0')
-    .addTag('Auth', '인증 관련 API')
-    .addTag('Users', '사용자 관련 API')
-    .addTag('Admin', '관리자 관련 API')
-    .addTag('Admin/Roles', '관리자 권한 관련 API')
-    .addTag('Admin/Scopes', '관리자 스코프 관련 API')
-    .addTag('Admin/Dormant', '휴면 계정 관련 API')
-    .addTag('Shop', '상점 관련 API')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'JWT',
-        description: 'Enter JWT token',
-        in: 'header',
-      },
-      'access-token',
-    )
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
 
   await app.register(fastifyCors, {
     origin:

@@ -4,6 +4,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -290,6 +291,34 @@ export const businessLicenses = pgTable(
   }),
 );
 
+// ==================== 번호 인증 테이블 ====================
+export const phoneVerifications = pgTable(
+  'phone_verifications',
+  {
+    id: serial('id').primaryKey(),
+    phoneNumber: varchar('phone_number', { length: 20 }).notNull(),
+    code: varchar('code', { length: 6 }).notNull(),
+
+    // 검증 관련
+    isVerified: boolean('is_verified').default(false).notNull(),
+    verifiedAt: timestamp('verified_at'),
+    isExpired: boolean('is_expired').default(false).notNull(),
+
+    // 보안 관련
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+
+    // 시간 관련
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    phoneNumberIdx: index('phone_verifications_phone_number_idx').on(
+      table.phoneNumber,
+    ),
+  }),
+);
+
 // ==================== 블랙리스트 테이블 ====================
 
 /**
@@ -491,6 +520,7 @@ export const userServiceTables = {
   blacklists,
   wishlist,
   userRecentViews,
+  phoneVerifications,
 } as const;
 
 /*───────────────────────────
