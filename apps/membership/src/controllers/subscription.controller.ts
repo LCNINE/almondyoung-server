@@ -66,7 +66,7 @@ export class SubscriptionController {
     private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly cancellationReasonReader: CancellationReasonReader,
-  ) {}
+  ) { }
 
   /**
    * 현재 구독 상태 조회 (Lazy Expiration 적용)
