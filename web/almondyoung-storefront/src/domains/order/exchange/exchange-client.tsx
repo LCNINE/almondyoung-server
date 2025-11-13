@@ -31,7 +31,7 @@ export function ExchangeClient() {
   }
 
   return (
-    <div className="min-h-screen bg-white py-4 md:px-6">
+    <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <PageTitle>반품/교환/환불 목록</PageTitle>
 
       <section className="space-y-6">

@@ -38,10 +38,11 @@ export default function RebuyPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "재구매 상품",
       }}
     >
       <MypageLayout>
-        <div className="min-h-screen bg-white py-4 md:px-6">
+        <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>자주 산 상품 목록</PageTitle>
           <div className="p-4">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

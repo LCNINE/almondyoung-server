@@ -33,13 +33,13 @@ export default function MembershipPage() {
       }}
     >
       <MypageLayout>
-        <div className="min-h-screen bg-white py-4 md:px-6">
+        <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>멤버십 관리</PageTitle>
           <MembershipRequestBanner />
 
           <MembershipStatusSection />
           <section className="mb-[36px]">
-            <h3 className="my-4 hidden text-lg font-semibold text-black md:block">
+            <h3 className="my-4 hidden text-center text-lg font-semibold text-black md:block">
               멤버십 혜택
             </h3>
 

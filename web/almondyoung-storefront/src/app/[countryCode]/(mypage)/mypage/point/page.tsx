@@ -4,6 +4,11 @@ import {
   ChevronDown, // [추가] 드롭다운 아이콘
 } from "lucide-react"
 import { cn } from "@lib/utils"
+import { WithHeaderLayout } from "@components/layout"
+
+//  필요한 API 목록
+//  포인트 적립 내역 조회 API
+//  현재 포인트 잔액 조회 API
 
 // --- Mock Data ---
 const historyData = [
@@ -35,8 +40,7 @@ const CashSummary = () => (
       {/* 헤더: 전체 내역 타이틀 & 총액 */}
       <div className="text-primary mb-4 flex items-center justify-between">
         <button className="flex items-center gap-1 text-[15px] font-bold text-gray-800 transition-opacity hover:opacity-70">
-          아몬드영 캐시 전체 내역
-          <ChevronDown className="h-4 w-4 text-gray-500" />
+          현재 포인트 잔액
         </button>
         <span className="text-lg font-bold text-black">1,400원</span>
       </div>
@@ -125,16 +129,25 @@ const HistorySection = () => {
 }
 
 // --- Main Page Component ---
-export default function RewardPage() {
+export default function PointPage() {
   return (
-    <div className="min-h-screen w-full bg-white font-['Pretendard'] text-black">
-      <div className="mx-auto min-h-screen max-w-md bg-white">
-        <main>
-          <CashSummary />
+    <WithHeaderLayout
+      config={{
+        showDesktopHeader: true,
+        showMobileHeader: false,
+        showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "포인트 적립",
+      }}
+    >
+      <div className="min-h-screen w-full bg-white font-['Pretendard'] text-black">
+        <div className="mx-auto min-h-screen max-w-md bg-white">
+          <main>
+            <CashSummary />
 
-          <HistorySection />
-        </main>
+            <HistorySection />
+          </main>
+        </div>
       </div>
-    </div>
+    </WithHeaderLayout>
   )
 }

@@ -29,8 +29,8 @@ export function ReviewHelpfulButton({ initialLikeCount, onLike }: Props) {
         onClick={handleLikeClick}
         className={`h-[27px] rounded border bg-white px-2.5 py-1 text-xs transition-colors ${
           liked
-            ? "border-orange-600 bg-orange-50 text-orange-600"
-            : "border-orange-500 text-orange-500 hover:bg-orange-50"
+            ? "border-amber-600 bg-orange-50 text-orange-600"
+            : "border-amber-500 text-orange-500 hover:bg-orange-50"
         }`}
         aria-pressed={liked}
       >

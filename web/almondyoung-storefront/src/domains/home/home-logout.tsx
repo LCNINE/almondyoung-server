@@ -29,6 +29,13 @@ import CategoryBadgeList from "@components/category-badge-tabs"
 
 // 서버 데이터를 그대로 사용 (변환 불필요)
 
+//  카테고리 별 제품 API 상품 목록 데이터에서 카테고리로 params넣으면 해결되지않을까? 랭킹부분은 인기순으로 prams 넣으면되고
+//  신상품 API 상품 목록 데이터에서 신상품으로 params넣으면되고
+//  웰컴딜 API 상품 목록 데이터에서 웰컴딜으로 params넣으면되고
+//  타임세일 API 상품 목록 데이터에서 타임세일으로 params넣으면되고
+//  디저틸 템플릿 API 상품 목록 데이터에서 디저틸 템플릿으로 params넣으면되고
+//  인기 급상승 제품  디자인에는 없지만 기존에는 구현되어있었음. 어느게 사실? 
+
 // 비로그인 사용자용 홈페이지 섹션들
 export const HomeLogout: React.FC<{
   categories: PimCategory[]
@@ -91,20 +98,6 @@ export const HomeLogout: React.FC<{
           description="카테고리별 제품을 만나보세요"
         />
         <CategoryBadgeList />
-        <div className="mt-6">
-          <ProductListSix
-            products={fitTop10Products}
-            renderCard={(product, index) => (
-              <RankProductCard product={product} rank={index + 1} />
-            )}
-          />
-        </div>
-      </ProductListSection>
-      <ProductListSection>
-        <SectionHeader
-          title="인기 제품"
-          description="인기 제품을 만나보세요 키워드 제품"
-        />
         <div className="mt-6">
           <ProductListSix
             products={fitTop10Products}

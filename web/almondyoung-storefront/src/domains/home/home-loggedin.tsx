@@ -11,26 +11,36 @@ import ProductList from "./components/list/product-list"
 import { ProductListSection } from "./components/list/product-list-section"
 import SectionHeader from "./components/list/section-header"
 import UserReport from "./components/report/user-report"
+import { clientApi } from "@lib/api/client-api"
+import { USER_SERVICE_BASE_URL } from "@lib/api/api.config"
+import { useEffect } from "react"
 
 // 전문 분야 한글명 매핑 (이미 한글이므로 그대로 반환)
 const getSpecialtyFieldName = (specialty: string): string => {
   // 이미 한글 카테고리명이므로 그대로 반환
   return specialty || "일반"
 }
+
+// 구매 리포트 API
+// 관심있게 본 상품 api
+// 고객 개인화 추천 제품 API
+// 자주 구매하는 재료 API
+// 장바구니에서 기다리는 상품 API (이건 메두사 장바구니 fetch한후 pim을 재 fectch하면 해결될듯. 없으면 섹션없애도됨)
+
 // 로그인한 사용자용 홈페이지 섹션들
 export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
   return (
     <>
       {/* 검색 결과 및 구매 리포트 섹션 */}
-      <UserReport />
-      <section className="bg-muted">
+
+      <section>
         <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
           <div className="flex flex-col gap-[30px] py-[40px] lg:flex-row">
             <div className="hidden w-full max-w-[833px] md:block">
               <ProductIntrestSection />
             </div>
             <div className="w-full lg:max-w-[406px]">
-              <PurchaseReportDashboard />
+              <UserReport />
             </div>
             <div className="block w-full max-w-[833px] md:hidden">
               <ProductIntrestSection />

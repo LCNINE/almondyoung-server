@@ -6,6 +6,9 @@ import { WithHeaderLayout } from "@components/layout"
 /**
  * 고정 찜 목록 데이터 (서버 데이터 구조)
  */
+
+// 최근 본 상품 API 유저서비스 api호출
+// id값을 기반으로 pim api 호출
 const MOCK_WISHLIST_ITEMS = [
   {
     id: "wish-1",

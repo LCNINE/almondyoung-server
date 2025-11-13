@@ -29,7 +29,7 @@ export const ReviewsContainer = () => {
   } = useReviewActions()
 
   return (
-    <main className="min-h-screen bg-white py-4 md:px-6">
+    <main className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <PageTitle>리뷰</PageTitle>
 
       <Tabs defaultValue={REVIEW_TAB_VALUES.WRITABLE} className="w-ful4 mt-3">

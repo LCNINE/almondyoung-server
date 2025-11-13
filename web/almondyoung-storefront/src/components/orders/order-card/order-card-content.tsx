@@ -131,6 +131,7 @@ export default function OrderCardContent({
           variant="outline"
           color="secondary"
           size="lg"
+          className="flex-1"
           fullWidth={true}
         >
           주문 취소 / 반품 신청
@@ -141,6 +142,7 @@ export default function OrderCardContent({
           variant="outline"
           color="primary"
           size="lg"
+          className="flex-1"
           fullWidth={true}
         >
           배송 조회

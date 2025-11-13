@@ -1,5 +1,4 @@
 import { UserDetail } from "domains/auth/types"
-import { QUICK_LINKS } from "../constants/mypage-constants"
 import { PaymentInfoSection } from "./payment-info-section"
 import { QuickMenuSection } from "./quick-menu-section"
 import { RecommendedProductsSection } from "./recommended-products-section"
@@ -26,7 +25,7 @@ export function MyPageDesktopContent({
         userName={currentUser?.username}
         userId={currentUser?.id}
       />
-      <QuickMenuSection items={QUICK_LINKS} />
+      <QuickMenuSection  />
       <ShippingItemsSection />
       <PaymentInfoSection />
       <RecommendedProductsSection />

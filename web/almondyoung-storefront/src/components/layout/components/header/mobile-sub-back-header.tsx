@@ -1,6 +1,6 @@
 "use client" // 1. Next.js 13+ App Router에서 훅을 사용하기 위해 필요
 
-import { ChevronLeft } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { useRouter } from "next/navigation" // 2. next/navigation에서 useRouter 임포트
 
 interface SubPageHeaderProps {
@@ -27,7 +27,7 @@ export default function MobileSubBackHeader({ title }: SubPageHeaderProps) {
           className="h-6 w-6 text-black"
           onClick={handleGoBack} // 5. onClick 이벤트에 핸들러 연결
         >
-          <ChevronLeft className="h-full w-full" />
+          <ArrowLeft className="h-full w-full" />
         </button>
       </div>
 

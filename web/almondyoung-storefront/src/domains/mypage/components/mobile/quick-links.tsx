@@ -1,35 +1,50 @@
-import { QuickLink } from "../../types/mypage-types"
+import React from "react"
+import {
+  OrderListIcon,
+  WishlistIcon,
+  FrequentPurchaseIcon,
+  RecentViewIcon,
+} from "components/common/icons"
 
-interface QuickLinksProps {
-  links: QuickLink[]
+// --- 1. 재사용 가능한 메뉴 아이템 컴포넌트 ---
+interface QuickMenuItemProps {
+  icon: React.ReactNode
+  label: string
+  onClick?: () => void
 }
 
-function MenuIcon({ children }: { children: React.ReactNode }) {
+function QuickMenuItem({ icon, label, onClick }: QuickMenuItemProps) {
   return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-orange-100 text-2xl">
-      {children}
-    </div>
+    // flex-1: 아이템들이 공간을 균등하게 차지하도록 합니다.
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-1 flex-col items-center justify-center gap-[6px]"
+    >
+      {/* 아이콘 영역 */}
+      <div className="relative h-[27px] w-[27px]">{icon}</div>
+      {/* 텍스트 영역 */}
+      <span className="text-center font-['Pretendard'] text-xs whitespace-nowrap text-black">
+        {label}
+      </span>
+    </button>
   )
 }
 
-export function QuickLinks({ links }: QuickLinksProps) {
+// --- 2. 메인 퀵 메뉴 컴포넌트 ---
+export function QuickLinks() {
   return (
-    <nav aria-label="빠른 메뉴">
-      <ul className="grid grid-cols-4 gap-3 rounded-lg bg-white p-4 shadow-sm">
-        {links.map((link) => (
-          <li key={link.label}>
-            <a
-              href="#"
-              className="flex flex-col items-center gap-2 text-center"
-            >
-              <MenuIcon>{link.icon}</MenuIcon>
-              <span className="text-sm font-medium text-gray-700">
-                {link.label}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
+    <nav
+      className="flex w-full items-center justify-between rounded-[10px] bg-white py-[15px] shadow-sm"
+      aria-label="퀵 메뉴"
+    >
+      <QuickMenuItem label="주문목록" icon={<OrderListIcon size={27} />} />
+      <QuickMenuItem label="찜한상품" icon={<WishlistIcon size={27} />} />
+      <QuickMenuItem
+        label="자주산상품"
+        icon={<FrequentPurchaseIcon size={27} />}
+      />
+      <QuickMenuItem label="최근 본 상품" icon={<RecentViewIcon size={27} />} />
     </nav>
   )
 }

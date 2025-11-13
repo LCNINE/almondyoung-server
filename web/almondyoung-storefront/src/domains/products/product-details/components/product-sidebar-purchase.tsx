@@ -151,7 +151,8 @@ export function ProductSidebarPurchase({
 
           <div className="flex gap-2">
             <CustomButton
-              variant="secondary"
+              variant="outline"
+              color="secondary"
               size="md"
               onClick={onWishlistToggle}
               disabled={wishlistLoading}
@@ -164,7 +165,12 @@ export function ProductSidebarPurchase({
               />
               찜
             </CustomButton>
-            <CustomButton variant="secondary" size="md" aria-label="챗봇">
+            <CustomButton
+              variant="outline"
+              color="secondary"
+              size="md"
+              aria-label="챗봇"
+            >
               <MessageCircle className="h-7 w-7" />
               챗봇
             </CustomButton>
@@ -237,12 +243,18 @@ export function ProductSidebarPurchase({
         <footer className="flex gap-2">
           {isOutOfStock ? (
             <>
-              <CustomButton variant="secondary" size="lg" className="flex-1">
+              <CustomButton
+                variant="outline"
+                color="secondary"
+                size="lg"
+                className="flex-1"
+              >
                 <Bell className="h-4 w-4" />
                 <span>재입고알림 신청하기</span>
               </CustomButton>
               <CustomButton
-                variant="primary"
+                variant="fill"
+                color="primary"
                 size="lg"
                 className="flex-1 bg-green-600"
               >
@@ -261,7 +273,8 @@ export function ProductSidebarPurchase({
                 장바구니
               </CustomButton>
               <CustomButton
-                variant="primary"
+                variant="fill"
+                color="primary"
                 size="lg"
                 className="flex-1"
                 onClick={handleBuyNow}

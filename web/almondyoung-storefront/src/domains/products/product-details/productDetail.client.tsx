@@ -38,6 +38,8 @@ import {
 } from "domains/reviews/summary"
 import { ReviewDetailCard } from "domains/reviews/details"
 
+// 상품 상세페이지의 모바일 리뷰 섹션은 데스크탑이랑 동일하게 페이지네이션 형식으로 결정 .
+// 또한 전용페이지가 아닌 해당 섹션내에서 페이지네이션 처리하기로 결정남
 interface ProductDetailPageProps {
   params: Promise<{
     id: string
@@ -1005,7 +1007,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 </div>
                 <div className="flex gap-2">
                   <CustomButton
-                    variant="secondary"
+                    variant="outline"
+                    color="secondary"
                     size="md"
                     onClick={handleWishlistToggle}
                     disabled={wishlistLoading}
@@ -1019,7 +1022,7 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     />{" "}
                     찜
                   </CustomButton>
-                  <CustomButton variant="secondary" size="md">
+                  <CustomButton variant="outline" color="secondary" size="md">
                     <MessageCircle className="h-7 w-7" />
                     챗봇
                   </CustomButton>
@@ -1286,7 +1289,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 {isOutOfStock() ? (
                   <>
                     <CustomButton
-                      variant="secondary"
+                      variant="outline"
+                      color="secondary"
                       size="lg"
                       className="flex-1"
                     >
@@ -1294,7 +1298,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                       <span>재입고알림 신청하기</span>
                     </CustomButton>
                     <CustomButton
-                      variant="primary"
+                      variant="fill"
+                      color="primary"
                       size="lg"
                       className="flex-1 bg-green-600"
                     >
@@ -1312,7 +1317,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                       장바구니
                     </CustomButton>
                     <CustomButton
-                      variant="primary"
+                      variant="fill"
+                      color="primary"
                       size="lg"
                       className="flex-1"
                       onClick={() => {
@@ -1341,7 +1347,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         <div className="border-gray-20 fixed right-0 bottom-0 left-0 z-50 border-t bg-white p-4 md:hidden">
           <div className="flex gap-2">
             <CustomButton
-              variant="secondary"
+              variant="outline"
+              color="secondary"
               size="lg"
               onClick={handleWishlistToggle}
               disabled={wishlistLoading}
@@ -1358,7 +1365,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               장바구니
             </CustomButton>
             <CustomButton
-              variant="primary"
+              variant="fill"
+              color="primary"
               size="lg"
               className="flex-1"
               onClick={() => {
@@ -1532,7 +1540,12 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     <Bell className="h-4 w-4" />
                     <span>재입고알림 신청하기</span>
                   </CustomButton>
-                  <CustomButton variant="primary" size="lg" className="flex-1">
+                  <CustomButton
+                    variant="fill"
+                    color="primary"
+                    size="lg"
+                    className="flex-1"
+                  >
                     <Zap className="h-4 w-4" />
                     <span>미리구매하기</span>
                   </CustomButton>
@@ -1556,7 +1569,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     <span>장바구니</span>
                   </CustomButton>
                   <CustomButton
-                    variant="primary"
+                    variant="fill"
+                    color="primary"
                     size="lg"
                     className="flex-1"
                     onClick={() => {
