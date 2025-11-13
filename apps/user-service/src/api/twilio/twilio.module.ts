@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { Twilio } from 'twilio';
 import { LookupController } from './controllers/lookup.controller';
 import { SendMessageController } from './controllers/send-verify-code.controller';
@@ -11,6 +12,7 @@ import { SendMessageService } from './services/send-verify-code.service';
 import { VerifyCodeService } from './services/verify-code.service';
 
 @Module({
+  imports: [ScheduleModule.forRoot()],
   controllers: [SendMessageController, LookupController, VerifyCodeController],
   providers: [
     SendMessageService,
