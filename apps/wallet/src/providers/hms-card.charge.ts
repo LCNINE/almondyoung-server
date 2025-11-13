@@ -15,10 +15,14 @@ export class HmsCardChargeProvider
   private readonly hmsApi: HmsAPI;
 
   constructor() {
+    const isTest = process.env.NODE_ENV !== 'production';
+    this.logger.warn(
+      `🔍 HMS Card Charge 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
+    );
     this.hmsApi = ApiClientFactory.create({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
-      isTest: process.env.NODE_ENV !== 'production',
+      isTest: isTest,
       useMock: false,
     }) as HmsAPI;
   }
