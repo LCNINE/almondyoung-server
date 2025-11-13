@@ -102,4 +102,4 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     PaymentClientService,
   ],
 })
-export class AppModule {}
+export class AppModule { }
