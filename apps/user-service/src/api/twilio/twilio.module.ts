@@ -2,12 +2,16 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Twilio } from 'twilio';
 import { LookupController } from './controllers/lookup.controller';
-import { SendMessageController } from './controllers/send-message.controller';
+import { SendMessageController } from './controllers/send-verify-code.controller';
+import { VerifyCodeController } from './controllers/verify-code.controller';
+import { CheckResendService } from './services/check-resend.service';
+import { ExpireExistingCodesService } from './services/expire-existing-codes';
 import { LookupService } from './services/lookup.service';
-import { SendMessageService } from './services/send-message.service';
+import { SendMessageService } from './services/send-verify-code.service';
+import { VerifyCodeService } from './services/verify-code.service';
 
 @Module({
-  controllers: [SendMessageController, LookupController],
+  controllers: [SendMessageController, LookupController, VerifyCodeController],
   providers: [
     SendMessageService,
     LookupService,
@@ -34,6 +38,9 @@ import { SendMessageService } from './services/send-message.service';
       },
       inject: [ConfigService],
     },
+    CheckResendService,
+    ExpireExistingCodesService,
+    VerifyCodeService,
   ],
   exports: [],
 })
