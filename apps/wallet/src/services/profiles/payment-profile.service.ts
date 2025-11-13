@@ -38,9 +38,9 @@ export class PaymentProfileService {
     private readonly profilesRepo: PaymentProfilesRepository,
     private readonly cmsCardRepo: CmsCardProfilesRepository,
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
-  ) {}
+  ) { }
 
-  // 결제 프로필 목록 조회
+  // 결제 프로필 목록 조회 (payment_profiles 테이블만 조회)
   async getPaymentProfiles(userId: string) {
     return this.db.db.transaction(async (tx) => {
       // 사용자의 모든 결제 프로필 조회
@@ -49,49 +49,15 @@ export class PaymentProfileService {
         .from(schema.paymentProfiles)
         .where(eq(schema.paymentProfiles.userId, userId));
 
-      // 각 프로필의 상세 정보 조회
-      const profilesWithDetails = await Promise.all(
-        profiles.map(async (profile) => {
-          let details = null;
-
-          // 프로필 종류에 따라 상세 정보 조회
-          if (profile.kind === 'CARD' && profile.provider === 'HMS_CARD') {
-            const cardDetails = await this.cmsCardRepo.findById(profile.id, tx);
-            if (cardDetails) {
-              details = {
-                paymentCompany: cardDetails.paymentCompany,
-                paymentNumber: cardDetails.cardLast4
-                  ? `****-****-****-${cardDetails.cardLast4}`
-                  : null,
-                payerName: cardDetails.payerName,
-              };
-            }
-          } else if (
-            profile.kind === 'BANK_ACCOUNT' &&
-            profile.provider === 'HMS_BNPL'
-          ) {
-            const bnplDetails = await this.cmsBatchRepo.findById(profile.id, tx);
-            if (bnplDetails) {
-              details = {
-                paymentCompany: bnplDetails.paymentCompany,
-                payerName: bnplDetails.payerName,
-              };
-            }
-          }
-
-          return {
-            id: profile.id,
-            kind: profile.kind,
-            provider: profile.provider,
-            status: profile.status,
-            name: profile.name,
-            details,
-            createdAt: profile.createdAt,
-          };
-        }),
-      );
-
-      return profilesWithDetails;
+      // 프로필 정보만 반환 (하위 테이블 조회 없음)
+      return profiles.map((profile) => ({
+        id: profile.id,
+        kind: profile.kind,
+        provider: profile.provider,
+        status: profile.status,
+        name: profile.name,
+        createdAt: profile.createdAt,
+      }));
     });
   }
 
