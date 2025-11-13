@@ -136,7 +136,7 @@ export default function WishlistPage() {
     >
       <MypageLayout>
         <div className="bg-background w-full">
-          <div className="bg-white md:px-6">
+          <div className="bg-white px-3 md:px-6">
             <PageTitle>찜한 상품</PageTitle>
 
             {/* 상품 목록 (고정 데이터) */}

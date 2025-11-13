@@ -1,6 +1,5 @@
 import { CartQuickButton } from "@components/cart/mobile-cart-quickButton"
 import { FloatingButtons } from "@components/common/custom-buttons/floating-buttons"
-import { ConditionalFooter } from "@components/layout/components/conditional-footer"
 import { fetchCurrentUser } from "@lib/api/users"
 import { CategoryProvider } from "@lib/providers/category-provider"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
@@ -13,6 +12,8 @@ import "styles/globals.css"
 import categoriesData from "@lib/data/dummy/get-categories.json"
 import { UserProvider } from "contexts/user-context"
 import { OverlayProvider } from "overlay-kit"
+import { BottomNavigation } from "@components/layout/components/bottom-nav"
+import Footer from "@components/layout/components/footer"
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
@@ -45,7 +46,8 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                 </CustomThemeProvider>
               </ThemeProvider>
             </UserProvider>
-            <ConditionalFooter />
+            <Footer />
+            <BottomNavigation />
           </CategoryProvider>
           {renderSchemaTags()}
         </OverlayProvider>

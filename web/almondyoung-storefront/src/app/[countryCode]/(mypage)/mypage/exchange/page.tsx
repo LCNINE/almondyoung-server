@@ -15,6 +15,7 @@ export default function ExchangePage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "취소/교환/반품",
       }}
     >
       <MypageLayout>

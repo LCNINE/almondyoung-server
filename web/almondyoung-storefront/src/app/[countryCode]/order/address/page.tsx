@@ -1,5 +1,5 @@
 import React from "react"
-
+//   /store/customers/me/addresses 메두사 배송지 등록 api
 // --- 아이콘 Placeholder (lucide-react 등 라이브러리로 대체) ---
 const BackIcon = () => (
   <svg

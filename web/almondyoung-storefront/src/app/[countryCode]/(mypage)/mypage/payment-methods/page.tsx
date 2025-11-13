@@ -9,6 +9,7 @@ export default function PaymentManagePage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "결제수단 관리",
       }}
     >
       <MypageLayout>

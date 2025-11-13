@@ -1,12 +1,12 @@
 import { UserDetail } from "domains/auth/types"
-import { MENU_ITEMS, QUICK_LINKS } from "../constants/mypage-constants"
+import { MENU_ITEMS } from "../constants/mypage-constants"
 import { MenuList } from "./menu-list"
 import { MobileHeader } from "./mobile-header"
-import { PaymentBanner } from "./payment-banner"
 import { PointsBanner } from "./points-banner"
 import { QuickLinks } from "./quick-links"
 import { SavingsBanner } from "./savings-banner"
-import { ShippingItem } from "./shipping-item"
+import ShippingStatusCard from "./shipping-status-card"
+import PayLaterBanner from "./paylater-banner"
 
 /**
  * 마이페이지 모바일 콘텐츠
@@ -21,13 +21,17 @@ interface MyPageMobileContentProps {
 
 export function MyPageMobileContent({ currentUser }: MyPageMobileContentProps) {
   return (
-    <div className="bg-muted mx-auto space-y-4 px-4 py-4">
-      <MobileHeader userName={currentUser?.username} />
-      <SavingsBanner />
-      <PointsBanner />
-      <QuickLinks links={QUICK_LINKS} />
-      <ShippingItem />
-      <PaymentBanner />
+    <div className="mx-auto">
+      <div className="bg-muted space-y-4 px-6 py-4">
+        <MobileHeader userName={currentUser?.username} />
+        <SavingsBanner />
+        <PointsBanner />
+        <QuickLinks />
+      </div>
+      <div className="space-y-4 bg-white px-4 py-4">
+        <ShippingStatusCard />
+      </div>
+      <PayLaterBanner />
       <MenuList items={MENU_ITEMS} />
     </div>
   )

@@ -27,10 +27,12 @@ export function OrderListClient() {
   const groupedOrders = groupOrdersByDate(orders)
 
   return (
-    <div className="min-h-screen bg-white py-4 md:px-6">
+    <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <PageTitle>주문 목록</PageTitle>
-      <FrequentProducts />
-      <OrderFilter />
+      {/* <FrequentProducts />  이건 잠시 보류 물어볼것 */}
+      <section className="my-5">
+        <OrderFilter />
+      </section>
       <section className="space-y-6">
         <OrderCard orderDate={orderData.orderDate}>
           <OrderCardContent

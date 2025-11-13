@@ -10,10 +10,10 @@ import { UserBasicInfo } from "@lib/types/ui/user"
 import { getRecommendedProducts } from "app/data/__mocks__/recommended-products.mock"
 import { ProductRecommandSlider } from "components/product-recommand-slider"
 import {
-  ReviewCardList,
   ReviewSummary,
   ProductReviewThumbnailGallery,
 } from "domains/reviews/summary"
+import { ReviewDetailCardList } from "domains/reviews/details"
 import { use, useRef, useState } from "react"
 import { ProductImageGallery } from "./components/product-image-gallery"
 import { ProductInfoMobile } from "./components/product-info-mobile"
@@ -45,7 +45,12 @@ const reviewListData = {
       date: "2025-05-09T00:00:00Z",
       tags: ["10년차 원장님", "재구매"],
       text: "얇고 촥 붙어요 좋습니다!\n언제나 믿고 사는 제품이에요. 가격이나 품질이나 모두 괜찮습니다",
-      thumbnail: { src: "rectangle-29.png", alt: "리뷰 첨부 사진", count: 5 },
+      productOption: "옵션: 100매 x 2박스",
+      thumbnails: [
+        { src: "/images/review-1.jpg", alt: "리뷰 사진 1" },
+        { src: "/images/review-2.jpg", alt: "리뷰 사진 2" },
+      ],
+      likeCount: 24,
     },
     {
       id: "r2",
@@ -54,7 +59,114 @@ const reviewListData = {
       date: "2025-05-09T00:00:00Z",
       tags: ["10년차 원장님"],
       text: "촉촉하고 유통기한 넉넉해서 좋네요!",
-      thumbnail: { src: "rectangle-29.png", alt: "리뷰 첨부 사진", count: 5 },
+      productOption: "옵션: 50매 x 1박스",
+      thumbnails: [{ src: "/images/review-3.jpg", alt: "리뷰 사진 3" }],
+      likeCount: 15,
+    },
+    {
+      id: "r3",
+      author: "박*수",
+      rating: 5,
+      date: "2025-05-08T00:00:00Z",
+      tags: ["5년차 원장님", "재구매"],
+      text: "가성비 최고입니다. 항상 구매하는 제품이에요.",
+      likeCount: 32,
+    },
+    {
+      id: "r4",
+      author: "최*영",
+      rating: 5,
+      date: "2025-05-07T00:00:00Z",
+      tags: ["3년차 원장님"],
+      text: "품질 좋고 배송도 빨라요!",
+      productOption: "옵션: 100매 x 1박스",
+      likeCount: 18,
+    },
+    {
+      id: "r5",
+      author: "김*민",
+      rating: 4,
+      date: "2025-05-06T00:00:00Z",
+      tags: ["7년차 원장님", "재구매"],
+      text: "만족스럽습니다. 다음에도 구매할게요.",
+      thumbnails: [
+        { src: "/images/review-4.jpg", alt: "리뷰 사진 4" },
+        { src: "/images/review-5.jpg", alt: "리뷰 사진 5" },
+        { src: "/images/review-6.jpg", alt: "리뷰 사진 6" },
+      ],
+      likeCount: 27,
+    },
+    {
+      id: "r6",
+      author: "정*아",
+      rating: 5,
+      date: "2025-05-05T00:00:00Z",
+      tags: ["8년차 원장님"],
+      text: "항상 이 제품만 사용합니다. 믿을 수 있어요.",
+      productOption: "옵션: 100매 x 3박스",
+      likeCount: 41,
+    },
+    {
+      id: "r7",
+      author: "윤*진",
+      rating: 4,
+      date: "2025-05-04T00:00:00Z",
+      tags: ["2년차 원장님"],
+      text: "처음 써봤는데 괜찮네요. 다음에도 구매할 것 같아요.",
+      thumbnails: [{ src: "/images/review-7.jpg", alt: "리뷰 사진 7" }],
+      likeCount: 12,
+    },
+    {
+      id: "r8",
+      author: "한*우",
+      rating: 5,
+      date: "2025-05-03T00:00:00Z",
+      tags: ["6년차 원장님", "재구매"],
+      text: "품질 대비 가격이 정말 좋습니다. 추천해요!",
+      likeCount: 29,
+    },
+    {
+      id: "r9",
+      author: "송*미",
+      rating: 5,
+      date: "2025-05-02T00:00:00Z",
+      tags: ["4년차 원장님"],
+      text: "배송도 빠르고 제품도 만족스럽습니다.",
+      productOption: "옵션: 50매 x 2박스",
+      thumbnails: [
+        { src: "/images/review-8.jpg", alt: "리뷰 사진 8" },
+        { src: "/images/review-9.jpg", alt: "리뷰 사진 9" },
+      ],
+      likeCount: 22,
+    },
+    {
+      id: "r10",
+      author: "조*현",
+      rating: 4,
+      date: "2025-05-01T00:00:00Z",
+      tags: ["9년차 원장님", "재구매"],
+      text: "오랫동안 사용하고 있는 제품입니다. 안정적이에요.",
+      likeCount: 35,
+    },
+    {
+      id: "r11",
+      author: "임*서",
+      rating: 5,
+      date: "2025-04-30T00:00:00Z",
+      tags: ["1년차 원장님"],
+      text: "신규 원장인데 선배 추천으로 구매했어요. 만족합니다!",
+      productOption: "옵션: 100매 x 1박스",
+      likeCount: 19,
+    },
+    {
+      id: "r12",
+      author: "장*은",
+      rating: 5,
+      date: "2025-04-29T00:00:00Z",
+      tags: ["12년차 원장님", "재구매"],
+      text: "오래 사용한 제품이라 믿고 삽니다. 항상 감사합니다.",
+      thumbnails: [{ src: "/images/review-10.jpg", alt: "리뷰 사진 10" }],
+      likeCount: 48,
     },
   ],
 }
@@ -288,9 +400,15 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
                 />
               </div>
 
-              <div className="px-4">
-                <ReviewCardList reviews={reviewListData.reviews} />
-              </div>
+     
+                <ReviewDetailCardList
+                  reviews={reviewListData.reviews}
+                  itemsPerPage={5}
+                  onLike={(reviewId, liked) =>
+                    console.log(`Review ${reviewId} liked: ${liked}`)
+                  }
+                />
+            
             </div>
 
             {/* Q&A */}

@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react"
 import { MenuItem } from "../../types/mypage-types"
-
+import Link from "next/link"
 interface MenuListProps {
   items: MenuItem[]
 }
@@ -15,8 +15,8 @@ export function MenuList({ items }: MenuListProps) {
       <ul className="rounded-lg bg-white shadow-sm">
         {items.map((item, index) => (
           <li key={item.label}>
-            <a
-              href="#"
+            <Link
+              href={item.path}
               className={`flex w-full items-center gap-4 p-4 transition-colors hover:bg-gray-50 ${index > 0 ? "border-muted border-t" : ""}`}
             >
               <ListIcon>{item.icon}</ListIcon>
@@ -24,7 +24,7 @@ export function MenuList({ items }: MenuListProps) {
                 {item.label}
               </span>
               <ChevronRight className="h-5 w-5" />
-            </a>
+            </Link>
           </li>
         ))}
       </ul>

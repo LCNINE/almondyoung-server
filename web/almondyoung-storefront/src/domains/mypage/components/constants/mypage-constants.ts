@@ -8,16 +8,16 @@ export const QUICK_LINKS: QuickLink[] = [
 ]
 
 export const MENU_ITEMS: MenuItem[] = [
-  { label: "주문조회", icon: "📄" },
-  { label: "취소 / 반품 / 교환목록", icon: "🔄" },
-  { label: "리뷰 관리", icon: "⭐" },
-  { label: "아몬드영 멤버십", icon: "💎" },
-  { label: "결제수단", icon: "💳" },
-  { label: "적립금", icon: "💰" },
-  { label: "쿠폰", icon: "🏷️" },
-  { label: "다운로드", icon: "📥" },
-  { label: "구독 관리", icon: "🔁" },
-  { label: "로그아웃", icon: "🚪" },
+  { label: "주문조회", icon: "📄", path: "/mypage/order/list" },
+  { label: "취소 / 반품 / 교환목록", icon: "🔄", path: "/mypage/exchange" },
+  { label: "리뷰 관리", icon: "⭐", path: "/mypage/reviews" },
+  { label: "아몬드영 멤버십", icon: "💎", path: "/mypage/membership" },
+  { label: "결제수단", icon: "💳", path: "/mypage/payment-methods" },
+  { label: "적립금", icon: "💰", path: "/mypage/points" },
+  { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
+  { label: "다운로드", icon: "📥", path: "/mypage/download" },
+  { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
+  { label: "로그아웃", icon: "🚪", path: "/mypage/logout" },
 ]
 
 export const SIDEBAR_MENU_ITEMS = [

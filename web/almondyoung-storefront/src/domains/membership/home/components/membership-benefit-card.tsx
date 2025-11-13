@@ -93,7 +93,7 @@ export default function MembershipPlanCard({
   const headerBgColor = variant === "pro" ? "bg-[#007aff]" : "bg-[#2c2c2e]"
 
   return (
-    <article className="flex w-full max-w-[473px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
+    <article className="mx-auto flex w-full max-w-[473px] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white">
       {/* Header - 가격 정보 (연간 버전 레이아웃 기준) */}
       <header className={`flex flex-col gap-2.5 p-5 ${headerBgColor}`}>
         {/* 플랜명 + 가격 */}

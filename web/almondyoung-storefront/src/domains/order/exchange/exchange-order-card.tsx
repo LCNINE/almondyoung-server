@@ -119,6 +119,7 @@ export function ExchangeOrderCard({
               size="md"
               onClick={onExchangeDetailClick}
               fullWidth={true}
+              className="flex-1"
             >
               교환 상세보기
             </CustomButton>
@@ -129,6 +130,7 @@ export function ExchangeOrderCard({
                 size="md"
                 onClick={onTrackingClick}
                 fullWidth={true}
+                className="flex-1"
               >
                 회수조회
               </CustomButton>
@@ -138,6 +140,7 @@ export function ExchangeOrderCard({
                 size="md"
                 fullWidth={false}
                 onClick={onDeliveryTrackingClick}
+                className="flex-1"
               >
                 배송조회
               </CustomButton>
@@ -219,6 +222,7 @@ export function ExchangeOrderCard({
               size="md"
               onClick={onExchangeDetailClick}
               fullWidth={true}
+              className="flex-1"
             >
               교환 상세
             </CustomButton>
@@ -228,6 +232,7 @@ export function ExchangeOrderCard({
               size="md"
               onClick={onTrackingClick}
               fullWidth={true}
+              className="flex-1"
             >
               회수 조회
             </CustomButton>
@@ -237,6 +242,7 @@ export function ExchangeOrderCard({
               size="md"
               onClick={onDeliveryTrackingClick}
               fullWidth={true}
+              className="flex-1"
             >
               배송 조회
             </CustomButton>

@@ -1,12 +1,13 @@
-import { QuickLink } from "app/[countryCode]/mypage/types/mypage-types"
-import { FileText, Heart, ShoppingCart, Clock } from "lucide-react"
-interface QuickMenuSectionProps {
-  items: QuickLink[]
-}
+import {
+  OrderListIcon,
+  WishlistIcon,
+  FrequentPurchaseIcon,
+  RecentViewIcon,
+} from "components/common/icons"
 
-export function QuickMenuSection({ items }: QuickMenuSectionProps) {
+export function QuickMenuSection() {
   return (
-    <nav className="bg-white rounded-lg">
+    <nav className="rounded-lg bg-white">
       {/* Outer Container - 최대 좌우 여백 제한 */}
       <div className="px-5 py-4">
         {/* Inner Container - 아이콘 그룹 최대 너비 제한 + 중앙 정렬 */}
@@ -19,11 +20,9 @@ export function QuickMenuSection({ items }: QuickMenuSectionProps) {
                 type="button"
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
-                {/* Icon Container */}
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <FileText className="h-8 w-8 text-[#FF9500]" />
+                  <OrderListIcon size={32} />
                 </div>
-                {/* Label */}
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   주문목록
                 </span>
@@ -36,11 +35,9 @@ export function QuickMenuSection({ items }: QuickMenuSectionProps) {
                 type="button"
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
-                {/* Icon Container */}
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <Heart className="h-8 w-8 text-[#FF9500]" />
+                  <WishlistIcon size={32} />
                 </div>
-                {/* Label */}
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   찜한상품
                 </span>
@@ -53,30 +50,26 @@ export function QuickMenuSection({ items }: QuickMenuSectionProps) {
                 type="button"
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
-                {/* Icon Container */}
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <ShoppingCart className="h-8 w-8 text-[#FF9500]" />
+                  <FrequentPurchaseIcon size={32} />
                 </div>
-                {/* Label */}
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
                   자주산상품
                 </span>
               </button>
             </li>
 
-            {/* 맞춤정보 */}
+            {/* 최근 본 상품 */}
             <li>
               <button
                 type="button"
                 className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
               >
-                {/* Icon Container */}
                 <div className="flex h-10 w-10 items-center justify-center">
-                  <Clock className="h-8 w-8 text-[#FF9500]" />
+                  <RecentViewIcon size={32} />
                 </div>
-                {/* Label */}
                 <span className="font-['Pretendard'] text-sm font-medium text-black">
-                  맞춤정보
+                  최근 본 상품
                 </span>
               </button>
             </li>
