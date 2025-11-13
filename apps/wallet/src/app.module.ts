@@ -60,13 +60,12 @@ import { PointRepository } from './services/points/point.repository';
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateWalletEnv,
-      ...(process.env.NODE_ENV !== 'production' && {
-        envFilePath: ['apps/wallet/.env'],
-      }),
+      envFilePath:
+        process.env.NODE_ENV === 'production'
+          ? undefined
+          : ['.env', 'apps/wallet/.env'],
     }),
-    AuthCoreModule.forRootAsync({
-      secret: process.env.AUTH_SECRET || '',
-    }),
+    AuthCoreModule.forRootAsync(),
     ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
@@ -144,4 +143,4 @@ import { PointRepository } from './services/points/point.repository';
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule {}
+export class AppModule { }
