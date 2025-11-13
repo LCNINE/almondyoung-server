@@ -1225,7 +1225,7 @@ export class ProductMastersService {
     const client = this.getClient(tx);
 
     // Check if product exists and is not already deleted
-    const product = await this.getMasterById(id, tx);
+    const product = await this.getMasterById(id, tx, true);
     if (!product) {
       throw new Error(`Product with ID ${id} not found`);
     }
