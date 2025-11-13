@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Twilio } from 'twilio';
 import { LookupDto } from '../dto/twilio.dto';
-import { TwilioLookupException } from '../exceptions/twilio.exceptions';
+import { TwilioException } from '../exceptions/twilio.exceptions';
 
 @Injectable()
 export class LookupService {
@@ -22,7 +22,7 @@ export class LookupService {
 
       return result;
     } catch (error) {
-      if (error instanceof TwilioLookupException) {
+      if (error instanceof TwilioException) {
         throw error;
       }
 
@@ -33,9 +33,10 @@ export class LookupService {
         status: error.status,
       });
 
-      throw new TwilioLookupException({
+      throw new TwilioException({
         message: `전화번호 조회 중 오류가 발생했습니다: ${error.message}`,
         httpStatus: error.status,
+        errorCode: 'TWILIO_LOOKUP_EXCEPTION',
       });
     }
   }
@@ -46,8 +47,9 @@ export class LookupService {
       const errorMessage = result.validationErrors.join(', ');
 
       this.logger.warn(`전화번호 검증 실패: ${errorMessage}`);
-      throw new TwilioLookupException({
+      throw new TwilioException({
         message: errorMessage,
+        errorCode: 'TWILIO_LOOKUP_EXCEPTION',
       });
     }
   }
