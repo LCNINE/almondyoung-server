@@ -4,7 +4,6 @@ import {
   Body,
   Controller,
   Delete,
-  Get,
   Param,
   Post,
   Put,
@@ -18,11 +17,16 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { BusinessLicense } from '../../../database/drizzle/schema';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
-import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
-import { CreateBusinessLicenseWithFileDto } from './dto/create-business-license.dto';
+import {
+  BusinessLicenseResponseDto,
+  FetchBusinessLicenseResponseDto,
+} from './dto/business-license.response.dto';
+import {
+  CreateBusinessLicenseWithFileDto,
+  FetchBusinessLicenseDto,
+} from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 
 @ApiTags('사업자 등록 관리')
@@ -35,25 +39,24 @@ export class BusinessLicensesController {
   ) {}
 
   @ApiOperation({
-    summary: '사업자 등록 정보 조회',
-    description: '현재 로그인한 사용자의 사업자 등록 정보를 조회합니다.',
+    summary: '사업자 정보 외부 조회',
+    description: '사용자의 사업자 정보를 외부에서 조회합니다.',
   })
   @ApiResponse({
     status: 200,
     description: '사업자 등록 정보 조회 성공',
-    type: BusinessLicenseResponseDto,
+    type: FetchBusinessLicenseResponseDto,
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
-  @Get()
+  @Post('fetch')
   @RequireScopes(['user:read'])
-  async findBusinessLicenseByUserId(
-    @CurrentUser() user: JwtPayload,
-  ): Promise<BusinessLicense | null> {
-    const registration =
-      await this.businessLicensesService.findBusinessLicenseByUserId(user.id);
-
-    return registration;
+  async fetchBusinessLicense(
+    @Body() fetchBusinessLicenseDto: FetchBusinessLicenseDto,
+  ) {
+    return this.businessLicensesService.fetchBusinessLicense(
+      fetchBusinessLicenseDto,
+    );
   }
 
   /**
@@ -116,11 +119,11 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @Delete(':id')
   @RequireScopes(['user:delete'])
-  async deleteBusinessLicenseByBusinessLicenseId(
+  async removeBusinessLicense(
     @Param('id') businessLicenseId: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.businessLicensesService.deleteBusinessLicenseByBusinessLicenseId(
+    return this.businessLicensesService.removeBusinessLicense(
       businessLicenseId,
       user.id,
     );
