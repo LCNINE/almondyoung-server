@@ -29,7 +29,10 @@ export class AuthCoreModule {
   static forRootAsync(options?: { secret?: string }): DynamicModule {
     return {
       module: AuthCoreModule,
-      imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
+      imports: [
+        ConfigModule,
+        PassportModule.register({ defaultStrategy: 'jwt' }),
+      ],
       providers: [
         {
           provide: AUTH_CONFIG,
