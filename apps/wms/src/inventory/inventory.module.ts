@@ -46,6 +46,9 @@ import { TransferController } from './controllers/transfer.controller';
 // Phase 3 Week 7: SKU Groups Management
 import { SkuGroupService } from './services/sku-group.service';
 import { SkuGroupController } from './controllers/sku-group.controller';
+// Holder Management
+import { HolderService } from './services/holder.service';
+import { HolderController } from './controllers/holder.controller';
 
 @Module({
   imports: [
@@ -84,6 +87,8 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     TransferController,
     // Phase 3 Week 7: SKU Groups controller
     SkuGroupController,
+    // Holder controller
+    HolderController,
     // Phase 3: Product Event Consumer (Kafka)
     ProductEventConsumer,
   ],
@@ -112,6 +117,8 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     TransferService,
     // Phase 3 Week 7: SKU Groups service
     SkuGroupService,
+    // Holder service
+    HolderService,
   ],
   exports: [
     InventoryService,
@@ -135,6 +142,8 @@ import { SkuGroupController } from './controllers/sku-group.controller';
     TransferService,
     // Phase 3 Week 7: Export SKU Groups service
     SkuGroupService,
+    // Export Holder service
+    HolderService,
   ],
 })
 export class InventoryModule { }
