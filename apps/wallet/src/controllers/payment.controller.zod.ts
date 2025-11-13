@@ -80,8 +80,10 @@ const CapturePaymentResponseSchema = BaseResponseSchema.extend({
 
 // HMS 카드 프로필 관련 스키마
 export const CreateHmsCardProfileSchema = z.object({
-  userId: z.string().min(1, '사용자 ID는 필수입니다.'),
-  memberId: z.string().min(1).max(20, '회원 ID는 20자 이내여야 합니다.'),
+  // userId는 JWT에서 추출되므로 optional로 변경
+  userId: z.string().min(1, '사용자 ID는 필수입니다.').optional(),
+  // memberId는 서버에서 자동 생성되므로 optional로 변경
+  memberId: z.string().min(1).max(20, '회원 ID는 20자 이내여야 합니다.').optional(),
   memberName: z.string().min(1).max(25, '회원명은 25자 이내여야 합니다.'),
   phone: z
     .string()
