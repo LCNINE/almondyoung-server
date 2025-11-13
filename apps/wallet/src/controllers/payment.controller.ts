@@ -79,7 +79,7 @@ import {
  * @since 2025-01-15
  */
 @ApiTags('결제 (Payments)')
-@Controller('v2/payments')
+@Controller('/payments')
 export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
   constructor(
@@ -530,6 +530,55 @@ export class PaymentController {
       }
     } catch (error) {
       this.handleError(error, '결제 캡처');
+    }
+  }
+
+  @Get('profiles')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '결제 프로필 목록 조회',
+    description: `사용자의 모든 결제 프로필을 조회합니다.
+    
+**반환 정보:**
+- 프로필 ID
+- 프로필 종류 (CARD, BANK_ACCOUNT, WALLET)
+- 결제 제공자 (HMS_CARD, HMS_BNPL, TOSS)
+- 프로필 상태
+- 상세 정보 (카드사, 마스킹된 번호 등)`,
+  })
+  @ApiResponse({
+    status: 200,
+    description: '결제 프로필 목록 조회 성공',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '프로필 ID' },
+          kind: { type: 'string', description: '프로필 종류' },
+          provider: { type: 'string', description: '결제 제공자' },
+          status: { type: 'string', description: '프로필 상태' },
+          name: { type: 'string', description: '프로필 이름' },
+          details: { type: 'object', description: '상세 정보' },
+          createdAt: { type: 'string', description: '등록일시' },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: '인증 실패',
+    type: ErrorResponseDto,
+  })
+  async getPaymentProfiles(@User('userId') userId: string) {
+    try {
+      this.logger.log(`결제 프로필 목록 조회: userId=${userId}`);
+
+      const profiles = await this.profileService.getPaymentProfiles(userId);
+
+      return profiles;
+    } catch (error) {
+      this.handleError(error, '결제 프로필 조회');
     }
   }
 
