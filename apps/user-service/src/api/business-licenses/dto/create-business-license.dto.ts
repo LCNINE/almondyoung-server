@@ -1,4 +1,5 @@
 import { PickType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
   IsOptional,
@@ -33,3 +34,15 @@ export class CreateBusinessLicenseWithFileDto extends PickType(
   BusinessLicenseBaseDto,
   ['file', 'shopId', 'metadata'] as const,
 ) {}
+
+export class FetchBusinessLicenseDto {
+  @Transform(({ value }) => value?.replace(/-/g, ''))
+  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
+  @Length(10, 10, { message: '사업자번호는 10자리이어야 합니다.' })
+  @IsString({ message: '사업자번호는 문자열이어야 합니다.' })
+  businessNumber: string;
+
+  @IsNotEmpty({ message: '대표자명은 필수입니다.' })
+  @Length(1, 100)
+  representativeName: string;
+}
