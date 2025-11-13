@@ -34,10 +34,14 @@ export class HmsCardRegistrar
   constructor() {
     // API 클라이언트 초기화 로직을 여기로 가져옵니다.
     // 더 좋은 방법은 API 클라이언트를 별도 Provider로 만들어 주입(Inject)받는 것입니다.
+    const isTest = process.env.NODE_ENV !== 'production';
+    this.logger.warn(
+      `🔍 HMS Card Registrar 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
+    );
     this.hmsApi = ApiClientFactory.create({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
-      isTest: process.env.NODE_ENV !== 'production',
+      isTest: isTest,
       useMock: false,
     }) as HmsAPI;
   }

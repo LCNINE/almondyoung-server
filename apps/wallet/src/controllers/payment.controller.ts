@@ -10,12 +10,15 @@ import {
   BadRequestException,
   Req,
   HttpCode,
-  Logger, // ✨ 바로 이 부분이 @nestjs/common에서 온 것인지가 중요합니다.
+  Logger,
+  UseGuards,
 } from '@nestjs/common';
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplService } from '../services/bnpl/bnpl.service';
+import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
+import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
 
 import { PaymentError } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -87,7 +90,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
-  ) {}
+  ) { }
 
   @Post('intents')
   @ApiOperation({
@@ -531,6 +534,7 @@ export class PaymentController {
   }
 
   @Post('profiles/hms-card')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'HMS 카드 프로필 생성',
     description: `HMS(Hyundai Motor Service) 카드 결제를 위한 프로필을 생성합니다.
@@ -552,8 +556,6 @@ export class PaymentController {
       hmsCard: {
         summary: 'HMS 카드 프로필',
         value: {
-          userId: 'user_12345',
-          memberId: 'HM20250115001',
           memberName: '김현대',
           phone: '01012345678',
           payerNumber: '901201',
@@ -579,18 +581,26 @@ export class PaymentController {
     type: ErrorResponseDto,
   })
   @ApiResponse({
+    status: 401,
+    description: '인증 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
     status: 500,
     description: '프로필 생성 중 서버 오류',
     type: ErrorResponseDto,
   })
   async createHmsCardProfile(
+    @User('userId') userId: string,
     @Body(new ZodValidationPipe(CreateHmsCardProfileSchema))
     dto: CreateHmsCardProfileDto,
   ) {
     try {
-      // 추후 userid jwt토큰에서 추출하는것으로 바꿀것.
-      // const { userId, ...profileData } = dto;
-      return await this.profileService.createHmsCardProfile(dto);
+      // JWT에서 추출한 userId 사용
+      return await this.profileService.createHmsCardProfile({
+        ...dto,
+        userId,
+      });
     } catch (error) {
       // ... (에러 처리)
       throw new HttpException(
@@ -763,7 +773,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {
