@@ -59,7 +59,7 @@ export class PaymentProfileService {
       await this.profilesRepo.create(
         {
           id: profileId,
-          userId: dto.userId,
+          userId: dto.userId!, // controller에서 이미 userId를 주입했으므로 non-null assertion
           kind: 'CARD',
           provider: ProviderType.HMS_CARD,
           name: dto.memberName ?? null,
