@@ -238,13 +238,69 @@ export const inventoryMasterStatusEnum = pgEnum('inventory_master_status', ['act
 export const suppliers = pgTable('suppliers', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
-    contactInfo: json('contact_info'), // 연락처, 주소 등
+    
+    // Contact information
+    phone: varchar('phone', { length: 50 }),
+    fax: varchar('fax', { length: 50 }),
+    email: varchar('email', { length: 255 }),
+    
+    // Address information
+    zipcode: varchar('zipcode', { length: 20 }),
+    address1: varchar('address1', { length: 500 }),
+    address2: varchar('address2', { length: 500 }),
+    
+    // Business information
+    businessRegNo: varchar('business_reg_no', { length: 50 }),
+    businessType: varchar('business_type', { length: 100 }),
+    ceoName: varchar('ceo_name', { length: 100 }),
+    
+    // Purchase settings
+    isDirectDelivery: boolean('is_direct_delivery').default(false),
+    orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
+    
+    // Payment information
+    bankName: varchar('bank_name', { length: 100 }),
+    bankAccountNo: varchar('bank_account_no', { length: 100 }),
+    bankAccountHolder: varchar('bank_account_holder', { length: 100 }),
+    // NOTE: Common values: 'prepaid', 'postpaid', 'monthly'. Kept as varchar for flexibility
+    paymentMethod: varchar('payment_method', { length: 50 }),
+    
+    // Additional metadata
+    description: text('description'),
+    memo: text('memo'),
+    
+    // NOTE: References user-service users table (separate DB), stored as string without FK
+    purchaseManagerId: varchar('purchase_manager_id', { length: 36 }),
+    
+    // DEPRECATED: Will be removed in future migration, use individual fields above
+    contactInfo: json('contact_info'),
+    
     defaultWarehouseId: uuid('default_warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' })
-        .notNull(),
+        .references(() => warehouses.id, { onDelete: 'restrict' }),
+    
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const supplierCategories = pgTable('supplier_categories', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 255 }).notNull().unique(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const supplierCategoryMappings = pgTable('supplier_category_mappings', {
+    supplierId: uuid('supplier_id')
+        .references(() => suppliers.id, { onDelete: 'cascade' })
+        .notNull(),
+    categoryId: uuid('category_id')
+        .references(() => supplierCategories.id, { onDelete: 'cascade' })
+        .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+    pk: primaryKey({ columns: [t.supplierId, t.categoryId] }),
+}));
 
 /*───────────────────────────
  * MOVEMENT JOBS (헤더/라인/타임라인)
@@ -1679,6 +1735,8 @@ export const invoices = pgTable('invoices', {
  *──────────────────────────*/
 export const wmsTables = {
     suppliers,
+    supplierCategories,
+    supplierCategoryMappings,
     holders,
     skus,
     skuSuppliers,
@@ -1773,6 +1831,22 @@ export const holdersRelations = relations(holders, ({ many }) => ({
 export const suppliersRelations = relations(suppliers, ({ many }) => ({
     purchaseOrders: many(purchaseOrders),
     skuSuppliers: many(skuSuppliers),
+    supplierCategoryMappings: many(supplierCategoryMappings),
+}));
+
+export const supplierCategoriesRelations = relations(supplierCategories, ({ many }) => ({
+    supplierCategoryMappings: many(supplierCategoryMappings),
+}));
+
+export const supplierCategoryMappingsRelations = relations(supplierCategoryMappings, ({ one }) => ({
+    supplier: one(suppliers, {
+        fields: [supplierCategoryMappings.supplierId],
+        references: [suppliers.id],
+    }),
+    category: one(supplierCategories, {
+        fields: [supplierCategoryMappings.categoryId],
+        references: [supplierCategories.id],
+    }),
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -2521,6 +2595,8 @@ export const wmsRelations = {
     // 모든 관계들 - Core Master Data Relations
     holdersRelations,
     suppliersRelations,
+    supplierCategoriesRelations,
+    supplierCategoryMappingsRelations,
     categoriesRelations,
     deliveryProfilesRelations,
 

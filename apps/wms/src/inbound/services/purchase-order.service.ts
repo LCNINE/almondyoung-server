@@ -314,8 +314,13 @@ export class PurchaseOrderService {
             .from(wmsTables.suppliers)
             .where(eq(wmsTables.suppliers.id, supplierId))
             .limit(1);
-        if (!supplier || !supplier.defaultWarehouseId) {
-            throw new BadRequestException('Supplier default warehouse not configured');
+        if (!supplier) {
+            throw new BadRequestException(`Supplier with ID ${supplierId} not found`);
+        }
+        if (!supplier.defaultWarehouseId) {
+            throw new BadRequestException(
+                `Supplier ${supplierId} does not have a default warehouse configured. Please set a default warehouse for this supplier.`
+            );
         }
         return supplier.defaultWarehouseId;
     }
