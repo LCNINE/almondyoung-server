@@ -26,7 +26,7 @@ import {
 import { FastifyReply, FastifyRequest } from 'fastify';
 import * as schema from '../../../database/drizzle/schema';
 import { ProviderType } from '../../commons/types';
-import { Public } from '../../constants/public.decorator';
+import { Public } from '../../commons/decorator/public.decorator';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
