@@ -1,5 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { Public } from 'apps/user-service/src/constants/public.decorator';
+import { Public } from 'apps/user-service/src/commons/decorator/public.decorator';
 import { SendMessageDto } from '../dto/twilio.dto';
 import { SendMessageService } from '../services/send-message.service';
 
