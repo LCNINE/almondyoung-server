@@ -6,7 +6,11 @@ import { BusinessLicenseBaseDto } from './create-business-license.dto';
 
 export class UpdateBusinessLicenseDto extends PartialType(
   BusinessLicenseBaseDto,
-) {}
+) {
+  @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
+  @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
+  file: string;
+}
 
 export class UpdateBusinessLicenseDtoWithReviewCommentAndStatus extends PartialType(
   BusinessLicenseBaseDto,

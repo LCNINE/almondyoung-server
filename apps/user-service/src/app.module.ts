@@ -95,6 +95,7 @@ function createKafkaConfig() {
         throwOnValidationError: true,
       },
     }),
+
     ScheduleModule.forRoot(),
     AuthModule.register(),
     UsersModule,
