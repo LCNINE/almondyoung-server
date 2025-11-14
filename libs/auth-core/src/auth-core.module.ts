@@ -29,14 +29,16 @@ export class AuthCoreModule {
   static forRootAsync(options?: { secret?: string }): DynamicModule {
     return {
       module: AuthCoreModule,
-      imports: [
-        ConfigModule,
-        PassportModule.register({ defaultStrategy: 'jwt' }),
-      ],
+      imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
       providers: [
         {
           provide: AUTH_CONFIG,
           useFactory: (configService: ConfigService) => {
+            // 디버깅: 모든 환경 변수 확인
+            console.log('🔍 [AuthCoreModule] options?.secret:', options?.secret);
+            console.log('🔍 [AuthCoreModule] process.env.AUTH_SECRET:', process.env.AUTH_SECRET);
+            console.log('🔍 [AuthCoreModule] configService.get(AUTH_SECRET):', configService.get<string>('AUTH_SECRET'));
+            
             // 직접 주입된 secret 우선, 없으면 ConfigService에서 읽기
             const secret =
               options?.secret || configService.get<string>('AUTH_SECRET');
