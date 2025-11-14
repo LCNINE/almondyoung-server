@@ -213,7 +213,7 @@ export class AuthService {
           this.configService.get('USER_SERVICE_URL') +
           `auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to_full)}`;
 
-        console.log('callbackUrl:::', callbackUrl);
+        console.log(callbackUrl);
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
