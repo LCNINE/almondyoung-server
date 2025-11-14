@@ -19,12 +19,18 @@ export class HmsCardChargeProvider
     this.logger.warn(
       `🔍 HMS Card Charge 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
     );
-    this.hmsApi = ApiClientFactory.create({
+    
+    // 카드 결제도 api-test를 사용
+    const baseURL = isTest 
+      ? 'https://api-test.hyosungcms.co.kr/v1'
+      : 'https://api.hyosungcms.co.kr/v1';
+    
+    this.hmsApi = new (require('hms-api-wrapper').HmsAPI)({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
       isTest: isTest,
-      useMock: false,
-    }) as HmsAPI;
+      baseURL: baseURL,
+    });
   }
 
   async process(payload: HmsCardPayload): Promise<PaymentResult> {

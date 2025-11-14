@@ -25,13 +25,13 @@ async function bootstrap(): Promise<void> {
   // 개발환경: Express, 운영환경: Fastify
   const app = isDev
     ? await NestFactory.create<NestFastifyApplication>(
-        AppModule,
-        new FastifyAdapter(),
-      )
+      AppModule,
+      new FastifyAdapter(),
+    )
     : await NestFactory.create<NestFastifyApplication>(
-        AppModule,
-        new FastifyAdapter(),
-      );
+      AppModule,
+      new FastifyAdapter(),
+    );
 
   // 쿠키 파서 등록 (Fastify)
   await app.register(fastifyCookie);
@@ -94,6 +94,44 @@ async function bootstrap(): Promise<void> {
       },
     });
   }
+
+  // 전역 에러 로깅 필터 (Fastify 호환)
+  app.useGlobalFilters({
+    catch(exception: any, host: any) {
+      const ctx = host.switchToHttp();
+      const response = ctx.getResponse();
+      const request = ctx.getRequest();
+
+      const status = exception.getStatus?.() || 500;
+
+      console.error('❌ [Membership] 전역 에러 발생:', {
+        timestamp: new Date().toISOString(),
+        path: request.url,
+        method: request.method,
+        status: status,
+        body: request.body,
+        query: request.query,
+        params: request.params,
+        errorName: exception.name,
+        errorMessage: exception.message,
+        // Zod 에러의 경우 상세 정보 포함
+        zodErrors: exception.response?.message || exception.getResponse?.(),
+      });
+
+      // 스택 트레이스는 개발 환경에서만
+      if (isDev) {
+        console.error('Stack trace:', exception.stack);
+      }
+
+      // Fastify 응답 처리
+      response.code(status).send({
+        statusCode: status,
+        message: exception.message,
+        error: exception.name,
+        ...(exception.response && { details: exception.response }),
+      });
+    },
+  });
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port, '0.0.0.0');
