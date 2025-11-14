@@ -73,44 +73,6 @@ export class AuthService {
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
   }
 
-  private getEmailVerifyCallbackUrl(
-    callbackPath: string,
-    redirectTo?: string,
-  ): string {
-    const redirect_to = redirectTo ?? '/callback/signup';
-
-    // 서버쪽 주소
-    const baseUrl = process.env.production
-      ? this.configService.get('USER_SERVICE_URL')
-      : this.configService.get('USER_SERVICE_URL') || 'http://localhost:3030';
-
-    return new URL(
-      `/${callbackPath}?redirect_to=${redirect_to}`,
-      baseUrl,
-    ).toString();
-  }
-
-  private getEmailVerifyRedirectUrl(redirectTo?: string): string {
-    // 프론트쪽 주소
-    const baseUrl = process.env.production
-      ? this.configService.get('CORS_ORIGIN_DOMAIN')
-      : this.configService.get('CORS_ORIGIN_DOMAIN') || 'http://localhost:8000';
-
-    return new URL(
-      `/auth/callback/signup?redirect_to=${redirectTo}`,
-      baseUrl,
-    ).toString();
-  }
-
-  private getRedirectUrl(redirectTo: string): string {
-    const baseUrl =
-      (this.configService.get('CORS_ORIGIN_DOMAIN') ??
-        'http://localhost:8000') + `/${redirectTo}`;
-
-    const redirectUrl = new URL(baseUrl);
-    return redirectUrl.toString();
-  }
-
   async signUp(
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
@@ -249,6 +211,17 @@ export class AuthService {
         //   callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
         //   redirectTo?: this.getEmailVerifyRedirectUrl(redirect_to),
         // });
+        const frontendBaseUrl =
+          this.configService.get('CORS_ORIGIN_DOMAIN') ??
+          'http://localhost:8000';
+
+        const redirect_to_full = `${frontendBaseUrl}/callback/signup`;
+
+        const callbackUrl =
+          this.configService.get('USER_SERVICE_URL') +
+          `/auth/callback/signup?redirect_to=${encodeURIComponent(redirect_to_full)}`;
+
+        console.log('callbackUrl:::', callbackUrl);
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
@@ -265,6 +238,7 @@ export class AuthService {
     }
   }
 
+  // 회원가입 이메일 인증 완료 처리
   async signupVerifyEmail(
     token: string,
     reply: FastifyReply,
@@ -335,10 +309,12 @@ export class AuthService {
       //     name: verificationToken.user.username,
       //   },
       // });
+      const frontendBaseUrl =
+        this.configService.get('CORS_ORIGIN_DOMAIN') ?? 'http://localhost:8000';
 
-      const redirectUrl = this.getRedirectUrl(redirectTo ?? '/callback/signup');
+      const redirect_to_full = `${frontendBaseUrl}${redirectTo ?? '/callback/signup'}`;
 
-      return reply.status(302).redirect(redirectUrl);
+      return reply.status(302).redirect(redirect_to_full);
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
@@ -382,8 +358,11 @@ export class AuthService {
       email: user.email,
       name: user.username,
       verificationToken: verificationToken,
-      callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
-      redirectTo: this.getEmailVerifyRedirectUrl(redirectTo),
+      callbackUrl:
+        (this.configService.get('CORS_ORIGIN_DOMAIN') ??
+          'http://localhost:8000') + `/callback/signup`,
+
+      redirectTo: `/${redirectTo ?? '/callback/signup'}`,
     });
 
     return;
@@ -422,7 +401,9 @@ export class AuthService {
     await this.lastActivityAtUpdate(user);
 
     if (redirectTo) {
-      const redirectUrl = this.getRedirectUrl(redirectTo);
+      const redirectUrl =
+        (this.configService.get('CORS_ORIGIN_DOMAIN') ??
+          'http://localhost:8000') + `/${redirectTo ?? '/'}`;
 
       return reply.status(302).redirect(redirectUrl.toString());
     }
