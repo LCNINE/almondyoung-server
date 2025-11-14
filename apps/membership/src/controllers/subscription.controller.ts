@@ -135,12 +135,18 @@ export class SubscriptionController {
     description: '플랜을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  // @UseGuards(DevAuthGuard) // 🚨 임시로 비활성화
+  @UseGuards(JwtAuthGuard)
   async createSubscription(
     @User('userId') userId: string,
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
   ) {
+    console.log('📥 구독 생성 요청:', { userId, planId: createSubscriptionDto.planId });
+
+    if (!userId) {
+      throw new BadRequestException('userId가 필요합니다');
+    }
+
     return this.subscriptionService.createSubscription(
       userId,
       createSubscriptionDto.planId,
