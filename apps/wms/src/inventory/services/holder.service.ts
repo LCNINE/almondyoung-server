@@ -203,7 +203,7 @@ export class HolderService {
             const [fulfillmentCount] = await trx
                 .select({ count: count() })
                 .from(fulfillmentOrders)
-                .where(eq(fulfillmentOrders.holderId, id));
+                .where(eq(fulfillmentOrders.ownerId, id));
 
             if (fulfillmentCount.count > 0) {
                 throw new BadRequestException(
