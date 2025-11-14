@@ -3,45 +3,22 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
+import { validatePimEnv } from './config/env.validation';
+import { pimSchema } from './schema';
+
+// Root level
 import { PimController } from './pim.controller';
 import { PimService } from './pim.service';
-import { ProductCategoriesController } from './controllers/categories.controller';
-import { ProductCategoriesService } from './services/categories.service';
-import { ProductMastersController } from './controllers/product-masters.controller';
-import { ProductMastersService } from './services/product-masters.service';
-import { ProductVariantsController } from './controllers/product-variants.controller';
-import { ProductVariantsService } from './services/product-variants.service';
-import { ChannelProductsController } from './controllers/channel-products.controller';
-import { ChannelProductsService } from './services/channel-products.service';
-import { SalesChannelsController } from './controllers/sales-channels.controller';
-import { SalesChannelsService } from './services/sales-channels.service';
-import { FileUploadController } from './controllers/file-upload.controller';
-import { ImageService } from './services/image.service';
-import { validatePimEnv } from './config/env.validation';
 
-// Phase 1 new imports
-import { ProductApprovalController } from './controllers/product-approval.controller';
-import { ProductApprovalService } from './services/product-approval.service';
-import { ProductSearchService } from './services/product-search.service';
-import { ProductBulkController } from './controllers/product-bulk.controller';
-import { ProductBulkService } from './services/product-bulk.service';
-
-// Phase 3 new imports
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ProductCsvService } from './services/product-csv.service';
-import { ProductCsvController } from './controllers/product-csv.controller';
-import { ProductAuditService } from './services/product-audit.service';
-import { ProductAuditController } from './controllers/product-audit.controller';
-import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
-
-// Phase 4 new imports
-import { DashboardService } from './services/dashboard.service';
-import { DashboardController } from './controllers/dashboard.controller';
-
-import { PricingStrategyFactory } from './services/pricing/pricing-strategy.factory';
-import { OptionBasedPricingStrategy } from './services/pricing/option-based-pricing.strategy';
-import { VariantBasedPricingStrategy } from './services/pricing/variant-based-pricing.strategy';
-import { pimSchema } from './schema';
+// Feature modules
+import { CategoriesModule } from './core/categories/categories.module';
+import { ProductsModule } from './core/products/products.module';
+import { ChannelsModule } from './core/channels/channels.module';
+import { ApprovalModule } from './operations/approval/approval.module';
+import { BulkModule } from './operations/bulk/bulk.module';
+import { CsvModule } from './operations/csv/csv.module';
+import { AuditModule } from './operations/audit/audit.module';
+import { DashboardModule } from './analytics/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -49,7 +26,6 @@ import { pimSchema } from './schema';
       isGlobal: true,
       validate: validatePimEnv,
     }),
-    // PIM 전체 스키마를 한 곳에서 관리
     DbModule.forRoot({
       config: {
         connectionString:
@@ -58,54 +34,24 @@ import { pimSchema } from './schema';
       },
       schema: pimSchema,
     }),
-    // EventsModule Publisher 등록
     EventsModule.forRoot({
       streams: [PRODUCT_STREAM],
       serviceName: 'pim',
       enableDLQ: true,
     }),
+    // Core domain modules
+    CategoriesModule,
+    ProductsModule,
+    ChannelsModule,
+    // Operations modules
+    ApprovalModule,
+    BulkModule,
+    CsvModule,
+    AuditModule,
+    // Analytics modules
+    DashboardModule,
   ],
-  controllers: [
-    PimController,
-    ProductCategoriesController,
-    ProductMastersController,
-    ProductVariantsController,
-    ChannelProductsController,
-    SalesChannelsController,
-    FileUploadController,
-    // Phase 1 new controllers
-    ProductApprovalController,
-    ProductBulkController,
-    // Phase 3 new controllers
-    ProductCsvController,
-    ProductAuditController,
-    // Phase 4 new controllers
-    DashboardController,
-  ],
-  providers: [
-    PimService,
-    ProductCategoriesService,
-    ProductMastersService,
-    ProductVariantsService,
-    ChannelProductsService,
-    SalesChannelsService,
-    ImageService,
-    PricingStrategyFactory,
-    OptionBasedPricingStrategy,
-    VariantBasedPricingStrategy,
-    // Phase 1 new services
-    ProductApprovalService,
-    ProductSearchService,
-    ProductBulkService,
-    // Phase 3 new services
-    ProductCsvService,
-    ProductAuditService,
-    // Phase 4 new services
-    DashboardService,
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditLogInterceptor,
-    },
-  ],
+  controllers: [PimController],
+  providers: [PimService],
 })
 export class PimModule {}
