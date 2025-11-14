@@ -152,8 +152,9 @@ export class AuthController {
   @Public()
   async resendVerificationEmail(
     @Body(ValidationPipe) { email }: { email: string },
+    @Query('redirect_to') redirectTo?: string,
   ) {
-    return this.authService.resendVerificationEmail(email);
+    return this.authService.resendVerificationEmail(email, redirectTo);
   }
 
   @ApiOperation({ summary: '회원 탈퇴' })
