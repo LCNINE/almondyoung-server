@@ -647,13 +647,19 @@ export class PaymentController {
     dto: CreateHmsCardProfileDto,
   ) {
     try {
+      this.logger.log(`📥 HMS 카드 프로필 생성 요청 - userId: ${userId}`);
+      this.logger.debug(`📥 요청 데이터:`, JSON.stringify(dto, null, 2));
+      
       // JWT에서 추출한 userId 사용
-      return await this.profileService.createHmsCardProfile({
+      const result = await this.profileService.createHmsCardProfile({
         ...dto,
         userId,
       });
+      
+      this.logger.log(`✅ HMS 카드 프로필 생성 성공 - profileId: ${result}`);
+      return result;
     } catch (error) {
-      // ... (에러 처리)
+      this.logger.error(`❌ HMS 카드 프로필 생성 실패:`, error);
       throw new HttpException(
         'Failed to create HMS card profile',
         HttpStatus.BAD_REQUEST,

@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { validateWalletEnv } from './config/env.validation';
+// import { validateWalletEnv } from './config/env.validation';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 import { PaymentController } from './controllers/payment.controller';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
@@ -59,11 +59,9 @@ import { PointRepository } from './services/points/point.repository';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      validate: validateWalletEnv,
-      envFilePath:
-        process.env.NODE_ENV === 'production'
-          ? undefined
-          : ['.env', 'apps/wallet/.env'],
+      envFilePath: ['.env', 'apps/wallet/.env'],
+      ignoreEnvFile: false,
+      expandVariables: true,
     }),
     AuthCoreModule.forRootAsync(),
     ScheduleModule.forRoot(),
