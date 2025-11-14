@@ -73,14 +73,19 @@ export class AuthService {
     return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
   }
 
-  private getEmailVerifyCallbackUrl(redirectTo?: string): string {
+  private getEmailVerifyCallbackUrl(
+    callbackPath: string,
+    redirectTo?: string,
+  ): string {
+    const redirect_to = redirectTo ?? '/callback/signup';
+
     // 서버쪽 주소
     const baseUrl = process.env.production
       ? this.configService.get('USER_SERVICE_URL')
       : this.configService.get('USER_SERVICE_URL') || 'http://localhost:3030';
 
     return new URL(
-      `/auth/callback/signup?redirect_to=${redirectTo}`,
+      `/${callbackPath}?redirect_to=${redirect_to}`,
       baseUrl,
     ).toString();
   }
@@ -99,11 +104,10 @@ export class AuthService {
 
   private getRedirectUrl(redirectTo: string): string {
     const baseUrl =
-      this.configService.get('CORS_ORIGIN_DOMAIN') ?? 'http://localhost:8000';
+      (this.configService.get('CORS_ORIGIN_DOMAIN') ??
+        'http://localhost:8000') + `/${redirectTo}`;
 
     const redirectUrl = new URL(baseUrl);
-
-    redirectUrl.searchParams.set('redirect_to', redirectTo);
     return redirectUrl.toString();
   }
 
@@ -158,19 +162,14 @@ export class AuthService {
           new Date(Date.now() + this.parseExpiresIn(expiresIn)),
         );
 
-        // todo: 이벤트 redirectTo에 넣어야함
-        const redirectTo = this.getRedirectUrl(
-          redirect_to ? `${redirect_to}/callback/signup` : '/callback/signup',
-        );
-
         // 이메일 재발송
         // await this.notificationPublisher.publishUserVerificationEvent({
         //   userId: existingUser.id,
         //   email: existingUser.email,
         //   name: existingUser.username,
         //   verificationToken: verificationToken,
-        //   callbackUrl: this.getEmailVerifyCallbackUrl(),
-        //   redirectTo: this.getEmailVerifyRedirectUrl(),
+        //   callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
+        //   redirectTo?: this.getEmailVerifyRedirectUrl(redirect_to),
         // });
 
         return {
@@ -247,8 +246,8 @@ export class AuthService {
         //   email: user.email,
         //   name: user.username,
         //   verificationToken: verificationToken,
-        //   callbackUrl: this.getEmailVerifyCallbackUrl(),
-        //   redirectTo: this.getEmailVerifyRedirectUrl(redirect_to),
+        //   callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
+        //   redirectTo?: this.getEmailVerifyRedirectUrl(redirect_to),
         // });
 
         return {
@@ -337,7 +336,8 @@ export class AuthService {
       //   },
       // });
 
-      return reply.status(302).redirect(redirectTo);
+      const redirectUrl = this.getRedirectUrl(redirectTo ?? '/callback/signup');
+      return reply.status(302).redirect(redirectUrl);
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
@@ -353,7 +353,7 @@ export class AuthService {
   }
 
   // 이메일 재전송
-  async resendVerificationEmail(email: string) {
+  async resendVerificationEmail(email: string, redirectTo?: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
@@ -381,8 +381,8 @@ export class AuthService {
       email: user.email,
       name: user.username,
       verificationToken: verificationToken,
-      callbackUrl: this.getEmailVerifyCallbackUrl(),
-      redirectTo: this.getEmailVerifyRedirectUrl(),
+      callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
+      redirectTo: this.getEmailVerifyRedirectUrl(redirectTo),
     });
 
     return;
@@ -726,6 +726,7 @@ export class AuthService {
         : {}), // 로컬/테스트 시 domain 제거
     };
 
+    console.log('cookieOptions:::', cookieOptions);
     reply.setCookie('accessToken', accessToken, cookieOptions);
 
     this.logger.log(`Access token issued for user: ${user.email}`);
