@@ -68,7 +68,7 @@ export const DeactivatePlanRequestSchema = z.object({
 
 // Subscription Operations
 export const CreateSubscriptionRequestSchema = z.object({
-  planId: z.uuid('유효한 UUID 형식이어야 합니다'),
+  planId: z.string().min(1, 'planId는 필수입니다'),
 });
 
 export const UpgradeSubscriptionRequestSchema = z.object({
