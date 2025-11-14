@@ -9,10 +9,31 @@ export class HmsApiFactory {
   private static readonly logger = new Logger(HmsApiFactory.name);
 
   /**
-   * BNPL용 HMS API - 항상 Mock 사용
+   * BNPL용 HMS API - 동의서 등록은 add-test 사용
    */
-  static createForBnpl(): MockHmsAPI {
-    this.logger.log('🔧 BNPL용 HMS Mock API 생성');
+  static createForBnpl(): HmsAPI | MockHmsAPI {
+    const swKey = process.env.SW_KEY;
+    const custKey = process.env.CUST_KEY;
+    const isTest = process.env.NODE_ENV !== 'production';
+
+    if (swKey && custKey) {
+      // BNPL 동의서는 add-test를 사용
+      const baseURL = isTest
+        ? 'https://add-test.hyosungcms.co.kr/v1'
+        : 'https://add.hyosungcms.co.kr/v1';
+
+      this.logger.log(`🔧 BNPL용 HMS API 생성 - ${baseURL}`);
+      return new HmsAPI({
+        swKey: swKey,
+        custKey: custKey,
+        isTest: isTest,
+        baseURL: baseURL,
+        timeout: 60000,
+      });
+    }
+
+    // 키가 없으면 Mock 사용
+    this.logger.warn('🔧 BNPL용 HMS Mock API 생성 (키 없음)');
     return new MockHmsAPI({
       swKey: 'mock-sw-key',
       custKey: 'mock-cust-key',

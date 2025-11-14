@@ -27,11 +27,10 @@ export interface HmsBnplRegisterInput {
 @Injectable()
 export class HmsBnplRegistrar
   implements
-    ProfileRegistrar<
-      HmsBnplRegisterInput,
-      Record<string, never> // Meta Type (BNPL은 특별한 메타 데이터 없음)
-    >
-{
+  ProfileRegistrar<
+    HmsBnplRegisterInput,
+    Record<string, never> // Meta Type (BNPL은 특별한 메타 데이터 없음)
+  > {
   private readonly logger = new Logger(HmsBnplRegistrar.name);
   private readonly hmsApi: HmsAPI | MockHmsAPI;
 

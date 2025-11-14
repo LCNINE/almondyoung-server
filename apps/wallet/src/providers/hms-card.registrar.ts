@@ -37,18 +37,19 @@ export class HmsCardRegistrar
     this.logger.warn(
       `🔍 HMS Card Registrar 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
     );
-    
+
     // 카드 등록은 api-test를 사용해야 함 (add-test가 아님!)
-    const baseURL = isTest 
+    const baseURL = isTest
       ? 'https://api-test.hyosungcms.co.kr/v1'
       : 'https://api.hyosungcms.co.kr/v1';
-    
+
     // HmsAPI를 직접 생성하여 baseURL 설정
     this.hmsApi = new (require('hms-api-wrapper').HmsAPI)({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
       isTest: isTest,
       baseURL: baseURL,
+      timeout: 60000, // 60초 타임아웃
     });
   }
 
@@ -72,7 +73,9 @@ export class HmsCardRegistrar
     this.logger.debug(`📤 HMS API 요청 데이터:`, JSON.stringify(requestData, null, 2));
 
     try {
+      this.logger.log(`⏳ HMS API 호출 시작...`);
       const resp = await this.hmsApi.paymentProfiles.create(requestData);
+      this.logger.log(`✅ HMS API 응답 받음`);
 
       // 인터페이스 계약(return type)에 맞춰 결과를 반환합니다.
       return {
