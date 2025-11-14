@@ -202,15 +202,7 @@ export class AuthService {
           tx,
         );
 
-        // // 이메일 발송
-        // await this.notificationPublisher.publishUserVerificationEvent({
-        //   userId: user.id,
-        //   email: user.email,
-        //   name: user.username,
-        //   verificationToken: verificationToken,
-        //   callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
-        //   redirectTo?: this.getEmailVerifyRedirectUrl(redirect_to),
-        // });
+        // todo 알림 서비스에 이벤트 발행
         const frontendBaseUrl =
           this.configService.get('CORS_ORIGIN_DOMAIN') ??
           'http://localhost:8000';
@@ -219,7 +211,7 @@ export class AuthService {
 
         const callbackUrl =
           this.configService.get('USER_SERVICE_URL') +
-          `/auth/callback/signup?redirect_to=${encodeURIComponent(redirect_to_full)}`;
+          `auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to_full)}`;
 
         console.log('callbackUrl:::', callbackUrl);
 
