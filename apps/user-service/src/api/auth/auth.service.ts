@@ -38,6 +38,12 @@ import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 
+const REDIRECT_URL_WHITELIST = [
+  'http://localhost:8000/callback/signup',
+  'http://localhost:8000/',
+  'http://localhost:8000',
+];
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -202,18 +208,13 @@ export class AuthService {
           tx,
         );
 
-        // todo 알림 서비스에 이벤트 발행
-        const frontendBaseUrl =
-          this.configService.get('CORS_ORIGIN_DOMAIN') ??
-          'http://localhost:8000';
-
-        const redirect_to_full = `${frontendBaseUrl}/callback/signup`;
-
-        const callbackUrl =
+        const verifyEmailCallbackUrl =
           this.configService.get('USER_SERVICE_URL') +
-          `auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to_full)}`;
+          `/auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(this.configService.get('SIGNUP_CALLBACK_URL')!)}`;
 
-        console.log(callbackUrl);
+        console.log(verifyEmailCallbackUrl);
+
+        // todo 알림 서비스에 이벤트 발행
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
@@ -263,9 +264,6 @@ export class AuthService {
         .limit(1)
         .then((rows) => rows[0]);
 
-      console.log('입력받은 token:::', token);
-      console.log('verificationToken:::', verificationToken);
-
       if (!verificationToken) {
         console.log('유효하지 않은 인증 토큰입니다.');
         throw new UnauthorizedException('유효하지 않은 인증 토큰입니다.');
@@ -305,12 +303,13 @@ export class AuthService {
       //     name: verificationToken.user.username,
       //   },
       // });
-      const frontendBaseUrl =
-        this.configService.get('CORS_ORIGIN_DOMAIN') ?? 'http://localhost:8000';
+      let redirectUrl = this.configService.get('SIGNUP_CALLBACK_URL');
 
-      const redirect_to_full = `${frontendBaseUrl}${redirectTo ?? '/callback/signup'}`;
+      if (!REDIRECT_URL_WHITELIST.includes(redirectUrl)) {
+        redirectUrl = this.configService.get('SIGNUP_CALLBACK_URL');
+      }
 
-      return reply.status(302).redirect(redirect_to_full);
+      return reply.status(302).redirect(redirectUrl);
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
