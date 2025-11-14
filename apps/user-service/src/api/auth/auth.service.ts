@@ -338,10 +338,7 @@ export class AuthService {
 
       const redirectUrl = this.getRedirectUrl(redirectTo ?? '/callback/signup');
 
-      console.log('발급 완료 accessToken:::', accessToken);
-
-      return;
-      // return reply.status(302).redirect(redirectUrl);
+      return reply.status(302).redirect(redirectUrl);
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
