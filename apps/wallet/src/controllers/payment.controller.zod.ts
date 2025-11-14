@@ -97,9 +97,11 @@ export const CreateHmsCardProfileSchema = z.object({
     .regex(/^\d+$/, '숫자만 입력해주세요'),
   paymentNumber: z
     .string()
-    .max(16, '16자 이내로 입력해주세요')
-    .min(1, '카드번호를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
+    .length(16, '카드번호는 정확히 16자리여야 합니다')
+    .regex(/^\d+$/, '숫자만 입력해주세요')
+    .refine((val) => parseInt(val.slice(-1)) % 2 === 0, {
+      message: '테스트 환경에서는 카드번호 끝자리가 짝수여야 합니다',
+    }),
   payerName: z
     .string()
     .max(10, '10자 이내로 입력해주세요')
@@ -111,13 +113,13 @@ export const CreateHmsCardProfileSchema = z.object({
   validMonth: z
     .string()
     .length(2, '카드 유효기간 월 2자리를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
+    .regex(/^(0[1-9]|1[0-2])$/, '월은 01-12 사이여야 합니다'),
   validUntil: z.string().length(4, '카드 유효기간 4자리를 입력해주세요'),
   password: z
     .string()
     .length(2, '비밀번호 앞 2자리를 입력해주세요')
     .regex(/^\d+$/, '숫자만 입력해주세요'),
-  paymentCompany: z.string().max(3, '결제 기관 코드를 입력해주세요'),
+  paymentCompany: z.string().max(3, '결제 기관 코드를 입력해주세요').optional(),
 });
 
 // HMS 카드 프로필 응답은 실제로는 문자열을 반환할 수 있음

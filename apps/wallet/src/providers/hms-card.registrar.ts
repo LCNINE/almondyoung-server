@@ -6,28 +6,27 @@ import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브�
 @Injectable()
 export class HmsCardRegistrar
   implements
-    ProfileRegistrar<
-      // Input Type: 프로필 등록에 필요한 정보
-      {
-        userId: string;
-        payerName: string;
-        phone: string;
-        paymentCompany?: string;
-        // ... HmsCardProfileRequest에서 필요했던 다른 필드들
-        memberId: string; // 예시: 외부에서 생성된 ID
-        paymentNumber: string; // 카드번호 등
-        validYear: string;
-        validMonth: string;
-        password?: string;
-        memberName: string;
-      },
-      // Meta Type: 등록 후 반환할 추가 정보
-      {
-        cardBrand?: string;
-        last4?: string;
-      }
-    >
-{
+  ProfileRegistrar<
+    // Input Type: 프로필 등록에 필요한 정보
+    {
+      userId: string;
+      payerName: string;
+      phone: string;
+      paymentCompany?: string;
+      // ... HmsCardProfileRequest에서 필요했던 다른 필드들
+      memberId: string; // 예시: 외부에서 생성된 ID
+      paymentNumber: string; // 카드번호 등
+      validYear: string;
+      validMonth: string;
+      password?: string;
+      memberName: string;
+    },
+    // Meta Type: 등록 후 반환할 추가 정보
+    {
+      cardBrand?: string;
+      last4?: string;
+    }
+  > {
   private readonly logger = new Logger(HmsCardRegistrar.name);
   private readonly hmsApi: HmsAPI; // API 클라이언트를 주입받거나 직접 생성합니다.
 
@@ -38,31 +37,42 @@ export class HmsCardRegistrar
     this.logger.warn(
       `🔍 HMS Card Registrar 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
     );
-    this.hmsApi = ApiClientFactory.create({
+    
+    // 카드 등록은 api-test를 사용해야 함 (add-test가 아님!)
+    const baseURL = isTest 
+      ? 'https://api-test.hyosungcms.co.kr/v1'
+      : 'https://api.hyosungcms.co.kr/v1';
+    
+    // HmsAPI를 직접 생성하여 baseURL 설정
+    this.hmsApi = new (require('hms-api-wrapper').HmsAPI)({
       swKey: process.env.SW_KEY || '',
       custKey: process.env.CUST_KEY || '',
       isTest: isTest,
-      useMock: false,
-    }) as HmsAPI;
+      baseURL: baseURL,
+    });
   }
 
   async register(input: any, ctx: { tx: any }) {
     this.logger.log(`➡️ HMS 카드 프로필 등록 요청: ${input.userId}`);
 
+    const requestData = {
+      memberId: input.memberId,
+      paymentKind: 'CARD' as const,
+      payerNumber: input.payerNumber,
+      paymentNumber: input.paymentNumber,
+      payerName: input.payerName,
+      phone: input.phone,
+      memberName: input.memberName,
+      validYear: input.validYear,
+      validMonth: input.validMonth,
+      password: input.password,
+      paymentCompany: input.paymentCompany || '', // 기본값 설정
+    };
+
+    this.logger.debug(`📤 HMS API 요청 데이터:`, JSON.stringify(requestData, null, 2));
+
     try {
-      const resp = await this.hmsApi.paymentProfiles.create({
-        memberId: input.memberId,
-        paymentKind: 'CARD',
-        payerNumber: input.payerNumber,
-        paymentNumber: input.paymentNumber,
-        payerName: input.payerName,
-        // ... 기존 registerProfile에서 사용하던 모든 필드를 input에서 가져와 매핑합니다.
-        phone: input.phone,
-        memberName: input.memberName,
-        validYear: input.validYear,
-        validMonth: input.validMonth,
-        password: input.password,
-      });
+      const resp = await this.hmsApi.paymentProfiles.create(requestData);
 
       // 인터페이스 계약(return type)에 맞춰 결과를 반환합니다.
       return {
