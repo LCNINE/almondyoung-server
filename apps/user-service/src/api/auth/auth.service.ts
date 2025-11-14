@@ -263,7 +263,11 @@ export class AuthService {
         .limit(1)
         .then((rows) => rows[0]);
 
+      console.log('입력받은 token:::', token);
+      console.log('verificationToken:::', verificationToken);
+
       if (!verificationToken) {
+        console.log('유효하지 않은 인증 토큰입니다.');
         throw new UnauthorizedException('유효하지 않은 인증 토큰입니다.');
       }
 
