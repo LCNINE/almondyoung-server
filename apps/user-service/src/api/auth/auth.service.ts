@@ -209,7 +209,7 @@ export class AuthService {
 
         const verifyEmailCallbackUrl =
           this.configService.get('USER_SERVICE_URL') +
-          `/auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`;
+          `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`;
 
         console.log(verifyEmailCallbackUrl);
 
