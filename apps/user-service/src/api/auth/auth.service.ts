@@ -279,29 +279,6 @@ export class AuthService {
       //  사용된 인증 토큰 삭제
       await this.tokensService.deleteTokenByValue(token);
 
-      // 기본 역할 설정을 'user'로 하고 기본권한 부여
-      await this.usersService.assignDefaultRoleToUser(
-        verificationToken.user.id,
-      );
-
-      // access 토큰 발급
-      const { accessToken } = await this.getAccessToken(
-        verificationToken.user,
-        reply,
-      );
-      await this.setRefreshToken(verificationToken.user.id, reply);
-      // 마지막 활동일 업데이트
-      await this.lastActivityAtUpdate(verificationToken.user);
-
-      // await this.eventPublisher.publishEvent({
-      //   eventType: 'UserCreated',
-      //   aggregateId: verificationToken.user.id,
-      //   payload: {
-      //     userId: verificationToken.user.id,
-      //     email: verificationToken.user.email,
-      //     name: verificationToken.user.username,
-      //   },
-      // });
       let redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
       const url = new URL(redirectUrl);
 
@@ -331,6 +308,38 @@ export class AuthService {
         '이메일 인증 중 오류가 발생했습니다.',
       );
     }
+  }
+
+  async callbackSignup(
+    userId: string,
+    reply: FastifyReply,
+    redirectTo?: string,
+    tx?: DbTransaction,
+  ) {
+    return this.inTx(async (trx) => {
+      const user = await this.usersService.findUserById(userId, trx);
+      if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+
+      // 기본 역할 설정을 'user'로 하고 기본권한 부여
+      await this.usersService.assignDefaultRoleToUser(user.id, trx);
+
+      const { accessToken } = await this.setAccessToken(user, reply, trx);
+      await this.setRefreshToken(user.id, reply, false, trx);
+      // 마지막 활동일 업데이트
+      await this.lastActivityAtUpdate(user as User, trx);
+
+      // await this.eventPublisher.publishEvent({
+      //   eventType: 'UserCreated',
+      //   aggregateId: verificationToken.user.id,
+      //   payload: {
+      //     userId: verificationToken.user.id,
+      //     email: verificationToken.user.email,
+      //     name: verificationToken.user.username,
+      //   },
+      // });
+
+      return { accessToken };
+    }, tx);
   }
 
   // 이메일 재전송
@@ -397,7 +406,7 @@ export class AuthService {
       reply,
       signInDto.rememberMe,
     );
-    const { accessToken } = await this.getAccessToken(user, reply);
+    const { accessToken } = await this.setAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
@@ -457,7 +466,7 @@ export class AuthService {
       const result = await processSignIn(tx);
 
       await this.setRefreshToken(result.user.id, reply, false, tx);
-      await this.getAccessToken(result.user, reply, tx);
+      await this.setAccessToken(result.user, reply, tx);
       await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
 
       return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
@@ -466,7 +475,7 @@ export class AuthService {
         const result = await processSignIn(transaction);
 
         await this.setRefreshToken(result.user.id, reply, false, transaction);
-        await this.getAccessToken(result.user, reply, transaction);
+        await this.setAccessToken(result.user, reply, transaction);
         await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
 
         return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
@@ -663,7 +672,7 @@ export class AuthService {
     return uniqueScopes;
   }
 
-  private async getAccessToken(
+  private async setAccessToken(
     user: IUser,
     reply: FastifyReply,
     tx?: DbTransaction,
@@ -704,8 +713,6 @@ export class AuthService {
     if (!isProd) {
       logCookieDebugInfo({ isRailway, isProd, corsOrigin }, cookieOptions);
     }
-
-    reply.setCookie('accessToken', accessToken, cookieOptions);
 
     this.logger.log(`Access token issued for user: ${user.email}`);
 
@@ -770,7 +777,7 @@ export class AuthService {
 
     const user = await this.usersService.findUserById(userId, client);
 
-    return await this.getAccessToken(user, reply, client);
+    return await this.setAccessToken(user, reply, client);
   }
 
   async forgetUserId(email: string) {
