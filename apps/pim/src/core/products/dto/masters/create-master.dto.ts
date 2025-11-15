@@ -35,11 +35,11 @@ export const CreateMasterSchema = z.object({
           value: z.string(),
           displayName: z.string(),
           sortOrder: z.number().optional(),
-          price: z.number().optional(),
         }),
       ),
     }),
   ).optional(),
+  optionValuePrices: z.record(z.string(), z.number()).optional(),
   variantPrices: z.record(z.string(), z.number()).optional(),
   categoryIds: z.array(z.uuid()).optional(),
   primaryCategoryId: z.uuid().optional(),
@@ -110,14 +110,14 @@ export class CreateMasterDtoSwagger {
   wholesalePrice?: number;
 
   @ApiProperty({ 
-    description: '옵션 그룹들',
+    description: '옵션 그룹들 (구조 정의용, 가격 정보 제외)',
     required: false,
     example: [{
       name: 'color',
       displayName: '색상',
       sortOrder: 0,
       values: [
-        { value: 'red', displayName: '빨강', sortOrder: 0, price: 1000 }
+        { value: 'red', displayName: '빨강', sortOrder: 0 }
       ]
     }]
   })
@@ -129,11 +129,21 @@ export class CreateMasterDtoSwagger {
       value: string;
       displayName: string;
       sortOrder?: number;
-      price?: number;
     }>;
   }>;
 
-  @ApiProperty({ description: '옵션 조합별 가격', required: false })
+  @ApiProperty({ 
+    description: '옵션값별 가격 (option_based 전략용)',
+    example: { 'option-value-id-1': 5000, 'option-value-id-2': 3000 },
+    required: false 
+  })
+  optionValuePrices?: Record<string, number>;
+
+  @ApiProperty({ 
+    description: 'Variant별 가격 (variant_based 전략용)',
+    example: { 'variant-id-1': 15000, 'variant-id-2': 18000 },
+    required: false 
+  })
   variantPrices?: Record<string, number>;
 
   @ApiProperty({ 

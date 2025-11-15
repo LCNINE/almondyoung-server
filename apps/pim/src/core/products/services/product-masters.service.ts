@@ -627,13 +627,55 @@ export class ProductMastersService {
     }
 
     const executeUpdate = async (txClient: DbTransaction) => {
+      // 0. 기존 마스터 조회
       const existingMaster = await this.getMasterById(masterId, txClient);
       if (!existingMaster) {
         throw new Error(`Master not found: ${masterId}`);
       }
 
-      // Separate category fields from master fields
-      const { categoryIds, primaryCategoryId, ...masterUpdateData } = data;
+      // 1. 가격 전략 변경 처리 (최우선)
+      if (data.pricingStrategy && 
+          data.pricingStrategy !== existingMaster.pricingStrategy) {
+        
+        await this.changePricingStrategy(
+          masterId,
+          data.pricingStrategy,
+          data.migrationData,
+          txClient
+        );
+        
+        // 전략 변경 후 새 가격 데이터 설정
+        if (data.pricingStrategy === 'option_based' && data.optionValuePrices) {
+          const strategy = this.pricingStrategyFactory.getStrategy('option_based');
+          await strategy.updatePriceData(masterId, data.optionValuePrices, txClient);
+        } else if (data.pricingStrategy === 'variant_based' && data.variantPrices) {
+          const strategy = this.pricingStrategyFactory.getStrategy('variant_based');
+          await strategy.updatePriceData(masterId, data.variantPrices, txClient);
+        }
+      }
+      // 2. 전략 유지하면서 가격만 업데이트
+      else {
+        const currentStrategy = existingMaster.pricingStrategy;
+        
+        if (currentStrategy === 'option_based' && data.optionValuePrices) {
+          const strategy = this.pricingStrategyFactory.getStrategy('option_based');
+          await strategy.updatePriceData(masterId, data.optionValuePrices, txClient);
+        } else if (currentStrategy === 'variant_based' && data.variantPrices) {
+          const strategy = this.pricingStrategyFactory.getStrategy('variant_based');
+          await strategy.updatePriceData(masterId, data.variantPrices, txClient);
+        }
+      }
+
+      // 3. 기본 필드 업데이트 (가격 관련 필드 제외)
+      const { 
+        categoryIds, 
+        primaryCategoryId, 
+        pricingStrategy,
+        optionValuePrices,
+        variantPrices,
+        migrationData,
+        ...masterUpdateData 
+      } = data;
 
       // Update master basic info with type safety
       const [updated] = await txClient
@@ -649,7 +691,7 @@ export class ProductMastersService {
         throw new Error(`Failed to update master: ${masterId}`);
       }
 
-      // Update categories if provided
+      // 4. 카테고리 업데이트
       if (categoryIds !== undefined) {
         // Delete existing relations
         await txClient
@@ -936,34 +978,22 @@ export class ProductMastersService {
       );
 
       if (strategyData.pricingStrategy === 'option_based') {
-        const priceData: Record<string, number> = {};
-
-        if (strategyData.optionGroups) {
-          for (const group of strategyData.optionGroups) {
-            for (const value of group.values) {
-              if (value.price !== undefined) {
-                priceData[value.id] = value.price;
-              }
-            }
-          }
-        }
-
-        if (strategy && typeof strategy.setPriceData === 'function') {
+        // 명시적 optionValuePrices만 사용
+        const priceData = strategyData.optionValuePrices || {};
+        
+        if (Object.keys(priceData).length > 0) {
           await strategy.setPriceData(masterId, priceData, client);
         }
       } else if (strategyData.pricingStrategy === 'variant_based') {
-        const priceData: Record<string, number> = {};
-
-        if (strategyData.variantPrices) {
-          Object.assign(priceData, strategyData.variantPrices);
-        }
-
-        if (strategy && typeof strategy.setPriceData === 'function') {
+        // 명시적 variantPrices만 사용
+        const priceData = strategyData.variantPrices || {};
+        
+        if (Object.keys(priceData).length > 0) {
           await strategy.setPriceData(masterId, priceData, client);
         }
       }
     } catch (error) {
-      console.warn('Pricing strategy initialization skipped:', error.message);
+      this.logger.warn('Pricing strategy initialization skipped:', error.message);
     }
   }
 

@@ -39,6 +39,9 @@ export type UpdateProductMaster = Partial<
 > & {
   categoryIds?: string[];
   primaryCategoryId?: string;
+  optionValuePrices?: Record<string, number>;
+  variantPrices?: Record<string, number>;
+  migrationData?: any;
 };
 
 // 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
@@ -157,7 +160,7 @@ export interface CreateMasterDto {
   membershipPrice?: number;
   wholesalePrice?: number;
 
-  // 옵션 정보
+  // 옵션 구조 정보 (가격 제외)
   optionGroups?: {
     name: string;
     displayName: string;
@@ -166,12 +169,12 @@ export interface CreateMasterDto {
       value: string;
       displayName: string;
       sortOrder?: number;
-      price?: number; // option_based 전략용
     }[];
   }[];
 
-  // variant_based 전략용 품목별 가격
-  variantPrices?: Record<string, number>; // 옵션 조합별 가격
+  // 가격 데이터 (명시적 분리)
+  optionValuePrices?: Record<string, number>; // option_based 전략용
+  variantPrices?: Record<string, number>; // variant_based 전략용
 }
 
 // Product Master 목록용 DTO (간단한 정보만)
