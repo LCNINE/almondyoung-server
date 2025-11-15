@@ -209,7 +209,7 @@ export class AuthService {
 
         const verifyEmailCallbackUrl =
           this.configService.get('USER_SERVICE_URL') +
-          `/auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(this.configService.get('SIGNUP_CALLBACK_URL')!)}`;
+          `/auth/callback/signup?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`;
 
         console.log(verifyEmailCallbackUrl);
 
@@ -234,7 +234,7 @@ export class AuthService {
   async signupVerifyEmail(
     token: string,
     reply: FastifyReply,
-    redirectTo: string,
+    redirectTo?: string,
   ): Promise<void | { accessToken: string }> {
     try {
       //  토큰 검증
@@ -303,6 +303,8 @@ export class AuthService {
       //   },
       // });
       let redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
+      const url = new URL(redirectUrl);
+
       const redirectUrlWhitelist = this.configService
         .getOrThrow('REDIRECT_URL_WHITELIST')
         .split(',')
@@ -312,7 +314,11 @@ export class AuthService {
         redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
       }
 
-      return reply.status(302).redirect(redirectUrl);
+      if (redirectTo) {
+        url.searchParams.set('redirect_to', redirectTo);
+      }
+
+      return reply.status(302).redirect(url.toString());
     } catch (error) {
       if (
         error instanceof UnauthorizedException ||
