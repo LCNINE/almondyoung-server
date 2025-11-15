@@ -37,12 +37,7 @@ import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-
-const REDIRECT_URL_WHITELIST = [
-  'http://localhost:8000/callback/signup',
-  'http://localhost:8000/',
-  'http://localhost:8000',
-];
+import { getCookieOptions, logCookieDebugInfo } from './utils/cookies';
 
 @Injectable()
 export class AuthService {
@@ -303,10 +298,14 @@ export class AuthService {
       //     name: verificationToken.user.username,
       //   },
       // });
-      let redirectUrl = this.configService.get('SIGNUP_CALLBACK_URL');
+      let redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
+      const redirectUrlWhitelist = this.configService
+        .getOrThrow('REDIRECT_URL_WHITELIST')
+        .split(',')
+        .map((url) => url.trim());
 
-      if (!REDIRECT_URL_WHITELIST.includes(redirectUrl)) {
-        redirectUrl = this.configService.get('SIGNUP_CALLBACK_URL');
+      if (!redirectUrlWhitelist.includes(redirectUrl)) {
+        redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
       }
 
       return reply.status(302).redirect(redirectUrl);
@@ -681,7 +680,7 @@ export class AuthService {
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('AUTH_SECRET'),
+      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
       expiresIn,
     });
 
@@ -692,19 +691,20 @@ export class AuthService {
 
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
+    const corsOrigin =
+      this.configService.getOrThrow('CORS_ORIGIN_DOMAIN') || '';
 
-    const cookieOptions = {
-      path: '/',
-      httpOnly: true,
-      sameSite: isRailway ? ('none' as const) : ('lax' as const),
-      secure: isRailway,
-      ...(isProd
-        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
-        : {}), // 로컬/테스트 시 domain 제거
-    };
+    // 쿠키 옵션 생성
+    const cookieOptions = getCookieOptions({
+      isRailway,
+      isProd,
+      corsOrigin,
+    });
 
-    console.log('cookieOptions:::', cookieOptions);
-    reply.setCookie('accessToken', accessToken, cookieOptions);
+    // 개발 환경에서만 디버깅 로그
+    if (!isProd) {
+      logCookieDebugInfo({ isRailway, isProd, corsOrigin }, cookieOptions);
+    }
 
     this.logger.log(`Access token issued for user: ${user.email}`);
 
@@ -727,7 +727,7 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(
       { sub: userId, scopes },
       {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn,
       },
     );
@@ -743,24 +743,22 @@ export class AuthService {
       rememberMe,
       tx,
     );
-
-    // domain에서 프로토콜과 포트 모두 제거
-    const getDomain = (url: string) => {
-      return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-    };
-
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
+    const corsOrigin =
+      this.configService.getOrThrow('CORS_ORIGIN_DOMAIN') || '';
 
-    const cookieOptions = {
-      path: '/',
-      httpOnly: true,
-      sameSite: isRailway ? ('none' as const) : ('lax' as const),
-      secure: isRailway,
-      ...(isProd
-        ? { domain: `.${getDomain(process.env.CORS_ORIGIN_DOMAIN || '')}` }
-        : {}), // 로컬/테스트 시 domain 제거
-    };
+    // 쿠키 옵션 생성
+    const cookieOptions = getCookieOptions({
+      isRailway,
+      isProd,
+      corsOrigin,
+    });
+
+    // 개발 환경에서만 디버깅 로그
+    if (!isProd) {
+      logCookieDebugInfo({ isRailway, isProd, corsOrigin }, cookieOptions);
+    }
 
     reply.setCookie('refreshToken', refreshToken, cookieOptions);
 
