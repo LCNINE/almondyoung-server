@@ -27,7 +27,7 @@ async function bootstrap() {
 
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? (process.env.CORS_ORIGIN_DOMAIN?.split(',').map((origin) =>
+      ? (process.env.CORS_ORIGIN_DOMAINS?.split(',').map((origin) =>
           origin.trim(),
         ) ?? [])
       : ['http://localhost:8000'];
