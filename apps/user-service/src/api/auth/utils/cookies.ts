@@ -22,24 +22,15 @@ export function getCookieOptions(
     corsOrigin.includes('127.0.0.1') ||
     corsOrigin.startsWith('http://');
 
-  //   const cookieOptions: CookieSerializeOptions = {
-  //     path: '/',
-  //     httpOnly: true,
-  //     sameSite: isRailway && isLocalFrontend ? 'none' : 'lax', // Railway 환경이어도 프론트가 로컬이면 none
-  //     secure: isRailway,
-  //     // 프로덕션이고 로컬 프론트가 아닐 때만 domain 설정
-  //     ...(isProd && !isLocalFrontend
-  //       ? { domain: `.${getDomain(corsOrigin)}` }
-  //       : {}),
-  //   };
-
   const cookieOptions: CookieSerializeOptions = {
     path: '/',
     httpOnly: true,
-    sameSite: isProd ? 'none' : 'lax',
-    secure: isProd,
+    sameSite: isRailway && isLocalFrontend ? 'none' : 'lax', // Railway 환경이어도 프론트가 로컬이면 none
+    secure: isRailway,
     // 프로덕션이고 로컬 프론트가 아닐 때만 domain 설정
-    ...(isProd ? { domain: `.${getDomain(corsOrigin)}` } : {}),
+    ...(isProd && !isLocalFrontend
+      ? { domain: `.${getDomain(corsOrigin)}` }
+      : {}),
   };
 
   return cookieOptions;
