@@ -151,7 +151,7 @@ export class AuthController {
   @Post('callback/signup')
   @Public()
   async callbackSignup(
-    @Body() userId: string,
+    @Body() { userId }: { userId: string },
     @Query('redirect_to') redirectTo: string,
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
