@@ -340,8 +340,9 @@ export class UsersService {
     return this.getUserBaseInfo(userId);
   }
 
-  async findByRoleName(roleName: string) {
-    return await this.dbService.db
+  async findByRoleName(roleName: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+    return await client
       .select()
       .from(schema.roles)
       .where(eq(schema.roles.name, roleName))
@@ -371,10 +372,16 @@ export class UsersService {
     return;
   }
 
-  async assignDefaultRoleToUser(userId: string): Promise<void> {
-    const [role] = await this.findByRoleName('user');
+  async assignDefaultRoleToUser(
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+
+    const [role] = await this.findByRoleName('user', tx);
+
     if (!role) throw new InternalServerErrorException();
-    await this.assignUserRole(userId, role.roleId);
+    await this.assignUserRole(userId, role.roleId, tx);
 
     return;
   }
