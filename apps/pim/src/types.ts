@@ -36,7 +36,10 @@ export type ProductMaster = InferSelectModel<typeof productMasters>;
 export type NewProductMaster = InferInsertModel<typeof productMasters>;
 export type UpdateProductMaster = Partial<
   Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>
->;
+> & {
+  categoryIds?: string[];
+  primaryCategoryId?: string;
+};
 
 // 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
 
@@ -136,7 +139,8 @@ export interface CreateMasterDto {
   description?: string;
   brand?: string;
   thumbnail?: string; // 썸네일 이미지 URL (내부 또는 외부)
-  categoryId?: string;
+  categoryIds?: string[];
+  primaryCategoryId?: string;
   basePrice: number;
   pricingStrategy: PricingStrategyType;
   tags?: string[];
