@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsPositive, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsBoolean, IsPositive, MinLength } from 'class-validator';
 
 export class UpdateProductMasterDto {
   @ApiProperty({ 
@@ -64,5 +64,115 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsEnum(['active', 'inactive', 'draft'])
   status?: 'active' | 'inactive' | 'draft';
+
+  // ========== 이미지 관련 필드 ==========
+
+  @ApiProperty({ description: '썸네일 URL', required: false })
+  @IsOptional()
+  @IsString()
+  thumbnail?: string;
+
+  @ApiProperty({ description: '썸네일 업로드 ID', required: false })
+  @IsOptional()
+  @IsUUID()
+  thumbnailUploadId?: string;
+
+  @ApiProperty({ description: '썸네일 외부 URL', required: false })
+  @IsOptional()
+  @IsUrl()
+  thumbnailUrl?: string;
+
+  @ApiProperty({ description: '부가 이미지 업로드 ID 배열 (최대 5개)', type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  additionalImageUploadIds?: string[];
+
+  // ========== 마케팅/SEO 필드 ==========
+
+  @ApiProperty({ description: '마케팅 태그', type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @ApiProperty({ description: 'SEO 제목', required: false })
+  @IsOptional()
+  @IsString()
+  seoTitle?: string;
+
+  @ApiProperty({ description: 'SEO 설명', required: false })
+  @IsOptional()
+  @IsString()
+  seoDescription?: string;
+
+  @ApiProperty({ description: 'SEO 키워드', type: [String], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  seoKeywords?: string[];
+
+  @ApiProperty({ description: '상품 상세설명 HTML', required: false })
+  @IsOptional()
+  @IsString()
+  descriptionHtml?: string;
+
+  // ========== 구매 제한 및 특별 가격 필드 ==========
+
+  @ApiProperty({ description: '도매회원 전용 여부', required: false })
+  @IsOptional()
+  @IsBoolean()
+  isWholesaleOnly?: boolean;
+
+  @ApiProperty({ description: '멤버십회원 전용 여부', required: false })
+  @IsOptional()
+  @IsBoolean()
+  isMembershipOnly?: boolean;
+
+  @ApiProperty({ description: '멤버십 전용 가격 (원 단위)', required: false, minimum: 1 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  membershipPrice?: number;
+
+  @ApiProperty({ description: '도매 전용 가격 (원 단위)', required: false, minimum: 1 })
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  wholesalePrice?: number;
+
+  // ========== 가격 전략 및 데이터 필드 ==========
+
+  @ApiProperty({ 
+    description: '가격 전략',
+    enum: ['option_based', 'variant_based'],
+    required: false 
+  })
+  @IsOptional()
+  @IsEnum(['option_based', 'variant_based'])
+  pricingStrategy?: 'option_based' | 'variant_based';
+
+  @ApiProperty({ 
+    description: '옵션값별 가격 (option_based 전략용)',
+    example: { 'option-value-id-1': 5000, 'option-value-id-2': 3000 },
+    required: false 
+  })
+  @IsOptional()
+  optionValuePrices?: Record<string, number>;
+
+  @ApiProperty({ 
+    description: 'Variant별 가격 (variant_based 전략용)',
+    example: { 'variant-id-1': 15000, 'variant-id-2': 18000 },
+    required: false 
+  })
+  @IsOptional()
+  variantPrices?: Record<string, number>;
+
+  @ApiProperty({ 
+    description: '전략 변경 시 마이그레이션 데이터 (선택)',
+    required: false 
+  })
+  @IsOptional()
+  migrationData?: any;
 }
 
