@@ -689,12 +689,6 @@ export class AuthService {
       secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
       expiresIn,
     });
-
-    // domain에서 프로토콜과 포트 모두 제거
-    const getDomain = (url: string) => {
-      return url.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-    };
-
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
     const corsOrigin = this.frontendUrl;
@@ -710,6 +704,8 @@ export class AuthService {
     if (!isProd) {
       logCookieDebugInfo({ isRailway, isProd, corsOrigin }, cookieOptions);
     }
+
+    reply.setCookie('accessToken', accessToken, cookieOptions);
 
     this.logger.log(`Access token issued for user: ${user.email}`);
 
