@@ -182,6 +182,11 @@ export class ProductMastersService {
     // 이미지 연결 처리
     await this._linkImages(master.id, data, tx);
 
+    // 카테고리 연결 처리
+    if (data.categoryIds && data.categoryIds.length > 0) {
+      await this._linkCategories(master.id, data.categoryIds, data.primaryCategoryId, tx);
+    }
+
     // 옵션 처리는 비동기로 후속 처리
     setImmediate(async () => {
       try {
@@ -192,6 +197,45 @@ export class ProductMastersService {
     });
 
     return master;
+  }
+
+  private async _linkCategories(
+    masterId: string,
+    categoryIds: string[],
+    primaryCategoryId: string | undefined,
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!categoryIds || categoryIds.length === 0) {
+      return;
+    }
+
+    // Validate categories exist
+    const existingCategories = await tx
+      .select({ id: productCategories.id })
+      .from(productCategories)
+      .where(inArray(productCategories.id, categoryIds));
+
+    const existingCategoryIds = existingCategories.map(c => c.id);
+    const missingCategoryIds = categoryIds.filter(id => !existingCategoryIds.includes(id));
+
+    if (missingCategoryIds.length > 0) {
+      throw new Error(`Categories not found: ${missingCategoryIds.join(', ')}`);
+    }
+
+    // Validate primaryCategoryId if provided
+    if (primaryCategoryId && !categoryIds.includes(primaryCategoryId)) {
+      throw new Error('primaryCategoryId must be one of the categoryIds');
+    }
+
+    // Create category relations
+    const categoryRelations = categoryIds.map(categoryId => ({
+      masterId: masterId,
+      categoryId: categoryId,
+      isPrimary: categoryId === primaryCategoryId,
+      createdAt: new Date(),
+    }));
+
+    await tx.insert(productMasterCategories).values(categoryRelations);
   }
 
   private async _generateVariants(
@@ -582,30 +626,51 @@ export class ProductMastersService {
       throw new Error('Master ID is required');
     }
 
-    const client = this.getClient(tx);
+    const executeUpdate = async (txClient: DbTransaction) => {
+      const existingMaster = await this.getMasterById(masterId, txClient);
+      if (!existingMaster) {
+        throw new Error(`Master not found: ${masterId}`);
+      }
 
-    const existingMaster = await this.getMasterById(masterId, tx);
-    if (!existingMaster) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
+      // Separate category fields from master fields
+      const { categoryIds, primaryCategoryId, ...masterUpdateData } = data;
 
-    const updateData = {
-      ...data,
-      updatedAt: new Date(),
+      // Update master basic info with type safety
+      const [updated] = await txClient
+        .update(productMasters)
+        .set({ 
+          ...(masterUpdateData satisfies Partial<Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>>),
+          updatedAt: new Date() 
+        })
+        .where(eq(productMasters.id, masterId))
+        .returning();
+
+      if (!updated) {
+        throw new Error(`Failed to update master: ${masterId}`);
+      }
+
+      // Update categories if provided
+      if (categoryIds !== undefined) {
+        // Delete existing relations
+        await txClient
+          .delete(productMasterCategories)
+          .where(eq(productMasterCategories.masterId, masterId));
+
+        // Create new relations
+        if (categoryIds.length > 0) {
+          await this._linkCategories(
+            masterId,
+            categoryIds,
+            primaryCategoryId,
+            txClient
+          );
+        }
+      }
+
+      return updated;
     };
-    delete (updateData as any).id;
-    delete (updateData as any).createdAt;
-    const result = await client
-      .update(productMasters)
-      .set(updateData)
-      .where(eq(productMasters.id, masterId))
-      .returning();
 
-    if (result.length === 0) {
-      throw new Error(`Failed to update master: ${masterId}`);
-    }
-
-    return result[0];
+    return tx ? executeUpdate(tx) : this.db.db.transaction(executeUpdate);
   }
 
   async deleteMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {

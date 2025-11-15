@@ -17,10 +17,23 @@ export class UpdateProductMasterDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: '카테고리 ID (UUID 형식)', required: false })
+  @ApiProperty({ 
+    description: '카테고리 ID 배열 (기존 카테고리를 모두 대체)',
+    type: [String],
+    required: false 
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  categoryIds?: string[];
+
+  @ApiProperty({ 
+    description: '주 카테고리 ID',
+    required: false 
+  })
   @IsOptional()
   @IsUUID()
-  categoryId?: string;
+  primaryCategoryId?: string;
 
   @ApiProperty({ description: '브랜드명', required: false })
   @IsOptional()
