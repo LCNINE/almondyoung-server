@@ -327,7 +327,12 @@ export class AuthService {
       await this.usersService.assignDefaultRoleToUser(user.id, trx);
 
       const { accessToken } = await this.setAccessToken(user, reply, trx);
-      await this.setRefreshToken(user.id, reply, false, trx);
+      const { refreshToken } = await this.setRefreshToken(
+        user.id,
+        reply,
+        false,
+        trx,
+      );
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(user as User, trx);
 
@@ -341,7 +346,7 @@ export class AuthService {
       //   },
       // });
 
-      return { accessToken };
+      return { accessToken, refreshToken };
     }, tx);
   }
 
