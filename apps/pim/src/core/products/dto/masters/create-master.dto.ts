@@ -41,6 +41,8 @@ export const CreateMasterSchema = z.object({
     }),
   ).optional(),
   variantPrices: z.record(z.string(), z.number()).optional(),
+  categoryIds: z.array(z.uuid()).optional(),
+  primaryCategoryId: z.uuid().optional(),
 });
 
 export type CreateMasterDto = z.infer<typeof CreateMasterSchema>;
@@ -133,5 +135,19 @@ export class CreateMasterDtoSwagger {
 
   @ApiProperty({ description: '옵션 조합별 가격', required: false })
   variantPrices?: Record<string, number>;
+
+  @ApiProperty({ 
+    description: '카테고리 ID 배열 (UUID)',
+    type: [String],
+    required: false,
+    example: ['550e8400-e29b-41d4-a716-446655440000']
+  })
+  categoryIds?: string[];
+
+  @ApiProperty({ 
+    description: '주 카테고리 ID (categoryIds 중 하나여야 함)',
+    required: false 
+  })
+  primaryCategoryId?: string;
 }
 
