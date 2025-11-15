@@ -293,6 +293,7 @@ export class AuthService {
 
       if (redirectTo) {
         url.searchParams.set('redirect_to', redirectTo);
+        url.searchParams.set('userId', verificationToken.user.id);
       }
 
       return reply.status(302).redirect(url.toString());
