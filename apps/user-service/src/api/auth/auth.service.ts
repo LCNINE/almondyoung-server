@@ -296,6 +296,8 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
+      console.log('url:', url.toString());
+
       return reply.status(302).redirect(url.toString());
     } catch (error) {
       if (
