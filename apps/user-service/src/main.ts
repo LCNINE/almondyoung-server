@@ -19,7 +19,9 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({
+      trustProxy: true, // railway / 프록시 환경
+    }),
   );
 
   const configService = app.get(ConfigService);
