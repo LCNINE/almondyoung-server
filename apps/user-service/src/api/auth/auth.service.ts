@@ -59,6 +59,14 @@ export class AuthService {
     return tx ?? this.dbService.db;
   }
 
+  private get frontendUrl(): string {
+    const isProd = this.configService.get('NODE_ENV') === 'production';
+
+    return isProd
+      ? this.configService.getOrThrow('FRONTEND_URL')
+      : 'http://localhost:8000';
+  }
+
   private async inTx<T>(
     fn: (tx: DbTransaction) => Promise<T>,
     tx?: DbTransaction,
@@ -67,11 +75,7 @@ export class AuthService {
   }
 
   private getSocialRedirectUrl(provider: ProviderType): string {
-    const frontBaseUrl = process.env.production
-      ? this.configService.get('CORS_ORIGIN_DOMAIN') // 프론트쪽 콜백 URL
-      : 'http://localhost:8000';
-
-    return new URL(`/auth/${provider}/callback`, frontBaseUrl).toString();
+    return new URL(`/auth/${provider}/callback`, this.frontendUrl).toString();
   }
 
   async signUp(
@@ -352,9 +356,7 @@ export class AuthService {
       email: user.email,
       name: user.username,
       verificationToken: verificationToken,
-      callbackUrl:
-        (this.configService.get('CORS_ORIGIN_DOMAIN') ??
-          'http://localhost:8000') + `/callback/signup`,
+      callbackUrl: this.frontendUrl + `/callback/signup`,
 
       redirectTo: `/${redirectTo ?? '/callback/signup'}`,
     });
@@ -395,9 +397,7 @@ export class AuthService {
     await this.lastActivityAtUpdate(user);
 
     if (redirectTo) {
-      const redirectUrl =
-        (this.configService.get('CORS_ORIGIN_DOMAIN') ??
-          'http://localhost:8000') + `/${redirectTo ?? '/'}`;
+      const redirectUrl = this.frontendUrl + `/${redirectTo ?? '/'}`;
 
       return reply.status(302).redirect(redirectUrl.toString());
     }
@@ -585,14 +585,14 @@ export class AuthService {
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
+          domain: this.frontendUrl,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: this.configService.get('CORS_ORIGIN_DOMAIN'),
+          domain: this.frontendUrl,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
@@ -691,8 +691,7 @@ export class AuthService {
 
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
-    const corsOrigin =
-      this.configService.getOrThrow('CORS_ORIGIN_DOMAIN') || '';
+    const corsOrigin = this.frontendUrl;
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
@@ -745,8 +744,7 @@ export class AuthService {
     );
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
-    const corsOrigin =
-      this.configService.getOrThrow('CORS_ORIGIN_DOMAIN') || '';
+    const corsOrigin = this.frontendUrl;
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
