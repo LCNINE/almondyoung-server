@@ -136,7 +136,7 @@ export class AuthController {
 
   @ApiOperation({ summary: '이메일 인증' })
   @ApiResponse({ status: 200, description: '이메일 인증 성공' })
-  @Get('callback/signup')
+  @Get('verify-email')
   @Public()
   async signupVerifyEmail(
     @Query('token') token: string,
@@ -144,6 +144,18 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
   ) {
     return await this.authService.signupVerifyEmail(token, res, redirectTo);
+  }
+
+  @ApiOperation({ summary: '회원가입 콜백(쿠키 설정)' })
+  @ApiResponse({ status: 200, description: '회원가입 콜백(쿠키 설정) 성공' })
+  @Post('callback/signup')
+  @Public()
+  async callbackSignup(
+    @Body() userId: string,
+    @Query('redirect_to') redirectTo: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    return await this.authService.callbackSignup(userId, res, redirectTo);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
