@@ -26,26 +26,23 @@ export class SubscriptionService {
     private readonly contractReader: SubscriptionContractReader,
     private readonly subscriptionCreator: SubscriptionCreator,
     private readonly subscriptionManager: SubscriptionManager,
-  ) {}
+  ) { }
 
   /**
    * 현재 구독 상태 조회
    *
-   * ✅ 흐름만 표현: "권한 체크 → 권한 조회"
+   * ✅ 흐름만 표현: "권한 조회"
    */
   async getCurrentSubscriptionDetails(userId: string) {
-    await this.entitlementService.checkAndUpdateSubscription(userId);
     return this.entitlementService.getUserEntitlement(userId);
   }
 
   /**
    * 새 구독 생성
    *
-   * ✅ 흐름만 표현: "권한 체크 → 기존 구독 확인 → 플랜 조회 → 구독 생성"
+   * ✅ 흐름만 표현: "기존 구독 확인 → 플랜 조회 → 구독 생성"
    */
   async createSubscription(userId: string, planId: string) {
-    await this.entitlementService.checkAndUpdateSubscription(userId);
-
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 

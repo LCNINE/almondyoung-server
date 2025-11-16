@@ -33,9 +33,12 @@ import { SubscriptionController } from './controllers/subscription.controller';
 import { PlanController } from './controllers/plan.controller';
 import { PauseController } from './controllers/pause.controller';
 import { BenefitTrackingController } from './controllers/benefit-tracking.controller';
+import { SavingsController } from './controllers/savings.controller';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
+import { SavingsService } from './services/savings/savings.service';
+import { SavingsReader } from './services/savings/savings.reader';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 
 @Module({
@@ -63,6 +66,7 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     PlanController,
     PauseController,
     BenefitTrackingController,
+    SavingsController,
   ],
   providers: [
     // Auth
@@ -75,6 +79,7 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     BenefitTrackingService,
     SubscriptionCancellationService,
     EntitlementService,
+    SavingsService,
     // Implementation Layer (Readers & Managers)
     EntitlementReader,
     EntitlementManager,
@@ -91,6 +96,7 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     PlanManager,
     BenefitReader,
     BenefitManager,
+    SavingsReader,
     BillingManager,
     RecurringBillingService,
     BillingReader,
@@ -100,4 +106,4 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     PaymentClientService,
   ],
 })
-export class AppModule { }
+export class AppModule {}
