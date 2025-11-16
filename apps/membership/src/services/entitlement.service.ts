@@ -22,10 +22,13 @@ export class EntitlementService {
   /**
    * 구독 상태 체크 및 자동 만료 처리 (Lazy Expiration)
    *
-   * ✅ 흐름만 표현: "권한 조회 → 만료 체크 → 만료 시 처리"
-   *
-   * @sideEffect 만료된 구독의 isCurrent 플래그를 false로 업데이트
-   * @rationale 데이터 정합성 보장 및 성능 최적화
+   * @deprecated 이 메서드는 더 이상 사용되지 않습니다.
+   * 스케줄러가 주기적으로 만료된 구독을 처리하도록 변경되었습니다.
+   * 
+   * @reason GET 요청 시 lazy 연산을 제거하여 성능 개선 및 
+   * 만료일 당일 결제 완료까지 멤버십 혜택을 유지하기 위함
+   * 
+   * @see 스케줄러 구현 예정: 매일 새벽 만료된 구독의 isCurrent를 false로 업데이트
    */
   async checkAndUpdateSubscription(userId: string): Promise<boolean> {
     const entitlement = await this.reader.findActiveEntitlement(userId);
