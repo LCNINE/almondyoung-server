@@ -25,10 +25,8 @@ import {
   CreateMasterSchema,
   CreateMasterDtoSwagger,
   UpdateProductMasterDto,
-  ChangePricingStrategyDto,
   ProductMasterDto,
   MasterDetailDto,
-  PricePreviewDto,
   MasterListItemDto,
   MasterListResponseDto,
   MasterUpdateResponseDto,
@@ -52,7 +50,7 @@ export class ProductMastersController {
   })
   @ApiResponse({
     status: 400,
-    description: '잘못된 요청 데이터 (name, basePrice, pricingStrategy 필수)',
+    description: '잘못된 요청 데이터 (name, basePrice 필수)',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async createMaster(
@@ -62,8 +60,7 @@ export class ProductMastersController {
     try {
       if (
         !createMasterDto.name ||
-        !createMasterDto.basePrice ||
-        !createMasterDto.pricingStrategy
+        !createMasterDto.basePrice
       ) {
         throw new HttpException('Validation failed', HttpStatus.BAD_REQUEST);
       }
@@ -126,12 +123,6 @@ export class ProductMastersController {
     description: '브랜드 필터',
   })
   @ApiQuery({
-    name: 'pricingStrategy',
-    required: false,
-    type: String,
-    description: '가격 전략 필터',
-  })
-  @ApiQuery({
     name: 'search',
     required: false,
     type: String,
@@ -151,7 +142,6 @@ export class ProductMastersController {
       status?: string;
       categoryId?: string;
       brand?: string;
-      pricingStrategy?: string;
       search?: string;
     },
   ): Promise<MasterListResponseDto> {
@@ -162,7 +152,6 @@ export class ProductMastersController {
         status: query.status,
         categoryId: query.categoryId,
         brand: query.brand,
-        pricingStrategy: query.pricingStrategy,
         search: query.search,
       };
 
@@ -192,12 +181,9 @@ export class ProductMastersController {
         description: { type: 'string' },
         brand: { type: 'string' },
         basePrice: { type: 'number' },
-        pricingStrategy: { type: 'string' },
         status: { type: 'string' },
         isWholesaleOnly: { type: 'boolean' },
         isMembershipOnly: { type: 'boolean' },
-        membershipPrice: { type: 'number' },
-        wholesalePrice: { type: 'number' },
         images: {
           type: 'object',
           properties: {
@@ -447,95 +433,9 @@ export class ProductMastersController {
     }
   }
 
-  @Get(':id/price-preview')
-  @ApiOperation({
-    summary: '가격 미리보기',
-    description: '제품 마스터의 가격 전략 적용 미리보기를 제공합니다.',
-  })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiResponse({
-    status: 200,
-    description: '가격 미리보기 성공',
-    type: PricePreviewDto,
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async getPricePreview(@Param('id') id: string): Promise<PricePreviewDto> {
-    try {
-      return (await this.productMastersService.getPricePreview(
-        id,
-      )) as unknown as PricePreviewDto;
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get price preview',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Put(':id/pricing')
-  @ApiOperation({
-    summary: '가격 전략 변경',
-    description: '제품 마스터의 가격 전략을 변경합니다.',
-  })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiBody({
-    type: ChangePricingStrategyDto,
-    description: '가격 전략 변경 데이터',
-  })
-  @ApiResponse({ status: 200, description: '가격 전략 변경 성공' })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 데이터 (pricingStrategy 필수)',
-  })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async changePricingStrategy(
-    @Param('id') id: string,
-    @Body() pricingDto: ChangePricingStrategyDto,
-  ): Promise<void> {
-    try {
-      if (!pricingDto.pricingStrategy) {
-        throw new HttpException(
-          'Pricing strategy is required',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      const master = await this.productMastersService.getMasterById(id);
-      if (!master) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-
-      await this.productMastersService.changePricingStrategy(
-        id,
-        pricingDto.pricingStrategy as any,
-        pricingDto.migrationData,
-      );
-    } catch (error) {
-      if (
-        error.message === 'Master not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (
-        error.message.includes('required') ||
-        error.message.includes('Invalid')
-      ) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to change pricing strategy',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  // NOTE: Price preview and pricing strategy endpoints have been removed.
+  // Use the new pricing rules API instead:
+  //   - GET /products/:masterId/pricing-rules
+  //   - PUT /products/:masterId/pricing-rules
+  //   - POST /products/:masterId/pricing/calculate
 }

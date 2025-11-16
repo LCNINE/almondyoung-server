@@ -318,23 +318,6 @@ describe('ProductMastersService - CRUD Tests', () => {
       expect(updated.basePrice).toBe(15000);
     });
 
-    it('✅ 특수 가격 필드 수정 (membershipPrice, wholesalePrice)', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '테스트 상품',
-        basePrice: 10000,
-      });
-
-      const updated = await service.updateMaster(testMaster.id, {
-        membershipPrice: 8000,
-        wholesalePrice: 7000,
-        isMembershipOnly: true,
-      });
-
-      expect(updated.membershipPrice).toBe(8000);
-      expect(updated.wholesalePrice).toBe(7000);
-      expect(updated.isMembershipOnly).toBe(true);
-    });
-
     it('❌ 존재하지 않는 Master 수정 시 에러', async () => {
       await expect(
         service.updateMaster('00000000-0000-0000-0000-000000000000', {

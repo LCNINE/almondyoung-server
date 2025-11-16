@@ -104,9 +104,6 @@ export const productMasters = pgTable(
     thumbnail: text('thumbnail'), // 썸네일 이미지 URL
     // categoryId removed - now using many-to-many relationship via productMasterCategories
     basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
-    pricingStrategy: varchar('pricing_strategy', { length: 50 })
-      .notNull()
-      .default('option_based'), // 'option_based', 'variant_based'
     // 물리적 속성 제거: weight, dimensions, costPrice 등
     tags: text('tags').array(), // 마케팅 태그
     images: jsonb('images'), // 상품 이미지 (string[])
@@ -120,9 +117,6 @@ export const productMasters = pgTable(
     // 구매제한 관련 필드들
     isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
     isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
-    // 특별 가격 필드들
-    membershipPrice: bigint('membership_price', { mode: 'number' }), // 멤버십 전용 가격
-    wholesalePrice: bigint('wholesale_price', { mode: 'number' }), // 도매 전용 가격
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
@@ -185,7 +179,6 @@ export const productMasters = pgTable(
     index('idx_masters_brand').on(table.brand),
     index('idx_masters_created_at').on(table.createdAt),
     index('idx_masters_base_price').on(table.basePrice),
-    index('idx_masters_pricing_strategy').on(table.pricingStrategy),
     // Phase 1 new indexes
     index('idx_masters_product_type').on(table.productType),
     index('idx_masters_product_code').on(table.productCode),
@@ -392,9 +385,9 @@ export const channelProducts = pgTable(
   ],
 );
 
-// ===== 9. OPTION VALUE PRICES (전략1: 옵션별 가격) =====
-export const optionValuePrices = pgTable(
-  'option_value_prices',
+// ===== 9. PRICING RULES (규칙 기반 가격 정책) =====
+export const pricingRules = pgTable(
+  'pricing_rules',
   {
     id: uuid('id')
       .primaryKey()
@@ -402,44 +395,28 @@ export const optionValuePrices = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    optionValueId: uuid('option_value_id')
-      .notNull()
-      .references(() => productOptionValues.id, { onDelete: 'cascade' }),
-    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
+    layer: varchar('layer', { length: 20 }).notNull(), // 'base_price', 'membership_price', 'tiered_price'
+    order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
+    scopeType: varchar('scope_type', { length: 20 }).notNull(), // 'all_variants', 'with_option', 'variants'
+    scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
+    operationType: varchar('operation_type', { length: 20 }).notNull(), // 'offset', 'scale', 'override'
+    operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
+    minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
-    index('idx_option_value_prices_master').on(table.masterId),
-    index('idx_option_value_prices_option_value').on(table.optionValueId),
-    uniqueIndex('unique_master_option_value_price').on(
+    index('idx_pricing_rules_master').on(table.masterId),
+    index('idx_pricing_rules_master_layer').on(table.masterId, table.layer),
+    uniqueIndex('unique_pricing_rule_order').on(
       table.masterId,
-      table.optionValueId,
+      table.layer,
+      table.order,
     ),
   ],
 );
 
-// ===== 10. VARIANT PRICES (전략2: 품목별 개별 가격) =====
-export const variantPrices = pgTable(
-  'variant_prices',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    variantId: uuid('variant_id')
-      .notNull()
-      .references(() => productVariants.id, { onDelete: 'cascade' }),
-    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    index('idx_variant_prices_variant').on(table.variantId),
-    uniqueIndex('unique_variant_price').on(table.variantId),
-  ],
-);
-
-// ===== 11. UPLOADS (파일 업로드) =====
+// ===== 13. UPLOADS (파일 업로드) =====
 export const uploads = pgTable(
   'uploads',
   {
@@ -571,8 +548,7 @@ export const pimSchema = {
   variantOptionValues,
   salesChannels,
   channelProducts,
-  optionValuePrices,
-  variantPrices,
+  pricingRules,
   uploads,
   productImages,
   productApprovalHistory,
