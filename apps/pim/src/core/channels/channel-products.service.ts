@@ -245,7 +245,6 @@ export class ChannelProductsService {
           brand: productMasters.brand,
           thumbnail: productMasters.thumbnail, // thumbnail 필드 추가
           basePrice: productMasters.basePrice,
-          pricingStrategy: productMasters.pricingStrategy,
           tags: productMasters.tags,
           images: productMasters.images,
           attributes: productMasters.attributes,

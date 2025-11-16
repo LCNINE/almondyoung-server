@@ -556,7 +556,6 @@ export class ProductCategoriesService {
         brand: pimSchema.productMasters.brand,
         thumbnail: pimSchema.productMasters.thumbnail, // thumbnail 필드 추가
         basePrice: pimSchema.productMasters.basePrice,
-        pricingStrategy: pimSchema.productMasters.pricingStrategy,
         tags: pimSchema.productMasters.tags,
         images: pimSchema.productMasters.images,
         attributes: pimSchema.productMasters.attributes,

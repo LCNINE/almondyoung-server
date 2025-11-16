@@ -15,14 +15,12 @@ import {
   productOptionValues,
   variantOptionValues
 } from '../../../schema';
-import { PricingStrategyFactory } from '../pricing/pricing-strategy.factory';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray } from 'drizzle-orm';
 
 @Injectable()
 export class ProductVariantsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-    private readonly pricingStrategyFactory: PricingStrategyFactory,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -381,101 +379,19 @@ export class ProductVariantsService {
 
 
   async calculateVariantPrice(variantId: string, tx?: DbTransaction): Promise<number> {
-    if (!variantId) {
-      throw new Error('Variant ID is required');
-    }
-    
-    const client = this.getClient(tx);
-    
-    const variants = await client
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.id, variantId));
-    
-    if (variants.length === 0) {
-      throw new Error(`Variant not found: ${variantId}`);
-    }
-    
-    const variant = variants[0];
-    
-    const masters = await client
-      .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, variant.masterId));
-    
-    if (masters.length === 0) {
-      throw new Error(`Master not found: ${variant.masterId}`);
-    }
-    
-    const master = masters[0];
-    
-    const strategy = await this.pricingStrategyFactory.getStrategy(master.pricingStrategy as any);
-    
-    const optionInfo = await client
-      .select({
-        optionValueId: productOptionValues.id,
-        value: productOptionValues.value,
-        groupName: productOptionGroups.name
-      })
-      .from(variantOptionValues)
-      .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
-      .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
-      .where(eq(variantOptionValues.variantId, variantId));
-    
-    try {
-      if (master.pricingStrategy === 'option_based') {
-        return await strategy.calculatePrice(optionInfo as any, client);
-      } else if (master.pricingStrategy === 'variant_based') {
-        return await strategy.calculatePrice(variantId, client);
-      } else {
-        return master.basePrice || 0;
-      }
-    } catch (error) {
-      console.warn(`Failed to calculate price for variant ${variantId} with strategy ${master.pricingStrategy}:`, error.message);
-      
-      return master.basePrice || 0;
-    }
+    // NOTE: This method has been moved to PricingCalculatorService
+    // Use PricingCalculatorService.calculateVariantPrice() instead
+    throw new Error('calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
   async calculateVariantPrices(variantIds: string[], tx?: DbTransaction): Promise<Record<string, number>> {
-    if (!variantIds || variantIds.length === 0) {
-      throw new Error('Variant IDs are required');
-    }
-    
-    const prices: Record<string, number> = {};
-    
-    for (const variantId of variantIds) {
-      try {
-        prices[variantId] = await this.calculateVariantPrice(variantId, tx);
-      } catch (error) {
-        console.warn(`Failed to calculate price for variant ${variantId}:`, error.message);
-        
-        prices[variantId] = 0;
-      }
-    }
-    
-    return prices;
+    // NOTE: This method has been moved to PricingCalculatorService
+    throw new Error('calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
   async calculateAllVariantPrices(masterId: string, tx?: DbTransaction): Promise<Record<string, number>> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
-    }
-    
-    const client = this.getClient(tx);
-    
-    const variants = await client
-      .select({ id: productVariants.id })
-      .from(productVariants)
-      .where(eq(productVariants.masterId, masterId));
-    
-    if (variants.length === 0) {
-      return {};
-    }
-    
-    const variantIds = variants.map(v => v.id);
-    
-    return await this.calculateVariantPrices(variantIds, tx);
+    // NOTE: This method has been moved to PricingCalculatorService
+    throw new Error('calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
 

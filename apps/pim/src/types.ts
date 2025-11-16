@@ -11,10 +11,7 @@ import {
   variantOptionValues,
   salesChannels,
   channelProducts,
-  optionValuePrices,
-  variantPrices,
-  customerTierPrices,
-  volumeTierPrices,
+  pricingRules,
   uploads,
   productImages,
   productApprovalHistory,
@@ -41,8 +38,6 @@ export type UpdateProductMaster = Partial<
 > & {
   categoryIds?: string[];
   primaryCategoryId?: string;
-  optionValuePrices?: Record<string, number>;
-  variantPrices?: Record<string, number>;
   migrationData?: any;
 };
 
@@ -107,33 +102,21 @@ export type UpdateChannelProduct = Partial<
   Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== OPTION VALUE PRICES 타입 =====
-export type OptionValuePrice = InferSelectModel<typeof optionValuePrices>;
-export type NewOptionValuePrice = InferInsertModel<typeof optionValuePrices>;
-export type UpdateOptionValuePrice = Partial<
-  Omit<NewOptionValuePrice, 'id' | 'createdAt' | 'updatedAt'>
+// ===== PRICING RULES 타입 =====
+export type PricingRule = InferSelectModel<typeof pricingRules>;
+export type NewPricingRule = InferInsertModel<typeof pricingRules>;
+export type UpdatePricingRule = Partial<
+  Omit<NewPricingRule, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== VARIANT PRICES 타입 =====
-export type VariantPrice = InferSelectModel<typeof variantPrices>;
-export type NewVariantPrice = InferInsertModel<typeof variantPrices>;
-export type UpdateVariantPrice = Partial<
-  Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>
->;
+// 가격 레이어 타입
+export type PriceLayer = 'base_price' | 'membership_price' | 'tiered_price';
 
-// ===== CUSTOMER TIER PRICES 타입 =====
-export type CustomerTierPrice = InferSelectModel<typeof customerTierPrices>;
-export type NewCustomerTierPrice = InferInsertModel<typeof customerTierPrices>;
-export type UpdateCustomerTierPrice = Partial<
-  Omit<NewCustomerTierPrice, 'id' | 'createdAt' | 'updatedAt'>
->;
+// 스코프 타입
+export type ScopeType = 'all_variants' | 'with_option' | 'variants';
 
-// ===== VOLUME TIER PRICES 타입 =====
-export type VolumeTierPrice = InferSelectModel<typeof volumeTierPrices>;
-export type NewVolumeTierPrice = InferInsertModel<typeof volumeTierPrices>;
-export type UpdateVolumeTierPrice = Partial<
-  Omit<NewVolumeTierPrice, 'id' | 'createdAt' | 'updatedAt'>
->;
+// 연산 타입
+export type OperationType = 'offset' | 'scale' | 'override';
 
 // ===== UPLOADS 타입 =====
 export type Upload = InferSelectModel<typeof uploads>;
@@ -147,9 +130,6 @@ export type UpdateProductImage = Partial<
   Omit<NewProductImage, 'id' | 'createdAt'>
 >;
 
-// ===== 가격 전략 관련 타입 =====
-export type PricingStrategyType = 'option_based' | 'variant_based';
-
 // ===== 비즈니스 로직 DTO =====
 
 // Product Master 생성 DTO
@@ -161,7 +141,6 @@ export interface CreateMasterDto {
   categoryIds?: string[];
   primaryCategoryId?: string;
   basePrice: number;
-  pricingStrategy: PricingStrategyType;
   tags?: string[];
   images?: string[];
   attributes?: Record<string, any>;
@@ -184,10 +163,6 @@ export interface CreateMasterDto {
       sortOrder?: number;
     }[];
   }[];
-
-  // 가격 데이터 (명시적 분리)
-  optionValuePrices?: Record<string, number>; // option_based 전략용
-  variantPrices?: Record<string, number>; // variant_based 전략용
 }
 
 // Product Master 목록용 DTO (간단한 정보만)
@@ -240,15 +215,7 @@ export interface CreateChannelProductDto {
   channelSpecificData?: Record<string, any>;
 }
 
-// 가격 미리보기 DTO
-export interface PricePreviewDto {
-  masterId: string;
-  variants: {
-    variantId: string;
-    optionCombination: string;
-    price: number;
-  }[];
-}
+// NOTE: PricePreviewDto removed. Use PricingCalculatorService instead.
 
 // ===== PRODUCT APPROVAL HISTORY 타입 =====
 export type ProductApprovalHistory = InferSelectModel<typeof productApprovalHistory>;
@@ -258,54 +225,44 @@ export type NewProductApprovalHistory = InferInsertModel<typeof productApprovalH
 export type ProductAuditLog = InferSelectModel<typeof productAuditLog>;
 export type NewProductAuditLog = InferInsertModel<typeof productAuditLog>;
 
-// ===== 가격 계산 시스템 타입 =====
+// ===== 규칙 기반 가격 계산 시스템 타입 =====
 
-// 가격 계산 컨텍스트
-export interface PriceCalculationContext {
-  masterId: string;
-  variantId?: string;
-  optionValueIds?: string[];
-  customerTier: string; // 'regular', 'membership', or membership tier ID
-  quantity: number;
-  includeVolumeTier?: boolean; // 수량 할인 적용 여부 (기본: true)
-  timestamp?: Date; // 특정 시점 가격 계산 (기본: now)
+// 단일 variant의 계산된 가격
+export interface CalculatedVariantPrice {
+  variantId: string;
+  basePrice: number; // 일반가 (base_price 레이어 적용 결과)
+  membershipPrice: number; // 멤버십가 (base + membership 레이어 적용 결과)
+  tieredPrices: TieredPrice[]; // 도매가 (수량별)
 }
 
-// 가격 계산 결과
+// 수량별 도매가
+export interface TieredPrice {
+  minQuantity: number;
+  price: number;
+}
+
+// 가격 계산 결과 (상세)
 export interface PriceCalculationResult {
-  basePrice: number; // 1단계: 기준가 (option/variant 전략으로 계산)
-  tierAdjustedPrice: number; // 2단계: 고객 등급 조정 후
-  finalUnitPrice: number; // 3단계: 수량 할인 적용 후 개당 가격
-  totalPrice: number; // 최종 총 가격 (finalUnitPrice × quantity)
-  appliedPolicies: {
-    basePricingStrategy: 'option_based' | 'variant_based';
-    customerTierPolicy?: {
-      tier: string;
-      priceType: string;
-      value: number;
-      discount?: number;
-    };
-    volumeTierPolicy?: {
-      minQuantity: number;
-      priceType: string;
-      value: number;
-      discount?: number;
-    };
-  };
-  breakdown: {
-    basePrice: number;
-    customerTierAdjustment: number; // +/- 조정액
-    volumeTierDiscount: number; // 수량 할인액
+  variantId: string;
+  price: number; // 최종 단가
+  totalPrice?: number; // 수량 * 단가 (quantity가 주어진 경우)
+  appliedRules: AppliedRuleInfo[]; // 적용된 규칙들
+  priceBreakdown: {
+    initialPrice: number;
+    afterBasePrice: number;
+    afterMembershipPrice?: number;
+    afterTieredPrice?: number;
   };
 }
 
-// 상품의 모든 가격 정보 (API 응답용)
-export interface PricingInfo {
-  basePrice: number; // 기준가
-  tierPrices: Record<string, number>; // 고객 등급별 가격 { regular: 28800, membership: 24000 }
-  volumeTiers: Array<{
-    minQuantity: number;
-    unitPrice: number;
-    requiredTier: string | null;
-  }>;
+// 적용된 규칙 정보
+export interface AppliedRuleInfo {
+  ruleId: string;
+  layer: PriceLayer;
+  order: number;
+  scopeType: ScopeType;
+  operationType: OperationType;
+  operationValue: number;
+  priceBeforeRule: number;
+  priceAfterRule: number;
 }

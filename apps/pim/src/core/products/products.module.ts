@@ -6,10 +6,6 @@ import { ProductVariantsController } from './controllers/product-variants.contro
 import { ProductMastersService } from './services/product-masters.service';
 import { ProductVariantsService } from './services/product-variants.service';
 import { ProductSearchService } from './services/product-search.service';
-import { ProductPricingService } from './services/product-pricing.service';
-import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
-import { OptionBasedPricingStrategy } from './pricing/option-based-pricing.strategy';
-import { VariantBasedPricingStrategy } from './pricing/variant-based-pricing.strategy';
 
 @Module({
   imports: [],
@@ -18,17 +14,11 @@ import { VariantBasedPricingStrategy } from './pricing/variant-based-pricing.str
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
-    ProductPricingService,
-    PricingStrategyFactory,
-    OptionBasedPricingStrategy,
-    VariantBasedPricingStrategy,
   ],
   exports: [
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
-    ProductPricingService,
-    PricingStrategyFactory,
   ],
 })
 export class ProductsModule {}

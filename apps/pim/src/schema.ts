@@ -104,9 +104,6 @@ export const productMasters = pgTable(
     thumbnail: text('thumbnail'), // 썸네일 이미지 URL
     // categoryId removed - now using many-to-many relationship via productMasterCategories
     basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
-    pricingStrategy: varchar('pricing_strategy', { length: 50 })
-      .notNull()
-      .default('option_based'), // 'option_based', 'variant_based'
     // 물리적 속성 제거: weight, dimensions, costPrice 등
     tags: text('tags').array(), // 마케팅 태그
     images: jsonb('images'), // 상품 이미지 (string[])
@@ -182,7 +179,6 @@ export const productMasters = pgTable(
     index('idx_masters_brand').on(table.brand),
     index('idx_masters_created_at').on(table.createdAt),
     index('idx_masters_base_price').on(table.basePrice),
-    index('idx_masters_pricing_strategy').on(table.pricingStrategy),
     // Phase 1 new indexes
     index('idx_masters_product_type').on(table.productType),
     index('idx_masters_product_code').on(table.productCode),
@@ -389,9 +385,9 @@ export const channelProducts = pgTable(
   ],
 );
 
-// ===== 9. OPTION VALUE PRICES (전략1: 옵션별 가격) =====
-export const optionValuePrices = pgTable(
-  'option_value_prices',
+// ===== 9. PRICING RULES (규칙 기반 가격 정책) =====
+export const pricingRules = pgTable(
+  'pricing_rules',
   {
     id: uuid('id')
       .primaryKey()
@@ -399,108 +395,23 @@ export const optionValuePrices = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    optionValueId: uuid('option_value_id')
-      .notNull()
-      .references(() => productOptionValues.id, { onDelete: 'cascade' }),
-    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
+    layer: varchar('layer', { length: 20 }).notNull(), // 'base_price', 'membership_price', 'tiered_price'
+    order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
+    scopeType: varchar('scope_type', { length: 20 }).notNull(), // 'all_variants', 'with_option', 'variants'
+    scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
+    operationType: varchar('operation_type', { length: 20 }).notNull(), // 'offset', 'scale', 'override'
+    operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
+    minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
-    index('idx_option_value_prices_master').on(table.masterId),
-    index('idx_option_value_prices_option_value').on(table.optionValueId),
-    uniqueIndex('unique_master_option_value_price').on(
+    index('idx_pricing_rules_master').on(table.masterId),
+    index('idx_pricing_rules_master_layer').on(table.masterId, table.layer),
+    uniqueIndex('unique_pricing_rule_order').on(
       table.masterId,
-      table.optionValueId,
-    ),
-  ],
-);
-
-// ===== 10. VARIANT PRICES (전략2: 품목별 개별 가격) =====
-export const variantPrices = pgTable(
-  'variant_prices',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    variantId: uuid('variant_id')
-      .notNull()
-      .references(() => productVariants.id, { onDelete: 'cascade' }),
-    price: bigint('price', { mode: 'number' }).notNull(), // 원 단위 정수
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    index('idx_variant_prices_variant').on(table.variantId),
-    uniqueIndex('unique_variant_price').on(table.variantId),
-  ],
-);
-
-// ===== 11. CUSTOMER TIER PRICES (고객 등급별 가격 정책) =====
-export const customerTierPrices = pgTable(
-  'customer_tier_prices',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
-    variantId: uuid('variant_id')
-      .references(() => productVariants.id, { onDelete: 'cascade' }),
-    customerTier: varchar('customer_tier', { length: 50 }).notNull(), // 'regular', 'membership', or tier ID
-    priceType: varchar('price_type', { length: 20 }).notNull(), // 'fixed', 'multiplier', 'adjustment'
-    value: bigint('value', { mode: 'number' }).notNull(), // 가격, 배율(×1000), 조정액
-    priority: integer('priority').default(0), // 우선순위 (높을수록 우선)
-    validFrom: timestamp('valid_from'), // 유효 시작일
-    validTo: timestamp('valid_to'), // 유효 종료일
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    index('idx_customer_tier_prices_master').on(table.masterId),
-    index('idx_customer_tier_prices_variant').on(table.variantId),
-    index('idx_customer_tier_prices_tier').on(table.customerTier),
-    index('idx_customer_tier_prices_priority').on(table.priority),
-    uniqueIndex('unique_customer_tier_price').on(
-      table.masterId,
-      table.variantId,
-      table.customerTier,
-    ),
-  ],
-);
-
-// ===== 12. VOLUME TIER PRICES (수량별 도매가 계단) =====
-export const volumeTierPrices = pgTable(
-  'volume_tier_prices',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
-    variantId: uuid('variant_id')
-      .references(() => productVariants.id, { onDelete: 'cascade' }),
-    minQuantity: integer('min_quantity').notNull(), // 최소 수량
-    priceType: varchar('price_type', { length: 20 }).notNull(), // 'fixed_unit_price', 'discount_rate', 'discount_amount'
-    value: bigint('value', { mode: 'number' }).notNull(), // 단가, 할인율(×100), 할인액
-    requiredCustomerTier: varchar('required_customer_tier', { length: 50 }), // 'membership' 등 (NULL = 모두 가능)
-    validFrom: timestamp('valid_from'), // 유효 시작일
-    validTo: timestamp('valid_to'), // 유효 종료일
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    index('idx_volume_tier_prices_master').on(table.masterId),
-    index('idx_volume_tier_prices_variant').on(table.variantId),
-    index('idx_volume_tier_prices_min_qty').on(table.minQuantity),
-    index('idx_volume_tier_prices_tier').on(table.requiredCustomerTier),
-    uniqueIndex('unique_volume_tier').on(
-      table.masterId,
-      table.variantId,
-      table.minQuantity,
-      table.requiredCustomerTier,
+      table.layer,
+      table.order,
     ),
   ],
 );
@@ -637,10 +548,7 @@ export const pimSchema = {
   variantOptionValues,
   salesChannels,
   channelProducts,
-  optionValuePrices,
-  variantPrices,
-  customerTierPrices,
-  volumeTierPrices,
+  pricingRules,
   uploads,
   productImages,
   productApprovalHistory,
