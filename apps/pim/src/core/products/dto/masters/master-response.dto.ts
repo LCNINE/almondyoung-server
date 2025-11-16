@@ -16,9 +16,6 @@ export class ProductMasterDto {
   @ApiProperty({ description: '기본 가격', nullable: true })
   basePrice: number | null;
 
-  @ApiProperty({ description: '가격 전략' })
-  pricingStrategy: string;
-
   @ApiProperty({ description: '마케팅 태그', type: [String], nullable: true })
   tags: string[] | null;
 
@@ -45,12 +42,6 @@ export class ProductMasterDto {
 
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;
-
-  @ApiProperty({ description: '멤버십 전용 가격', nullable: true })
-  membershipPrice: number | null;
-
-  @ApiProperty({ description: '도매 전용 가격', nullable: true })
-  wholesalePrice: number | null;
 
   @ApiProperty({ description: '생성일시', nullable: true })
   createdAt: Date | null;
@@ -218,25 +209,6 @@ export class MasterDetailDto extends ProductMasterDto {
   channelProducts: ChannelProductDto[];
 }
 
-export class PriceVariantDto {
-  @ApiProperty({ description: '변형 ID' })
-  variantId: string;
-
-  @ApiProperty({ description: '옵션 조합' })
-  optionCombination: string;
-
-  @ApiProperty({ description: '계산된 가격' })
-  price: number;
-}
-
-export class PricePreviewDto {
-  @ApiProperty({ description: '제품 마스터 ID' })
-  masterId: string;
-
-  @ApiProperty({ description: '변형별 가격 목록', type: [PriceVariantDto] })
-  variants: PriceVariantDto[];
-}
-
 export class MasterListItemDto {
   @ApiProperty({ description: '제품 마스터 ID' })
   id: string;
@@ -249,9 +221,6 @@ export class MasterListItemDto {
 
   @ApiProperty({ description: '기본 가격', nullable: true })
   basePrice: number | null;
-
-  @ApiProperty({ description: '멤버십 전용 가격', nullable: true })
-  membershipPrice: number | null;
 
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;

@@ -11,8 +11,7 @@ import {
   variantOptionValues,
   salesChannels,
   channelProducts,
-  optionValuePrices,
-  variantPrices,
+  pricingRules,
   uploads,
   productImages,
   productApprovalHistory,
@@ -39,6 +38,7 @@ export type UpdateProductMaster = Partial<
 > & {
   categoryIds?: string[];
   primaryCategoryId?: string;
+  migrationData?: any;
 };
 
 // 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
@@ -102,19 +102,21 @@ export type UpdateChannelProduct = Partial<
   Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== OPTION VALUE PRICES 타입 =====
-export type OptionValuePrice = InferSelectModel<typeof optionValuePrices>;
-export type NewOptionValuePrice = InferInsertModel<typeof optionValuePrices>;
-export type UpdateOptionValuePrice = Partial<
-  Omit<NewOptionValuePrice, 'id' | 'createdAt' | 'updatedAt'>
+// ===== PRICING RULES 타입 =====
+export type PricingRule = InferSelectModel<typeof pricingRules>;
+export type NewPricingRule = InferInsertModel<typeof pricingRules>;
+export type UpdatePricingRule = Partial<
+  Omit<NewPricingRule, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== VARIANT PRICES 타입 =====
-export type VariantPrice = InferSelectModel<typeof variantPrices>;
-export type NewVariantPrice = InferInsertModel<typeof variantPrices>;
-export type UpdateVariantPrice = Partial<
-  Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>
->;
+// 가격 레이어 타입
+export type PriceLayer = 'base_price' | 'membership_price' | 'tiered_price';
+
+// 스코프 타입
+export type ScopeType = 'all_variants' | 'with_option' | 'variants';
+
+// 연산 타입
+export type OperationType = 'offset' | 'scale' | 'override';
 
 // ===== UPLOADS 타입 =====
 export type Upload = InferSelectModel<typeof uploads>;
@@ -128,9 +130,6 @@ export type UpdateProductImage = Partial<
   Omit<NewProductImage, 'id' | 'createdAt'>
 >;
 
-// ===== 가격 전략 관련 타입 =====
-export type PricingStrategyType = 'option_based' | 'variant_based';
-
 // ===== 비즈니스 로직 DTO =====
 
 // Product Master 생성 DTO
@@ -142,7 +141,6 @@ export interface CreateMasterDto {
   categoryIds?: string[];
   primaryCategoryId?: string;
   basePrice: number;
-  pricingStrategy: PricingStrategyType;
   tags?: string[];
   images?: string[];
   attributes?: Record<string, any>;
@@ -153,11 +151,8 @@ export interface CreateMasterDto {
   // 구매제한 필드들
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
-  // 특별 가격 필드들
-  membershipPrice?: number;
-  wholesalePrice?: number;
 
-  // 옵션 정보
+  // 옵션 구조 정보 (가격 제외)
   optionGroups?: {
     name: string;
     displayName: string;
@@ -166,12 +161,8 @@ export interface CreateMasterDto {
       value: string;
       displayName: string;
       sortOrder?: number;
-      price?: number; // option_based 전략용
     }[];
   }[];
-
-  // variant_based 전략용 품목별 가격
-  variantPrices?: Record<string, number>; // 옵션 조합별 가격
 }
 
 // Product Master 목록용 DTO (간단한 정보만)
@@ -180,7 +171,6 @@ export interface MasterListItemDto {
   name: string;
   thumbnail?: string;
   basePrice: number;
-  membershipPrice?: number;
   isMembershipOnly: boolean;
   status: string;
   createdAt: Date;
@@ -225,15 +215,7 @@ export interface CreateChannelProductDto {
   channelSpecificData?: Record<string, any>;
 }
 
-// 가격 미리보기 DTO
-export interface PricePreviewDto {
-  masterId: string;
-  variants: {
-    variantId: string;
-    optionCombination: string;
-    price: number;
-  }[];
-}
+// NOTE: PricePreviewDto removed. Use PricingCalculatorService instead.
 
 // ===== PRODUCT APPROVAL HISTORY 타입 =====
 export type ProductApprovalHistory = InferSelectModel<typeof productApprovalHistory>;
@@ -242,3 +224,45 @@ export type NewProductApprovalHistory = InferInsertModel<typeof productApprovalH
 // ===== PRODUCT AUDIT LOG 타입 =====
 export type ProductAuditLog = InferSelectModel<typeof productAuditLog>;
 export type NewProductAuditLog = InferInsertModel<typeof productAuditLog>;
+
+// ===== 규칙 기반 가격 계산 시스템 타입 =====
+
+// 단일 variant의 계산된 가격
+export interface CalculatedVariantPrice {
+  variantId: string;
+  basePrice: number; // 일반가 (base_price 레이어 적용 결과)
+  membershipPrice: number; // 멤버십가 (base + membership 레이어 적용 결과)
+  tieredPrices: TieredPrice[]; // 도매가 (수량별)
+}
+
+// 수량별 도매가
+export interface TieredPrice {
+  minQuantity: number;
+  price: number;
+}
+
+// 가격 계산 결과 (상세)
+export interface PriceCalculationResult {
+  variantId: string;
+  price: number; // 최종 단가
+  totalPrice?: number; // 수량 * 단가 (quantity가 주어진 경우)
+  appliedRules: AppliedRuleInfo[]; // 적용된 규칙들
+  priceBreakdown: {
+    initialPrice: number;
+    afterBasePrice: number;
+    afterMembershipPrice?: number;
+    afterTieredPrice?: number;
+  };
+}
+
+// 적용된 규칙 정보
+export interface AppliedRuleInfo {
+  ruleId: string;
+  layer: PriceLayer;
+  order: number;
+  scopeType: ScopeType;
+  operationType: OperationType;
+  operationValue: number;
+  priceBeforeRule: number;
+  priceAfterRule: number;
+}

@@ -5,7 +5,6 @@ import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
   CreateMasterDto,
   MasterDetailDto,
-  PricePreviewDto,
   ProductMaster,
   NewProductMaster,
   UpdateProductMaster,
@@ -24,7 +23,6 @@ import {
   uploads,
   productAuditLog,
 } from '../../../schema';
-import { PricingStrategyFactory } from '../pricing/pricing-strategy.factory';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 
 @Injectable()
@@ -33,7 +31,6 @@ export class ProductMastersService {
 
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-    private readonly pricingStrategyFactory: PricingStrategyFactory,
 
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
@@ -161,7 +158,6 @@ export class ProductMastersService {
       brand: data.brand,
       thumbnail: data.thumbnail,
       basePrice: data.basePrice,
-      pricingStrategy: data.pricingStrategy,
       tags: data.tags,
       images: data.images,
       attributes: data.attributes,
@@ -170,8 +166,6 @@ export class ProductMastersService {
       seoKeywords: data.seoKeywords,
       isWholesaleOnly: data.isWholesaleOnly || false,
       isMembershipOnly: data.isMembershipOnly || false,
-      membershipPrice: data.membershipPrice || null,
-      wholesalePrice: data.wholesalePrice || null,
     };
 
     const [master] = await tx
@@ -422,7 +416,6 @@ export class ProductMastersService {
       status?: string;
       categoryId?: string;
       brand?: string;
-      pricingStrategy?: string;
       search?: string;
       page?: number;
       limit?: number;
@@ -435,7 +428,6 @@ export class ProductMastersService {
       name: string;
       thumbnail: string | null;
       basePrice: number | null;
-      membershipPrice: number | null;
       isMembershipOnly: boolean | null;
       status: string | null;
       createdAt: string | null;
@@ -465,11 +457,6 @@ export class ProductMastersService {
 
     if (filters?.brand) {
       whereConditions.push(eq(productMasters.brand, filters.brand));
-    }
-    if (filters?.pricingStrategy) {
-      whereConditions.push(
-        eq(productMasters.pricingStrategy, filters.pricingStrategy),
-      );
     }
     if (filters?.search) {
       whereConditions.push(ilike(productMasters.name, `%${filters.search}%`));
@@ -526,7 +513,6 @@ export class ProductMastersService {
           name: productMasters.name,
           thumbnail: productMasters.thumbnail,
           basePrice: productMasters.basePrice,
-          membershipPrice: productMasters.membershipPrice,
           isMembershipOnly: productMasters.isMembershipOnly,
           status: productMasters.status,
           createdAt: productMasters.createdAt,
@@ -581,7 +567,6 @@ export class ProductMastersService {
         name: productMasters.name,
         thumbnail: productMasters.thumbnail,
         basePrice: productMasters.basePrice,
-        membershipPrice: productMasters.membershipPrice,
         isMembershipOnly: productMasters.isMembershipOnly,
         status: productMasters.status,
         createdAt: productMasters.createdAt,
@@ -627,13 +612,22 @@ export class ProductMastersService {
     }
 
     const executeUpdate = async (txClient: DbTransaction) => {
+      // 0. 기존 마스터 조회
       const existingMaster = await this.getMasterById(masterId, txClient);
       if (!existingMaster) {
         throw new Error(`Master not found: ${masterId}`);
       }
 
-      // Separate category fields from master fields
-      const { categoryIds, primaryCategoryId, ...masterUpdateData } = data;
+      // NOTE: Pricing strategy logic has been moved to PricingModule
+      // Use the new rule-based pricing API: PUT /products/:masterId/pricing-rules
+
+      // 3. 기본 필드 업데이트
+      const { 
+        categoryIds, 
+        primaryCategoryId, 
+        migrationData,
+        ...masterUpdateData 
+      } = data;
 
       // Update master basic info with type safety
       const [updated] = await txClient
@@ -649,7 +643,7 @@ export class ProductMastersService {
         throw new Error(`Failed to update master: ${masterId}`);
       }
 
-      // Update categories if provided
+      // 4. 카테고리 업데이트
       if (categoryIds !== undefined) {
         // Delete existing relations
         await txClient
@@ -923,185 +917,9 @@ export class ProductMastersService {
     }
   }
 
-  async initializePricingStrategy(
-    masterId: string,
-    strategyData: any,
-    tx?: DbTransaction,
-  ): Promise<void> {
-    const client = this.getClient(tx);
-
-    try {
-      const strategy = this.pricingStrategyFactory.getStrategy(
-        strategyData.pricingStrategy,
-      );
-
-      if (strategyData.pricingStrategy === 'option_based') {
-        const priceData: Record<string, number> = {};
-
-        if (strategyData.optionGroups) {
-          for (const group of strategyData.optionGroups) {
-            for (const value of group.values) {
-              if (value.price !== undefined) {
-                priceData[value.id] = value.price;
-              }
-            }
-          }
-        }
-
-        if (strategy && typeof strategy.setPriceData === 'function') {
-          await strategy.setPriceData(masterId, priceData, client);
-        }
-      } else if (strategyData.pricingStrategy === 'variant_based') {
-        const priceData: Record<string, number> = {};
-
-        if (strategyData.variantPrices) {
-          Object.assign(priceData, strategyData.variantPrices);
-        }
-
-        if (strategy && typeof strategy.setPriceData === 'function') {
-          await strategy.setPriceData(masterId, priceData, client);
-        }
-      }
-    } catch (error) {
-      console.warn('Pricing strategy initialization skipped:', error.message);
-    }
-  }
-
-  async changePricingStrategy(
-    masterId: string,
-    toStrategy: string,
-    migrationData?: any,
-    tx?: DbTransaction,
-  ): Promise<void> {
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({ pricingStrategy: productMasters.pricingStrategy })
-      .from(productMasters)
-      .where(eq(productMasters.id, masterId));
-
-    const master = Array.isArray(result) ? result[0] : result;
-
-    if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
-
-    const fromStrategy = master.pricingStrategy;
-    await this.pricingStrategyFactory.changeStrategy(
-      masterId,
-      fromStrategy as any,
-      toStrategy as any,
-      migrationData || {},
-      client,
-    );
-    await client
-      .update(productMasters)
-      .set({ pricingStrategy: toStrategy })
-      .where(eq(productMasters.id, masterId));
-  }
-
-  async getPricePreview(
-    masterId: string,
-    tx?: DbTransaction,
-  ): Promise<PricePreviewDto> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
-    }
-
-    const client = this.getClient(tx);
-
-    const master = await this.getMasterById(masterId, tx);
-    if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
-    const variants = await client
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.masterId, masterId))
-      .orderBy(asc(productVariants.displayOrder));
-
-    if (variants.length === 0) {
-      return {
-        masterId,
-        variants: [],
-      };
-    }
-
-    const strategy = await this.pricingStrategyFactory.getStrategy(
-      master.pricingStrategy as any,
-    );
-    const variantPreviews: {
-      variantId: string;
-      optionCombination: string;
-      price: number;
-    }[] = [];
-
-    for (const variant of variants) {
-      try {
-        const variantOptions = await client
-          .select({
-            optionValue: {
-              id: productOptionValues.id,
-              value: productOptionValues.value,
-              displayName: productOptionValues.displayName,
-              optionGroupId: productOptionValues.optionGroupId,
-            },
-            optionGroup: {
-              name: productOptionGroups.name,
-              displayName: productOptionGroups.displayName,
-            },
-          })
-          .from(variantOptionValues)
-          .innerJoin(
-            productOptionValues,
-            eq(variantOptionValues.optionValueId, productOptionValues.id),
-          )
-          .innerJoin(
-            productOptionGroups,
-            eq(productOptionValues.optionGroupId, productOptionGroups.id),
-          )
-          .where(eq(variantOptionValues.variantId, variant.id))
-          .orderBy(asc(productOptionGroups.sortOrder));
-        let optionCombination: string;
-        if (variantOptions.length === 0) {
-          // 옵션이 없는 기본 품목
-          optionCombination = '기본 품목';
-        } else {
-          optionCombination = variantOptions
-            .map((vo) => vo.optionValue.displayName)
-            .join(' × ');
-        }
-        const optionInfo = variantOptions.map((vo) => ({
-          optionValueId: vo.optionValue.id,
-          value: vo.optionValue.value,
-          groupName: vo.optionGroup.name,
-        }));
-        const price = await strategy.calculatePrice(optionInfo as any, client);
-
-        variantPreviews.push({
-          variantId: variant.id,
-          optionCombination,
-          price,
-        });
-      } catch (error) {
-        console.warn(
-          `Failed to calculate price for variant ${variant.id}:`,
-          error.message,
-        );
-
-        variantPreviews.push({
-          variantId: variant.id,
-          optionCombination: variant.variantName || '알 수 없음',
-          price: master.basePrice || 0,
-        });
-      }
-    }
-
-    return {
-      masterId,
-      variants: variantPreviews,
-    };
-  }
+  // NOTE: Pricing methods removed. Use PricingModule instead:
+  // - PricingService for rules management
+  // - PricingCalculatorService for price calculation
 
   async existsMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {
     if (!masterId) {

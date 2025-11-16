@@ -67,11 +67,13 @@ describe('ProductMastersController - E2E Tests', () => {
             name: 'size',
             displayName: '사이즈',
             values: [
-              { value: 'S', displayName: 'Small', price: 0 },
-              { value: 'M', displayName: 'Medium', price: 1000 },
+              { value: 'S', displayName: 'Small' },
+              { value: 'M', displayName: 'Medium' },
             ]
           }
-        ]
+        ],
+        // 가격 데이터는 옵션 생성 후 별도로 설정 가능
+        // optionValuePrices: { 'option-value-id': 1000 }
       };
 
       const response = await request(app.getHttpServer())
