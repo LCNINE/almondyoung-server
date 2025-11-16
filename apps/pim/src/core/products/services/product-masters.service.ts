@@ -25,6 +25,7 @@ import {
   productAuditLog,
 } from '../../../schema';
 import { PricingStrategyFactory } from '../pricing/pricing-strategy.factory';
+import { ProductPricingService } from './product-pricing.service';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class ProductMastersService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly pricingStrategyFactory: PricingStrategyFactory,
+    private readonly productPricingService: ProductPricingService,
 
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
@@ -170,8 +172,6 @@ export class ProductMastersService {
       seoKeywords: data.seoKeywords,
       isWholesaleOnly: data.isWholesaleOnly || false,
       isMembershipOnly: data.isMembershipOnly || false,
-      membershipPrice: data.membershipPrice || null,
-      wholesalePrice: data.wholesalePrice || null,
     };
 
     const [master] = await tx
@@ -435,7 +435,6 @@ export class ProductMastersService {
       name: string;
       thumbnail: string | null;
       basePrice: number | null;
-      membershipPrice: number | null;
       isMembershipOnly: boolean | null;
       status: string | null;
       createdAt: string | null;
@@ -526,7 +525,6 @@ export class ProductMastersService {
           name: productMasters.name,
           thumbnail: productMasters.thumbnail,
           basePrice: productMasters.basePrice,
-          membershipPrice: productMasters.membershipPrice,
           isMembershipOnly: productMasters.isMembershipOnly,
           status: productMasters.status,
           createdAt: productMasters.createdAt,
@@ -581,7 +579,6 @@ export class ProductMastersService {
         name: productMasters.name,
         thumbnail: productMasters.thumbnail,
         basePrice: productMasters.basePrice,
-        membershipPrice: productMasters.membershipPrice,
         isMembershipOnly: productMasters.isMembershipOnly,
         status: productMasters.status,
         createdAt: productMasters.createdAt,

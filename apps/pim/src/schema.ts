@@ -120,9 +120,6 @@ export const productMasters = pgTable(
     // 구매제한 관련 필드들
     isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
     isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
-    // 특별 가격 필드들
-    membershipPrice: bigint('membership_price', { mode: 'number' }), // 멤버십 전용 가격
-    wholesalePrice: bigint('wholesale_price', { mode: 'number' }), // 도매 전용 가격
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
@@ -439,7 +436,76 @@ export const variantPrices = pgTable(
   ],
 );
 
-// ===== 11. UPLOADS (파일 업로드) =====
+// ===== 11. CUSTOMER TIER PRICES (고객 등급별 가격 정책) =====
+export const customerTierPrices = pgTable(
+  'customer_tier_prices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id')
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    customerTier: varchar('customer_tier', { length: 50 }).notNull(), // 'regular', 'membership', or tier ID
+    priceType: varchar('price_type', { length: 20 }).notNull(), // 'fixed', 'multiplier', 'adjustment'
+    value: bigint('value', { mode: 'number' }).notNull(), // 가격, 배율(×1000), 조정액
+    priority: integer('priority').default(0), // 우선순위 (높을수록 우선)
+    validFrom: timestamp('valid_from'), // 유효 시작일
+    validTo: timestamp('valid_to'), // 유효 종료일
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_customer_tier_prices_master').on(table.masterId),
+    index('idx_customer_tier_prices_variant').on(table.variantId),
+    index('idx_customer_tier_prices_tier').on(table.customerTier),
+    index('idx_customer_tier_prices_priority').on(table.priority),
+    uniqueIndex('unique_customer_tier_price').on(
+      table.masterId,
+      table.variantId,
+      table.customerTier,
+    ),
+  ],
+);
+
+// ===== 12. VOLUME TIER PRICES (수량별 도매가 계단) =====
+export const volumeTierPrices = pgTable(
+  'volume_tier_prices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    variantId: uuid('variant_id')
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    minQuantity: integer('min_quantity').notNull(), // 최소 수량
+    priceType: varchar('price_type', { length: 20 }).notNull(), // 'fixed_unit_price', 'discount_rate', 'discount_amount'
+    value: bigint('value', { mode: 'number' }).notNull(), // 단가, 할인율(×100), 할인액
+    requiredCustomerTier: varchar('required_customer_tier', { length: 50 }), // 'membership' 등 (NULL = 모두 가능)
+    validFrom: timestamp('valid_from'), // 유효 시작일
+    validTo: timestamp('valid_to'), // 유효 종료일
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_volume_tier_prices_master').on(table.masterId),
+    index('idx_volume_tier_prices_variant').on(table.variantId),
+    index('idx_volume_tier_prices_min_qty').on(table.minQuantity),
+    index('idx_volume_tier_prices_tier').on(table.requiredCustomerTier),
+    uniqueIndex('unique_volume_tier').on(
+      table.masterId,
+      table.variantId,
+      table.minQuantity,
+      table.requiredCustomerTier,
+    ),
+  ],
+);
+
+// ===== 13. UPLOADS (파일 업로드) =====
 export const uploads = pgTable(
   'uploads',
   {
@@ -573,6 +639,8 @@ export const pimSchema = {
   channelProducts,
   optionValuePrices,
   variantPrices,
+  customerTierPrices,
+  volumeTierPrices,
   uploads,
   productImages,
   productApprovalHistory,

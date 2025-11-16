@@ -567,8 +567,6 @@ export class ProductCategoriesService {
         status: pimSchema.productMasters.status,
         isWholesaleOnly: pimSchema.productMasters.isWholesaleOnly,
         isMembershipOnly: pimSchema.productMasters.isMembershipOnly,
-        membershipPrice: pimSchema.productMasters.membershipPrice,
-        wholesalePrice: pimSchema.productMasters.wholesalePrice,
         createdAt: pimSchema.productMasters.createdAt,
         updatedAt: pimSchema.productMasters.updatedAt,
         createdBy: pimSchema.productMasters.createdBy,
