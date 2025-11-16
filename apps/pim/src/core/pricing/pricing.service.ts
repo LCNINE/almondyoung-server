@@ -81,7 +81,10 @@ export class PricingService {
           layer: 'base_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: rule.scopeTargetIds || null,
+          scopeTargetIds: 
+            rule.scopeType === 'all_variants' 
+              ? null 
+              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: null,
@@ -94,7 +97,10 @@ export class PricingService {
           layer: 'membership_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: rule.scopeTargetIds || null,
+          scopeTargetIds: 
+            rule.scopeType === 'all_variants' 
+              ? null 
+              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: null,
@@ -107,7 +113,10 @@ export class PricingService {
           layer: 'tiered_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: rule.scopeTargetIds || null,
+          scopeTargetIds: 
+            rule.scopeType === 'all_variants' 
+              ? null 
+              : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: rule.minQuantity,

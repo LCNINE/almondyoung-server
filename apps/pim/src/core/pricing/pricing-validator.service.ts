@@ -4,11 +4,18 @@ import { DbService } from '@app/db';
 import { eq, inArray } from 'drizzle-orm';
 import { 
   productOptionValues,
+  productOptionGroups,
   productVariants,
   pimSchema 
 } from '../../schema';
 import { DbTransaction } from '../../types';
-import { ValidatedPricingRulesSet, pricingRulesSetSchema } from './dto';
+import { 
+  ValidatedPricingRulesSet, 
+  pricingRulesSetSchema,
+  hasWithOptionScope,
+  hasVariantsScope,
+  PricingRuleInput
+} from './dto';
 import { PricingCalculatorService } from './pricing-calculator.service';
 
 @Injectable()
@@ -32,7 +39,7 @@ export class PricingValidatorService {
 
   async validateRuleSet(
     masterId: string,
-    rulesDto: any,
+    rulesDto: unknown,
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
     return this.inTx(async (trx) => {
@@ -40,7 +47,7 @@ export class PricingValidatorService {
       if (!parseResult.success) {
         throw new BadRequestException({
           message: 'Invalid pricing rules structure',
-          errors: parseResult.error.errors,
+          errors: parseResult.error.issues,
         });
       }
 
@@ -57,81 +64,125 @@ export class PricingValidatorService {
     rulesSet: ValidatedPricingRulesSet,
     tx: DbTransaction,
   ): Promise<void> {
-    const allRules = [
+    const allRules = this.collectAllRules(rulesSet);
+
+    const withOptionTargetIds = this.collectTargetIds(allRules, hasWithOptionScope);
+    if (withOptionTargetIds.length > 0) {
+      await this.validateOptionValueIds(masterId, withOptionTargetIds, tx);
+    }
+
+    const variantsTargetIds = this.collectTargetIds(allRules, hasVariantsScope);
+    if (variantsTargetIds.length > 0) {
+      await this.validateVariantIds(masterId, variantsTargetIds, tx);
+    }
+  }
+
+  private collectAllRules(rulesSet: ValidatedPricingRulesSet): PricingRuleInput[] {
+    return [
       ...rulesSet.basePriceRules,
       ...rulesSet.membershipPriceRules,
       ...rulesSet.tieredPriceRules,
     ];
+  }
 
-    const withOptionRules = allRules.filter((r) => r.scopeType === 'with_option');
-    const variantsRules = allRules.filter((r) => r.scopeType === 'variants');
+  private collectTargetIds(
+    rules: PricingRuleInput[],
+    scopeGuard: (rule: PricingRuleInput) => boolean,
+  ): string[] {
+    const targetIds = rules
+      .filter(scopeGuard)
+      .flatMap((rule) => rule.scopeTargetIds || []);
 
-    if (withOptionRules.length > 0) {
-      const allOptionValueIds = withOptionRules
-        .flatMap((r) => r.scopeTargetIds || [])
-        .filter((id, index, self) => self.indexOf(id) === index);
+    return [...new Set(targetIds)];
+  }
 
-      if (allOptionValueIds.length > 0) {
-        const optionValues = await tx
-          .select({ 
-            id: productOptionValues.id,
-            masterId: productOptionValues.masterId 
-          })
-          .from(productOptionValues)
-          .where(inArray(productOptionValues.id, allOptionValueIds));
+  private async validateOptionValueIds(
+    masterId: string,
+    optionValueIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    const optionValues = await tx
+      .select({
+        id: productOptionValues.id,
+        masterId: productOptionGroups.masterId,
+      })
+      .from(productOptionValues)
+      .innerJoin(
+        productOptionGroups,
+        eq(productOptionValues.optionGroupId, productOptionGroups.id),
+      )
+      .where(inArray(productOptionValues.id, optionValueIds));
 
-        const foundIds = new Set(optionValues.map((ov) => ov.id));
-        const missingIds = allOptionValueIds.filter((id) => !foundIds.has(id));
-        
-        if (missingIds.length > 0) {
-          throw new BadRequestException(
-            `Option value IDs not found: ${missingIds.join(', ')}`,
-          );
-        }
+    this.validateFoundIds(
+      optionValueIds,
+      optionValues.map((ov) => ov.id),
+      'Option value IDs not found',
+    );
 
-        const invalidMasterIds = optionValues.filter(
-          (ov) => ov.masterId !== masterId,
-        );
-        if (invalidMasterIds.length > 0) {
-          throw new BadRequestException(
-            `Option values do not belong to master ${masterId}: ${invalidMasterIds.map((ov) => ov.id).join(', ')}`,
-          );
-        }
-      }
+    this.validateMasterId(
+      masterId,
+      optionValues,
+      (ov) => ov.masterId,
+      (ov) => ov.id,
+      'Option values do not belong to master',
+    );
+  }
+
+  private async validateVariantIds(
+    masterId: string,
+    variantIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    const variants = await tx
+      .select({
+        id: productVariants.id,
+        masterId: productVariants.masterId,
+      })
+      .from(productVariants)
+      .where(inArray(productVariants.id, variantIds));
+
+    this.validateFoundIds(
+      variantIds,
+      variants.map((v) => v.id),
+      'Variant IDs not found',
+    );
+
+    this.validateMasterId(
+      masterId,
+      variants,
+      (v) => v.masterId,
+      (v) => v.id,
+      'Variants do not belong to master',
+    );
+  }
+
+  private validateFoundIds(
+    requestedIds: string[],
+    foundIds: string[],
+    errorMessagePrefix: string,
+  ): void {
+    const foundSet = new Set(foundIds);
+    const missingIds = requestedIds.filter((id) => !foundSet.has(id));
+
+    if (missingIds.length > 0) {
+      throw new BadRequestException(`${errorMessagePrefix}: ${missingIds.join(', ')}`);
     }
+  }
 
-    if (variantsRules.length > 0) {
-      const allVariantIds = variantsRules
-        .flatMap((r) => r.scopeTargetIds || [])
-        .filter((id, index, self) => self.indexOf(id) === index);
+  private validateMasterId<T>(
+    expectedMasterId: string,
+    items: T[],
+    getMasterId: (item: T) => string,
+    getId: (item: T) => string,
+    errorMessagePrefix: string,
+  ): void {
+    const invalidItems = items.filter((item) => getMasterId(item) !== expectedMasterId);
 
-      if (allVariantIds.length > 0) {
-        const variants = await tx
-          .select({ 
-            id: productVariants.id,
-            masterId: productVariants.masterId 
-          })
-          .from(productVariants)
-          .where(inArray(productVariants.id, allVariantIds));
-
-        const foundIds = new Set(variants.map((v) => v.id));
-        const missingIds = allVariantIds.filter((id) => !foundIds.has(id));
-        
-        if (missingIds.length > 0) {
-          throw new BadRequestException(
-            `Variant IDs not found: ${missingIds.join(', ')}`,
-          );
-        }
-
-        const invalidMasterIds = variants.filter(
-          (v) => v.masterId !== masterId,
-        );
-        if (invalidMasterIds.length > 0) {
-          throw new BadRequestException(
-            `Variants do not belong to master ${masterId}: ${invalidMasterIds.map((v) => v.id).join(', ')}`,
-          );
-        }
-      }
+    if (invalidItems.length > 0) {
+      const invalidIds = invalidItems.map(getId).join(', ');
+      throw new BadRequestException(
+        `${errorMessagePrefix} ${expectedMasterId}: ${invalidIds}`,
+      );
     }
   }
 
