@@ -98,6 +98,17 @@ export const productMasters = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
+    
+    // ===== VERSION MANAGEMENT FIELDS START =====
+    masterId: uuid('master_id').notNull(),
+    version: integer('version').notNull().default(1),
+    parentVersionId: uuid('parent_version_id'),
+    versionStatus: varchar('version_status', { length: 20 })
+      .notNull()
+      .default('draft'), // 'draft' | 'inactive' | 'active'
+    draftOwnerId: uuid('draft_owner_id'),
+    // ===== VERSION MANAGEMENT FIELDS END =====
+    
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
@@ -186,6 +197,19 @@ export const productMasters = pgTable(
     index('idx_masters_deleted_at').on(table.deletedAt),
     index('idx_masters_supplier').on(table.supplierId),
     index('idx_masters_sales_dates').on(table.salesStartDate, table.salesEndDate),
+    // Version management indexes
+    index('idx_masters_master_id').on(table.masterId),
+    index('idx_masters_version_status').on(table.versionStatus),
+    index('idx_masters_master_id_version').on(table.masterId, table.version),
+    uniqueIndex('unique_master_active_version')
+      .on(table.masterId)
+      .where(sql`${table.versionStatus} = 'active'`),
+    uniqueIndex('unique_master_version').on(table.masterId, table.version),
+    // Self-referencing foreign key for parent version
+    foreignKey({
+      columns: [table.parentVersionId],
+      foreignColumns: [table.id],
+    }),
   ],
 );
 
@@ -214,6 +238,87 @@ export const productMasterCategories = pgTable(
   ],
 );
 
+// ===== 2.2. PRODUCT MASTER OPTION GROUPS (Mapping Table) =====
+export const productMasterOptionGroups = pgTable(
+  'product_master_option_groups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id').notNull(),
+    optionGroupId: uuid('option_group_id')
+      .notNull()
+      .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_master_option_groups_master_version').on(
+      table.masterId,
+      table.version,
+    ),
+    uniqueIndex('unique_master_option_group_version').on(
+      table.masterId,
+      table.optionGroupId,
+      table.version,
+    ),
+  ],
+);
+
+// ===== 2.3. PRODUCT MASTER VARIANTS (Mapping Table) =====
+export const productMasterVariants = pgTable(
+  'product_master_variants',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id').notNull(),
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_master_variants_master_version').on(
+      table.masterId,
+      table.version,
+    ),
+    uniqueIndex('unique_master_variant_version').on(
+      table.masterId,
+      table.variantId,
+      table.version,
+    ),
+  ],
+);
+
+// ===== 2.4. PRODUCT MASTER PRICING RULES (Mapping Table) =====
+export const productMasterPricingRules = pgTable(
+  'product_master_pricing_rules',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id').notNull(),
+    pricingRuleId: uuid('pricing_rule_id')
+      .notNull()
+      .references(() => pricingRules.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_master_pricing_rules_master_version').on(
+      table.masterId,
+      table.version,
+    ),
+    uniqueIndex('unique_master_pricing_rule_version').on(
+      table.masterId,
+      table.pricingRuleId,
+      table.version,
+    ),
+  ],
+);
+
 // ===== 3. PRODUCT OPTION GROUPS =====
 export const productOptionGroups = pgTable(
   'product_option_groups',
@@ -221,9 +326,7 @@ export const productOptionGroups = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id'),
     name: varchar('name', { length: 100 }).notNull(), // 'color', 'size'
     displayName: varchar('display_name', { length: 100 }).notNull(), // '색상', '사이즈'
     sortOrder: integer('sort_order').default(0),
@@ -234,10 +337,6 @@ export const productOptionGroups = pgTable(
   (table) => [
     index('idx_option_groups_master').on(table.masterId),
     index('idx_option_groups_sort_order').on(table.masterId, table.sortOrder),
-    uniqueIndex('unique_option_groups_master_name').on(
-      table.masterId,
-      table.name,
-    ),
   ],
 );
 
@@ -279,9 +378,7 @@ export const productVariants = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id'),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
     images: jsonb('images'), // string[] - 품목별 이미지
     priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
@@ -392,9 +489,7 @@ export const pricingRules = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id'),
     layer: varchar('layer', { length: 20 }).notNull(), // 'base_price', 'membership_price', 'tiered_price'
     order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
     scopeType: varchar('scope_type', { length: 20 }).notNull(), // 'all_variants', 'with_option', 'variants'
@@ -408,11 +503,6 @@ export const pricingRules = pgTable(
   (table) => [
     index('idx_pricing_rules_master').on(table.masterId),
     index('idx_pricing_rules_master_layer').on(table.masterId, table.layer),
-    uniqueIndex('unique_pricing_rule_order').on(
-      table.masterId,
-      table.layer,
-      table.order,
-    ),
   ],
 );
 
@@ -542,6 +632,9 @@ export const pimSchema = {
   productCategories,
   productMasters,
   productMasterCategories,
+  productMasterOptionGroups,
+  productMasterVariants,
+  productMasterPricingRules,
   productOptionGroups,
   productOptionValues,
   productVariants,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
@@ -22,8 +22,13 @@ import {
   productImages,
   uploads,
   productAuditLog,
+  productMasterOptionGroups,
+  productMasterVariants,
+  productMasterPricingRules,
 } from '../../../schema';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { ProductVersionsService } from './product-versions.service';
+import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class ProductMastersService {
@@ -34,6 +39,9 @@ export class ProductMastersService {
 
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
+
+    @Inject(forwardRef(() => ProductVersionsService))
+    private readonly productVersionsService: ProductVersionsService,
   ) {}
 
   private async _linkImages(
@@ -151,7 +159,15 @@ export class ProductMastersService {
         .replace(/<p><br><\/p>/g, '');
     }
 
+    const newId = uuidv7();
+
     const masterData = {
+      id: newId,
+      masterId: newId,
+      version: 1,
+      versionStatus: 'draft',
+      parentVersionId: null,
+      draftOwnerId: null,
       name: data.name,
       description: data.description,
       descriptionHtml: processedHtml,
@@ -170,7 +186,7 @@ export class ProductMastersService {
 
     const [master] = await tx
       .insert(productMasters)
-      .values(masterData)
+      .values(masterData as any)
       .returning();
 
     // 이미지 연결 처리

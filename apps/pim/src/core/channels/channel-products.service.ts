@@ -216,7 +216,10 @@ export class ChannelProductsService {
       .from(channelProducts)
       .innerJoin(
         productMasters,
-        eq(channelProducts.masterId, productMasters.id),
+        and(
+          eq(channelProducts.masterId, productMasters.masterId),
+          eq(productMasters.versionStatus, 'active'),
+        ),
       );
 
     if (whereClause) {
@@ -240,6 +243,9 @@ export class ChannelProductsService {
         // ProductMaster 필드들 (master 객체로 그룹화)
         master: {
           id: productMasters.id,
+          masterId: productMasters.masterId,
+          version: productMasters.version,
+          versionStatus: productMasters.versionStatus,
           name: productMasters.name,
           description: productMasters.description,
           brand: productMasters.brand,
@@ -261,7 +267,10 @@ export class ChannelProductsService {
       .from(channelProducts)
       .innerJoin(
         productMasters,
-        eq(channelProducts.masterId, productMasters.id),
+        and(
+          eq(channelProducts.masterId, productMasters.masterId),
+          eq(productMasters.versionStatus, 'active'),
+        ),
       )
       .orderBy(desc(channelProducts.createdAt))
       .limit(limit)

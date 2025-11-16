@@ -5,6 +5,9 @@ import {
   productCategories,
   productMasters,
   productMasterCategories,
+  productMasterOptionGroups,
+  productMasterVariants,
+  productMasterPricingRules,
   productOptionGroups,
   productOptionValues,
   productVariants,
@@ -21,6 +24,9 @@ import {
 
 // ===== TRANSACTION 타입 =====
 export type DbTransaction = PostgresJsDatabase<PimSchema>;
+
+// ===== VERSION MANAGEMENT 타입 =====
+export type VersionStatus = 'draft' | 'inactive' | 'active';
 
 // ===== PRODUCT CATEGORIES 타입 =====
 
@@ -53,6 +59,18 @@ export type NewProductMasterCategory = InferInsertModel<
 export type UpdateProductMasterCategory = Partial<
   Omit<NewProductMasterCategory, 'id' | 'createdAt'>
 >;
+
+// ===== PRODUCT MASTER OPTION GROUPS (Mapping Table) 타입 =====
+export type ProductMasterOptionGroup = InferSelectModel<typeof productMasterOptionGroups>;
+export type NewProductMasterOptionGroup = InferInsertModel<typeof productMasterOptionGroups>;
+
+// ===== PRODUCT MASTER VARIANTS (Mapping Table) 타입 =====
+export type ProductMasterVariant = InferSelectModel<typeof productMasterVariants>;
+export type NewProductMasterVariant = InferInsertModel<typeof productMasterVariants>;
+
+// ===== PRODUCT MASTER PRICING RULES (Mapping Table) 타입 =====
+export type ProductMasterPricingRule = InferSelectModel<typeof productMasterPricingRules>;
+export type NewProductMasterPricingRule = InferInsertModel<typeof productMasterPricingRules>;
 
 // ===== PRODUCT OPTION GROUPS 타입 =====
 export type ProductOptionGroup = InferSelectModel<typeof productOptionGroups>;
@@ -265,4 +283,38 @@ export interface AppliedRuleInfo {
   operationValue: number;
   priceBeforeRule: number;
   priceAfterRule: number;
+}
+
+// ===== VERSION MANAGEMENT DTO =====
+
+// 버전 트리 노드
+export interface VersionTreeNode {
+  id: string;
+  masterId: string;
+  version: number;
+  versionStatus: VersionStatus;
+  name: string;
+  parentVersionId: string | null;
+  children: VersionTreeNode[];
+  createdAt: Date;
+  updatedAt: Date;
+  draftOwnerId?: string | null;
+}
+
+// 버전 비교 DTO
+export interface VersionDiffDto {
+  field: string;
+  oldValue: any;
+  newValue: any;
+}
+
+// 버전 생성 요청 DTO
+export interface CreateDraftVersionDto {
+  parentVersionId: string;
+  copyMappings?: boolean;
+}
+
+// 버전 publish 요청 DTO
+export interface PublishVersionDto {
+  targetStatus: 'active' | 'inactive';
 }

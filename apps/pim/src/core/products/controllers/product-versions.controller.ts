@@ -1,0 +1,217 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ProductVersionsService } from '../services/product-versions.service';
+import {
+  CreateDraftVersionDto,
+  PublishVersionDto,
+  VersionTreeResponseDto,
+  VersionDiffItemDto,
+} from '../dto/versions';
+
+@ApiTags('Product Versions')
+@Controller('masters/:masterId/versions')
+export class ProductVersionsController {
+  private readonly logger = new Logger(ProductVersionsController.name);
+
+  constructor(private readonly productVersionsService: ProductVersionsService) {}
+
+  @Get()
+  @ApiOperation({
+    summary: '버전 트리 조회',
+    description: '특정 Master ID에 대한 모든 버전을 트리 구조로 조회합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiResponse({
+    status: 200,
+    description: '버전 트리 조회 성공',
+    type: [VersionTreeResponseDto],
+  })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  async getVersionTree(
+    @Param('masterId') masterId: string,
+  ): Promise<VersionTreeResponseDto[]> {
+    try {
+      const tree = await this.productVersionsService.getVersionTree(masterId);
+      return tree.map(this._mapToResponseDto);
+    } catch (error) {
+      this.logger.error(`Failed to get version tree: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to get version tree: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('active')
+  @ApiOperation({
+    summary: 'Active 버전 조회',
+    description: '특정 Master ID의 현재 active 상태인 버전을 조회합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Active 버전 조회 성공',
+  })
+  @ApiResponse({ status: 404, description: 'Active 버전을 찾을 수 없음' })
+  async getActiveVersion(@Param('masterId') masterId: string) {
+    try {
+      const version = await this.productVersionsService.getActiveVersion(masterId);
+      return {
+        ...version,
+        createdAt: version.createdAt?.toISOString() || null,
+        updatedAt: version.updatedAt?.toISOString() || null,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get active version: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to get active version: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post()
+  @ApiOperation({
+    summary: '새 Draft 버전 생성',
+    description: '기존 버전을 기반으로 새로운 draft 버전을 생성합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiResponse({
+    status: 201,
+    description: 'Draft 버전 생성 성공',
+  })
+  @ApiResponse({ status: 404, description: '부모 버전을 찾을 수 없음' })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  async createDraftVersion(
+    @Param('masterId') masterId: string,
+    @Body() dto: CreateDraftVersionDto,
+  ) {
+    try {
+      const userId = 'system';
+      const version = await this.productVersionsService.createDraftVersion(
+        dto.parentVersionId,
+        userId,
+        dto.copyMappings !== false,
+      );
+      return {
+        ...version,
+        createdAt: version.createdAt?.toISOString() || null,
+        updatedAt: version.updatedAt?.toISOString() || null,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to create draft version: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to create draft version: ${error.message}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Patch(':versionId/publish')
+  @ApiOperation({
+    summary: '버전 Publish',
+    description: 'Draft 버전을 active 또는 inactive 상태로 변경합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID' })
+  @ApiResponse({
+    status: 200,
+    description: '버전 publish 성공',
+  })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  @ApiResponse({ status: 400, description: 'Draft 상태가 아닌 버전은 publish할 수 없음' })
+  async publishVersion(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Body() dto: PublishVersionDto,
+  ) {
+    try {
+      await this.productVersionsService.publishVersion(versionId, dto.targetStatus);
+      return { message: 'Version published successfully' };
+    } catch (error) {
+      this.logger.error(`Failed to publish version: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('Only draft')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to publish version: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get(':versionId/compare/:compareVersionId')
+  @ApiOperation({
+    summary: '버전 비교',
+    description: '두 버전 간의 차이점을 비교합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: '비교 대상 버전 ID 1' })
+  @ApiParam({ name: 'compareVersionId', description: '비교 대상 버전 ID 2' })
+  @ApiResponse({
+    status: 200,
+    description: '버전 비교 성공',
+    type: [VersionDiffItemDto],
+  })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  @ApiResponse({ status: 400, description: '다른 master의 버전은 비교할 수 없음' })
+  async compareVersions(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Param('compareVersionId') compareVersionId: string,
+  ): Promise<VersionDiffItemDto[]> {
+    try {
+      return await this.productVersionsService.compareVersions(versionId, compareVersionId);
+    } catch (error) {
+      this.logger.error(`Failed to compare versions: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('Cannot compare')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to compare versions: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private _mapToResponseDto(node: any): VersionTreeResponseDto {
+    return {
+      id: node.id,
+      masterId: node.masterId,
+      version: node.version,
+      versionStatus: node.versionStatus,
+      name: node.name,
+      parentVersionId: node.parentVersionId,
+      children: node.children.map((child: any) => this._mapToResponseDto(child)),
+      createdAt: node.createdAt?.toISOString() || node.createdAt,
+      updatedAt: node.updatedAt?.toISOString() || node.updatedAt,
+      draftOwnerId: node.draftOwnerId,
+    };
+  }
+}
+
