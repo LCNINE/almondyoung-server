@@ -48,18 +48,7 @@ export class HmsApiFactory {
     const swKey = process.env.SW_KEY;
     const custKey = process.env.CUST_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
-
-    // 실제 키가 모두 존재하고, 운영 환경이 아닐 때만 Test API 사용
-    if (swKey && custKey && !isProduction) {
-      this.logger.log(
-        '🎯 신용카드용 HMS Test API 생성 (키 직접 주입)',
-      );
-      return new HmsAPI({
-        swKey: swKey,
-        custKey: custKey,
-        isTest: true,
-      });
-    }
+    const useRealApi = process.env.USE_REAL_HMS_API === 'true'; // 명시적 플래그
 
     // 운영 환경일 경우 isTest: false로 실제 API 사용 (주의!)
     if (swKey && custKey && isProduction) {
@@ -70,14 +59,34 @@ export class HmsApiFactory {
         swKey: swKey,
         custKey: custKey,
         isTest: false,
+        baseURL: 'https://api.hyosungcms.co.kr/v1',
+        timeout: 30000,
       });
     }
 
-    // 그 외 모든 경우 (키 누락 등) Mock으로 안전하게 폴백
+    // 개발 환경에서 실제 API 사용 (USE_REAL_HMS_API=true일 때만)
+    if (swKey && custKey && !isProduction && useRealApi) {
+      this.logger.log(
+        '🎯 신용카드용 HMS Test API 생성 (키 직접 주입)',
+      );
+      return new HmsAPI({
+        swKey: swKey,
+        custKey: custKey,
+        isTest: true,
+        baseURL: 'https://api-test.hyosungcms.co.kr/v1',
+        timeout: 30000,
+      });
+    }
+
+    // 그 외 모든 경우 Mock으로 안전하게 폴백
     this.logger.warn(
-      `SW_KEY/CUST_KEY가 없거나 개발 환경이 아니므로 Mock API로 폴백합니다.`,
+      `HMS Mock API 사용 (USE_REAL_HMS_API=${useRealApi}, NODE_ENV=${process.env.NODE_ENV})`,
     );
-    return this.createForBnpl();
+    return new MockHmsAPI({
+      swKey: 'mock-sw-key',
+      custKey: 'mock-cust-key',
+      isTest: true,
+    });
   }
 
   /**
