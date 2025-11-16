@@ -146,14 +146,17 @@ export interface PublishVersionDto
 - 새 상품 생성 시 버전 필드 자동 설정:
   ```typescript
   {
-    id: newId,
-    masterId: newId,  // 첫 버전은 자기 자신을 masterId로
+    id: versionId,        // 물리적 버전 ID (각 버전마다 고유)
+    masterId: masterId,   // 논리적 그룹 ID (별도 생성, 모든 버전이 공유)
     version: 1,
     versionStatus: 'draft',
     parentVersionId: null,
     draftOwnerId: null
   }
   ```
+  - `masterId`: 판매상품 그룹을 나타내는 논리적 식별자 (별도 생성)
+  - `id`: 특정 버전을 나타내는 물리적 식별자
+  - 모든 버전에서 일관된 패턴 유지
 - `ProductVersionsService` 의존성 주입
 - 기존 코드와의 하위 호환성 유지
 
@@ -192,7 +195,8 @@ export interface PublishVersionDto
 ### 1. 새 상품 생성
 ```
 1. POST /masters
-   → masterId=A, version=1, versionStatus='draft' 생성
+   → id=V1, masterId=A (별도 생성), version=1, versionStatus='draft' 생성
+   (V1: 첫 버전의 물리적 ID, A: 논리적 그룹 ID)
 ```
 
 ### 2. 첫 버전 Publish
@@ -238,13 +242,18 @@ export interface PublishVersionDto
 ## 버전 트리 구조 예시
 
 ```
-masterId: A
-└── version 1 (inactive) [root]
-    ├── version 2 (active)
-    │   └── version 4 (draft)
-    └── version 3 (inactive)
-        └── version 5 (draft)
+masterId: A (논리적 그룹 ID - 실제 레코드 아님)
+│
+├── id: V1, version: 1 (inactive) [root]
+│   ├── id: V2, version: 2 (active)
+│   │   └── id: V4, version: 4 (draft)
+│   └── id: V3, version: 3 (inactive)
+│       └── id: V5, version: 5 (draft)
 ```
+
+- **masterId (A)**: 모든 버전이 공유하는 논리적 판매상품 그룹 ID
+- **id (V1, V2, ...)**: 각 버전의 물리적 고유 ID
+- **version (1, 2, ...)**: 버전 번호 (자동 증가)
 
 ## 데이터베이스 마이그레이션
 
@@ -257,14 +266,20 @@ masterId: A
 2. 기존 데이터 마이그레이션:
    ```sql
    -- 1. 새 컬럼 추가 (nullable)
-   -- 2. 기존 데이터에 대해 masterId = id, version = 1, versionStatus = 'active' 설정
+   
+   -- 2. 기존 데이터에 대해 별도의 masterId 생성
+   -- 주의: 실제로는 각 레코드마다 새로운 UUID를 생성해야 함
+   -- 여기서는 예시로 id를 masterId로 사용 (기존 데이터 호환성)
    UPDATE product_masters
-   SET master_id = id,
+   SET master_id = gen_random_uuid(),  -- 또는 id를 그대로 사용 (기존 호환성)
        version = 1,
        version_status = 'active',
        parent_version_id = NULL,
        draft_owner_id = NULL
    WHERE master_id IS NULL;
+   
+   -- 권장: 신규 데이터부터는 masterId를 별도 생성
+   -- 기존 데이터는 master_id = id로 유지 (하위 호환성)
    
    -- 3. NOT NULL 제약조건 추가
    -- 4. 인덱스 및 유니크 제약조건 추가
@@ -365,11 +380,38 @@ masterId: A
 - 기존 FK 참조를 점진적으로 매핑 테이블로 전환
 - 레거시 코드 제거
 
+## 설계 개선 사항
+
+### masterId 별도 생성
+✅ **개선 완료**
+
+초기 설계에서는 첫 버전의 `id`를 `masterId`로 사용했으나, 다음과 같이 개선했습니다:
+
+**개선 전:**
+```typescript
+const newId = uuidv7();
+{ id: newId, masterId: newId, version: 1 }  // masterId = id
+```
+
+**개선 후:**
+```typescript
+const masterId = uuidv7();  // 논리적 그룹 ID (별도 생성)
+const versionId = uuidv7(); // 물리적 버전 ID
+{ id: versionId, masterId: masterId, version: 1 }
+```
+
+**개선 효과:**
+- ✅ **개념적 명확성**: masterId(논리적)와 id(물리적)의 역할이 명확히 분리
+- ✅ **일관성**: 모든 버전에서 동일한 패턴 (id ≠ masterId)
+- ✅ **혼란 방지**: "masterId를 조회하면 뭐가 나오지?"라는 혼란 제거
+- ✅ **확장성**: 향후 masterId를 별도 테이블로 분리하기 용이
+
 ## 주의사항
 
 ### 1. 데이터베이스 마이그레이션
 - **중요**: 프로덕션 환경에 배포하기 전에 반드시 마이그레이션 스크립트를 테스트 환경에서 검증해야 합니다.
 - 기존 데이터가 있는 경우, 데이터 손실 없이 마이그레이션되는지 확인 필요
+- 기존 데이터는 하위 호환성을 위해 `masterId = id`를 유지할 수 있음 (신규 데이터만 별도 생성)
 
 ### 2. 성능 고려사항
 - 버전이 많아지면 쿼리 성능에 영향을 줄 수 있습니다
@@ -391,6 +433,8 @@ PIM 판매상품 버전 관리 기능이 성공적으로 구현되었습니다.
 - ✅ RESTful API 제공
 - ✅ 외부 시스템 호환성 유지
 - ✅ 하위 호환성 보장
+- ✅ 깔끔한 아키텍처: masterId(논리적)와 id(물리적) 명확히 분리
+- ✅ FK 제거 및 매핑 테이블 완전 전환
 
 이제 관리자는 상품 정보를 수정할 때 draft 버전을 만들어 안전하게 작업하고, 준비가 되면 publish하여 고객에게 보이도록 할 수 있습니다. 또한 언제든지 이전 버전으로 되돌릴 수 있어 운영의 유연성이 크게 향상되었습니다.
 

@@ -326,7 +326,6 @@ export const productOptionGroups = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id'),
     name: varchar('name', { length: 100 }).notNull(), // 'color', 'size'
     displayName: varchar('display_name', { length: 100 }).notNull(), // '색상', '사이즈'
     sortOrder: integer('sort_order').default(0),
@@ -334,10 +333,6 @@ export const productOptionGroups = pgTable(
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
-  (table) => [
-    index('idx_option_groups_master').on(table.masterId),
-    index('idx_option_groups_sort_order').on(table.masterId, table.sortOrder),
-  ],
 );
 
 // ===== 4. PRODUCT OPTION VALUES =====
@@ -378,7 +373,6 @@ export const productVariants = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id'),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
     images: jsonb('images'), // string[] - 품목별 이미지
     priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
@@ -395,12 +389,9 @@ export const productVariants = pgTable(
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
-    index('idx_variants_master').on(table.masterId),
     index('idx_variants_status').on(table.status),
     index('idx_variants_is_default').on(table.isDefault),
-    index('idx_variants_display_order').on(table.masterId, table.displayOrder),
     index('idx_variants_created_at').on(table.createdAt),
-    // Phase 1 new index
     index('idx_variants_code').on(table.variantCode),
   ],
 );
@@ -489,7 +480,6 @@ export const pricingRules = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id'),
     layer: varchar('layer', { length: 20 }).notNull(), // 'base_price', 'membership_price', 'tiered_price'
     order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
     scopeType: varchar('scope_type', { length: 20 }).notNull(), // 'all_variants', 'with_option', 'variants'
@@ -500,10 +490,6 @@ export const pricingRules = pgTable(
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
-  (table) => [
-    index('idx_pricing_rules_master').on(table.masterId),
-    index('idx_pricing_rules_master_layer').on(table.masterId, table.layer),
-  ],
 );
 
 // ===== 13. UPLOADS (파일 업로드) =====

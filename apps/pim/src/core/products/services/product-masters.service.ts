@@ -159,11 +159,13 @@ export class ProductMastersService {
         .replace(/<p><br><\/p>/g, '');
     }
 
-    const newId = uuidv7();
+    // 버전 관리: masterId는 논리적 그룹 ID, id는 물리적 버전 ID
+    const masterId = uuidv7();  // 논리적 판매상품 그룹 ID
+    const versionId = uuidv7(); // 첫 번째 버전의 물리적 ID
 
     const masterData = {
-      id: newId,
-      masterId: newId,
+      id: versionId,
+      masterId: masterId,  // 별도의 논리적 ID로 명확히 분리
       version: 1,
       versionStatus: 'draft',
       parentVersionId: null,
@@ -249,7 +251,6 @@ export class ProductMastersService {
   }
 
   private async _generateVariants(
-    masterId: string,
     master: ProductMaster,
     optionGroups: any[],
     tx: DbTransaction,
@@ -258,12 +259,20 @@ export class ProductMastersService {
       const [variant] = await tx
         .insert(productVariants)
         .values({
-          masterId,
           variantName: null,
           isDefault: true,
           status: 'active',
         })
         .returning();
+
+      // 매핑 테이블에 연결
+      await tx.insert(productMasterVariants).values({
+        id: uuidv7(),
+        masterId: master.masterId,
+        variantId: variant.id,
+        version: master.version,
+        createdAt: new Date(),
+      });
 
       // 이벤트 발행
       await this.publishVariantCreatedEvent(master, variant, null);
@@ -277,12 +286,20 @@ export class ProductMastersService {
       const [variant] = await tx
         .insert(productVariants)
         .values({
-          masterId,
           variantName: combination.map((v) => v.displayName).join(' × '),
           isDefault: false,
           status: 'active',
         })
         .returning();
+
+      // 매핑 테이블에 연결
+      await tx.insert(productMasterVariants).values({
+        id: uuidv7(),
+        masterId: master.masterId,
+        variantId: variant.id,
+        version: master.version,
+        createdAt: new Date(),
+      });
 
       for (const optionValue of combination) {
         await tx.insert(variantOptionValues).values({
@@ -1041,12 +1058,20 @@ export class ProductMastersService {
           const [variant] = await tx
             .insert(productVariants)
             .values({
-              masterId,
               variantName: null,
               isDefault: true,
               status: 'active',
             })
             .returning();
+
+          // 매핑 테이블에 연결
+          await tx.insert(productMasterVariants).values({
+            id: uuidv7(),
+            masterId: master.masterId,
+            variantId: variant.id,
+            version: master.version,
+            createdAt: new Date(),
+          });
 
           // 이벤트 발행
           await this.publishVariantCreatedEvent(master, variant, null);
@@ -1073,9 +1098,8 @@ export class ProductMastersService {
     optionGroups: any[],
     tx: DbTransaction,
   ): Promise<void> {
-    // 1. 옵션 그룹들을 bulk insert
+    // 1. 옵션 그룹들을 bulk insert (masterId 없이)
     const groupInsertData = optionGroups.map((group, index) => ({
-      masterId,
       name: group.name,
       displayName: group.displayName,
       sortOrder: group.sortOrder || index,
@@ -1086,7 +1110,18 @@ export class ProductMastersService {
       .values(groupInsertData)
       .returning();
 
-    // 2. 옵션 값들을 bulk insert
+    // 2. 매핑 테이블에 연결
+    const mappingData = insertedGroups.map(group => ({
+      id: uuidv7(),
+      masterId: master.masterId,
+      optionGroupId: group.id,
+      version: master.version,
+      createdAt: new Date(),
+    }));
+
+    await tx.insert(productMasterOptionGroups).values(mappingData);
+
+    // 3. 옵션 값들을 bulk insert
     const valueInsertData: any[] = [];
     for (let i = 0; i < optionGroups.length; i++) {
       const group = optionGroups[i];
@@ -1108,13 +1143,13 @@ export class ProductMastersService {
       .values(valueInsertData)
       .returning();
 
-    // 3. 옵션 조합으로 variants 생성
+    // 4. 옵션 조합으로 variants 생성
     const optionGroupsWithValues = insertedGroups.map((group, index) => ({
       ...group,
       values: insertedValues.filter((v) => v.optionGroupId === group.id),
     }));
 
-    await this._generateVariants(masterId, master, optionGroupsWithValues, tx);
+    await this._generateVariants(master, optionGroupsWithValues, tx);
   }
 
   /**
