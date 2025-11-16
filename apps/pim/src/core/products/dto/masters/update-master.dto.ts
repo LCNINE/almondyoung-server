@@ -129,18 +129,6 @@ export class UpdateProductMasterDto {
   @IsBoolean()
   isMembershipOnly?: boolean;
 
-  @ApiProperty({ description: '멤버십 전용 가격 (원 단위)', required: false, minimum: 1 })
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  membershipPrice?: number;
-
-  @ApiProperty({ description: '도매 전용 가격 (원 단위)', required: false, minimum: 1 })
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  wholesalePrice?: number;
-
   // ========== 가격 전략 및 데이터 필드 ==========
 
   @ApiProperty({ 

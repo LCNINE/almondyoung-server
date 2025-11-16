@@ -1,5 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class VolumeTierDto {
+  @ApiProperty({ description: '최소 수량', minimum: 1 })
+  minQuantity: number;
+
+  @ApiProperty({ description: '단가 (원)' })
+  unitPrice: number;
+
+  @ApiProperty({ description: '필요 고객 등급 (null이면 모두 가능)', nullable: true })
+  requiredTier: string | null;
+}
+
+export class PricingInfoDto {
+  @ApiProperty({ description: '기준가 (원)' })
+  basePrice: number;
+
+  @ApiProperty({ 
+    description: '고객 등급별 가격',
+    example: { regular: 28800, membership: 24000 },
+  })
+  tierPrices: Record<string, number>;
+
+  @ApiProperty({ description: '수량별 도매가 계단', type: [VolumeTierDto] })
+  volumeTiers: VolumeTierDto[];
+}
+
 export class ProductMasterDto {
   @ApiProperty({ description: '제품 마스터 ID (UUID 형식)' })
   id: string;
@@ -45,12 +70,6 @@ export class ProductMasterDto {
 
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;
-
-  @ApiProperty({ description: '멤버십 전용 가격', nullable: true })
-  membershipPrice: number | null;
-
-  @ApiProperty({ description: '도매 전용 가격', nullable: true })
-  wholesalePrice: number | null;
 
   @ApiProperty({ description: '생성일시', nullable: true })
   createdAt: Date | null;
@@ -216,6 +235,9 @@ export class MasterDetailDto extends ProductMasterDto {
 
   @ApiProperty({ description: '채널별 제품들', type: [ChannelProductDto] })
   channelProducts: ChannelProductDto[];
+
+  @ApiProperty({ description: '가격 정보', type: PricingInfoDto, required: false })
+  pricing?: PricingInfoDto;
 }
 
 export class PriceVariantDto {
@@ -249,9 +271,6 @@ export class MasterListItemDto {
 
   @ApiProperty({ description: '기본 가격', nullable: true })
   basePrice: number | null;
-
-  @ApiProperty({ description: '멤버십 전용 가격', nullable: true })
-  membershipPrice: number | null;
 
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;

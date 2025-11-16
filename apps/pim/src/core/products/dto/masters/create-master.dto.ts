@@ -23,8 +23,6 @@ export const CreateMasterSchema = z.object({
   thumbnailUrl: z.string().url().optional(),
   isWholesaleOnly: z.boolean().default(false),
   isMembershipOnly: z.boolean().default(false),
-  membershipPrice: z.number().int().positive().optional(),
-  wholesalePrice: z.number().int().positive().optional(),
   optionGroups: z.array(
     z.object({
       name: z.string(),
@@ -102,12 +100,6 @@ export class CreateMasterDtoSwagger {
 
   @ApiProperty({ description: '멤버십회원 전용 여부', default: false })
   isMembershipOnly?: boolean;
-
-  @ApiProperty({ description: '멤버십 전용 가격 (원 단위)', required: false, minimum: 1 })
-  membershipPrice?: number;
-
-  @ApiProperty({ description: '도매 전용 가격 (원 단위)', required: false, minimum: 1 })
-  wholesalePrice?: number;
 
   @ApiProperty({ 
     description: '옵션 그룹들 (구조 정의용, 가격 정보 제외)',

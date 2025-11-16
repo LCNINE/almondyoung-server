@@ -13,6 +13,8 @@ import {
   channelProducts,
   optionValuePrices,
   variantPrices,
+  customerTierPrices,
+  volumeTierPrices,
   uploads,
   productImages,
   productApprovalHistory,
@@ -119,6 +121,20 @@ export type UpdateVariantPrice = Partial<
   Omit<NewVariantPrice, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
+// ===== CUSTOMER TIER PRICES 타입 =====
+export type CustomerTierPrice = InferSelectModel<typeof customerTierPrices>;
+export type NewCustomerTierPrice = InferInsertModel<typeof customerTierPrices>;
+export type UpdateCustomerTierPrice = Partial<
+  Omit<NewCustomerTierPrice, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== VOLUME TIER PRICES 타입 =====
+export type VolumeTierPrice = InferSelectModel<typeof volumeTierPrices>;
+export type NewVolumeTierPrice = InferInsertModel<typeof volumeTierPrices>;
+export type UpdateVolumeTierPrice = Partial<
+  Omit<NewVolumeTierPrice, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
 // ===== UPLOADS 타입 =====
 export type Upload = InferSelectModel<typeof uploads>;
 export type NewUpload = InferInsertModel<typeof uploads>;
@@ -156,9 +172,6 @@ export interface CreateMasterDto {
   // 구매제한 필드들
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
-  // 특별 가격 필드들
-  membershipPrice?: number;
-  wholesalePrice?: number;
 
   // 옵션 구조 정보 (가격 제외)
   optionGroups?: {
@@ -183,7 +196,6 @@ export interface MasterListItemDto {
   name: string;
   thumbnail?: string;
   basePrice: number;
-  membershipPrice?: number;
   isMembershipOnly: boolean;
   status: string;
   createdAt: Date;
@@ -245,3 +257,55 @@ export type NewProductApprovalHistory = InferInsertModel<typeof productApprovalH
 // ===== PRODUCT AUDIT LOG 타입 =====
 export type ProductAuditLog = InferSelectModel<typeof productAuditLog>;
 export type NewProductAuditLog = InferInsertModel<typeof productAuditLog>;
+
+// ===== 가격 계산 시스템 타입 =====
+
+// 가격 계산 컨텍스트
+export interface PriceCalculationContext {
+  masterId: string;
+  variantId?: string;
+  optionValueIds?: string[];
+  customerTier: string; // 'regular', 'membership', or membership tier ID
+  quantity: number;
+  includeVolumeTier?: boolean; // 수량 할인 적용 여부 (기본: true)
+  timestamp?: Date; // 특정 시점 가격 계산 (기본: now)
+}
+
+// 가격 계산 결과
+export interface PriceCalculationResult {
+  basePrice: number; // 1단계: 기준가 (option/variant 전략으로 계산)
+  tierAdjustedPrice: number; // 2단계: 고객 등급 조정 후
+  finalUnitPrice: number; // 3단계: 수량 할인 적용 후 개당 가격
+  totalPrice: number; // 최종 총 가격 (finalUnitPrice × quantity)
+  appliedPolicies: {
+    basePricingStrategy: 'option_based' | 'variant_based';
+    customerTierPolicy?: {
+      tier: string;
+      priceType: string;
+      value: number;
+      discount?: number;
+    };
+    volumeTierPolicy?: {
+      minQuantity: number;
+      priceType: string;
+      value: number;
+      discount?: number;
+    };
+  };
+  breakdown: {
+    basePrice: number;
+    customerTierAdjustment: number; // +/- 조정액
+    volumeTierDiscount: number; // 수량 할인액
+  };
+}
+
+// 상품의 모든 가격 정보 (API 응답용)
+export interface PricingInfo {
+  basePrice: number; // 기준가
+  tierPrices: Record<string, number>; // 고객 등급별 가격 { regular: 28800, membership: 24000 }
+  volumeTiers: Array<{
+    minQuantity: number;
+    unitPrice: number;
+    requiredTier: string | null;
+  }>;
+}

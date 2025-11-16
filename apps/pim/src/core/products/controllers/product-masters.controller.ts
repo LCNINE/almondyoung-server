@@ -196,8 +196,6 @@ export class ProductMastersController {
         status: { type: 'string' },
         isWholesaleOnly: { type: 'boolean' },
         isMembershipOnly: { type: 'boolean' },
-        membershipPrice: { type: 'number' },
-        wholesalePrice: { type: 'number' },
         images: {
           type: 'object',
           properties: {
