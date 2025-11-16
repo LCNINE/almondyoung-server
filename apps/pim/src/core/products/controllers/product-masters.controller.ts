@@ -128,6 +128,19 @@ export class ProductMastersController {
     type: String,
     description: '검색 키워드',
   })
+  @ApiQuery({
+    name: 'versionStatus',
+    required: false,
+    type: String,
+    enum: ['draft', 'inactive', 'active'],
+    description: '버전 상태 필터 (기본값: active)',
+  })
+  @ApiQuery({
+    name: 'includeAllVersions',
+    required: false,
+    type: Boolean,
+    description: '모든 버전 포함 여부 (기본값: false, active만 조회)',
+  })
   @ApiResponse({
     status: 200,
     description: '제품 마스터 목록 조회 성공',
@@ -143,6 +156,8 @@ export class ProductMastersController {
       categoryId?: string;
       brand?: string;
       search?: string;
+      versionStatus?: 'draft' | 'inactive' | 'active';
+      includeAllVersions?: boolean;
     },
   ): Promise<MasterListResponseDto> {
     try {
@@ -153,6 +168,7 @@ export class ProductMastersController {
         categoryId: query.categoryId,
         brand: query.brand,
         search: query.search,
+        versionStatus: query.includeAllVersions ? undefined : (query.versionStatus || 'active'),
       };
 
       return await this.productMastersService.getMasters(filters);
