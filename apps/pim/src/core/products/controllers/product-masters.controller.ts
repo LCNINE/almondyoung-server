@@ -19,6 +19,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
+import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
 import {
   CreateMasterDto,
@@ -35,7 +36,10 @@ import {
 @ApiTags('Product Masters')
 @Controller('masters')
 export class ProductMastersController {
-  constructor(private readonly productMastersService: ProductMastersService) {}
+  constructor(
+    private readonly productMastersService: ProductMastersService,
+    private readonly productVersionsService: ProductVersionsService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -277,9 +281,9 @@ export class ProductMastersController {
   @Put(':id')
   @ApiOperation({
     summary: '제품 마스터 수정',
-    description: '기존 제품 마스터 정보를 수정합니다.',
+    description: '기존 제품 마스터 정보를 수정합니다. draft 상태의 버전만 수정 가능합니다.',
   })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
+  @ApiParam({ name: 'id', description: '제품 마스터 ID (버전 ID)' })
   @ApiBody({
     type: UpdateProductMasterDto,
     description: '수정할 제품 마스터 정보',
@@ -290,6 +294,7 @@ export class ProductMastersController {
     type: MasterUpdateResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 403, description: 'draft 상태의 버전만 수정 가능' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async updateMaster(
@@ -297,6 +302,21 @@ export class ProductMastersController {
     @Body() updateData: UpdateProductMasterDto,
   ): Promise<MasterUpdateResponseDto> {
     try {
+      // TODO: JWT에서 실제 userId 추출 (현재는 'system' 사용)
+      const userId = 'system';
+
+      const canModify = await this.productVersionsService.canUserModifyVersion(
+        id,
+        userId,
+      );
+
+      if (!canModify) {
+        throw new HttpException(
+          'Only draft versions can be modified. Create a new draft version to make changes.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
       const updatedMaster = await this.productMastersService.updateMaster(
         id,
         updateData,
@@ -306,6 +326,9 @@ export class ProductMastersController {
         data: updatedMaster as unknown as ProductMasterDto,
       };
     } catch (error) {
+      if (error.status === HttpStatus.FORBIDDEN) {
+        throw error;
+      }
       if (error.message.includes('not found')) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
