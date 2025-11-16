@@ -12,7 +12,9 @@ import {
   DbTransaction, 
   PricingRule,
   PriceCalculationResult,
-  AppliedRuleInfo 
+  AppliedRuleInfo,
+  ScopeType,
+  OperationType
 } from '../../types';
 
 @Injectable()
@@ -61,8 +63,8 @@ export class PricingCalculatorService {
             ruleId: rule.id,
             layer: 'base_price',
             order: rule.order,
-            scopeType: rule.scopeType,
-            operationType: rule.operationType,
+            scopeType: rule.scopeType as ScopeType,
+            operationType: rule.operationType as OperationType,
             operationValue: rule.operationValue,
             priceBeforeRule,
             priceAfterRule: currentPrice,
@@ -81,8 +83,8 @@ export class PricingCalculatorService {
               ruleId: rule.id,
               layer: 'membership_price',
               order: rule.order,
-              scopeType: rule.scopeType,
-              operationType: rule.operationType,
+              scopeType: rule.scopeType as ScopeType,
+              operationType: rule.operationType as OperationType,
               operationValue: rule.operationValue,
               priceBeforeRule,
               priceAfterRule: currentPrice,
@@ -106,8 +108,8 @@ export class PricingCalculatorService {
               ruleId: rule.id,
               layer: 'tiered_price',
               order: rule.order,
-              scopeType: rule.scopeType,
-              operationType: rule.operationType,
+              scopeType: rule.scopeType as ScopeType,
+              operationType: rule.operationType as OperationType,
               operationValue: rule.operationValue,
               priceBeforeRule,
               priceAfterRule: currentPrice,
