@@ -2,8 +2,6 @@ import { z } from 'zod';
 import { ApiProperty } from '@nestjs/swagger';
 
 // Zod schema for complex runtime validation
-const PricingStrategySchema = z.enum(['option_based', 'variant_based'] as const);
-
 export const CreateMasterSchema = z.object({
   name: z.string().min(1, '제품명은 필수입니다'),
   description: z.string().optional(),
@@ -12,7 +10,6 @@ export const CreateMasterSchema = z.object({
   thumbnailUploadId: z.string().uuid().optional(),
   additionalImageUploadIds: z.array(z.string().uuid()).max(5, '부가 이미지는 최대 5개까지 가능합니다').optional(),
   basePrice: z.number(),
-  pricingStrategy: PricingStrategySchema,
   tags: z.array(z.string()).optional(),
   images: z.array(z.string()).optional(),
   attributes: z.record(z.string(), z.unknown()).optional(),
@@ -37,8 +34,6 @@ export const CreateMasterSchema = z.object({
       ),
     }),
   ).optional(),
-  optionValuePrices: z.record(z.string(), z.number()).optional(),
-  variantPrices: z.record(z.string(), z.number()).optional(),
   categoryIds: z.array(z.uuid()).optional(),
   primaryCategoryId: z.uuid().optional(),
 });
@@ -67,9 +62,6 @@ export class CreateMasterDtoSwagger {
 
   @ApiProperty({ description: '기본 가격' })
   basePrice: number;
-
-  @ApiProperty({ description: '가격 전략', enum: ['option_based', 'variant_based'] })
-  pricingStrategy: 'option_based' | 'variant_based';
 
   @ApiProperty({ description: '마케팅 태그', type: [String], required: false })
   tags?: string[];
@@ -123,20 +115,6 @@ export class CreateMasterDtoSwagger {
       sortOrder?: number;
     }>;
   }>;
-
-  @ApiProperty({ 
-    description: '옵션값별 가격 (option_based 전략용)',
-    example: { 'option-value-id-1': 5000, 'option-value-id-2': 3000 },
-    required: false 
-  })
-  optionValuePrices?: Record<string, number>;
-
-  @ApiProperty({ 
-    description: 'Variant별 가격 (variant_based 전략용)',
-    example: { 'variant-id-1': 15000, 'variant-id-2': 18000 },
-    required: false 
-  })
-  variantPrices?: Record<string, number>;
 
   @ApiProperty({ 
     description: '카테고리 ID 배열 (UUID)',

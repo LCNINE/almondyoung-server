@@ -1,30 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class VolumeTierDto {
-  @ApiProperty({ description: '최소 수량', minimum: 1 })
-  minQuantity: number;
-
-  @ApiProperty({ description: '단가 (원)' })
-  unitPrice: number;
-
-  @ApiProperty({ description: '필요 고객 등급 (null이면 모두 가능)', nullable: true })
-  requiredTier: string | null;
-}
-
-export class PricingInfoDto {
-  @ApiProperty({ description: '기준가 (원)' })
-  basePrice: number;
-
-  @ApiProperty({ 
-    description: '고객 등급별 가격',
-    example: { regular: 28800, membership: 24000 },
-  })
-  tierPrices: Record<string, number>;
-
-  @ApiProperty({ description: '수량별 도매가 계단', type: [VolumeTierDto] })
-  volumeTiers: VolumeTierDto[];
-}
-
 export class ProductMasterDto {
   @ApiProperty({ description: '제품 마스터 ID (UUID 형식)' })
   id: string;
@@ -40,9 +15,6 @@ export class ProductMasterDto {
 
   @ApiProperty({ description: '기본 가격', nullable: true })
   basePrice: number | null;
-
-  @ApiProperty({ description: '가격 전략' })
-  pricingStrategy: string;
 
   @ApiProperty({ description: '마케팅 태그', type: [String], nullable: true })
   tags: string[] | null;
@@ -235,28 +207,6 @@ export class MasterDetailDto extends ProductMasterDto {
 
   @ApiProperty({ description: '채널별 제품들', type: [ChannelProductDto] })
   channelProducts: ChannelProductDto[];
-
-  @ApiProperty({ description: '가격 정보', type: PricingInfoDto, required: false })
-  pricing?: PricingInfoDto;
-}
-
-export class PriceVariantDto {
-  @ApiProperty({ description: '변형 ID' })
-  variantId: string;
-
-  @ApiProperty({ description: '옵션 조합' })
-  optionCombination: string;
-
-  @ApiProperty({ description: '계산된 가격' })
-  price: number;
-}
-
-export class PricePreviewDto {
-  @ApiProperty({ description: '제품 마스터 ID' })
-  masterId: string;
-
-  @ApiProperty({ description: '변형별 가격 목록', type: [PriceVariantDto] })
-  variants: PriceVariantDto[];
 }
 
 export class MasterListItemDto {

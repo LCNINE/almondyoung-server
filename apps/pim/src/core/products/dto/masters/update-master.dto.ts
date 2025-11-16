@@ -128,39 +128,5 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsBoolean()
   isMembershipOnly?: boolean;
-
-  // ========== 가격 전략 및 데이터 필드 ==========
-
-  @ApiProperty({ 
-    description: '가격 전략',
-    enum: ['option_based', 'variant_based'],
-    required: false 
-  })
-  @IsOptional()
-  @IsEnum(['option_based', 'variant_based'])
-  pricingStrategy?: 'option_based' | 'variant_based';
-
-  @ApiProperty({ 
-    description: '옵션값별 가격 (option_based 전략용)',
-    example: { 'option-value-id-1': 5000, 'option-value-id-2': 3000 },
-    required: false 
-  })
-  @IsOptional()
-  optionValuePrices?: Record<string, number>;
-
-  @ApiProperty({ 
-    description: 'Variant별 가격 (variant_based 전략용)',
-    example: { 'variant-id-1': 15000, 'variant-id-2': 18000 },
-    required: false 
-  })
-  @IsOptional()
-  variantPrices?: Record<string, number>;
-
-  @ApiProperty({ 
-    description: '전략 변경 시 마이그레이션 데이터 (선택)',
-    required: false 
-  })
-  @IsOptional()
-  migrationData?: any;
 }
 
