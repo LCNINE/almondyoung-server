@@ -172,6 +172,12 @@ export interface PublishVersionDto
 - `includeAllVersions=true`면 모든 버전 조회
 - `versionStatus`로 특정 상태 필터링 가능
 
+**버전 수정 제한:**
+- `PUT /masters/:id` 엔드포인트에 draft 상태 검증 추가
+- `ProductVersionsService.canUserModifyVersion()` 호출하여 권한 확인
+- draft가 아닌 버전 수정 시도 시 403 Forbidden 에러 반환
+- 에러 메시지: "Only draft versions can be modified. Create a new draft version to make changes."
+
 ### 7. 채널 연동 수정 (`channel-products.service.ts`)
 ✅ **완료**
 
@@ -422,6 +428,12 @@ const versionId = uuidv7(); // 물리적 버전 ID
 - WMS, 주문 시스템 등이 masterId를 올바르게 참조하는지 확인
 - API 문서 업데이트 필요
 
+### 4. 버전 수정 제한
+- **중요**: draft 상태의 버전만 수정 가능합니다
+- active 또는 inactive 버전을 수정하려면 새로운 draft 버전을 생성해야 합니다
+- `PUT /masters/:id` 호출 시 버전 상태를 확인하고, draft가 아니면 403 에러를 반환합니다
+- 관리자 UI에서는 버전 상태에 따라 수정 버튼을 비활성화하는 것을 권장합니다
+
 ## 결론
 
 PIM 판매상품 버전 관리 기능이 성공적으로 구현되었습니다. 
@@ -435,6 +447,7 @@ PIM 판매상품 버전 관리 기능이 성공적으로 구현되었습니다.
 - ✅ 하위 호환성 보장
 - ✅ 깔끔한 아키텍처: masterId(논리적)와 id(물리적) 명확히 분리
 - ✅ FK 제거 및 매핑 테이블 완전 전환
+- ✅ **버전 수정 제한 가드**: draft가 아닌 버전은 수정 불가
 
-이제 관리자는 상품 정보를 수정할 때 draft 버전을 만들어 안전하게 작업하고, 준비가 되면 publish하여 고객에게 보이도록 할 수 있습니다. 또한 언제든지 이전 버전으로 되돌릴 수 있어 운영의 유연성이 크게 향상되었습니다.
+이제 관리자는 상품 정보를 수정할 때 draft 버전을 만들어 안전하게 작업하고, 준비가 되면 publish하여 고객에게 보이도록 할 수 있습니다. 또한 언제든지 이전 버전으로 되돌릴 수 있어 운영의 유연성이 크게 향상되었습니다. **active 또는 inactive 버전은 수정할 수 없으며**, 수정이 필요한 경우 반드시 새로운 draft 버전을 생성해야 하므로 데이터 무결성이 보장됩니다.
 
