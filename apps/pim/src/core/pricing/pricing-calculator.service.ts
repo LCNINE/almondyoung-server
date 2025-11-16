@@ -3,7 +3,9 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc } from 'drizzle-orm';
 import { 
-  pricingRules, 
+  pricingRules,
+  productMasterPricingRules,
+  productMasters,
   productVariants,
   variantOptionValues,
   pimSchema 
@@ -189,21 +191,55 @@ export class PricingCalculatorService {
     masterId: string,
     layer?: 'base_price' | 'membership_price' | 'tiered_price',
     tx?: DbTransaction,
+    version?: number,
   ): Promise<{
     basePriceRules: PricingRule[];
     membershipPriceRules: PricingRule[];
     tieredPriceRules: PricingRule[];
   }> {
     return this.inTx(async (trx) => {
-      const conditions = layer
-        ? and(eq(pricingRules.masterId, masterId), eq(pricingRules.layer, layer))
-        : eq(pricingRules.masterId, masterId);
-
-      const allRules = await trx
-        .select()
+      // masterId와 version으로 매핑 테이블을 통해 pricing rules 조회
+      let query = trx
+        .select({
+          id: pricingRules.id,
+          layer: pricingRules.layer,
+          order: pricingRules.order,
+          scopeType: pricingRules.scopeType,
+          scopeTargetIds: pricingRules.scopeTargetIds,
+          operationType: pricingRules.operationType,
+          operationValue: pricingRules.operationValue,
+          minQuantity: pricingRules.minQuantity,
+          createdAt: pricingRules.createdAt,
+          updatedAt: pricingRules.updatedAt,
+        })
         .from(pricingRules)
-        .where(conditions)
-        .orderBy(asc(pricingRules.order));
+        .innerJoin(
+          productMasterPricingRules,
+          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
+        )
+        .where(eq(productMasterPricingRules.masterId, masterId));
+
+      // version이 지정되면 해당 버전만, 아니면 active 버전 사용
+      if (version !== undefined) {
+        query = query.where(eq(productMasterPricingRules.version, version));
+      } else {
+        // active 버전의 rules 가져오기
+        query = query
+          .innerJoin(
+            productMasters,
+            and(
+              eq(productMasters.masterId, masterId),
+              eq(productMasters.versionStatus, 'active'),
+            ),
+          )
+          .where(eq(productMasterPricingRules.version, productMasters.version));
+      }
+
+      if (layer) {
+        query = query.where(eq(pricingRules.layer, layer));
+      }
+
+      const allRules = await query.orderBy(asc(pricingRules.order));
 
       return {
         basePriceRules: allRules.filter((r) => r.layer === 'base_price'),
