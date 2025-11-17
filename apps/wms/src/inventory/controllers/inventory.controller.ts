@@ -226,7 +226,6 @@ export class InventoryController {
 
     @Post('/skus')
     @ApiOperation({ summary: 'SKU 생성' })
-    @ApiBody({ type: CreateSkuDto })
     @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
     @ApiResponse({ status: 400, description: '잘못된 요청' })
     async createSku(@Body() createSkuDto: CreateSkuDto): Promise<SkuResponseDto> {

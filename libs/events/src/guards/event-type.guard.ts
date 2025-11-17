@@ -17,6 +17,11 @@ export class EventTypeGuard implements NestInterceptor {
   constructor(private reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    // HTTP 요청인 경우 바로 통과 (RPC 요청만 처리)
+    if (context.getType() !== 'rpc') {
+      return next.handle();
+    }
+
     // @OnEvent에서 설정한 eventType 메타데이터 가져오기
     const expectedEventType = this.reflector.get<string>(
       EVENT_TYPE_FILTER,
@@ -30,6 +35,11 @@ export class EventTypeGuard implements NestInterceptor {
 
     // Kafka 메시지에서 실제 eventType 추출
     const kafkaContext = context.switchToRpc().getContext<KafkaContext>();
+    
+    // kafkaContext가 유효한지 확인
+    if (!kafkaContext || typeof kafkaContext.getMessage !== 'function') {
+      return of(undefined); // 조용히 무시
+    }
     const message = kafkaContext.getMessage();
     const value = message.value;
 
