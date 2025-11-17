@@ -50,43 +50,18 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
   }
 
   catch(exception: Error, host: ArgumentsHost): any {
-    // RPC (Kafka) 요청이 아닌 경우 즉시 반환 (다른 필터가 처리하도록)
-    if (host.getType() !== 'rpc') {
-      // HTTP 요청은 이 필터에서 처리하지 않음
-      // NestJS의 기본 예외 처리 또는 다른 HTTP 필터가 처리하도록 함
-      throw exception; // 예외를 다시 던져서 다른 필터가 처리하도록
-    }
     return this.handleException(exception, host);
   }
 
-  private async handleException(
-    exception: Error,
-    host: ArgumentsHost,
-  ): Promise<void> {
+  private async handleException(exception: Error, host: ArgumentsHost): Promise<void> {
     const ctx = host.switchToRpc();
     const kafkaContext = ctx.getContext<KafkaContext>();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const handler: ((...args: any[]) => any) | null = (host as any).getHandler
-      ? // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        ((host as any).getHandler() as (...args: any[]) => any)
-      : null;
-    const handlerName =
-      handler && typeof handler === 'function'
-        ? handler.name
-        : 'UnknownHandler';
+    const handler = (host as any).getHandler ? (host as any).getHandler() : { name: 'UnknownHandler' };
 
-    // 핸들러의 재시도 정책 조회 (handler가 함수인 경우에만)
+    // 핸들러의 재시도 정책 조회
     const retryPolicyConfig =
-      handler && typeof handler === 'function'
-        ? this.reflector.get<RetryPolicyConfig>(
-            RETRY_POLICY_METADATA,
-            handler,
-          ) || {}
-        : {};
-    const disableDLQ =
-      handler && typeof handler === 'function'
-        ? this.reflector.get<boolean>(DISABLE_DLQ_METADATA, handler) || false
-        : false;
+      this.reflector.get<RetryPolicyConfig>(RETRY_POLICY_METADATA, handler) || {};
+    const disableDLQ = this.reflector.get<boolean>(DISABLE_DLQ_METADATA, handler) || false;
 
     const retryPolicy = normalizeRetryPolicy(retryPolicyConfig);
 
@@ -101,20 +76,26 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     // 재시도 컨텍스트 생성
     const retryContext = createRetryContext();
 
-    this.logger.error(`Event handler failed: ${handlerName}`, {
-      error: exception.message,
-      stack: exception.stack,
-      errorType: exception.name,
-      topic: kafkaContext.getTopic(),
-      partition: kafkaContext.getPartition(),
-      offset: kafkaContext.getMessage().offset,
-    });
+    this.logger.error(
+      `Event handler failed: ${handler.name}`,
+      {
+        error: exception.message,
+        stack: exception.stack,
+        errorType: exception.name,
+        topic: kafkaContext.getTopic(),
+        partition: kafkaContext.getPartition(),
+        offset: kafkaContext.getMessage().offset,
+      },
+    );
 
     // 재시도 로직
     let lastError = exception;
     let shouldRetry = isRetryableError(exception, retryPolicy);
 
-    while (shouldRetry && retryContext.attemptNumber < retryPolicy.maxRetries) {
+    while (
+      shouldRetry &&
+      retryContext.attemptNumber < retryPolicy.maxRetries
+    ) {
       // 백오프 대기
       const delay = calculateBackoffDelay(
         retryContext.attemptNumber + 1,
@@ -126,7 +107,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
       this.logger.warn(
         `Retrying in ${delay}ms... (attempt ${retryContext.attemptNumber + 1}/${retryPolicy.maxRetries})`,
         {
-          handler: handlerName,
+          handler: handler.name,
           topic: kafkaContext.getTopic(),
         },
       );
@@ -136,12 +117,12 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
       // 재시도 실행
       try {
         const result = await this.retryHandler(host);
-
+        
         // 성공!
         this.logger.log(
           `✅ Retry succeeded on attempt ${retryContext.attemptNumber + 1}`,
           {
-            handler: handlerName,
+            handler: handler.name,
             topic: kafkaContext.getTopic(),
           },
         );
@@ -158,7 +139,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
           this.logger.warn(
             `Non-retryable error encountered: ${lastError.name}`,
             {
-              handler: handlerName,
+              handler: handler.name,
               topic: kafkaContext.getTopic(),
             },
           );
@@ -172,12 +153,12 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
       await this.sendToDLQ(
         kafkaContext,
         lastError,
-        handlerName,
+        handler.name,
         retryContext.attemptHistory,
       );
     } else if (disableDLQ) {
       this.logger.warn(
-        `DLQ disabled for handler: ${handlerName}. Discarding message.`,
+        `DLQ disabled for handler: ${handler.name}. Discarding message.`,
         {
           topic: kafkaContext.getTopic(),
           offset: kafkaContext.getMessage().offset,
@@ -187,7 +168,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
       this.logger.error(
         `DLQHandler not available. Cannot send message to DLQ.`,
         {
-          handler: handlerName,
+          handler: handler.name,
           topic: kafkaContext.getTopic(),
         },
       );
@@ -197,7 +178,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     // 따라서 여기서 에러를 삼켜야 함 (DLQ로 보냈으므로)
     // 하지만 로그는 남김
     this.logger.error(
-      `❌ Handler failed after ${retryContext.attemptNumber} retries: ${handlerName}`,
+      `❌ Handler failed after ${retryContext.attemptNumber} retries: ${handler.name}`,
       {
         error: lastError.message,
         topic: kafkaContext.getTopic(),
@@ -215,11 +196,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
    * 핸들러 재실행
    */
   private async retryHandler(host: ArgumentsHost): Promise<any> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const handler: ((...args: any[]) => any) | null = (host as any).getHandler
-      ? // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        ((host as any).getHandler() as (...args: any[]) => any)
-      : null;
+    const handler = (host as any).getHandler ? (host as any).getHandler() : null;
     const args = host.getArgs();
 
     if (handler && typeof handler === 'function') {
@@ -277,13 +254,15 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
         },
       );
     } catch (dlqError) {
-      this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
-        originalError: error.message,
-        dlqError:
-          dlqError instanceof Error ? dlqError.message : String(dlqError),
-        topic,
-        offset: message.offset,
-      });
+      this.logger.error(
+        `❌ CRITICAL: Failed to send message to DLQ`,
+        {
+          originalError: error.message,
+          dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
+          topic,
+          offset: message.offset,
+        },
+      );
 
       // DLQ 전송 실패는 치명적이므로 에러를 던짐
       // 이 경우 Kafka가 메시지를 다시 전달할 것임
@@ -291,3 +270,4 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     }
   }
 }
+
