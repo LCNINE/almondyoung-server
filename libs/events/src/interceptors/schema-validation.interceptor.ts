@@ -56,8 +56,20 @@ export class SchemaValidationInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    // HTTP 요청인 경우 바로 통과 (RPC 요청만 처리)
+    if (context.getType() !== 'rpc') {
+      return next.handle();
+    }
+
     const ctx = context.switchToRpc();
     const kafkaContext = ctx.getContext<KafkaContext>();
+    
+    // kafkaContext가 유효한지 확인
+    if (!kafkaContext || typeof kafkaContext.getTopic !== 'function') {
+      this.logger.warn('Invalid Kafka context, skipping schema validation');
+      return next.handle();
+    }
+    
     const topic = kafkaContext.getTopic();
 
     try {
