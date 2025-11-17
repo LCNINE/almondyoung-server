@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
 import { StockEventService } from '../services/stock-event.service';
 import { SafetyStockService } from '../services/safety-stock.service';
@@ -226,7 +226,6 @@ export class InventoryController {
 
     @Post('/skus')
     @ApiOperation({ summary: 'SKU 생성' })
-    @ApiBody({ type: CreateSkuDto })
     @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
     @ApiResponse({ status: 400, description: '잘못된 요청' })
     async createSku(@Body() createSkuDto: CreateSkuDto): Promise<SkuResponseDto> {
