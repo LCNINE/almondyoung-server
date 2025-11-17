@@ -346,8 +346,6 @@ export class AuthService {
       //   },
       // });
 
-      console.log('토큰발급완료 :', accessToken);
-
       return { accessToken, refreshToken };
     }, tx);
   }
