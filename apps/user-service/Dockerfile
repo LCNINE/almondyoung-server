@@ -1,18 +1,26 @@
-# User Service Dockerfile
 FROM node:22-alpine AS base
 
 WORKDIR /app
+# git 패키지는 이미 설치되어 있지만, 명시적으로 포함
 RUN apk add --no-cache postgresql-client git openssh-client
+
+ARG GITHUB_TOKEN=dummy
+
 
 # === 의존성 설치 단계 ===
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci
+# 1. 토큰을 사용하여 GitHub 인증을 설정합니다.
+RUN git config --global url."https://oauth2:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" \
+    && npm ci
 
 # === 프로덕션 의존성 설치 단계 ===
 FROM base AS deps-prod
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# 2. 프로덕션 의존성 설치 전에도 동일한 인증 설정을 적용합니다.
+RUN git config --global url."https://oauth2:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" \
+    && npm ci --omit=dev \
+    && npm cache clean --force
 
 # === 빌드 단계 ===
 FROM base AS builder
