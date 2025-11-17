@@ -501,8 +501,8 @@ export const membershipCycleBenefits = pgTable(
   'membership_cycle_benefits',
   {
     userId: varchar('user_id').notNull(),
-    cycleStartDate: date('cycle_start_date').notNull(),
-    cycleEndDate: date('cycle_end_date').notNull(),
+    cycleStartDate: date('cycle_start_date').notNull(), // 집계주기(o) 결제주기(x)
+    cycleEndDate: date('cycle_end_date').notNull(), // 집계주기(o) 결제주기(x)
     totalDiscountAmount: integer('total_discount_amount').notNull().default(0),
     orderCount: integer('order_count').notNull().default(0),
     subscriptionId: varchar('subscription_id').notNull(),
@@ -514,11 +514,11 @@ export const membershipCycleBenefits = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => ({
-    pk: primaryKey({ columns: [table.userId, table.cycleStartDate] }),
-    subscriptionIdx: index('idx_cycle_subscription').on(table.subscriptionId),
-    endDateIdx: index('idx_cycle_end_date').on(table.cycleEndDate),
-  }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.cycleStartDate] }),
+    index('idx_cycle_subscription').on(table.subscriptionId),
+    index('idx_cycle_end_date').on(table.cycleEndDate),
+  ],
 );
 
 /**
@@ -541,14 +541,11 @@ export const membershipDiscountEvents = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => ({
-    userCycleIdx: index('idx_events_user_cycle').on(
-      table.userId,
-      table.cycleStartDate,
-    ),
-    subscriptionIdx: index('idx_events_subscription').on(table.subscriptionId),
-    cancelledIdx: index('idx_events_cancelled').on(table.isCancelled),
-  }),
+  (table) => [
+    index('idx_events_user_cycle').on(table.userId, table.cycleStartDate),
+    index('idx_events_subscription').on(table.subscriptionId),
+    index('idx_events_cancelled').on(table.isCancelled),
+  ],
 );
 
 // Relations for Benefits Tracking
