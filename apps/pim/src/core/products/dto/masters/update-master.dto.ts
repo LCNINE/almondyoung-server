@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsBoolean, IsPositive, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsBoolean, IsPositive, MinLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { OptionDiffDto } from './option-diff.dto';
 
 export class UpdateProductMasterDto {
   @ApiProperty({ 
@@ -40,11 +42,7 @@ export class UpdateProductMasterDto {
   @IsString()
   brand?: string;
 
-  @ApiProperty({ description: '기본 가격', minimum: 0, required: false })
-  @IsOptional()
-  @IsNumber()
-  @IsPositive()
-  basePrice?: number;
+  // basePrice removed - 가격은 pricing rules API로 설정
 
   @ApiProperty({ description: '제품 이미지 URL 배열', type: [String], required: false })
   @IsOptional()
@@ -128,5 +126,15 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsBoolean()
   isMembershipOnly?: boolean;
+
+  @ApiProperty({ 
+    description: '옵션 변경사항',
+    type: OptionDiffDto,
+    required: false 
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OptionDiffDto)
+  optionDiff?: OptionDiffDto;
 }
 
