@@ -8,7 +8,7 @@ import {
 import { InventoryService } from './inventory.service';
 import { PimOrchestrator, PimHttpClient } from '@app/shared';
 import { ConfigService } from '@nestjs/config';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 // DEPRECATED: OptionSchema는 UI 호환성을 위해 타입만 유지
 type OptionSchema = { options?: Array<{ name: string; values: string[] }> };
@@ -44,15 +44,11 @@ export class MasterService {
     // 1) 내부 저장 (트랜잭션)
     const master = await this.inTx(async (trx) => {
       // optionSchema 검증은 제거됨 - UI 호환성만 유지
-      // Drizzle 버그: json 필드가 테이블에 정의되어 있으면 모든 컬럼을 명시하고 id에 'default' 키워드 사용
-      // 해결: id를 명시적으로 sql 함수로 생성하여 default 키워드 사용 방지
       const [created] = await trx
         .insert(wmsTables.inventoryProductMasters)
         .values({
-          id: sql`gen_random_uuid()`,
           name: params.name,
           masterCode: params.masterCode,
-          status: 'active' as any,
           optionSchema: params.optionSchema as any,
           defaultPolicy: params.defaultPolicy as any,
         })

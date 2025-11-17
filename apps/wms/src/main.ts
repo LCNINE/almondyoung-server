@@ -26,14 +26,11 @@ function createKafkaConfig() {
       maxRetryTime: 30000,
     },
     ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl:
-      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
-        ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
-        : undefined,
+    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
+      mechanism: 'plain' as const,
+      username: process.env.KAFKA_API_KEY,
+      password: process.env.KAFKA_API_SECRET,
+    } : undefined,
   };
 }
 
@@ -44,8 +41,6 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
   app.enableShutdownHooks();
 
@@ -61,10 +56,7 @@ async function bootstrap() {
       app.connectMicroservice(consumerOptions);
       console.log('✅ Kafka microservice 연결됨');
     } catch (error) {
-      console.warn(
-        '⚠️  Kafka 연결 실패 (선택사항이므로 계속 진행):',
-        error.message,
-      );
+      console.warn('⚠️  Kafka 연결 실패 (선택사항이므로 계속 진행):', error.message);
     }
   } else {
     console.log('ℹ️  Kafka 환경변수가 없어 Kafka 연결을 건너뜁니다.');
@@ -90,7 +82,6 @@ async function bootstrap() {
     .addTag('Masters', '마스터 관리')
     .addServer('https://wms-development.up.railway.app', '개발 서버')
     .addServer('https://wms.almondyoung.com', '프로덕션 서버')
-    .addServer('http://localhost:5000', '로컬 개발 서버')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
@@ -101,19 +92,12 @@ async function bootstrap() {
       await app.startAllMicroservices();
       console.log('✅ 모든 마이크로서비스 시작됨');
     } catch (error) {
-      console.warn(
-        '⚠️  마이크로서비스 시작 실패 (HTTP 서버는 계속 실행):',
-        error.message,
-      );
+      console.warn('⚠️  마이크로서비스 시작 실패 (HTTP 서버는 계속 실행):', error.message);
     }
   }
 
-  await app.listen(process.env.PORT ?? 5000);
-  console.log(
-    `🚀 WMS 서비스가 0.0.0.0:${process.env.PORT ?? 5000}에서 실행 중입니다.`,
-  );
-  console.log(
-    `📚 Swagger 문서: http://localhost:${process.env.PORT ?? 5000}/docs`,
-  );
+  await app.listen(process.env.PORT ?? 3010);
+  console.log(`🚀 WMS 서비스가 0.0.0.0:${process.env.PORT ?? 3010}에서 실행 중입니다.`);
+  console.log(`📚 Swagger 문서: http://localhost:${process.env.PORT ?? 3010}/docs`);
 }
 bootstrap();
