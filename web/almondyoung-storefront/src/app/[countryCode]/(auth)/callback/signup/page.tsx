@@ -1,4 +1,5 @@
 import { fetchCurrentUser } from "@lib/api/users"
+import { callbackSignup } from "@lib/api/users/callback-signup"
 import { appConfig } from "@lib/app-config"
 import { medusaSignup, retrieveCustomer } from "@lib/data/customer"
 import { AuthCallback } from "domains/auth/components/auth-callback"
@@ -6,22 +7,28 @@ import { cookies as nextCookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 /**
- * 이 페이지는 회원가입 콜백 페이지로, backendUrl/auth/callback/signup에서 redirect되어 오는 페이지입니다.
+ * 이 페이지는 회원가입 콜백 페이지로, backendUrl/auth/verify-email redirect되어 오는 페이지입니다.
  */
 export default async function SignupCallbackPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirect_to?: string }>
+  searchParams: Promise<{ redirect_to?: string; userId: string }>
 }) {
+  const params = await searchParams
+  const { accessToken, refreshToken } = await callbackSignup(params.userId)
+  console.log("accessToken", accessToken)
+
   const cookies = await nextCookies()
+
   const almondToken = cookies.get("accessToken")
 
-  const params = await searchParams
   const redirectTo = params?.redirect_to ?? appConfig.auth.redirect_to
   let result = null
 
+  console.log("almondToken", almondToken)
+
   if (!almondToken) {
-    redirect("/login")
+    // redirect("/login")
   }
 
   const customer = await retrieveCustomer()
