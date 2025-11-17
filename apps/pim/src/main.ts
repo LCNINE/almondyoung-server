@@ -63,7 +63,6 @@ async function bootstrap() {
     .addTag('Dashboard', '대시보드 통계')
     .addServer('https://pim-development.up.railway.app', '로컬 개발 서버')
     .addServer('https://pim.almondyoung.com', '프로덕션 서버')
-    .addServer('http://localhost:3020', '로컬 개발 서버')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
