@@ -1,10 +1,7 @@
 import { MembershipForm } from "./components"
-
-// 순수 UI 데모용 데이터
-const mockPlans = {
-  monthly: { days: 30, price: 4990 },
-  yearly: { days: 365, price: 49900 },
-}
+import type { PlanWithTier } from "@lib/types/membership"
+import { serverApi } from "@lib/api/server-api"
+import { ApiError } from "@lib/api/api-error"
 
 const mockBenefits = [
   {
@@ -26,13 +23,63 @@ const mockBenefits = [
   },
 ]
 
-export default function MembershipFormPage() {
+async function getPlans(): Promise<PlanWithTier[]> {
+  // serverApi는 기본적으로 body.data를 추출해서 반환
+  const plans = await serverApi<PlanWithTier[]>(
+    `${process.env.BACKEND_URL}/membership/plans`
+  )
+  return plans
+}
+
+async function getPaymentProfiles() {
+  try {
+    const profiles = await serverApi<any[]>(
+      `${process.env.BACKEND_URL}/wallet/payments/profiles`
+    )
+    console.log("✅ Payment profiles loaded:", profiles)
+    return profiles
+  } catch (error) {
+    // 에러 상세 정보 로깅
+    console.error("❌ Payment profiles API error:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      status: error instanceof ApiError ? error.status : undefined,
+      url: `${process.env.BACKEND_URL}/wallet/payments/profiles`,
+    })
+    // 프로필이 없거나 에러 발생 시 빈 배열 반환
+    return []
+  }
+}
+
+export default async function MembershipFormPage() {
+  const plans = await getPlans()
+  const paymentProfiles = await getPaymentProfiles()
+
+  // 월간/연간 플랜 추출 (durationDays로 판별)
+  const monthlyPlan = plans.find((p) => p.plan.durationDays === 30)
+  const yearlyPlan = plans.find((p) => p.plan.durationDays === 365)
+
+  if (!monthlyPlan || !yearlyPlan) {
+    throw new Error("필요한 플랜을 찾을 수 없습니다")
+  }
+
+  // HMS 카드 프로필 찾기
+  const hmsCardProfile = paymentProfiles.find(
+    (p) => p.kind === "CARD" && p.provider === "HMS_CARD"
+  )
+
   return (
     <>
       <MembershipForm
-        memberId="demo-user-id"
-        plans={mockPlans}
-        existingFmsMember={null}
+        monthlyPlan={monthlyPlan}
+        yearlyPlan={yearlyPlan}
+        existingFmsMember={
+          hmsCardProfile
+            ? {
+                paymentCompany: hmsCardProfile.details?.paymentCompany || "",
+                paymentNumber: hmsCardProfile.details?.paymentNumber || "",
+              }
+            : null
+        }
         existingSubType={null}
         availableBenefits={mockBenefits}
       />

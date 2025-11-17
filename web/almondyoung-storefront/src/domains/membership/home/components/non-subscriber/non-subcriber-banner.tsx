@@ -8,7 +8,7 @@ import { Check, ChevronRight } from "lucide-react"
  * - container: 중앙 정렬 및 최대 너비 관리
  * - inner: 실제 콘텐츠 그룹
  */
-export default function MembershipRequestBanner() {
+export default function NonSubscriberBanner() {
   return (
     <section className="bg-[#f29219]">
       {/* Container - 중앙 정렬 및 padding 관리 */}
