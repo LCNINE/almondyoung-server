@@ -24,6 +24,7 @@ import {
 } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
+import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 
 @Injectable()
 export class BusinessLicensesService {
@@ -35,6 +36,17 @@ export class BusinessLicensesService {
     private readonly configService: ConfigService,
   ) {}
 
+  async getBusinessLicensesByUserId(
+    userId: string,
+  ): Promise<BusinessLicenseResponseDto | null> {
+    const [result] = await this.dbService.db
+      .select()
+      .from(businessLicenses)
+      .where(eq(businessLicenses.userId, userId))
+      .limit(1);
+
+    return result ?? null;
+  }
   /**
    * 사업자 정보 외부 조회
    */
