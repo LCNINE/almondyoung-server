@@ -106,7 +106,6 @@
     "db:push.wms:test": "npm run db:push:wms:test",
     "db:generate.wms": "npm run db:generate:wms",
     "test:user": "npm run test:user-service",
-    "seed:user-service": "npm run db:seed:user-service",
     "db:push.user": "npm run db:push:user-service",
     "db:seed": "npm run db:seed:membership",
     "db:seed:billing-test": "npm run db:seed:membership:billing-test",
