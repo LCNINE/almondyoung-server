@@ -118,11 +118,11 @@ export class AuthService {
         }
 
         // 새로운 인증 토큰 생성
-        const verificationToken = this.jwtService.sign(
-          { sub: String(existingUser.id) },
+        const verificationToken = await this.jwtService.signAsync(
+          { sub: existingUser.id },
           {
-            secret: this.configService.get<string>('AUTH_SECRET'),
-            expiresIn,
+            secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
+            expiresIn: this.parseExpiresIn(expiresIn),
           },
         );
 
@@ -193,13 +193,13 @@ export class AuthService {
         });
 
         // 이메일 인증용 토큰 생성
-        const verificationToken = this.jwtService.sign(
-          { sub: String(user.id) },
+        const verificationToken = await this.jwtService.signAsync(
+          { sub: user.id as string },
           {
-            secret: this.configService.get<string>(
+            secret: this.configService.getOrThrow<string>(
               'JWT_VERIFICATION_TOKEN_SECRET',
             ),
-            expiresIn,
+            expiresIn: this.parseExpiresIn(expiresIn),
           },
         );
 
@@ -362,10 +362,12 @@ export class AuthService {
     const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
     // 새로운 인증 토큰 생성
-    const verificationToken = this.jwtService.sign(
-      { sub: String(user.id) },
+    const verificationToken = await this.jwtService.signAsync(
+      { sub: user.id },
       {
-        secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        secret: this.configService.getOrThrow<string>(
+          'JWT_VERIFICATION_TOKEN_SECRET',
+        ),
         expiresIn,
       },
     );
@@ -751,7 +753,7 @@ export class AuthService {
     // 자동 로그인 여부에 따라 만료 시간 결정
     const expiresIn = this.getRefreshTokenExpiration(rememberMe);
 
-    const refreshToken = this.jwtService.sign(
+    const refreshToken = await this.jwtService.signAsync(
       { sub: userId, scopes },
       {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
@@ -816,10 +818,10 @@ export class AuthService {
     if (user.loginId !== loginId)
       throw new NotFoundException('존재하지 않는 아이디입니다');
 
-    const verificationToken = this.jwtService.sign(
+    const verificationToken = await this.jwtService.signAsync(
       { email },
       {
-        secret: this.configService.get('AUTH_SECRET'),
+        secret: this.configService.getOrThrow('AUTH_SECRET'),
         expiresIn: JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
       },
     );
@@ -832,7 +834,7 @@ export class AuthService {
 
   async resetPassword(token: string, password: string): Promise<void> {
     const email = await this.jwtService.verify(token, {
-      secret: this.configService.get('AUTH_SECRET'),
+      secret: this.configService.getOrThrow('AUTH_SECRET'),
     });
 
     if (typeof email !== 'string') {
