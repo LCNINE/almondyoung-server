@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import {
+  wmsTables,
+  wmsSchema,
+  DbTx,
+} from '../../../database/schemas/wms-schema';
 import { InventoryService } from './inventory.service';
 import { PimOrchestrator, PimHttpClient } from '@app/shared';
 import { ConfigService } from '@nestjs/config';
@@ -14,7 +18,8 @@ export class MasterService {
   private readonly logger = new Logger(MasterService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    @InjectTypedDb<typeof wmsSchema>()
+    private readonly dbService: DbService<typeof wmsSchema>,
     private readonly inventoryService: InventoryService,
     private readonly configService: ConfigService,
   ) {}
@@ -27,21 +32,27 @@ export class MasterService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async createMaster(params: {
-    name: string;
-    masterCode: string;
-    optionSchema?: OptionSchema;
-    defaultPolicy?: Record<string, unknown>;
-  }, tx?: DbTx) {
+  async createMaster(
+    params: {
+      name: string;
+      masterCode: string;
+      optionSchema?: OptionSchema;
+      defaultPolicy?: Record<string, unknown>;
+    },
+    tx?: DbTx,
+  ) {
     // 1) 내부 저장 (트랜잭션)
     const master = await this.inTx(async (trx) => {
       // optionSchema 검증은 제거됨 - UI 호환성만 유지
-      const [created] = await trx.insert(wmsTables.inventoryProductMasters).values({
-        name: params.name,
-        masterCode: params.masterCode,
-        optionSchema: params.optionSchema as any,
-        defaultPolicy: params.defaultPolicy as any,
-      }).returning();
+      const [created] = await trx
+        .insert(wmsTables.inventoryProductMasters)
+        .values({
+          name: params.name,
+          masterCode: params.masterCode,
+          optionSchema: params.optionSchema as any,
+          defaultPolicy: params.defaultPolicy as any,
+        })
+        .returning();
       return created;
     }, tx);
 
@@ -54,43 +65,63 @@ export class MasterService {
     return master;
   }
 
-  async syncWithPim(masterId: string): Promise<{ masterId: string; variants: string[] }> {
-    const pimBaseUrl = this.configService.get<string>('PIM_BASE_URL') || 'http://localhost:3001';
+  async syncWithPim(
+    masterId: string,
+  ): Promise<{ masterId: string; variants: string[] }> {
+    const pimBaseUrl =
+      this.configService.get<string>('PIM_BASE_URL') || 'http://localhost:3001';
     const pimApiKey = this.configService.get<string>('PIM_API_KEY');
     const client = new PimHttpClient(pimBaseUrl, pimApiKey);
     const orchestrator = new PimOrchestrator(client);
 
     // 마스터/옵션 스키마 조회
-    const master = await this.db.query.inventoryProductMasters.findFirst({ where: eq(wmsTables.inventoryProductMasters.id, masterId) });
+    const master = await this.db.query.inventoryProductMasters.findFirst({
+      where: eq(wmsTables.inventoryProductMasters.id, masterId),
+    });
     if (!master) {
       throw new Error(`Master not found: ${masterId}`);
     }
 
-    const optionSchema = (master.optionSchema || { options: [] }) as OptionSchema;
+    const optionSchema = (master.optionSchema || {
+      options: [],
+    }) as OptionSchema;
     const input = {
       name: master.name,
       pricingStrategy: 'variant_based',
       basePrice: 0,
-      optionGroups: (optionSchema.options || []).map(o => ({ name: o.name, values: o.values.map(v => ({ value: v, displayName: v })) })),
+      optionGroups: (optionSchema.options || []).map((o) => ({
+        name: o.name,
+        values: o.values.map((v) => ({ value: v, displayName: v })),
+      })),
     };
 
     // PIM 마스터/변형 생성
-    const { masterId: pimMasterId } = await orchestrator.createMasterAndVariants(input, { idempotencyKey: `wms-${masterId}` });
+    const { masterId: pimMasterId } =
+      await orchestrator.createMasterAndVariants(input, {
+        idempotencyKey: `wms-${masterId}`,
+      });
     const detail = await client.getMasterDetail(pimMasterId);
-    const variantIds: string[] = Array.isArray(detail?.variants) ? detail.variants.map((v: any) => v.id) : [];
+    const variantIds: string[] = Array.isArray(detail?.variants)
+      ? detail.variants.map((v: any) => v.id)
+      : [];
 
     // WMS 매칭 row 준비 (pending)
     await this.inTx(async (trx) => {
       for (const variantId of variantIds) {
         // upsert 유사: 기존 존재하면 skip
-        const existing = await trx.query.productMatchings.findFirst({ where: eq(wmsTables.productMatchings.variantId, variantId) });
+        const existing = await trx.query.productMatchings.findFirst({
+          where: eq(wmsTables.productMatchings.variantId, variantId),
+        });
         if (existing) continue;
         await trx.insert(wmsTables.productMatchings).values({
           variantId,
           masterId,
           status: 'pending' as any,
           priority: 'normal' as any,
-          strategy: (optionSchema.options?.length ?? 0) > 0 ? 'variant' as any : 'void' as any,
+          strategy:
+            (optionSchema.options?.length ?? 0) > 0
+              ? ('variant' as any)
+              : ('void' as any),
           isResolved: false,
         });
       }
@@ -99,15 +130,20 @@ export class MasterService {
     return { masterId, variants: variantIds };
   }
 
-  async updateMaster(masterId: string, params: Partial<{
-    name: string;
-    optionSchema: OptionSchema;
-    defaultPolicy: Record<string, unknown>;
-    status: 'active' | 'archived';
-  }>, tx?: DbTx) {
+  async updateMaster(
+    masterId: string,
+    params: Partial<{
+      name: string;
+      optionSchema: OptionSchema;
+      defaultPolicy: Record<string, unknown>;
+      status: 'active' | 'archived';
+    }>,
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       // optionSchema 검증은 제거됨
-      const [updated] = await trx.update(wmsTables.inventoryProductMasters)
+      const [updated] = await trx
+        .update(wmsTables.inventoryProductMasters)
         .set({
           name: params.name,
           optionSchema: params.optionSchema as any,
@@ -131,15 +167,21 @@ export class MasterService {
       if (linkedSku) {
         throw new Error('Cannot delete master with linked SKUs');
       }
-      await trx.delete(wmsTables.inventoryProductMasters).where(eq(wmsTables.inventoryProductMasters.id, masterId));
+      await trx
+        .delete(wmsTables.inventoryProductMasters)
+        .where(eq(wmsTables.inventoryProductMasters.id, masterId));
     }, tx);
   }
 
-
-  async updateMasterOptions(masterId: string, optionSchema: OptionSchema, tx?: DbTx) {
+  async updateMasterOptions(
+    masterId: string,
+    optionSchema: OptionSchema,
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       // optionSchema 검증은 제거됨
-      const [updated] = await trx.update(wmsTables.inventoryProductMasters)
+      const [updated] = await trx
+        .update(wmsTables.inventoryProductMasters)
         .set({ optionSchema: optionSchema as any, updatedAt: new Date() })
         .where(eq(wmsTables.inventoryProductMasters.id, masterId))
         .returning();
@@ -166,5 +208,3 @@ export class MasterService {
     }, tx);
   }
 }
-
-
