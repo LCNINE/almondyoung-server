@@ -735,6 +735,8 @@ export class AuthService {
       logCookieDebugInfo({ isRailway, isProd, corsOrigin }, cookieOptions);
     }
 
+    reply.setCookie('accessToken', accessToken, cookieOptions);
+
     this.logger.log(`Access token issued for user: ${user.email}`);
 
     return { accessToken };
