@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
@@ -14,6 +14,8 @@ import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class PricingService {
+  private readonly logger = new Logger(PricingService.name);
+
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
@@ -175,13 +177,12 @@ export class PricingService {
           ),
         );
 
-      // 매핑된 rules 삭제
+      // 고아 rules 정리 (다른 버전이 사용하지 않는 경우만 삭제)
       if (mappedRuleIds.length > 0) {
-        for (const { pricingRuleId } of mappedRuleIds) {
-          await trx
-            .delete(pricingRules)
-            .where(eq(pricingRules.id, pricingRuleId));
-        }
+        await this._cleanupOrphanedPricingRules(
+          mappedRuleIds.map((r) => r.pricingRuleId),
+          trx,
+        );
       }
 
       const rulesToInsert: typeof pricingRules.$inferInsert[] = [];
@@ -301,13 +302,12 @@ export class PricingService {
           ),
         );
 
-      // 매핑된 rules 삭제
+      // 고아 rules 정리 (다른 버전이 사용하지 않는 경우만 삭제)
       if (mappedRuleIds.length > 0) {
-        for (const { pricingRuleId } of mappedRuleIds) {
-          await trx
-            .delete(pricingRules)
-            .where(eq(pricingRules.id, pricingRuleId));
-        }
+        await this._cleanupOrphanedPricingRules(
+          mappedRuleIds.map((r) => r.pricingRuleId),
+          trx,
+        );
       }
     }, tx);
   }
@@ -354,6 +354,44 @@ export class PricingService {
       createdAt: rule.createdAt!,
       updatedAt: rule.updatedAt!,
     };
+  }
+
+  /**
+   * 고아 pricing rule 정리
+   * - 다른 버전이 참조하지 않는 경우만 삭제
+   * - Variants 정리 로직과 동일한 패턴
+   */
+  private async _cleanupOrphanedPricingRules(
+    candidateRuleIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (candidateRuleIds.length === 0) {
+      return;
+    }
+
+    let deletedCount = 0;
+
+    for (const ruleId of candidateRuleIds) {
+      // 1. 이 rule을 참조하는 모든 버전 매핑 조회
+      const allMappings = await tx
+        .select()
+        .from(productMasterPricingRules)
+        .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
+
+      // 2. 아무도 참조하지 않으면 삭제
+      if (allMappings.length === 0) {
+        await tx
+          .delete(pricingRules)
+          .where(eq(pricingRules.id, ruleId));
+        deletedCount++;
+      }
+    }
+
+    if (deletedCount > 0) {
+      this.logger.log(
+        `Cleaned up ${deletedCount} orphaned pricing rules out of ${candidateRuleIds.length} candidates`,
+      );
+    }
   }
 }
 

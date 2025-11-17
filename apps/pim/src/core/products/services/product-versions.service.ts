@@ -17,6 +17,7 @@ import {
   productOptionValueDisplays,
   variantOptionValues,
   productVariants,
+  pricingRules,
 } from '../../../schema';
 import { eq, and, sql, max as drizzleMax } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -716,6 +717,17 @@ export class ProductVersionsService {
           ),
         );
 
+      // 3. 가격 규칙 매핑 삭제 (고아 정리 포함)
+      const pricingRuleMappings = await tx
+        .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
+        .from(productMasterPricingRules)
+        .where(
+          and(
+            eq(productMasterPricingRules.masterId, version.masterId),
+            eq(productMasterPricingRules.version, version.version),
+          ),
+        );
+
       await tx
         .delete(productMasterPricingRules)
         .where(
@@ -735,6 +747,14 @@ export class ProductVersionsService {
         await this._cleanupOrphanedVariantsAfterDeletion(
           version.masterId,
           variantIds,
+          tx,
+        );
+      }
+
+      // 6. 고아 pricing rules 정리
+      if (pricingRuleMappings.length > 0) {
+        await this._cleanupOrphanedPricingRules(
+          pricingRuleMappings.map((m) => m.pricingRuleId),
           tx,
         );
       }
@@ -783,6 +803,40 @@ export class ProductVersionsService {
     if (deletedCount > 0) {
       this.logger.log(
         `Cleaned up ${deletedCount} orphaned variant entities`,
+      );
+    }
+  }
+
+  /**
+   * 고아 pricing rule 정리 (deleteDraftVersion용)
+   */
+  private async _cleanupOrphanedPricingRules(
+    candidateRuleIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (candidateRuleIds.length === 0) {
+      return;
+    }
+
+    let deletedCount = 0;
+
+    for (const ruleId of candidateRuleIds) {
+      const allMappings = await tx
+        .select()
+        .from(productMasterPricingRules)
+        .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
+
+      if (allMappings.length === 0) {
+        await tx
+          .delete(pricingRules)
+          .where(eq(pricingRules.id, ruleId));
+        deletedCount++;
+      }
+    }
+
+    if (deletedCount > 0) {
+      this.logger.log(
+        `Cleaned up ${deletedCount} orphaned pricing rules`,
       );
     }
   }
