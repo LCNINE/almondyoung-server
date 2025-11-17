@@ -69,20 +69,15 @@ export class SubscriptionController {
   ) { }
 
   /**
-   * 현재 구독 상태 조회 (Lazy Expiration 적용)
+   * 현재 구독 상태 조회
    *
    * @description 사용자의 현재 구독 상태를 조회합니다.
-   * 만료된 구독의 경우 상태를 자동으로 정규화합니다.
-   *
-   * @sideEffect 만료된 구독의 isCurrent 플래그를 false로 업데이트
-   * @rationale 데이터 정합성 보장 및 성능 최적화
-   * @httpMethod GET (데이터 정규화는 허용되는 사이드 이펙트)
    */
   @Get('current')
   @ApiOperation({
     summary: '현재 구독 상태 조회',
     description:
-      '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다. 만료된 구독은 자동으로 정규화됩니다.',
+      '사용자의 현재 활성 구독 정보를 플랜 및 티어 정보와 함께 조회합니다.',
   })
   @ApiQuery({
     name: 'userId',
