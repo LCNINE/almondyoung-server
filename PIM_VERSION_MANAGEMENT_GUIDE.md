@@ -382,6 +382,26 @@ Master 버전과 Pricing Rule을 연결합니다.
 **유니크 제약:**
 - `(masterId, pricingRuleId, version)`: 동일 버전에서 중복 방지
 
+**특징:**
+- 가격 규칙은 여러 버전이 재사용 가능
+- 버전별로 독립적인 가격 정책 구성 가능
+- Draft 버전에서만 수정 가능
+
+**예시:**
+```sql
+-- Version 1: 기본 가격 정책 (10,000원)
+INSERT INTO product_master_pricing_rules VALUES
+  ('M1', 'PR_BASE_10000', 1);
+
+-- Version 2: 동일한 가격 정책 재사용
+INSERT INTO product_master_pricing_rules VALUES
+  ('M1', 'PR_BASE_10000', 2);
+
+-- Version 3: 새로운 가격 정책 (15,000원)
+INSERT INTO product_master_pricing_rules VALUES
+  ('M1', 'PR_BASE_15000', 3);
+```
+
 #### 3.2.4 variant_option_values
 
 Variant와 Option Value를 연결합니다. (다대다 관계)
@@ -748,13 +768,18 @@ private async _copyMappings(
     await tx.insert(productMasterPricingRules).values({
       id: uuidv7(),
       masterId: masterId,
-      pricingRuleId: pr.pricingRuleId,
+      pricingRuleId: pr.pricingRuleId,  // 동일한 규칙 재사용
       version: toVersion,
       createdAt: new Date(),
     });
   }
 }
 ```
+
+**주의사항:**
+- Pricing Rule 레코드 자체는 복사하지 않고 매핑만 복사
+- 여러 버전이 동일한 pricing rule을 참조 가능
+- 이는 Variant와 동일한 재사용 패턴
 
 ### 4.2 버전 상태 전환 (Publish)
 
@@ -1589,6 +1614,167 @@ applyRule(currentPrice: number, rule: PricingRule): number {
 - 10~49개: 9,500원 (5% 할인)
 - 50개 이상: 9,000원 (10% 할인)
 
+### 6.4 버전별 가격 정책 관리
+
+가격 정책은 버전별로 독립적으로 관리됩니다. 이는 옵션 및 품목과 동일한 매핑 테이블 패턴을 사용합니다.
+
+#### 6.4.1 가격 정책과 버전의 관계
+
+```
+Master ID: "M123"
+│
+├── Version 1 (active)
+│   └── Pricing Rules: [PR1: 기본가 10,000원]
+│
+├── Version 2 (draft) ← 새로 생성된 버전
+│   └── Pricing Rules: [PR1: 기본가 10,000원]  (복사됨)
+│
+└── Version 3 (draft) ← Version 1에서 파생
+    └── Pricing Rules: [PR2: 기본가 15,000원]  (새로 생성)
+```
+
+**핵심 원칙:**
+- 가격 규칙(`pricingRules`)은 재사용 가능한 공유 리소스
+- 매핑 테이블(`product_master_pricing_rules`)로 버전별 연결
+- 새 draft 생성 시 부모 버전의 가격 정책 자동 복사
+- Draft 버전에서만 가격 정책 수정 가능
+
+#### 6.4.2 Draft에서 가격 정책 수정
+
+```typescript
+// 1. Draft 버전 생성
+POST /masters/:masterId/versions
+{
+  "parentVersionId": "versionId_v1",
+  "copyMappings": true  // 가격 정책도 함께 복사
+}
+
+// 2. Draft 버전의 가격 정책 수정
+PUT /products/:masterId/pricing?version=2
+{
+  "basePriceRules": [
+    {
+      "layer": "base_price",
+      "order": 1,
+      "scopeType": "all_variants",
+      "operationType": "override",
+      "operationValue": 15000  // 10,000원 → 15,000원 변경
+    }
+  ]
+}
+
+// 3. 변경사항 확인 (특정 버전 조회)
+GET /products/:masterId/pricing?version=2
+
+// 4. Publish
+PATCH /masters/:masterId/versions/:versionId/publish
+{ "targetStatus": "active" }
+```
+
+#### 6.4.3 가격 규칙 재사용 메커니즘
+
+가격 규칙은 Variant와 동일하게 재사용 가능합니다.
+
+**재사용 시나리오:**
+```sql
+-- 초기: Version 1이 PR1 사용
+product_master_pricing_rules: (M1, PR1, version=1)
+
+-- Version 2 생성: 동일한 PR1 재사용
+product_master_pricing_rules: (M1, PR1, version=2)
+
+-- Version 2 가격 정책 변경: PR1 매핑 제거, 새로운 PR2 생성
+-- 1) 매핑 삭제
+DELETE FROM product_master_pricing_rules 
+WHERE masterId='M1' AND version=2;
+
+-- 2) 새 규칙 생성 및 매핑
+INSERT INTO pricing_rules VALUES (PR2, ...);
+INSERT INTO product_master_pricing_rules VALUES (M1, PR2, version=2);
+
+-- 3) PR1 정리 확인
+-- Version 1이 여전히 PR1 사용 중이므로 PR1은 삭제되지 않음
+```
+
+**고아 Pricing Rule 정리:**
+- `replaceMasterRules()` 또는 `deleteMasterRules()` 호출 시 자동 정리
+- 어떤 버전도 참조하지 않는 규칙만 삭제
+- Variant 정리와 동일한 패턴
+
+```typescript
+// PricingService._cleanupOrphanedPricingRules()
+for (const ruleId of candidateRuleIds) {
+  const allMappings = await tx
+    .select()
+    .from(productMasterPricingRules)
+    .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
+
+  // 아무도 참조하지 않으면 삭제
+  if (allMappings.length === 0) {
+    await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
+  }
+}
+```
+
+#### 6.4.4 버전별 가격 조회
+
+특정 버전의 가격 정책을 조회할 수 있습니다.
+
+```typescript
+// Active 버전의 가격 정책 조회 (기본값)
+GET /products/:masterId/pricing
+
+// 특정 버전의 가격 정책 조회
+GET /products/:masterId/pricing?version=2
+
+// 가격 계산 시에도 버전 지정 가능
+POST /products/:masterId/pricing/calculate
+{
+  "variantId": "variant_xyz",
+  "quantity": 10,
+  "customerType": "membership",
+  "version": 2  // Optional: 지정하지 않으면 active 버전 사용
+}
+```
+
+#### 6.4.5 제약사항
+
+**1. Active/Inactive 버전의 가격 정책 변경 불가**
+
+```typescript
+// ❌ Active 버전의 가격 정책 수정 시도
+PUT /products/:masterId/pricing?version=1
+// → Error: "Cannot modify pricing for active version. Create a draft version."
+
+// ✅ 올바른 방법
+// 1. Draft 버전 생성
+POST /masters/:masterId/versions { "parentVersionId": "v1" }
+// 2. Draft에서 가격 정책 수정
+PUT /products/:masterId/pricing?version=2 { ... }
+// 3. Publish
+PATCH /masters/:masterId/versions/v2/publish
+```
+
+**2. Version 파라미터 생략 시 Active 버전 사용**
+
+```typescript
+// version 파라미터 없으면 active 버전 사용
+await pricingService.replaceMasterRules(masterId, rulesDto);
+// → active 버전이 없으면 NotFoundException 발생
+```
+
+**3. 가격 규칙은 절대 직접 삭제 불가**
+
+```typescript
+// ❌ 직접 삭제 금지
+DELETE FROM pricing_rules WHERE id = 'PR1';
+
+// ✅ 매핑 테이블을 통한 간접 관리
+// - replaceMasterRules()로 교체
+// - deleteMasterRules()로 전체 삭제
+// - 고아 규칙은 자동 정리됨
+```
+
 ---
 
 ## 7. API 워크플로우
@@ -1783,7 +1969,7 @@ ProductMastersController
 ### 7.5 가격 정책 설정 플로우
 
 ```
-사용자 → PUT /products/:masterId/pricing
+사용자 → PUT /products/:masterId/pricing?version=2  ← version 파라미터 추가
         {
           "basePriceRules": [...],
           "membershipPriceRules": [...],
@@ -1793,14 +1979,21 @@ ProductMastersController
         ↓
         
 PricingController
-  → PricingService.replaceMasterRules()
+  → PricingService.replaceMasterRules(masterId, rulesDto, version, tx)
      ↓
      트랜잭션 시작
      1. Master 존재 확인
-     2. 기존 가격 규칙 삭제 (매핑 삭제)
-     3. 새 가격 규칙 생성
-     4. 매핑 테이블에 연결
-     5. 가격 유효성 검증
+     2. **Version 결정**
+        - version 파라미터 있으면 해당 버전 사용
+        - 없으면 active 버전 조회
+     3. **Draft 상태 확인** (version 지정 시)
+        - Draft가 아니면 에러 발생
+     4. 기존 가격 규칙 매핑 삭제
+     5. 새 가격 규칙 생성
+     6. 매핑 테이블에 연결
+     7. **고아 pricing rule 정리**
+        - 다른 버전이 사용하지 않는 규칙 삭제
+     8. 가격 유효성 검증
         - 모든 Variant 가격 계산
         - 음수/0원 체크
      트랜잭션 커밋
@@ -1813,6 +2006,11 @@ PricingController
   "tieredPriceRules": [...]
 }
 ```
+
+**중요 포인트:**
+- `version` 파라미터로 특정 버전의 가격 정책 수정 가능
+- Draft 버전만 수정 가능 (active/inactive는 에러)
+- 고아 pricing rule 자동 정리로 불필요한 규칙 삭제
 
 ### 7.6 가격 계산 플로우
 
@@ -2398,6 +2596,41 @@ if (baseResult.price <= 0) {
 **주의:**
 - 이전 레이어의 모든 계산 결과 무시
 - 일반적으로 레이어의 첫 번째 규칙으로 사용
+
+#### 9.3.4 버전별 가격 정책 제약
+
+**Draft에서만 수정 가능:**
+
+```typescript
+// ❌ Active 버전의 가격 정책 수정 불가
+PUT /products/:masterId/pricing
+// active 버전이면 에러 발생
+
+// ✅ 올바른 방법: Draft 버전 생성 후 수정
+POST /masters/:masterId/versions
+PUT /products/:masterId/pricing?version=2
+```
+
+**이유:**
+- 가격 정책 변경은 민감한 작업
+- Active 버전의 가격 변경은 즉시 외부에 영향
+- Draft에서 충분히 테스트 후 Publish 권장
+
+**가격 규칙 재사용 제약:**
+
+```typescript
+// Pricing Rule은 여러 버전이 공유 가능
+// 하나의 버전에서 규칙 변경 시 다른 버전 영향 없음
+// 매핑 테이블이 버전별 독립성 보장
+```
+
+**고아 규칙 정리:**
+
+```typescript
+// 버전 삭제 또는 가격 정책 변경 시
+// 어떤 버전도 참조하지 않는 규칙은 자동 삭제
+// Variant 정리와 동일한 패턴
+```
 
 ### 9.4 트랜잭션 관리
 
