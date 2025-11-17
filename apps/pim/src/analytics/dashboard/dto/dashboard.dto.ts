@@ -93,13 +93,6 @@ export class TopProductItemDto {
   brand: string | null;
 
   @ApiProperty({
-    description: '기본 가격 (원)',
-    example: 29900,
-    minimum: 0,
-  })
-  basePrice: number;
-
-  @ApiProperty({
     description: '제품 상태',
     example: 'active',
   })

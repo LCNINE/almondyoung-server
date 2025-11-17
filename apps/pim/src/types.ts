@@ -8,6 +8,8 @@ import {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productOptionGroupDisplays,
+  productOptionValueDisplays,
   productOptionGroups,
   productOptionValues,
   productVariants,
@@ -45,6 +47,7 @@ export type UpdateProductMaster = Partial<
   categoryIds?: string[];
   primaryCategoryId?: string;
   migrationData?: any;
+  optionDiff?: OptionDiff;
 };
 
 // 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
@@ -71,6 +74,64 @@ export type NewProductMasterVariant = InferInsertModel<typeof productMasterVaria
 // ===== PRODUCT MASTER PRICING RULES (Mapping Table) 타입 =====
 export type ProductMasterPricingRule = InferSelectModel<typeof productMasterPricingRules>;
 export type NewProductMasterPricingRule = InferInsertModel<typeof productMasterPricingRules>;
+
+// ===== PRODUCT OPTION GROUP DISPLAYS 타입 =====
+export type ProductOptionGroupDisplay = InferSelectModel<typeof productOptionGroupDisplays>;
+export type NewProductOptionGroupDisplay = InferInsertModel<typeof productOptionGroupDisplays>;
+
+// ===== PRODUCT OPTION VALUE DISPLAYS 타입 =====
+export type ProductOptionValueDisplay = InferSelectModel<typeof productOptionValueDisplays>;
+export type NewProductOptionValueDisplay = InferInsertModel<typeof productOptionValueDisplays>;
+
+// ===== OPTION DIFF 타입 =====
+export interface OptionDiff {
+  add?: AddOptionDto[];
+  modifyDisplay?: ModifyOptionDisplayDto[];
+  addValues?: AddOptionValuesDto[];
+  removeValues?: RemoveOptionValuesDto[];
+  remove?: string[];
+}
+
+export interface AddOptionDto {
+  displayName: string;
+  description?: string;
+  sortOrder?: number;
+  values: Array<{
+    displayName: string;
+    colorCode?: string;
+    imageUrl?: string;
+    sortOrder?: number;
+  }>;
+}
+
+export interface ModifyOptionDisplayDto {
+  optionGroupId: string;
+  displayName?: string;
+  description?: string;
+  sortOrder?: number;
+  values?: Array<{
+    optionValueId: string;
+    displayName?: string;
+    colorCode?: string;
+    imageUrl?: string;
+    sortOrder?: number;
+  }>;
+}
+
+export interface AddOptionValuesDto {
+  optionGroupId: string;
+  values: Array<{
+    displayName: string;
+    colorCode?: string;
+    imageUrl?: string;
+    sortOrder?: number;
+  }>;
+}
+
+export interface RemoveOptionValuesDto {
+  optionGroupId: string;
+  optionValueIds: string[];
+}
 
 // ===== PRODUCT OPTION GROUPS 타입 =====
 export type ProductOptionGroup = InferSelectModel<typeof productOptionGroups>;
@@ -152,13 +213,13 @@ export type UpdateProductImage = Partial<
 
 // Product Master 생성 DTO
 export interface CreateMasterDto {
-  name: string;
+  name?: string; // 선택사항, 기본값: "새 상품"
   description?: string;
   brand?: string;
   thumbnail?: string; // 썸네일 이미지 URL (내부 또는 외부)
   categoryIds?: string[];
   primaryCategoryId?: string;
-  basePrice: number;
+  // basePrice removed - 가격은 전적으로 pricing rules로 결정
   tags?: string[];
   images?: string[];
   attributes?: Record<string, any>;
@@ -170,17 +231,7 @@ export interface CreateMasterDto {
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
 
-  // 옵션 구조 정보 (가격 제외)
-  optionGroups?: {
-    name: string;
-    displayName: string;
-    sortOrder?: number;
-    values: {
-      value: string;
-      displayName: string;
-      sortOrder?: number;
-    }[];
-  }[];
+  // optionGroups removed - use update API with optionDiff instead
 }
 
 // Product Master 목록용 DTO (간단한 정보만)
@@ -188,7 +239,7 @@ export interface MasterListItemDto {
   id: string;
   name: string;
   thumbnail?: string;
-  basePrice: number;
+  // basePrice removed - 가격은 pricing rules로 조회
   isMembershipOnly: boolean;
   status: string;
   createdAt: Date;

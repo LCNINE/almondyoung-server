@@ -250,7 +250,6 @@ export class ChannelProductsService {
           description: productMasters.description,
           brand: productMasters.brand,
           thumbnail: productMasters.thumbnail, // thumbnail 필드 추가
-          basePrice: productMasters.basePrice,
           tags: productMasters.tags,
           images: productMasters.images,
           attributes: productMasters.attributes,
@@ -367,7 +366,6 @@ export class ChannelProductsService {
     description: string; // 원본 설명
     images: string[]; // 원본 이미지
     isActive: boolean; // 채널별 판매 여부
-    basePrice: number; // 원본 기본 가격
     channelSpecificData?: any;
   } | null> {
     if (!masterId || !channelId) {
@@ -392,7 +390,6 @@ export class ChannelProductsService {
           name: productMasters.name, // 원본 이름
           description: productMasters.description,
           images: productMasters.images,
-          basePrice: productMasters.basePrice,
         },
       })
       .from(channelProducts)
@@ -420,12 +417,12 @@ export class ChannelProductsService {
       channelId: data.channelProduct.channelId,
       // 상품명: 오버라이드된 이름이 있으면 사용, 없으면 원본 이름 사용
       name: data.channelProduct.name || data.master.name,
-      // 설명, 이미지, 기본가격은 항상 원본 Master 데이터 사용
+      // 설명, 이미지는 항상 원본 Master 데이터 사용
       description: data.master.description || '',
       images: Array.isArray(data.master.images)
         ? (data.master.images as string[])
         : [],
-      basePrice: data.master.basePrice || 0,
+      // basePrice removed - 가격은 pricing rules API로 조회 필요
       // 판매 여부는 채널별 설정 사용
       isActive: (data.channelProduct.isActive ?? true) as boolean,
       // 채널별 특수 데이터

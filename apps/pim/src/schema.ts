@@ -109,12 +109,12 @@ export const productMasters = pgTable(
     draftOwnerId: uuid('draft_owner_id'),
     // ===== VERSION MANAGEMENT FIELDS END =====
     
-    name: varchar('name', { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull().default('새 상품'),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
     thumbnail: text('thumbnail'), // 썸네일 이미지 URL
     // categoryId removed - now using many-to-many relationship via productMasterCategories
-    basePrice: bigint('base_price', { mode: 'number' }), // 원 단위 정수 (25000 = 25,000원)
+    // basePrice removed - 가격은 전적으로 pricing rules로 결정
     // 물리적 속성 제거: weight, dimensions, costPrice 등
     tags: text('tags').array(), // 마케팅 태그
     images: jsonb('images'), // 상품 이미지 (string[])
@@ -189,7 +189,6 @@ export const productMasters = pgTable(
     index('idx_masters_name').on(table.name),
     index('idx_masters_brand').on(table.brand),
     index('idx_masters_created_at').on(table.createdAt),
-    index('idx_masters_base_price').on(table.basePrice),
     // Phase 1 new indexes
     index('idx_masters_product_type').on(table.productType),
     index('idx_masters_product_code').on(table.productCode),
@@ -319,6 +318,75 @@ export const productMasterPricingRules = pgTable(
   ],
 );
 
+// ===== 2.5. PRODUCT OPTION GROUP DISPLAYS (버전별/언어별 표시 정보) =====
+export const productOptionGroupDisplays = pgTable(
+  'product_option_group_displays',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    optionGroupId: uuid('option_group_id')
+      .notNull()
+      .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id').notNull(),
+    version: integer('version').notNull(),
+    locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
+    displayName: varchar('display_name', { length: 100 }).notNull(),
+    description: text('description'),
+    sortOrder: integer('sort_order').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_option_group_displays_lookup').on(
+      table.optionGroupId,
+      table.masterId,
+      table.version,
+      table.locale,
+    ),
+    uniqueIndex('unique_option_group_display').on(
+      table.optionGroupId,
+      table.masterId,
+      table.version,
+      table.locale,
+    ),
+  ],
+);
+
+// ===== 2.6. PRODUCT OPTION VALUE DISPLAYS (버전별/언어별 표시 정보) =====
+export const productOptionValueDisplays = pgTable(
+  'product_option_value_displays',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    optionValueId: uuid('option_value_id')
+      .notNull()
+      .references(() => productOptionValues.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id').notNull(),
+    version: integer('version').notNull(),
+    locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
+    displayName: varchar('display_name', { length: 100 }).notNull(),
+    colorCode: varchar('color_code', { length: 7 }),
+    imageUrl: text('image_url'),
+    sortOrder: integer('sort_order').default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_option_value_displays_lookup').on(
+      table.optionValueId,
+      table.masterId,
+      table.version,
+      table.locale,
+    ),
+    uniqueIndex('unique_option_value_display').on(
+      table.optionValueId,
+      table.masterId,
+      table.version,
+      table.locale,
+    ),
+  ],
+);
+
 // ===== 3. PRODUCT OPTION GROUPS =====
 export const productOptionGroups = pgTable(
   'product_option_groups',
@@ -326,12 +394,7 @@ export const productOptionGroups = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    name: varchar('name', { length: 100 }).notNull(), // 'color', 'size'
-    displayName: varchar('display_name', { length: 100 }).notNull(), // '색상', '사이즈'
-    sortOrder: integer('sort_order').default(0),
-    isRequired: boolean('is_required').default(true),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
   },
 );
 
@@ -345,24 +408,10 @@ export const productOptionValues = pgTable(
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-    value: varchar('value', { length: 100 }).notNull(), // 'red', 'M'
-    displayName: varchar('display_name', { length: 100 }).notNull(), // '빨간색', 'M사이즈'
-    sortOrder: integer('sort_order').default(0),
-    isActive: boolean('is_active').default(true),
     createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
     index('idx_option_values_group').on(table.optionGroupId),
-    index('idx_option_values_sort_order').on(
-      table.optionGroupId,
-      table.sortOrder,
-    ),
-    index('idx_option_values_active').on(table.isActive),
-    uniqueIndex('unique_option_values_group_value').on(
-      table.optionGroupId,
-      table.value,
-    ),
   ],
 );
 
@@ -621,6 +670,8 @@ export const pimSchema = {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productOptionGroupDisplays,
+  productOptionValueDisplays,
   productOptionGroups,
   productOptionValues,
   productVariants,

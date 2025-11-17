@@ -13,8 +13,7 @@ export class ProductMasterDto {
   @ApiProperty({ description: '브랜드명', nullable: true })
   brand: string | null;
 
-  @ApiProperty({ description: '기본 가격', nullable: true })
-  basePrice: number | null;
+  // basePrice removed - 가격은 pricing rules로 조회
 
   @ApiProperty({ description: '마케팅 태그', type: [String], nullable: true })
   tags: string[] | null;
@@ -219,8 +218,7 @@ export class MasterListItemDto {
   @ApiProperty({ description: '썸네일 이미지 URL', nullable: true })
   thumbnail: string | null;
 
-  @ApiProperty({ description: '기본 가격', nullable: true })
-  basePrice: number | null;
+  // basePrice removed - 가격은 pricing rules로 조회
 
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;

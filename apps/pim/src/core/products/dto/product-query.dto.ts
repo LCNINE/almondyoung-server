@@ -32,18 +32,6 @@ export class ProductQueryDto {
   seller?: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  minPrice?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  maxPrice?: number;
-
-  @IsOptional()
   @IsDateString()
   startDate?: string;
 
@@ -56,7 +44,7 @@ export class ProductQueryDto {
   dateRange?: string;
 
   @IsOptional()
-  @IsEnum(['createdAt', 'updatedAt', 'name', 'basePrice'])
+  @IsEnum(['createdAt', 'updatedAt', 'name'])
   sortBy?: string;
 
   @IsOptional()

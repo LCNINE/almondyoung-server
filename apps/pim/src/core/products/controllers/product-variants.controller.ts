@@ -91,6 +91,7 @@ export class ProductVariantsController {
 
       return (await this.productVariantsService.getVariantsByMaster(
         masterId,
+        undefined, // version (optional)
         filters,
       )) as unknown as VariantListResponseDto;
     } catch (error) {

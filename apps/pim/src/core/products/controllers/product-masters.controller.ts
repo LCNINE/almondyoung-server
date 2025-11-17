@@ -43,37 +43,42 @@ export class ProductMastersController {
 
   @Post()
   @ApiOperation({
-    summary: '제품 마스터 생성 (최적화됨)',
-    description: '새로운 제품 마스터를 생성합니다. 상품 마스터는 즉시 생성되고, 옵션 처리는 백그라운드에서 비동기로 처리됩니다.',
+    summary: '제품 마스터 생성 (간소화)',
+    description: `
+      빈 draft 상태의 판매 상품을 생성합니다.
+      모든 필드는 선택사항이며, 생성 후 PUT /masters/:id 로 정보를 채웁니다.
+      
+      워크플로우:
+      1. POST /masters {} - 빈 draft 생성 (name: "새 상품", 기본 variant 1개)
+      2. PUT /masters/:id { name, description, ... } - 기본 정보 입력
+      3. PUT /masters/:id { optionDiff: { add: [...] } } - 옵션 추가 (variants 자동 생성)
+      4. PUT /products/:masterId/pricing { ... } - 가격 정책 설정
+      5. PATCH /masters/:masterId/versions/:versionId/publish - 활성화
+    `,
   })
-  @ApiBody({ type: CreateMasterDtoSwagger, description: '제품 마스터 생성 정보' })
+  @ApiBody({ 
+    type: CreateMasterDtoSwagger,
+    description: '모든 필드 선택사항. 빈 객체로 호출 가능',
+    required: false,
+  })
   @ApiResponse({
     status: 201,
-    description: '제품 마스터 생성 성공 (옵션 처리는 백그라운드에서 진행)',
+    description: '제품 마스터 생성 성공 (즉시 완료, 비동기 처리 없음)',
     type: ProductMasterDto,
   })
   @ApiResponse({
     status: 400,
-    description: '잘못된 요청 데이터 (name, basePrice 필수)',
+    description: '잘못된 요청 데이터',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async createMaster(
     @Body(new ZodValidationPipe(CreateMasterSchema))
-    createMasterDto: CreateMasterDto,
+    createMasterDto: CreateMasterDto = {},
   ): Promise<ProductMasterDto> {
     try {
-      if (
-        !createMasterDto.name ||
-        !createMasterDto.basePrice
-      ) {
-        throw new HttpException('Validation failed', HttpStatus.BAD_REQUEST);
-      }
+      // 빈 draft 생성 - 모든 세부사항은 update API로 채움
+      const master = await this.productMastersService.createMaster(createMasterDto);
 
-      // 상품 마스터 생성 (옵션은 백그라운드에서 처리)
-      const master =
-        await this.productMastersService.createMaster(createMasterDto);
-
-      // 즉시 응답 반환 (옵션 처리는 비동기로 진행 중)
       return {
         ...master,
         createdAt: master.createdAt?.toISOString() || null,
@@ -81,9 +86,6 @@ export class ProductMastersController {
       } as unknown as ProductMasterDto;
     } catch (error) {
       console.error('Create master error:', error);
-      if (error.message === 'Validation failed') {
-        throw error;
-      }
       throw new HttpException(
         `Failed to create master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,

@@ -13,6 +13,10 @@ import {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productOptionGroupDisplays,
+  productOptionValueDisplays,
+  variantOptionValues,
+  productVariants,
 } from '../../../schema';
 import { eq, and, sql, max as drizzleMax } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -175,7 +179,17 @@ export class ProductVersionsService {
         throw new BadRequestException('Only draft versions can be published');
       }
 
+      let previousActiveVersion: ProductMaster | null = null;
+
       if (targetStatus === 'active') {
+        // 기존 active 버전 조회
+        try {
+          previousActiveVersion = await this.getActiveVersion(version.masterId, tx);
+        } catch (e) {
+          this.logger.debug(`No previous active version for ${version.masterId}`);
+        }
+
+        // 기존 active를 inactive로
         await tx
           .update(productMasters)
           .set({ versionStatus: 'inactive' })
@@ -187,15 +201,71 @@ export class ProductVersionsService {
           );
       }
 
+      // draft를 publish
       await tx
         .update(productMasters)
         .set({ versionStatus: targetStatus, draftOwnerId: null, updatedAt: new Date() })
         .where(eq(productMasters.id, versionId));
 
+      // 이벤트 발행: 추가/삭제된 variant만
+      if (targetStatus === 'active') {
+        await this._publishVariantChangeEvents(
+          version,
+          previousActiveVersion,
+          tx,
+        );
+      }
+
       this.logger.log(
         `Published version ${version.version} of master ${version.masterId} as ${targetStatus}`,
       );
     }, tx);
+  }
+
+  /**
+   * publish 시 variant 변경 이벤트 발행
+   */
+  private async _publishVariantChangeEvents(
+    newVersion: ProductMaster,
+    oldVersion: ProductMaster | null,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const newVariantIds = await this.getVersionVariants(
+      newVersion.masterId,
+      newVersion.version,
+      tx,
+    );
+
+    const oldVariantIds = oldVersion
+      ? await this.getVersionVariants(
+          oldVersion.masterId,
+          oldVersion.version,
+          tx,
+        )
+      : [];
+
+    const addedVariantIds = newVariantIds.filter(
+      (id) => !oldVariantIds.includes(id),
+    );
+    const deletedVariantIds = oldVariantIds.filter(
+      (id) => !newVariantIds.includes(id),
+    );
+
+    if (deletedVariantIds.length > 0) {
+      this.logger.log(
+        `VARIANT_DELETED event: ${deletedVariantIds.length} variants deleted from master ${newVersion.masterId}`,
+      );
+    }
+
+    if (addedVariantIds.length > 0) {
+      this.logger.log(
+        `VARIANT_ADDED event: ${addedVariantIds.length} variants added to master ${newVersion.masterId}`,
+      );
+    }
+
+    if (addedVariantIds.length === 0 && deletedVariantIds.length === 0) {
+      this.logger.log(`No variant changes for master ${newVersion.masterId}`);
+    }
   }
 
   async compareVersions(
@@ -474,6 +544,61 @@ export class ProductVersionsService {
           createdAt: new Date(),
         })),
       );
+
+      // 1-1. 옵션 그룹 display 정보 복사
+      const groupDisplays = await tx
+        .select()
+        .from(productOptionGroupDisplays)
+        .where(
+          and(
+            eq(productOptionGroupDisplays.masterId, masterId),
+            eq(productOptionGroupDisplays.version, fromVersion),
+          ),
+        );
+
+      if (groupDisplays.length > 0) {
+        await tx.insert(productOptionGroupDisplays).values(
+          groupDisplays.map((gd) => ({
+            id: uuidv7(),
+            optionGroupId: gd.optionGroupId,
+            masterId,
+            version: toVersion,
+            locale: gd.locale,
+            displayName: gd.displayName,
+            description: gd.description,
+            sortOrder: gd.sortOrder,
+            createdAt: new Date(),
+          })),
+        );
+      }
+
+      // 1-2. 옵션값 display 정보 복사
+      const valueDisplays = await tx
+        .select()
+        .from(productOptionValueDisplays)
+        .where(
+          and(
+            eq(productOptionValueDisplays.masterId, masterId),
+            eq(productOptionValueDisplays.version, fromVersion),
+          ),
+        );
+
+      if (valueDisplays.length > 0) {
+        await tx.insert(productOptionValueDisplays).values(
+          valueDisplays.map((vd) => ({
+            id: uuidv7(),
+            optionValueId: vd.optionValueId,
+            masterId,
+            version: toVersion,
+            locale: vd.locale,
+            displayName: vd.displayName,
+            colorCode: vd.colorCode,
+            imageUrl: vd.imageUrl,
+            sortOrder: vd.sortOrder,
+            createdAt: new Date(),
+          })),
+        );
+      }
     }
 
     const variants = await tx
@@ -521,8 +646,145 @@ export class ProductVersionsService {
     }
 
     this.logger.log(
-      `Copied mappings from version ${fromVersion} to ${toVersion} for master ${masterId}: ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules`,
+      `Copied mappings and displays from version ${fromVersion} to ${toVersion} for master ${masterId}: ` +
+      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules`,
     );
+  }
+
+  /**
+   * Draft 버전 삭제 (고아 variant도 정리)
+   */
+  async deleteDraftVersion(
+    versionId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.inTx(async (tx) => {
+      const version = await this.getVersionById(versionId, tx);
+
+      if (version.versionStatus !== 'draft') {
+        throw new BadRequestException('Only draft versions can be deleted');
+      }
+
+      // 1. 이 버전이 참조하는 variant 목록 조회
+      const variantMappings = await tx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.version, version.version),
+          ),
+        );
+
+      const variantIds = variantMappings.map((m) => m.variantId);
+
+      // 2. Display 정보 삭제
+      await tx
+        .delete(productOptionGroupDisplays)
+        .where(
+          and(
+            eq(productOptionGroupDisplays.masterId, version.masterId),
+            eq(productOptionGroupDisplays.version, version.version),
+          ),
+        );
+
+      await tx
+        .delete(productOptionValueDisplays)
+        .where(
+          and(
+            eq(productOptionValueDisplays.masterId, version.masterId),
+            eq(productOptionValueDisplays.version, version.version),
+          ),
+        );
+
+      // 3. 매핑 테이블 삭제
+      await tx
+        .delete(productMasterOptionGroups)
+        .where(
+          and(
+            eq(productMasterOptionGroups.masterId, version.masterId),
+            eq(productMasterOptionGroups.version, version.version),
+          ),
+        );
+
+      await tx
+        .delete(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.version, version.version),
+          ),
+        );
+
+      await tx
+        .delete(productMasterPricingRules)
+        .where(
+          and(
+            eq(productMasterPricingRules.masterId, version.masterId),
+            eq(productMasterPricingRules.version, version.version),
+          ),
+        );
+
+      // 4. 버전 자체 삭제
+      await tx
+        .delete(productMasters)
+        .where(eq(productMasters.id, versionId));
+
+      // 5. 고아 variant 정리
+      if (variantIds.length > 0) {
+        await this._cleanupOrphanedVariantsAfterDeletion(
+          version.masterId,
+          variantIds,
+          tx,
+        );
+      }
+
+      this.logger.log(
+        `Deleted draft version ${version.version} of master ${version.masterId}`,
+      );
+    }, tx);
+  }
+
+  /**
+   * Draft 버전 삭제 후 고아 variant 정리
+   */
+  private async _cleanupOrphanedVariantsAfterDeletion(
+    masterId: string,
+    candidateVariantIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    let deletedCount = 0;
+
+    for (const variantId of candidateVariantIds) {
+      // 이 variant를 참조하는 다른 버전이 있는지 확인
+      const remainingMappings = await tx
+        .select({ version: productMasterVariants.version })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.variantId, variantId),
+          ),
+        );
+
+      if (remainingMappings.length === 0) {
+        // 더 이상 참조하는 버전이 없으면 삭제
+        await tx
+          .delete(productVariants)
+          .where(eq(productVariants.id, variantId));
+
+        deletedCount++;
+        this.logger.log(
+          `Deleted orphaned variant entity: ${variantId} (no longer referenced after draft deletion)`,
+        );
+      }
+    }
+
+    if (deletedCount > 0) {
+      this.logger.log(
+        `Cleaned up ${deletedCount} orphaned variant entities`,
+      );
+    }
   }
 }
 

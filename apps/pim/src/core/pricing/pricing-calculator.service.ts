@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, SQL } from 'drizzle-orm';
 import { 
   pricingRules,
   productMasterPricingRules,
   productMasters,
   productVariants,
+  productMasterVariants,
   variantOptionValues,
   pimSchema 
 } from '../../schema';
@@ -138,10 +139,23 @@ export class PricingCalculatorService {
     tx?: DbTransaction,
   ): Promise<Map<string, { basePrice: number; membershipPrice: number }>> {
     return this.inTx(async (trx) => {
+      // 매핑 테이블을 통해 active 버전의 variants 조회
       const variants = await trx
         .select({ id: productVariants.id })
-        .from(productVariants)
-        .where(eq(productVariants.masterId, masterId));
+        .from(productMasterVariants)
+        .innerJoin(
+          productVariants,
+          eq(productMasterVariants.variantId, productVariants.id),
+        )
+        .innerJoin(
+          productMasters,
+          and(
+            eq(productMasterVariants.masterId, productMasters.masterId),
+            eq(productMasterVariants.version, productMasters.version),
+            eq(productMasters.versionStatus, 'active'),
+          ),
+        )
+        .where(eq(productMasters.masterId, masterId));
 
       const priceMap = new Map<
         string,
@@ -198,48 +212,91 @@ export class PricingCalculatorService {
     tieredPriceRules: PricingRule[];
   }> {
     return this.inTx(async (trx) => {
-      // masterId와 version으로 매핑 테이블을 통해 pricing rules 조회
-      let query = trx
-        .select({
-          id: pricingRules.id,
-          layer: pricingRules.layer,
-          order: pricingRules.order,
-          scopeType: pricingRules.scopeType,
-          scopeTargetIds: pricingRules.scopeTargetIds,
-          operationType: pricingRules.operationType,
-          operationValue: pricingRules.operationValue,
-          minQuantity: pricingRules.minQuantity,
-          createdAt: pricingRules.createdAt,
-          updatedAt: pricingRules.updatedAt,
-        })
-        .from(pricingRules)
-        .innerJoin(
-          productMasterPricingRules,
-          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-        )
-        .where(eq(productMasterPricingRules.masterId, masterId));
+      type RuleRow = {
+        id: string;
+        layer: string;
+        order: number;
+        scopeType: string;
+        scopeTargetIds: string[] | null;
+        operationType: string;
+        operationValue: number;
+        minQuantity: number | null;
+        createdAt: Date | null;
+        updatedAt: Date | null;
+      };
+
+      let allRules: RuleRow[];
 
       // version이 지정되면 해당 버전만, 아니면 active 버전 사용
       if (version !== undefined) {
-        query = query.where(eq(productMasterPricingRules.version, version));
+        const conditions: SQL[] = [
+          eq(productMasterPricingRules.masterId, masterId),
+          eq(productMasterPricingRules.version, version),
+        ];
+
+        if (layer) {
+          conditions.push(eq(pricingRules.layer, layer));
+        }
+
+        allRules = await trx
+          .select({
+            id: pricingRules.id,
+            layer: pricingRules.layer,
+            order: pricingRules.order,
+            scopeType: pricingRules.scopeType,
+            scopeTargetIds: pricingRules.scopeTargetIds,
+            operationType: pricingRules.operationType,
+            operationValue: pricingRules.operationValue,
+            minQuantity: pricingRules.minQuantity,
+            createdAt: pricingRules.createdAt,
+            updatedAt: pricingRules.updatedAt,
+          })
+          .from(pricingRules)
+          .innerJoin(
+            productMasterPricingRules,
+            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
+          )
+          .where(and(...conditions))
+          .orderBy(asc(pricingRules.order));
       } else {
         // active 버전의 rules 가져오기
-        query = query
+        const conditions: SQL[] = [
+          eq(productMasters.masterId, masterId),
+          eq(productMasters.versionStatus, 'active'),
+        ];
+
+        if (layer) {
+          conditions.push(eq(pricingRules.layer, layer));
+        }
+
+        allRules = await trx
+          .select({
+            id: pricingRules.id,
+            layer: pricingRules.layer,
+            order: pricingRules.order,
+            scopeType: pricingRules.scopeType,
+            scopeTargetIds: pricingRules.scopeTargetIds,
+            operationType: pricingRules.operationType,
+            operationValue: pricingRules.operationValue,
+            minQuantity: pricingRules.minQuantity,
+            createdAt: pricingRules.createdAt,
+            updatedAt: pricingRules.updatedAt,
+          })
+          .from(pricingRules)
+          .innerJoin(
+            productMasterPricingRules,
+            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
+          )
           .innerJoin(
             productMasters,
             and(
-              eq(productMasters.masterId, masterId),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterPricingRules.masterId, productMasters.masterId),
+              eq(productMasterPricingRules.version, productMasters.version),
             ),
           )
-          .where(eq(productMasterPricingRules.version, productMasters.version));
+          .where(and(...conditions))
+          .orderBy(asc(pricingRules.order));
       }
-
-      if (layer) {
-        query = query.where(eq(pricingRules.layer, layer));
-      }
-
-      const allRules = await query.orderBy(asc(pricingRules.order));
 
       return {
         basePriceRules: allRules.filter((r) => r.layer === 'base_price'),

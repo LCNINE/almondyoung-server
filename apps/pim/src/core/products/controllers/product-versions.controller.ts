@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   HttpException,
@@ -194,6 +195,41 @@ export class ProductVersionsController {
       }
       throw new HttpException(
         `Failed to compare versions: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Delete(':versionId')
+  @ApiOperation({
+    summary: 'Draft 버전 삭제',
+    description: 'Draft 상태의 버전을 삭제합니다. 오직 이 버전만 참조하던 variant도 함께 삭제됩니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (삭제할 draft)' })
+  @ApiResponse({ status: 200, description: 'Draft 버전 삭제 성공' })
+  @ApiResponse({ status: 400, description: 'Draft가 아닌 버전은 삭제 불가' })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  async deleteDraftVersion(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    try {
+      await this.productVersionsService.deleteDraftVersion(versionId);
+      return {
+        success: true,
+        message: `Draft version ${versionId} deleted successfully`,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to delete draft version: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('Only draft')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to delete draft version: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

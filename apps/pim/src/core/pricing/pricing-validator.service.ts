@@ -1,11 +1,14 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, and } from 'drizzle-orm';
 import { 
   productOptionValues,
   productOptionGroups,
   productVariants,
+  productMasters,
+  productMasterOptionGroups,
+  productMasterVariants,
   pimSchema 
 } from '../../schema';
 import { DbTransaction } from '../../types';
@@ -101,17 +104,35 @@ export class PricingValidatorService {
     optionValueIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
+    // 매핑 테이블을 통해 active 버전의 optionValues 조회
     const optionValues = await tx
       .select({
         id: productOptionValues.id,
-        masterId: productOptionGroups.masterId,
+        masterId: productMasterOptionGroups.masterId,
       })
       .from(productOptionValues)
       .innerJoin(
         productOptionGroups,
         eq(productOptionValues.optionGroupId, productOptionGroups.id),
       )
-      .where(inArray(productOptionValues.id, optionValueIds));
+      .innerJoin(
+        productMasterOptionGroups,
+        eq(productOptionGroups.id, productMasterOptionGroups.optionGroupId),
+      )
+      .innerJoin(
+        productMasters,
+        and(
+          eq(productMasterOptionGroups.masterId, productMasters.masterId),
+          eq(productMasterOptionGroups.version, productMasters.version),
+          eq(productMasters.versionStatus, 'active'),
+        ),
+      )
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          inArray(productOptionValues.id, optionValueIds),
+        ),
+      );
 
     this.validateFoundIds(
       optionValueIds,
@@ -133,13 +154,31 @@ export class PricingValidatorService {
     variantIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
+    // 매핑 테이블을 통해 active 버전의 variants 조회
     const variants = await tx
       .select({
         id: productVariants.id,
-        masterId: productVariants.masterId,
+        masterId: productMasterVariants.masterId,
       })
       .from(productVariants)
-      .where(inArray(productVariants.id, variantIds));
+      .innerJoin(
+        productMasterVariants,
+        eq(productVariants.id, productMasterVariants.variantId),
+      )
+      .innerJoin(
+        productMasters,
+        and(
+          eq(productMasterVariants.masterId, productMasters.masterId),
+          eq(productMasterVariants.version, productMasters.version),
+          eq(productMasters.versionStatus, 'active'),
+        ),
+      )
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          inArray(productVariants.id, variantIds),
+        ),
+      );
 
     this.validateFoundIds(
       variantIds,
@@ -191,10 +230,23 @@ export class PricingValidatorService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
+      // 매핑 테이블을 통해 active 버전의 variants 조회
       const variants = await trx
         .select({ id: productVariants.id })
-        .from(productVariants)
-        .where(eq(productVariants.masterId, masterId));
+        .from(productMasterVariants)
+        .innerJoin(
+          productVariants,
+          eq(productMasterVariants.variantId, productVariants.id),
+        )
+        .innerJoin(
+          productMasters,
+          and(
+            eq(productMasterVariants.masterId, productMasters.masterId),
+            eq(productMasterVariants.version, productMasters.version),
+            eq(productMasters.versionStatus, 'active'),
+          ),
+        )
+        .where(eq(productMasters.masterId, masterId));
 
       if (variants.length === 0) {
         return;
