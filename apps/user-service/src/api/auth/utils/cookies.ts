@@ -39,7 +39,7 @@ export function getCookieOptions(
 /**
  * URL에서 도메인을 추출합니다
  */
-function getDomain(url: string): string {
+export function getDomain(url: string): string {
   try {
     const urlObj = new URL(url);
     return urlObj.hostname;

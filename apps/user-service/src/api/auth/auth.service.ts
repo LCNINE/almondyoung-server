@@ -37,7 +37,11 @@ import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-import { getCookieOptions, logCookieDebugInfo } from './utils/cookies';
+import {
+  getCookieOptions,
+  getDomain,
+  logCookieDebugInfo,
+} from './utils/cookies';
 
 @Injectable()
 export class AuthService {
@@ -608,14 +612,21 @@ export class AuthService {
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: this.frontendUrl,
+          domain: `.${getDomain(this.frontendUrl)}`,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: this.frontendUrl,
+          domain: `.${getDomain(this.frontendUrl)}`,
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        });
+        reply.clearCookie('_medusa_jwt', {
+          path: '/',
+          domain: `.${getDomain(this.frontendUrl)}`,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
