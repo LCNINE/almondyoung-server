@@ -1,4 +1,5 @@
 // apps/wallet/src/main.ts
+import 'reflect-metadata'; // 배포 에러로 넣었음 지훈
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
