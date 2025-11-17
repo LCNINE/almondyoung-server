@@ -194,7 +194,7 @@ export class AuthService {
 
         // 이메일 인증용 토큰 생성
         const verificationToken = this.jwtService.sign(
-          { sub: user.id },
+          { sub: user.id as string },
           {
             secret: this.configService.get<string>(
               'JWT_VERIFICATION_TOKEN_SECRET',
