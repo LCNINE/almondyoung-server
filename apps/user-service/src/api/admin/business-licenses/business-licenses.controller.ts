@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
+import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UpdateBusinessLicenseDtoWithReviewCommentAndStatus } from '../../business-licenses/dto/update-business-license.dto';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
@@ -29,6 +30,22 @@ export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
   ) {}
+
+  @Get('/user/:userId')
+  @ApiOperation({
+    summary: '관리자가 특정 사용자의 사업자 등록 정보 조회',
+    description: '관리자가 특정 사용자의 사업자 등록 정보를 조회합니다.',
+  })
+  @ApiParam({ name: 'userId', description: '사용자 ID' })
+  @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  @RequireScopes(['user:read'])
+  async getBusinessLicensesByUserId(
+    @Param('userId') userId: string,
+  ): Promise<BusinessLicenseResponseDto | null> {
+    return this.businessLicensesService.getBusinessLicensesByUserId(userId);
+  }
 
   @Get()
   @RequireScopes(['master', 'admin:users:read'])
