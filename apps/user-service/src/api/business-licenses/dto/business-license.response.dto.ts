@@ -32,21 +32,21 @@ export class BusinessLicenseResponseDto {
     type: String,
     nullable: true,
   })
-  shopId?: string;
+  shopId?: string | null;
 
   @ApiProperty({
     description: '사업자 등록 번호 (10자리)',
     type: String,
     nullable: true,
   })
-  businessNumber?: string;
+  businessNumber?: string | null;
 
   @ApiProperty({
     description: '대표자 이름',
     type: String,
     nullable: true,
   })
-  representativeName?: string;
+  representativeName?: string | null;
 
   @ApiProperty({
     description: '검토 상태',
@@ -59,28 +59,28 @@ export class BusinessLicenseResponseDto {
     type: String,
     nullable: true,
   })
-  reviewComment?: string;
+  reviewComment?: string | null;
 
   @ApiProperty({
     description: '검토 일시',
     type: Date,
     nullable: true,
   })
-  reviewedAt?: Date;
+  reviewedAt?: Date | null;
 
   @ApiProperty({
     description: '인증 완료 일시',
     type: Date,
     nullable: true,
   })
-  verifiedAt?: Date;
+  verifiedAt?: Date | null;
 
   @ApiProperty({
     description: '증빙 검증 파일 URL',
     type: String,
     nullable: true,
   })
-  verificationFile?: string;
+  verificationFile?: string | null;
 
   @ApiProperty({
     description: '추가 메타데이터',
@@ -88,7 +88,7 @@ export class BusinessLicenseResponseDto {
     nullable: true,
     additionalProperties: true,
   })
-  metadata?: string;
+  metadata?: unknown;
 
   @ApiProperty({
     description: '생성 일시',
