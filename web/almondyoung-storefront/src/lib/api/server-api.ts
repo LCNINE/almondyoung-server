@@ -3,21 +3,30 @@ import "server-only"
 import { cookies as nextCookies } from "next/headers"
 import { ApiAuthError, ApiError, ApiNetworkError } from "./api-error"
 
+export interface ServerApiOptions extends RequestInit {
+  /**
+   * body.data를 자동으로 추출할지 여부
+   * @default true - body.data가 있으면 추출, 없으면 body 전체 반환
+   */
+  unwrapData?: boolean
+}
+
 export async function serverApi<T = any>(
   url: string,
-  options?: RequestInit
+  options?: ServerApiOptions
 ): Promise<T> {
   try {
     const cookies = await nextCookies()
+    const { unwrapData = true, ...fetchOptions } = options || {}
 
     // 3.5초 타임아웃 설정 (서버 블로킹 방지)
     const res = await fetch(`${url}`, {
-      ...options,
-      signal: options?.signal || AbortSignal.timeout(35000),
+      ...fetchOptions,
+      signal: fetchOptions?.signal || AbortSignal.timeout(35000),
       headers: {
         "Content-Type": "application/json",
         Cookie: cookies.toString(),
-        ...options?.headers,
+        ...fetchOptions?.headers,
       },
     })
 
@@ -34,7 +43,12 @@ export async function serverApi<T = any>(
       )
     }
 
-    return body.data || body
+    // unwrapData 옵션에 따라 처리
+    if (unwrapData && body.data !== undefined) {
+      return body.data
+    }
+
+    return body
   } catch (error) {
     if (error instanceof ApiError) {
       throw error

@@ -1,10 +1,14 @@
 "use client"
 
+import React from "react"
 import { Calendar, Gift, TriangleAlert } from "lucide-react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@components/common/ui/button"
+import { clientApi } from "@lib/api/client-api"
+import { ApiError } from "@lib/api/api-error"
+import { useUser } from "contexts/user-context"
 import {
   Form,
   FormControl,
@@ -30,10 +34,20 @@ import {
 } from "@components/common/ui/alert"
 import { toast } from "sonner"
 import { Checkbox } from "@components/common/ui/checkbox"
-import { Table, TableBody, TableCell, TableRow } from "@components/common/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from "@components/common/ui/table"
 import { cn } from "@lib/utils"
 import { useRouter } from "next/navigation"
-import { Dialog, DialogContent, DialogFooter, DialogHeader } from "@components/common/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+} from "@components/common/ui/dialog"
 import { useState } from "react"
 import {
   Card,
@@ -103,7 +117,11 @@ const cardDetailsSchema = z.object({
 })
 const subscriptionSchema = z.object({
   useNewCard: z.boolean(),
-  subscriptionType: z.enum(["inactive", "monthly", "yearly"]).optional(),
+  subscriptionType: z
+    .enum(["inactive", "monthly", "yearly"])
+    .refine((val) => val === "monthly" || val === "yearly", {
+      message: "구독 유형을 선택해주세요",
+    }),
   discountBenefitId: z.string().optional(),
   agreement: z.boolean().refine((value) => value === true, {
     message: "약관에 동의해주세요",
@@ -120,20 +138,43 @@ const registerMembershipFormSchema = z.union([
 ])
 
 type MembershipFormProps = {
-  memberId: string
-  plans: { [key: string]: { days: number; price: number } }
+  monthlyPlan: {
+    plan: {
+      id: string
+      price: number
+      durationDays: number
+      trialDays: number
+    }
+    tier: {
+      code: string
+      name: string
+    }
+  }
+  yearlyPlan: {
+    plan: {
+      id: string
+      price: number
+      durationDays: number
+      trialDays: number
+    }
+    tier: {
+      code: string
+      name: string
+    }
+  }
   existingFmsMember: FmsMember
   existingSubType: SubscriptionType
   availableBenefits: MemberBenefit[]
 }
 export function MembershipForm({
-  memberId,
-  plans,
+  monthlyPlan,
+  yearlyPlan,
   existingFmsMember,
   existingSubType,
   availableBenefits,
 }: MembershipFormProps) {
   const router = useRouter()
+  const { user } = useUser()
 
   const trialBenefits: MembershipTrialBenefit[] = []
   const discountBenefits: MembershipDiscountBenefit[] = []
@@ -156,28 +197,71 @@ export function MembershipForm({
     payerName: "",
     validUntil: "",
     password: "",
-
     subscriptionType:
       existingSubType === "monthly" || existingSubType === "yearly"
         ? existingSubType
-        : undefined,
+        : ("inactive" as const),
+    agreement: false,
   }
 
   const form = useForm<z.infer<typeof registerMembershipFormSchema>>({
-    mode: "onBlur",
+    mode: "onChange",
     resolver: zodResolver(registerMembershipFormSchema),
     defaultValues: formDefaultValues,
   })
 
   async function onSubmit(data: z.infer<typeof registerMembershipFormSchema>) {
-    // 순수 UI - 실제 API 호출 제거
-    console.log("Form submitted:", { ...data, memberId })
-    
-    // 데모용 성공 처리
-    toast.success("멤버십이 등록되었습니다!")
-    
-    // 실제 앱에서는 router.push를 사용
-    // router.push(`/membership`)
+    try {
+      // 사용자 인증 확인
+      if (!user) {
+        toast.error("로그인이 필요합니다.")
+        return
+      }
+
+      // 1단계: 새 카드 등록 (조건부)
+      if (data.useNewCard) {
+        const validMonth = data.validUntil.slice(0, 2) // "2812" → "28"
+        const validYear = data.validUntil.slice(2, 4) // "2812" → "12"
+
+        await clientApi("/api/wallet/payments/profiles/hms-card", {
+          method: "POST",
+          body: JSON.stringify({
+            memberName: data.payerName,
+            phone: data.phone,
+            payerNumber: data.payerNumber,
+            paymentNumber: data.paymentNumber,
+            payerName: data.payerName,
+            validYear: validYear,
+            validMonth: validMonth,
+            validUntil: data.validUntil,
+            password: data.password,
+          }),
+        })
+      }
+
+      // // 2단계: 멤버십 구독 생성
+      // const selectedPlanId =
+      //   data.subscriptionType === "monthly"
+      //     ? monthlyPlan.plan.id
+      //     : yearlyPlan.plan.id
+
+      // await clientApi("/api/membership/subscriptions", {
+      //   method: "POST",
+      //   body: JSON.stringify({
+      //     planId: selectedPlanId,
+      //   }),
+      // })
+
+      toast.success("멤버십이 등록되었습니다!")
+      router.push("/mypage/membership")
+    } catch (error) {
+      if (error instanceof ApiError) {
+        toast.error(error.message)
+      } else {
+        toast.error("멤버십 등록에 실패했습니다.")
+      }
+      console.error(error)
+    }
   }
 
   const totalTrialDays = trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
@@ -187,7 +271,12 @@ export function MembershipForm({
     form.watch("subscriptionType") == "monthly" ||
     form.watch("subscriptionType") == "yearly"
   const subscriptionType = form.watch("subscriptionType")
-  let firstPrice = subscriptionType && plans[subscriptionType]?.price || 0
+  let firstPrice =
+    subscriptionType === "monthly"
+      ? monthlyPlan.plan.price
+      : subscriptionType === "yearly"
+        ? yearlyPlan.plan.price
+        : 0
   const selectedDiscount = discountBenefits.find(
     (b) => b.id === form.watch("discountBenefitId")
   )
@@ -391,8 +480,8 @@ export function MembershipForm({
                                       월간 구독
                                     </p>
                                     <p className="text-muted-foreground text-sm">
-                                      {plans.monthly.price.toLocaleString()}원 /
-                                      월
+                                      {monthlyPlan.plan.price.toLocaleString()}
+                                      원 / 월
                                     </p>
                                   </div>
                                 </div>
@@ -418,8 +507,8 @@ export function MembershipForm({
                                       연간 구독
                                     </p>
                                     <p className="text-muted-foreground text-sm">
-                                      {plans.yearly.price.toLocaleString()}원 /
-                                      연
+                                      {yearlyPlan.plan.price.toLocaleString()}원
+                                      / 연
                                     </p>
                                   </div>
                                 </div>
@@ -578,7 +667,16 @@ export function MembershipForm({
           </div>
 
           <div>
-            <Button className="w-full" disabled={!form.formState.isValid}>
+            <Button
+              className="w-full"
+              disabled={
+                !form.watch("agreement") ||
+                !form.watch("subscriptionType") ||
+                form.watch("subscriptionType") === "inactive" ||
+                form.formState.isSubmitting
+              }
+              type="submit"
+            >
               {form.formState.isSubmitting ? (
                 <span className="flex items-center gap-2">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -657,10 +755,12 @@ function TermsAndConditions() {
   return (
     <div className="space-y-4 text-sm">
       <div>
-        <h1 className="mb-2 text-xl font-bold">정기 자동 결제 및 이용 약관 동의서</h1>
+        <h1 className="mb-2 text-xl font-bold">
+          정기 자동 결제 및 이용 약관 동의서
+        </h1>
         <p>
-          본 동의서는 귀하의 정기 결제 서비스 이용과 관련하여 법적 보호 및 명확한
-          이용 조건을 제공하기 위해 작성되었습니다.
+          본 동의서는 귀하의 정기 결제 서비스 이용과 관련하여 법적 보호 및
+          명확한 이용 조건을 제공하기 위해 작성되었습니다.
         </p>
       </div>
 
@@ -703,8 +803,8 @@ function TermsAndConditions() {
             가능합니다.
           </li>
           <li>
-            철회 이후 결제된 금액은 환불되지 않으며, 해당 월의 서비스는 정상적으로
-            유지됩니다.
+            철회 이후 결제된 금액은 환불되지 않으며, 해당 월의 서비스는
+            정상적으로 유지됩니다.
           </li>
         </ul>
       </div>
@@ -722,14 +822,14 @@ function TermsAndConditions() {
 
       <div>
         <h2 className="mb-2 text-lg font-bold">환불 정책</h2>
-        
-        <h3 className="mb-1 mt-3 text-base font-bold">제 1조 목적</h3>
+
+        <h3 className="mt-3 mb-1 text-base font-bold">제 1조 목적</h3>
         <p>
           본 약관은 아몬드영 멤버십 서비스(이하 "서비스")를 이용함에 있어 회원과
           회사 간의 권리·의무 및 책임 사항을 규정함을 목적으로 합니다.
         </p>
 
-        <h3 className="mb-1 mt-3 text-base font-bold">제 2조 환불 불가 정책</h3>
+        <h3 className="mt-3 mb-1 text-base font-bold">제 2조 환불 불가 정책</h3>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             본 서비스는 구독형 서비스로, 서비스 제공이 개시된 이후에는 환불이
@@ -745,11 +845,13 @@ function TermsAndConditions() {
           </li>
         </ul>
 
-        <h3 className="mb-1 mt-3 text-base font-bold">제 3조 구독 해지 및 갱신</h3>
+        <h3 className="mt-3 mb-1 text-base font-bold">
+          제 3조 구독 해지 및 갱신
+        </h3>
         <ul className="list-disc space-y-1 pl-5">
           <li>
-            회원은 언제든지 구독을 해지할 수 있으며, 해지 요청은 다음 결제일 전에
-            완료되어야 합니다.
+            회원은 언제든지 구독을 해지할 수 있으며, 해지 요청은 다음 결제일
+            전에 완료되어야 합니다.
           </li>
           <li>
             해지 요청이 이루어지지 않은 경우, 서비스는 자동으로 갱신되며 결제가
@@ -757,12 +859,14 @@ function TermsAndConditions() {
           </li>
         </ul>
 
-        <h3 className="mb-1 mt-3 text-base font-bold">제 4조 회원의 동의</h3>
+        <h3 className="mt-3 mb-1 text-base font-bold">제 4조 회원의 동의</h3>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             회원은 구독 결제를 진행함으로써 본 약관에 동의한 것으로 간주됩니다.
           </li>
-          <li>회원은 결제 전 환불 불가 정책을 충분히 숙지할 책임이 있습니다.</li>
+          <li>
+            회원은 결제 전 환불 불가 정책을 충분히 숙지할 책임이 있습니다.
+          </li>
         </ul>
       </div>
     </div>
