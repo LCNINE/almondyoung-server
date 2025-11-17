@@ -1,4 +1,5 @@
 // apps/wms/src/main.ts
+import 'reflect-metadata'; // 배포 에러로 넣었음 지훈
 import { NestFactory } from '@nestjs/core';
 import { WmsModule } from './wms.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -28,11 +29,14 @@ function createKafkaConfig() {
       maxRetryTime: 30000,
     },
     ssl: process.env.KAFKA_API_KEY ? true : false,
-    sasl: process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET ? {
-      mechanism: 'plain' as const,
-      username: process.env.KAFKA_API_KEY,
-      password: process.env.KAFKA_API_SECRET,
-    } : undefined,
+    sasl:
+      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
+        ? {
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
+        : undefined,
   };
 }
 
