@@ -119,7 +119,7 @@ export class AuthService {
 
         // 새로운 인증 토큰 생성
         const verificationToken = this.jwtService.sign(
-          { sub: existingUser.id },
+          { sub: existingUser.id as string },
           {
             secret: this.configService.get<string>('AUTH_SECRET'),
             expiresIn,
