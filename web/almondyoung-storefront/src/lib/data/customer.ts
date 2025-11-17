@@ -130,6 +130,7 @@ export async function medusaLogin(): Promise<{
     const headers = {
       ...(await getAuthHeaders("accessToken")),
     }
+    console.log("headers:", headers)
 
     const res = await fetch(`${MEDUSA_BASE_URL}/auth/customer/my-auth`, {
       method: "POST",
