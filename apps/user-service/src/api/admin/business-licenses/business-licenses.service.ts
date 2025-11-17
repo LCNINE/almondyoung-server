@@ -22,6 +22,7 @@ import {
   userServiceSchema,
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
+import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 
 @Injectable()
 export class BusinessLicensesService {
@@ -29,6 +30,18 @@ export class BusinessLicensesService {
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
   ) {}
+
+  async getBusinessLicensesByUserId(
+    userId: string,
+  ): Promise<BusinessLicenseResponseDto | null> {
+    const [result] = await this.dbService.db
+      .select()
+      .from(userServiceSchema.businessLicenses)
+      .where(eq(userServiceSchema.businessLicenses.userId, userId))
+      .limit(1);
+
+    return result ?? null;
+  }
 
   async getBusinessLicenses({
     businessLicenseQueryDto,

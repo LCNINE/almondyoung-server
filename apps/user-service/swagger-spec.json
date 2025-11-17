@@ -209,7 +209,7 @@
         ]
       }
     },
-    "/auth/callback/signup": {
+    "/auth/verify-email": {
       "get": {
         "operationId": "AuthController_signupVerifyEmail",
         "parameters": [
@@ -246,10 +246,48 @@
         ]
       }
     },
+    "/auth/callback/signup": {
+      "post": {
+        "operationId": "AuthController_callbackSignup",
+        "parameters": [
+          {
+            "name": "redirect_to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "회원가입 콜백(쿠키 설정) 성공"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "회원가입 콜백(쿠키 설정)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/auth/resend-verification-email": {
       "post": {
         "operationId": "AuthController_resendVerificationEmail",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "redirect_to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "인증 이메일 재전송 성공"
@@ -1077,18 +1115,65 @@
         ]
       }
     },
-    "/business-licenses": {
+    "/business-licenses/{userId}": {
       "get": {
-        "description": "현재 로그인한 사용자의 사업자 등록 정보를 조회합니다.",
-        "operationId": "BusinessLicensesController_findBusinessLicenseByUserId",
+        "description": "사용자의 사업자 등록 정보를 조회합니다.",
+        "operationId": "BusinessLicensesController_getBusinessLicensesByUserId",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "사용자 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "사업자 등록 정보 조회 성공"
+          },
+          "401": {
+            "description": "인증되지 않은 사용자"
+          },
+          "403": {
+            "description": "권한 없음"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "사용자의 사업자 등록 정보 조회",
+        "tags": [
+          "사업자 등록 관리"
+        ]
+      }
+    },
+    "/business-licenses/fetch": {
+      "post": {
+        "description": "사용자의 사업자 정보를 외부에서 조회합니다.",
+        "operationId": "BusinessLicensesController_fetchBusinessLicense",
         "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FetchBusinessLicenseDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "사업자 등록 정보 조회 성공",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BusinessLicenseResponseDto"
+                  "$ref": "#/components/schemas/FetchBusinessLicenseResponseDto"
                 }
               }
             }
@@ -1105,48 +1190,7 @@
             "access-token": []
           }
         ],
-        "summary": "사업자 등록 정보 조회",
-        "tags": [
-          "사업자 등록 관리"
-        ]
-      },
-      "post": {
-        "description": "새로운 사업자 등록 정보를 생성합니다.",
-        "operationId": "BusinessLicensesController_createBusinessLicenseWithInfo",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateBusinessLicenseWithInfoDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "사업자 등록 정보 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청"
-          },
-          "401": {
-            "description": "인증되지 않은 사용자"
-          },
-          "403": {
-            "description": "권한 없음"
-          },
-          "409": {
-            "description": "이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다."
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "사업자 등록 정보 생성",
+        "summary": "사업자 정보 외부 조회",
         "tags": [
           "사업자 등록 관리"
         ]
@@ -1254,7 +1298,7 @@
     "/business-licenses/{id}": {
       "delete": {
         "description": "사업자 등록 정보를 삭제합니다.",
-        "operationId": "BusinessLicensesController_deleteBusinessLicenseByBusinessLicenseId",
+        "operationId": "BusinessLicensesController_removeBusinessLicense",
         "parameters": [
           {
             "name": "id",
@@ -1323,6 +1367,43 @@
         ],
         "tags": [
           "Auth"
+        ]
+      }
+    },
+    "/admin/business-licenses/user/{userId}": {
+      "get": {
+        "description": "관리자가 특정 사용자의 사업자 등록 정보를 조회합니다.",
+        "operationId": "BusinessLicensesController_getBusinessLicensesByUserId",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "사용자 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "사업자 등록 정보 조회 성공"
+          },
+          "401": {
+            "description": "인증되지 않은 사용자"
+          },
+          "403": {
+            "description": "권한 없음"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "관리자가 특정 사용자의 사업자 등록 정보 조회",
+        "tags": [
+          "사업자 등록 관리"
         ]
       }
     },
@@ -2858,6 +2939,35 @@
           "productId"
         ]
       },
+      "FetchBusinessLicenseDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "FetchBusinessLicenseResponseDto": {
+        "type": "object",
+        "properties": {
+          "businessNumber": {
+            "type": "string",
+            "description": "사업자 등록 번호"
+          },
+          "ceoName": {
+            "type": "string",
+            "description": "대표자 이름"
+          }
+        },
+        "required": [
+          "businessNumber",
+          "ceoName"
+        ]
+      },
+      "CreateBusinessLicenseWithFileDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateBusinessLicenseDto": {
+        "type": "object",
+        "properties": {}
+      },
       "BusinessLicenseResponseDto": {
         "type": "object",
         "properties": {
@@ -2947,18 +3057,6 @@
           "createdAt",
           "updatedAt"
         ]
-      },
-      "CreateBusinessLicenseWithFileDto": {
-        "type": "object",
-        "properties": {}
-      },
-      "CreateBusinessLicenseWithInfoDto": {
-        "type": "object",
-        "properties": {}
-      },
-      "UpdateBusinessLicenseDto": {
-        "type": "object",
-        "properties": {}
       },
       "CreateAccountDto": {
         "type": "object",
