@@ -119,7 +119,7 @@ export class AuthService {
 
         // 새로운 인증 토큰 생성
         const verificationToken = this.jwtService.sign(
-          { sub: existingUser.id as string },
+          { sub: String(existingUser.id) },
           {
             secret: this.configService.get<string>('AUTH_SECRET'),
             expiresIn,
@@ -194,7 +194,7 @@ export class AuthService {
 
         // 이메일 인증용 토큰 생성
         const verificationToken = this.jwtService.sign(
-          { sub: user.id as string },
+          { sub: String(user.id) },
           {
             secret: this.configService.get<string>(
               'JWT_VERIFICATION_TOKEN_SECRET',
@@ -363,7 +363,7 @@ export class AuthService {
 
     // 새로운 인증 토큰 생성
     const verificationToken = this.jwtService.sign(
-      { sub: user.id },
+      { sub: String(user.id) },
       {
         secret: this.configService.get<string>('JWT_VERIFICATION_TOKEN_SECRET'),
         expiresIn,
