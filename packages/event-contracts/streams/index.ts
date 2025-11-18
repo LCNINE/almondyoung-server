@@ -16,6 +16,9 @@ export * from './order.stream';
 // Payment Stream
 export * from './payment.stream';
 
+// Wallet Stream
+export * from './wallet.stream';
+
 // Channel Adapter Stream
 export * from './adapter.stream';
 

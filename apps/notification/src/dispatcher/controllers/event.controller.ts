@@ -1,4 +1,4 @@
-// apps/notification/src/event-handlers/controllers/event.controller.ts
+// apps/notification/src/dispatcher/controllers/event.controller.ts
 import {
     Controller,
     Get,
@@ -9,8 +9,8 @@ import {
     ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { EventMappingService } from '../../event-handlers/services/event-mapping.service';
-import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../event-handlers/dto/event.dto';
+import { EventMappingService } from '../../shared/services/event-mapping.service';
+import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../shared/dto/event.dto';
 
 @ApiTags('event-handlers')
 @Controller('api/v1/events')
@@ -82,3 +82,4 @@ export class EventController {
         return this.eventMappingService.updateEvent(eventKey, dto);
     }
 }
+
