@@ -1,5 +1,6 @@
 export const S3_FOLDER_NAMES = {
-  BUSINESS: 'business',
-
-  // 추후 필요한 폴더명들 추가 가능
+  business: 'business',
+  avatar: 'avatar',
 } as const;
+
+export type S3FolderName = keyof typeof S3_FOLDER_NAMES;
