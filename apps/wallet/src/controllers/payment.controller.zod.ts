@@ -32,19 +32,32 @@ const IntentResponseSchema = z.object({
   type: z.string(),
   status: z.string(),
   // z.date() 대신 문자열로 처리 (JSON Schema 호환성)
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
   metadata: z.any().optional(),
   // 실제 서비스에서 반환되는 추가 필드들
-  capturedAt: z.iso.datetime().nullable().optional(),
+  capturedAt: z.string().datetime().nullable().optional(),
 });
 
 // 결제 승인 관련 스키마
-export const AuthorizePaymentSchema = z.object({
-  provider: z.string().min(1).optional(), // ✅ 포인트 전액 결제 시 불필요
-  paymentKey: z.string().min(1).optional(), // ✅ 포인트 전액 결제 시 불필요
-  usePoints: z.number().int().nonnegative().optional(), // 포인트 사용 금액
-});
+export const AuthorizePaymentSchema = z
+  .object({
+    authParams: z.record(z.string(), z.string()).optional(),
+    profileId: z.string().optional(),
+    provider: z.enum(['TOSS', 'HMS_CARD', 'HMS_BNPL']),
+    usePoints: z.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (data) => {
+      const hasAuthParams =
+        !!data.authParams && Object.keys(data.authParams).length > 0;
+      const hasProfileId = !!data.profileId;
+      return (
+        (hasAuthParams && !hasProfileId) || (!hasAuthParams && hasProfileId)
+      );
+    },
+    { message: 'Either authParams or profileId required, but not both' },
+  );
 
 const AuthorizePaymentResponseSchema = BaseResponseSchema.extend({
   intentId: z.string(),
@@ -83,7 +96,11 @@ export const CreateHmsCardProfileSchema = z.object({
   // userId는 JWT에서 추출되므로 optional로 변경
   userId: z.string().min(1, '사용자 ID는 필수입니다.').optional(),
   // memberId는 서버에서 자동 생성되므로 optional로 변경
-  memberId: z.string().min(1).max(20, '회원 ID는 20자 이내여야 합니다.').optional(),
+  memberId: z
+    .string()
+    .min(1)
+    .max(20, '회원 ID는 20자 이내여야 합니다.')
+    .optional(),
   memberName: z.string().min(1).max(25, '회원명은 25자 이내여야 합니다.'),
   phone: z
     .string()
