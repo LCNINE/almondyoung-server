@@ -122,4 +122,13 @@ export class TemplateController {
     ): Promise<any> {
         return this.templateService.previewTemplate(templateKey, channel, testDto);
     }
+
+    @Post("by-id/:id/kakao/sync")
+    @ApiOperation({ summary: '카카오 템플릿 상태 동기화', description: 'NHN 콘솔에서 카카오 템플릿 상태를 동기화합니다.' })
+    @ApiParam({ name: 'id', description: '템플릿 ID', type: 'string' })
+    @ApiResponse({ status: 200, description: '동기화 성공' })
+    @ApiResponse({ status: 404, description: '템플릿을 찾을 수 없음' })
+    async syncKakaoTemplate(@Param("id") id: string): Promise<any> {
+        return this.templateService.syncKakaoTemplateStatus(id);
+    }
 }

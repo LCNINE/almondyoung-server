@@ -3,6 +3,7 @@ import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
 import { TemplateController } from './controllers/template.controller';
 import { TemplateService } from './services/template.service';
+import { NHNTemplateService } from './services/nhn-template.service';
 import { TemplateRendererService } from '../shared/services/template-renderer.service';
 import { ProviderModule } from '../provider/provider.module';
 
@@ -19,6 +20,7 @@ import { ProviderModule } from '../provider/provider.module';
     controllers: [TemplateController],
     providers: [
         TemplateService,
+        NHNTemplateService,
         TemplateRendererService,
     ],
     exports: [TemplateService],
