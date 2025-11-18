@@ -18,7 +18,7 @@ import { PaymentManager } from './payment/payment.manager';
 import { PaymentPointManager } from './payment/payment-point.manager';
 import { PaymentProviderManager } from './payment/payment-provider.manager';
 import { PaymentAttemptRepository } from './payment/payment-attempt.repository';
-import { PaymentRequestBuilder } from './payment/payment-request.builder';
+import { generateUUIDv7 } from '../shared/utils/id-generator';
 
 /**
  * PaymentService (Business Layer)
@@ -39,7 +39,6 @@ export class PaymentService {
     private readonly pointManager: PaymentPointManager,
     private readonly providerManager: PaymentProviderManager,
     private readonly attemptRepo: PaymentAttemptRepository,
-    private readonly requestBuilder: PaymentRequestBuilder,
   ) {}
 
   /**
@@ -50,9 +49,8 @@ export class PaymentService {
     providerType: ProviderType | null,
     options: {
       usePoints?: number;
+      authParams?: Record<string, string>;
       profileId?: string;
-      instrumentRef?: string;
-      instrumentType?: string;
       actor?: string;
       source?: string;
     } = {},
@@ -92,16 +90,8 @@ export class PaymentService {
         );
       }
 
-      // 6. PaymentRequest 조립
-      const paymentRequest = this.requestBuilder.build(
-        intent,
-        pointResult.finalAmount,
-        {
-          ...options,
-          pointEventId: pointResult.pointEventId,
-          pointsUsed: pointResult.pointsUsed,
-        },
-      );
+      // 6. Attempt ID 생성
+      const attemptId = generateUUIDv7();
 
       try {
         // 7. Provider 호출
@@ -115,22 +105,34 @@ export class PaymentService {
 
         // 8. 성공 기록
         await this.attemptRepo.create(
-          paymentRequest,
+          {
+            attemptId,
+            intentId: intent.id,
+            provider: providerType,
+            profileId: options.profileId,
+            amount: pointResult.finalAmount,
+            metadata: {
+              source: options.source || 'api',
+              actor: options.actor || 'SYSTEM',
+              pointEventId: pointResult.pointEventId,
+              pointsUsed: pointResult.pointsUsed,
+              authParams: options.authParams,
+            },
+          },
           result,
-          providerType,
           'AUTHORIZED',
           tx,
         );
         await this.paymentManager.updateStatus(
           intentId,
-          paymentRequest.attemptId,
+          attemptId,
           'AUTHORIZED',
           result,
           tx,
         );
 
         // 9. 포인트 정보 포함
-        result.attemptId = paymentRequest.attemptId;
+        result.attemptId = attemptId;
         result.pointEventId = pointResult.pointEventId;
         result.breakdown = {
           totalAmount: Number(intent.amount),
@@ -163,9 +165,22 @@ export class PaymentService {
           message: error.message,
         };
         await this.attemptRepo.create(
-          paymentRequest,
+          {
+            attemptId,
+            intentId: intent.id,
+            provider: providerType,
+            profileId: options.profileId,
+            amount: pointResult.finalAmount,
+            metadata: {
+              source: options.source || 'api',
+              actor: options.actor || 'SYSTEM',
+              pointEventId: pointResult.pointEventId,
+              pointsUsed: pointResult.pointsUsed,
+              authParams: options.authParams,
+              error: error.message,
+            },
+          },
           failedResult,
-          providerType,
           'FAILED',
           tx,
         );
