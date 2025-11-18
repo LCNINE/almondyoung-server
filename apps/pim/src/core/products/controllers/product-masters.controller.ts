@@ -9,6 +9,7 @@ import {
   Query,
   HttpException,
   HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -181,6 +182,29 @@ export class ProductMastersController {
     } catch (error) {
       throw new HttpException(
         'Failed to get masters',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('deleted')
+  @ApiOperation({
+    summary: '삭제된 제품 마스터 목록 조회',
+    description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async getDeleted(): Promise<ProductMasterDto[]> {
+    try {
+      const deleted = await this.productMastersService.findDeleted();
+      return deleted.map(master => ({
+        ...master,
+        createdAt: master.createdAt?.toISOString() || null,
+        updatedAt: master.updatedAt?.toISOString() || null,
+      })) as unknown as ProductMasterDto[];
+    } catch (error) {
+      throw new HttpException(
+        'Failed to get deleted masters',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -385,30 +409,8 @@ export class ProductMastersController {
     }
   }
 
-  @Get('deleted')
-  @ApiOperation({
-    summary: '삭제된 제품 마스터 목록 조회',
-    description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async getDeleted(): Promise<ProductMasterDto[]> {
-    try {
-      const deleted = await this.productMastersService.findDeleted();
-      return deleted.map(master => ({
-        ...master,
-        createdAt: master.createdAt?.toISOString() || null,
-        updatedAt: master.updatedAt?.toISOString() || null,
-      })) as unknown as ProductMasterDto[];
-    } catch (error) {
-      throw new HttpException(
-        'Failed to get deleted masters',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   @Post(':id/restore')
+  @HttpCode(200)
   @ApiOperation({
     summary: '제품 마스터 복원',
     description: '소프트 삭제된 제품 마스터를 복원합니다.',

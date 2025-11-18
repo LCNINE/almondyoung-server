@@ -39,12 +39,21 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       const master = await PimTestFactory.createProductWithSimplePricing(0);
 
       const db = PimTestDatabase.getDb();
-      const variants = await PimTestFactory.getVersionTree(master.masterId, db);
+      
+      // Get the default variant
+      const variantMappings = await db.query.productMasterVariants.findMany({
+        where: (t, { and, eq }) => and(
+          eq(t.masterId, master.masterId),
+          eq(t.version, master.version),
+        ),
+      });
+
+      const variantId = variantMappings[0].variantId;
 
       // 가격 규칙 없이 계산하면 0원부터 시작
       const result = await service.calculateVariantPriceByVersion(
         master.id,
-        variants[0].id,
+        variantId,
       );
 
       expect(result.priceBreakdown.initialPrice).toBe(0);
@@ -219,6 +228,7 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         master.id,
         variantId,
         1,
+        'membership',
       );
       expect(result1.price).toBe(10000);
 
@@ -227,6 +237,7 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         master.id,
         variantId,
         10,
+        'membership',
       );
       expect(result10.price).toBe(9500); // 5% 할인
 
@@ -235,6 +246,7 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         master.id,
         variantId,
         50,
+        'membership',
       );
       expect(result50.price).toBe(9000); // 10% 할인
     });
