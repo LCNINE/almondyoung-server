@@ -11,7 +11,7 @@ export const createUser = async (
   data: LocalSignupRequest,
   redirectTo?: string
 ): Promise<LocalSignupResponse> => {
-  const encodedRedirectTo = encodeURIComponent(redirectTo || "/mypage")
+  const encodedRedirectTo = encodeURIComponent(redirectTo || "/")
 
   return clientApi(
     USER_SERVICE_BASE_URL + "/auth/signup?redirect_to=" + encodedRedirectTo,
