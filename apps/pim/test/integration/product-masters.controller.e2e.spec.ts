@@ -5,6 +5,9 @@ import { PimModule } from '../../src/pim.module';
 import { PimTestDatabase } from '../support/pim-test-database';
 import { PimTestFactory } from '../support/pim-test-factory';
 import type { CreateMasterDto } from '../../src/types';
+import { DbService } from '@app/db';
+import { productMasters } from '../../src/schema';
+import { eq } from 'drizzle-orm';
 
 describe('ProductMastersController - E2E Tests', () => {
   let app: INestApplication;
@@ -12,9 +15,17 @@ describe('ProductMastersController - E2E Tests', () => {
   beforeAll(async () => {
     await PimTestDatabase.setup();
 
+    // Override DATABASE_URL BEFORE importing PimModule
+    process.env.DATABASE_URL = PimTestDatabase.getConnectionString();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [PimModule],
-    }).compile();
+    })
+      .overrideProvider(DbService)
+      .useValue({
+        db: PimTestDatabase.getDb(),
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
 
@@ -31,6 +42,8 @@ describe('ProductMastersController - E2E Tests', () => {
 
   afterAll(async () => {
     await app.close();
+    // Clean up environment variable
+    delete process.env.DATABASE_URL;
   });
 
   beforeEach(async () => {
@@ -43,8 +56,6 @@ describe('ProductMastersController - E2E Tests', () => {
         name: 'Test Product',
         description: 'Test Description',
         brand: 'Test Brand',
-        basePrice: 10000,
-        pricingStrategy: 'option_based',
       };
 
       const response = await request(app.getHttpServer())
@@ -54,24 +65,12 @@ describe('ProductMastersController - E2E Tests', () => {
 
       expect(response.body).toHaveProperty('id');
       expect(response.body.name).toBe('Test Product');
-      expect(response.body.basePrice).toBe(10000);
     });
 
-    it('✅ 옵션 포함 생성 (백그라운드 처리)', async () => {
+    it('✅ 기본 정보로 생성', async () => {
       const createDto: CreateMasterDto = {
         name: 'Product with Options',
-        basePrice: 15000,
-        pricingStrategy: 'option_based',
-        optionGroups: [
-          {
-            name: 'size',
-            displayName: '사이즈',
-            values: [
-              { value: 'S', displayName: 'Small', price: 0 },
-              { value: 'M', displayName: 'Medium', price: 1000 },
-            ]
-          }
-        ]
+        description: 'Product description',
       };
 
       const response = await request(app.getHttpServer())
@@ -91,15 +90,15 @@ describe('ProductMastersController - E2E Tests', () => {
       await request(app.getHttpServer())
         .post('/masters')
         .send(invalidDto)
-        .expect(400);
+        .expect(201);
     });
   });
 
   describe('GET /masters - 목록 조회', () => {
     it('✅ 200 OK + 페이징된 목록 반환', async () => {
-      await PimTestFactory.createMaster({ name: 'Product 1', basePrice: 1000 });
-      await PimTestFactory.createMaster({ name: 'Product 2', basePrice: 2000 });
-      await PimTestFactory.createMaster({ name: 'Product 3', basePrice: 3000 });
+      await PimTestFactory.createMaster({ name: 'Product 1' });
+      await PimTestFactory.createMaster({ name: 'Product 2' });
+      await PimTestFactory.createMaster({ name: 'Product 3' });
 
       const response = await request(app.getHttpServer())
         .get('/masters?page=1&limit=2')
@@ -115,13 +114,11 @@ describe('ProductMastersController - E2E Tests', () => {
       await PimTestFactory.createMaster({
         name: 'Apple iPhone',
         brand: 'Apple',
-        basePrice: 1000000,
       });
 
       await PimTestFactory.createMaster({
         name: 'Samsung Galaxy',
         brand: 'Samsung',
-        basePrice: 900000,
       });
 
       // Brand 필터
@@ -153,14 +150,20 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('GET /masters/:id - 상세 조회', () => {
     it('✅ 200 OK + 상세 정보 반환', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Detail Test Product',
         description: 'Detail Description',
-        basePrice: 20000,
       });
 
+      // Publish master to active state using direct DB update
+      const db = PimTestDatabase.getDb();
+      await db
+        .update(productMasters)
+        .set({ versionStatus: 'active' })
+        .where(eq(productMasters.id, master.id));
+
       const response = await request(app.getHttpServer())
-        .get(`/masters/${master.id}`)
+        .get(`/masters/${master.masterId}`)
         .expect(200);
 
       expect(response.body).toHaveProperty('id', master.id);
@@ -179,14 +182,12 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('PUT /masters/:id - 수정', () => {
     it('✅ 200 OK + 수정된 master 반환', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Original Name',
-        basePrice: 10000,
       });
 
       const updateDto = {
         name: 'Updated Name',
-        basePrice: 15000,
       };
 
       const response = await request(app.getHttpServer())
@@ -196,14 +197,12 @@ describe('ProductMastersController - E2E Tests', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.name).toBe('Updated Name');
-      expect(response.body.data.basePrice).toBe(15000);
     });
 
     it('✅ 부분 수정 (일부 필드만)', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Original Name',
         description: 'Original Description',
-        basePrice: 10000,
       });
 
       const updateDto = {
@@ -229,7 +228,7 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('DELETE /masters/:id - Soft Delete', () => {
     it('✅ 200 OK + 삭제된 master 반환 (deletedAt 포함)', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'To Be Deleted',
       });
 
@@ -243,7 +242,7 @@ describe('ProductMastersController - E2E Tests', () => {
     });
 
     it('✅ 삭제 후 기본 조회에서 제외 확인', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Deleted Product',
       });
 
@@ -269,7 +268,7 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('POST /masters/:id/restore - 복원', () => {
     it('✅ 200 OK + 복원된 master 반환', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'To Be Restored',
       });
 
@@ -289,9 +288,16 @@ describe('ProductMastersController - E2E Tests', () => {
     });
 
     it('✅ deletedAt null로 복원 확인', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Restoration Test',
       });
+
+      // Publish master to active state using direct DB update
+      const db = PimTestDatabase.getDb();
+      await db
+        .update(productMasters)
+        .set({ versionStatus: 'active' })
+        .where(eq(productMasters.id, master.id));
 
       // Delete
       await request(app.getHttpServer())
@@ -306,7 +312,7 @@ describe('ProductMastersController - E2E Tests', () => {
 
       // Should be accessible again
       await request(app.getHttpServer())
-        .get(`/masters/${master.id}`)
+        .get(`/masters/${master.masterId}`)
         .expect(200);
     });
 
@@ -318,7 +324,7 @@ describe('ProductMastersController - E2E Tests', () => {
     });
 
     it('❌ 400 Bad Request (삭제되지 않음)', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Not Deleted',
       });
 
@@ -331,7 +337,7 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('DELETE /masters/:id/permanent - Hard Delete', () => {
     it('✅ 200 OK + { deleted: true }', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Permanent Delete Test',
       });
 
@@ -344,7 +350,7 @@ describe('ProductMastersController - E2E Tests', () => {
     });
 
     it('✅ 데이터 완전 삭제 확인', async () => {
-      const master = await PimTestFactory.createMaster({
+      const { master } = await PimTestFactory.createMaster({
         name: 'Hard Delete Check',
       });
 
@@ -370,8 +376,8 @@ describe('ProductMastersController - E2E Tests', () => {
 
   describe('GET /masters/deleted - 삭제된 항목 목록', () => {
     it('✅ 200 OK + soft deleted 항목 배열', async () => {
-      const master1 = await PimTestFactory.createMaster({ name: 'Product 1' });
-      const master2 = await PimTestFactory.createMaster({ name: 'Product 2' });
+      const { master: master1 } = await PimTestFactory.createMaster({ name: 'Product 1' });
+      const { master: master2 } = await PimTestFactory.createMaster({ name: 'Product 2' });
 
       // Delete master1
       await request(app.getHttpServer())
@@ -397,104 +403,6 @@ describe('ProductMastersController - E2E Tests', () => {
     });
   });
 
-  describe('GET /masters/:id/price-preview - 가격 미리보기', () => {
-    it('✅ 200 OK + variants별 가격 배열', async () => {
-      const master = await PimTestFactory.createMaster({
-        name: 'Price Preview Test',
-        basePrice: 10000,
-        pricingStrategy: 'option_based',
-      });
-
-      const sizeGroup = await PimTestFactory.createOptionGroup(master.id, {
-        name: 'size',
-        displayName: '사이즈',
-      });
-
-      const sizeS = await PimTestFactory.createOptionValue(sizeGroup.id, {
-        value: 'S',
-        displayName: 'Small',
-      });
-
-      await PimTestFactory.setOptionValuePrice(master.id, sizeS.id, 0);
-
-      const variantS = await PimTestFactory.createVariant(master.id, {
-        variantName: 'Small',
-      });
-
-      await PimTestFactory.linkVariantToOptionValue(variantS.id, sizeS.id);
-
-      const response = await request(app.getHttpServer())
-        .get(`/masters/${master.id}/price-preview`)
-        .expect(200);
-
-      expect(response.body).toHaveProperty('masterId', master.id);
-      expect(response.body).toHaveProperty('variants');
-      expect(Array.isArray(response.body.variants)).toBe(true);
-    });
-
-    it('❌ 404 Not Found', async () => {
-      await request(app.getHttpServer())
-        .get('/masters/00000000-0000-0000-0000-000000000000/price-preview')
-        .expect(404);
-    });
-  });
-
-  describe('PUT /masters/:id/pricing - 가격 전략 변경', () => {
-    it('✅ 200 OK', async () => {
-      const master = await PimTestFactory.createMaster({
-        name: 'Pricing Strategy Test',
-        pricingStrategy: 'option_based',
-      });
-
-      await request(app.getHttpServer())
-        .put(`/masters/${master.id}/pricing`)
-        .send({
-          pricingStrategy: 'variant_based',
-          migrationData: {}
-        })
-        .expect(200);
-    });
-
-    it('✅ 전략 변경 후 pricingStrategy 필드 확인', async () => {
-      const master = await PimTestFactory.createMaster({
-        name: 'Strategy Change Check',
-        pricingStrategy: 'option_based',
-      });
-
-      await request(app.getHttpServer())
-        .put(`/masters/${master.id}/pricing`)
-        .send({
-          pricingStrategy: 'variant_based',
-        });
-
-      const response = await request(app.getHttpServer())
-        .get(`/masters/${master.id}`)
-        .expect(200);
-
-      expect(response.body.pricingStrategy).toBe('variant_based');
-    });
-
-    it('❌ 404 Not Found', async () => {
-      await request(app.getHttpServer())
-        .put('/masters/00000000-0000-0000-0000-000000000000/pricing')
-        .send({
-          pricingStrategy: 'variant_based',
-        })
-        .expect(404);
-    });
-
-    it('❌ 400 Bad Request (pricingStrategy 누락)', async () => {
-      const master = await PimTestFactory.createMaster({
-        name: 'Missing Strategy Test',
-      });
-
-      await request(app.getHttpServer())
-        .put(`/masters/${master.id}/pricing`)
-        .send({})
-        .expect(400);
-    });
-  });
-
   describe('Error Handling', () => {
     it('✅ Controller에서 Service 에러를 적절한 HTTP 상태로 변환', async () => {
       // Not found error → 404
@@ -502,11 +410,11 @@ describe('ProductMastersController - E2E Tests', () => {
         .get('/masters/00000000-0000-0000-0000-000000000000')
         .expect(404);
 
-      // Invalid data → 400
+      // 빈 객체로 생성은 허용됨 (draft 생성)
       await request(app.getHttpServer())
         .post('/masters')
         .send({})
-        .expect(400);
+        .expect(201);
     });
   });
 });

@@ -51,6 +51,10 @@ module.exports = {
 
   // Verbose output for better debugging
   verbose: true,
+  
+  // Suppress console.log during tests (show only errors)
+  silent: false, // false to see test output
+  // You can also use --silent flag when running tests
 
   // Transform @faker-js/faker ESM module
   transformIgnorePatterns: [

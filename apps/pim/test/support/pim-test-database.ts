@@ -1,6 +1,7 @@
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as postgres from 'postgres';
 import { pimSchema } from '../../src/schema';
 import type { PimSchema } from '../../src/schema';
@@ -16,7 +17,7 @@ export class PimTestDatabase {
       return;
     }
 
-    console.log('🐳 Starting PostgreSQL test container...');
+    // console.log('🐳 Starting PostgreSQL test container...');
 
     this.container = await new PostgreSqlContainer('postgres:15-alpine')
       .withDatabase('pim_test')
@@ -25,7 +26,7 @@ export class PimTestDatabase {
       .withExposedPorts(5432)
       .start();
 
-    console.log(`✅ PostgreSQL container started on port ${this.container.getMappedPort(5432)}`);
+    // console.log(`✅ PostgreSQL container started on port ${this.container.getMappedPort(5432)}`);
 
     // Create connection
     const connectionString = this.container.getConnectionUri();
@@ -33,7 +34,7 @@ export class PimTestDatabase {
     this.db = drizzle(this.connection, { schema: pimSchema });
 
     // Enable required extensions and create simple uuid_v7 function
-    console.log('🔧 Setting up PostgreSQL extensions and functions...');
+    // console.log('🔧 Setting up PostgreSQL extensions and functions...');
     await this.connection`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`;
 
     // Create a simplified uuid_v7 function for testing (using gen_random_uuid for compatibility)
@@ -45,26 +46,22 @@ export class PimTestDatabase {
       $$ LANGUAGE plpgsql VOLATILE;
     `;
 
-    // Create PIM tables using drizzle-kit push
-    console.log('📋 Creating PIM tables from schema...');
+    // Create PIM tables using migrations
+    // console.log('📋 Creating PIM tables from schema...');
     try {
-      const { execSync } = require('child_process');
-      const env = {
-        ...process.env,
-        DATABASE_URL: connectionString
-      };
-
-      execSync('npx drizzle-kit push --config apps/pim/drizzle.test-config.ts', {
-        env,
-        stdio: 'inherit'
+      // Run migrations to create all tables
+      const path = require('path');
+      const migrationsPath = path.resolve(__dirname, '../../drizzle/migrations');
+      await migrate(this.db, {
+        migrationsFolder: migrationsPath,
       });
 
-      console.log('✅ PIM schema tables created successfully');
+      // console.log('✅ PIM schema tables created successfully');
 
       this.isInitialized = true;
 
       // Create basic infrastructure data if needed
-      console.log('🏗️ Creating basic infrastructure data...');
+      // console.log('🏗️ Creating basic infrastructure data...');
       await this.createBasicInfrastructure();
     } catch (error) {
       console.error('❌ Failed to create PIM schema tables:', error.message);
@@ -81,7 +78,7 @@ export class PimTestDatabase {
       return;
     }
 
-    console.log('🧹 Cleaning up test database...');
+    // console.log('🧹 Cleaning up test database...');
 
     try {
       if (this.connection) {
@@ -95,7 +92,7 @@ export class PimTestDatabase {
     try {
       if (this.container) {
         await this.container.stop();
-        console.log('✅ PostgreSQL container stopped');
+        // console.log('✅ PostgreSQL container stopped');
       }
     } catch (error) {
       console.warn('Warning: Container stop failed:', error.message);
@@ -124,28 +121,32 @@ export class PimTestDatabase {
   static async clearAllTables(): Promise<void> {
     const db = this.getDb();
 
-    console.log('🧽 Clearing all tables...');
+    // console.log('🧽 Clearing all tables...');
 
     // Disable foreign key checks temporarily
     await db.execute(sql`SET session_replication_role = 'replica'`);
 
     // Clear PIM tables (clear in dependency order to avoid FK violations)
     const orderedTables = [
-      'variantPrices',
-      'optionValuePrices',
       'variantOptionValues',
+      'productMasterPricingRules',
+      'productMasterVariants',
+      'productMasterOptionGroups',
+      'productOptionValueDisplays',
+      'productOptionGroupDisplays',
       'productVariants',
       'productOptionValues',
       'productOptionGroups',
+      'pricingRules',
       'productMasterCategories',
       'productImages',
       'uploads',
       'productAuditLog',
       'productApprovalHistory',
-      'productMasters',
-      'productCategories',
       'channelProducts',
       'salesChannels',
+      'productMasters',
+      'productCategories',
     ];
 
     for (const tableName of orderedTables) {
@@ -162,7 +163,7 @@ export class PimTestDatabase {
     // Re-enable foreign key checks
     await db.execute(sql`SET session_replication_role = 'origin'`);
 
-    console.log('✅ All tables cleared');
+    // console.log('✅ All tables cleared');
   }
 
   static async resetSequences(): Promise<void> {
@@ -170,7 +171,7 @@ export class PimTestDatabase {
 
     // Reset any auto-increment sequences if needed
     // PostgreSQL uses UUIDs mostly, so this might not be necessary
-    console.log('🔄 Resetting sequences (if any)...');
+    // console.log('🔄 Resetting sequences (if any)...');
   }
 
   static async getTableCounts(): Promise<Record<string, number>> {
@@ -196,7 +197,7 @@ export class PimTestDatabase {
   private static async createBasicInfrastructure(): Promise<void> {
     // No basic infrastructure needed for PIM
     // (unlike WMS which needs default holders/suppliers)
-    console.log('✅ Basic infrastructure data created (none required for PIM)');
+    // console.log('✅ Basic infrastructure data created (none required for PIM)');
   }
 }
 

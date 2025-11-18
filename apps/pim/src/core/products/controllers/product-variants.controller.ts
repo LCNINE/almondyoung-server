@@ -91,6 +91,7 @@ export class ProductVariantsController {
 
       return (await this.productVariantsService.getVariantsByMaster(
         masterId,
+        undefined, // version (optional)
         filters,
       )) as unknown as VariantListResponseDto;
     } catch (error) {
@@ -230,39 +231,24 @@ export class ProductVariantsController {
 
   @Get(':id/price')
   @ApiOperation({
-    summary: '제품 변형 가격 조회',
-    description: '특정 제품 변형의 계산된 가격을 조회합니다.',
+    summary: '제품 변형 가격 조회 (Deprecated)',
+    description: 'DEPRECATED: Use POST /products/:masterId/pricing/calculate instead. This endpoint has been moved to PricingController.',
+    deprecated: true,
   })
   @ApiParam({ name: 'id', description: '제품 변형 ID' })
-  @ApiResponse({
-    status: 200,
-    description: '제품 변형 가격 조회 성공',
-    type: VariantPriceResponseDto,
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 404, description: '제품 변형을 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
+  @ApiResponse({ status: 410, description: 'Endpoint moved. Use /products/:masterId/pricing/calculate' })
   async getVariantPrice(
     @Param('id') id: string,
-  ): Promise<VariantPriceResponseDto> {
-    try {
-      const price = await this.productVariantsService.calculateVariantPrice(id);
-      return {
-        variantId: id,
-        price,
-      };
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to calculate variant price',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+  ): Promise<never> {
+    throw new HttpException(
+      {
+        statusCode: HttpStatus.GONE,
+        message: 'This endpoint has been moved to PricingController',
+        redirect: 'Use POST /products/:masterId/pricing/calculate with { variantId, quantity?, customerType? } in request body',
+        alternativeEndpoint: 'GET /products/:masterId/pricing/price-set?variantId=:id for complete price information',
+      },
+      HttpStatus.GONE,
+    );
   }
 
   @Put(':id/status')

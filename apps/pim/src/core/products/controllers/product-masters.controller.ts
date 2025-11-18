@@ -9,6 +9,7 @@ import {
   Query,
   HttpException,
   HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,16 +20,15 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
+import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
 import {
   CreateMasterDto,
   CreateMasterSchema,
   CreateMasterDtoSwagger,
   UpdateProductMasterDto,
-  ChangePricingStrategyDto,
   ProductMasterDto,
   MasterDetailDto,
-  PricePreviewDto,
   MasterListItemDto,
   MasterListResponseDto,
   MasterUpdateResponseDto,
@@ -37,42 +37,49 @@ import {
 @ApiTags('Product Masters')
 @Controller('masters')
 export class ProductMastersController {
-  constructor(private readonly productMastersService: ProductMastersService) {}
+  constructor(
+    private readonly productMastersService: ProductMastersService,
+    private readonly productVersionsService: ProductVersionsService,
+  ) {}
 
   @Post()
   @ApiOperation({
-    summary: '제품 마스터 생성 (최적화됨)',
-    description: '새로운 제품 마스터를 생성합니다. 상품 마스터는 즉시 생성되고, 옵션 처리는 백그라운드에서 비동기로 처리됩니다.',
+    summary: '제품 마스터 생성 (간소화)',
+    description: `
+      빈 draft 상태의 판매 상품을 생성합니다.
+      모든 필드는 선택사항이며, 생성 후 PUT /masters/:id 로 정보를 채웁니다.
+      
+      워크플로우:
+      1. POST /masters {} - 빈 draft 생성 (name: "새 상품", 기본 variant 1개)
+      2. PUT /masters/:id { name, description, ... } - 기본 정보 입력
+      3. PUT /masters/:id { optionDiff: { add: [...] } } - 옵션 추가 (variants 자동 생성)
+      4. PUT /products/:masterId/pricing { ... } - 가격 정책 설정
+      5. PATCH /masters/:masterId/versions/:versionId/publish - 활성화
+    `,
   })
-  @ApiBody({ type: CreateMasterDtoSwagger, description: '제품 마스터 생성 정보' })
+  @ApiBody({ 
+    type: CreateMasterDtoSwagger,
+    description: '모든 필드 선택사항. 빈 객체로 호출 가능',
+    required: false,
+  })
   @ApiResponse({
     status: 201,
-    description: '제품 마스터 생성 성공 (옵션 처리는 백그라운드에서 진행)',
+    description: '제품 마스터 생성 성공 (즉시 완료, 비동기 처리 없음)',
     type: ProductMasterDto,
   })
   @ApiResponse({
     status: 400,
-    description: '잘못된 요청 데이터 (name, basePrice, pricingStrategy 필수)',
+    description: '잘못된 요청 데이터',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async createMaster(
     @Body(new ZodValidationPipe(CreateMasterSchema))
-    createMasterDto: CreateMasterDto,
+    createMasterDto: CreateMasterDto = {},
   ): Promise<ProductMasterDto> {
     try {
-      if (
-        !createMasterDto.name ||
-        !createMasterDto.basePrice ||
-        !createMasterDto.pricingStrategy
-      ) {
-        throw new HttpException('Validation failed', HttpStatus.BAD_REQUEST);
-      }
+      // 빈 draft 생성 - 모든 세부사항은 update API로 채움
+      const master = await this.productMastersService.createMaster(createMasterDto);
 
-      // 상품 마스터 생성 (옵션은 백그라운드에서 처리)
-      const master =
-        await this.productMastersService.createMaster(createMasterDto);
-
-      // 즉시 응답 반환 (옵션 처리는 비동기로 진행 중)
       return {
         ...master,
         createdAt: master.createdAt?.toISOString() || null,
@@ -80,9 +87,6 @@ export class ProductMastersController {
       } as unknown as ProductMasterDto;
     } catch (error) {
       console.error('Create master error:', error);
-      if (error.message === 'Validation failed') {
-        throw error;
-      }
       throw new HttpException(
         `Failed to create master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -126,16 +130,23 @@ export class ProductMastersController {
     description: '브랜드 필터',
   })
   @ApiQuery({
-    name: 'pricingStrategy',
-    required: false,
-    type: String,
-    description: '가격 전략 필터',
-  })
-  @ApiQuery({
     name: 'search',
     required: false,
     type: String,
     description: '검색 키워드',
+  })
+  @ApiQuery({
+    name: 'versionStatus',
+    required: false,
+    type: String,
+    enum: ['draft', 'inactive', 'active'],
+    description: '버전 상태 필터 (기본값: active)',
+  })
+  @ApiQuery({
+    name: 'includeAllVersions',
+    required: false,
+    type: Boolean,
+    description: '모든 버전 포함 여부 (기본값: false, active만 조회)',
   })
   @ApiResponse({
     status: 200,
@@ -151,8 +162,9 @@ export class ProductMastersController {
       status?: string;
       categoryId?: string;
       brand?: string;
-      pricingStrategy?: string;
       search?: string;
+      versionStatus?: 'draft' | 'inactive' | 'active';
+      includeAllVersions?: boolean;
     },
   ): Promise<MasterListResponseDto> {
     try {
@@ -162,14 +174,37 @@ export class ProductMastersController {
         status: query.status,
         categoryId: query.categoryId,
         brand: query.brand,
-        pricingStrategy: query.pricingStrategy,
         search: query.search,
+        versionStatus: query.includeAllVersions ? undefined : (query.versionStatus || 'active'),
       };
 
       return await this.productMastersService.getMasters(filters);
     } catch (error) {
       throw new HttpException(
         'Failed to get masters',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get('deleted')
+  @ApiOperation({
+    summary: '삭제된 제품 마스터 목록 조회',
+    description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async getDeleted(): Promise<ProductMasterDto[]> {
+    try {
+      const deleted = await this.productMastersService.findDeleted();
+      return deleted.map(master => ({
+        ...master,
+        createdAt: master.createdAt?.toISOString() || null,
+        updatedAt: master.updatedAt?.toISOString() || null,
+      })) as unknown as ProductMasterDto[];
+    } catch (error) {
+      throw new HttpException(
+        'Failed to get deleted masters',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -192,12 +227,9 @@ export class ProductMastersController {
         description: { type: 'string' },
         brand: { type: 'string' },
         basePrice: { type: 'number' },
-        pricingStrategy: { type: 'string' },
         status: { type: 'string' },
         isWholesaleOnly: { type: 'boolean' },
         isMembershipOnly: { type: 'boolean' },
-        membershipPrice: { type: 'number' },
-        wholesalePrice: { type: 'number' },
         images: {
           type: 'object',
           properties: {
@@ -275,9 +307,9 @@ export class ProductMastersController {
   @Put(':id')
   @ApiOperation({
     summary: '제품 마스터 수정',
-    description: '기존 제품 마스터 정보를 수정합니다.',
+    description: '기존 제품 마스터 정보를 수정합니다. draft 상태의 버전만 수정 가능합니다.',
   })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
+  @ApiParam({ name: 'id', description: '제품 마스터 ID (버전 ID)' })
   @ApiBody({
     type: UpdateProductMasterDto,
     description: '수정할 제품 마스터 정보',
@@ -288,6 +320,7 @@ export class ProductMastersController {
     type: MasterUpdateResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 403, description: 'draft 상태의 버전만 수정 가능' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async updateMaster(
@@ -295,6 +328,21 @@ export class ProductMastersController {
     @Body() updateData: UpdateProductMasterDto,
   ): Promise<MasterUpdateResponseDto> {
     try {
+      // TODO: JWT에서 실제 userId 추출 (현재는 'system' 사용)
+      const userId = 'system';
+
+      const canModify = await this.productVersionsService.canUserModifyVersion(
+        id,
+        userId,
+      );
+
+      if (!canModify) {
+        throw new HttpException(
+          'Only draft versions can be modified. Create a new draft version to make changes.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
       const updatedMaster = await this.productMastersService.updateMaster(
         id,
         updateData,
@@ -304,6 +352,9 @@ export class ProductMastersController {
         data: updatedMaster as unknown as ProductMasterDto,
       };
     } catch (error) {
+      if (error.status === HttpStatus.FORBIDDEN) {
+        throw error;
+      }
       if (error.message.includes('not found')) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
@@ -358,30 +409,8 @@ export class ProductMastersController {
     }
   }
 
-  @Get('deleted')
-  @ApiOperation({
-    summary: '삭제된 제품 마스터 목록 조회',
-    description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async getDeleted(): Promise<ProductMasterDto[]> {
-    try {
-      const deleted = await this.productMastersService.findDeleted();
-      return deleted.map(master => ({
-        ...master,
-        createdAt: master.createdAt?.toISOString() || null,
-        updatedAt: master.updatedAt?.toISOString() || null,
-      })) as unknown as ProductMasterDto[];
-    } catch (error) {
-      throw new HttpException(
-        'Failed to get deleted masters',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   @Post(':id/restore')
+  @HttpCode(200)
   @ApiOperation({
     summary: '제품 마스터 복원',
     description: '소프트 삭제된 제품 마스터를 복원합니다.',
@@ -447,95 +476,9 @@ export class ProductMastersController {
     }
   }
 
-  @Get(':id/price-preview')
-  @ApiOperation({
-    summary: '가격 미리보기',
-    description: '제품 마스터의 가격 전략 적용 미리보기를 제공합니다.',
-  })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiResponse({
-    status: 200,
-    description: '가격 미리보기 성공',
-    type: PricePreviewDto,
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async getPricePreview(@Param('id') id: string): Promise<PricePreviewDto> {
-    try {
-      return (await this.productMastersService.getPricePreview(
-        id,
-      )) as unknown as PricePreviewDto;
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get price preview',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  @Put(':id/pricing')
-  @ApiOperation({
-    summary: '가격 전략 변경',
-    description: '제품 마스터의 가격 전략을 변경합니다.',
-  })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
-  @ApiBody({
-    type: ChangePricingStrategyDto,
-    description: '가격 전략 변경 데이터',
-  })
-  @ApiResponse({ status: 200, description: '가격 전략 변경 성공' })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 데이터 (pricingStrategy 필수)',
-  })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async changePricingStrategy(
-    @Param('id') id: string,
-    @Body() pricingDto: ChangePricingStrategyDto,
-  ): Promise<void> {
-    try {
-      if (!pricingDto.pricingStrategy) {
-        throw new HttpException(
-          'Pricing strategy is required',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      const master = await this.productMastersService.getMasterById(id);
-      if (!master) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-
-      await this.productMastersService.changePricingStrategy(
-        id,
-        pricingDto.pricingStrategy as any,
-        pricingDto.migrationData,
-      );
-    } catch (error) {
-      if (
-        error.message === 'Master not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (
-        error.message.includes('required') ||
-        error.message.includes('Invalid')
-      ) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to change pricing strategy',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  // NOTE: Price preview and pricing strategy endpoints have been removed.
+  // Use the new pricing rules API instead:
+  //   - GET /products/:masterId/pricing-rules
+  //   - PUT /products/:masterId/pricing-rules
+  //   - POST /products/:masterId/pricing/calculate
 }
