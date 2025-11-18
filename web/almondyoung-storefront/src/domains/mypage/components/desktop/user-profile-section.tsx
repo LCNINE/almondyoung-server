@@ -70,8 +70,8 @@ export function UserProfileSection({
             <ul className="flex items-center gap-2">
               <li>
                 <CustomButton
-                  className="whitespace-nowrap"
-                  variant="secondary"
+                  className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
+                  variant="outline"
                   size="sm"
                 >
                   설정
@@ -79,8 +79,8 @@ export function UserProfileSection({
               </li>
               <li>
                 <CustomButton
-                  className="whitespace-nowrap"
-                  variant="secondary"
+                  className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
+                  variant="outline"
                   size="sm"
                 >
                   맞춤형 관리
@@ -88,8 +88,8 @@ export function UserProfileSection({
               </li>
               <li>
                 <CustomButton
-                  className="whitespace-nowrap"
-                  variant="secondary"
+                  className="text-gray-90 border-gray-90 hover:border-gray-90 whitespace-nowrap hover:bg-gray-100"
+                  variant="outline"
                   size="sm"
                   onClick={handleLogout}
                 >
