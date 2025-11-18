@@ -22,7 +22,6 @@ import { PaymentManager } from './services/payment/payment.manager';
 import { PaymentPointManager } from './services/payment/payment-point.manager';
 import { PaymentProviderManager } from './services/payment/payment-provider.manager';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
-import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
 import { EphemeralPaymentStrategy } from './services/payment/strategies/ephemeral-payment.strategy';
 import { StoredProfilePaymentStrategy } from './services/payment/strategies/stored-profile-payment.strategy';
 import { PaymentStrategyFactory } from './services/payment/strategies/payment-strategy.factory';
@@ -112,7 +111,6 @@ import { PointRepository } from './services/points/point.repository';
     PaymentPointManager,
     PaymentProviderManager,
     PaymentAttemptRepository,
-    PaymentRequestBuilder,
 
     // --- Payment Strategies ---
     EphemeralPaymentStrategy,
@@ -149,4 +147,4 @@ import { PointRepository } from './services/points/point.repository';
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule { }
+export class AppModule {}
