@@ -50,9 +50,8 @@ export class PaymentService {
     providerType: ProviderType | null,
     options: {
       usePoints?: number;
+      authParams?: Record<string, string>;
       profileId?: string;
-      instrumentRef?: string;
-      instrumentType?: string;
       actor?: string;
       source?: string;
     } = {},
