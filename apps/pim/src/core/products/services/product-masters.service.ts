@@ -377,11 +377,17 @@ export class ProductMastersService {
 
     const client = this.getClient(tx);
 
-    // 1. 상품 기본 정보 조회
+    // 1. 상품 기본 정보 조회 (active 버전)
     const masterResult = await client
       .select()
       .from(productMasters)
-      .where(eq(productMasters.id, masterId));
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          eq(productMasters.versionStatus, 'active'),
+        ),
+      )
+      .limit(1);
 
     if (masterResult.length === 0) {
       return null;
@@ -701,6 +707,7 @@ export class ProductMastersService {
       .select({
         id: productMasters.id,
         name: productMasters.name,
+        brand: productMasters.brand,
         thumbnail: productMasters.thumbnail,
         isMembershipOnly: productMasters.isMembershipOnly,
         status: productMasters.status,
@@ -751,6 +758,11 @@ export class ProductMastersService {
       const existingMaster = await this.getVersionById(masterId, txClient);
       if (!existingMaster) {
         throw new Error(`Version not found: ${masterId}`);
+      }
+
+      // draft 상태 검증
+      if (existingMaster.versionStatus !== 'draft') {
+        throw new Error('Only draft versions can be modified');
       }
 
       // NOTE: Pricing strategy logic has been moved to PricingModule

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
@@ -156,6 +156,26 @@ export class PricingService {
           throw new NotFoundException(`No active version found for master ${masterId}`);
         }
         actualVersion = activeMaster.version;
+      }
+
+      // draft 상태 검증
+      const [versionToModify] = await trx
+        .select({ versionStatus: productMasters.versionStatus })
+        .from(productMasters)
+        .where(
+          and(
+            eq(productMasters.masterId, masterId),
+            eq(productMasters.version, actualVersion),
+          ),
+        )
+        .limit(1);
+
+      if (!versionToModify) {
+        throw new NotFoundException(`Version ${actualVersion} not found for master ${masterId}`);
+      }
+
+      if (versionToModify.versionStatus !== 'draft') {
+        throw new BadRequestException('Cannot modify pricing rules for active or inactive versions');
       }
 
       // 매핑된 pricingRule ID 조회
