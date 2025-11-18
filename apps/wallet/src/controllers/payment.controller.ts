@@ -320,20 +320,25 @@ export class PaymentController {
         throw new Error('Intent not found');
       }
 
-      // Provider 타입 결정 (DTO → 서비스 파라미터 변환만 수행)
-      const providerType = dto.provider === 'TOSS' ? ProviderType.TOSS : null;
+      // Provider 타입 결정
+      let providerType: ProviderType | null = null;
+      if (dto.provider === 'TOSS') {
+        providerType = ProviderType.TOSS;
+      } else if (dto.provider === 'HMS_CARD') {
+        providerType = ProviderType.HMS_CARD;
+      } else if (dto.provider === 'HMS_BNPL') {
+        providerType = ProviderType.HMS_BNPL;
+      }
 
-      // 서비스 호출 (비즈니스 로직은 모두 서비스에 위임)
+      // 서비스 호출
       const result = await this.paymentService.authorizePaymentByIntent(
         intentId,
         providerType,
         {
-          instrumentRef: dto.provider === 'TOSS' ? dto.paymentKey : undefined,
+          authParams: dto.authParams,
+          profileId: dto.profileId,
           usePoints: dto.usePoints,
-          source:
-            dto.provider === 'TOSS'
-              ? 'toss_authorize_api'
-              : 'point_full_payment_api',
+          source: 'api',
           actor: 'frontend_user',
         },
       );
@@ -349,15 +354,15 @@ export class PaymentController {
         intentId: intentId,
         attemptId: result.attemptId,
         status: 'AUTHORIZED',
-        provider: dto.provider || null,
+        provider: dto.provider,
         amount: intent.amount,
-        paymentKey: dto.provider === 'TOSS' ? dto.paymentKey : null,
+        paymentKey:
+          dto.provider === 'TOSS' && dto.authParams
+            ? dto.authParams.paymentKey
+            : null,
         pointEventId: result.pointEventId,
         breakdown: result.breakdown,
-        message:
-          dto.provider === 'TOSS'
-            ? 'Toss 결제 승인이 성공적으로 완료되었습니다.'
-            : '포인트 전액 결제가 성공적으로 완료되었습니다.',
+        message: '결제 승인이 성공적으로 완료되었습니다.',
       };
     } catch (error) {
       this.handleError(error, '결제 승인');
