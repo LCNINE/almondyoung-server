@@ -5,6 +5,7 @@ import { PimModule } from '../../src/pim.module';
 import { PimTestDatabase } from '../support/pim-test-database';
 import { PimTestFactory } from '../support/pim-test-factory';
 import type { CreateMasterDto } from '../../src/types';
+import { DbService } from '@app/db';
 
 describe('ProductMastersController - E2E Tests', () => {
   let app: INestApplication;
@@ -12,12 +13,17 @@ describe('ProductMastersController - E2E Tests', () => {
   beforeAll(async () => {
     await PimTestDatabase.setup();
 
-    // Override DATABASE_URL to use testcontainer
+    // Override DATABASE_URL BEFORE importing PimModule
     process.env.DATABASE_URL = PimTestDatabase.getConnectionString();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [PimModule],
-    }).compile();
+    })
+      .overrideProvider(DbService)
+      .useValue({
+        db: PimTestDatabase.getDb(),
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
 

@@ -50,8 +50,10 @@ export class PimTestDatabase {
     // console.log('📋 Creating PIM tables from schema...');
     try {
       // Run migrations to create all tables
+      const path = require('path');
+      const migrationsPath = path.resolve(__dirname, '../../drizzle/migrations');
       await migrate(this.db, {
-        migrationsFolder: './apps/pim/drizzle/migrations',
+        migrationsFolder: migrationsPath,
       });
 
       // console.log('✅ PIM schema tables created successfully');

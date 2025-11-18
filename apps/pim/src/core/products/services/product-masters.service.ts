@@ -310,19 +310,19 @@ export class ProductMastersService {
     }
   }
 
-  async getMasterById(
-    masterId: string,
+  async getVersionById(
+    versionId: string,
     tx?: DbTransaction,
-    includeDeleted = false,
+    options?: { includeDeleted?: boolean; throwIfNotFound?: boolean }
   ): Promise<ProductMaster | null> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
+    if (!versionId) {
+      throw new Error('Version ID is required');
     }
 
     const client = this.getClient(tx);
 
-    const conditions = [eq(productMasters.id, masterId)];
-    if (!includeDeleted) {
+    const conditions = [eq(productMasters.id, versionId)];
+    if (!options?.includeDeleted) {
       conditions.push(isNull(productMasters.deletedAt));
     }
 
@@ -331,7 +331,38 @@ export class ProductMastersService {
       .from(productMasters)
       .where(and(...conditions));
 
-    return result.length > 0 ? result[0] : null;
+    const version = result.length > 0 ? result[0] : null;
+
+    if (!version && options?.throwIfNotFound) {
+      throw new Error(`Version ${versionId} not found`);
+    }
+
+    return version;
+  }
+
+  async getMasterById(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster | null> {
+    if (!masterId) {
+      throw new Error('Master ID is required');
+    }
+
+    const client = this.getClient(tx);
+
+    const [activeMaster] = await client
+      .select()
+      .from(productMasters)
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          eq(productMasters.versionStatus, 'active'),
+          isNull(productMasters.deletedAt)
+        )
+      )
+      .limit(1);
+
+    return activeMaster || null;
   }
 
   async getMasterWithImages(
@@ -415,7 +446,17 @@ export class ProductMastersService {
       actualVersion = activeMaster.version;
     }
 
-    const master = await this.getMasterById(masterId, tx);
+    const [master] = await client
+      .select()
+      .from(productMasters)
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          eq(productMasters.version, actualVersion)
+        )
+      )
+      .limit(1);
+
     if (!master) {
       return null;
     }
@@ -706,10 +747,10 @@ export class ProductMastersService {
     }
 
     const executeUpdate = async (txClient: DbTransaction) => {
-      // 0. 기존 마스터 조회
-      const existingMaster = await this.getMasterById(masterId, txClient);
+      // 0. 기존 마스터 조회 (masterId는 versionId임)
+      const existingMaster = await this.getVersionById(masterId, txClient);
       if (!existingMaster) {
-        throw new Error(`Master not found: ${masterId}`);
+        throw new Error(`Version not found: ${masterId}`);
       }
 
       // NOTE: Pricing strategy logic has been moved to PricingModule
@@ -798,7 +839,7 @@ export class ProductMastersService {
 
     const client = this.getClient(tx);
 
-    const master = await this.getMasterById(masterId, tx);
+    const master = await this.getVersionById(masterId, tx);
     if (!master) {
       return false;
     }
@@ -821,9 +862,9 @@ export class ProductMastersService {
       throw new Error(`Master not found: ${masterId}`);
     }
 
-    const master = await this.getMasterById(masterId, tx);
+    const master = await this.getVersionById(masterId, tx);
     if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
+      throw new Error(`Version not found: ${masterId}`);
     }
 
     // 매핑 테이블을 통해 기존 variants 확인
@@ -875,9 +916,9 @@ export class ProductMastersService {
       throw new Error(`Master not found: ${masterId}`);
     }
 
-    const master = await this.getMasterById(masterId, tx);
+    const master = await this.getVersionById(masterId, tx);
     if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
+      throw new Error(`Version not found: ${masterId}`);
     }
 
     // 매핑 테이블을 통해 optionGroups 확인
@@ -949,9 +990,9 @@ export class ProductMastersService {
       throw new Error(`Master not found: ${masterId}`);
     }
 
-    const master = await this.getMasterById(masterId, tx);
+    const master = await this.getVersionById(masterId, tx);
     if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
+      throw new Error(`Version not found: ${masterId}`);
     }
 
     const executeRegeneration = async (txn: DbTransaction) => {
@@ -1106,7 +1147,7 @@ export class ProductMastersService {
     const client = this.getClient(tx);
 
     // Check if product exists and is not already deleted
-    const product = await this.getMasterById(id, tx, true);
+    const product = await this.getVersionById(id, tx, { includeDeleted: true });
     if (!product) {
       throw new Error(`Product with ID ${id} not found`);
     }
@@ -1401,9 +1442,19 @@ export class ProductMastersService {
     changeType: 'option_group_changed' | 'option_value_changed',
     tx: DbTransaction,
   ): Promise<void> {
-    const master = await this.getMasterById(masterId, tx);
+    const [master] = await tx
+      .select()
+      .from(productMasters)
+      .where(
+        and(
+          eq(productMasters.masterId, masterId),
+          eq(productMasters.version, currentVersion)
+        )
+      )
+      .limit(1);
+
     if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
+      throw new Error(`Master not found: ${masterId} version ${currentVersion}`);
     }
 
     const locale = 'ko-KR';
