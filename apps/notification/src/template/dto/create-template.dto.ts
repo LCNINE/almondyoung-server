@@ -340,6 +340,30 @@ import {
     @ApiProperty({ description: '템플릿 본문', example: '안녕하세요 {{userName}}님...' })
     @IsString()
     templateContent: string;
+
+    @ApiPropertyOptional({ description: 'NHN 내부 템플릿 ID (동기화 후 자동 설정)', example: 'TEMPLATE_12345' })
+    @IsOptional()
+    @IsString()
+    providerTemplateId?: string;
+
+    @ApiPropertyOptional({ 
+      enum: ['PENDING', 'REQUESTED', 'APPROVED', 'REJECTED', 'INACTIVE'],
+      description: 'NHN 템플릿 상태',
+      example: 'PENDING'
+    })
+    @IsOptional()
+    @IsString()
+    status?: 'PENDING' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
+
+    @ApiPropertyOptional({ description: '마지막 동기화 시각', example: '2024-01-15T10:00:00Z' })
+    @IsOptional()
+    @IsString()
+    lastSyncedAt?: string;
+
+    @ApiPropertyOptional({ description: '동기화 에러 메시지', example: '템플릿 검수 반려: 부적절한 내용' })
+    @IsOptional()
+    @IsString()
+    lastSyncError?: string;
   
     // (이하 옵션 필드들 그대로 유지)
   }

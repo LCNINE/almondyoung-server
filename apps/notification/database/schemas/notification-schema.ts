@@ -37,6 +37,15 @@ export const notificationPriorityEnum = pgEnum('notification_priority', [
     'LOW'        // 낮음
 ]);
 
+// 카카오 템플릿 상태 (NHN 콘솔 상태)
+export const kakaoTemplateStatusEnum = pgEnum('kakao_template_status', [
+    'PENDING',   // 우리쪽에서만 존재, 아직 NHN에 등록 안함
+    'REQUESTED', // NHN 검수 요청 중 (TSC02)
+    'APPROVED',  // 승인됨 (TSC03)
+    'REJECTED',  // 반려됨 (TSC04)
+    'INACTIVE',  // 비활성화됨
+]);
+
 // 템플릿 테이블
 export const templates = pgTable('templates', {
     templateId: uuid('template_id').defaultRandom().primaryKey(),
@@ -48,11 +57,18 @@ export const templates = pgTable('templates', {
     version: integer('version').default(1).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
+    // NHN 카카오 템플릿 연동 필드
+    kakaoTemplateCode: varchar('kakao_template_code', { length: 100 }), // NHN 템플릿 코드
+    kakaoTemplateStatus: kakaoTemplateStatusEnum('kakao_template_status'), // NHN 템플릿 상태
+    providerTemplateId: varchar('provider_template_id', { length: 255 }), // NHN 내부 템플릿 ID (kakaoTemplateCode)
+    lastSyncedAt: timestamp('last_synced_at'), // NHN와 마지막 동기화 시각
+    lastSyncError: text('last_sync_error'), // 동기화 실패 시 에러 메시지
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     templateKeyIdx: index('idx_template_key_active').on(table.templateKey, table.isActive),
     categoryIdx: index('idx_template_category').on(table.category),
+    kakaoTemplateCodeIdx: index('idx_kakao_template_code').on(table.kakaoTemplateCode),
 }));
 
 // 알림 발송 테이블
@@ -288,6 +304,7 @@ export type Language = 'ko' | 'en';
 export type NotificationCategory = 'INFORMATIONAL' | 'MARKETING' | 'TRANSACTIONAL' | 'SYSTEM' | 'ADMIN' | 'OPERATIONAL' | 'CUSTOMER_SERVICE';
 export type NotificationPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 export type DevicePlatform = 'ios' | 'android' | 'web';
+export type KakaoTemplateStatus = 'PENDING' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'INACTIVE';
 
 // Interfaces
 export interface ChannelContent {
