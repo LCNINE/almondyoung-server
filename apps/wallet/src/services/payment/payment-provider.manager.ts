@@ -3,10 +3,10 @@ import { ProviderRegistry } from '../../providers/provider-registry';
 import { PaymentProfileService } from '../profiles/payment-profile.service';
 import { BnplService } from '../bnpl/bnpl.service';
 import { PaymentPolicy } from '../../providers/payment-policy';
+import { PaymentStrategyFactory } from './strategies/payment-strategy.factory';
 import type {
   PaymentResult,
   ProviderType,
-  TossPayload,
 } from '../../providers/payment-provider.interface';
 import type { PaymentIntent } from '../../shared/database/types';
 import type { PointResult } from './payment-point.manager';
@@ -17,7 +17,7 @@ import type { PointResult } from './payment-point.manager';
  * 책임: Provider 관련 모든 로직
  * - Provider 선택
  * - 정책 검증
- * - Payload 조립
+ * - Payload 조립 (전략 패턴 사용)
  * - Provider 호출
  * - BNPL 특별 처리
  */
@@ -29,6 +29,7 @@ export class PaymentProviderManager {
     private readonly registry: ProviderRegistry,
     private readonly profiles: PaymentProfileService,
     private readonly bnplService: BnplService,
+    private readonly strategyFactory: PaymentStrategyFactory,
   ) {}
 
   /**
@@ -39,9 +40,8 @@ export class PaymentProviderManager {
     providerType: ProviderType,
     pointResult: PointResult,
     options: {
+      authParams?: Record<string, string>;
       profileId?: string;
-      instrumentRef?: string;
-      instrumentType?: string;
       sessionId?: string;
       actor?: string;
       source?: string;
@@ -189,44 +189,22 @@ export class PaymentProviderManager {
   }
 
   /**
-   * Payload 조립 (내부 메서드)
+   * Payload 조립 (전략 패턴 사용)
    */
   private async buildPayload(
     intent: PaymentIntent,
     providerType: ProviderType,
     amount: number,
     options: {
+      authParams?: Record<string, string>;
       profileId?: string;
-      instrumentRef?: string;
-      instrumentType?: string;
     },
     tx: any,
   ): Promise<any> {
     this.logger.log(`Building payload for ${providerType}`);
 
-    // 1. Profile에서 기본 Payload 조립
-    const payload = await this.profiles.resolvePayload(
-      options.profileId!,
-      providerType,
-      amount,
-      { tx },
-    );
-
-    // 2. ONE_TIME 결제 처리
-    if (options.instrumentType === 'ONE_TIME' && options.instrumentRef) {
-      if (providerType === 'TOSS') {
-        (payload as TossPayload).oneTimeToken = options.instrumentRef;
-        (payload as TossPayload).metadata = {
-          ...(payload as TossPayload).metadata,
-          intentId: intent.id,
-        };
-
-        this.logger.log(
-          `Added oneTimeToken to Toss payload: ${options.instrumentRef}`,
-        );
-      }
-    }
-
-    return payload;
+    // 전략 선택 및 Payload 조립
+    const strategy = this.strategyFactory.getStrategy(options);
+    return strategy.buildPayload(intent, providerType, amount, options, tx);
   }
 }
