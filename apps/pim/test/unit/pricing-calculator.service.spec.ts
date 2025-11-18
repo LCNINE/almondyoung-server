@@ -42,8 +42,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       const variants = await PimTestFactory.getVersionTree(master.masterId, db);
 
       // 가격 규칙 없이 계산하면 0원부터 시작
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variants[0].id,
       );
 
@@ -65,8 +65,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
 
       const variantId = variantMappings[0].variantId;
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
       );
 
@@ -87,8 +87,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
 
       const variantId = variantMappings[0].variantId;
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
       );
 
@@ -109,8 +109,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
 
       const variantId = variantMappings[0].variantId;
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
       );
 
@@ -141,8 +141,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         ),
       });
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variantMappings[0].variantId,
       );
 
@@ -173,8 +173,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       const variantId = variantMappings[0].variantId;
 
       // 일반 고객
-      const regularResult = await service.calculateVariantPrice(
-        master.masterId,
+      const regularResult = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
         undefined,
         'regular',
@@ -184,8 +184,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       expect(regularResult.priceBreakdown.afterMembershipPrice).toBeUndefined();
 
       // 멤버십 고객
-      const membershipResult = await service.calculateVariantPrice(
-        master.masterId,
+      const membershipResult = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
         undefined,
         'membership',
@@ -215,24 +215,24 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       const variantId = variantMappings[0].variantId;
 
       // 1개
-      const result1 = await service.calculateVariantPrice(
-        master.masterId,
+      const result1 = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
         1,
       );
       expect(result1.price).toBe(10000);
 
       // 10개 이상
-      const result10 = await service.calculateVariantPrice(
-        master.masterId,
+      const result10 = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
         10,
       );
       expect(result10.price).toBe(9500); // 5% 할인
 
       // 50개 이상
-      const result50 = await service.calculateVariantPrice(
-        master.masterId,
+      const result50 = await service.calculateVariantPriceByVersion(
+        master.id,
         variantId,
         50,
       );
@@ -260,8 +260,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         ),
       });
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         variantMappings[0].variantId,
         undefined,
         'membership',
@@ -299,8 +299,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
       });
 
       for (const mapping of variantMappings) {
-        const result = await service.calculateVariantPrice(
-          master.masterId,
+        const result = await service.calculateVariantPriceByVersion(
+          master.id,
           mapping.variantId,
         );
         expect(result.price).toBe(10000);
@@ -407,8 +407,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
 
         const hasRed = optionValues.some((ov) => ov.optionValueId === redValue.id);
 
-        const result = await service.calculateVariantPrice(
-          master.masterId,
+        const result = await service.calculateVariantPriceByVersion(
+          master.id,
           mapping.variantId,
         );
 
@@ -462,8 +462,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         defaultVariant.id,
       );
 
@@ -494,8 +494,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         defaultVariant.id,
       );
 
@@ -543,8 +543,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         defaultVariant.id,
       );
 
@@ -592,8 +592,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         defaultVariant.id,
       );
 
@@ -659,8 +659,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const result = await service.calculateVariantPrice(
-        master.masterId,
+      const result = await service.calculateVariantPriceByVersion(
+        master.id,
         defaultVariant.id,
       );
 
@@ -670,8 +670,8 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
     });
   });
 
-  describe('6.6 모든 Variant 가격 계산', () => {
-    it('✅ calculateAllVariantsPrices() - Map 반환', async () => {
+  describe('6.6 Variant 가격 세트 계산', () => {
+    it('✅ calculateVariantPriceSet() - 가격 세트 반환', async () => {
       const db = PimTestDatabase.getDb();
       const master = await PimTestFactory.createCompleteProductWithVersions(
         {
@@ -686,18 +686,29 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const allPrices = await service.calculateAllVariantsPrices(master.masterId);
+      // Get a variant from the master
+      const variantMappings = await db.query.productMasterVariants.findMany({
+        where: (t, { and, eq }) => and(
+          eq(t.masterId, master.masterId),
+          eq(t.version, master.version),
+        ),
+      });
 
-      expect(allPrices.size).toBe(2); // S, M
+      expect(variantMappings.length).toBeGreaterThan(0);
 
-      for (const [variantId, prices] of allPrices.entries()) {
-        expect(prices.basePrice).toBe(10000);
-      }
+      const priceSet = await service.calculateVariantPriceSet(
+        master.id,
+        variantMappings[0].variantId,
+      );
+
+      expect(priceSet.basePrice).toBe(10000);
+      expect(priceSet.membershipPrice).toBe(10000);
+      expect(priceSet.tieredPrices).toEqual([]);
     });
 
     it('✅ 일반가와 멤버십가 모두 계산', async () => {
       const db = PimTestDatabase.getDb();
-      const { master } = await PimTestFactory.createDraftMasterWithBasicInfo();
+      const { master, defaultVariant } = await PimTestFactory.createDraftMasterWithBasicInfo();
 
       await PimTestFactory.createCompletePricingPolicy(
         master.masterId,
@@ -709,12 +720,14 @@ describe('PricingCalculatorService - Price Calculation Tests', () => {
         db,
       );
 
-      const allPrices = await service.calculateAllVariantsPrices(master.masterId);
+      const priceSet = await service.calculateVariantPriceSet(
+        master.id,
+        defaultVariant.id,
+      );
 
-      for (const [_, prices] of allPrices.entries()) {
-        expect(prices.basePrice).toBe(10000);
-        expect(prices.membershipPrice).toBe(9000);
-      }
+      expect(priceSet.basePrice).toBe(10000);
+      expect(priceSet.membershipPrice).toBe(9000);
+      expect(priceSet.tieredPrices).toEqual([]);
     });
   });
 });

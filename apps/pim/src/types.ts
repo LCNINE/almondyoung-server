@@ -336,6 +336,19 @@ export interface AppliedRuleInfo {
   priceAfterRule: number;
 }
 
+// 수량별 가격 정보
+export interface TieredPriceInfo {
+  minQuantity: number;
+  price: number;
+}
+
+// Variant 가격 세트 (basePrice, membershipPrice, tieredPrices)
+export interface VariantPriceSet {
+  basePrice: number;
+  membershipPrice: number;
+  tieredPrices: TieredPriceInfo[];
+}
+
 // ===== VERSION MANAGEMENT DTO =====
 
 // 버전 트리 노드

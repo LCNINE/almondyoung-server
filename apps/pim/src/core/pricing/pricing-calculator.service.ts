@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
@@ -17,7 +17,9 @@ import {
   PriceCalculationResult,
   AppliedRuleInfo,
   ScopeType,
-  OperationType
+  OperationType,
+  VariantPriceSet,
+  TieredPriceInfo
 } from '../../types';
 
 @Injectable()
@@ -46,8 +48,76 @@ export class PricingCalculatorService {
     tx?: DbTransaction,
   ): Promise<PriceCalculationResult> {
     return this.inTx(async (trx) => {
-      const rules = await this.getRulesForMaster(masterId, undefined, trx);
-      
+      const [activeVersion] = await trx
+        .select({ id: productMasters.id })
+        .from(productMasters)
+        .where(
+          and(
+            eq(productMasters.masterId, masterId),
+            eq(productMasters.versionStatus, 'active'),
+          ),
+        );
+
+      if (!activeVersion) {
+        throw new NotFoundException(
+          `No active version found for master ${masterId}`,
+        );
+      }
+
+      return this.calculateVariantPriceByVersion(
+        activeVersion.id,
+        variantId,
+        quantity,
+        customerType,
+        trx,
+      );
+    }, tx);
+  }
+
+  async calculateVariantPriceByVersion(
+    versionId: string,
+    variantId: string,
+    quantity?: number,
+    customerType: 'regular' | 'membership' = 'regular',
+    tx?: DbTransaction,
+  ): Promise<PriceCalculationResult> {
+    return this.inTx(async (trx) => {
+      const [version] = await trx
+        .select({
+          masterId: productMasters.masterId,
+          version: productMasters.version,
+        })
+        .from(productMasters)
+        .where(eq(productMasters.id, versionId));
+
+      if (!version) {
+        throw new NotFoundException(`Product version ${versionId} not found`);
+      }
+
+      const [mapping] = await trx
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.version, version.version),
+            eq(productMasterVariants.variantId, variantId),
+          ),
+        );
+
+      if (!mapping) {
+        throw new BadRequestException(
+          `Variant ${variantId} is not part of version ${versionId}`,
+        );
+      }
+
+      const rules = await this.getRulesForMaster(
+        version.masterId,
+        undefined,
+        trx,
+        version.version,
+      );
+
       let currentPrice = 0;
       const appliedRules: AppliedRuleInfo[] = [];
       const breakdown = {
@@ -57,7 +127,6 @@ export class PricingCalculatorService {
         afterTieredPrice: undefined as number | undefined,
       };
 
-      // Layer 1: base_price (항상 적용)
       for (const rule of rules.basePriceRules) {
         if (await this.matchesScope(variantId, rule, trx)) {
           const priceBeforeRule = currentPrice;
@@ -76,7 +145,6 @@ export class PricingCalculatorService {
       }
       breakdown.afterBasePrice = currentPrice;
 
-      // Layer 2: membership_price (customerType === 'membership'만)
       if (customerType === 'membership') {
         for (const rule of rules.membershipPriceRules) {
           if (await this.matchesScope(variantId, rule, trx)) {
@@ -97,7 +165,6 @@ export class PricingCalculatorService {
         breakdown.afterMembershipPrice = currentPrice;
       }
 
-      // Layer 3: tiered_price (customerType === 'membership' && quantity)
       if (customerType === 'membership' && quantity && quantity > 0) {
         for (const rule of rules.tieredPriceRules) {
           if (
@@ -134,57 +201,97 @@ export class PricingCalculatorService {
     }, tx);
   }
 
-  async calculateAllVariantsPrices(
-    masterId: string,
+  async calculateVariantPriceSet(
+    versionId: string,
+    variantId: string,
     tx?: DbTransaction,
-  ): Promise<Map<string, { basePrice: number; membershipPrice: number }>> {
+  ): Promise<VariantPriceSet> {
     return this.inTx(async (trx) => {
-      // 매핑 테이블을 통해 active 버전의 variants 조회
-      const variants = await trx
-        .select({ id: productVariants.id })
-        .from(productMasterVariants)
-        .innerJoin(
-          productVariants,
-          eq(productMasterVariants.variantId, productVariants.id),
-        )
-        .innerJoin(
-          productMasters,
-          and(
-            eq(productMasterVariants.masterId, productMasters.masterId),
-            eq(productMasterVariants.version, productMasters.version),
-            eq(productMasters.versionStatus, 'active'),
-          ),
-        )
-        .where(eq(productMasters.masterId, masterId));
+      const [version] = await trx
+        .select({
+          masterId: productMasters.masterId,
+          version: productMasters.version,
+        })
+        .from(productMasters)
+        .where(eq(productMasters.id, versionId));
 
-      const priceMap = new Map<
-        string,
-        { basePrice: number; membershipPrice: number }
-      >();
-
-      for (const variant of variants) {
-        const baseResult = await this.calculateVariantPrice(
-          masterId,
-          variant.id,
-          undefined,
-          'regular',
-          trx,
-        );
-        const membershipResult = await this.calculateVariantPrice(
-          masterId,
-          variant.id,
-          undefined,
-          'membership',
-          trx,
-        );
-
-        priceMap.set(variant.id, {
-          basePrice: baseResult.price,
-          membershipPrice: membershipResult.price,
-        });
+      if (!version) {
+        throw new NotFoundException(`Product version ${versionId} not found`);
       }
 
-      return priceMap;
+      const [mapping] = await trx
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.version, version.version),
+            eq(productMasterVariants.variantId, variantId),
+          ),
+        );
+
+      if (!mapping) {
+        throw new BadRequestException(
+          `Variant ${variantId} is not part of version ${versionId}`,
+        );
+      }
+
+      const baseResult = await this.calculateVariantPriceByVersion(
+        versionId,
+        variantId,
+        1,
+        'regular',
+        trx,
+      );
+
+      const membershipResult = await this.calculateVariantPriceByVersion(
+        versionId,
+        variantId,
+        1,
+        'membership',
+        trx,
+      );
+
+      const rules = await this.getRulesForMaster(
+        version.masterId,
+        'tiered_price',
+        trx,
+        version.version,
+      );
+
+      const tieredPrices: TieredPriceInfo[] = [];
+      const processedQuantities = new Set<number>();
+
+      for (const rule of rules.tieredPriceRules) {
+        if (
+          rule.minQuantity &&
+          !processedQuantities.has(rule.minQuantity) &&
+          (await this.matchesScope(variantId, rule, trx))
+        ) {
+          const tierResult = await this.calculateVariantPriceByVersion(
+            versionId,
+            variantId,
+            rule.minQuantity,
+            'membership',
+            trx,
+          );
+
+          tieredPrices.push({
+            minQuantity: rule.minQuantity,
+            price: tierResult.price,
+          });
+
+          processedQuantities.add(rule.minQuantity);
+        }
+      }
+
+      tieredPrices.sort((a, b) => a.minQuantity - b.minQuantity);
+
+      return {
+        basePrice: baseResult.price,
+        membershipPrice: membershipResult.price,
+        tieredPrices,
+      };
     }, tx);
   }
 

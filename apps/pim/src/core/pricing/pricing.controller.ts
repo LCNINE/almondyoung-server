@@ -8,6 +8,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { PricingService } from './pricing.service';
@@ -19,6 +20,8 @@ import {
   CalculatePriceResponseDto,
   AppliedRuleDto,
   PriceBreakdownDto,
+  GetPriceSetRequestDto,
+  VariantPriceSetDto,
 } from './dto';
 
 @ApiTags('Pricing')
@@ -116,6 +119,25 @@ export class PricingController {
       appliedRules,
       priceBreakdown,
     };
+  }
+
+  @Get('price-set')
+  @ApiOperation({ summary: 'Get complete price set for a variant (base, membership, tiered)' })
+  @ApiParam({ name: 'masterId', description: 'Master product ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Price set retrieved',
+    type: VariantPriceSetDto,
+  })
+  async getPriceSet(
+    @Param('masterId') masterId: string,
+    @Query() dto: GetPriceSetRequestDto,
+  ): Promise<VariantPriceSetDto> {
+    return this.pricingService.getVariantPriceSet(
+      masterId,
+      dto.variantId,
+      dto.versionId,
+    );
   }
 }
 

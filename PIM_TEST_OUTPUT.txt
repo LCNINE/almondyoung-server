@@ -1,806 +1,183 @@
-
-> almondyoung-server@0.0.1 test:pim
-> NODE_OPTIONS='--max-old-space-size=4096' jest --config apps/pim/jest.config.js
-
-🚀 Setting up PIM test environment...
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-{
-  severity_local: 'NOTICE',
-  severity: 'NOTICE',
-  code: '42622',
-  message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-  file: 'scansup.c',
-  line: '99',
-  routine: 'truncate_identifier'
-}
-✅ PIM test environment ready
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.error
-    Create master error: DrizzleQueryError: Failed query: insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"
-    params: 019a9461-6a79-758e-8e9d-571169e6c193,019a9461-6a78-76b1-846d-bbc37d1b2c19,1,,draft,,Test Product,Test Description,Test Brand,,{},,{},,,{},Test Description,draft,false,false
-        at PostgresJsPreparedQuery.queryWithCache (/home/pauseb/workspace/almondyoung-server/node_modules/src/pg-core/session.ts:73:11)
-        at processTicksAndRejections (node:internal/process/task_queues:105:5)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/src/postgres-js/session.ts:58:17
-        at ProductMastersService._createMasterWithinTransaction (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/services/product-masters.service.ts:174:22)
-        at scope (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:260:18)
-        at Function.begin (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:243:14)
-        at ProductMastersController.createMaster (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/controllers/product-masters.controller.ts:80:22)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-execution-context.js:46:28
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-proxy.js:9:17 {
-      query: 'insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"',
-      params: [
-        '019a9461-6a79-758e-8e9d-571169e6c193',
-        '019a9461-6a78-76b1-846d-bbc37d1b2c19',
-        1,
-        null,
-        'draft',
-        null,
-        'Test Product',
-        'Test Description',
-        'Test Brand',
-        null,
-        '{}',
-        null,
-        '{}',
-        null,
-        null,
-        '{}',
-        'Test Description',
-        'draft',
-        false,
-        false
-      ],
-      cause: PostgresError: relation "product_masters" does not exist
-          at ErrorResponse (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:794:26)
-          at handle (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:480:6)
-          at TLSSocket.data (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:315:9)
-          at TLSSocket.emit (node:events:518:28)
-          at addChunk (node:internal/streams/readable:561:12)
-          at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
-          at TLSSocket.Readable.push (node:internal/streams/readable:392:5)
-          at TLSWrap.onStreamRead (node:internal/stream_base_commons:189:23) {
-        severity_local: 'ERROR',
-        severity: 'ERROR',
-        code: '42P01',
-        position: '13',
-        file: 'parse_relation.c',
-        line: '1449',
-        routine: 'parserOpenTable'
-      }
-    }
-
-      86 |       } as unknown as ProductMasterDto;
-      87 |     } catch (error) {
-    > 88 |       console.error('Create master error:', error);
-         |               ^
-      89 |       throw new HttpException(
-      90 |         `Failed to create master: ${error.message}`,
-      91 |         HttpStatus.INTERNAL_SERVER_ERROR,
-
-      at ProductMastersController.createMaster (src/core/products/controllers/product-masters.controller.ts:88:15)
-      at ../../node_modules/@nestjs/core/router/router-execution-context.js:46:28
-      at ../../node_modules/@nestjs/core/router/router-proxy.js:9:17
-
-  console.error
-    Create master error: DrizzleQueryError: Failed query: insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"
-    params: 019a9461-6f41-7061-9b1a-1088daa862df,019a9461-6f41-7061-9b1a-0d32d4672a54,1,,draft,,Product with Options,Product description,,,{},,{},,,{},Product description,draft,false,false
-        at PostgresJsPreparedQuery.queryWithCache (/home/pauseb/workspace/almondyoung-server/node_modules/src/pg-core/session.ts:73:11)
-        at processTicksAndRejections (node:internal/process/task_queues:105:5)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/src/postgres-js/session.ts:58:17
-        at ProductMastersService._createMasterWithinTransaction (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/services/product-masters.service.ts:174:22)
-        at scope (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:260:18)
-        at Function.begin (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:243:14)
-        at ProductMastersController.createMaster (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/controllers/product-masters.controller.ts:80:22)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-execution-context.js:46:28
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-proxy.js:9:17 {
-      query: 'insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"',
-      params: [
-        '019a9461-6f41-7061-9b1a-1088daa862df',
-        '019a9461-6f41-7061-9b1a-0d32d4672a54',
-        1,
-        null,
-        'draft',
-        null,
-        'Product with Options',
-        'Product description',
-        null,
-        null,
-        '{}',
-        null,
-        '{}',
-        null,
-        null,
-        '{}',
-        'Product description',
-        'draft',
-        false,
-        false
-      ],
-      cause: PostgresError: relation "product_masters" does not exist
-          at ErrorResponse (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:794:26)
-          at handle (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:480:6)
-          at TLSSocket.data (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:315:9)
-          at TLSSocket.emit (node:events:518:28)
-          at addChunk (node:internal/streams/readable:561:12)
-          at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
-          at TLSSocket.Readable.push (node:internal/streams/readable:392:5)
-          at TLSWrap.onStreamRead (node:internal/stream_base_commons:189:23) {
-        severity_local: 'ERROR',
-        severity: 'ERROR',
-        code: '42P01',
-        position: '13',
-        file: 'parse_relation.c',
-        line: '1449',
-        routine: 'parserOpenTable'
-      }
-    }
-
-      86 |       } as unknown as ProductMasterDto;
-      87 |     } catch (error) {
-    > 88 |       console.error('Create master error:', error);
-         |               ^
-      89 |       throw new HttpException(
-      90 |         `Failed to create master: ${error.message}`,
-      91 |         HttpStatus.INTERNAL_SERVER_ERROR,
-
-      at ProductMastersController.createMaster (src/core/products/controllers/product-masters.controller.ts:88:15)
-      at ../../node_modules/@nestjs/core/router/router-execution-context.js:46:28
-      at ../../node_modules/@nestjs/core/router/router-proxy.js:9:17
-
-  console.error
-    Create master error: DrizzleQueryError: Failed query: insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"
-    params: 019a9461-7411-72be-aebc-84c84455fbb6,019a9461-7411-72be-aebc-82625bf6b4f6,1,,draft,,새 상품,Missing required fields,,,{},,{},,,{},Missing required fields,draft,false,false
-        at PostgresJsPreparedQuery.queryWithCache (/home/pauseb/workspace/almondyoung-server/node_modules/src/pg-core/session.ts:73:11)
-        at processTicksAndRejections (node:internal/process/task_queues:105:5)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/src/postgres-js/session.ts:58:17
-        at ProductMastersService._createMasterWithinTransaction (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/services/product-masters.service.ts:174:22)
-        at scope (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:260:18)
-        at Function.begin (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/index.js:243:14)
-        at ProductMastersController.createMaster (/home/pauseb/workspace/almondyoung-server/apps/pim/src/core/products/controllers/product-masters.controller.ts:80:22)
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-execution-context.js:46:28
-        at /home/pauseb/workspace/almondyoung-server/node_modules/@nestjs/core/router/router-proxy.js:9:17 {
-      query: 'insert into "product_masters" ("id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by") values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default, default) returning "id", "master_id", "version", "parent_version_id", "version_status", "draft_owner_id", "name", "description", "brand", "thumbnail", "tags", "images", "attributes", "seo_title", "seo_description", "seo_keywords", "description_html", "status", "is_wholesale_only", "is_membership_only", "product_type", "product_code", "alternative_name", "material", "sales_classification", "purchase_classification", "shipping_method_id", "market_price", "supply_price", "supplier_id", "age_restriction", "min_quantity", "max_quantity", "sales_start_date", "sales_end_date", "approval_status", "approved_at", "approved_by", "rejection_reason", "deleted_at", "deleted_by", "seller", "registration_date", "last_edit_date", "created_at", "updated_at", "created_by", "updated_by"',
-      params: [
-        '019a9461-7411-72be-aebc-84c84455fbb6',
-        '019a9461-7411-72be-aebc-82625bf6b4f6',
-        1,
-        null,
-        'draft',
-        null,
-        '새 상품',
-        'Missing required fields',
-        null,
-        null,
-        '{}',
-        null,
-        '{}',
-        null,
-        null,
-        '{}',
-        'Missing required fields',
-        'draft',
-        false,
-        false
-      ],
-      cause: PostgresError: relation "product_masters" does not exist
-          at ErrorResponse (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:794:26)
-          at handle (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:480:6)
-          at TLSSocket.data (/home/pauseb/workspace/almondyoung-server/node_modules/postgres/cjs/src/connection.js:315:9)
-          at TLSSocket.emit (node:events:518:28)
-          at addChunk (node:internal/streams/readable:561:12)
-          at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
-          at TLSSocket.Readable.push (node:internal/streams/readable:392:5)
-          at TLSWrap.onStreamRead (node:internal/stream_base_commons:189:23) {
-        severity_local: 'ERROR',
-        severity: 'ERROR',
-        code: '42P01',
-        position: '13',
-        file: 'parse_relation.c',
-        line: '1449',
-        routine: 'parserOpenTable'
-      }
-    }
-
-      86 |       } as unknown as ProductMasterDto;
-      87 |     } catch (error) {
-    > 88 |       console.error('Create master error:', error);
-         |               ^
-      89 |       throw new HttpException(
-      90 |         `Failed to create master: ${error.message}`,
-      91 |         HttpStatus.INTERNAL_SERVER_ERROR,
-
-      at ProductMastersController.createMaster (src/core/products/controllers/product-masters.controller.ts:88:15)
-      at ../../node_modules/@nestjs/core/router/router-execution-context.js:46:28
-      at ../../node_modules/@nestjs/core/router/router-proxy.js:9:17
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_option_groups_option_group_id_product_option_groups_id_fk" will be truncated to "product_master_option_groups_option_group_id_product_option_gro"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_fk" will be truncated to "product_master_pricing_rules_pricing_rule_id_pricing_rules_id_f"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_group_displays_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_group_displays_option_group_id_product_option_gr"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_value_displays_option_value_id_product_option_values_id_fk" will be truncated to "product_option_value_displays_option_value_id_product_option_va"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "product_option_values_option_group_id_product_option_groups_id_fk" will be truncated to "product_option_values_option_group_id_product_option_groups_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-  console.log
-    {
-      severity_local: 'NOTICE',
-      severity: 'NOTICE',
-      code: '42622',
-      message: 'identifier "variant_option_values_option_value_id_product_option_values_id_fk" will be truncated to "variant_option_values_option_value_id_product_option_values_id_"',
-      file: 'scansup.c',
-      line: '99',
-      routine: 'truncate_identifier'
-    }
-
-      at NoticeResponse (../../node_modules/postgres/cjs/src/connection.js:898:17)
-
-🧹 Tearing down PIM test environment...
-✅ PIM test environment cleaned up
+=================================================================
+PIM 테스트 결과 요약
+실행일시: 2025-11-18
+=================================================================
+
+📊 전체 통계
+-------------
+- 총 테스트: 126개
+- 성공: 79개 (62.7%)
+- 실패: 47개 (37.3%)
+- Test Suites: 7개 (2 PASS, 5 FAIL)
+
+✅ 성공한 테스트 스위트
+- edge-cases.spec.ts (17/17) - 동시성, 고아 리소스, 특수문자 처리
+- product-versions.service.spec.ts (26/26) - 버전 생성, 매핑 복사, Publish
+
+=================================================================
+❌ 실패한 테스트 분류 (47개)
+=================================================================
+
+1️⃣ 가격 계산 로직 전체 실패 (15개)
+   파일: pricing-calculator.service.spec.ts
+   증상: 모든 가격 계산 결과가 0원으로 반환
+   
+   실패 항목:
+   - base_price 레이어 적용 (3개)
+   - 3단계 레이어 적용 (4개)
+   - Scope 매칭: all_variants, with_option, variants (3개)
+   - 연산 타입: override, offset, scale (4개)
+   - calculateAllVariantsPrices() (1개)
+   
+   예시 에러:
+   ```
+   Expected: 10000
+   Received: 0
+   ```
+   
+   원인 추정:
+   - PricingRule이 제대로 조회되지 않음
+   - 또는 가격 계산 로직 자체에 버그 존재
+
+---
+
+2️⃣ PricingService - Master 조회 실패 (17개)
+   파일: pricing.service.spec.ts (13개)
+        product-workflow.spec.ts (4개)
+   증상: NotFoundException: Product master XXX not found
+   
+   실패 위치:
+   - PricingService.ensureMasterExists (line 326)
+   
+   실패 항목:
+   [pricing.service.spec.ts]
+   - 5.1 가격 정책 설정 (5개)
+   - 5.2 버전별 가격 정책 (5개)
+   - 5.3 가격 정책 재사용 (1개)
+   - 5.4 고아 규칙 정리 (3개)
+   
+   [product-workflow.spec.ts]
+   - 7.1 완전한 상품 생성 플로우 (1개)
+   - 7.2 버전 수정 플로우 (1개)
+   - 7.3 버전 롤백 시나리오 (1개)
+   - 7.5 가격 정책 버전 독립성 (1개)
+   
+   원인 추정:
+   - ProductMaster는 생성되는데 PricingService에서 조회 실패
+   - 트랜잭션 커밋 타이밍 이슈 또는
+   - ensureMasterExists 쿼리 조건 문제
+
+---
+
+3️⃣ 버전 상태 검증 로직 미작동 (2개)
+   파일: product-masters.service.spec.ts
+   증상: Active/Inactive 버전 수정 시 예외가 발생하지 않음
+   
+   실패 항목:
+   - "❌ Active 버전은 직접 수정 불가"
+   - "❌ Inactive 버전은 직접 수정 불가"
+   
+   예상 동작:
+   ```typescript
+   await expect(
+     service.updateMaster(activeVersionId, { name: '변경 시도' })
+   ).rejects.toThrow(/only.*draft/i);
+   ```
+   
+   실제 동작:
+   - 예외 없이 업데이트가 진행됨
+   
+   원인 추정:
+   - updateMaster 메소드에서 versionStatus 검증 로직 누락
+
+---
+
+4️⃣ Variants 삭제 검증 로직 미작동 (3개)
+   파일: product-masters.service.spec.ts
+   증상: 잘못된 삭제 요청 시 예외가 발생하지 않음
+   
+   실패 항목:
+   - "❌ 잘못된 variant 제거 시도 (존재하지 않는 ID)"
+   - "❌ variantIds 없이 호출 시 에러"
+   - "❌ 모든 variants 삭제 시도"
+   
+   원인 추정:
+   - removeVariants 메소드의 유효성 검증 로직 미구현
+
+---
+
+5️⃣ 버전 트리 조회 버그 (10개)
+   파일: product-masters.service.spec.ts
+   증상: 버전 트리 조회 실패 또는 잘못된 결과 반환
+   
+   실패 항목:
+   - "❌ Active 버전 없으면 에러"
+   - "✅ 버전 트리 조회" (8개 관련 테스트)
+   - "✅ 버전 번호 자동 증가"
+   
+   예시 에러:
+   ```
+   Expected: NotFoundException
+   Received: (no error)
+   ```
+   
+   원인 추정:
+   - getMasterVersionTree 메소드 로직 오류
+   - Active 버전 검증 로직 누락
+
+=================================================================
+🚨 우선순위별 수정 권장 사항
+=================================================================
+
+🔴 CRITICAL (비즈니스 로직 핵심)
+1. 가격 계산 로직 전체 실패 (15개)
+   → PricingCalculatorService 전체 검토 필요
+   
+2. PricingService Master 조회 실패 (17개)
+   → ensureMasterExists 쿼리 및 트랜잭션 처리 검토
+
+🟡 HIGH (데이터 무결성 보호)
+3. 버전 상태 검증 로직 (2개)
+   → updateMaster에 versionStatus 검증 추가
+   
+4. Variants 삭제 검증 (3개)
+   → removeVariants 유효성 검증 추가
+
+🟢 MEDIUM (조회 로직)
+5. 버전 트리 조회 버그 (10개)
+   → getMasterVersionTree 로직 수정
+
+=================================================================
+⚠️ 추가 발견 사항
+=================================================================
+
+Kafka 연결 에러 (테스트 환경)
+- KafkaJSNonRetriableError: broker at index 0 is invalid "string"
+- ProductVariant 생성 이벤트 발행 실패
+- 테스트 실행에는 영향 없음
+- Mock 처리 고려 필요
+
+PostgreSQL 경고 (무시 가능)
+- Foreign key 이름이 63자 초과로 자동 truncate됨
+- 기능에는 영향 없음
+
+=================================================================
+📋 다음 단계 제안
+=================================================================
+
+1. PricingCalculatorService 디버깅
+   - PricingRule 조회 로직 확인
+   - 가격 계산 알고리즘 검토
+   
+2. PricingService.ensureMasterExists 수정
+   - 쿼리 조건 확인
+   - 트랜잭션 처리 검토
+   
+3. ProductMastersService 검증 로직 추가
+   - updateMaster: versionStatus 검증
+   - removeVariants: 유효성 검증
+   
+4. 버전 트리 조회 로직 수정
+   - getMasterVersionTree 메소드 리팩토링
+
+=================================================================

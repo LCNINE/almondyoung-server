@@ -134,15 +134,15 @@ describe('Product Workflow - Integration Tests', () => {
         master.version,
       );
 
-      // 6. 가격 계산 확인
-      const price = await calculatorService.calculateVariantPrice(
-        master.masterId,
+      // 6. 가격 계산 확인 (Draft 버전)
+      const price = await calculatorService.calculateVariantPriceByVersion(
+        master.id,
         variantMappings[0].variantId,
       );
       expect(price.price).toBe(50000);
 
-      const membershipPrice = await calculatorService.calculateVariantPrice(
-        master.masterId,
+      const membershipPrice = await calculatorService.calculateVariantPriceByVersion(
+        master.id,
         variantMappings[0].variantId,
         undefined,
         'membership',
