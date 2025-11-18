@@ -1,6 +1,7 @@
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as postgres from 'postgres';
 import { pimSchema } from '../../src/schema';
 import type { PimSchema } from '../../src/schema';
@@ -45,18 +46,12 @@ export class PimTestDatabase {
       $$ LANGUAGE plpgsql VOLATILE;
     `;
 
-    // Create PIM tables using drizzle-kit push
+    // Create PIM tables using migrations
     // console.log('📋 Creating PIM tables from schema...');
     try {
-      const { execSync } = require('child_process');
-      const env = {
-        ...process.env,
-        DATABASE_URL: connectionString
-      };
-
-      execSync('npx drizzle-kit push --config apps/pim/drizzle.test-config.ts', {
-        env,
-        stdio: 'inherit'
+      // Run migrations to create all tables
+      await migrate(this.db, {
+        migrationsFolder: './apps/pim/drizzle/migrations',
       });
 
       // console.log('✅ PIM schema tables created successfully');
@@ -131,21 +126,25 @@ export class PimTestDatabase {
 
     // Clear PIM tables (clear in dependency order to avoid FK violations)
     const orderedTables = [
-      'variantPrices',
-      'optionValuePrices',
       'variantOptionValues',
+      'productMasterPricingRules',
+      'productMasterVariants',
+      'productMasterOptionGroups',
+      'productOptionValueDisplays',
+      'productOptionGroupDisplays',
       'productVariants',
       'productOptionValues',
       'productOptionGroups',
+      'pricingRules',
       'productMasterCategories',
       'productImages',
       'uploads',
       'productAuditLog',
       'productApprovalHistory',
-      'productMasters',
-      'productCategories',
       'channelProducts',
       'salesChannels',
+      'productMasters',
+      'productCategories',
     ];
 
     for (const tableName of orderedTables) {
