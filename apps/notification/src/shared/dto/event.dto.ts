@@ -118,3 +118,4 @@ export class TriggerEventDto {
     @IsObject()
     metadata?: Record<string, any>;
 }
+
