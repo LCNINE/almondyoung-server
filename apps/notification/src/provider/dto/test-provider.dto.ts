@@ -5,13 +5,6 @@ import { Channel } from '../../shared/enums';
 
 export class TestProviderDto {
   @ApiProperty({
-    description: '프로바이더 ID',
-    example: 'provider-123',
-  })
-  @IsString()
-  providerId: string;
-
-  @ApiProperty({
     description: '테스트 수신자',
     example: 'test@example.com',
   })
