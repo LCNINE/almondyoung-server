@@ -1,21 +1,17 @@
-import { AuthorizationGuard, RequireScopes } from '@app/roles';
-import {
-  Controller,
-  Delete,
-  Param,
-  Post,
-  UseGuards,
-  UsePipes,
-} from '@nestjs/common';
+import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
+import { DeleteFileDto } from './dto/delete-file.dto';
 import { FileService } from './file.service';
 import {
   FastifyFile,
@@ -33,7 +29,6 @@ export class FileController {
 
   @Post('upload')
   @FastifyFileInterceptor('file')
-  @UsePipes(FileValidatorPipe)
   @RequireScopes(['user:modify'])
   @ApiOperation({
     summary: '파일 업로드',
@@ -52,26 +47,57 @@ export class FileController {
       },
     },
   })
-  async uploadFile(@FastifyFile() file: ValidatedFile) {
-    return this.fileService.uploadFile(file);
+  async uploadFile(
+    @FastifyFile(FileValidatorPipe) file: ValidatedFile,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.fileService.uploadFile(file, user.id);
   }
 
   /**
    *  aws s3 폴더명과 파일명을 파라미터로 받아서 삭제
    */
-  @Delete(':folderNameAndKey')
+  @Post('delete')
   @RequireScopes(['user:delete'])
   @ApiOperation({
     summary: '파일 삭제',
-    description: 'AWS S3에서 지정된 파일을 삭제합니다.',
+    description: 'AWS S3에서 사용자가 업로드한 파일을 삭제합니다.',
   })
-  @ApiParam({
-    name: 'folderNameAndKey',
-    description: 'AWS S3의 폴더명과 파일명 (예: folder/filename.jpg)',
-    type: 'string',
-    required: true,
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['folderName', 'fileName'],
+      properties: {
+        folderName: {
+          type: 'string',
+          description: 'S3 폴더명 (예: avatar, business-license)',
+          example: 'avatar',
+        },
+        fileName: {
+          type: 'string',
+          description: '삭제할 파일명',
+          example: '239ad90b-b1e5-4784-8e3d-b366c4e6bd9f.png',
+        },
+      },
+    },
   })
-  deleteFile(@Param('folderNameAndKey') folderNameAndKey: string) {
-    return this.fileService.deleteFile(folderNameAndKey);
+  @ApiResponse({
+    status: 200,
+    description: '파일 삭제 성공',
+  })
+  @ApiResponse({
+    status: 403,
+    description: '본인의 파일만 삭제 가능합니다.',
+  })
+  @ApiResponse({
+    status: 404,
+    description: '파일을 찾을 수 없습니다.',
+  })
+  async deleteFile(
+    @Body() deleteFileDto: DeleteFileDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    const key = `${deleteFileDto.folderName}/${user.id}/${deleteFileDto.fileName}`;
+    await this.fileService.deleteFile(key);
   }
 }
