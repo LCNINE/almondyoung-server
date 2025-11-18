@@ -11,7 +11,9 @@ import { NotificationDispatcherService } from './services/notification-dispatche
 import { NotificationController } from './controllers/notification.controller';
 import { EventController } from './controllers/event.controller';
 import { NotificationProcessor } from './processors/notification.processor';
-import { NotificationEventConsumer } from './handlers/notification-event.consumer';
+import { UserEventConsumer } from './handlers/user-event.consumer';
+import { OrderEventConsumer } from './handlers/order-event.consumer';
+import { WalletEventConsumer } from './handlers/wallet-event.consumer';
 
 @Module({
   imports: [
@@ -30,7 +32,9 @@ import { NotificationEventConsumer } from './handlers/notification-event.consume
   controllers: [
     NotificationController,
     EventController,
-    NotificationEventConsumer,
+    UserEventConsumer,
+    OrderEventConsumer,
+    WalletEventConsumer,
   ],
   providers: [
     NotificationDispatcherService,
