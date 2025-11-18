@@ -1,140 +1,178 @@
 "use client"
-import React, { useState } from "react"
-import {
-  ChevronDown, // [추가] 드롭다운 아이콘
-} from "lucide-react"
-import { cn } from "@lib/utils"
 
-// --- Mock Data ---
-const historyData = [
-  {
-    id: 1,
-    date: "2024.05.05",
-    title: "상품 구매 확정 적립",
-    reason: "주문번호 240501-12345",
-    amount: 1250,
-    balance: 1250,
-  },
-  {
-    id: 2,
-    date: "2024.04.20",
-    title: "포토 리뷰 작성 적립",
-    reason: "롤리킹 펌제 1제 2제",
-    amount: 150,
-    balance: 0,
-  },
-]
+import { useRef, useState } from "react"
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
 
-// --- Components ---
-
-// 1. [변경] 메인 캐시 디스플레이 (상세 내역 카드형)
-const CashSummary = () => (
-  <section className="bg-white px-5 pt-6 pb-6">
-    {/* 카드 컨테이너 */}
-    <div className="rounded-2xl bg-[#F7F8FA] p-5 shadow-sm">
-      {/* 헤더: 전체 내역 타이틀 & 총액 */}
-      <div className="text-primary mb-4 flex items-center justify-between">
-        <button className="flex items-center gap-1 text-[15px] font-bold text-gray-800 transition-opacity hover:opacity-70">
-          아몬드영 캐시 전체 내역
-          <ChevronDown className="h-4 w-4 text-gray-500" />
-        </button>
-        <span className="text-lg font-bold text-black">1,400원</span>
-      </div>
-
-      {/* 구분선 */}
-      <div className="mb-4 h-px w-full bg-gray-200" />
-
-      {/* 상세 내역 리스트 */}
-      <div className="flex flex-col gap-3">
-        {/* 적립 */}
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-gray-500">적립</span>
-          <span className="font-bold text-green-600">+2,400원</span>
-        </div>
-
-        {/* 사용 */}
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium text-gray-500">사용</span>
-          <span className="font-bold text-gray-900">-1,000원</span>
-        </div>
-      </div>
-    </div>
-  </section>
-)
-
-// 4. 내역 리스트 (유지)
-const HistorySection = () => {
-  const [activeTab, setActiveTab] = useState("전체")
-  const tabs = ["전체", "적립", "사용"]
-
-  return (
-    <section className="min-h-[400px] border-t border-gray-100 bg-white">
-      <div className="sticky top-0 z-40 border-b border-gray-50 bg-white px-5 py-4">
-        <div className="flex gap-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                activeTab === tab
-                  ? "bg-[#1c1c1e] text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              )}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ul className="flex flex-col pb-20">
-        {historyData.map((item) => (
-          <li
-            key={item.id}
-            className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5 last:border-0"
-          >
-            <span className="text-xs text-gray-400">{item.date}</span>
-            <div className="flex items-start justify-between">
-              <div className="flex flex-col gap-1">
-                <span className="text-[15px] font-bold text-gray-900">
-                  {item.title}
-                </span>
-                <span className="text-xs text-gray-500">{item.reason}</span>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span
-                  className={cn(
-                    "text-[15px] font-bold",
-                    item.amount > 0 ? "text-amber-500" : "text-black"
-                  )}
-                >
-                  {item.amount > 0 ? "+" : ""}
-                  {item.amount.toLocaleString()}원
-                </span>
-                <span className="text-xs text-gray-400">
-                  잔액 {item.balance.toLocaleString()}원
-                </span>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
+interface IntentResponse {
+  id: string
+  customerId: string
+  amount: number
+  type: string
+  status: string
+  createdAt: string
+  updatedAt: string
 }
 
-// --- Main Page Component ---
-export default function RewardPage() {
-  return (
-    <div className="min-h-screen w-full bg-white font-['Pretendard'] text-black">
-      <div className="mx-auto min-h-screen max-w-md bg-white">
-        <main>
-          <CashSummary />
+export default function TestPage() {
+  const [intent, setIntent] = useState<IntentResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const paymentRef = useRef<any>(null)
 
-          <HistorySection />
-        </main>
+  // Intent 생성
+  const createIntent = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const response = await fetch(`/api/wallet/payments/intents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerId: `test_customer_${Date.now()}`,
+          amount: 100,
+          type: "ORDER",
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || "Intent 생성 실패")
+      }
+
+      const data: IntentResponse = await response.json()
+      setIntent(data)
+
+      // Intent 생성 후 토스 결제 SDK 초기화
+      await initializeTossPayment(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "알 수 없는 오류")
+      console.error("Intent 생성 실패:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 토스 결제 SDK 초기화
+  const initializeTossPayment = async (intentData: IntentResponse) => {
+    try {
+      const clientKey = "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
+      const tossPayments = await loadTossPayments(clientKey)
+
+      // 표준 결제창 사용
+      const payment = tossPayments.payment({
+        customerKey: intentData.customerId,
+      })
+
+      paymentRef.current = payment
+      console.log("✅ 토스 결제 SDK 초기화 완료")
+    } catch (err) {
+      setError(
+        "토스 SDK 초기화 실패: " +
+          (err instanceof Error ? err.message : "알 수 없는 오류")
+      )
+      console.error("토스 SDK 초기화 실패:", err)
+    }
+  }
+
+  // 결제 요청
+  const handlePayment = async () => {
+    if (!intent || !paymentRef.current) {
+      setError("Intent가 초기화되지 않았습니다.")
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      const baseUrl = window.location.origin
+      const countryCode = window.location.pathname.split("/")[1]
+
+      // 표준 결제창으로 카드 결제 요청
+      await paymentRef.current.requestPayment({
+        method: "CARD", // 카드 결제
+        amount: {
+          currency: "KRW",
+          value: intent.amount,
+        },
+        orderId: intent.id, // intentId를 orderId로 사용
+        orderName: "테스트 상품",
+        successUrl: `${baseUrl}/${countryCode}/test/callback`,
+        failUrl: `${baseUrl}/${countryCode}/test/callback`,
+        customerEmail: "customer123@gmail.com",
+        customerName: "김토스",
+        customerMobilePhone: "01012341234",
+        card: {
+          useEscrow: false,
+          flowMode: "DEFAULT",
+          useCardPoint: false,
+          useAppCardOnly: false,
+        },
+      })
+
+      console.log("✅ 결제창 요청 성공")
+    } catch (err: any) {
+      if (err?.code === "USER_CANCEL") {
+        setError("결제가 취소되었습니다.")
+        return
+      }
+
+      setError("결제 요청 실패: " + (err?.message || "알 수 없는 오류"))
+      console.error("결제 요청 실패:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="container mx-auto max-w-4xl p-8">
+      <h1 className="mb-6 text-3xl font-bold">토스 결제 테스트</h1>
+
+      {/* Intent 생성 버튼 */}
+      <div className="mb-6">
+        <button
+          onClick={createIntent}
+          disabled={loading || !!intent}
+          className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-400"
+        >
+          {loading ? "처리 중..." : intent ? "Intent 생성 완료" : "Intent 생성"}
+        </button>
       </div>
+
+      {/* Intent 정보 표시 */}
+      {intent && (
+        <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
+          <h2 className="mb-2 text-xl font-semibold">Intent 정보</h2>
+          <p>
+            <strong>Intent ID:</strong> {intent.id}
+          </p>
+          <p>
+            <strong>금액:</strong> {intent.amount.toLocaleString()}원
+          </p>
+          <p>
+            <strong>상태:</strong> {intent.status}
+          </p>
+
+          {/* 결제 버튼 */}
+          <button
+            onClick={handlePayment}
+            disabled={loading}
+            className="mt-4 w-full rounded bg-blue-600 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+          >
+            {loading ? "처리 중..." : "결제하기"}
+          </button>
+        </div>
+      )}
+
+      {/* 에러 메시지 */}
+      {error && (
+        <div className="mb-6 rounded border border-red-400 bg-red-100 p-4 text-red-700">
+          <strong>오류:</strong> {error}
+        </div>
+      )}
     </div>
   )
 }
