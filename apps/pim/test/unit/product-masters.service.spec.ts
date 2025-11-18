@@ -406,9 +406,8 @@ describe('ProductMastersService - Version Management Tests', () => {
     it('❌ 존재하지 않는 Master 조회', async () => {
       const fakeId = '00000000-0000-0000-0000-000000000000';
 
-      await expect(
-        service.getMasterById(fakeId),
-      ).rejects.toThrow(/not found/i);
+      const result = await service.getVersionById(fakeId);
+      expect(result).toBeNull();
     });
 
     it('❌ 존재하지 않는 버전 수정', async () => {

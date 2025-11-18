@@ -7,6 +7,7 @@ import { DbService } from '@app/db';
 import { productMasters, productVariants, pricingRules } from '../../src/schema';
 import type { ProductMaster } from '../../src/types';
 import { eq } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 
 describe('Edge Cases and Error Scenarios', () => {
   let mastersService: ProductMastersService;
@@ -317,7 +318,7 @@ describe('Edge Cases and Error Scenarios', () => {
       for (let i = 0; i < 5; i++) {
         const branch = await versionsService.createDraftVersion(
           v1.id,
-          `user-${i}`,
+          uuidv7(),
         );
         branches.push(branch);
       }
