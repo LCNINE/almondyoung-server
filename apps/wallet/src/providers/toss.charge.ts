@@ -53,10 +53,13 @@ export class TossChargeProvider implements ChargePort<ProviderType.TOSS> {
 
   /**
    * 토스페이먼츠의 '결제 승인 API'를 호출합니다.
+   *
+   * @docs https://docs.tosspayments.com/guides/v2/payment-widget/integration#결제-승인-api-호출하기
    * @private
    */
   private async confirmPayment(payload: TossPayload): Promise<PaymentResult> {
-    // 임시로 테스트 시크릿 키 하드코딩 (개발용) - 클라이언트 키와 매칭
+    // TODO: 개발자센터에 로그인해서 내 결제위젯 연동 키 > 시크릿 키를 입력하세요. 시크릿 키는 외부에 공개되면 안돼요.
+    // @docs https://docs.tosspayments.com/reference/using-api/api-keys
     const secretKey =
       process.env.TOSS_SECRET_KEY || 'test_sk_ALnQvDd2VJxMDd5NLwna8Mj7X41m';
 
@@ -72,22 +75,24 @@ export class TossChargeProvider implements ChargePort<ProviderType.TOSS> {
     // 상위 서비스(Orchestrator)에서 intentId를 metadata로 넘겨주는 것이 이상적입니다.
     const orderId = payload.metadata?.intentId ?? `temp-order-${Date.now()}`;
     const paymentKey = payload.oneTimeToken!;
+    const amount = payload.amount;
+
+    // 토스페이먼츠 API는 시크릿 키를 사용자 ID로 사용하고, 비밀번호는 사용하지 않습니다.
+    // 비밀번호가 없다는 것을 알리기 위해 시크릿 키 뒤에 콜론을 추가합니다.
+    // @docs https://docs.tosspayments.com/reference/using-api/authorization#%EC%9D%B8%EC%A6%9D
+    const encryptedSecretKey =
+      'Basic ' + Buffer.from(secretKey + ':').toString('base64');
 
     try {
+      // ------ 결제 승인 API 호출 ------
+      // @docs https://docs.tosspayments.com/guides/v2/payment-widget/integration#결제-승인-api-호출하기
       const response = await fetch(`${this.TOSS_API_URL}/payments/confirm`, {
         method: 'POST',
+        body: JSON.stringify({ orderId, amount, paymentKey }),
         headers: {
-          // 토스페이먼츠 인증 헤더
-          Authorization: `Basic ${Buffer.from(secretKey + ':').toString(
-            'base64',
-          )}`,
+          Authorization: encryptedSecretKey,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          paymentKey: paymentKey,
-          orderId: orderId,
-          amount: payload.amount,
-        }),
       });
 
       const responseData = await response.json();

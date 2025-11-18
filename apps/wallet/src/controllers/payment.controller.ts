@@ -20,7 +20,10 @@ import { BnplService } from '../services/bnpl/bnpl.service';
 import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
 import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
 
-import { PaymentError } from '../providers/payment-provider.interface';
+import {
+  PaymentError,
+  ProviderType,
+} from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
@@ -90,7 +93,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
-  ) { }
+  ) {}
 
   @Post('intents')
   @ApiOperation({
@@ -160,21 +163,25 @@ export class PaymentController {
     @Body(new ZodValidationPipe(CreateIntentSchema)) dto: CreateIntentDto,
     @Headers('Idempotency-Key') idemKey?: string,
   ) {
-    return runInTransaction(this.db, async (tx) => {
-      const { hit, response } = await this.idempotencyService.checkOrCreate(
-        tx,
-        idemKey,
-        dto.customerId,
-        dto,
-        'v2/payments/intents',
-      );
-      if (hit) return response;
+    try {
+      return await runInTransaction(this.db, async (tx) => {
+        const { hit, response } = await this.idempotencyService.checkOrCreate(
+          tx,
+          idemKey,
+          dto.customerId,
+          dto,
+          'v2/payments/intents',
+        );
+        if (hit) return response;
 
-      const newIntent = await this.intentService.createIntent(dto, tx);
+        const newIntent = await this.intentService.createIntent(dto, tx);
 
-      await this.idempotencyService.complete(tx, idemKey, newIntent);
-      return newIntent;
-    });
+        await this.idempotencyService.complete(tx, idemKey, newIntent);
+        return newIntent;
+      });
+    } catch (error) {
+      this.handleError(error, '결제 의도 생성');
+    }
   }
 
   @Get('intents/:intentId')
@@ -222,10 +229,7 @@ export class PaymentController {
       const intent = await this.intentService.findById(intentId);
 
       if (!intent) {
-        throw new HttpException(
-          `Intent not found: ${intentId}`,
-          HttpStatus.NOT_FOUND,
-        );
+        throw new Error(`Intent not found: ${intentId}`);
       }
 
       return intent;
@@ -309,104 +313,52 @@ export class PaymentController {
   ) {
     try {
       this.logger.log(`🔍 AUTHORIZE 시작 - intentId: ${intentId}`);
-      this.logger.log(`🔍 원본 요청 body:`, JSON.stringify(request.body));
-      this.logger.log(`🔍 파싱된 DTO:`, JSON.stringify(dto));
-      this.logger.log(
-        `결제 승인 요청: Intent ${intentId}, Provider ${dto.provider || '포인트 전액'}`,
-      );
 
+      // Intent 존재 여부 확인 (서비스에서도 확인하지만, 404를 명확히 하기 위해)
       const intent = await this.intentService.findById(intentId);
       if (!intent) {
-        throw new HttpException('Intent not found', HttpStatus.NOT_FOUND);
+        throw new Error('Intent not found');
       }
 
-      // ✅ 포인트 전액 결제 (provider 없음)
-      if (!dto.provider) {
-        this.logger.log('포인트 전액 결제 처리');
+      // Provider 타입 결정 (DTO → 서비스 파라미터 변환만 수행)
+      const providerType = dto.provider === 'TOSS' ? ProviderType.TOSS : null;
 
-        const result = await this.paymentService.authorizePaymentByIntent(
-          intentId,
-          null, // provider 없음
-          {
-            usePoints: dto.usePoints,
-            source: 'point_full_payment_api',
-            actor: 'frontend_user',
-          },
-        );
-
-        this.logger.log(`🎯 포인트 결제 결과:`, JSON.stringify(result));
-
-        if (result.success) {
-          return {
-            success: true,
-            intentId: intentId,
-            attemptId: result.attemptId,
-            status: 'AUTHORIZED',
-            provider: null,
-            amount: intent.amount,
-            paymentKey: null,
-            pointEventId: result.pointEventId,
-            breakdown: result.breakdown,
-            message: '포인트 전액 결제가 성공적으로 완료되었습니다.',
-          };
-        } else {
-          throw new HttpException(
-            `포인트 결제 실패: ${result.message}`,
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-      }
-
-      // Toss 결제 승인 처리
-      if (dto.provider === 'TOSS') {
-        this.logger.log(`Toss 결제 승인 처리: paymentKey=${dto.paymentKey}`);
-
-        // TOSS Provider에게 oneTimeToken으로 paymentKey 전달
-        const result = await this.paymentService.authorizePaymentByIntent(
-          intentId,
-          'TOSS' as any, // ProviderType
-          {
-            // paymentKey를 oneTimeToken으로 전달하기 위해 instrumentRef에 저장
-            instrumentRef: dto.paymentKey, // 이것이 TossPayload.oneTimeToken이 됨
-            usePoints: dto.usePoints, // 포인트 사용 금액 전달
-            source: 'toss_authorize_api',
-            actor: 'frontend_user',
-          },
-        );
-
-        this.logger.log(`🎯 결제 승인 결과:`, JSON.stringify(result));
-
-        if (result.success) {
-          const response = {
-            success: true,
-            intentId: intentId,
-            attemptId: result.attemptId,
-            status: 'AUTHORIZED',
-            provider: 'TOSS',
-            amount: intent.amount,
-            paymentKey: dto.paymentKey,
-            pointEventId: result.pointEventId, // ✅ 포인트 정보 추가
-            breakdown: result.breakdown, // ✅ 금액 분해 정보 추가
-            message: 'Toss 결제 승인이 성공적으로 완료되었습니다.',
-          };
-
-          this.logger.log(
-            `🎉 Toss 결제 승인 완료 응답:`,
-            JSON.stringify(response),
-          );
-          return response;
-        } else {
-          throw new HttpException(
-            `결제 승인 실패: ${result.message}`,
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-      }
-
-      throw new HttpException(
-        `지원하지 않는 Provider: ${dto.provider}`,
-        HttpStatus.BAD_REQUEST,
+      // 서비스 호출 (비즈니스 로직은 모두 서비스에 위임)
+      const result = await this.paymentService.authorizePaymentByIntent(
+        intentId,
+        providerType,
+        {
+          instrumentRef: dto.provider === 'TOSS' ? dto.paymentKey : undefined,
+          usePoints: dto.usePoints,
+          source:
+            dto.provider === 'TOSS'
+              ? 'toss_authorize_api'
+              : 'point_full_payment_api',
+          actor: 'frontend_user',
+        },
       );
+
+      // 서비스 실패 결과를 에러로 변환
+      if (!result.success) {
+        throw new Error(result.message || 'Payment authorization failed');
+      }
+
+      // 서비스 결과를 HTTP 응답 형식으로 변환 (전송 계층 책임)
+      return {
+        success: true,
+        intentId: intentId,
+        attemptId: result.attemptId,
+        status: 'AUTHORIZED',
+        provider: dto.provider || null,
+        amount: intent.amount,
+        paymentKey: dto.provider === 'TOSS' ? dto.paymentKey : null,
+        pointEventId: result.pointEventId,
+        breakdown: result.breakdown,
+        message:
+          dto.provider === 'TOSS'
+            ? 'Toss 결제 승인이 성공적으로 완료되었습니다.'
+            : '포인트 전액 결제가 성공적으로 완료되었습니다.',
+      };
     } catch (error) {
       this.handleError(error, '결제 승인');
     }
@@ -508,26 +460,20 @@ export class PaymentController {
         },
       );
 
-      this.logger.log(`🎯 결제 캡처 결과:`, JSON.stringify(result));
-
-      if (result.success) {
-        const response = {
-          success: true,
-          intentId: intentId,
-          attemptId: dto.attemptId,
-          status: 'CAPTURED',
-          amount: dto.amount,
-          message: '결제 캡처가 성공적으로 완료되었습니다.',
-        };
-
-        this.logger.log(`🎉 결제 캡처 완료 응답:`, JSON.stringify(response));
-        return response;
-      } else {
-        throw new HttpException(
-          `결제 캡처 실패: ${result.message}`,
-          HttpStatus.BAD_REQUEST,
-        );
+      // 서비스 실패 결과를 에러로 변환
+      if (!result.success) {
+        throw new Error(result.message || 'Payment capture failed');
       }
+
+      // 서비스 결과를 HTTP 응답 형식으로 변환
+      return {
+        success: true,
+        intentId: intentId,
+        attemptId: dto.attemptId,
+        status: 'CAPTURED',
+        amount: dto.amount,
+        message: '결제 캡처가 성공적으로 완료되었습니다.',
+      };
     } catch (error) {
       this.handleError(error, '결제 캡처');
     }
@@ -649,21 +595,17 @@ export class PaymentController {
     try {
       this.logger.log(`📥 HMS 카드 프로필 생성 요청 - userId: ${userId}`);
       this.logger.debug(`📥 요청 데이터:`, JSON.stringify(dto, null, 2));
-      
+
       // JWT에서 추출한 userId 사용
       const result = await this.profileService.createHmsCardProfile({
         ...dto,
         userId,
       });
-      
+
       this.logger.log(`✅ HMS 카드 프로필 생성 성공 - profileId: ${result}`);
       return result;
     } catch (error) {
-      this.logger.error(`❌ HMS 카드 프로필 생성 실패:`, error);
-      throw new HttpException(
-        'Failed to create HMS card profile',
-        HttpStatus.BAD_REQUEST,
-      );
+      this.handleError(error, 'HMS 카드 프로필 생성');
     }
   }
 
@@ -830,7 +772,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {
@@ -840,7 +782,7 @@ export class PaymentController {
           idemKey,
           intentId,
           dto,
-          `v2/payments/${intentId}/refund`,
+          `/payments/${intentId}/refund`,
         );
 
         if (hit) {
@@ -868,26 +810,50 @@ export class PaymentController {
 
   /**
    * 컨트롤러에서 발생하는 에러를 중앙에서 처리하여 HTTP 응답으로 변환합니다.
+   *
+   * [CTO 스타일] 서비스에서 던진 일반 Error를 전송 방식에 맞게 변환합니다.
+   * 에러 매핑은 문자열 패턴 기반으로 처리합니다.
+   *
    * @param error 발생한 에러 객체
    * @param context 에러가 발생한 컨텍스트 (로깅용)
    */
   private handleError(error: unknown, context: string): never {
-    // this.logger.error(
-    //   `❌ ${context} 실패: ${error instanceof Error ? error.message : String(error)}`,
-    //   error instanceof Error ? error.stack : undefined,
-    // );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
 
+    this.logger.error(`❌ ${context} 실패: ${errorMessage}`, errorStack);
+
+    // 이미 HTTP 에러인 경우 그대로 다시 던짐
+    if (error instanceof HttpException) {
+      throw error;
+    }
+
+    // PaymentError는 도메인 에러로 특별 처리
     if (error instanceof PaymentError) {
-      // 서비스 계층에서 발생한 도메인 에러를 HTTP 에러로 매핑
       if (error.code === 'PROVIDER_FAILED') {
         throw new HttpException(error.message, HttpStatus.BAD_GATEWAY); // 502
       }
       throw new BadRequestException(error.message); // 400
     }
 
-    if (error instanceof HttpException) {
-      // 이미 HTTP 에러인 경우 그대로 다시 던짐
-      throw error;
+    // 문자열 패턴 기반 에러 매핑 (CTO 스타일)
+    const message = errorMessage.toLowerCase();
+
+    if (message.includes('not found')) {
+      throw new HttpException(errorMessage, HttpStatus.NOT_FOUND); // 404
+    }
+
+    if (
+      message.includes('already processed') ||
+      message.includes('exceeds') ||
+      message.includes('required') ||
+      message.includes('invalid') ||
+      message.includes('failed') ||
+      message.includes('cannot') ||
+      message.includes('not in') ||
+      message.includes('not supported')
+    ) {
+      throw new BadRequestException(errorMessage); // 400
     }
 
     // 예측하지 못한 모든 에러는 500 서버 에러로 처리
