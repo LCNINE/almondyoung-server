@@ -45,8 +45,5 @@ export class CategoryResponseDto {
 
   @ApiProperty({ description: '기본 가격', required: false, nullable: true })
   basePrice?: string | null;
-
-  @ApiProperty({ description: '가격 전략', required: false })
-  pricingStrategy?: number;
 }
 
