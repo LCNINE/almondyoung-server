@@ -85,9 +85,6 @@ export class ProductMasterInfoDto {
   @ApiProperty({ description: '브랜드명', nullable: true })
   brand: string | null;
 
-  @ApiProperty({ description: '기본 가격' })
-  basePrice: number;
-
   @ApiProperty({ description: '마스터 상태' })
   status: string;
 }
@@ -162,9 +159,6 @@ export class MergedChannelProductDto {
 
   @ApiProperty({ description: '활성 상태' })
   isActive: boolean;
-
-  @ApiProperty({ description: '기본 가격' })
-  basePrice: number;
 
   @ApiProperty({ description: '채널별 특화 데이터', required: false })
   channelSpecificData?: Record<string, any>;

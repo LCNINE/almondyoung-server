@@ -10,6 +10,7 @@ import {
 } from './dto';
 import { NewProductMaster } from '../../types';
 import { inArray, isNull } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
 export class ProductCsvService {
@@ -153,28 +154,39 @@ export class ProductCsvService {
     }
 
     // Transform CSV rows to database records
-    const productsToInsert: NewProductMaster[] = valid.map((row) => ({
-      productCode: row.productCode || undefined,
-      name: row.name.trim(),
-      alternativeName: row.alternativeName?.trim() || undefined,
-      description: row.description?.trim() || undefined,
-      brand: row.brand?.trim() || undefined,
-      material: row.material?.trim() || undefined,
-      basePrice: row.basePrice ? Number(row.basePrice) : undefined,
-      marketPrice: row.marketPrice ? Number(row.marketPrice) : undefined,
-      supplyPrice: row.supplyPrice ? Number(row.supplyPrice) : undefined,
-      status: (row.status as any) || 'draft',
-      productType: (row.productType as any) || 'regular_sale',
-      salesClassification: row.salesClassification?.trim() || undefined,
-      purchaseClassification: row.purchaseClassification?.trim() || undefined,
-      ageRestriction: row.ageRestriction ? Number(row.ageRestriction) : 0,
-      minQuantity: row.minQuantity ? Number(row.minQuantity) : 1,
-      maxQuantity: row.maxQuantity ? Number(row.maxQuantity) : undefined,
-      seller: row.seller?.trim() || undefined,
-      approvalStatus: 'draft',
-      createdBy: userId,
-      updatedBy: userId,
-    }));
+    const productsToInsert: NewProductMaster[] = valid.map((row) => {
+      const masterId = uuidv7(); // 논리적 그룹 ID
+      const versionId = uuidv7(); // 물리적 버전 ID
+
+      return {
+        id: versionId,
+        masterId: masterId,
+        version: 1,
+        versionStatus: 'draft',
+        parentVersionId: null,
+        draftOwnerId: null,
+        productCode: row.productCode || undefined,
+        name: row.name.trim(),
+        alternativeName: row.alternativeName?.trim() || undefined,
+        description: row.description?.trim() || undefined,
+        brand: row.brand?.trim() || undefined,
+        material: row.material?.trim() || undefined,
+        basePrice: row.basePrice ? Number(row.basePrice) : undefined,
+        marketPrice: row.marketPrice ? Number(row.marketPrice) : undefined,
+        supplyPrice: row.supplyPrice ? Number(row.supplyPrice) : undefined,
+        status: (row.status as any) || 'draft',
+        productType: (row.productType as any) || 'regular_sale',
+        salesClassification: row.salesClassification?.trim() || undefined,
+        purchaseClassification: row.purchaseClassification?.trim() || undefined,
+        ageRestriction: row.ageRestriction ? Number(row.ageRestriction) : 0,
+        minQuantity: row.minQuantity ? Number(row.minQuantity) : 1,
+        maxQuantity: row.maxQuantity ? Number(row.maxQuantity) : undefined,
+        seller: row.seller?.trim() || undefined,
+        approvalStatus: 'draft',
+        createdBy: userId,
+        updatedBy: userId,
+      };
+    });
 
     // Batch insert with audit logging
     const inserted = await this.db.transaction(async (tx) => {
