@@ -32,7 +32,3 @@ export const appConfig = {
     redirect_to: "/", // 좀 더 고민이 필요함 일단 기본값은 홈으로 설정했음
   },
 }
-
-// API Gateway 사용 설정
-// Gateway 안정성 문제 등으로 직접 서비스 호출이 필요할 경우 false로 설정하세요.
-export const USE_API_GATEWAY = false
