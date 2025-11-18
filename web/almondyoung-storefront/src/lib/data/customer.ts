@@ -168,6 +168,8 @@ export async function signout() {
     body: JSON.stringify({}),
   })
 
+  await sdk.auth.logout()
+
   await removeMedusaAuthToken()
   await removeAccessToken()
   await removeRefreshToken()
