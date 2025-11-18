@@ -22,8 +22,8 @@ export class PaymentRequestBuilder {
     intent: PaymentIntent,
     finalAmount: number,
     options: {
+      authParams?: Record<string, string>;
       profileId?: string;
-      instrumentRef?: string;
       sessionId?: string;
       source?: string;
       actor?: string;
@@ -37,9 +37,11 @@ export class PaymentRequestBuilder {
       amount: finalAmount,
       paymentType: intent.type as PaymentType,
       userId: intent.customerId,
-      instrumentType: options.profileId ? 'PROFILE' : 'ONE_TIME',
+      instrumentType: options.profileId ? 'PROFILE' : 'EPHEMERAL',
       profileId: options.profileId,
-      instrumentRef: options.instrumentRef,
+      instrumentRef: options.authParams
+        ? JSON.stringify(options.authParams)
+        : undefined,
       metadata: {
         sessionId: options.sessionId,
         source: options.source || 'api',

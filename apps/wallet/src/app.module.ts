@@ -23,6 +23,9 @@ import { PaymentPointManager } from './services/payment/payment-point.manager';
 import { PaymentProviderManager } from './services/payment/payment-provider.manager';
 import { PaymentAttemptRepository } from './services/payment/payment-attempt.repository';
 import { PaymentRequestBuilder } from './services/payment/payment-request.builder';
+import { EphemeralPaymentStrategy } from './services/payment/strategies/ephemeral-payment.strategy';
+import { StoredProfilePaymentStrategy } from './services/payment/strategies/stored-profile-payment.strategy';
+import { PaymentStrategyFactory } from './services/payment/strategies/payment-strategy.factory';
 import { BnplRepository } from './services/bnpl/bnpl.repository';
 import { BnplSettlementService } from './services/bnpl/bnpl-settlement.service';
 import { BnplBatchCreator } from './services/bnpl/bnpl-batch.creator';
@@ -110,6 +113,11 @@ import { PointRepository } from './services/points/point.repository';
     PaymentProviderManager,
     PaymentAttemptRepository,
     PaymentRequestBuilder,
+
+    // --- Payment Strategies ---
+    EphemeralPaymentStrategy,
+    StoredProfilePaymentStrategy,
+    PaymentStrategyFactory,
 
     // --- BNPL Implementation Layer ---
     BnplAccountReader,
