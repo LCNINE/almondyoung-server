@@ -19,11 +19,7 @@ export interface PaymentRequest {
   intentId: string;
   attemptId: string;
   amount: number;
-  paymentType: PaymentType;
-  userId: string;
-  instrumentType: 'PROFILE' | 'ONE_TIME';
-  profileId?: string; // PROFILE일 때만
-  instrumentRef?: string; // ONE_TIME일 때(예: 토스 원타임 토큰)
+  profileId?: string;
   metadata?: Record<string, any>;
 }
 

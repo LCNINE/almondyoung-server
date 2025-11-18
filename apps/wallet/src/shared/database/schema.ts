@@ -1261,11 +1261,6 @@ export const paymentAttempts = pgTable(
       .notNull()
       .references(() => paymentIntents.id, { onDelete: 'cascade' }),
     profileId: varchar('profile_id', { length: 36 }),
-    // 프로필 기반 vs 일회성 구분
-    instrumentType: varchar('instrument_type', { length: 16 })
-      .$type<'PROFILE' | 'ONE_TIME'>()
-      .notNull()
-      .default('PROFILE'),
     provider: paymentProviderEnum('provider').notNull(),
     amount: bigint('amount', { mode: 'number' }).notNull(),
     status: transactionStatusEnum('status').notNull(),

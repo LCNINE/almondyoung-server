@@ -28,32 +28,33 @@ export class PaymentAttemptRepository {
    * PaymentAttempt를 생성합니다.
    */
   async create(
-    request: PaymentRequest,
+    data: {
+      attemptId: string;
+      intentId: string;
+      provider: ProviderType;
+      profileId?: string;
+      amount: number;
+      metadata?: Record<string, any>;
+    },
     result: PaymentResult,
-    providerType: ProviderType,
     status: string,
     tx?: any,
   ): Promise<void> {
     const executor = tx ?? this.db.db;
 
     await executor.insert(schema.paymentAttempts).values({
-      id: request.attemptId,
-      intentId: request.intentId,
-      provider: providerType,
-      instrumentType: request.instrumentType,
-      profileId: request.profileId || null,
-      amount: request.amount,
+      id: data.attemptId,
+      intentId: data.intentId,
+      provider: data.provider,
+      profileId: data.profileId || null,
+      amount: data.amount,
       status: result.success ? status : 'FAILED',
       transactionId: result.transactionId ?? null,
-      requestMetadata: request.metadata
-        ? JSON.stringify(request.metadata)
-        : null,
+      requestMetadata: data.metadata ? JSON.stringify(data.metadata) : null,
       providerResponseSnapshot: result.raw ? JSON.stringify(result.raw) : null,
     });
 
-    this.logger.log(
-      `Attempt ${request.attemptId} created with status ${status}`,
-    );
+    this.logger.log(`Attempt ${data.attemptId} created with status ${status}`);
   }
 
   /**
