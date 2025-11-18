@@ -27,3 +27,17 @@ export class CalculatePriceRequestDto {
   customerType?: 'regular' | 'membership';
 }
 
+export class GetPriceSetRequestDto {
+  @ApiProperty({ description: 'Variant ID' })
+  @IsString()
+  variantId: string;
+
+  @ApiProperty({ 
+    description: 'Version ID (optional, defaults to active)',
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  versionId?: string;
+}
+

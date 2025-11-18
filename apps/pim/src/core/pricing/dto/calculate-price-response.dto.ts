@@ -81,3 +81,25 @@ export class CalculatePriceResponseDto {
   priceBreakdown: PriceBreakdownDto;
 }
 
+export class TieredPriceDto {
+  @ApiProperty({ description: 'Minimum quantity' })
+  minQuantity: number;
+
+  @ApiProperty({ description: 'Unit price at this tier' })
+  price: number;
+}
+
+export class VariantPriceSetDto {
+  @ApiProperty({ description: 'Base price (regular customer)' })
+  basePrice: number;
+
+  @ApiProperty({ description: 'Membership price' })
+  membershipPrice: number;
+
+  @ApiProperty({ 
+    description: 'Tiered prices for bulk purchases',
+    type: [TieredPriceDto]
+  })
+  tieredPrices: TieredPriceDto[];
+}
+

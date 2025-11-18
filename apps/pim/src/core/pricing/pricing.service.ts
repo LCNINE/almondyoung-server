@@ -3,13 +3,14 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
 import { pricingRules, productMasters, productMasterPricingRules, pimSchema } from '../../schema';
-import { DbTransaction, PricingRule } from '../../types';
+import { DbTransaction, PricingRule, VariantPriceSet } from '../../types';
 import {
   ReplacePricingRulesDto,
   PricingRulesResponseDto,
   PricingRuleResponseDto,
 } from './dto';
 import { PricingValidatorService } from './pricing-validator.service';
+import { PricingCalculatorService } from './pricing-calculator.service';
 import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class PricingService {
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
+    private readonly calculatorService: PricingCalculatorService,
   ) {}
 
   private get db() {
@@ -312,6 +314,44 @@ export class PricingService {
     }, tx);
   }
 
+  async getVariantPriceSet(
+    masterId: string,
+    variantId: string,
+    versionId?: string,
+    tx?: DbTransaction,
+  ): Promise<VariantPriceSet> {
+    return this.inTx(async (trx) => {
+      let targetVersionId: string;
+
+      if (versionId) {
+        targetVersionId = versionId;
+      } else {
+        const [activeVersion] = await trx
+          .select({ id: productMasters.id })
+          .from(productMasters)
+          .where(
+            and(
+              eq(productMasters.masterId, masterId),
+              eq(productMasters.versionStatus, 'active'),
+            ),
+          );
+
+        if (!activeVersion) {
+          throw new NotFoundException(
+            `No active version found for master ${masterId}`,
+          );
+        }
+        targetVersionId = activeVersion.id;
+      }
+
+      return this.calculatorService.calculateVariantPriceSet(
+        targetVersionId,
+        variantId,
+        trx,
+      );
+    }, tx);
+  }
+
   private async ensureMasterExists(
     masterId: string,
     tx: DbTransaction,
@@ -319,7 +359,7 @@ export class PricingService {
     const masters = await tx
       .select({ id: productMasters.id })
       .from(productMasters)
-      .where(eq(productMasters.id, masterId))
+      .where(eq(productMasters.masterId, masterId))
       .limit(1);
 
     if (masters.length === 0) {
