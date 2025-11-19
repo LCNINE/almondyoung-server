@@ -9,15 +9,12 @@ import {
   AbstractAuthModuleProvider,
   MedusaError,
 } from '@medusajs/framework/utils';
-import CustomUserModuleService from '../custom-user/service';
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
   static identifier = 'my-auth';
-  private userCustomModule: CustomUserModuleService;
 
   constructor() {
     super();
-    this.userCustomModule = new CustomUserModuleService();
   }
 
   async register(
