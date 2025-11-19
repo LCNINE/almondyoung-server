@@ -24,7 +24,7 @@ import { UpdateHolderDto } from '../dto/holder/holder-update.dto';
 import { HolderDto, HolderListResponseDto } from '../dto/holder/holder-response.dto';
 
 @ApiTags('Holder Management')
-@Controller('wms/holders')
+@Controller('holders')
 export class HolderController {
     private readonly logger = new Logger(HolderController.name);
 

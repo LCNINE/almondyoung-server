@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 type OptionSchema = { options?: Array<{ name: string; values: string[] }> };
 
 @ApiTags('Masters')
-@Controller('wms/masters')
+@Controller('masters')
 export class MastersController {
   constructor(private readonly masterService: MasterService, private readonly config: ConfigService) {}
 

@@ -45,7 +45,7 @@ const CompleteSessionSchema = z.object({
 });
 
 @ApiTags('Inspection')
-@Controller('wms/inspection')
+@Controller('inspection')
 export class InspectionController {
   constructor(
     private readonly inspectionService: InspectionService

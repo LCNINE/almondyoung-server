@@ -22,7 +22,7 @@ import {
 } from '../dto';
 
 @ApiTags('Suppliers')
-@Controller('wms/suppliers')
+@Controller('suppliers')
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 

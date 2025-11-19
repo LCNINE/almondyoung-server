@@ -29,7 +29,7 @@ import {
 } from '../dto/return/return-response.dto';
 
 @ApiTags('Inventory - Returns')
-@Controller('wms/inventory/returns')
+@Controller('inventory/returns')
 export class ReturnController {
   constructor(private readonly returnService: ReturnService) {}
 

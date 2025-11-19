@@ -41,7 +41,7 @@ const AddVariantToMappingSchema = z.object({
   quantity: z.number().int().positive().default(1)
 });
 
-@Controller('wms/fulfillment-orders')
+@Controller('fulfillment-orders')
 export class FulfillmentOrderController {
   constructor(
     private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService,
@@ -81,7 +81,7 @@ export class FulfillmentOrderController {
   }
 }
 
-@Controller('wms/product-sku-mappings')
+@Controller('product-sku-mappings')
 export class ProductSkuMappingController {
   constructor(
     private readonly productSkuMappingService: ProductSkuMappingService

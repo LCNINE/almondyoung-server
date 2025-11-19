@@ -16,7 +16,7 @@ import { ImmediateReceiveDto } from '../dto/inbound-list/immediate-receive.dto';
 import { InboundListResponseDto, InboundListItemDto } from '../dto/inbound-list/inbound-list-response.dto';
 
 @ApiTags('Inbound Lists')
-@Controller('wms/inbound/lists')
+@Controller('inbound/lists')
 export class InboundListController {
     constructor(private readonly inboundListService: InboundListService) {}
 

@@ -28,7 +28,7 @@ const ExportOrdersSchema = z.object({
 });
 
 @ApiTags('Direct Ship')
-@Controller('wms/direct-ship')
+@Controller('direct-ship')
 export class DirectShipController {
   constructor(
     private readonly directShipService: DirectShipService

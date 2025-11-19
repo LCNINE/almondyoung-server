@@ -18,7 +18,7 @@ import {
 } from '../dto';
 
 @ApiTags('Supplier Categories')
-@Controller('wms/supplier-categories')
+@Controller('supplier-categories')
 export class SupplierCategoriesController {
   constructor(
     private readonly supplierCategoriesService: SupplierCategoriesService,

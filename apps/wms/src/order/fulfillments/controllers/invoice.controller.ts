@@ -19,7 +19,7 @@ const PrintInvoicesSchema = z.object({
   invoiceIds: z.array(z.string().uuid()).min(1)
 });
 
-@Controller('wms/invoices')
+@Controller('invoices')
 export class InvoiceController {
   constructor(
     private readonly invoiceService: InvoiceService

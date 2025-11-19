@@ -28,7 +28,7 @@ import {
 } from '../dto/transfer/transfer-response.dto';
 
 @ApiTags('Inventory - Transfers')
-@Controller('wms/inventory/transfers')
+@Controller('inventory/transfers')
 export class TransferController {
   constructor(private readonly transferService: TransferService) {}
 

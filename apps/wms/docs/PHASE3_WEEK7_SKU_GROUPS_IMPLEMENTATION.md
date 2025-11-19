@@ -198,7 +198,7 @@ Successfully implemented WMS-internal SKU Groups feature for warehouse organizat
 
 #### 1. Create SKU Group
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/sku-groups \
+curl -X POST http://localhost:3000/inventory/sku-groups \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Eyelash Extensions - J Curl",
@@ -211,14 +211,14 @@ curl -X POST http://localhost:3000/wms/inventory/sku-groups \
 
 #### 2. List All Groups
 ```bash
-curl http://localhost:3000/wms/inventory/sku-groups
+curl http://localhost:3000/inventory/sku-groups
 
 # Expected: 200, array of groups with member counts
 ```
 
 #### 3. Add SKU to Group
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/sku-groups/{groupId}/members \
+curl -X POST http://localhost:3000/inventory/sku-groups/{groupId}/members \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "{sku-uuid}"
@@ -229,7 +229,7 @@ curl -X POST http://localhost:3000/wms/inventory/sku-groups/{groupId}/members \
 
 #### 4. Bulk Add SKUs
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/sku-groups/{groupId}/members/bulk \
+curl -X POST http://localhost:3000/inventory/sku-groups/{groupId}/members/bulk \
   -H "Content-Type: application/json" \
   -d '{
     "skuIds": [
@@ -244,7 +244,7 @@ curl -X POST http://localhost:3000/wms/inventory/sku-groups/{groupId}/members/bu
 
 #### 5. Get Group Members
 ```bash
-curl http://localhost:3000/wms/inventory/sku-groups/{groupId}/members
+curl http://localhost:3000/inventory/sku-groups/{groupId}/members
 
 # Expected: 200, group info with array of member SKUs
 ```
@@ -252,19 +252,19 @@ curl http://localhost:3000/wms/inventory/sku-groups/{groupId}/members
 #### 6. Delete Group (Critical Test!)
 ```bash
 # Delete the group
-curl -X DELETE http://localhost:3000/wms/inventory/sku-groups/{groupId}
+curl -X DELETE http://localhost:3000/inventory/sku-groups/{groupId}
 
 # Expected: 204 No Content
 
 # Verify SKUs still exist with groupId = null
-curl http://localhost:3000/wms/inventory/skus/{sku-id}
+curl http://localhost:3000/inventory/skus/{sku-id}
 
 # Expected: 200, SKU exists, groupId is null ✅
 ```
 
 #### 7. Get Ungrouped SKUs
 ```bash
-curl "http://localhost:3000/wms/inventory/sku-groups/ungrouped?limit=20&offset=0"
+curl "http://localhost:3000/inventory/sku-groups/ungrouped?limit=20&offset=0"
 
 # Expected: 200, array of SKUs where groupId IS NULL
 ```

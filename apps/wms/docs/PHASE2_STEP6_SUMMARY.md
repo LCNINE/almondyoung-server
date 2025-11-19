@@ -83,13 +83,13 @@
 
 **엔드포인트 (7개):**
 ```
-POST   /wms/inventory/skus/pricing               - 생성/수정
-GET    /wms/inventory/skus/:skuId/pricing        - 조회
-GET    /wms/inventory/skus/:skuId/pricing/effective - 유효 가격
-PUT    /wms/inventory/skus/:skuId/pricing        - 수정
-DELETE /wms/inventory/skus/:skuId/pricing        - 삭제
-GET    /wms/inventory/skus/pricing/all           - 전체 목록
-GET    /wms/inventory/skus/:skuId/pricing/valid  - 유효성 확인
+POST   /inventory/skus/pricing               - 생성/수정
+GET    /inventory/skus/:skuId/pricing        - 조회
+GET    /inventory/skus/:skuId/pricing/effective - 유효 가격
+PUT    /inventory/skus/:skuId/pricing        - 수정
+DELETE /inventory/skus/:skuId/pricing        - 삭제
+GET    /inventory/skus/pricing/all           - 전체 목록
+GET    /inventory/skus/:skuId/pricing/valid  - 유효성 확인
 ```
 
 ---
@@ -99,13 +99,13 @@ GET    /wms/inventory/skus/:skuId/pricing/valid  - 유효성 확인
 
 **엔드포인트 (7개):**
 ```
-POST   /wms/inventory/skus/managers                      - 할당
-GET    /wms/inventory/skus/:skuId/managers               - 조회
-PUT    /wms/inventory/skus/:skuId/managers               - 수정
-DELETE /wms/inventory/skus/:skuId/managers               - 전체 제거
-DELETE /wms/inventory/skus/:skuId/managers/:role         - 역할 제거
-GET    /wms/inventory/skus/managers/all                  - 전체 목록
-GET    /wms/inventory/managers/:managerId/skus           - 담당 SKU 목록
+POST   /inventory/skus/managers                      - 할당
+GET    /inventory/skus/:skuId/managers               - 조회
+PUT    /inventory/skus/:skuId/managers               - 수정
+DELETE /inventory/skus/:skuId/managers               - 전체 제거
+DELETE /inventory/skus/:skuId/managers/:role         - 역할 제거
+GET    /inventory/skus/managers/all                  - 전체 목록
+GET    /inventory/managers/:managerId/skus           - 담당 SKU 목록
 ```
 
 ---
@@ -120,13 +120,13 @@ GET    /wms/inventory/managers/:managerId/skus           - 담당 SKU 목록
 
 **엔드포인트 (6개):**
 ```
-POST   /wms/inventory/location-movements                         - 이동 기록
-GET    /wms/inventory/location-movements                         - 필터링 조회
-GET    /wms/inventory/location-movements/recent                  - 최근 이동
-GET    /wms/inventory/location-movements/statistics              - 통계
-GET    /wms/inventory/location-movements/:id                     - 상세 조회
-GET    /wms/inventory/skus/:skuId/location-movements             - SKU 이력
-GET    /wms/inventory/locations/:locationId/movements            - 위치 이력
+POST   /inventory/location-movements                         - 이동 기록
+GET    /inventory/location-movements                         - 필터링 조회
+GET    /inventory/location-movements/recent                  - 최근 이동
+GET    /inventory/location-movements/statistics              - 통계
+GET    /inventory/location-movements/:id                     - 상세 조회
+GET    /inventory/skus/:skuId/location-movements             - SKU 이력
+GET    /inventory/locations/:locationId/movements            - 위치 이력
 ```
 
 ---
@@ -272,17 +272,17 @@ open http://localhost:3000/api
 
 # 3. API 테스트 (예시)
 # 가격 생성
-curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
+curl -X POST http://localhost:3000/inventory/skus/pricing \
   -H "Content-Type: application/json" \
   -d '{"skuId": "test-sku-id", "sellingPrice": 30000}'
 
 # 담당자 할당
-curl -X POST http://localhost:3000/wms/inventory/skus/managers \
+curl -X POST http://localhost:3000/inventory/skus/managers \
   -H "Content-Type: application/json" \
   -d '{"skuId": "test-sku-id", "purchaseManagerId": "manager-id"}'
 
 # 위치 이동
-curl -X POST http://localhost:3000/wms/inventory/location-movements \
+curl -X POST http://localhost:3000/inventory/location-movements \
   -H "Content-Type: application/json" \
   -d '{"skuId": "sku-id", "barcode": "TEST", "fromLocationId": "loc1", "toLocationId": "loc2"}'
 ```

@@ -16,7 +16,7 @@ import { UpdateSkuManagersDto } from '../dto/sku-managers/update-sku-managers.dt
 import { SkuManagersResponseDto } from '../dto/sku-managers/sku-managers-response.dto';
 
 @ApiTags('SKU Managers')
-@Controller('wms/inventory/skus')
+@Controller('inventory/skus')
 export class SkuManagersController {
     constructor(private readonly skuManagersService: SkuManagersService) {}
 
@@ -142,7 +142,7 @@ export class SkuManagersController {
 }
 
 @ApiTags('Manager SKU Assignments')
-@Controller('wms/inventory/managers')
+@Controller('inventory/managers')
 export class ManagerSkusController {
     constructor(private readonly skuManagersService: SkuManagersService) {}
 

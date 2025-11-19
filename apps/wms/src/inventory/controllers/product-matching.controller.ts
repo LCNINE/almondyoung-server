@@ -9,7 +9,7 @@ import { VariantSkuLookupDto } from '../dto/product-matching/variant-sku-lookup.
 import { matchingStatusEnum } from '../../../database/schemas/wms-schema';
 
 @ApiTags('Product Matching')
-@Controller('wms/matchings')
+@Controller('matchings')
 export class ProductMatchingController {
     constructor(private readonly productMatchingService: ProductMatchingService) { }
 

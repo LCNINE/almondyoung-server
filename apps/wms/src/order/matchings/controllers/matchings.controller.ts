@@ -9,7 +9,7 @@ const UpsertMatchingSchema = z.object({
   policy: z.object({ inventoryManagement: z.boolean().optional(), preStockSellable: z.boolean().optional(), alwaysSellableZeroStock: z.boolean().optional() }).optional(),
 });
 
-@Controller('wms/matchings')
+@Controller('matchings')
 export class MatchingsController {
   constructor(private readonly service: MatchingsService) {}
 

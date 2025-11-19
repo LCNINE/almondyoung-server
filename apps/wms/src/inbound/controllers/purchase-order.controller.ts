@@ -27,7 +27,7 @@ import {
 import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
 
 @ApiTags('Purchase Orders')
-@Controller('wms/purchase-orders')
+@Controller('purchase-orders')
 export class PurchaseOrderController {
     constructor(private readonly purchaseOrderService: PurchaseOrderService) {}
 
