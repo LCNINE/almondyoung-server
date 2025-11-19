@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Body } from '@nestjs/common';
 
-@Controller('wms/location-optimization')
+@Controller('location-optimization')
 export class LocationOptimizationController {
 
   @Post('routes/optimize')

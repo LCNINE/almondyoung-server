@@ -4,7 +4,7 @@ import { InboundService } from '../services/inbound.service';
 import { SimpleInboundDto, IndividualInboundDto, PutawayRequestDto, ReturnInboundDto, CancelInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ListPlanItemsQueryDto, ReceiveFromPlanDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 
 @ApiTags('Inbound')
-@Controller('wms/inbound')
+@Controller('inbound')
 export class InboundController {
     @Post('simple')
     @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })

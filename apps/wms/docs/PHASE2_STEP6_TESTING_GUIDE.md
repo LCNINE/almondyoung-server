@@ -29,10 +29,10 @@ npm run start:dev wms
 
 ```bash
 # SKU 목록 확인
-curl http://localhost:3000/wms/inventory/skus | jq '.[0:3]'
+curl http://localhost:3000/inventory/skus | jq '.[0:3]'
 
 # 위치 목록 확인
-curl http://localhost:3000/wms/inventory/locations | jq '.[0:3]'
+curl http://localhost:3000/inventory/locations | jq '.[0:3]'
 ```
 
 테스트용 환경 변수를 설정합니다:
@@ -51,7 +51,7 @@ export TEST_MANAGER_ID="manager-id-here"
 ### 1.1 가격 생성 (Create/Upsert)
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
+curl -X POST http://localhost:3000/inventory/skus/pricing \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -83,26 +83,26 @@ curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
 ### 1.2 가격 조회
 
 ```bash
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing | jq
 ```
 
 ### 1.3 유효한 가격 조회 (현재 날짜 기준)
 
 ```bash
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing/effective | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing/effective | jq
 ```
 
 ### 1.4 특정 날짜 기준 유효 가격 조회
 
 ```bash
 # 2025년 6월 1일 기준
-curl "http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing/effective?referenceDate=2025-06-01T00:00:00Z" | jq
+curl "http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing/effective?referenceDate=2025-06-01T00:00:00Z" | jq
 ```
 
 ### 1.5 가격 수정
 
 ```bash
-curl -X PUT http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing \
+curl -X PUT http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing \
   -H "Content-Type: application/json" \
   -d '{
     "sellingPrice": 42000,
@@ -113,7 +113,7 @@ curl -X PUT http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing \
 ### 1.6 가격 유효성 확인
 
 ```bash
-curl "http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing/valid" | jq
+curl "http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing/valid" | jq
 ```
 
 **예상 결과:**
@@ -128,13 +128,13 @@ curl "http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing/valid" | j
 ### 1.7 전체 가격 목록
 
 ```bash
-curl http://localhost:3000/wms/inventory/skus/pricing/all | jq
+curl http://localhost:3000/inventory/skus/pricing/all | jq
 ```
 
 ### 1.8 가격 삭제
 
 ```bash
-curl -X DELETE http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing | jq
+curl -X DELETE http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing | jq
 ```
 
 ---
@@ -144,7 +144,7 @@ curl -X DELETE http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing |
 ### 2.1 담당자 할당
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/skus/managers \
+curl -X POST http://localhost:3000/inventory/skus/managers \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -170,13 +170,13 @@ curl -X POST http://localhost:3000/wms/inventory/skus/managers \
 ### 2.2 담당자 조회
 
 ```bash
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/managers | jq
 ```
 
 ### 2.3 담당자 수정 (부분 업데이트)
 
 ```bash
-curl -X PUT http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers \
+curl -X PUT http://localhost:3000/inventory/skus/${TEST_SKU_ID}/managers \
   -H "Content-Type: application/json" \
   -d '{
     "purchaseManagerId": "new-manager-id"
@@ -187,13 +187,13 @@ curl -X PUT http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers \
 
 ```bash
 # designer 역할 제거
-curl -X DELETE http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers/designer | jq
+curl -X DELETE http://localhost:3000/inventory/skus/${TEST_SKU_ID}/managers/designer | jq
 ```
 
 ### 2.5 담당자별 SKU 목록 조회
 
 ```bash
-curl http://localhost:3000/wms/inventory/managers/${TEST_MANAGER_ID}/skus | jq
+curl http://localhost:3000/inventory/managers/${TEST_MANAGER_ID}/skus | jq
 ```
 
 **예상 결과:**
@@ -215,13 +215,13 @@ curl http://localhost:3000/wms/inventory/managers/${TEST_MANAGER_ID}/skus | jq
 ### 2.6 전체 담당자 할당 목록
 
 ```bash
-curl http://localhost:3000/wms/inventory/skus/managers/all | jq
+curl http://localhost:3000/inventory/skus/managers/all | jq
 ```
 
 ### 2.7 모든 담당자 제거
 
 ```bash
-curl -X DELETE http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers | jq
+curl -X DELETE http://localhost:3000/inventory/skus/${TEST_SKU_ID}/managers | jq
 ```
 
 ---
@@ -231,7 +231,7 @@ curl -X DELETE http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers 
 ### 3.1 위치 이동 기록
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/location-movements \
+curl -X POST http://localhost:3000/inventory/location-movements \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -265,7 +265,7 @@ curl -X POST http://localhost:3000/wms/inventory/location-movements \
 ### 3.2 SKU별 이동 이력 조회
 
 ```bash
-curl "http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/location-movements?limit=10&offset=0" | jq
+curl "http://localhost:3000/inventory/skus/${TEST_SKU_ID}/location-movements?limit=10&offset=0" | jq
 ```
 
 **예상 결과:**
@@ -280,32 +280,32 @@ curl "http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/location-movements
 
 ```bash
 # 기본 조회
-curl http://localhost:3000/wms/inventory/location-movements | jq
+curl http://localhost:3000/inventory/location-movements | jq
 
 # 특정 SKU 필터
-curl "http://localhost:3000/wms/inventory/location-movements?skuId=${TEST_SKU_ID}" | jq
+curl "http://localhost:3000/inventory/location-movements?skuId=${TEST_SKU_ID}" | jq
 
 # 출발 위치 필터
-curl "http://localhost:3000/wms/inventory/location-movements?fromLocationId=${TEST_LOCATION_FROM}" | jq
+curl "http://localhost:3000/inventory/location-movements?fromLocationId=${TEST_LOCATION_FROM}" | jq
 
 # 날짜 범위 필터
-curl "http://localhost:3000/wms/inventory/location-movements?startDate=2025-10-01T00:00:00Z&endDate=2025-10-31T23:59:59Z" | jq
+curl "http://localhost:3000/inventory/location-movements?startDate=2025-10-01T00:00:00Z&endDate=2025-10-31T23:59:59Z" | jq
 ```
 
 ### 3.4 최근 이동 내역
 
 ```bash
-curl "http://localhost:3000/wms/inventory/location-movements/recent?limit=20" | jq
+curl "http://localhost:3000/inventory/location-movements/recent?limit=20" | jq
 ```
 
 ### 3.5 이동 통계
 
 ```bash
 # 전체 통계
-curl http://localhost:3000/wms/inventory/location-movements/statistics | jq
+curl http://localhost:3000/inventory/location-movements/statistics | jq
 
 # 기간별 통계
-curl "http://localhost:3000/wms/inventory/location-movements/statistics?startDate=2025-10-01T00:00:00Z&endDate=2025-10-31T23:59:59Z" | jq
+curl "http://localhost:3000/inventory/location-movements/statistics?startDate=2025-10-01T00:00:00Z&endDate=2025-10-31T23:59:59Z" | jq
 ```
 
 **예상 결과:**
@@ -334,20 +334,20 @@ curl "http://localhost:3000/wms/inventory/location-movements/statistics?startDat
 
 ```bash
 # 해당 위치에서 나간 이동 (from)
-curl "http://localhost:3000/wms/inventory/locations/${TEST_LOCATION_FROM}/movements?direction=from" | jq
+curl "http://localhost:3000/inventory/locations/${TEST_LOCATION_FROM}/movements?direction=from" | jq
 
 # 해당 위치로 들어온 이동 (to)
-curl "http://localhost:3000/wms/inventory/locations/${TEST_LOCATION_TO}/movements?direction=to" | jq
+curl "http://localhost:3000/inventory/locations/${TEST_LOCATION_TO}/movements?direction=to" | jq
 
 # 양방향 모두 (both)
-curl "http://localhost:3000/wms/inventory/locations/${TEST_LOCATION_FROM}/movements?direction=both" | jq
+curl "http://localhost:3000/inventory/locations/${TEST_LOCATION_FROM}/movements?direction=both" | jq
 ```
 
 ### 3.7 특정 이동 조회
 
 ```bash
 export MOVEMENT_ID="movement-uuid-from-create"
-curl http://localhost:3000/wms/inventory/location-movements/${MOVEMENT_ID} | jq
+curl http://localhost:3000/inventory/location-movements/${MOVEMENT_ID} | jq
 ```
 
 ---
@@ -360,7 +360,7 @@ curl http://localhost:3000/wms/inventory/location-movements/${MOVEMENT_ID} | jq
 #!/bin/bash
 
 echo "=== 1. SKU 가격 설정 ==="
-curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
+curl -X POST http://localhost:3000/inventory/skus/pricing \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -369,7 +369,7 @@ curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
   }' | jq
 
 echo -e "\n=== 2. 담당자 할당 ==="
-curl -X POST http://localhost:3000/wms/inventory/skus/managers \
+curl -X POST http://localhost:3000/inventory/skus/managers \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -377,7 +377,7 @@ curl -X POST http://localhost:3000/wms/inventory/skus/managers \
   }' | jq
 
 echo -e "\n=== 3. 위치 이동 기록 ==="
-curl -X POST http://localhost:3000/wms/inventory/location-movements \
+curl -X POST http://localhost:3000/inventory/location-movements \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -391,13 +391,13 @@ curl -X POST http://localhost:3000/wms/inventory/location-movements \
 
 echo -e "\n=== 4. 데이터 확인 ==="
 echo "Price:"
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/pricing | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/pricing | jq
 
 echo -e "\nManagers:"
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/managers | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/managers | jq
 
 echo -e "\nMovement History:"
-curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/location-movements | jq
+curl http://localhost:3000/inventory/skus/${TEST_SKU_ID}/location-movements | jq
 ```
 
 ---
@@ -439,7 +439,7 @@ curl http://localhost:3000/wms/inventory/skus/${TEST_SKU_ID}/location-movements 
 ### 6.1 잘못된 날짜 범위 (Pricing)
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
+curl -X POST http://localhost:3000/inventory/skus/pricing \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -459,7 +459,7 @@ curl -X POST http://localhost:3000/wms/inventory/skus/pricing \
 ### 6.2 담당자 없이 할당 (Managers)
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/skus/managers \
+curl -X POST http://localhost:3000/inventory/skus/managers \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'"
@@ -471,7 +471,7 @@ curl -X POST http://localhost:3000/wms/inventory/skus/managers \
 ### 6.3 동일 위치로 이동 (Location Movement)
 
 ```bash
-curl -X POST http://localhost:3000/wms/inventory/location-movements \
+curl -X POST http://localhost:3000/inventory/location-movements \
   -H "Content-Type: application/json" \
   -d '{
     "skuId": "'${TEST_SKU_ID}'",
@@ -530,31 +530,31 @@ http://localhost:3000/api
 ### API 엔드포인트 요약
 
 **SKU Pricing (7개)**
-- POST `/wms/inventory/skus/pricing` - 생성/수정
-- GET `/wms/inventory/skus/:skuId/pricing` - 조회
-- GET `/wms/inventory/skus/:skuId/pricing/effective` - 유효 가격 조회
-- PUT `/wms/inventory/skus/:skuId/pricing` - 수정
-- DELETE `/wms/inventory/skus/:skuId/pricing` - 삭제
-- GET `/wms/inventory/skus/pricing/all` - 전체 목록
-- GET `/wms/inventory/skus/:skuId/pricing/valid` - 유효성 확인
+- POST `/inventory/skus/pricing` - 생성/수정
+- GET `/inventory/skus/:skuId/pricing` - 조회
+- GET `/inventory/skus/:skuId/pricing/effective` - 유효 가격 조회
+- PUT `/inventory/skus/:skuId/pricing` - 수정
+- DELETE `/inventory/skus/:skuId/pricing` - 삭제
+- GET `/inventory/skus/pricing/all` - 전체 목록
+- GET `/inventory/skus/:skuId/pricing/valid` - 유효성 확인
 
 **SKU Managers (7개)**
-- POST `/wms/inventory/skus/managers` - 할당
-- GET `/wms/inventory/skus/:skuId/managers` - 조회
-- PUT `/wms/inventory/skus/:skuId/managers` - 수정
-- DELETE `/wms/inventory/skus/:skuId/managers` - 전체 제거
-- DELETE `/wms/inventory/skus/:skuId/managers/:role` - 역할 제거
-- GET `/wms/inventory/skus/managers/all` - 전체 목록
-- GET `/wms/inventory/managers/:managerId/skus` - 담당 SKU 목록
+- POST `/inventory/skus/managers` - 할당
+- GET `/inventory/skus/:skuId/managers` - 조회
+- PUT `/inventory/skus/:skuId/managers` - 수정
+- DELETE `/inventory/skus/:skuId/managers` - 전체 제거
+- DELETE `/inventory/skus/:skuId/managers/:role` - 역할 제거
+- GET `/inventory/skus/managers/all` - 전체 목록
+- GET `/inventory/managers/:managerId/skus` - 담당 SKU 목록
 
 **SKU Location Movement (6개)**
-- POST `/wms/inventory/location-movements` - 이동 기록
-- GET `/wms/inventory/location-movements` - 필터링 조회
-- GET `/wms/inventory/location-movements/recent` - 최근 이동
-- GET `/wms/inventory/location-movements/statistics` - 통계
-- GET `/wms/inventory/location-movements/:id` - 상세 조회
-- GET `/wms/inventory/skus/:skuId/location-movements` - SKU 이동 이력
-- GET `/wms/inventory/locations/:locationId/movements` - 위치별 이동
+- POST `/inventory/location-movements` - 이동 기록
+- GET `/inventory/location-movements` - 필터링 조회
+- GET `/inventory/location-movements/recent` - 최근 이동
+- GET `/inventory/location-movements/statistics` - 통계
+- GET `/inventory/location-movements/:id` - 상세 조회
+- GET `/inventory/skus/:skuId/location-movements` - SKU 이동 이력
+- GET `/inventory/locations/:locationId/movements` - 위치별 이동
 
 **총 20개 엔드포인트**
 

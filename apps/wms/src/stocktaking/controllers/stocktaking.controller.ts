@@ -17,7 +17,7 @@ import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
 
 @ApiTags('Stocktaking')
-@Controller('wms/stocktaking')
+@Controller('stocktaking')
 export class StocktakingController {
     constructor(private readonly stocktakingService: StocktakingService) {}
 

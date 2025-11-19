@@ -32,7 +32,7 @@ const CreateSalesOrderSchema = z.object({
 });
 
 @ApiTags('Sales Orders')
-@Controller('wms/sales-orders')
+@Controller('sales-orders')
 export class SalesOrdersController {
   constructor(private readonly service: SalesOrdersService) {}
 

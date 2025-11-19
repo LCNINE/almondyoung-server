@@ -140,27 +140,27 @@ SO 수신 → 매핑 확인 → FO 생성 → 재고 예약 → 출고회차 할
 ## API 엔드포인트 예시
 
 ### Sales Orders
-- `POST /wms/sales-orders` - 판매주문 생성
-- `GET /wms/sales-orders/{id}` - 판매주문 조회
-- `PATCH /wms/sales-orders/{id}` - 판매주문 수정
+- `POST /sales-orders` - 판매주문 생성
+- `GET /sales-orders/{id}` - 판매주문 조회
+- `PATCH /sales-orders/{id}` - 판매주문 수정
 
 ### Fulfillments
-- `POST /wms/fulfillments` - 출고주문 생성
-- `POST /wms/fulfillments/{id}/reserve` - 재고 예약
-- `POST /wms/outbound-batches` - 출고회차 생성
-- `POST /wms/picking/{batchId}/start` - 피킹 시작
-- `POST /wms/inspection/{foId}/scan` - 바코드 검수
-- `POST /wms/consolidation/merge` - 합배송 처리
-- `POST /wms/invoices/{foId}/issue` - 송장 발급
+- `POST /fulfillments` - 출고주문 생성
+- `POST /fulfillments/{id}/reserve` - 재고 예약
+- `POST /outbound-batches` - 출고회차 생성
+- `POST /picking/{batchId}/start` - 피킹 시작
+- `POST /inspection/{foId}/scan` - 바코드 검수
+- `POST /consolidation/merge` - 합배송 처리
+- `POST /invoices/{foId}/issue` - 송장 발급
 
 ### Direct Ship
-- `GET /wms/direct-ship/pending` - 직배 대기 목록
-- `POST /wms/direct-ship/export` - 외부업체 리스트 내보내기
-- `POST /wms/direct-ship/complete` - 직배 완료 처리
+- `GET /direct-ship/pending` - 직배 대기 목록
+- `POST /direct-ship/export` - 외부업체 리스트 내보내기
+- `POST /direct-ship/complete` - 직배 완료 처리
 
 ### Matchings
-- `GET /wms/matchings/{variantId}` - 상품 매칭 조회
-- `PUT /wms/matchings/{variantId}` - 매핑 규칙 설정
+- `GET /matchings/{variantId}` - 상품 매칭 조회
+- `PUT /matchings/{variantId}` - 매핑 규칙 설정
 
 ## 데이터 흐름
 

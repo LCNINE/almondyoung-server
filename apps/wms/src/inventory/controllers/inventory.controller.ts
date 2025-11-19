@@ -16,7 +16,7 @@ import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
 
 @ApiTags('Inventory')
-@Controller('wms/inventory')
+@Controller('inventory')
 export class InventoryController {
     constructor(
         private readonly inventoryService: InventoryService,
