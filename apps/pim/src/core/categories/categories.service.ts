@@ -555,8 +555,6 @@ export class ProductCategoriesService {
         description: pimSchema.productMasters.description,
         brand: pimSchema.productMasters.brand,
         thumbnail: pimSchema.productMasters.thumbnail, // thumbnail 필드 추가
-        basePrice: pimSchema.productMasters.basePrice,
-        pricingStrategy: pimSchema.productMasters.pricingStrategy,
         tags: pimSchema.productMasters.tags,
         images: pimSchema.productMasters.images,
         attributes: pimSchema.productMasters.attributes,
@@ -567,8 +565,6 @@ export class ProductCategoriesService {
         status: pimSchema.productMasters.status,
         isWholesaleOnly: pimSchema.productMasters.isWholesaleOnly,
         isMembershipOnly: pimSchema.productMasters.isMembershipOnly,
-        membershipPrice: pimSchema.productMasters.membershipPrice,
-        wholesalePrice: pimSchema.productMasters.wholesalePrice,
         createdAt: pimSchema.productMasters.createdAt,
         updatedAt: pimSchema.productMasters.updatedAt,
         createdBy: pimSchema.productMasters.createdBy,

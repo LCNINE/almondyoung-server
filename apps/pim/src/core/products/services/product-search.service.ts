@@ -77,14 +77,6 @@ export class ProductSearchService {
       conditions.push(eq(productMasters.seller, query.seller));
     }
 
-    // Price range
-    if (query.minPrice !== undefined) {
-      conditions.push(gte(productMasters.basePrice, query.minPrice));
-    }
-    if (query.maxPrice !== undefined) {
-      conditions.push(lte(productMasters.basePrice, query.maxPrice));
-    }
-
     // Date range
     const { startDate, endDate } = this.parseDateRange(query);
     if (startDate) {
