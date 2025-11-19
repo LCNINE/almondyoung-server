@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   userServiceSchema,
   UserServiceSchema,
@@ -8,9 +8,12 @@ import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { and, isNotNull, lt } from 'drizzle-orm';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly usersService: UsersService,
@@ -99,5 +102,32 @@ export class AuthService {
     );
 
     return user;
+  }
+
+  /**
+   * 유저 영구삭제 크론잡
+   */
+  @Cron('0 0 1 * *') // 매월 1일 0시 0분에 실행
+  async handleUserPermanentCleanup() {
+    this.logger.log('유저 영구삭제 크론잡 시작');
+
+    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+    const limitDate = new Date(Date.now() - THIRTY_DAYS);
+
+    try {
+      const client = this.getClient();
+      await client
+        .delete(userServiceSchema.users)
+        .where(
+          and(
+            isNotNull(userServiceSchema.users.deletedAt),
+            lt(userServiceSchema.users.deletedAt, limitDate),
+          ),
+        );
+
+      this.logger.log('유저 영구삭제 크론잡 완료');
+    } catch (error) {
+      this.logger.error('유저 영구삭제 크론잡 중 오류 발생', error);
+    }
   }
 }

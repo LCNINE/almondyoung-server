@@ -928,13 +928,15 @@ export class AuthService {
     return;
   }
 
-  async deleteAccount(userId: string): Promise<void> {
-    const deletedUser = await this.dbService.db
-      .delete(userServiceSchema.users)
-      .where(eq(userServiceSchema.users.id, userId))
-      .returning();
+  async removeAccount(userId: string, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      await tx
+        .update(userServiceSchema.users)
+        .set({
+          deletedAt: new Date(),
+        })
+        .where(eq(userServiceSchema.users.id, userId));
 
-    if (deletedUser.length > 0) {
       await this.eventPublisher.publishEvent({
         eventType: 'UserDeleted',
         aggregateId: userId,
@@ -942,13 +944,7 @@ export class AuthService {
           userId,
         },
       });
-    } else {
-      throw new NotFoundException(
-        `User with id ${userId} not found or already deleted.`,
-      );
-    }
-
-    return;
+    }, tx);
   }
 
   // 리프레시 토큰 만료 시간 결정
