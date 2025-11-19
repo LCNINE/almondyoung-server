@@ -1,6 +1,6 @@
 import {
   DeleteObjectCommand,
-  GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -8,6 +8,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -48,14 +49,13 @@ export class FileService implements OnModuleInit {
     this.logger.log('S3 Client initialized successfully');
   }
 
-  async uploadFile(
-    file: ValidatedFile,
-    folderName: keyof typeof S3_FOLDER_NAMES = 'BUSINESS',
-  ): Promise<string> {
+  async uploadFile(file: ValidatedFile, userId: string): Promise<string> {
+    const { buffer, filename, mimetype, folderName } = file;
+
     try {
       // 파일 확장자 추출
       const fileExtension = file.filename.split('.').pop();
-      const key = `${S3_FOLDER_NAMES[folderName]}/${uuid()}.${fileExtension}`;
+      const key = `${S3_FOLDER_NAMES[folderName]}/${userId}/${uuid()}.${fileExtension}`;
 
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
@@ -65,11 +65,6 @@ export class FileService implements OnModuleInit {
       });
 
       await this.s3Client.send(command);
-
-      const getCommand = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-      });
 
       const publicUrl = this.getPublicUrl(key);
 
@@ -89,19 +84,29 @@ export class FileService implements OnModuleInit {
     }
   }
 
-  async deleteFile(folderNameAndKey: string): Promise<void> {
+  async deleteFile(key: string): Promise<void> {
     try {
-      const command = new DeleteObjectCommand({
-        Bucket: this.bucketName,
-        Key: folderNameAndKey,
-      });
+      // 파일 존재 확인
+      await this.s3Client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        }),
+      );
 
-      await this.s3Client.send(command);
+      // 삭제
+      await this.s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        }),
+      );
 
-      this.logger.log(`File deleted successfully: ${folderNameAndKey}`);
-
-      return;
+      this.logger.log(`File deleted successfully: ${key}`);
     } catch (error) {
+      if (error.name === 'NotFound') {
+        throw new NotFoundException('파일을 찾을 수 없습니다.');
+      }
       throw new BadRequestException('파일 삭제 중 오류가 발생했습니다.');
     }
   }

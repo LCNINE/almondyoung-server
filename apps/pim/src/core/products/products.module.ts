@@ -3,29 +3,30 @@ import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { ProductMastersController } from './controllers/product-masters.controller';
 import { ProductVariantsController } from './controllers/product-variants.controller';
+import { ProductVersionsController } from './controllers/product-versions.controller';
 import { ProductMastersService } from './services/product-masters.service';
 import { ProductVariantsService } from './services/product-variants.service';
 import { ProductSearchService } from './services/product-search.service';
-import { PricingStrategyFactory } from './pricing/pricing-strategy.factory';
-import { OptionBasedPricingStrategy } from './pricing/option-based-pricing.strategy';
-import { VariantBasedPricingStrategy } from './pricing/variant-based-pricing.strategy';
+import { ProductVersionsService } from './services/product-versions.service';
 
 @Module({
   imports: [],
-  controllers: [ProductMastersController, ProductVariantsController],
+  controllers: [
+    ProductMastersController,
+    ProductVariantsController,
+    ProductVersionsController,
+  ],
   providers: [
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
-    PricingStrategyFactory,
-    OptionBasedPricingStrategy,
-    VariantBasedPricingStrategy,
+    ProductVersionsService,
   ],
   exports: [
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
-    PricingStrategyFactory,
+    ProductVersionsService,
   ],
 })
 export class ProductsModule {}

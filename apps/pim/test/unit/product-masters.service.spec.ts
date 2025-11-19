@@ -1,24 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ProductMastersService } from '../../src/services/product-masters.service';
-import { PricingStrategyFactory } from '../../src/services/pricing/pricing-strategy.factory';
-import { OptionBasedPricingStrategy } from '../../src/services/pricing/option-based-pricing.strategy';
-import { VariantBasedPricingStrategy } from '../../src/services/pricing/variant-based-pricing.strategy';
+import { ProductMastersService } from '../../src/core/products/services/product-masters.service';
+import { ProductVersionsService } from '../../src/core/products/services/product-versions.service';
 import { PimTestDatabase } from '../support/pim-test-database';
 import { PimTestFactory } from '../support/pim-test-factory';
 import { DbService } from '@app/db';
-import { pimSchema } from '../../src/schema';
-import type { CreateMasterDto } from '../../src/types';
-import { eq } from 'drizzle-orm';
+import { pimSchema, productMasters, productVariants, productMasterVariants } from '../../src/schema';
+import { eq, and } from 'drizzle-orm';
 
-describe('ProductMastersService - CRUD Tests', () => {
+describe('ProductMastersService - Version Management Tests', () => {
   let service: ProductMastersService;
+  let versionsService: ProductVersionsService;
   let module: TestingModule;
 
   beforeAll(async () => {
-    // testcontainers는 이미 jest-setup.ts에서 시작됨
     await PimTestDatabase.setup();
 
-    // Mock StreamPublisher (이벤트 발행은 테스트 범위 밖)
     const mockStreamPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
     };
@@ -26,9 +22,7 @@ describe('ProductMastersService - CRUD Tests', () => {
     module = await Test.createTestingModule({
       providers: [
         ProductMastersService,
-        PricingStrategyFactory,
-        OptionBasedPricingStrategy,
-        VariantBasedPricingStrategy,
+        ProductVersionsService,
         {
           provide: DbService,
           useFactory: () => ({
@@ -43,6 +37,7 @@ describe('ProductMastersService - CRUD Tests', () => {
     }).compile();
 
     service = module.get<ProductMastersService>(ProductMastersService);
+    versionsService = module.get<ProductVersionsService>(ProductVersionsService);
   });
 
   afterAll(async () => {
@@ -53,448 +48,374 @@ describe('ProductMastersService - CRUD Tests', () => {
     await PimTestDatabase.clearAllTables();
   });
 
-  describe('createMaster()', () => {
-    it('✅ 옵션 없는 간단한 상품(감자) 생성 테스트', async () => {
-      const createDto: CreateMasterDto = {
-        name: '국산 감자',
-        description: '신선한 국산 감자입니다',
-        brand: '농장직송',
-        basePrice: 5000,
-        pricingStrategy: 'option_based',
-      };
+  describe('3.1 상품 생성 (Create-Then-Update 패턴)', () => {
+    it('✅ 빈 draft 생성 (빈 객체)', async () => {
+      const master = await service.createMaster({});
 
-      const result = await service.createMaster(createDto);
+      expect(master).toBeDefined();
+      expect(master.id).toBeDefined();
+      expect(master.masterId).toBeDefined();
+      expect(master.version).toBe(1);
+      expect(master.versionStatus).toBe('draft');
+      expect(master.parentVersionId).toBeNull();
+      expect(master.name).toBe('새 상품');
+    });
 
-      expect(result).toBeDefined();
-      expect(result.id).toBeDefined();
-      expect(result.name).toBe('국산 감자');
-      expect(result.basePrice).toBe(5000);
-      expect(result.pricingStrategy).toBe('option_based');
+    it('✅ 기본 정보 포함 생성', async () => {
+      const master = await service.createMaster({
+        name: '무선 이어폰',
+        description: '고음질 무선 이어폰',
+        brand: '테스트 브랜드',
+      });
 
-      // DB 확인
-      const savedMasters = await PimTestDatabase.getDb()
+      expect(master.name).toBe('무선 이어폰');
+      expect(master.description).toBe('고음질 무선 이어폰');
+      expect(master.brand).toBe('테스트 브랜드');
+      expect(master.versionStatus).toBe('draft');
+    });
+
+    it('✅ masterId와 versionId 별도 생성 확인', async () => {
+      const master = await service.createMaster({});
+
+      expect(master.id).not.toBe(master.masterId);
+      expect(master.id).toBeDefined();
+      expect(master.masterId).toBeDefined();
+    });
+
+    it('✅ 첫 버전은 version=1, status=draft', async () => {
+      const master = await service.createMaster({});
+
+      expect(master.version).toBe(1);
+      expect(master.versionStatus).toBe('draft');
+    });
+
+    it('✅ 기본 variant 1개 자동 생성 (isDefault=true)', async () => {
+      const master = await service.createMaster({});
+
+      const db = PimTestDatabase.getDb();
+      const variants = await db
         .select()
-        .from(pimSchema.productMasters)
-        .where(eq(pimSchema.productMasters.id, result.id));
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
 
-      expect(savedMasters).toHaveLength(1);
-      expect(savedMasters[0].name).toBe('국산 감자');
-      expect(savedMasters[0].brand).toBe('농장직송');
-    }, 10000);
+      expect(variants).toHaveLength(1);
 
-    it('✅ 단일 옵션 그룹이 있는 상품(아이스티) 생성 테스트', async () => {
-      const createDto: CreateMasterDto = {
-        name: '프리미엄 아이스티',
-        description: '시원하고 달콤한 아이스티',
-        brand: '카페브랜드',
-        basePrice: 3000,
-        pricingStrategy: 'option_based',
-        optionGroups: [{
-          name: 'size',
-          displayName: '사이즈',
-          values: [
-            { value: 'S', displayName: 'Small (355ml)', price: 0 },
-            { value: 'M', displayName: 'Medium (473ml)', price: 500 },
-            { value: 'L', displayName: 'Large (591ml)', price: 1000 }
-          ]
-        }]
-      };
-
-      const result = await service.createMaster(createDto);
-
-      expect(result).toBeDefined();
-      expect(result.pricingStrategy).toBe('option_based');
-
-      // 비동기 옵션 처리를 기다림 (setImmediate 사용하므로)
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // 옵션 그룹 확인
-      const optionGroups = await PimTestDatabase.getDb()
+      const [variantMapping] = variants;
+      const [variant] = await db
         .select()
-        .from(pimSchema.productOptionGroups)
-        .where(eq(pimSchema.productOptionGroups.masterId, result.id));
+        .from(productVariants)
+        .where(eq(productVariants.id, variantMapping.variantId));
 
-      expect(optionGroups.length).toBeGreaterThan(0);
-      if (optionGroups.length > 0) {
-        expect(optionGroups[0].name).toBe('size');
-        expect(optionGroups[0].displayName).toBe('사이즈');
-
-        // 옵션 값 확인
-        const optionValues = await PimTestDatabase.getDb()
-          .select()
-          .from(pimSchema.productOptionValues)
-          .where(eq(pimSchema.productOptionValues.optionGroupId, optionGroups[0].id));
-
-        expect(optionValues.length).toBeGreaterThanOrEqual(3);
-      }
-    }, 15000);
-
-    it('✅ 다중 옵션 그룹이 있는 상품(티셔츠) 생성 테스트', async () => {
-      const createDto: CreateMasterDto = {
-        name: '프리미엄 티셔츠',
-        description: '고품질 면 100% 티셔츠',
-        brand: '패션브랜드',
-        basePrice: 25000,
-        pricingStrategy: 'option_based',
-        optionGroups: [
-          {
-            name: 'size',
-            displayName: '사이즈',
-            values: [
-              { value: 'S', displayName: 'Small', price: 0 },
-              { value: 'M', displayName: 'Medium', price: 0 },
-              { value: 'L', displayName: 'Large', price: 2000 },
-              { value: 'XL', displayName: 'Extra Large', price: 3000 }
-            ]
-          },
-          {
-            name: 'color',
-            displayName: '색상',
-            values: [
-              { value: 'black', displayName: '블랙', price: 0 },
-              { value: 'white', displayName: '화이트', price: 0 },
-              { value: 'navy', displayName: '네이비', price: 1000 }
-            ]
-          }
-        ]
-      };
-
-      const result = await service.createMaster(createDto);
-
-      expect(result).toBeDefined();
-      expect(result.name).toBe('프리미엄 티셔츠');
-
-      // 비동기 옵션 처리를 기다림
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // 옵션 그룹 확인
-      const optionGroups = await PimTestDatabase.getDb()
-        .select()
-        .from(pimSchema.productOptionGroups)
-        .where(eq(pimSchema.productOptionGroups.masterId, result.id));
-
-      expect(optionGroups.length).toBeGreaterThanOrEqual(2);
-
-      if (optionGroups.length >= 2) {
-        // Variants 확인 (4 x 3 = 12개 조합)
-        const variants = await PimTestDatabase.getDb()
-          .select()
-          .from(pimSchema.productVariants)
-          .where(eq(pimSchema.productVariants.masterId, result.id));
-
-        expect(variants.length).toBeGreaterThanOrEqual(12);
-      }
-    }, 15000);
-
-    it('❌ 필수 필드 누락 시 에러', async () => {
-      const invalidDto = {
-        description: '설명만 있음',
-      } as CreateMasterDto;
-
-      await expect(service.createMaster(invalidDto)).rejects.toThrow();
+      expect(variant.isDefault).toBe(true);
+      expect(variant.status).toBe('active');
     });
   });
 
-  describe('getMasterById()', () => {
-    it('✅ 존재하는 Master 조회 성공', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '테스트 조회용 상품',
-        description: '조회 테스트용',
-        brand: '테스트브랜드',
-        basePrice: 10000,
-        pricingStrategy: 'option_based',
+  describe('3.2 상품 수정', () => {
+    it('✅ Draft 버전 수정 가능', async () => {
+      const master = await service.createMaster({
+        name: '원래 이름',
       });
 
-      const result = await service.getMasterById(testMaster.id);
-
-      expect(result).toBeDefined();
-      expect(result!.id).toBe(testMaster.id);
-      expect(result!.name).toBe('테스트 조회용 상품');
-      expect(result!.basePrice).toBe(10000);
-      expect(result!.brand).toBe('테스트브랜드');
-    });
-
-    it('❌ 존재하지 않는 Master 조회 시 null 반환', async () => {
-      const result = await service.getMasterById('00000000-0000-0000-0000-000000000000');
-
-      expect(result).toBeNull();
-    });
-
-    it('❌ 잘못된 UUID 형식으로 조회', async () => {
-      await expect(service.getMasterById('invalid-uuid')).rejects.toThrow();
-    });
-  });
-
-  describe('getMasters() - 목록 조회', () => {
-    it('✅ 기본 페이징 (page, limit)', async () => {
-      // 테스트 데이터 생성
-      await PimTestFactory.createMaster({ name: 'Product 1', basePrice: 1000 });
-      await PimTestFactory.createMaster({ name: 'Product 2', basePrice: 2000 });
-      await PimTestFactory.createMaster({ name: 'Product 3', basePrice: 3000 });
-
-      const result = await service.getMasters({
-        page: 1,
-        limit: 2
+      const updated = await service.updateMaster(master.id, {
+        name: '변경된 이름',
+        description: '새 설명',
       });
 
-      expect(result.data).toHaveLength(2);
-      expect(result.total).toBe(3);
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(2);
+      expect(updated.name).toBe('변경된 이름');
+      expect(updated.description).toBe('새 설명');
     });
 
-    it('✅ 필터링 (status, brand, search)', async () => {
-      await PimTestFactory.createMaster({
-        name: 'Apple Product',
-        brand: 'Apple',
-        basePrice: 10000
-      });
+    it('❌ Active 버전 수정 불가', async () => {
+      const { master } = await PimTestFactory.createDraftMasterWithBasicInfo();
 
-      await PimTestFactory.createMaster({
-        name: 'Samsung Product',
-        brand: 'Samsung',
-        basePrice: 20000
-      });
+      // Publish to active
+      await PimTestFactory.publishVersion(master.id, 'active');
 
-      // Brand 필터
-      const resultByBrand = await service.getMasters({
-        brand: 'Apple',
-        page: 1,
-        limit: 10
-      });
-
-      expect(resultByBrand.data.length).toBe(1);
-      expect(resultByBrand.data[0].name).toBe('Apple Product');
-
-      // Search 필터
-      const resultBySearch = await service.getMasters({
-        search: 'Samsung',
-        page: 1,
-        limit: 10
-      });
-
-      expect(resultBySearch.data.length).toBe(1);
-      expect(resultBySearch.data[0].name).toBe('Samsung Product');
+      // Try to update
+      await expect(
+        service.updateMaster(master.id, { name: '변경 시도' }),
+      ).rejects.toThrow(/only.*draft/i);
     });
 
-    it('✅ soft delete된 항목 제외', async () => {
-      const master1 = await PimTestFactory.createMaster({ name: 'Active Product' });
-      const master2 = await PimTestFactory.createMaster({ name: 'Deleted Product' });
+    it('❌ Inactive 버전 수정 불가', async () => {
+      const { master } = await PimTestFactory.createDraftMasterWithBasicInfo();
 
-      // master2 soft delete
-      await service.softDelete(master2.id, '00000000-0000-0000-0000-000000000001');
+      // Publish to inactive
+      await PimTestFactory.publishVersion(master.id, 'inactive');
 
-      // 기본 조회 (includeDeleted = false)
-      const result = await service.getMasters({ page: 1, limit: 10 });
-
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0].id).toBe(master1.id);
+      // Try to update
+      await expect(
+        service.updateMaster(master.id, { name: '변경 시도' }),
+      ).rejects.toThrow(/only.*draft/i);
     });
 
-    it('✅ 빈 결과 처리', async () => {
-      const result = await service.getMasters({ page: 1, limit: 10 });
-
-      expect(result.data).toHaveLength(0);
-      expect(result.total).toBe(0);
-    });
-  });
-
-  describe('updateMaster()', () => {
-    it('✅ 기본 정보 수정 (name, description, basePrice 등)', async () => {
-      const testMaster = await PimTestFactory.createMaster({
+    it('✅ 필드 부분 업데이트 (name만)', async () => {
+      const master = await service.createMaster({
         name: '원래 이름',
         description: '원래 설명',
-        basePrice: 10000,
       });
 
-      const updated = await service.updateMaster(testMaster.id, {
-        name: '수정된 이름',
-        description: '수정된 설명',
-        basePrice: 15000,
+      const updated = await service.updateMaster(master.id, {
+        name: '변경된 이름',
       });
 
-      expect(updated.name).toBe('수정된 이름');
-      expect(updated.description).toBe('수정된 설명');
-      expect(updated.basePrice).toBe(15000);
-    });
-
-    it('✅ 특수 가격 필드 수정 (membershipPrice, wholesalePrice)', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '테스트 상품',
-        basePrice: 10000,
-      });
-
-      const updated = await service.updateMaster(testMaster.id, {
-        membershipPrice: 8000,
-        wholesalePrice: 7000,
-        isMembershipOnly: true,
-      });
-
-      expect(updated.membershipPrice).toBe(8000);
-      expect(updated.wholesalePrice).toBe(7000);
-      expect(updated.isMembershipOnly).toBe(true);
-    });
-
-    it('❌ 존재하지 않는 Master 수정 시 에러', async () => {
-      await expect(
-        service.updateMaster('00000000-0000-0000-0000-000000000000', {
-          name: '수정 시도'
-        })
-      ).rejects.toThrow(/not found/i);
+      expect(updated.name).toBe('변경된 이름');
+      expect(updated.description).toBe('원래 설명'); // 변경되지 않음
     });
   });
 
-  describe('softDelete() & restore()', () => {
-    it('✅ Soft delete 성공 및 deletedAt, deletedBy 설정 확인', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '삭제 테스트 상품',
+  describe('3.3 옵션 관리 (optionDiff)', () => {
+    it('✅ 옵션 추가 (add) - 새 옵션 그룹 + 값들', async () => {
+      const master = await service.createMaster({
+        name: '옵션 테스트 상품',
       });
 
-      const deleted = await service.softDelete(testMaster.id, '00000000-0000-0000-0000-000000000001');
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '색상',
+              values: [
+                { displayName: '빨강' },
+                { displayName: '파랑' },
+              ],
+            },
+          ],
+        },
+      });
 
-      expect(deleted.deletedAt).toBeDefined();
-      expect(deleted.deletedAt).not.toBeNull();
-      expect(deleted.deletedBy).toBe('00000000-0000-0000-0000-000000000001');
+      const db = PimTestDatabase.getDb();
+      const updated = await PimTestFactory.getMasterById(master.id, db);
+
+      // Verify master still exists
+      expect(updated).toBeDefined();
+      expect(updated.name).toBe('옵션 테스트 상품');
     });
 
-    it('✅ Soft delete된 항목은 기본 조회에서 제외', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '삭제될 상품',
+    it('✅ 옵션 추가 시 variants 자동 재생성', async () => {
+      const master = await service.createMaster({});
+
+      const db = PimTestDatabase.getDb();
+
+      // 기본 variant 1개 확인
+      let variantsBefore = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+      expect(variantsBefore).toHaveLength(1);
+
+      // 옵션 추가
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '사이즈',
+              values: [
+                { displayName: 'S' },
+                { displayName: 'M' },
+                { displayName: 'L' },
+              ],
+            },
+          ],
+        },
       });
 
-      await service.softDelete(testMaster.id, '00000000-0000-0000-0000-000000000001');
+      // Variants 재생성 확인 (3개)
+      let variantsAfter = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+      expect(variantsAfter).toHaveLength(3);
+    });
 
-      // 기본 조회 (includeDeleted = false)
-      const result = await service.getMasterById(testMaster.id);
+    it('✅ 기존 기본 variant 삭제 후 조합 생성 확인', async () => {
+      const master = await service.createMaster({});
 
+      const db = PimTestDatabase.getDb();
+
+      // 기본 variant ID 저장
+      const [defaultVariantMapping] = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+
+      const defaultVariantId = defaultVariantMapping.variantId;
+
+      // 옵션 추가
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '색상',
+              values: [{ displayName: '빨강' }, { displayName: '파랑' }],
+            },
+          ],
+        },
+      });
+
+      // 기본 variant가 매핑에서 제거되었는지 확인
+      const defaultVariantStillMapped = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+            eq(productMasterVariants.variantId, defaultVariantId),
+          ),
+        );
+
+      expect(defaultVariantStillMapped).toHaveLength(0);
+    });
+  });
+
+  describe('3.4 Variant 자동 생성', () => {
+    it('✅ 단일 옵션 그룹 (3개 조합)', async () => {
+      const master = await service.createMaster({});
+
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '사이즈',
+              values: [
+                { displayName: 'S' },
+                { displayName: 'M' },
+                { displayName: 'L' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const db = PimTestDatabase.getDb();
+      const variants = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+
+      expect(variants).toHaveLength(3);
+    });
+
+    it('✅ 다중 옵션 그룹 (3×4 = 12개 조합)', async () => {
+      const master = await service.createMaster({});
+
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '사이즈',
+              values: [
+                { displayName: 'S' },
+                { displayName: 'M' },
+                { displayName: 'L' },
+              ],
+            },
+            {
+              displayName: '색상',
+              values: [
+                { displayName: '빨강' },
+                { displayName: '파랑' },
+                { displayName: '녹색' },
+                { displayName: '검정' },
+              ],
+            },
+          ],
+        },
+      });
+
+      const db = PimTestDatabase.getDb();
+      const variants = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+
+      expect(variants).toHaveLength(12); // 3 × 4 = 12
+    });
+
+    it('✅ Variant-OptionValue 매핑 확인', async () => {
+      const master = await service.createMaster({});
+
+      await service.updateMaster(master.id, {
+        optionDiff: {
+          add: [
+            {
+              displayName: '색상',
+              values: [{ displayName: '빨강' }, { displayName: '파랑' }],
+            },
+          ],
+        },
+      });
+
+      const db = PimTestDatabase.getDb();
+      const variantMappings = await db
+        .select()
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, master.masterId),
+            eq(productMasterVariants.version, master.version),
+          ),
+        );
+
+      // 각 variant가 옵션 값과 연결되어 있는지 확인
+      for (const mapping of variantMappings) {
+        const { variantOptionValues } = pimSchema;
+        const optionValues = await db
+          .select()
+          .from(variantOptionValues)
+          .where(eq(variantOptionValues.variantId, mapping.variantId));
+
+        expect(optionValues.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('3.5 에러 처리', () => {
+    it('❌ 존재하지 않는 Master 조회', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
+
+      const result = await service.getVersionById(fakeId);
       expect(result).toBeNull();
-
-      // includeDeleted = true로 조회
-      const resultWithDeleted = await service.getMasterById(testMaster.id, undefined, true);
-
-      expect(resultWithDeleted).toBeDefined();
-      expect(resultWithDeleted!.deletedAt).not.toBeNull();
     });
 
-    it('✅ Restore 성공 및 deletedAt null로 복원', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '복원 테스트 상품',
-      });
-
-      await service.softDelete(testMaster.id, '00000000-0000-0000-0000-000000000001');
-
-      const restored = await service.restore(testMaster.id, '00000000-0000-0000-0000-000000000002');
-
-      expect(restored.deletedAt).toBeNull();
-      expect(restored.deletedBy).toBeNull();
-
-      // 기본 조회로 다시 보이는지 확인
-      const result = await service.getMasterById(testMaster.id);
-      expect(result).toBeDefined();
-    });
-
-    it('❌ 이미 삭제된 항목 재삭제 시 에러', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '중복 삭제 테스트',
-      });
-
-      await service.softDelete(testMaster.id, '00000000-0000-0000-0000-000000000001');
+    it('❌ 존재하지 않는 버전 수정', async () => {
+      const fakeId = '00000000-0000-0000-0000-000000000000';
 
       await expect(
-        service.softDelete(testMaster.id, '00000000-0000-0000-0000-000000000001')
-      ).rejects.toThrow(/already deleted/i);
-    });
-
-    it('❌ 삭제되지 않은 항목 복원 시도 시 에러', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '복원 불가 테스트',
-      });
-
-      await expect(
-        service.restore(testMaster.id, '00000000-0000-0000-0000-000000000001')
-      ).rejects.toThrow(/not deleted/i);
-    });
-  });
-
-  describe('hardDelete()', () => {
-    it('✅ 영구 삭제 성공', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '영구 삭제 테스트',
-      });
-
-      const result = await service.hardDelete(testMaster.id, '00000000-0000-0000-0000-000000000001');
-
-      expect(result.deleted).toBe(true);
-
-      // 완전히 삭제되었는지 확인
-      const checkResult = await PimTestDatabase.getDb()
-        .select()
-        .from(pimSchema.productMasters)
-        .where(eq(pimSchema.productMasters.id, testMaster.id));
-
-      expect(checkResult).toHaveLength(0);
-    });
-
-    it('❌ 존재하지 않는 항목 삭제 시 에러', async () => {
-      await expect(
-        service.hardDelete('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000001')
-      ).rejects.toThrow(/not found/i);
-    });
-  });
-
-  describe('existsMaster()', () => {
-    it('✅ 존재하는 Master 존재 확인', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '존재 확인용 상품',
-        basePrice: 5000,
-      });
-
-      const exists = await service.existsMaster(testMaster.id);
-      expect(exists).toBe(true);
-    });
-
-    it('❌ 존재하지 않는 Master 존재 확인', async () => {
-      const exists = await service.existsMaster('00000000-0000-0000-0000-000000000000');
-      expect(exists).toBe(false);
-    });
-  });
-
-  describe('updateMasterStatus()', () => {
-    it('✅ 상태 변경 (active, inactive, draft)', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '상태 변경용 상품',
-        basePrice: 5000,
-      });
-
-      await service.updateMasterStatus(testMaster.id, 'inactive');
-
-      const updatedMaster = await service.getMasterById(testMaster.id);
-      expect(updatedMaster!.status).toBe('inactive');
-
-      // DB 직접 확인
-      const savedMaster = await PimTestDatabase.getDb()
-        .select()
-        .from(pimSchema.productMasters)
-        .where(eq(pimSchema.productMasters.id, testMaster.id));
-
-      expect(savedMaster[0].status).toBe('inactive');
-    });
-
-    it('❌ 잘못된 상태값 시 에러', async () => {
-      const testMaster = await PimTestFactory.createMaster({
-        name: '잘못된 상태 테스트',
-      });
-
-      await expect(
-        service.updateMasterStatus(testMaster.id, 'invalid_status')
-      ).rejects.toThrow(/Invalid status/i);
-    });
-
-    it('❌ 존재하지 않는 Master 상태 변경 시 에러', async () => {
-      await expect(
-        service.updateMasterStatus('00000000-0000-0000-0000-000000000000', 'inactive')
-      ).rejects.toThrow(/not found/i);
+        service.updateMaster(fakeId, { name: '변경 시도' }),
+      ).rejects.toThrow();
     });
   });
 });
-
