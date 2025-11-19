@@ -68,12 +68,7 @@ module.exports = defineConfig({
         ],
       },
     },
-    {
-      resolve: './src/modules/custom-user',
-      options: {
-        userServiceUrl: process.env.USER_SERVICE_URL,
-      },
-    },
+
     {
       resolve: './src/modules/wms',
       options: {
