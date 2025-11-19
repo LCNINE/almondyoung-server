@@ -173,8 +173,9 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원 탈퇴 성공' })
   @Delete('account')
   @UseGuards(AuthGuard('jwt'))
-  async deleteAccount(@CurrentUser() user: JwtPayload) {
-    return this.authService.deleteAccount(user.id);
+  @RequireScopes(['user:delete'])
+  async removeAccount(@CurrentUser() user: JwtPayload) {
+    return this.authService.removeAccount(user.id);
   }
 
   @ApiOperation({ summary: '비밀번호 확인' })
