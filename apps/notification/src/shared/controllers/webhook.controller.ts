@@ -25,7 +25,7 @@ import {
   }
   
   @ApiTags('webhooks')
-  @Controller('api/v1/webhooks')
+  @Controller('webhooks')
   export class WebhookController {
     constructor(private readonly webhookService: WebhookService) {}
   

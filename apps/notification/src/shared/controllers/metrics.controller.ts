@@ -9,7 +9,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { MetricsService } from '../services/metrics.service';
 
 @ApiTags('metrics')
-@Controller('api/v1/metrics')
+@Controller('metrics')
 export class MetricsController {
     constructor(private readonly metricsService: MetricsService) { }
 

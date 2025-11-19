@@ -10,7 +10,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/
 import { NotificationLoggerService } from '../services/notification-logger.service';
 
 @ApiTags('logs')
-@Controller('api/v1/logs')
+@Controller('logs')
 export class LogController {
     constructor(
         private readonly loggerService: NotificationLoggerService,

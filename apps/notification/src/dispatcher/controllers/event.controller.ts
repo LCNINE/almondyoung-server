@@ -13,7 +13,7 @@ import { EventMappingService } from '../../shared/services/event-mapping.service
 import { CreateEventDto, UpdateEventDto, TriggerEventDto } from '../../shared/dto/event.dto';
 
 @ApiTags('event-handlers')
-@Controller('api/v1/events')
+@Controller('events')
 export class EventController {
     constructor(private readonly eventMappingService: EventMappingService) { }
 
