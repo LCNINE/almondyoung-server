@@ -1,3 +1,4 @@
+// apps/notification/src/bulk/controllers/bulk-notification.controller.ts
 import { Controller, Post, Body, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { BulkNotificationService } from '../services/bulk-notification.service';
