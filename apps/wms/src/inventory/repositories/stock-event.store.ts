@@ -87,6 +87,7 @@ export class StockEventStore {
       }
 
       // 2) 레저 갱신 (from -= qty, to += qty)
+      this.logger.debug(`[createEvent] 레저 프로젝션 시작: ev#${event.id}, sku=${event.skuId}, qty=${event.quantity}`);
       await this.applyProjection(trx, {
         skuId: event.skuId,
         fromWarehouseId: event.fromWarehouseId,
@@ -97,6 +98,7 @@ export class StockEventStore {
         toState: event.toState,
         quantity: event.quantity,
       });
+      this.logger.debug(`[createEvent] 레저 프로젝션 완료: ev#${event.id}`);
 
       this.logger.debug(`Created ${event.transitionType} ev#${event.id} sku=${event.skuId} qty=${event.quantity}`);
       return event;
@@ -153,6 +155,7 @@ export class StockEventStore {
       if (!params.toWarehouseId || !params.toLocationId) {
         throw new BadRequestException('toState가 있으면 toWarehouse/Location이 필요합니다.');
       }
+      this.logger.debug(`[applyProjection] toState 증가: sku=${params.skuId}, warehouse=${params.toWarehouseId}, location=${params.toLocationId}, qty=${params.quantity}`);
       await tx
         .insert(wmsTables.stockLedgers)
         .values({
@@ -175,6 +178,7 @@ export class StockEventStore {
             updatedAt: now,
           },
         });
+      this.logger.debug(`[applyProjection] toState 증가 완료`);
     }
   }
 

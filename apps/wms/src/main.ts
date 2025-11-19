@@ -1,11 +1,12 @@
 // apps/wms/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { WmsModule } from './wms.module';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe, Logger, BadRequestException } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import * as os from 'os';
+import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 
 function createKafkaConfig() {
   const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
@@ -42,7 +43,34 @@ function createKafkaConfig() {
 async function bootstrap() {
   const app = await NestFactory.create(WmsModule);
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Global Exception Filter 추가 (ValidationPipe보다 먼저)
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+      forbidNonWhitelisted: false,
+      skipMissingProperties: false,
+      validationError: { target: false },
+      // 명시적으로 에러를 던지도록 설정
+      exceptionFactory: (errors) => {
+        const messages = errors.map((error) => {
+          const constraints = error.constraints || {};
+          return Object.values(constraints).join(', ');
+        });
+        const errorMessage =
+          messages.length > 0 ? messages.join('; ') : 'Validation failed';
+        console.error('Validation errors:', errors); // 디버깅용
+        return new BadRequestException({
+          message: errorMessage,
+        });
+      },
+    }),
+  );
   app.enableCors({
     origin: true,
     credentials: true,
@@ -89,8 +117,8 @@ async function bootstrap() {
     }
   }
 
-  await app.listen(process.env.PORT ?? 3010);
-  logger.log(`🚀 WMS API is running on port ${process.env.PORT ?? 3010}`);
+  await app.listen(process.env.PORT ?? 5000);
+  logger.log(`🚀 WMS API is running on port ${process.env.PORT ?? 5000}`);
 }
 
 bootstrap().catch((error) => {

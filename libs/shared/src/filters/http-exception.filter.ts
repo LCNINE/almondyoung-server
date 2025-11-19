@@ -96,14 +96,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     return errorCodes[status] || `ERROR_${status}`;
   }
 
-  private getErrorMessage(errorResponse: ErrorResponse): string {
+  private getErrorMessage(errorResponse: ErrorResponse | any): string {
     if (typeof errorResponse === 'string') {
       return errorResponse;
     }
 
+    // errors 배열이 있으면 우선 사용
+    if (errorResponse?.errors && Array.isArray(errorResponse.errors)) {
+      return errorResponse.errors.join('; ');
+    }
+
     if (errorResponse?.message) {
       return Array.isArray(errorResponse.message)
-        ? errorResponse.message[0]
+        ? errorResponse.message.join('; ')
         : errorResponse.message;
     }
 
