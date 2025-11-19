@@ -32,7 +32,6 @@ import {
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
 } from '../../constants/auth.constant';
 import { ConsentsService } from '../consents/consents.service';
-import { NotificationEventPublisher } from '../events/notification-event.publisher';
 import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
@@ -54,7 +53,6 @@ export class AuthService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectStreamPublisher('users.events.v1')
     private readonly eventPublisher: StreamPublisher<UserEvents>,
-    private readonly notificationPublisher: NotificationEventPublisher,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
   ) {}
@@ -133,15 +131,25 @@ export class AuthService {
           new Date(Date.now() + this.parseExpiresIn(expiresIn)),
         );
 
-        // 이메일 재발송
-        // await this.notificationPublisher.publishUserVerificationEvent({
-        //   userId: existingUser.id,
-        //   email: existingUser.email,
-        //   name: existingUser.username,
-        //   verificationToken: verificationToken,
-        //   callbackUrl: this.getEmailVerifyCallbackUrl('callback/signup'),
-        //   redirectTo?: this.getEmailVerifyRedirectUrl(redirect_to),
-        // });
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserVerification',
+          aggregateId: existingUser.id,
+          payload: {
+            userId: existingUser.id,
+            email: existingUser.email,
+            name: existingUser.username,
+            verificationToken: verificationToken,
+            callbackUrl:
+              this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+            redirectTo: redirect_to ?? '/',
+          },
+        });
+
+        /* 
+        ex)
+         this.configService.get('USER_SERVICE_URL') +
+              `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,        
+        */
 
         return {
           message:
@@ -211,13 +219,19 @@ export class AuthService {
           tx,
         );
 
-        const verifyEmailCallbackUrl =
-          this.configService.get('USER_SERVICE_URL') +
-          `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`;
-
-        console.log(verifyEmailCallbackUrl);
-
-        // todo 알림 서비스에 이벤트 발행
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserVerification',
+          aggregateId: user.id,
+          payload: {
+            userId: user.id,
+            email: user.email,
+            name: user.username,
+            verificationToken: verificationToken,
+            callbackUrl:
+              this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+            redirectTo: redirect_to ?? '/',
+          },
+        });
 
         return {
           message: '이메일로 인증 링크가 발송되었습니다. 인증을 완료해 주세요.',
@@ -300,8 +314,6 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
-      console.log('url:', url.toString());
-
       return reply.status(302).redirect(url.toString());
     } catch (error) {
       if (
@@ -340,15 +352,15 @@ export class AuthService {
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(user as User, trx);
 
-      // await this.eventPublisher.publishEvent({
-      //   eventType: 'UserCreated',
-      //   aggregateId: verificationToken.user.id,
-      //   payload: {
-      //     userId: verificationToken.user.id,
-      //     email: verificationToken.user.email,
-      //     name: verificationToken.user.username,
-      //   },
-      // });
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserCreated',
+        aggregateId: user.id,
+        payload: {
+          userId: user.id,
+          email: user.email,
+          name: user.username,
+        },
+      });
 
       return { accessToken, refreshToken };
     }, tx);
@@ -380,14 +392,18 @@ export class AuthService {
     );
 
     // 이메일 재발송
-    this.notificationPublisher.publishUserVerificationEvent({
-      userId: user.id,
-      email: user.email,
-      name: user.username,
-      verificationToken: verificationToken,
-      callbackUrl: this.frontendUrl + `/callback/signup`,
-
-      redirectTo: `/${redirectTo ?? '/callback/signup'}`,
+    await this.eventPublisher.publishEvent({
+      eventType: 'UserVerification',
+      aggregateId: user.id,
+      payload: {
+        userId: user.id,
+        email: user.email,
+        name: user.username,
+        verificationToken: verificationToken,
+        callbackUrl:
+          this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+        redirectTo: redirectTo ?? '/',
+      },
     });
 
     return;
@@ -808,10 +824,14 @@ export class AuthService {
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
     // ID 찾기 이벤트 발행
-    await this.notificationPublisher.publishUserFindIdEvent(
-      email,
-      user.loginId,
-    );
+    await this.eventPublisher.publishEvent({
+      eventType: 'UserFindId',
+      aggregateId: email,
+      payload: {
+        email,
+        loginId: user.loginId,
+      },
+    });
   }
 
   async forgotPassword(email: string, loginId: string) {
@@ -828,10 +848,14 @@ export class AuthService {
       },
     );
 
-    await this.notificationPublisher.publishUserResetPasswordEvent(
-      email,
-      verificationToken,
-    );
+    await this.eventPublisher.publishEvent({
+      eventType: 'UserResetPassword',
+      aggregateId: email,
+      payload: {
+        email,
+        verificationToken,
+      },
+    });
   }
 
   async resetPassword(token: string, password: string): Promise<void> {
