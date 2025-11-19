@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import {
+  wmsTables,
+  wmsSchema,
+  DbTx,
+} from '../../../database/schemas/wms-schema';
 import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
-import { 
-  CreateSupplierDto, 
+import {
+  CreateSupplierDto,
   UpdateSupplierDto,
   SupplierFiltersDto,
   SupplierResponseDto,
@@ -23,7 +32,7 @@ export class SuppliersService {
   private readonly logger = new Logger(SuppliersService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() 
+    @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
@@ -35,7 +44,10 @@ export class SuppliersService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async createSupplier(dto: CreateSupplierDto, tx?: DbTx): Promise<SupplierResponseDto> {
+  async createSupplier(
+    dto: CreateSupplierDto,
+    tx?: DbTx,
+  ): Promise<SupplierResponseDto> {
     return this.inTx(async (trx) => {
       const { suppliers, supplierCategoryMappings } = wmsTables;
 
@@ -66,23 +78,27 @@ export class SuppliersService {
         .returning();
 
       if (dto.categoryIds && dto.categoryIds.length > 0) {
-        await trx
-          .insert(supplierCategoryMappings)
-          .values(
-            dto.categoryIds.map(categoryId => ({
-              supplierId: supplier.id,
-              categoryId,
-            }))
-          );
+        await trx.insert(supplierCategoryMappings).values(
+          dto.categoryIds.map((categoryId) => ({
+            supplierId: supplier.id,
+            categoryId,
+          })),
+        );
       }
 
-      this.logger.log(`Created supplier ${supplier.id} with name "${supplier.name}"`);
+      this.logger.log(
+        `Created supplier ${supplier.id} with name "${supplier.name}"`,
+      );
 
       return this.getSupplierById(supplier.id, trx);
     }, tx);
   }
 
-  async updateSupplier(id: string, dto: UpdateSupplierDto, tx?: DbTx): Promise<SupplierResponseDto> {
+  async updateSupplier(
+    id: string,
+    dto: UpdateSupplierDto,
+    tx?: DbTx,
+  ): Promise<SupplierResponseDto> {
     return this.inTx(async (trx) => {
       const { suppliers, supplierCategoryMappings } = wmsTables;
 
@@ -104,21 +120,54 @@ export class SuppliersService {
           fax: dto.fax !== undefined ? dto.fax : existing.fax,
           email: dto.email !== undefined ? dto.email : existing.email,
           zipcode: dto.zipcode !== undefined ? dto.zipcode : existing.zipcode,
-          address1: dto.address1 !== undefined ? dto.address1 : existing.address1,
-          address2: dto.address2 !== undefined ? dto.address2 : existing.address2,
-          businessRegNo: dto.businessRegNo !== undefined ? dto.businessRegNo : existing.businessRegNo,
-          businessType: dto.businessType !== undefined ? dto.businessType : existing.businessType,
+          address1:
+            dto.address1 !== undefined ? dto.address1 : existing.address1,
+          address2:
+            dto.address2 !== undefined ? dto.address2 : existing.address2,
+          businessRegNo:
+            dto.businessRegNo !== undefined
+              ? dto.businessRegNo
+              : existing.businessRegNo,
+          businessType:
+            dto.businessType !== undefined
+              ? dto.businessType
+              : existing.businessType,
           ceoName: dto.ceoName !== undefined ? dto.ceoName : existing.ceoName,
-          isDirectDelivery: dto.isDirectDelivery !== undefined ? dto.isDirectDelivery : existing.isDirectDelivery,
-          orderCutoffTime: dto.orderCutoffTime !== undefined ? dto.orderCutoffTime : existing.orderCutoffTime,
-          bankName: dto.bankName !== undefined ? dto.bankName : existing.bankName,
-          bankAccountNo: dto.bankAccountNo !== undefined ? dto.bankAccountNo : existing.bankAccountNo,
-          bankAccountHolder: dto.bankAccountHolder !== undefined ? dto.bankAccountHolder : existing.bankAccountHolder,
-          paymentMethod: dto.paymentMethod !== undefined ? dto.paymentMethod : existing.paymentMethod,
-          description: dto.description !== undefined ? dto.description : existing.description,
+          isDirectDelivery:
+            dto.isDirectDelivery !== undefined
+              ? dto.isDirectDelivery
+              : existing.isDirectDelivery,
+          orderCutoffTime:
+            dto.orderCutoffTime !== undefined
+              ? dto.orderCutoffTime
+              : existing.orderCutoffTime,
+          bankName:
+            dto.bankName !== undefined ? dto.bankName : existing.bankName,
+          bankAccountNo:
+            dto.bankAccountNo !== undefined
+              ? dto.bankAccountNo
+              : existing.bankAccountNo,
+          bankAccountHolder:
+            dto.bankAccountHolder !== undefined
+              ? dto.bankAccountHolder
+              : existing.bankAccountHolder,
+          paymentMethod:
+            dto.paymentMethod !== undefined
+              ? dto.paymentMethod
+              : existing.paymentMethod,
+          description:
+            dto.description !== undefined
+              ? dto.description
+              : existing.description,
           memo: dto.memo !== undefined ? dto.memo : existing.memo,
-          purchaseManagerId: dto.purchaseManagerId !== undefined ? dto.purchaseManagerId : existing.purchaseManagerId,
-          defaultWarehouseId: dto.defaultWarehouseId !== undefined ? dto.defaultWarehouseId : existing.defaultWarehouseId,
+          purchaseManagerId:
+            dto.purchaseManagerId !== undefined
+              ? dto.purchaseManagerId
+              : existing.purchaseManagerId,
+          defaultWarehouseId:
+            dto.defaultWarehouseId !== undefined
+              ? dto.defaultWarehouseId
+              : existing.defaultWarehouseId,
           updatedAt: new Date(),
         })
         .where(eq(suppliers.id, id));
@@ -129,14 +178,12 @@ export class SuppliersService {
           .where(eq(supplierCategoryMappings.supplierId, id));
 
         if (dto.categoryIds.length > 0) {
-          await trx
-            .insert(supplierCategoryMappings)
-            .values(
-              dto.categoryIds.map(categoryId => ({
-                supplierId: id,
-                categoryId,
-              }))
-            );
+          await trx.insert(supplierCategoryMappings).values(
+            dto.categoryIds.map((categoryId) => ({
+              supplierId: id,
+              categoryId,
+            })),
+          );
         }
       }
 
@@ -165,7 +212,8 @@ export class SuppliersService {
 
   async getSupplierById(id: string, tx?: DbTx): Promise<SupplierResponseDto> {
     return this.inTx(async (trx) => {
-      const { suppliers, supplierCategoryMappings, supplierCategories } = wmsTables;
+      const { suppliers, supplierCategoryMappings, supplierCategories } =
+        wmsTables;
 
       const [supplier] = await trx
         .select()
@@ -186,7 +234,7 @@ export class SuppliersService {
         .from(supplierCategoryMappings)
         .innerJoin(
           supplierCategories,
-          eq(supplierCategoryMappings.categoryId, supplierCategories.id)
+          eq(supplierCategoryMappings.categoryId, supplierCategories.id),
         )
         .where(eq(supplierCategoryMappings.supplierId, id));
 
@@ -194,9 +242,13 @@ export class SuppliersService {
     }, tx);
   }
 
-  async getSuppliers(filters: SupplierFiltersDto, tx?: DbTx): Promise<SupplierListResponseDto> {
+  async getSuppliers(
+    filters: SupplierFiltersDto,
+    tx?: DbTx,
+  ): Promise<SupplierListResponseDto> {
     return this.inTx(async (trx) => {
-      const { suppliers, supplierCategoryMappings, supplierCategories } = wmsTables;
+      const { suppliers, supplierCategoryMappings, supplierCategories } =
+        wmsTables;
 
       const conditions: SQL[] = [];
 
@@ -207,8 +259,8 @@ export class SuppliersService {
             like(suppliers.name, searchPattern),
             like(suppliers.phone, searchPattern),
             like(suppliers.email, searchPattern),
-            like(suppliers.businessRegNo, searchPattern)
-          )!
+            like(suppliers.businessRegNo, searchPattern),
+          )!,
         );
       }
 
@@ -222,8 +274,8 @@ export class SuppliersService {
           conditions.push(
             inArray(
               suppliers.id,
-              suppliersWithCategory.map(s => s.supplierId)
-            )
+              suppliersWithCategory.map((s) => s.supplierId),
+            ),
           );
         } else {
           return {
@@ -236,11 +288,18 @@ export class SuppliersService {
       }
 
       if (filters.purchaseManagerId) {
-        conditions.push(eq(suppliers.purchaseManagerId, filters.purchaseManagerId));
+        conditions.push(
+          eq(suppliers.purchaseManagerId, filters.purchaseManagerId),
+        );
       }
 
       const limit = filters.limit || 50;
-      const offset = filters.offset !== undefined ? filters.offset : (filters.page ? (filters.page - 1) * limit : 0);
+      const offset =
+        filters.offset !== undefined
+          ? filters.offset
+          : filters.page
+            ? (filters.page - 1) * limit
+            : 0;
 
       const [supplierList, countResult] = await Promise.all([
         trx
@@ -258,7 +317,7 @@ export class SuppliersService {
 
       const total = countResult[0]?.count || 0;
 
-      const supplierIds = supplierList.map(s => s.id);
+      const supplierIds = supplierList.map((s) => s.id);
       let categoriesBySupplier: Record<string, any[]> = {};
 
       if (supplierIds.length > 0) {
@@ -272,25 +331,31 @@ export class SuppliersService {
           .from(supplierCategoryMappings)
           .innerJoin(
             supplierCategories,
-            eq(supplierCategoryMappings.categoryId, supplierCategories.id)
+            eq(supplierCategoryMappings.categoryId, supplierCategories.id),
           )
           .where(inArray(supplierCategoryMappings.supplierId, supplierIds));
 
-        categoriesBySupplier = allCategories.reduce((acc, cat) => {
-          if (!acc[cat.supplierId]) {
-            acc[cat.supplierId] = [];
-          }
-          acc[cat.supplierId].push({
-            id: cat.categoryId,
-            name: cat.categoryName,
-            description: cat.categoryDescription,
-          });
-          return acc;
-        }, {} as Record<string, any[]>);
+        categoriesBySupplier = allCategories.reduce(
+          (acc, cat) => {
+            if (!acc[cat.supplierId]) {
+              acc[cat.supplierId] = [];
+            }
+            acc[cat.supplierId].push({
+              id: cat.categoryId,
+              name: cat.categoryName,
+              description: cat.categoryDescription,
+            });
+            return acc;
+          },
+          {} as Record<string, any[]>,
+        );
       }
 
-      const data = supplierList.map(supplier =>
-        this.mapToResponseDto(supplier, categoriesBySupplier[supplier.id] || [])
+      const data = supplierList.map((supplier) =>
+        this.mapToResponseDto(
+          supplier,
+          categoriesBySupplier[supplier.id] || [],
+        ),
       );
 
       return {
@@ -312,7 +377,7 @@ export class SuppliersService {
         .orderBy(supplierCategories.name);
 
       return {
-        categories: categories.map(cat => ({
+        categories: categories.map((cat) => ({
           value: cat.id,
           label: cat.name,
         })),
@@ -327,7 +392,10 @@ export class SuppliersService {
     }, tx);
   }
 
-  private mapToResponseDto(supplier: any, categories: any[]): SupplierResponseDto {
+  private mapToResponseDto(
+    supplier: any,
+    categories: any[],
+  ): SupplierResponseDto {
     const contact: SupplierContactDto | null =
       supplier.phone || supplier.fax || supplier.email
         ? {
@@ -376,7 +444,7 @@ export class SuppliersService {
           }
         : null;
 
-    const categoryInfos: SupplierCategoryInfoDto[] = categories.map(cat => ({
+    const categoryInfos: SupplierCategoryInfoDto[] = categories.map((cat) => ({
       id: cat.id,
       name: cat.name,
       description: cat.description,
@@ -400,4 +468,3 @@ export class SuppliersService {
     };
   }
 }
-
