@@ -19,9 +19,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
-  ApiSecurity,
   ApiBody,
-  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
