@@ -71,15 +71,22 @@ export class FCMProvider implements NotificationProvider {
 
     private initializeFirebase() {
         try {
-            // Firebase Admin 초기화
-            const app = admin.initializeApp({
-                credential: admin.credential.cert({
+            const appName = `fcm-provider-${this.providerId}`;
+
+            // 이미 초기화된 앱이 있는지 확인
+            let app = admin.apps.find(a => a?.name === appName);
+
+            if (!app) {
+                // Firebase Admin 초기화
+                app = admin.initializeApp({
+                    credential: admin.credential.cert({
+                        projectId: this.config.projectId,
+                        privateKey: this.config.privateKey.replace(/\\n/g, '\n'),
+                        clientEmail: this.config.clientEmail,
+                    }),
                     projectId: this.config.projectId,
-                    privateKey: this.config.privateKey.replace(/\\n/g, '\n'),
-                    clientEmail: this.config.clientEmail,
-                }),
-                projectId: this.config.projectId,
-            }, `fcm-provider-${this.providerId}`);
+                }, appName);
+            }
 
             this.messaging = app.messaging();
             this.isInitialized = true;
@@ -87,6 +94,7 @@ export class FCMProvider implements NotificationProvider {
             this.logger.log('FCM Provider initialized', {
                 providerId: this.providerId,
                 projectId: this.config.projectId,
+                reused: admin.apps.length > 1,
             });
         } catch (error: any) {
             this.logger.error('Failed to initialize FCM', {

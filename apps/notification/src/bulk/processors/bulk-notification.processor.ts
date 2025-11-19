@@ -46,32 +46,17 @@ export class BulkNotificationProcessor {
       // 2. Resolve Audience - 프론트에서 이미 조인/필터링된 사용자 정보 사용
       let targetUsers: { userId: string; email?: string; phoneNumber?: string; isMarketingEnabled?: boolean }[] = [];
       
-      if (targetGroup.type === 'all') {
-        // ALL_USERS는 프론트에서 모든 사용자 정보를 조인해서 넘겨줘야 함
-        this.logger.warn('All users target type - 프론트에서 모든 사용자 정보를 users 배열로 전달해야 함');
-        targetUsers = [];
-      } else if ((targetGroup.type === 'excel' || targetGroup.type === 'filter') && targetGroup.userList) {
-        // 프론트에서 이미 조인/필터링된 사용자 정보 객체 배열
-        if (Array.isArray(targetGroup.userList)) {
-          targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
-            userId: user.userId || user.id,
-            email: user.email,
-            phoneNumber: user.phoneNumber,
-            isMarketingEnabled: user.isMarketingEnabled ?? true,
-          }));
-        }
-      } else if (targetGroup.type === 'search') {
-        // search 타입도 프론트에서 검색 결과를 users 배열로 넘겨줘야 함
-        if (Array.isArray(targetGroup.userList)) {
-          targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
-            userId: user.userId || user.id,
-            email: user.email,
-            phoneNumber: user.phoneNumber,
-            isMarketingEnabled: user.isMarketingEnabled ?? true,
-          }));
-        }
+      // 모든 타입에서 userList를 사용 (프론트에서 이미 조인/필터링된 정보)
+      if (Array.isArray(targetGroup.userList) && targetGroup.userList.length > 0) {
+        targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
+          userId: user.userId || user.id,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          isMarketingEnabled: user.isMarketingEnabled ?? true,
+        }));
       } else {
-        throw new BadRequestException('Invalid audience configuration');
+        this.logger.warn(`Target group ${targetGroupId} has empty userList - 프론트에서 사용자 정보를 users 배열로 전달해야 함`);
+        targetUsers = [];
       }
 
       // Update userCount in targetGroup
@@ -91,12 +76,30 @@ export class BulkNotificationProcessor {
             continue;
           }
 
-          // Determine channels based on user data
+          // Determine channels based on campaign settings and user data
+          // 캠페인에서 선택한 채널만 사용
+          const allowedChannels = (campaign.channels as Channel[]) || [];
           const channels: Channel[] = [];
-          if (user.email) channels.push(Channel.EMAIL);
-          if (user.phoneNumber) channels.push(Channel.SMS);
-          // KAKAO, PUSH는 기본적으로 추가 (실제로는 사용자 설정에 따라 결정)
-          channels.push(Channel.KAKAO, Channel.PUSH);
+
+          // 사용자 연락처가 있고, 캠페인에서 해당 채널이 선택된 경우만 추가
+          if (user.email && allowedChannels.includes(Channel.EMAIL)) {
+            channels.push(Channel.EMAIL);
+          }
+          if (user.phoneNumber && allowedChannels.includes(Channel.SMS)) {
+            channels.push(Channel.SMS);
+          }
+          if (allowedChannels.includes(Channel.KAKAO)) {
+            channels.push(Channel.KAKAO);
+          }
+          if (allowedChannels.includes(Channel.PUSH)) {
+            channels.push(Channel.PUSH);
+          }
+
+          // 사용 가능한 채널이 없으면 스킵
+          if (channels.length === 0) {
+            this.logger.log(`No channels resolved for user ${user.userId} (allowed: ${allowedChannels.join(', ')}, hasEmail: ${!!user.email}, hasPhone: ${!!user.phoneNumber}), skipping`);
+            continue;
+          }
 
           for (const channel of channels) {
             try {
