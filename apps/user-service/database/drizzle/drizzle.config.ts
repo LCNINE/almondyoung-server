@@ -1,26 +1,7 @@
 import { config } from 'dotenv';
 import { defineConfig } from 'drizzle-kit';
-import { join } from 'path';
 
-const env = process.env.NODE_ENV || 'development';
-
-let envFile: string;
-
-switch (env) {
-  case 'development':
-    envFile = '.env.dev';
-    break;
-  case 'production':
-    envFile = '.env.prod';
-    break;
-  case 'test':
-    envFile = '.env.test';
-    break;
-  default:
-    envFile = '.env';
-}
-
-config({ path: join(__dirname, '../../', envFile), override: true });
+config({ path: './apps/user-service/.env' });
 
 export default defineConfig({
   out: './apps/user-service/database/drizzle',
