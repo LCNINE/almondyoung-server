@@ -102,6 +102,10 @@ export const ResumeSubscriptionRequestSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const GetBulkSubscriptionsRequestSchema = z.object({
+  id: z.array(z.string().min(1, '사용자 ID는 필수입니다')),
+});
+
 // Type exports - Controller에서만 사용
 export type CreateTierRequest = z.infer<typeof CreateTierRequestSchema>;
 export type UpdateTierRequest = z.infer<typeof UpdateTierRequestSchema>;

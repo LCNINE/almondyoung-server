@@ -18,6 +18,25 @@ import { SubscriptionManager } from './subscription/subscription.manager';
  * - 상세 구현 없음 (Creator/Manager가 담당)
  * - Reader/Creator/Manager를 중계
  */
+
+interface BulkSubscriptionResponse {
+  id: string;
+  membership: {
+    tierId: string;
+    tierCode: string;
+    tierPriority: number;
+    planId: string;
+    planPrice: number;
+    planDuration: number;
+    startsAt: string;
+    endsAt: string;
+    contractId: string;
+    billingDate: Date;
+    nextBillingDate: Date | null;
+    isPaused: boolean;
+  };
+}
+
 @Injectable()
 export class SubscriptionService {
   constructor(
@@ -26,7 +45,7 @@ export class SubscriptionService {
     private readonly contractReader: SubscriptionContractReader,
     private readonly subscriptionCreator: SubscriptionCreator,
     private readonly subscriptionManager: SubscriptionManager,
-  ) { }
+  ) {}
 
   /**
    * 현재 구독 상태 조회
@@ -128,5 +147,44 @@ export class SubscriptionService {
       billingDate: new Date(contract.billingDate),
       type: subscriptionType as 'MONTHLY' | 'YEAR',
     };
+  }
+  /**
+   * 여러 사용자의 구독 정보 일괄 조회
+   *
+   * ✅ 흐름만 표현: "여러 사용자 권한 조회 → 응답 포맷팅"
+   */
+
+  async getBulkSubscriptions(userIds: string[]) {
+    const entitlementMap =
+      await this.entitlementService.getBulkUserEntitlements(userIds);
+
+    return userIds.map((userId) => {
+      const data = entitlementMap.get(userId);
+
+      if (!data) {
+        return {
+          id: userId,
+          membership: null,
+        };
+      }
+
+      return {
+        id: userId,
+        membership: {
+          tierId: data.tier.id,
+          tierCode: data.tier.code,
+          tierPriority: data.tier.priorityLevel,
+          planId: data.plan.id,
+          planPrice: data.plan.price,
+          planDuration: data.plan.durationDays,
+          startsAt: data.entitlement.startsAt,
+          endsAt: data.entitlement.endsAt,
+          contractId: data.contract.id,
+          billingDate: data.contract.billingDate,
+          nextBillingDate: data.contract.nextBillingDate,
+          isPaused: !!data.entitlement.pausedAt,
+        },
+      };
+    });
   }
 }
