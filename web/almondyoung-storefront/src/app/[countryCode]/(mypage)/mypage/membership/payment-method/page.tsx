@@ -40,7 +40,7 @@ export default function PaymentMethodScreen() {
                    (혹은 컨테이너에 px-6을 주고 여기선 px-0을 사용)
                    여기서는 일관성을 위해 px-6을 사용합니다.
         */}
-        <header className="flex w-full flex-shrink-0 items-center border-b border-gray-200 px-6 py-3">
+        <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
             <button aria-label="뒤로 가기" className="-m-2 p-2 text-black">
               <IconChevronLeft />
@@ -119,7 +119,7 @@ export default function PaymentMethodScreen() {
             - 'flex-shrink-0': 높이가 줄어들지 않습니다.
             - 'w-full': Container의 너비를 따릅니다 (max-w-lg).
         */}
-        <footer className="w-full flex-shrink-0">
+        <footer className="w-full shrink-0">
           {/* CTA 버튼 영역 */}
           <div className="border-t border-gray-200 bg-white p-4">
             <button className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600">

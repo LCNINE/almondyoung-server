@@ -12,7 +12,7 @@ export default function NonSubscriberBanner() {
   return (
     <section className="bg-[#f29219]">
       {/* Container - 중앙 정렬 및 padding 관리 */}
-      <div className="mx-auto flex min-h-[322px] max-w-screen-xl flex-col items-center justify-center px-4 py-12">
+      <div className="mx-auto flex min-h-[322px] max-w-7xl flex-col items-center justify-center px-4 py-12">
         {/* Inner - 콘텐츠 그룹 */}
         <div className="flex w-full flex-col items-center gap-6 text-center">
           {/* 멤버십 뱃지 */}

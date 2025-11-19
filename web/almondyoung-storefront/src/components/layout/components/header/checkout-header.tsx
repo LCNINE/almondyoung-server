@@ -9,7 +9,7 @@ export default function CheckoutHeader({ title }: { title: string }) {
         {/* 로고는 홈으로 가는 링크여야 함 */}
         <a href="/" className="absolute top-1/2 left-0 -translate-y-1/2">
           <img
-            src="almond-logo-blakc-1.png"
+            src="/images/almond-logo-black.png"
             className="h-[29px] w-[218px] object-contain"
             alt="아몬드 로고"
           />
