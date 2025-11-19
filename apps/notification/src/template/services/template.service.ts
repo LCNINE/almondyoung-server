@@ -1,7 +1,7 @@
 // apps/notification/src/template/services/template.service.ts
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { notificationTables, templates } from '../../../database/schemas/notification-schema';
 import { CreateTemplateDto, UpdateTemplateDto, TemplateFilterDto, PreviewTemplateDto } from '../dto';
 import { NHNTemplateService } from './nhn-template.service';
@@ -130,8 +130,21 @@ export class TemplateService {
     }
 
     async findAllTemplates(filterDto: TemplateFilterDto): Promise<Template[]> {
-        // 간단한 구현
-        return [];
+        const db = this.dbService.db;
+        const conditions: any[] = [];
+
+        if (filterDto.isActive !== undefined) {
+            conditions.push(eq(templates.isActive, filterDto.isActive));
+        }
+
+        const whereClause = conditions.length > 0 ? conditions[0] : undefined;
+
+        const results = await db.query.templates.findMany({
+            where: whereClause,
+            orderBy: (templates, { desc }) => [desc(templates.createdAt)],
+        });
+
+        return results.map(t => this.formatTemplateResponse(t));
     }
 
     async findTemplateById(id: string): Promise<any> {
