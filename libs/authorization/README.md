@@ -207,6 +207,149 @@ async getAdminData() {
 }
 ```
 
+### 런타임 스코프 체크
+
+Guard 방식(`@RequireScopes()`)은 요청 시작 시 한 번만 체크하지만, 핸들러 내부에서 **조건부로 스코프를 확인**해야 할 때가 있습니다.
+
+#### 사용 시나리오
+
+- 조건부 데이터 필터링 (권한에 따라 다른 데이터 반환)
+- 동적 권한 체크 (리소스 소유자 또는 관리자만 허용)
+- 복잡한 비즈니스 로직 내 권한 분기
+
+#### 헬퍼 메소드
+
+```typescript
+import { Controller, Get, Param } from '@nestjs/common';
+import { AuthorizationService, UserWithRoles } from '@app/authorization';
+import { User } from '@app/auth-core';
+
+@Controller('products')
+export class ProductsController {
+  constructor(
+    private readonly authService: AuthorizationService,
+  ) {}
+
+  @Get(':id')
+  async getProduct(
+    @Param('id') id: string,
+    @User() user: UserWithRoles,
+  ) {
+    const product = await this.productService.findOne(id);
+    
+    // 1. hasScope - 단일 스코프 체크
+    const canViewSensitive = await this.authService.hasScope(user, 'product:admin');
+    
+    if (canViewSensitive) {
+      return { ...product, cost: product.cost, margin: product.margin };
+    }
+    
+    return product; // 일반 사용자는 민감 정보 제외
+  }
+
+  @Get()
+  async listProducts(@User() user: UserWithRoles) {
+    // 2. hasAnyScope - 여러 스코프 중 하나 (OR)
+    const canViewAll = await this.authService.hasAnyScope(user, [
+      'product:admin',
+      'product:read-all',
+    ]);
+    
+    if (canViewAll) {
+      return this.productService.findAll(); // 모든 상품
+    }
+    
+    return this.productService.findPublicOnly(); // 공개 상품만
+  }
+
+  @Delete(':id')
+  async deleteProduct(
+    @Param('id') id: string,
+    @User() user: UserWithRoles,
+  ) {
+    const product = await this.productService.findOne(id);
+    
+    // 3. 복합 조건 - 소유자이거나 관리자 권한 보유
+    const isOwner = product.createdBy === user.userId;
+    const isAdmin = await this.authService.hasScope(user, 'product:delete-all');
+    
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('Not authorized to delete this product');
+    }
+    
+    await this.productService.remove(id);
+  }
+
+  @Get('analytics')
+  async getAnalytics(@User() user: UserWithRoles) {
+    // 4. hasAllScopes - 모든 스코프 필요 (AND)
+    const canViewAnalytics = await this.authService.hasAllScopes(user, [
+      'product:read',
+      'analytics:view',
+    ]);
+    
+    if (!canViewAnalytics) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+    
+    return this.analyticsService.getProductAnalytics();
+  }
+
+  @Get('my-permissions')
+  async getMyPermissions(@User() user: UserWithRoles) {
+    // 5. getUserScopes - 사용자의 모든 스코프 조회
+    const scopes = await this.authService.getUserScopes(user);
+    return { scopes };
+  }
+}
+```
+
+#### Guard vs 런타임 체크 비교
+
+| 구분 | Guard (`@RequireScopes()`) | 런타임 체크 (`authService.hasScope()`) |
+|------|----------------------------|----------------------------------------|
+| **시점** | 요청 시작 시 (핸들러 실행 전) | 핸들러 내부 (조건부) |
+| **용도** | 엔드포인트 전체 보호 | 조건부 로직, 동적 체크 |
+| **실패 시** | 403 Forbidden 자동 반환 | 개발자가 직접 처리 |
+| **복잡도** | 간단 (데코레이터만) | 약간 복잡 (조건문 필요) |
+| **유연성** | 낮음 (고정 스코프) | 높음 (동적 판단 가능) |
+
+#### 권장 사용 패턴
+
+```typescript
+// ✅ 좋은 패턴: Guard로 기본 보호 + 런타임으로 세밀한 제어
+@Get(':id')
+@RequireScopes('resource:read')  // 최소 권한 체크 (Guard)
+async getResource(@Param('id') id: string, @User() user: UserWithRoles) {
+  const resource = await this.service.findOne(id);
+  
+  // 소유자가 아닌 경우 추가 권한 필요 (런타임)
+  if (resource.ownerId !== user.userId) {
+    const canViewOthers = await this.authService.hasScope(user, 'resource:read-all');
+    if (!canViewOthers) {
+      throw new ForbiddenException();
+    }
+  }
+  
+  return resource;
+}
+
+// ❌ 나쁜 패턴: 모든 로직을 런타임 체크로만 (Guard 미사용)
+@Get(':id')  // Guard 없음 - 보안 취약
+async getResource(@Param('id') id: string, @User() user: UserWithRoles) {
+  const canView = await this.authService.hasScope(user, 'resource:read');
+  if (!canView) {
+    throw new ForbiddenException();
+  }
+  // ...
+}
+```
+
+**💡 팁**: 
+- 엔드포인트 전체를 보호할 때는 `@RequireScopes()` Guard 사용
+- 핸들러 내부에서 조건부 로직이 필요할 때만 런타임 체크 사용
+- 두 방식을 조합하면 가장 안전하고 유연한 권한 관리 가능
+
 ## 동작 원리
 
 ### 1. 앱 시작 시 (Bootstrap)
