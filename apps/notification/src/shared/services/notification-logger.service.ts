@@ -7,7 +7,7 @@ import {
     notificationLogs,
     NewNotificationLog,
 } from '../../../database/schemas/notification-schema';
-import { sql, between, and, eq } from 'drizzle-orm';
+import { sql, between, and, eq, desc, or, like, inArray } from 'drizzle-orm';
 
 @Injectable()
 export class NotificationLoggerService {
@@ -83,5 +83,75 @@ export class NotificationLoggerService {
         }
 
         return query.groupBy(notificationLogs.channel, notificationLogs.status);
+    }
+
+    async findAllLogs(filters?: {
+        notificationId?: string;
+        campaignId?: string;
+        userId?: string;
+        eventKey?: string;
+        channel?: string;
+        provider?: string;
+        status?: string[];
+        startDate?: Date;
+        endDate?: Date;
+        limit?: number;
+        offset?: number;
+    }): Promise<{ logs: any[]; total: number }> {
+        const conditions: any[] = [];
+        const limit = filters?.limit || 100;
+        const offset = filters?.offset || 0;
+
+        if (filters?.notificationId) {
+            conditions.push(eq(notificationLogs.notificationId, filters.notificationId));
+        }
+        if (filters?.campaignId) {
+            conditions.push(eq(notificationLogs.campaignId, filters.campaignId));
+        }
+        if (filters?.userId) {
+            conditions.push(eq(notificationLogs.userId, filters.userId));
+        }
+        if (filters?.eventKey) {
+            conditions.push(eq(notificationLogs.eventKey, filters.eventKey));
+        }
+        if (filters?.channel) {
+            conditions.push(eq(notificationLogs.channel, filters.channel as any));
+        }
+        if (filters?.provider) {
+            conditions.push(eq(notificationLogs.provider, filters.provider));
+        }
+        if (filters?.status && filters.status.length > 0) {
+            conditions.push(inArray(notificationLogs.status, filters.status as any));
+        }
+        if (filters?.startDate && filters?.endDate) {
+            conditions.push(between(notificationLogs.createdAt, filters.startDate, filters.endDate));
+        }
+
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        const [logs, totalResult] = await Promise.all([
+            this.db.query.notificationLogs.findMany({
+                where: whereClause,
+                orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+                limit,
+                offset,
+            }),
+            this.db
+                .select({ count: sql<number>`count(*)::int` })
+                .from(notificationLogs)
+                .where(whereClause),
+        ]);
+
+        return {
+            logs: logs || [],
+            total: totalResult[0]?.count || 0,
+        };
+    }
+
+    async findLogsByNotificationId(notificationId: string): Promise<any[]> {
+        return this.db.query.notificationLogs.findMany({
+            where: eq(notificationLogs.notificationId, notificationId),
+            orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+        });
     }
 }

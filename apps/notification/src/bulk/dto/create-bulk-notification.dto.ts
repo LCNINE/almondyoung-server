@@ -6,6 +6,8 @@ import {
   ValidateNested,
   IsOptional,
   IsEnum,
+  IsIn,
+  IsBoolean,
   IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -47,6 +49,7 @@ class UserInfoDto {
     default: true,
   })
   @IsOptional()
+  @IsBoolean()
   isMarketingEnabled?: boolean;
 }
 
@@ -56,7 +59,7 @@ class AudienceDto {
     description: '대상 사용자 유형',
     example: 'SELECTED_USERS',
   })
-  @IsEnum(['ALL_USERS', 'SELECTED_USERS', 'FILTERED_USERS'])
+  @IsIn(['ALL_USERS', 'SELECTED_USERS', 'FILTERED_USERS'])
   kind: 'ALL_USERS' | 'SELECTED_USERS' | 'FILTERED_USERS';
 
   @ApiPropertyOptional({
@@ -210,4 +213,20 @@ export class CreateBulkNotificationDto {
   })
   @IsString()
   createdBy: string;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    description: '캠페인 단위 공통 메타데이터 (payload 등)',
+    example: {
+      payload: {
+        campaignName: '주문 배송 알림',
+        orderType: 'premium',
+      },
+      tags: ['marketing', 'order'],
+    },
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
