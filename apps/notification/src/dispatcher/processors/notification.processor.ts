@@ -1,6 +1,7 @@
 // apps/notification/src/dispatcher/processors/notification.processor.ts
 import { Processor, Process, OnQueueFailed } from '@nestjs/bull';
-import { Job } from 'bull';
+import { InjectQueue } from '@nestjs/bull';
+import { Job, Queue } from 'bull';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
@@ -24,6 +25,7 @@ export class NotificationProcessor {
 
     constructor(
         @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
+        @InjectQueue('notification') private readonly notificationQueue: Queue,
         private readonly providerManager: ProviderManagerService,
         private readonly notificationLogger: NotificationLoggerService,
         private readonly alertService: AlertService,
@@ -257,7 +259,17 @@ export class NotificationProcessor {
 
     private async getActiveJobsCount(): Promise<number> {
         // Bull queue에서 활성 작업 수 조회
-        return 0; // 구현 필요
+        try {
+            const [active, waiting, delayed] = await Promise.all([
+                this.notificationQueue.getActiveCount(),
+                this.notificationQueue.getWaitingCount(),
+                this.notificationQueue.getDelayedCount(),
+            ]);
+            return active + waiting + delayed;
+        } catch (error) {
+            this.logger.error('Failed to get active jobs count', { error });
+            return 0; // 에러 시 0 반환하여 시스템 부하 체크를 우회
+        }
     }
 
     private getPriorityValue(priority: NotificationPriority): number {

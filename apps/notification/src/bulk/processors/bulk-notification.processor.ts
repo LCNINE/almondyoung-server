@@ -1,3 +1,4 @@
+// apps/notification/src/bulk/processors/bulk-notification.processor.ts
 import { Processor, Process } from '@nestjs/bull';
 import { BadRequestException, Logger } from '@nestjs/common';
 import { Job } from 'bull';
@@ -42,25 +43,33 @@ export class BulkNotificationProcessor {
         throw new BadRequestException(`Target group not found: ${targetGroupId}`);
       }
 
-      // 2. Resolve Audience - 사용자 정보는 이미 targetGroup에 포함되어 있다고 가정
+      // 2. Resolve Audience - 프론트에서 이미 조인/필터링된 사용자 정보 사용
       let targetUsers: { userId: string; email?: string; phoneNumber?: string; isMarketingEnabled?: boolean }[] = [];
       
       if (targetGroup.type === 'all') {
-        // TODO: 모든 사용자 조회 로직 (필요시 구현)
-        this.logger.warn('All users target type not implemented yet');
+        // ALL_USERS는 프론트에서 모든 사용자 정보를 조인해서 넘겨줘야 함
+        this.logger.warn('All users target type - 프론트에서 모든 사용자 정보를 users 배열로 전달해야 함');
         targetUsers = [];
-      } else if (targetGroup.type === 'excel' && targetGroup.userList) {
-        // Excel에서 가져온 사용자 목록 사용
-        targetUsers = (targetGroup.userList as any[]).map(user => ({
-          userId: user.userId || user.id,
-          email: user.email,
-          phoneNumber: user.phoneNumber,
-          isMarketingEnabled: user.isMarketingEnabled ?? true
-        }));
-      } else if (targetGroup.type === 'filter' && targetGroup.criteria) {
-        // TODO: 필터 조건에 따른 사용자 조회 로직 (필요시 구현)
-        this.logger.warn('Filter criteria target type not implemented yet');
-        targetUsers = [];
+      } else if ((targetGroup.type === 'excel' || targetGroup.type === 'filter') && targetGroup.userList) {
+        // 프론트에서 이미 조인/필터링된 사용자 정보 객체 배열
+        if (Array.isArray(targetGroup.userList)) {
+          targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
+            userId: user.userId || user.id,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            isMarketingEnabled: user.isMarketingEnabled ?? true,
+          }));
+        }
+      } else if (targetGroup.type === 'search') {
+        // search 타입도 프론트에서 검색 결과를 users 배열로 넘겨줘야 함
+        if (Array.isArray(targetGroup.userList)) {
+          targetUsers = (targetGroup.userList as any[]).map((user: any) => ({
+            userId: user.userId || user.id,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            isMarketingEnabled: user.isMarketingEnabled ?? true,
+          }));
+        }
       } else {
         throw new BadRequestException('Invalid audience configuration');
       }
