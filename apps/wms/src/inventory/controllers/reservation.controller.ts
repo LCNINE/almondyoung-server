@@ -11,7 +11,7 @@ import {
 } from '../dto/reservation/reservation-response.dto';
 
 @ApiTags('Inventory - Reservations')
-@Controller('wms/inventory/reservations')
+@Controller('inventory/reservations')
 export class ReservationController {
   constructor(
     private readonly unifiedReservation: UnifiedReservationService,

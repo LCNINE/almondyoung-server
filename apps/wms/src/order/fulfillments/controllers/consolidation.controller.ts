@@ -11,7 +11,7 @@ const FindCandidatesSchema = z.object({
   warehouseId: z.string().uuid()
 });
 
-@Controller('wms/consolidation')
+@Controller('consolidation')
 export class ConsolidationController {
   constructor(
     private readonly consolidationService: ConsolidationService

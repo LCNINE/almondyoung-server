@@ -4,7 +4,7 @@ import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 
 @ApiTags('Movement')
-@Controller('wms/movement')
+@Controller('movement')
 export class MovementController {
     constructor(private readonly movementService: MovementService) { }
 

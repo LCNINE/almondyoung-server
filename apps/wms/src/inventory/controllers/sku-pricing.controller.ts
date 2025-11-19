@@ -17,7 +17,7 @@ import { UpdateSkuPricingDto } from '../dto/sku-pricing/update-sku-pricing.dto';
 import { SkuPricingResponseDto } from '../dto/sku-pricing/sku-pricing-response.dto';
 
 @ApiTags('SKU Pricing')
-@Controller('wms/inventory/skus')
+@Controller('inventory/skus')
 export class SkuPricingController {
     constructor(private readonly skuPricingService: SkuPricingService) {}
 

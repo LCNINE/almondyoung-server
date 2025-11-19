@@ -26,7 +26,7 @@ const UnreserveSchema = z.object({ fulfillmentOrderLineId: z.string(), quantity:
 const TransferSchema = z.object({ fromFulfillmentOrderLineId: z.string(), toFulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
 
 @ApiTags('Fulfillments')
-@Controller('wms/fulfillments')
+@Controller('fulfillments')
 export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,

@@ -60,7 +60,7 @@ class MovementQueryDto {
 }
 
 @ApiTags('SKU Location Movements')
-@Controller('wms/inventory/location-movements')
+@Controller('inventory/location-movements')
 export class SkuLocationMovementController {
     constructor(
         private readonly skuLocationMovementService: SkuLocationMovementService
@@ -303,7 +303,7 @@ export class SkuLocationMovementController {
 }
 
 @ApiTags('SKU Location Movements')
-@Controller('wms/inventory/skus')
+@Controller('inventory/skus')
 export class SkuMovementHistoryController {
     constructor(
         private readonly skuLocationMovementService: SkuLocationMovementService
@@ -345,7 +345,7 @@ export class SkuMovementHistoryController {
 }
 
 @ApiTags('Location Movement History')
-@Controller('wms/inventory/locations')
+@Controller('inventory/locations')
 export class LocationMovementHistoryController {
     constructor(
         private readonly skuLocationMovementService: SkuLocationMovementService

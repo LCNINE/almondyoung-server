@@ -23,7 +23,7 @@ const AddFulfillmentOrdersSchema = z.object({
 });
 
 @ApiTags('Outbound Batches')
-@Controller('wms/outbound-batches')
+@Controller('outbound-batches')
 export class OutboundBatchController {
   constructor(
     private readonly outboundBatchService: OutboundBatchService

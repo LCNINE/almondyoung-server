@@ -74,24 +74,24 @@
 - 삭제: `deleteLocation(locationId)` 차단 (예외 발생)
 
 ## REST API 개요
-컨트롤러: `@Controller('wms/locations')`
+컨트롤러: `@Controller('locations')`
 
 ### 열(Column)
-- POST `/wms/locations/warehouses/:warehouseId/columns` 생성
-- GET `/wms/locations/warehouses/:warehouseId/columns` 조회(활성 필터)
-- PUT `/wms/locations/columns/:columnId` 수정
+- POST `/locations/warehouses/:warehouseId/columns` 생성
+- GET `/locations/warehouses/:warehouseId/columns` 조회(활성 필터)
+- PUT `/locations/columns/:columnId` 수정
 
 ### 랙(Rack)
-- POST `/wms/locations/warehouses/:warehouseId/racks` 생성(표준 빈 자동/커스텀 가능)
-- GET `/wms/locations/warehouses/:warehouseId/racks` 조회(열/활성 필터)
-- PUT `/wms/locations/racks/:rackId` 수정
-- POST `/wms/locations/warehouses/:warehouseId/racks/custom-bins` 커스텀 빈 추가
+- POST `/locations/warehouses/:warehouseId/racks` 생성(표준 빈 자동/커스텀 가능)
+- GET `/locations/warehouses/:warehouseId/racks` 조회(열/활성 필터)
+- PUT `/locations/racks/:rackId` 수정
+- POST `/locations/warehouses/:warehouseId/racks/custom-bins` 커스텀 빈 추가
 
 ### 로케이션(Location)
-- POST `/wms/locations/warehouses/:warehouseId/zones` 구역 로케이션 생성
-- GET `/wms/locations/warehouses/:warehouseId` 로케이션 목록(통합)
-- GET `/wms/locations/:locationId` 로케이션 상세
-- PUT `/wms/locations/:locationId` 로케이션 수정(시스템 로케이션은 제한적)
+- POST `/locations/warehouses/:warehouseId/zones` 구역 로케이션 생성
+- GET `/locations/warehouses/:warehouseId` 로케이션 목록(통합)
+- GET `/locations/:locationId` 로케이션 상세
+- PUT `/locations/:locationId` 로케이션 수정(시스템 로케이션은 제한적)
 
 ### 쿼리 파라미터(주요)
 - `type`: `standard | zone`

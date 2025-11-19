@@ -16,7 +16,7 @@ import {
 } from '../dto/generate-barcode.dto';
 
 @ApiTags('Barcode Generation')
-@Controller('wms/barcode-generation')
+@Controller('barcode-generation')
 export class BarcodeGenerationController {
     constructor(private readonly barcodeService: BarcodeService) {}
 

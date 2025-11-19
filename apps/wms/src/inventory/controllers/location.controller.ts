@@ -46,7 +46,7 @@ import {
 } from '../dto/location-response.dto';
 
 @ApiTags('Location Management')
-@Controller('wms/locations')
+@Controller('locations')
 export class LocationController {
     private readonly logger = new Logger(LocationController.name);
 

@@ -46,7 +46,7 @@ const GenerateBarcodeSchema = z.object({
 });
 
 @ApiTags('Picking')
-@Controller('wms/picking')
+@Controller('picking')
 export class PickingController {
   constructor(
     private readonly pickingProcessService: PickingProcessService
