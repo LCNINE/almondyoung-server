@@ -1,6 +1,13 @@
 "use client"
+
 import { ChevronDown } from "lucide-react"
 import { useRouter } from "next/navigation"
+import dynamic from "next/dynamic"
+import "intl-tel-input/styles"
+
+const IntlTelInput = dynamic(() => import("intl-tel-input/reactWithUtils"), {
+  ssr: false,
+})
 
 interface PhoneVerifyFormProps {
   onComplete?: () => void
@@ -90,10 +97,16 @@ export default function PhoneVerifyForm({ onComplete }: PhoneVerifyFormProps) {
 
           {/* Phone Input */}
           <div className="flex flex-col">
-            <input
-              type="tel"
-              placeholder="휴대폰번호 (숫자만 입력하세요)"
-              className="border-b border-neutral-400 bg-transparent px-4 py-3 font-['Noto_Sans_KR'] text-xs leading-5 text-neutral-400 outline-none focus:border-black focus:text-black"
+            <IntlTelInput
+              initialValue=""
+              inputProps={{
+                placeholder: "휴대폰번호 (숫자만 입력하세요)",
+                className:
+                  "w-full border-b border-neutral-400 bg-transparent px-4 py-3 font-['Noto_Sans_KR'] text-xs leading-5 text-neutral-400 outline-none focus:border-black focus:text-black",
+              }}
+              initOptions={{
+                initialCountry: "kr",
+              }}
             />
           </div>
         </div>

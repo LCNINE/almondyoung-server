@@ -6947,6 +6947,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"intl-tel-input@npm:^25.12.5":
+  version: 25.12.5
+  resolution: "intl-tel-input@npm:25.12.5"
+  checksum: b23768fe286aeb6d7f713ecadef8a7aa819d8f39292bd3d44e258f97c0773e4c73eaf50c16d11b86e848c1d55c53b3a768c92d0ee44557d5956c8fd7eb9b7550
+  languageName: node
+  linkType: hard
+
 "ipaddr.js@npm:1.9.1":
   version: 1.9.1
   resolution: "ipaddr.js@npm:1.9.1"
@@ -7819,6 +7826,7 @@ __metadata:
     eslint: 8.10.0
     eslint-config-next: 15.0.3
     input-otp: ^1.4.2
+    intl-tel-input: ^25.12.5
     lodash: ^4.17.21
     lucide-react: ^0.542.0
     next: ^15.3.1
