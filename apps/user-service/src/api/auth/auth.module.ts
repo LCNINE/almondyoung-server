@@ -5,7 +5,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConsentsModule } from '../consents/consents.module';
-import { EventProcessorModule } from '../events/events.module';
 import { TokensModule } from '../tokens/tokens.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
@@ -67,7 +66,6 @@ export class AuthModule {
         DbModule,
         EventsModule,
         ConsentsModule,
-        EventProcessorModule,
       ],
       providers,
       controllers: [AuthController],
