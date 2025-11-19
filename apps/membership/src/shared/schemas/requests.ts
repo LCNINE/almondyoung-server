@@ -10,40 +10,42 @@ import { z } from 'zod';
 export const CreateTierRequestSchema = z.object({
   code: z
     .string()
-    .min(1, '티어 코드는 필수입니다')
-    .max(20, '티어 코드는 20자 이하여야 합니다')
-    .regex(/^[A-Z_]+$/, '티어 코드는 대문자와 언더스코어만 사용할 수 있습니다'),
+    .min(1, { error: '티어 코드는 필수입니다' })
+    .max(20, { error: '티어 코드는 20자 이하여야 합니다' })
+    .regex(/^[A-Z_]+$/, {
+      error: '티어 코드는 대문자와 언더스코어만 사용할 수 있습니다',
+    }),
   priorityLevel: z
     .number()
-    .min(1, '우선순위는 1 이상이어야 합니다')
+    .min(1, { error: '우선순위는 1 이상이어야 합니다' })
     .max(100, '우선순위는 100 이하여야 합니다'),
 });
 
 export const UpdateTierRequestSchema = z.object({
   name: z
     .string()
-    .min(1, '티어 이름은 필수입니다')
-    .max(50, '티어 이름은 50자 이하여야 합니다')
+    .min(1, { error: '티어 이름은 필수입니다' })
+    .max(50, { error: '티어 이름은 50자 이하여야 합니다' })
     .optional(),
   priorityLevel: z
     .number()
-    .min(1, '우선순위는 1 이상이어야 합니다')
-    .max(100, '우선순위는 100 이하여야 합니다')
+    .min(1, { error: '우선순위는 1 이상이어야 합니다' })
+    .max(100, { error: '우선순위는 100 이하여야 합니다' })
     .optional(),
 });
 
 export const CreatePlanRequestSchema = z.object({
-  tierId: z.uuid('유효한 티어 ID여야 합니다'),
-  price: z.number().min(0, '가격은 0 이상이어야 합니다'),
-  durationDays: z.number().min(1, '기간은 1일 이상이어야 합니다'),
+  tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }),
+  price: z.number().min(0, { error: '가격은 0 이상이어야 합니다' }),
+  durationDays: z.number().min(1, { error: '기간은 1일 이상이어야 합니다' }),
   currency: z
     .string()
-    .length(3, '통화 코드는 3자리여야 합니다')
+    .length(3, { error: '통화 코드는 3자리여야 합니다' })
     .default('KRW')
     .optional(),
   trialDays: z
     .number()
-    .min(0, '무료 체험 기간은 0 이상이어야 합니다')
+    .min(0, { error: '무료 체험 기간은 0 이상이어야 합니다' })
     .default(0)
     .optional(),
 });
@@ -62,28 +64,30 @@ export const UpdatePlanRequestSchema = z.object({
 export const DeactivatePlanRequestSchema = z.object({
   reason: z
     .string()
-    .min(1, '비활성화 사유는 필수입니다')
-    .max(500, '비활성화 사유는 500자 이하여야 합니다'),
+    .min(1, { error: '비활성화 사유는 필수입니다' })
+    .max(500, { error: '비활성화 사유는 500자 이하여야 합니다' }),
 });
 
 // Subscription Operations
 export const CreateSubscriptionRequestSchema = z.object({
-  planId: z.string().min(1, 'planId는 필수입니다'),
+  planId: z.string().min(1, { error: 'planId는 필수입니다' }),
 });
 
 export const UpgradeSubscriptionRequestSchema = z.object({
-  newPlanId: z.string().uuid('유효한 UUID 형식이어야 합니다'),
+  newPlanId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
 });
 
 export const DowngradeSubscriptionRequestSchema = z.object({
-  newPlanId: z.string().uuid('유효한 UUID 형식이어야 합니다'),
-  effectiveDate: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+  newPlanId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
+  effectiveDate: z.iso
+    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+    .optional(),
 });
 
 export const PauseSubscriptionRequestSchema = z
   .object({
-    startDate: z.iso.datetime('유효한 날짜 형식이어야 합니다'),
-    endDate: z.iso.datetime('유효한 날짜 형식이어야 합니다'),
+    startDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }),
+    endDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }),
     reason: z.string().optional(),
   })
   .refine((data) => new Date(data.startDate) < new Date(data.endDate), {
@@ -95,11 +99,17 @@ export const CancelSubscriptionRequestSchema = z.object({
   reasonCode: z.string(),
   reasonText: z.string().optional(),
   reason: z.string().optional(), // 하위 호환성
-  effectiveDate: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+  effectiveDate: z.iso
+    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+    .optional(),
 });
 
 export const ResumeSubscriptionRequestSchema = z.object({
   reason: z.string().optional(),
+});
+
+export const GetBulkSubscriptionsRequestSchema = z.object({
+  id: z.array(z.string({ error: '사용자 ID는 필수입니다' })),
 });
 
 // Type exports - Controller에서만 사용
@@ -166,11 +176,17 @@ const PolicyRuleValueSchema = z
 
 export const CreatePolicyRequestSchema = z
   .object({
-    ruleType: z.enum(POLICY_RULE_TYPES, '유효한 정책 타입이어야 합니다'),
+    ruleType: z.enum(POLICY_RULE_TYPES, {
+      error: '유효한 정책 타입이어야 합니다',
+    }),
     ruleValue: PolicyRuleValueSchema,
-    tierId: z.uuid('유효한 티어 ID여야 합니다').optional(),
-    validFrom: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
-    validUntil: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+    tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
+    validFrom: z.iso
+      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+      .optional(),
+    validUntil: z.iso
+      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+      .optional(),
   })
   .refine(
     (data) => {
@@ -189,8 +205,12 @@ export const UpdatePolicyRequestSchema = z
   .object({
     ruleValue: PolicyRuleValueSchema.optional(),
     isActive: z.boolean().optional(),
-    validFrom: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
-    validUntil: z.iso.datetime('유효한 날짜 형식이어야 합니다').optional(),
+    validFrom: z.iso
+      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+      .optional(),
+    validUntil: z.iso
+      .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+      .optional(),
   })
   .refine(
     (data) => {
@@ -206,13 +226,17 @@ export const UpdatePolicyRequestSchema = z
   );
 
 export const PolicyValidationRequestSchema = z.object({
-  userId: z.uuid('유효한 사용자 ID여야 합니다'),
+  userId: z.uuid({ error: '유효한 사용자 ID여야 합니다' }),
   action: z
     .string()
-    .min(1, '액션은 필수입니다')
-    .max(100, '액션은 100자 이하여야 합니다'),
-  context: z.record(z.string(), z.unknown(), '컨텍스트는 객체 형태여야 합니다'),
-  policyIds: z.array(z.string().uuid('유효한 정책 ID여야 합니다')).optional(),
+    .min(1, { error: '액션은 필수입니다' })
+    .max(100, { error: '액션은 100자 이하여야 합니다' }),
+  context: z.record(z.string(), z.unknown(), {
+    error: '컨텍스트는 객체 형태여야 합니다',
+  }),
+  policyIds: z
+    .array(z.string().uuid({ error: '유효한 정책 ID여야 합니다' }))
+    .optional(),
 });
 
 export const BulkPolicyValidationRequestSchema = z.object({
@@ -223,16 +247,22 @@ export const BulkPolicyValidationRequestSchema = z.object({
 
 export const GetPoliciesQuerySchema = z.object({
   ruleType: z.enum(POLICY_RULE_TYPES).optional(),
-  tierId: z.uuid().optional(),
+  tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
   isActive: z.boolean().optional(),
-  page: z.number().min(1).default(1).optional(),
+  page: z
+    .number()
+    .min(1, { error: '페이지는 1 이상이어야 합니다' })
+    .default(1)
+    .optional(),
   limit: z.number().min(1).max(100).default(20).optional(),
 });
 
 export const GetApplicablePoliciesQuerySchema = z.object({
-  tierId: z.uuid().optional(),
+  tierId: z.uuid({ error: '유효한 티어 ID여야 합니다' }).optional(),
   subscriptionId: z.uuid().optional(),
-  currentDate: z.iso.datetime().optional(),
+  currentDate: z.iso
+    .datetime({ error: '유효한 날짜 형식이어야 합니다' })
+    .optional(),
 });
 
 // =================================================================
@@ -273,9 +303,14 @@ export type ExtendEntitlementRequest = z.infer<
 
 // Force Cancel Subscription (Admin)
 export const ForceCancelSubscriptionRequestSchema = z.object({
-  reason: z.string().min(1, '취소 사유는 필수입니다'),
-  refundType: z.enum(['FULL', 'PARTIAL', 'NONE']),
-  refundAmount: z.number().min(0, '환불 금액은 0 이상이어야 합니다').optional(),
+  reason: z.string().min(1, { error: '취소 사유는 필수입니다' }),
+  refundType: z.enum(['FULL', 'PARTIAL', 'NONE'], {
+    error: '유효한 환불 타입이어야 합니다',
+  }),
+  refundAmount: z
+    .number()
+    .min(0, { error: '환불 금액은 0 이상이어야 합니다' })
+    .optional(),
   adminNote: z.string().optional(),
 });
 
