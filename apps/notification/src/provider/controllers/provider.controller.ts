@@ -33,9 +33,9 @@ import { ProviderStatus } from '../enums/provider-status.enum';
 
 @ApiTags('providers')
 
-@Controller('api/v1/providers')
+@Controller('providers')
 export class ProviderController {
-    constructor(
+    constructor(    
         @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
         private readonly providerManager: ProviderManagerService,
     ) { }

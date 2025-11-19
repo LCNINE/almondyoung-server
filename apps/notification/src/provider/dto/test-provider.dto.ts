@@ -5,11 +5,16 @@ import { Channel } from '../../shared/enums';
 
 export class TestProviderDto {
   @ApiProperty({
-    description: '테스트 수신자',
+    description: '테스트 수신자 (이메일 주소, 전화번호, 또는 FCM 토큰)',
     example: 'test@example.com',
+    examples: {
+      email: { value: 'test@example.com', description: '이메일 주소 (EMAIL 채널)' },
+      phone: { value: '+821012345678', description: '전화번호 (SMS 채널)' },
+      fcmToken: { value: 'dK3xYz9...', description: 'FCM 토큰 (PUSH 채널)' },
+    },
   })
   @IsString()
-  to: string; // Test recipient
+  to: string; // Test recipient (email, phone, or FCM token)
 
   @ApiPropertyOptional({
     description: '테스트 제목',

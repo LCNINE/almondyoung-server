@@ -4,7 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { TemplateService } from "../services/template.service";
 
 @ApiTags('templates')
-@Controller("api/v1/templates")
+@Controller("templates")
 export class TemplateChannelController {
     constructor(private readonly templateService: TemplateService) { }
 

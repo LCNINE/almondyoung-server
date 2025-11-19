@@ -5,7 +5,7 @@ import { TemplateService } from "../services/template.service";
 import { CreateTemplateDto, UpdateTemplateDto, TemplateFilterDto, PreviewTemplateDto } from "../dto";
 
 @ApiTags('templates')
-@Controller("api/v1/templates")
+@Controller("templates")
 export class TemplateController {
     constructor(private readonly templateService: TemplateService) { }
 
