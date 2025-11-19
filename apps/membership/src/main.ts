@@ -5,10 +5,9 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
-import { join } from 'path';
-import { writeFileSync, mkdirSync } from 'fs';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
+import { ZodValidationPipe } from 'nestjs-zod';
 
 /**
  * 애플리케이션 부트스트랩 함수
@@ -25,17 +24,17 @@ async function bootstrap(): Promise<void> {
   // 개발환경: Express, 운영환경: Fastify
   const app = isDev
     ? await NestFactory.create<NestFastifyApplication>(
-      AppModule,
-      new FastifyAdapter(),
-    )
+        AppModule,
+        new FastifyAdapter(),
+      )
     : await NestFactory.create<NestFastifyApplication>(
-      AppModule,
-      new FastifyAdapter(),
-    );
+        AppModule,
+        new FastifyAdapter(),
+      );
 
   // 쿠키 파서 등록 (Fastify)
   await app.register(fastifyCookie);
-
+  app.useGlobalPipes(new ZodValidationPipe());
   // Passport와 Fastify 호환성을 위한 훅 (중요!)
   app
     .getHttpAdapter()
