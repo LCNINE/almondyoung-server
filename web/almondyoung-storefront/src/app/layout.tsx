@@ -25,7 +25,10 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <body className="overflow-x-clip [scrollbar-gutter:stable_both-edges]">
+      <body
+        suppressHydrationWarning
+        className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"
+      >
         <OverlayProvider>
           <CategoryProvider initialCategories={categories}>
             <UserProvider initialUser={currentUser}>
