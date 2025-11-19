@@ -11,28 +11,26 @@ import ProductList from "./components/list/product-list"
 import { ProductListSection } from "./components/list/product-list-section"
 import SectionHeader from "./components/list/section-header"
 import UserReport from "./components/report/user-report"
-import { clientApi } from "@lib/api/client-api"
-import { USER_SERVICE_BASE_URL } from "@lib/api/api.config"
-import { useEffect } from "react"
+import { ProductCard } from "@lib/types/ui/product"
 
-// 전문 분야 한글명 매핑 (이미 한글이므로 그대로 반환)
-const getSpecialtyFieldName = (specialty: string): string => {
-  // 이미 한글 카테고리명이므로 그대로 반환
-  return specialty || "일반"
-}
-
-// 구매 리포트 API
-// 관심있게 본 상품 api
-// 고객 개인화 추천 제품 API
-// 자주 구매하는 재료 API
-// 장바구니에서 기다리는 상품 API (이건 메두사 장바구니 fetch한후 pim을 재 fectch하면 해결될듯. 없으면 섹션없애도됨)
+// 더미 JSON 데이터 import (개인화된 사용자는 주로 구매하는 카테고리 데이터 사용)
+import hairProducts from "@lib/data/dummy/get-hair-list.json"
 
 // 로그인한 사용자용 홈페이지 섹션들
 export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
+  // 개인화 데이터 - 실제로는 사용자의 주요 구매 카테고리를 기반으로 함
+  const personalizedProducts = hairProducts.data as ProductCard[]
+
+  // 각 섹션별 상품 할당 (데이터 재사용으로 모든 섹션에 표시)
+  const recommendedProducts = personalizedProducts.slice(0, 10) // 추천제품
+  const frequentProducts = personalizedProducts.slice(2, 12) // 자주 구매하는 재료
+  const cartWaitingProducts = personalizedProducts.slice(4, 14) // 장바구니 대기 상품
+  const expertProducts = personalizedProducts.slice(1, 11) // 전문가용 추천
+  const membershipProducts = personalizedProducts.slice(3, 13) // 멤버십 전용
+
   return (
     <>
       {/* 검색 결과 및 구매 리포트 섹션 */}
-
       <section>
         <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
           <div className="flex flex-col gap-[30px] py-[40px] lg:flex-row">
@@ -48,14 +46,15 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
           </div>
         </div>
       </section>
+
       {/* 추천제품 섹션 */}
       <ProductListSection>
         <SectionHeader
           title={`${user?.username || "고객"}님을 위한 추천제품`}
-          description="#시즌제품 #스마트케어 #머신신제품"
+          description="#시즌제품 #스마트케어 #머신 신제품"
         />
         <ProductList
-          products={[]}
+          products={recommendedProducts}
           renderCard={(product) => <BasicProductCard product={product} />}
         />
       </ProductListSection>
@@ -67,7 +66,7 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
           description="자주 구매하는 재료를 다시담기"
         />
         <ProductList
-          products={[]}
+          products={frequentProducts}
           renderCard={(product) => <BasicProductCard product={product} />}
         />
       </ProductListSection>
@@ -79,12 +78,23 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
           description="장바구니에서 기다리는 상품을 만나보세요"
         />
         <ProductList
-          products={[]}
+          products={cartWaitingProducts}
           renderCard={(product) => <BasicProductCard product={product} />}
         />
       </ProductListSection>
 
-      <BannerCarousel slides={bannerMockData} />
+      {/* 메인 배너 캐러셀 */}
+      <div className="w-full lg:py-8">
+        <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
+          <BannerCarousel
+            slides={bannerMockData}
+            height="120px"
+            autoPlay={true}
+            autoPlayInterval={6000}
+            className="lg:overflow-hidden lg:rounded-2xl"
+          />
+        </div>
+      </div>
 
       {/* 전문가를 위한 추천제품 섹션 */}
       <ProductListSection>
@@ -93,7 +103,7 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
           description="전문가를 위한 추천제품을 만나보세요"
         />
         <ProductList
-          products={[]}
+          products={expertProducts}
           renderCard={(product) => <BasicProductCard product={product} />}
         />
       </ProductListSection>
@@ -102,11 +112,11 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
       <ProductListSection>
         <MembershipBanner className="mb-4" />
         <SectionHeader
-          title="웰컴딜 전체 제품 100원"
-          description="웰컴딜 전체 제품을 만나보세요"
+          title="웰컴드 전체 제품 100원"
+          description="웰컴드 전체 제품을 만나보세요"
         />
         <ProductList
-          products={[]}
+          products={membershipProducts}
           renderCard={(product) => <BasicProductCard product={product} />}
         />
       </ProductListSection>

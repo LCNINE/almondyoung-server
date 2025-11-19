@@ -38,7 +38,7 @@ export default function MembershipSuccessScreen() {
             - Container의 자식으로, flex-shrink-0을 통해 높이가 줄어들지 않습니다.
             - Container의 px-6를 사용하므로, 여기서는 수직 패딩(py-3)만 적용합니다.
         */}
-        <header className="flex w-full flex-shrink-0 items-center border-b border-gray-200 py-3">
+        <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
             <button aria-label="뒤로 가기" className="-m-2 p-2 text-black">
               <IconChevronLeft />
@@ -98,7 +98,7 @@ export default function MembershipSuccessScreen() {
                 */}
                 <a
                   href="#"
-                  className="flex w-32 flex-shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
+                  className="flex w-32 shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
                 >
                   <p className="text-base leading-5 font-medium text-black">
                     100원 웰컴딜
@@ -116,7 +116,7 @@ export default function MembershipSuccessScreen() {
 
                 <a
                   href="#"
-                  className="flex w-32 flex-shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
+                  className="flex w-32 shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
                 >
                   <p className="text-base leading-5 font-medium text-black">
                     멤버십 전용 상품
@@ -134,7 +134,7 @@ export default function MembershipSuccessScreen() {
 
                 <a
                   href="#"
-                  className="flex w-32 flex-shrink-0 flex-col gap-9 rounded-lg border border-gray-300 p-3.5"
+                  className="flex w-32 shrink-0 flex-col gap-9 rounded-lg border border-gray-300 p-3.5"
                 >
                   <p className="text-base leading-5 font-medium text-black">
                     다뷰 다운로드
@@ -157,7 +157,7 @@ export default function MembershipSuccessScreen() {
             - 'flex-shrink-0': 높이가 줄어들지 않습니다.
             - Container의 px-6 내부에 있으므로 py-4(수직 패딩)만 적용합니다.
         */}
-        <footer className="w-full flex-shrink-0 border-t border-gray-200 bg-white py-4">
+        <footer className="w-full shrink-0 border-t border-gray-200 bg-white py-4">
           <button className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600">
             쇼핑 계속하기
           </button>

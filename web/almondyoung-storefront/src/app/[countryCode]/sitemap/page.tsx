@@ -489,7 +489,7 @@ export default function SitemapPage() {
   const apiConnectionRate = (apiConnectedPages / totalPages) * 100
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-8 sm:px-6 lg:px-8">
+    <div className="bg-linear-to-br from-gray-50 to-gray-100 px-4 py-8 sm:px-6 md:min-h-screen lg:px-8">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-6 rounded-2xl bg-white p-5 shadow-xl md:mb-8 md:p-8">
@@ -570,7 +570,7 @@ export default function SitemapPage() {
               </div>
               <div className="h-3 w-full rounded-full bg-gray-200">
                 <div
-                  className="h-3 rounded-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all duration-500"
+                  className="h-3 rounded-full bg-linear-to-r from-blue-400 to-blue-600 transition-all duration-500"
                   style={{ width: `${pageCreationRate}%` }}
                 />
               </div>
@@ -584,7 +584,7 @@ export default function SitemapPage() {
               </div>
               <div className="h-3 w-full rounded-full bg-gray-200">
                 <div
-                  className="h-3 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 transition-all duration-500"
+                  className="h-3 rounded-full bg-linear-to-r from-amber-400 to-amber-600 transition-all duration-500"
                   style={{ width: `${uiCompletionRate}%` }}
                 />
               </div>
@@ -598,7 +598,7 @@ export default function SitemapPage() {
               </div>
               <div className="h-3 w-full rounded-full bg-gray-200">
                 <div
-                  className="h-3 rounded-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500"
+                  className="h-3 rounded-full bg-linear-to-r from-green-400 to-green-600 transition-all duration-500"
                   style={{ width: `${apiConnectionRate}%` }}
                 />
               </div>
@@ -644,7 +644,7 @@ export default function SitemapPage() {
               key={category.category}
               className="overflow-hidden rounded-xl bg-white shadow-lg"
             >
-              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4">
+              <div className="bg-linear-to-r from-indigo-500 to-purple-600 px-6 py-4">
                 <h2 className="text-xl font-bold text-white">
                   {category.category}
                 </h2>
@@ -661,7 +661,7 @@ export default function SitemapPage() {
                   >
                     <div className="flex items-start gap-3">
                       {/* Checkbox */}
-                      <div className="flex-shrink-0 pt-1">
+                      <div className="shrink-0 pt-1">
                         <input
                           type="checkbox"
                           checked={page.isChecked}

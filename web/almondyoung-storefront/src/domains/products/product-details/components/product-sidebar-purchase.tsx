@@ -135,7 +135,7 @@ export function ProductSidebarPurchase({
     if (selectedOptions && Object.keys(selectedOptions).length > 0) {
       handleAddToCart()
     }
-    window.location.href = `/${countryCode}/order/checkout`
+    window.location.href = `/${countryCode}/checkout`
   }
   return (
     <aside className="hidden w-full min-w-[383px] overflow-y-auto md:sticky md:top-0 md:block md:max-h-screen md:max-w-[383px] lg:max-w-[480px]">
