@@ -14,7 +14,6 @@ import { AdminModule } from './api/admin/admin.module';
 import { AuthModule } from './api/auth/auth.module';
 import { BusinessLicensesModule } from './api/business-licenses/business-licenses.module';
 import { ConsentsModule } from './api/consents/consents.module';
-import { EventProcessorModule } from './api/events/events.module';
 import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
@@ -25,7 +24,7 @@ import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
 
 config({
-  path: join(process.cwd(), 'apps', 'user-service', '.env.dev'),
+  path: join(process.cwd(), 'apps', 'user-service', '.env'),
 });
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
@@ -101,7 +100,6 @@ function createKafkaConfig() {
     UsersModule,
     ShopModule,
     ConsentsModule,
-    EventProcessorModule,
     WishlistModule,
     RecentViewsModule,
     FileModule,

@@ -109,4 +109,29 @@ export class EntitlementService {
       adminId || 'system',
     );
   }
+
+
+  /**
+ * 여러 사용자의 권한 정보 일괄 조회
+ */
+async getBulkUserEntitlements(userIds: string[]) {
+  const results = await this.reader.getBulkUserEntitlementDetails(
+    userIds,
+  );
+
+  // userId를 키로 하는 Map으로 변환
+  const entitlementMap = new Map(
+    results.map((r) => [
+      r.entitlement.userId,
+      {
+        entitlement: r.entitlement,
+        contract: r.contract,
+        plan: r.plan,
+        tier: r.tier,
+      },
+    ]),
+  );
+
+  return entitlementMap;
+}
 }
