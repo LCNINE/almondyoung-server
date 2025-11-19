@@ -28,22 +28,7 @@ import { SubscriptionCancellationService } from '../services/subscription-cancel
 import { ContractEventManager } from '../services/subscription/contract-event.manager';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import {
-  CreateTierRequest,
-  UpdateTierRequest,
-  CreatePlanRequest,
-  UpdatePlanRequest,
-  DeactivatePlanRequest,
-  ExtendEntitlementRequest,
-  CreateTierRequestSchema,
-  UpdateTierRequestSchema,
-  CreatePlanRequestSchema,
-  UpdatePlanRequestSchema,
-  DeactivatePlanRequestSchema,
-  ExtendEntitlementRequestSchema,
-  ForceCancelSubscriptionRequest,
-  ForceCancelSubscriptionRequestSchema,
-} from '../shared/schemas';
+import { CreatePlanRequest, CreatePlanRequestSchema } from '../shared/schemas';
 
 import {
   AdminTierResponseDto,
@@ -63,17 +48,17 @@ import {
   DeactivatePlanRequestDto,
   ExtendEntitlementRequestDto,
   ForceCancelSubscriptionRequestDto,
+  GetBulkSubscriptionsRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
 import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { SubscriptionService } from '../services/subscription.service';
 /**
  * 관리자 운영 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
  */
 @ApiTags('admin')
-@ApiBearerAuth('JWT-auth')
-@ApiSecurity('dev-user-id')
 @Controller('admin')
 @UseGuards(JwtAuthGuard) // 모든 API에 관리자 인증 가드 적용
 @UseFilters(SubscriptionExceptionFilter)
@@ -82,6 +67,7 @@ export class AdminOperationsController {
 
   constructor(
     private readonly adminOperationsService: AdminOperationsService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
   ) {}
@@ -149,8 +135,7 @@ export class AdminOperationsController {
   @UseGuards(JwtAuthGuard)
   async createTier(
     @User('userId') userId: string,
-    @Body(new ZodValidationPipe(CreateTierRequestSchema))
-    dto: CreateTierRequest,
+    @Body() dto: CreateTierRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -205,8 +190,7 @@ export class AdminOperationsController {
   async updateTier(
     @User('userId') userId: string,
     @Param('tierId') tierId: string,
-    @Body(new ZodValidationPipe(UpdateTierRequestSchema))
-    dto: UpdateTierRequest,
+    @Body() dto: UpdateTierRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -319,8 +303,7 @@ export class AdminOperationsController {
   async updatePlan(
     @User('userId') userId: string,
     @Param('planId') planId: string,
-    @Body(new ZodValidationPipe(UpdatePlanRequestSchema))
-    dto: UpdatePlanRequest,
+    @Body() dto: UpdatePlanRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -379,8 +362,7 @@ export class AdminOperationsController {
   async deactivatePlan(
     @User('userId') userId: string,
     @Param('planId') planId: string,
-    @Body(new ZodValidationPipe(DeactivatePlanRequestSchema))
-    dto: DeactivatePlanRequest,
+    @Body() dto: DeactivatePlanRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -439,8 +421,7 @@ export class AdminOperationsController {
   @UseGuards(JwtAuthGuard)
   async adjustUserEntitlement(
     @User('userId') userId: string,
-    @Body(new ZodValidationPipe(ExtendEntitlementRequestSchema))
-    dto: ExtendEntitlementRequest,
+    @Body() dto: ExtendEntitlementRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -645,8 +626,7 @@ export class AdminOperationsController {
   async forceCancelSubscription(
     @User('userId') userId: string,
     @Param('contractId') contractId: string,
-    @Body(new ZodValidationPipe(ForceCancelSubscriptionRequestSchema))
-    dto: ForceCancelSubscriptionRequest,
+    @Body() dto: ForceCancelSubscriptionRequestDto,
   ) {
     try {
       const adminId = userId;
@@ -669,6 +649,29 @@ export class AdminOperationsController {
       return result;
     } catch (error) {
       this.handleError(error, '강제 구독 취소');
+    }
+  }
+
+  /**
+   * 여러 사용자의 멤버십 정보 일괄 조회
+   *
+   * POST /subscriptions/bulk
+   * Body: { id: ["user_123", "user_456", ...] }
+   *
+   * Response: [
+   *   { id: "user_123", membership: {...} },
+   *   { id: "user_456", membership: null }
+   * ]
+   */
+  @Post('subscriptions/bulk')
+  async getBulkMemberships(@Body() dto: GetBulkSubscriptionsRequestDto) {
+    try {
+      const result = await this.subscriptionService.getBulkSubscriptions(
+        dto.id,
+      );
+      return result;
+    } catch (error) {
+      this.handleError(error, '여러 사용자의 구독 정보 일괄 조회');
     }
   }
 }
