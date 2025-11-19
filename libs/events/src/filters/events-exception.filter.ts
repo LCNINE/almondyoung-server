@@ -50,20 +50,76 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
   }
 
   catch(exception: Error, host: ArgumentsHost): any {
+    // Kafka RPC 컨텍스트인지 확인
+    try {
+      const ctx = host.switchToRpc();
+      const kafkaContext = ctx.getContext<KafkaContext>();
+
+      // KafkaContext가 유효한지 확인
+      if (!kafkaContext || typeof kafkaContext.getTopic !== 'function') {
+        // Kafka 컨텍스트가 아니면 부모 클래스로 위임
+        return super.catch(exception, host);
+      }
+    } catch (error) {
+      // RPC 컨텍스트가 아니면 (예: Cron 작업, HTTP 요청) 부모 클래스로 위임
+      return super.catch(exception, host);
+    }
+
     return this.handleException(exception, host);
   }
 
-  private async handleException(exception: Error, host: ArgumentsHost): Promise<void> {
+  private async handleException(
+    exception: Error,
+    host: ArgumentsHost,
+  ): Promise<void> {
     const ctx = host.switchToRpc();
     const kafkaContext = ctx.getContext<KafkaContext>();
-    const handler = (host as any).getHandler ? (host as any).getHandler() : { name: 'UnknownHandler' };
 
-    // 핸들러의 재시도 정책 조회
-    const retryPolicyConfig =
-      this.reflector.get<RetryPolicyConfig>(RETRY_POLICY_METADATA, handler) || {};
-    const disableDLQ = this.reflector.get<boolean>(DISABLE_DLQ_METADATA, handler) || false;
+    // Kafka 컨텍스트 유효성 재확인
+    if (!kafkaContext || typeof kafkaContext.getTopic !== 'function') {
+      // 유효하지 않으면 부모 클래스로 위임 (반환값은 무시)
+      super.catch(exception, host);
+      return;
+    }
 
-    const retryPolicy = normalizeRetryPolicy(retryPolicyConfig);
+    const handler = (host as any).getHandler
+      ? (host as any).getHandler()
+      : null;
+
+    // 핸들러가 함수가 아니면 기본 처리로 위임
+    if (!handler || typeof handler !== 'function') {
+      this.logger.warn(
+        'Handler is not a function, delegating to parent filter',
+        { error: exception.message },
+      );
+      super.catch(exception, host);
+      return;
+    }
+
+    // 핸들러의 재시도 정책 조회 (안전하게)
+    let retryPolicyConfig: RetryPolicyConfig | undefined;
+    let disableDLQ = false;
+
+    try {
+      retryPolicyConfig = this.reflector.get<RetryPolicyConfig>(
+        RETRY_POLICY_METADATA,
+        handler,
+      );
+      disableDLQ =
+        this.reflector.get<boolean>(DISABLE_DLQ_METADATA, handler) || false;
+    } catch (metadataError) {
+      // 메타데이터 조회 실패 시 기본값 사용
+      this.logger.warn('Failed to get retry policy metadata, using defaults', {
+        error:
+          metadataError instanceof Error
+            ? metadataError.message
+            : String(metadataError),
+      });
+      retryPolicyConfig = {};
+      disableDLQ = false;
+    }
+
+    const retryPolicy = normalizeRetryPolicy(retryPolicyConfig || {});
 
     // SchemaValidationError는 재시도하지 않음 (nonRetryableErrors에 추가)
     if (!retryPolicy.nonRetryableErrors) {
@@ -76,26 +132,20 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     // 재시도 컨텍스트 생성
     const retryContext = createRetryContext();
 
-    this.logger.error(
-      `Event handler failed: ${handler.name}`,
-      {
-        error: exception.message,
-        stack: exception.stack,
-        errorType: exception.name,
-        topic: kafkaContext.getTopic(),
-        partition: kafkaContext.getPartition(),
-        offset: kafkaContext.getMessage().offset,
-      },
-    );
+    this.logger.error(`Event handler failed: ${handler.name}`, {
+      error: exception.message,
+      stack: exception.stack,
+      errorType: exception.name,
+      topic: kafkaContext.getTopic(),
+      partition: kafkaContext.getPartition(),
+      offset: kafkaContext.getMessage().offset,
+    });
 
     // 재시도 로직
     let lastError = exception;
     let shouldRetry = isRetryableError(exception, retryPolicy);
 
-    while (
-      shouldRetry &&
-      retryContext.attemptNumber < retryPolicy.maxRetries
-    ) {
+    while (shouldRetry && retryContext.attemptNumber < retryPolicy.maxRetries) {
       // 백오프 대기
       const delay = calculateBackoffDelay(
         retryContext.attemptNumber + 1,
@@ -117,7 +167,7 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
       // 재시도 실행
       try {
         const result = await this.retryHandler(host);
-        
+
         // 성공!
         this.logger.log(
           `✅ Retry succeeded on attempt ${retryContext.attemptNumber + 1}`,
@@ -196,7 +246,9 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
    * 핸들러 재실행
    */
   private async retryHandler(host: ArgumentsHost): Promise<any> {
-    const handler = (host as any).getHandler ? (host as any).getHandler() : null;
+    const handler = (host as any).getHandler
+      ? (host as any).getHandler()
+      : null;
     const args = host.getArgs();
 
     if (handler && typeof handler === 'function') {
@@ -254,15 +306,13 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
         },
       );
     } catch (dlqError) {
-      this.logger.error(
-        `❌ CRITICAL: Failed to send message to DLQ`,
-        {
-          originalError: error.message,
-          dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
-          topic,
-          offset: message.offset,
-        },
-      );
+      this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
+        originalError: error.message,
+        dlqError:
+          dlqError instanceof Error ? dlqError.message : String(dlqError),
+        topic,
+        offset: message.offset,
+      });
 
       // DLQ 전송 실패는 치명적이므로 에러를 던짐
       // 이 경우 Kafka가 메시지를 다시 전달할 것임
@@ -270,4 +320,3 @@ export class EventsExceptionFilter extends BaseRpcExceptionFilter {
     }
   }
 }
-

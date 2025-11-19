@@ -58,6 +58,13 @@ export class SchemaValidationInterceptor implements NestInterceptor {
 
     const ctx = context.switchToRpc();
     const kafkaContext = ctx.getContext<KafkaContext>();
+
+    // Kafka 컨텍스트 유효성 확인
+    if (!kafkaContext || typeof kafkaContext.getTopic !== 'function') {
+      // Kafka 컨텍스트가 아니면 검증을 건너뛰고 통과
+      return next.handle();
+    }
+
     const topic = kafkaContext.getTopic();
 
     try {

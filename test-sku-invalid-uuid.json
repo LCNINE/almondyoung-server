@@ -1,0 +1,11 @@
+{
+  "name": "잘못된 UUID 테스트",
+  "masterName": "테스트 마스터",
+  "optionKey": "S / 검정",
+  "source": "manual_entry",
+  "safetyStock": 10,
+  "deliveryProfileId": "invalid-uuid-string",
+  "supplierIds": ["string"],
+  "categoryIds": ["string"]
+}
+

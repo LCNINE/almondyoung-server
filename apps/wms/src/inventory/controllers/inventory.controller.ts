@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Query, Param, Body, HttpCode, HttpStatus, Patch, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { InventoryService } from '../services/inventory.service';
 import { StockEventService } from '../services/stock-event.service';
@@ -229,7 +229,28 @@ export class InventoryController {
     @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
     @ApiResponse({ status: 400, description: '잘못된 요청' })
     async createSku(@Body() createSkuDto: CreateSkuDto): Promise<SkuResponseDto> {
-        return this.inventoryService.createSku(createSkuDto);
+        try {
+            return await this.inventoryService.createSku(createSkuDto);
+        } catch (error) {
+            // 외래키 제약조건 위반 에러 처리
+            if (error.message?.includes('foreign key') || error.message?.includes('violates foreign key constraint')) {
+                throw new BadRequestException(
+                    `Invalid reference: ${error.message.includes('delivery_profile') ? 'deliveryProfileId' : error.message.includes('supplier') ? 'supplierIds' : error.message.includes('category') ? 'categoryIds' : 'referenced ID'} does not exist`
+                );
+            }
+            // 기존 에러 메시지 패턴 기반 처리
+            if (error.message?.includes('not found')) {
+                throw new BadRequestException(error.message);
+            }
+            if (error.message?.includes('already exists') || error.message?.includes('duplicate')) {
+                throw new BadRequestException(error.message);
+            }
+            if (error.message?.includes('required') || error.message?.includes('invalid')) {
+                throw new BadRequestException(error.message);
+            }
+            // 그 외 에러는 그대로 전파
+            throw error;
+        }
     }
 
     @Get('/skus')

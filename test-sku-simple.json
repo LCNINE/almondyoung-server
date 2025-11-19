@@ -1,0 +1,8 @@
+{
+  "name": "간단한 테스트 SKU",
+  "masterName": "테스트 마스터",
+  "optionKey": "S / 검정",
+  "source": "manual_entry",
+  "safetyStock": 10
+}
+
