@@ -2,6 +2,17 @@
 
 MSA 환경에서 사용할 공통 인증/인가 모듈입니다. JWT 토큰의 roles를 기반으로 DB에서 scopes를 조회하여 권한을 검증합니다.
 
+## 🚀 시작하기
+
+```bash
+# 1단계: Auth 스키마 생성 (DB마다 한 번만 실행)
+npm run migrate:auth "postgresql://user:password@localhost:5432/your_database"
+
+# 2단계: 전체 작동 예제 확인
+cd apps/test-auth-scope
+cat README.md
+```
+
 ## 특징
 
 - ✅ JWT roles 기반 권한 검증
@@ -21,6 +32,26 @@ MSA 환경에서 사용할 공통 인증/인가 모듈입니다. JWT 토큰의 r
 | **JWT Payload** | roles만 포함 (scopes는 런타임 DB 조회) |
 | **Admin API** | role-scope 매핑 CRUD만 제공 (scope 자체는 코드 관리) |
 
+## 빠른 시작 (Quick Start)
+
+```bash
+# 1. DB에 auth 스키마 생성
+npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
+
+# 2. Scope 정의 파일 작성
+# apps/your-service/src/auth/your-service.scopes.ts
+
+# 3. AppModule에 통합
+# - DbModule에 authorizationSchema 병합
+# - AuthorizationModule.forRoot() 추가
+# - APP_GUARD로 JwtAuthGuard + ScopeGuard 설정
+
+# 4. 컨트롤러에서 사용
+# @RequireScopes('resource:read')
+```
+
+전체 예제: `apps/test-auth-scope` 참조
+
 ## 설치 및 설정
 
 ### 1. tsconfig.json에 경로 추가 (이미 완료됨)
@@ -36,16 +67,30 @@ MSA 환경에서 사용할 공통 인증/인가 모듈입니다. JWT 토큰의 r
 
 ### 2. DB 마이그레이션 실행
 
+**권장 방법**: 새로운 마이그레이션 스크립트 사용
+
+```bash
+# 프로젝트 루트에서 실행
+npm run migrate:auth "postgresql://user:password@localhost:5432/your_database"
+
+# 또는 환경 변수 사용
+DATABASE_URL="postgresql://user:password@localhost:5432/your_database" npm run migrate:auth
+```
+
+**대체 방법**: drizzle-kit 직접 사용 (권장하지 않음)
+
 ```bash
 cd libs/authorization
-npx drizzle-kit generate
-npx drizzle-kit migrate
+DATABASE_URL="postgresql://..." npx drizzle-kit generate
+DATABASE_URL="postgresql://..." npx drizzle-kit migrate
 ```
 
 이 명령은 PostgreSQL에 `auth` 스키마를 생성하고 다음 테이블을 만듭니다:
 - `auth.roles` - 역할 정의
 - `auth.scopes` - 권한 정의
 - `auth.role_scope_mapping` - 역할-권한 매핑
+
+**⚠️ 중요**: 마이그레이션은 마이크로서비스마다 한 번만 실행하면 됩니다. 모든 서비스가 같은 `auth` 스키마를 공유합니다.
 
 ### 3. Scope 정의 파일 작성
 
@@ -271,6 +316,35 @@ DELETE /admin/roles/:roleId/scopes/:scopeId
 
 **Unique Constraint**: (role_id, scope_id)
 
+## 실제 작동 예제
+
+완전히 작동하는 예제는 **`apps/test-auth-scope`** 참조:
+
+```bash
+# 1. 데이터베이스 생성
+createdb test_auth_scope
+
+# 2. Auth 스키마 마이그레이션
+npm run migrate:auth "postgresql://user:password@localhost:5432/test_auth_scope"
+
+# 3. Todo 앱 테이블 마이그레이션
+cd apps/test-auth-scope
+DATABASE_URL="postgresql://..." npx drizzle-kit migrate
+
+# 4. e2e 테스트 실행
+cd ../..
+DATABASE_URL="postgresql://..." npx jest --config apps/test-auth-scope/test/jest-e2e.json --rootDir apps/test-auth-scope --runInBand
+```
+
+test-auth-scope는 다음을 검증합니다:
+- ✅ JWT 기반 인증
+- ✅ Scope 기반 인가 (`todo:read-all`)
+- ✅ 일반 사용자 vs 관리자 권한 분리
+- ✅ 사용자 격리 (자신의 데이터만 접근)
+- ✅ 16개 e2e 테스트 모두 통과
+
+자세한 내용은 `apps/test-auth-scope/README.md` 참조
+
 ## 예시: PIM 서비스
 
 ### Scope 정의
@@ -285,10 +359,6 @@ export const PIM_SCOPES: ScopeDefinition[] = [
   { key: 'category:write', category: 'category', description: '카테고리 생성/수정' },
 ];
 ```
-
-### 통합 예시
-
-전체 통합 예시는 `apps/pim/src/auth/pim.module.example.ts`와 `controller.example.ts` 참조
 
 ## 테스트
 
@@ -356,9 +426,16 @@ await authService.invalidateCache();
 **원인**: 
 - DATABASE_URL 환경 변수 누락
 - DB 연결 실패
+- auth 스키마 마이그레이션을 실행하지 않음
 
-**확인**:
+**해결**:
 ```bash
+# auth 스키마가 있는지 확인
+psql -U postgres -d your_db -c "\dn"
+
+# auth 스키마가 없으면 마이그레이션 실행
+npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
+
 # 로그 확인
 [ScopeBootstrapService] Initializing scopes for pim...
 [ScopeBootstrapService] Registered 5 new scopes for pim
@@ -373,6 +450,47 @@ npm run build
 
 # 또는 IDE 재시작
 ```
+
+### 4. "auth.scopes relation does not exist" 에러
+
+**증상**: DB 쿼리 실패
+
+**원인**: auth 스키마가 DB에 생성되지 않음
+
+**해결**:
+```bash
+# auth 스키마 마이그레이션 실행
+npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
+```
+
+### 5. 테스트에서 401 Unauthorized
+
+**증상**: JWT 토큰을 전달했는데도 401 에러
+
+**원인**: cookie-parser 미들웨어가 테스트 앱에 추가되지 않음
+
+**해결**:
+```typescript
+// e2e 테스트 beforeAll
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+```
+
+### 6. 여러 DB에서 auth 스키마를 사용하고 싶음
+
+**해결**: 각 DB마다 한 번씩 마이그레이션 실행
+```bash
+# DB1
+npm run migrate:auth "postgresql://user:password@localhost:5432/db1"
+
+# DB2
+npm run migrate:auth "postgresql://user:password@localhost:5432/db2"
+
+# DB3
+npm run migrate:auth "postgresql://user:password@localhost:5432/db3"
+```
+
+모든 DB가 동일한 auth 스키마 구조를 가지지만, 데이터(roles, scopes, mappings)는 독립적입니다.
 
 ## API Reference
 
@@ -409,6 +527,22 @@ class ScopeGuard implements CanActivate {
 // 여러 scope (OR 조건)
 @RequireScopes('product:read', 'admin:read')
 ```
+
+## 마이그레이션 스크립트
+
+`npm run migrate:auth` 명령어는 `libs/authorization/scripts/migrate-auth-schema.ts`를 실행합니다.
+
+이 스크립트는:
+- ✅ `auth` 스키마 생성
+- ✅ `auth.roles` 테이블 생성
+- ✅ `auth.scopes` 테이블 생성
+- ✅ `auth.role_scope_mapping` 테이블 생성
+- ✅ 멱등성 보장 (여러 번 실행해도 안전)
+
+**장점**:
+- 간단한 명령어 하나로 모든 DB 초기화
+- 환경 변수 또는 인자로 DATABASE_URL 전달 가능
+- 여러 마이크로서비스/DB에서 재사용 가능
 
 ## 관련 모듈
 
