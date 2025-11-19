@@ -110,6 +110,15 @@
         "tsConfigPath": "libs/shared/tsconfig.lib.json"
       }
     },
+    "test-auth-scope": {
+      "type": "application",
+      "root": "apps/test-auth-scope",
+      "entryFile": "main",
+      "sourceRoot": "apps/test-auth-scope/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/test-auth-scope/tsconfig.app.json"
+      }
+    },
     "user-service": {
       "type": "application",
       "root": "apps/user-service",
@@ -126,7 +135,9 @@
       "sourceRoot": "apps/wallet/src",
       "compilerOptions": {
         "tsConfigPath": "apps/wallet/tsconfig.app.json",
-        "assets": ["html/**/*"]
+        "assets": [
+          "html/**/*"
+        ]
       }
     },
     "wms": {
