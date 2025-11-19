@@ -1,3 +1,4 @@
+// apps/notification/src/bulk/services/bulk-notification.service.ts
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
@@ -54,6 +55,8 @@ export class BulkNotificationService {
     }
 
     // 2. Create Campaign Target Group Record
+    // 프론트에서 이미 조인/필터링된 사용자 정보를 받아서 그대로 저장
+    const userList = dto.audience.users || [];
     const [targetGroup] = await this.db.db
       .insert(notificationTables.campaignTargetGroups)
       .values({
@@ -61,8 +64,8 @@ export class BulkNotificationService {
         name: `${dto.name} - Audience`,
         type: dto.audience.kind === 'ALL_USERS' ? 'all' : dto.audience.kind === 'SELECTED_USERS' ? 'excel' : 'filter', // Map to schema enum
         criteria: dto.audience.criteria,
-        userList: dto.audience.userIds,
-        userCount: 0, // Will be updated by processor
+        userList: userList, // 프론트에서 받은 완성된 사용자 정보 객체 배열
+        userCount: userList.length, // 프론트에서 이미 필터링된 사용자 수
       })
       .returning();
 
@@ -84,18 +87,23 @@ export class BulkNotificationService {
       },
     );
 
+    // Calculate next status
+    const nextStatus = dto.sendAt && new Date(dto.sendAt) > new Date() 
+      ? 'SCHEDULED' 
+      : 'PROCESSING';
+
     await this.db.db
       .update(notificationTables.notificationCampaigns)
-      .set({ status: dto.sendAt && new Date(dto.sendAt) > new Date() ? 'SCHEDULED' : 'PROCESSING' })
+      .set({ status: nextStatus })
       .where(eq(notificationTables.notificationCampaigns.campaignId, campaign.campaignId));
 
     this.logger.log(
-      `Bulk notification campaign ${campaign.campaignId} created and added to queue with status: ${campaign.status}`,
+      `Bulk notification campaign ${campaign.campaignId} created and added to queue with status: ${nextStatus}`,
     );
 
     return {
       campaignId: campaign.campaignId,
-      status: campaign.status,
+      status: nextStatus, // Return the updated status
     };
   }
 }

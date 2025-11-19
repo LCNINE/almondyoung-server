@@ -182,9 +182,10 @@ export class ProviderController {
     async remove(@Param('id') id: string) {
         const result = await this.db
             .delete(notificationProviders)
-            .where(eq(notificationProviders.providerId, id));
+            .where(eq(notificationProviders.providerId, id))
+            .returning({ providerId: notificationProviders.providerId });
 
-        if (!result) {
+        if (result.length === 0) {
             throw new NotFoundException(`Provider ${id} not found`);
         }
 

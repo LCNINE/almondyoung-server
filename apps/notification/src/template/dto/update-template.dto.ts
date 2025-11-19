@@ -1,3 +1,4 @@
+// apps/notification/src/template/dto/update-template.dto.ts
 import { PartialType } from '@nestjs/swagger';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateTemplateDto, KakaoTemplateConfig, FCMConfig, EmailConfig, SMSConfig } from './create-template.dto';

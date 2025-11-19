@@ -1,3 +1,4 @@
+// apps/notification/src/bulk/dto/create-bulk-notification.dto.ts
 import {
   IsString,
   IsNotEmpty,
@@ -15,28 +16,70 @@ import {
   NotificationPriority,
 } from '../../shared/enums';
 
+class UserInfoDto {
+  @ApiProperty({
+    description: '사용자 ID',
+    example: 'user-123',
+  })
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @ApiPropertyOptional({
+    description: '이메일 주소',
+    example: 'user@example.com',
+  })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional({
+    description: '전화번호',
+    example: '010-1234-5678',
+  })
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
+  @ApiPropertyOptional({
+    description: '마케팅 수신 동의 여부',
+    example: true,
+    default: true,
+  })
+  @IsOptional()
+  isMarketingEnabled?: boolean;
+}
+
 class AudienceDto {
   @ApiProperty({
     enum: ['ALL_USERS', 'SELECTED_USERS', 'FILTERED_USERS'],
     description: '대상 사용자 유형',
-    example: 'ALL_USERS',
+    example: 'SELECTED_USERS',
   })
   @IsEnum(['ALL_USERS', 'SELECTED_USERS', 'FILTERED_USERS'])
   kind: 'ALL_USERS' | 'SELECTED_USERS' | 'FILTERED_USERS';
 
   @ApiPropertyOptional({
-    type: [String],
-    description: '선택된 사용자 ID 목록 (SELECTED_USERS일 때 사용)',
-    example: ['user1', 'user2', 'user3'],
+    type: [UserInfoDto],
+    description: '프론트엔드에서 조인/필터링된 사용자 정보 목록 (SELECTED_USERS, FILTERED_USERS일 때 사용)',
+    example: [
+      {
+        userId: 'user-123',
+        email: 'user@example.com',
+        phoneNumber: '010-1234-5678',
+        isMarketingEnabled: true,
+      },
+    ],
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  userIds?: string[];
+  @ValidateNested({ each: true })
+  @Type(() => UserInfoDto)
+  users?: UserInfoDto[];
 
   @ApiPropertyOptional({
     type: 'object',
-    description: '필터링 기준 (FILTERED_USERS일 때 사용)',
+    description: '필터링 기준 (FILTERED_USERS일 때 사용, 프론트에서 이미 적용됨)',
     example: { membershipType: 'premium', shopCategories: ['fashion'] },
     additionalProperties: true,
   })
