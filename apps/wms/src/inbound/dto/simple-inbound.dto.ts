@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsArray, ValidateNested, IsNumber, Min, IsOptional, IsDateString, IsString, MaxLength } from 'class-validator';
+import {
+  IsUUID,
+  IsNotEmpty,
+  IsArray,
+  ValidateNested,
+  IsNumber,
+  Min,
+  IsOptional,
+  IsDateString,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class SimpleInboundItemDto {
@@ -42,8 +53,9 @@ export class IndividualInboundDto {
   @IsNotEmpty()
   skuId: string;
 
-  @ApiProperty({ description: '입고 수량', minimum: 1 })
-  @IsNumber()
+  @ApiProperty({ description: '입고 수량', minimum: 1, type: Number })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'quantity must be a number' })
   @Min(1)
   quantity: number;
 
@@ -54,6 +66,7 @@ export class IndividualInboundDto {
 
   @ApiProperty({ description: '입고 메모', required: false })
   @IsOptional()
+  @IsString()
   memo?: string;
 }
 
@@ -69,7 +82,8 @@ export class PutawayRequestDto {
   toLocationId: string;
 
   @ApiProperty({ description: '이동 수량', minimum: 1 })
-  @IsNumber()
+  @Type(() => Number)
+  @IsNumber({}, { message: 'quantity must be a number' })
   @Min(1)
   quantity: number;
 }
@@ -116,6 +130,8 @@ export class InboundPlanItemInputDto {
   skuId: string;
 
   @ApiProperty({ description: '예정 수량', minimum: 1 })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'expectedQty must be a number' })
   @IsNumber()
   @Min(1)
   expectedQty: number;
@@ -141,6 +157,8 @@ export class ReceiveFromPlanDto {
   planItemId: string;
 
   @ApiProperty({ description: '실입고 수량', minimum: 1 })
+  @Type(() => Number)
+  @IsNumber({}, { message: 'quantity must be a number' })
   @IsNumber()
   @Min(1)
   quantity: number;
@@ -192,11 +210,11 @@ export interface InboundPendingResponse {
   expectedDate: Date | null;
 
   // 연관 정보
-  isLinkedPlan: boolean;           // destination plan 여부
-  sourcePlanStatus?: string;       // 중국 plan 상태 (destination plan인 경우)
+  isLinkedPlan: boolean; // destination plan 여부
+  sourcePlanStatus?: string; // 중국 plan 상태 (destination plan인 경우)
 
   // 발주 정보
-  purchaseOrder: {
+  purchaseOrder?: {
     id: string;
     type: 'domestic' | 'foreign';
     supplier?: {
@@ -226,5 +244,3 @@ export interface InboundPendingListResponse {
   totalPendingQuantity: number;
   pendingPlans: InboundPendingResponse[];
 }
-
-
