@@ -5,7 +5,7 @@ import { BulkNotificationService } from '../services/bulk-notification.service';
 import { CreateBulkNotificationDto } from '../dto/create-bulk-notification.dto';
 
 @ApiTags('bulk')
-@Controller('api/v1/bulk-notifications')
+@Controller('bulk-notifications')
 export class BulkNotificationController {
   private readonly logger = new Logger(BulkNotificationController.name);
 

@@ -14,7 +14,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { SendNotificationDto } from '../dto/send-notification.dto';
 
 @ApiTags('notifications')
-@Controller('api/v1/notifications')
+@Controller('notifications')
 export class NotificationController {
     constructor(
         private readonly dispatcherService: NotificationDispatcherService,

@@ -24,6 +24,9 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
       streams: [USER_STREAM, ORDER_STREAM, WALLET_STREAM],
       groupId: 'notification-consumer',
       enableAutoDLQ: true,
+      validation: {
+        validateOnConsume: false, // HTTP 요청과 충돌 방지를 위해 비활성화
+      },
     }),
     BullModule.registerQueue({
       name: 'notification',
