@@ -90,6 +90,7 @@
     "db:seed:membership:billing-test": "cd apps/membership && npx tsx drizzle/seed.ts",
     "docs:generate": "ts-node --transpile-only scripts/generate-swagger-docs.ts",
     "docs:wms": "npm run docs:generate wms",
+    "docs:membership": "npm run docs:generate membership",
     "docs:pim": "npm run docs:generate pim",
     "docs:user-service": "ts-node --transpileOnly -r tsconfig-paths/register apps/user-service/generate-swagger-docs.ts",
     "docs:notification": "ts-node -r tsconfig-paths/register apps/notification/generate-swagger-docs.ts",

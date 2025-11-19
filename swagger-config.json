@@ -13,6 +13,20 @@
       "version": "1.0.0",
       "appModule": "./apps/pim/src/pim.module.ts",
       "port": 3000
+    },
+    "membership": {
+      "title": "Membership API",
+      "description": "멤버십 관리 시스템 (Membership Management System) API",
+      "version": "1.0.0",
+      "appModule": "./apps/membership/src/app.module.ts",
+      "port": 3001
+    },
+    "wallet": {
+      "title": "Wallet API",
+      "description": "지갑 관리 시스템 (Wallet Management System) API",
+      "version": "1.0.0",
+      "appModule": "./apps/wallet/src/app.module.ts",
+      "port": 5000
     }
   }
 }
