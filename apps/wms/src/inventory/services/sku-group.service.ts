@@ -1,437 +1,418 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx, generateSkuGroupCode } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { eq, and, isNull, desc, count } from 'drizzle-orm';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/sku-groups/create-sku-group.dto';
 import { AddSkuToGroupDto, BulkAddSkusToGroupDto } from '../dto/sku-groups/manage-group-members.dto';
 import {
-    SkuGroupResponseDto,
-    SkuGroupMemberDto,
-    SkuGroupMembersResponseDto,
-    BulkAddSkusResponseDto,
-    BulkAddResultItemDto
+  SkuGroupResponseDto,
+  SkuGroupMemberDto,
+  SkuGroupMembersResponseDto,
+  BulkAddSkusResponseDto,
+  BulkAddResultItemDto
 } from '../dto/sku-groups/sku-group-response.dto';
 
 @Injectable()
 export class SkuGroupService {
-    constructor(
-        @InjectTypedDb<typeof wmsSchema>()
-        private readonly dbService: DbService<typeof wmsSchema>,
-    ) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>()
+    private readonly dbService: DbService<typeof wmsSchema>,
+  ) { }
 
-    private get db() {
-        return this.dbService.db;
-    }
+  private get db() {
+    return this.dbService.db;
+  }
 
-    /**
-     * Create a new SKU group
-     */
-    async createSkuGroup(createDto: CreateSkuGroupDto, tx?: DbTx): Promise<SkuGroupResponseDto> {
-        return this.inTx(async (tx) => {
-            const { skuGroups, inventoryProductMasters, skus } = wmsTables;
+  /**
+   * Create a new SKU group
+   */
+  async createSkuGroup(createDto: CreateSkuGroupDto, tx?: DbTx): Promise<SkuGroupResponseDto> {
+    return this.inTx(async (tx) => {
+      const { skuGroups, skus } = wmsTables;
 
-            // Generate code if not provided
-            const groupCode = createDto.code || generateSkuGroupCode(createDto.name, createDto.inventoryMasterId);
+      // Generate code if not provided
+      const groupCode = createDto.code || `G${Math.floor(100000 + Math.random() * 900000)}`;
 
-            // Validate inventory master if provided
-            if (createDto.inventoryMasterId) {
-                const [master] = await tx
-                    .select()
-                    .from(inventoryProductMasters)
-                    .where(eq(inventoryProductMasters.id, createDto.inventoryMasterId))
-                    .limit(1);
+      // Check code uniqueness
+      const [existingCode] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.code, groupCode))
+        .limit(1);
 
-                if (!master) {
-                    throw new NotFoundException(
-                        `Inventory master ${createDto.inventoryMasterId} not found`
-                    );
-                }
-            }
+      if (existingCode) {
+        throw new ConflictException(`Group code ${groupCode} already exists`);
+      }
 
-            // Check code uniqueness
-            const [existingCode] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.code, groupCode))
-                .limit(1);
+      // Create group
+      const [group] = await tx
+        .insert(skuGroups)
+        .values({
+          name: createDto.name,
+          code: groupCode,
+          description: createDto.description ?? null,
+        })
+        .returning();
 
-            if (existingCode) {
-                throw new ConflictException(`Group code ${groupCode} already exists`);
-            }
+      return {
+        id: group.id,
+        name: group.name,
+        code: group.code,
+        description: group.description,
+        memberCount: 0,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+      };
+    }, tx);
+  }
 
-            // Create group
-            const [group] = await tx
-                .insert(skuGroups)
-                .values({
-                    name: createDto.name,
-                    code: groupCode,
-                    description: createDto.description ?? null,
-                    inventoryMasterId: createDto.inventoryMasterId ?? null,
-                })
-                .returning();
+  /**
+   * Get SKU group by ID with member count
+   */
+  async getSkuGroupById(groupId: string, tx?: DbTx): Promise<SkuGroupResponseDto> {
+    return this.inTx(async (tx) => {
+      const { skuGroups, skus } = wmsTables;
 
-            return {
-                id: group.id,
-                name: group.name,
-                code: group.code,
-                description: group.description,
-                inventoryMasterId: group.inventoryMasterId,
-                memberCount: 0,
-                createdAt: group.createdAt,
-                updatedAt: group.updatedAt,
-            };
-        }, tx);
-    }
+      const [group] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.id, groupId))
+        .limit(1);
 
-    /**
-     * Get SKU group by ID with member count
-     */
-    async getSkuGroupById(groupId: string, tx?: DbTx): Promise<SkuGroupResponseDto> {
-        return this.inTx(async (tx) => {
-            const { skuGroups, skus } = wmsTables;
+      if (!group) {
+        throw new NotFoundException(`SKU group ${groupId} not found`);
+      }
 
-            const [group] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.id, groupId))
-                .limit(1);
+      // Count members
+      const [memberCountResult] = await tx
+        .select({ count: count() })
+        .from(skus)
+        .where(eq(skus.groupId, groupId));
 
-            if (!group) {
-                throw new NotFoundException(`SKU group ${groupId} not found`);
-            }
+      const memberCount = Number(memberCountResult?.count ?? 0);
 
-            // Count members
-            const [memberCountResult] = await tx
-                .select({ count: count() })
-                .from(skus)
-                .where(eq(skus.groupId, groupId));
+      return {
+        id: group.id,
+        name: group.name,
+        code: group.code,
+        description: group.description,
+        memberCount,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+      };
+    }, tx);
+  }
 
-            const memberCount = Number(memberCountResult?.count ?? 0);
+  /**
+   * List all SKU groups with member counts
+   */
+  async listSkuGroups(tx?: DbTx): Promise<SkuGroupResponseDto[]> {
+    return this.inTx(async (tx) => {
+      const { skuGroups, skus } = wmsTables;
 
-            return {
-                id: group.id,
-                name: group.name,
-                code: group.code,
-                description: group.description,
-                inventoryMasterId: group.inventoryMasterId,
-                memberCount,
-                createdAt: group.createdAt,
-                updatedAt: group.updatedAt,
-            };
-        }, tx);
-    }
+      const groups = await tx
+        .select()
+        .from(skuGroups)
+        .orderBy(desc(skuGroups.createdAt));
 
-    /**
-     * List all SKU groups with member counts
-     */
-    async listSkuGroups(tx?: DbTx): Promise<SkuGroupResponseDto[]> {
-        return this.inTx(async (tx) => {
-            const { skuGroups, skus } = wmsTables;
+      // Get member counts for all groups in a single query
+      const groupIds = groups.map(g => g.id);
 
-            const groups = await tx
-                .select()
-                .from(skuGroups)
-                .orderBy(desc(skuGroups.createdAt));
+      if (groupIds.length === 0) {
+        return [];
+      }
 
-            // Get member counts for all groups in a single query
-            const groupIds = groups.map(g => g.id);
-            
-            if (groupIds.length === 0) {
-                return [];
-            }
+      // Count members for each group
+      const memberCounts: Record<string, number> = {};
 
-            // Count members for each group
-            const memberCounts: Record<string, number> = {};
-            
-            for (const group of groups) {
-                const [result] = await tx
-                    .select({ count: count() })
-                    .from(skus)
-                    .where(eq(skus.groupId, group.id));
-                
-                memberCounts[group.id] = Number(result?.count ?? 0);
-            }
+      for (const group of groups) {
+        const [result] = await tx
+          .select({ count: count() })
+          .from(skus)
+          .where(eq(skus.groupId, group.id));
 
-            return groups.map(group => ({
-                id: group.id,
-                name: group.name,
-                code: group.code,
-                description: group.description,
-                inventoryMasterId: group.inventoryMasterId,
-                memberCount: memberCounts[group.id] || 0,
-                createdAt: group.createdAt,
-                updatedAt: group.updatedAt,
-            }));
-        }, tx);
-    }
+        memberCounts[group.id] = Number(result?.count ?? 0);
+      }
 
-    /**
-     * Update SKU group
-     */
-    async updateSkuGroup(
-        groupId: string,
-        updateDto: UpdateSkuGroupDto,
-        tx?: DbTx
-    ): Promise<SkuGroupResponseDto> {
-        return this.inTx(async (tx) => {
-            const { skuGroups } = wmsTables;
+      return groups.map(group => ({
+        id: group.id,
+        name: group.name,
+        code: group.code,
+        description: group.description,
+        memberCount: memberCounts[group.id] || 0,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+      }));
+    }, tx);
+  }
 
-            const [existing] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.id, groupId))
-                .limit(1);
+  /**
+   * Update SKU group
+   */
+  async updateSkuGroup(
+    groupId: string,
+    updateDto: UpdateSkuGroupDto,
+    tx?: DbTx
+  ): Promise<SkuGroupResponseDto> {
+    return this.inTx(async (tx) => {
+      const { skuGroups } = wmsTables;
 
-            if (!existing) {
-                throw new NotFoundException(`SKU group ${groupId} not found`);
-            }
+      const [existing] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.id, groupId))
+        .limit(1);
 
-            await tx
-                .update(skuGroups)
-                .set({
-                    ...updateDto,
-                    updatedAt: new Date(),
-                })
-                .where(eq(skuGroups.id, groupId));
+      if (!existing) {
+        throw new NotFoundException(`SKU group ${groupId} not found`);
+      }
 
-            return this.getSkuGroupById(groupId, tx);
-        }, tx);
-    }
+      await tx
+        .update(skuGroups)
+        .set({
+          ...updateDto,
+          updatedAt: new Date(),
+        })
+        .where(eq(skuGroups.id, groupId));
 
-    /**
-     * Delete SKU group (sets groupId to null for all members)
-     */
-    async deleteSkuGroup(groupId: string, tx?: DbTx): Promise<void> {
-        return this.inTx(async (tx) => {
-            const { skuGroups } = wmsTables;
+      return this.getSkuGroupById(groupId, tx);
+    }, tx);
+  }
 
-            const [group] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.id, groupId))
-                .limit(1);
+  /**
+   * Delete SKU group (sets groupId to null for all members)
+   */
+  async deleteSkuGroup(groupId: string, tx?: DbTx): Promise<void> {
+    return this.inTx(async (tx) => {
+      const { skuGroups } = wmsTables;
 
-            if (!group) {
-                throw new NotFoundException(`SKU group ${groupId} not found`);
-            }
+      const [group] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.id, groupId))
+        .limit(1);
 
-            // Note: ON DELETE SET NULL will automatically set groupId to null for all members
-            await tx
-                .delete(skuGroups)
-                .where(eq(skuGroups.id, groupId));
-        }, tx);
-    }
+      if (!group) {
+        throw new NotFoundException(`SKU group ${groupId} not found`);
+      }
 
-    /**
-     * Add SKU to group
-     */
-    async addSkuToGroup(
-        groupId: string,
-        addDto: AddSkuToGroupDto,
-        tx?: DbTx
-    ): Promise<{ success: boolean; skuId: string; groupId: string }> {
-        return this.inTx(async (tx) => {
-            const { skuGroups, skus } = wmsTables;
+      // Note: ON DELETE SET NULL will automatically set groupId to null for all members
+      await tx
+        .delete(skuGroups)
+        .where(eq(skuGroups.id, groupId));
+    }, tx);
+  }
 
-            // Validate group exists
-            const [group] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.id, groupId))
-                .limit(1);
+  /**
+   * Add SKU to group
+   */
+  async addSkuToGroup(
+    groupId: string,
+    addDto: AddSkuToGroupDto,
+    tx?: DbTx
+  ): Promise<{ success: boolean; skuId: string; groupId: string }> {
+    return this.inTx(async (tx) => {
+      const { skuGroups, skus } = wmsTables;
 
-            if (!group) {
-                throw new NotFoundException(`SKU group ${groupId} not found`);
-            }
+      // Validate group exists
+      const [group] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.id, groupId))
+        .limit(1);
 
-            // Validate SKU exists
-            const [sku] = await tx
-                .select()
-                .from(skus)
-                .where(eq(skus.id, addDto.skuId))
-                .limit(1);
+      if (!group) {
+        throw new NotFoundException(`SKU group ${groupId} not found`);
+      }
 
-            if (!sku) {
-                throw new NotFoundException(`SKU ${addDto.skuId} not found`);
-            }
+      // Validate SKU exists
+      const [sku] = await tx
+        .select()
+        .from(skus)
+        .where(eq(skus.id, addDto.skuId))
+        .limit(1);
 
-            // Update SKU to link to group
-            await tx
-                .update(skus)
-                .set({
-                    groupId,
-                    updatedAt: new Date(),
-                })
-                .where(eq(skus.id, addDto.skuId));
+      if (!sku) {
+        throw new NotFoundException(`SKU ${addDto.skuId} not found`);
+      }
 
-            return {
-                success: true,
-                skuId: addDto.skuId,
-                groupId,
-            };
-        }, tx);
-    }
+      // Update SKU to link to group
+      await tx
+        .update(skus)
+        .set({
+          groupId,
+          updatedAt: new Date(),
+        })
+        .where(eq(skus.id, addDto.skuId));
 
-    /**
-     * Bulk add SKUs to group
-     */
-    async bulkAddSkusToGroup(
-        groupId: string,
-        bulkDto: BulkAddSkusToGroupDto,
-        tx?: DbTx
-    ): Promise<BulkAddSkusResponseDto> {
-        return this.inTx(async (tx) => {
-            const results: BulkAddResultItemDto[] = [];
-            let successCount = 0;
-            let failedCount = 0;
+      return {
+        success: true,
+        skuId: addDto.skuId,
+        groupId,
+      };
+    }, tx);
+  }
 
-            for (const skuId of bulkDto.skuIds) {
-                try {
-                    await this.addSkuToGroup(groupId, { skuId }, tx);
-                    results.push({ skuId, success: true });
-                    successCount++;
-                } catch (error) {
-                    results.push({
-                        skuId,
-                        success: false,
-                        error: error.message,
-                    });
-                    failedCount++;
-                }
-            }
+  /**
+   * Bulk add SKUs to group
+   */
+  async bulkAddSkusToGroup(
+    groupId: string,
+    bulkDto: BulkAddSkusToGroupDto,
+    tx?: DbTx
+  ): Promise<BulkAddSkusResponseDto> {
+    return this.inTx(async (tx) => {
+      const results: BulkAddResultItemDto[] = [];
+      let successCount = 0;
+      let failedCount = 0;
 
-            return {
-                success: successCount > 0,
-                totalCount: bulkDto.skuIds.length,
-                successCount,
-                failedCount,
-                results,
-            };
-        }, tx);
-    }
+      for (const skuId of bulkDto.skuIds) {
+        try {
+          await this.addSkuToGroup(groupId, { skuId }, tx);
+          results.push({ skuId, success: true });
+          successCount++;
+        } catch (error) {
+          results.push({
+            skuId,
+            success: false,
+            error: error.message,
+          });
+          failedCount++;
+        }
+      }
 
-    /**
-     * Remove SKU from group
-     */
-    async removeSkuFromGroup(skuId: string, tx?: DbTx): Promise<{ success: boolean }> {
-        return this.inTx(async (tx) => {
-            const { skus } = wmsTables;
+      return {
+        success: successCount > 0,
+        totalCount: bulkDto.skuIds.length,
+        successCount,
+        failedCount,
+        results,
+      };
+    }, tx);
+  }
 
-            const [sku] = await tx
-                .select()
-                .from(skus)
-                .where(eq(skus.id, skuId))
-                .limit(1);
+  /**
+   * Remove SKU from group
+   */
+  async removeSkuFromGroup(skuId: string, tx?: DbTx): Promise<{ success: boolean }> {
+    return this.inTx(async (tx) => {
+      const { skus } = wmsTables;
 
-            if (!sku) {
-                throw new NotFoundException(`SKU ${skuId} not found`);
-            }
+      const [sku] = await tx
+        .select()
+        .from(skus)
+        .where(eq(skus.id, skuId))
+        .limit(1);
 
-            await tx
-                .update(skus)
-                .set({
-                    groupId: null,
-                    updatedAt: new Date(),
-                })
-                .where(eq(skus.id, skuId));
+      if (!sku) {
+        throw new NotFoundException(`SKU ${skuId} not found`);
+      }
 
-            return { success: true };
-        }, tx);
-    }
+      await tx
+        .update(skus)
+        .set({
+          groupId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(skus.id, skuId));
 
-    /**
-     * Get all SKUs in a group
-     */
-    async getGroupMembers(
-        groupId: string,
-        tx?: DbTx
-    ): Promise<SkuGroupMembersResponseDto> {
-        return this.inTx(async (tx) => {
-            const { skuGroups, skus } = wmsTables;
+      return { success: true };
+    }, tx);
+  }
 
-            // Validate group exists
-            const [group] = await tx
-                .select()
-                .from(skuGroups)
-                .where(eq(skuGroups.id, groupId))
-                .limit(1);
+  /**
+   * Get all SKUs in a group
+   */
+  async getGroupMembers(
+    groupId: string,
+    tx?: DbTx
+  ): Promise<SkuGroupMembersResponseDto> {
+    return this.inTx(async (tx) => {
+      const { skuGroups, skus } = wmsTables;
 
-            if (!group) {
-                throw new NotFoundException(`SKU group ${groupId} not found`);
-            }
+      // Validate group exists
+      const [group] = await tx
+        .select()
+        .from(skuGroups)
+        .where(eq(skuGroups.id, groupId))
+        .limit(1);
 
-            // Get all SKUs in group
-            const members = await tx
-                .select({
-                    id: skus.id,
-                    name: skus.name,
-                    code: skus.code,
-                    defaultBarcode: skus.defaultBarcode,
-                    safetyStock: skus.safetyStock,
-                    primaryLocationId: skus.primaryLocationId,
-                })
-                .from(skus)
-                .where(eq(skus.groupId, groupId))
-                .orderBy(skus.createdAt);
+      if (!group) {
+        throw new NotFoundException(`SKU group ${groupId} not found`);
+      }
 
-            const memberDtos: SkuGroupMemberDto[] = members.map(m => ({
-                id: m.id,
-                name: m.name,
-                code: m.code,
-                defaultBarcode: m.defaultBarcode,
-                safetyStock: m.safetyStock,
-                primaryLocationId: m.primaryLocationId,
-            }));
+      // Get all SKUs in group
+      const members = await tx
+        .select({
+          id: skus.id,
+          name: skus.name,
+          code: skus.code,
+          defaultBarcode: skus.defaultBarcode,
+          safetyStock: skus.safetyStock,
+          primaryLocationId: skus.primaryLocationId,
+        })
+        .from(skus)
+        .where(eq(skus.groupId, groupId))
+        .orderBy(skus.createdAt);
 
-            return {
-                groupId: group.id,
-                groupName: group.name,
-                totalMembers: memberDtos.length,
-                members: memberDtos,
-            };
-        }, tx);
-    }
+      const memberDtos: SkuGroupMemberDto[] = members.map(m => ({
+        id: m.id,
+        name: m.name,
+        code: m.code,
+        defaultBarcode: m.defaultBarcode,
+        safetyStock: m.safetyStock,
+        primaryLocationId: m.primaryLocationId,
+      }));
 
-    /**
-     * Get ungrouped SKUs (groupId is null)
-     */
-    async getUngroupedSkus(
-        limit: number = 50,
-        offset: number = 0,
-        tx?: DbTx
-    ): Promise<SkuGroupMemberDto[]> {
-        return this.inTx(async (tx) => {
-            const { skus } = wmsTables;
+      return {
+        groupId: group.id,
+        groupName: group.name,
+        totalMembers: memberDtos.length,
+        members: memberDtos,
+      };
+    }, tx);
+  }
 
-            const ungrouped = await tx
-                .select({
-                    id: skus.id,
-                    name: skus.name,
-                    code: skus.code,
-                    defaultBarcode: skus.defaultBarcode,
-                    safetyStock: skus.safetyStock,
-                    primaryLocationId: skus.primaryLocationId,
-                })
-                .from(skus)
-                .where(isNull(skus.groupId))
-                .orderBy(skus.createdAt)
-                .limit(limit)
-                .offset(offset);
+  /**
+   * Get ungrouped SKUs (groupId is null)
+   */
+  async getUngroupedSkus(
+    limit: number = 50,
+    offset: number = 0,
+    tx?: DbTx
+  ): Promise<SkuGroupMemberDto[]> {
+    return this.inTx(async (tx) => {
+      const { skus } = wmsTables;
 
-            return ungrouped.map(s => ({
-                id: s.id,
-                name: s.name,
-                code: s.code,
-                defaultBarcode: s.defaultBarcode,
-                safetyStock: s.safetyStock,
-                primaryLocationId: s.primaryLocationId,
-            }));
-        }, tx);
-    }
+      const ungrouped = await tx
+        .select({
+          id: skus.id,
+          name: skus.name,
+          code: skus.code,
+          defaultBarcode: skus.defaultBarcode,
+          safetyStock: skus.safetyStock,
+          primaryLocationId: skus.primaryLocationId,
+        })
+        .from(skus)
+        .where(isNull(skus.groupId))
+        .orderBy(skus.createdAt)
+        .limit(limit)
+        .offset(offset);
 
-    private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-        return tx ? fn(tx) : this.db.transaction(fn);
-    }
+      return ungrouped.map(s => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        defaultBarcode: s.defaultBarcode,
+        safetyStock: s.safetyStock,
+        primaryLocationId: s.primaryLocationId,
+      }));
+    }, tx);
+  }
+
+  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
+    return tx ? fn(tx) : this.db.transaction(fn);
+  }
 }
 

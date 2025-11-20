@@ -13,9 +13,9 @@ export const wmsEnvSchema = z.object({
   KAFKA_API_SECRET: z.string().optional(),
 
   // PIM Integration
-  PIM_SYNC_ENABLED: z.string().optional(),
-  PIM_BASE_URL: z.string().url().optional(),
-  PIM_API_KEY: z.string().optional(),
+  // PIM_SYNC_ENABLED: z.string().optional(),
+  // PIM_BASE_URL: z.string().url().optional(),
+  // PIM_API_KEY: z.string().optional(),
 
   // Goodsflow Delivery Provider
   GOODSFLOW_API_URL: z.string().url().optional(),

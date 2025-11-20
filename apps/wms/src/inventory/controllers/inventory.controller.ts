@@ -239,7 +239,7 @@ export class InventoryController {
     @ApiQuery({ name: 'barcode', required: false, description: 'SKU 기본 바코드 또는 서브 바코드' })
     @ApiQuery({ name: 'name', required: false, description: 'SKU 이름 (부분 일치)' })
     @ApiQuery({ name: 'supplierName', required: false, description: '공급사 이름 (부분 일치)' })
-    @ApiQuery({ name: 'masterId', required: false, description: '마스터 ID (정확히 일치)' })
+    @ApiQuery({ name: 'groupId', required: false, description: 'SKU 그룹 ID (정확히 일치)' })
     @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
     async searchSkus(
         @Query('id') id?: string,
@@ -247,7 +247,7 @@ export class InventoryController {
         @Query('barcode') barcode?: string,
         @Query('name') name?: string,
         @Query('supplierName') supplierName?: string,
-        @Query('masterId') masterId?: string,
+        @Query('groupId') groupId?: string,
     ): Promise<SkuResponseDto[]> {
         return this.inventoryService.searchSkus({
             id,
@@ -255,7 +255,7 @@ export class InventoryController {
             barcode,
             name,
             supplierName,
-            masterId,
+            groupId,
         });
     }
 
