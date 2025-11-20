@@ -82,9 +82,8 @@ export class PurchaseOrderService {
     /**
      * 장바구니에서 발주 생성
      */
-    async createPurchaseOrderFromCart(createDto: CreatePurchaseOrderFromCartDto, tx?: DbTx): Promise<PurchaseOrderResponse> {
+    async createPurchaseOrderFromCart(createDto: CreatePurchaseOrderFromCartDto, userId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
         return this.inTx(async (trx) => {
-            // 장바구니 아이템 조회
             const cartItems = await trx
                 .select({
                     id: wmsTables.purchaseOrderCart.id,
@@ -93,19 +92,20 @@ export class PurchaseOrderService {
                     type: wmsTables.purchaseOrderCart.type,
                 })
                 .from(wmsTables.purchaseOrderCart)
-                .where(inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds));
+                .where(and(
+                    inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds),
+                    eq(wmsTables.purchaseOrderCart.createdBy, userId)
+                ));
 
             if (cartItems.length !== createDto.cartItemIds.length) {
-                throw new BadRequestException('Some cart items not found');
+                throw new BadRequestException('Some cart items not found or you don\'t have permission to access them');
             }
 
-            // 발주 유형이 동일한지 확인
             const types = [...new Set(cartItems.map(item => item.type))];
             if (types.length > 1) {
                 throw new BadRequestException('All cart items must have the same purchase order type');
             }
 
-            // 발주 생성
             const destinationWarehouseId = createDto.destinationWarehouseId;
             const sourceWarehouseId = await this.getSupplierDefaultWarehouseId(createDto.supplierId, trx);
             const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
@@ -123,7 +123,6 @@ export class PurchaseOrderService {
                 })
                 .returning();
 
-            // 발주 라인 생성
             await trx
                 .insert(wmsTables.purchaseOrderLines)
                 .values(
@@ -135,12 +134,11 @@ export class PurchaseOrderService {
                     }))
                 );
 
-            // 장바구니에서 아이템 제거
             await trx
                 .delete(wmsTables.purchaseOrderCart)
                 .where(inArray(wmsTables.purchaseOrderCart.id, createDto.cartItemIds));
 
-            this.logger.log(`Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items`);
+            this.logger.log(`Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items for user ${userId}`);
 
             return this.getPurchaseOrderById(purchaseOrder.id, trx);
         }, tx);
@@ -463,22 +461,21 @@ export class PurchaseOrderService {
     /**
      * 장바구니에 아이템 추가
      */
-    async addToCart(addDto: AddToCartDto, tx?: DbTx): Promise<CartItemResponse> {
-        // 이미 장바구니에 있는지 확인
+    async addToCart(addDto: AddToCartDto, userId: string, tx?: DbTx): Promise<CartItemResponse> {
         const existingItem = await this.inTx(async (trx) => {
             const [row] = await trx
                 .select()
                 .from(wmsTables.purchaseOrderCart)
                 .where(and(
                     eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
-                    eq(wmsTables.purchaseOrderCart.type, addDto.type)
+                    eq(wmsTables.purchaseOrderCart.type, addDto.type),
+                    eq(wmsTables.purchaseOrderCart.createdBy, userId)
                 ))
                 .limit(1);
             return row;
         }, tx);
 
         if (existingItem) {
-            // 기존 아이템 수량 업데이트
             await this.inTx(async (trx) => trx
                 .update(wmsTables.purchaseOrderCart)
                 .set({
@@ -488,9 +485,8 @@ export class PurchaseOrderService {
                 })
                 .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id))
                 , tx);
-            return this.getCartItemById(existingItem.id, tx);
+            return this.getCartItemById(existingItem.id, userId, tx);
         } else {
-            // 새 아이템 추가
             const [cartItem] = await this.inTx(async (trx) => trx
                 .insert(wmsTables.purchaseOrderCart)
                 .values({
@@ -498,28 +494,32 @@ export class PurchaseOrderService {
                     quantity: addDto.quantity,
                     type: addDto.type,
                     supplierInfo: addDto.supplierInfo,
+                    createdBy: userId,
                 })
                 .returning(), tx);
 
-            return this.getCartItemById(cartItem.id, tx);
+            return this.getCartItemById(cartItem.id, userId, tx);
         }
     }
 
     /**
      * 장바구니 아이템 수정
      */
-    async updateCartItem(itemId: string, updateDto: UpdateCartItemDto, tx?: DbTx): Promise<CartItemResponse> {
+    async updateCartItem(itemId: string, userId: string, updateDto: UpdateCartItemDto, tx?: DbTx): Promise<CartItemResponse> {
         const existingItem = await this.inTx(async (trx) => {
             const [row] = await trx
                 .select()
                 .from(wmsTables.purchaseOrderCart)
-                .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+                .where(and(
+                    eq(wmsTables.purchaseOrderCart.id, itemId),
+                    eq(wmsTables.purchaseOrderCart.createdBy, userId)
+                ))
                 .limit(1);
             return row;
         }, tx);
 
         if (!existingItem) {
-            throw new NotFoundException(`Cart item with ID ${itemId} not found`);
+            throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
         }
 
         await this.inTx(async (trx) => trx
@@ -531,20 +531,23 @@ export class PurchaseOrderService {
             })
             .where(eq(wmsTables.purchaseOrderCart.id, itemId))
             , tx);
-        return this.getCartItemById(itemId, tx);
+        return this.getCartItemById(itemId, userId, tx);
     }
 
     /**
      * 장바구니에서 아이템 제거
      */
-    async removeFromCart(itemId: string, tx?: DbTx): Promise<void> {
+    async removeFromCart(itemId: string, userId: string, tx?: DbTx): Promise<void> {
         const result = await this.inTx(async (trx) => trx
             .delete(wmsTables.purchaseOrderCart)
-            .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+            .where(and(
+                eq(wmsTables.purchaseOrderCart.id, itemId),
+                eq(wmsTables.purchaseOrderCart.createdBy, userId)
+            ))
             .returning(), tx);
 
         if (result.length === 0) {
-            throw new NotFoundException(`Cart item with ID ${itemId} not found`);
+            throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to delete it`);
         }
 
         this.logger.log(`Removed cart item ${itemId}`);
@@ -553,7 +556,12 @@ export class PurchaseOrderService {
     /**
      * 장바구니 조회
      */
-    async getCartItems(type?: PurchaseOrderType, tx?: DbTx): Promise<CartItemResponse[]> {
+    async getCartItems(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<CartItemResponse[]> {
+        const conditions: any[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
+        if (type) {
+            conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
+        }
+
         const cartItems = await this.inTx(async (trx) => trx
             .select({
                 id: wmsTables.purchaseOrderCart.id,
@@ -568,7 +576,7 @@ export class PurchaseOrderService {
             })
             .from(wmsTables.purchaseOrderCart)
             .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
-            .where(type ? eq(wmsTables.purchaseOrderCart.type, type) : undefined)
+            .where(and(...conditions as [any, ...any[]]))
             .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
             , tx);
 
@@ -590,7 +598,7 @@ export class PurchaseOrderService {
     /**
      * 장바구니 아이템 조회
      */
-    private async getCartItemById(itemId: string, tx?: DbTx): Promise<CartItemResponse> {
+    private async getCartItemById(itemId: string, userId: string, tx?: DbTx): Promise<CartItemResponse> {
         const item = await this.inTx(async (trx) => {
             const [row] = await trx
                 .select({
@@ -606,7 +614,10 @@ export class PurchaseOrderService {
                 })
                 .from(wmsTables.purchaseOrderCart)
                 .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
-                .where(eq(wmsTables.purchaseOrderCart.id, itemId))
+                .where(and(
+                    eq(wmsTables.purchaseOrderCart.id, itemId),
+                    eq(wmsTables.purchaseOrderCart.createdBy, userId)
+                ))
                 .limit(1);
             return row;
         }, tx);
@@ -633,19 +644,18 @@ export class PurchaseOrderService {
     /**
      * 장바구니 비우기
      */
-    async clearCart(type?: PurchaseOrderType, tx?: DbTx): Promise<void> {
+    async clearCart(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<void> {
+        const conditions: any[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
         if (type) {
-            await this.inTx(async (trx) => trx
-                .delete(wmsTables.purchaseOrderCart)
-                .where(eq(wmsTables.purchaseOrderCart.type, type))
-                , tx);
-        } else {
-            await this.inTx(async (trx) => trx
-                .delete(wmsTables.purchaseOrderCart)
-                , tx);
+            conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
         }
 
-        this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''}`);
+        await this.inTx(async (trx) => trx
+            .delete(wmsTables.purchaseOrderCart)
+            .where(and(...conditions as [any, ...any[]]))
+            , tx);
+
+        this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''} for user ${userId}`);
     }
 
     // ========== 재주문 제안 ==========
