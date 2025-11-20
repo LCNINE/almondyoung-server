@@ -6,6 +6,7 @@ import {
 } from '@medusajs/framework/workflows-sdk';
 import {
   RefundPaymentWorkflowInput,
+  RefundPaymentsWorkflowInput,
   useQueryGraphStep,
   useRemoteQueryStep,
   validatePaymentsRefundStep,
@@ -57,9 +58,10 @@ export const requestRefundPaymentWorkFlow = createWorkflow(
     );
 
     // 환불 가능 여부 검증 (단일 payment를 배열로 감싸서 전달)
+    const refundInput = transform({ input }, ({ input }) => [input]);
     validatePaymentsRefundStep({
       payments,
-      input: transform({ input }, ({ input }) => [input]),
+      input: refundInput as WorkflowData<RefundPaymentsWorkflowInput>,
     });
 
     // 외부 시스템으로 환불 요청 전송
