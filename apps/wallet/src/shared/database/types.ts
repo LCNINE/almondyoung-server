@@ -37,7 +37,8 @@ export const walletSchema = {
   // Tax Invoice System
   taxInvoices: schema.taxInvoices,
   taxInvoiceEvents: schema.taxInvoiceEvents,
-  taxInvoiceEventDetails: schema.taxInvoiceEventDetails,
+  taxInvoiceSnapshots: schema.taxInvoiceSnapshots,
+  userTaxInvoicePreferences: schema.userTaxInvoicePreferences,
 
   // Cash Receipt System
   cashReceiptEvents: schema.cashReceiptEvents,
@@ -199,29 +200,196 @@ export type RefundWithAccount = PaymentRefund & {
 // ===============================
 export type TaxInvoice = InferSelectModel<typeof schema.taxInvoices>;
 export type NewTaxInvoice = InferInsertModel<typeof schema.taxInvoices>;
-export type UpdateTaxInvoice = Partial<Omit<NewTaxInvoice, 'id' | 'createdAt'>>;
+export type UpdateTaxInvoice = Partial<
+  Omit<NewTaxInvoice, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 export type TaxInvoiceEvent = InferSelectModel<typeof schema.taxInvoiceEvents>;
 export type NewTaxInvoiceEvent = InferInsertModel<
   typeof schema.taxInvoiceEvents
 >;
 
-export type TaxInvoiceEventsDetail = InferSelectModel<
-  typeof schema.taxInvoiceEventDetails
+export type TaxInvoiceSnapshot = InferSelectModel<
+  typeof schema.taxInvoiceSnapshots
 >;
-export type NewTaxInvoiceEventsDetail = InferInsertModel<
-  typeof schema.taxInvoiceEventDetails
+export type NewTaxInvoiceSnapshot = InferInsertModel<
+  typeof schema.taxInvoiceSnapshots
 >;
-export type UpdateTaxInvoiceEventsDetail = Partial<
-  Omit<NewTaxInvoiceEventsDetail, 'id' | 'createdAt' | 'updatedAt'>
+
+export type UserTaxInvoicePreference = InferSelectModel<
+  typeof schema.userTaxInvoicePreferences
+>;
+export type NewUserTaxInvoicePreference = InferInsertModel<
+  typeof schema.userTaxInvoicePreferences
+>;
+export type UpdateUserTaxInvoicePreference = Partial<
+  Omit<NewUserTaxInvoicePreference, 'userId' | 'createdAt' | 'updatedAt'>
 >;
 
 /**
- * 세금계산서와 상세 정보를 조인한 결과 타입
+ * 세금계산서와 이벤트를 조인한 결과 타입
  */
-export type TaxInvoiceWithDetails = TaxInvoice & {
-  details: TaxInvoiceEventsDetail;
-  events?: TaxInvoiceEvent[];
+export type TaxInvoiceWithEvents = TaxInvoice & {
+  events: TaxInvoiceEvent[];
+};
+
+/**
+ * 세금계산서와 스냅샷을 조인한 결과 타입
+ */
+export type TaxInvoiceWithSnapshot = TaxInvoice & {
+  snapshot?: TaxInvoiceSnapshot;
+};
+
+// ===============================
+// Tax Invoice 비즈니스 타입들
+// ===============================
+
+/**
+ * 사업자 정보 (JSON 필드용)
+ */
+export type BusinessInfo = {
+  name: string;
+  businessNumber: string;
+  address: string;
+  ownerName: string;
+  businessType?: string;
+  businessItem?: string;
+  email?: string;
+};
+
+/**
+ * 세금계산서 스냅샷 페이로드 (홈택스 제출용 - 확장 버전)
+ */
+export type TaxInvoiceSnapshotPayload = {
+  supplier: {
+    businessNumber: string;
+    name: string;
+    ownerName: string;
+    address: string;
+    businessType?: string;
+    businessItem?: string;
+    email?: string;
+  };
+  buyer: {
+    businessNumber: string;
+    name: string;
+    ownerName: string;
+    address: string;
+    businessType?: string;
+    businessItem?: string;
+    email?: string;
+  };
+  order: {
+    orderId: string;
+    orderNumber?: string;
+    completedAt: string;
+    status: 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
+    paymentMethod?: 'CASH' | 'CHECK' | 'NOTE' | 'CREDIT' | 'CARD';
+    memo?: string;
+    lines: Array<{
+      productName: string;
+      specification?: string;
+      quantity: number;
+      unitPrice: number;
+      amount: number;
+    }>;
+  };
+  amounts: {
+    supplyAmount: number;
+    taxAmount: number;
+    totalAmount: number;
+    issueDate: string;
+  };
+};
+
+/**
+ * OMS → Wallet용 DTO (세금계산서 발행에 필요한 주문 데이터)
+ */
+export type TaxInvoiceOrderData = {
+  orderId: string;
+  userId: string;
+  status: 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
+  completedAt: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  paymentMethod: 'CASH' | 'CHECK' | 'NOTE' | 'CREDIT' | 'CARD';
+  lines: Array<{
+    productName: string;
+    specification?: string;
+    quantity: number;
+    unitPrice: number;
+    amount: number;
+  }>;
+  memo?: string;
+};
+
+/**
+ * 홈택스 엑셀 Export용 응답 DTO
+ */
+export type HometaxExportRow = {
+  // 내부 추적용
+  taxInvoiceId: string;
+  orderId: string;
+
+  // 공급자 (우리 회사)
+  supplierBusinessNumber: string;
+  supplierName: string;
+  supplierOwnerName: string;
+  supplierAddress: string;
+  supplierBusinessType?: string;
+  supplierBusinessItem?: string;
+  supplierEmail?: string;
+
+  // 공급받는자 (고객)
+  buyerBusinessNumber: string;
+  buyerName: string;
+  buyerOwnerName: string;
+  buyerAddress: string;
+  buyerBusinessType?: string;
+  buyerBusinessItem?: string;
+  buyerEmail?: string;
+
+  // 거래 정보
+  issueDate: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+
+  // 품목 요약
+  productSummary: string;
+
+  // 비고
+  remark?: string;
+
+  // 결제수단
+  paymentMethod?: string;
+};
+
+/**
+ * 세금계산서 상태 타입
+ */
+export type TaxInvoiceStatus =
+  | 'REQUESTED'
+  | 'EXPORTED'
+  | 'ISSUED_CONFIRMED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'NEEDS_MODIFICATION';
+
+/**
+ * 상태 전이 매트릭스
+ */
+export const TAX_INVOICE_TRANSITIONS: Record<
+  TaxInvoiceStatus,
+  TaxInvoiceStatus[]
+> = {
+  REQUESTED: ['EXPORTED', 'CANCELLED'],
+  EXPORTED: ['ISSUED_CONFIRMED', 'FAILED'],
+  ISSUED_CONFIRMED: ['NEEDS_MODIFICATION'],
+  FAILED: ['REQUESTED'],
+  CANCELLED: ['REQUESTED'],
+  NEEDS_MODIFICATION: ['EXPORTED'],
 };
 
 // ===============================

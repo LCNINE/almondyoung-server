@@ -54,7 +54,16 @@ import { PointService } from './services/points/point.service';
 import { PointReader } from './services/points/point.reader';
 import { PointManager } from './services/points/point.manager';
 import { PointRepository } from './services/points/point.repository';
-
+import { TaxInvoiceService } from './services/tax/tax-invoice.service';
+import { TaxInvoiceAdminService } from './services/tax/tax-invoice-admin.service';
+import { TaxInvoicePreferenceService } from './services/tax/tax-invoice-preference.service';
+import { TaxInvoiceReader } from './services/tax/tax-invoice.reader';
+import { TaxInvoiceCreator } from './services/tax/tax-invoice.creator';
+import { TaxInvoiceManager } from './services/tax/tax-invoice.manager';
+import { TaxInvoiceRepository } from './services/tax/tax-invoice.repository';
+import { OmsClientMock } from './services/tax/oms-client.mock';
+import { TaxInvoiceController } from './controllers/tax-invoice.controller';
+import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.controller';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -78,6 +87,8 @@ import { PointRepository } from './services/points/point.repository';
   controllers: [
     // === 신규 아키텍처 ===
     PaymentController,
+    TaxInvoiceController,
+    TaxInvoiceAdminController,
   ],
   providers: [
     PaymentService,
@@ -139,6 +150,27 @@ import { PointRepository } from './services/points/point.repository';
     TossChargeProvider,
     HmsCardRefundProvider,
     TossRefundProvider,
+
+    //
+
+    // Main Services
+    TaxInvoiceService,
+    TaxInvoiceAdminService,
+    TaxInvoicePreferenceService,
+
+    // Implementation Layer
+    TaxInvoiceReader,
+    TaxInvoiceCreator,
+    TaxInvoiceManager,
+
+    // Data Access Layer (Unified Repository)
+    TaxInvoiceRepository,
+
+    // OMS Client (Mock - OMS는 다른 팀 담당)
+    {
+      provide: 'OMS_CLIENT',
+      useClass: OmsClientMock,
+    },
   ],
   exports: [
     // === v2 아키텍처 서비스들만 export ===

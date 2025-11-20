@@ -922,11 +922,6 @@ export const invoiceSourceEnum = pgEnum('tax_invoice_source', [
   'SETTLEMENT', // 월말/정산 단위(총액)
 ]);
 
-// ────────────────────────────────────────────
-// ────────────────────────────────────────────
-// 1️⃣ 마스터 테이블 (초경량 - 10개 필드)
-// ────────────────────────────────────────────
-
 export const taxInvoices = pgTable(
   'tax_invoices',
   {
@@ -934,37 +929,67 @@ export const taxInvoices = pgTable(
       .primaryKey()
       .$defaultFn(() => generateUUIDv7()),
 
+    // 신청한 사용자
     userId: varchar('user_id', { length: 64 }).notNull(),
 
-    // 핵심 링크 (범용 스코프)
-    scopeType: varchar('scope_type', { length: 32 }).notNull(),
-    // ORDER | PAYMENT | BNPL_STATEMENT | MANUAL
-    //외부 id ex)주문 id or 결제 id or 나중결제 id or 수동 입력 id
-    scopeId: varchar('scope_id', { length: 128 }).notNull(),
+    // 주문 기준 발행 (scopeType / scopeId 제거)
+    orderId: varchar('order_id', { length: 128 }).notNull(),
 
+    // 상태 머신
+    status: varchar('status', { length: 32 })
+      .notNull()
+      // REQUESTED | EXPORTED | ISSUED_CONFIRMED | FAILED | CANCELLED | NEEDS_MODIFICATION
+      .default('REQUESTED'),
+
+    // 공급시기 (세금계산서상 공급가액 기준 날짜)
     supplyDate: date('supply_date').notNull(),
+
+    // 사업자 정보 스냅샷
+    businessName: varchar('business_name', { length: 128 }).notNull(),
+    businessNumber: varchar('business_number', { length: 20 }).notNull(),
+    businessAddress: varchar('business_address', { length: 256 }).notNull(),
+    businessOwnerName: varchar('business_owner_name', { length: 64 }).notNull(),
+
+    // 금액 스냅샷
+    supplyAmount: bigint('supply_amount', { mode: 'number' }).notNull(),
+    taxAmount: bigint('tax_amount', { mode: 'number' }).notNull(),
     totalAmount: bigint('total_amount', { mode: 'number' }).notNull(),
 
-    status: varchar('status', { length: 16 }).notNull().default('PENDING'),
-    hometaxApprovalNumber: varchar('hometax_approval_number', { length: 64 }),
+    // 발행 작업 메타 (엑셀로 뽑은 시점 / 담당자)
+    exportedAt: timestamp('exported_at', { withTimezone: true }),
+    exportedBy: varchar('exported_by', { length: 64 }),
 
+    // 홈텍스 업로드 완료 시점(선택)
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+
+    // 홈텍스 발행 결과
+    hometaxIssueNo: varchar('hometax_issue_no', { length: 64 }),
+    hometaxIssueDate: date('hometax_issue_date'),
+    failReason: text('fail_reason'),
+
+    // 취소/에러 코드 (옵션)
     cancelReason: varchar('cancel_reason', { length: 32 }),
     errorCode: varchar('error_code', { length: 32 }),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
   },
   (t) => [
+    // 자주 쓸 인덱스들
     index('idx_ti_user_date').on(t.userId, t.supplyDate),
-    index('idx_ti_scope').on(t.scopeType, t.scopeId),
     index('idx_ti_status').on(t.status),
-    uniqueIndex('uq_ti_scope').on(t.scopeType, t.scopeId),
+    index('idx_ti_order').on(t.orderId),
+    // 한 주문에 세금계산서 1장만 허용 (필요 없으면 제거)
+    uniqueIndex('uq_ti_order').on(t.orderId),
   ],
 );
 
 // ────────────────────────────────────────────
-// 2️⃣ 이벤트 테이블 (명시적 필드, no metadata)
+// 2️⃣ 세금계산서 상태 이벤트 로그 (선택사항, Audit 용)
 // ────────────────────────────────────────────
 
 export const taxInvoiceEvents = pgTable(
@@ -972,35 +997,30 @@ export const taxInvoiceEvents = pgTable(
   {
     id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => {
-        return generateUUIDv7();
-      }),
+      .$defaultFn(() => generateUUIDv7()),
 
     invoiceId: varchar('invoice_id', { length: 36 })
       .notNull()
       .references(() => taxInvoices.id, { onDelete: 'cascade' }),
 
-    // 이벤트 타입
+    // 이벤트 타입 (비즈니스 관점)
     eventType: varchar('event_type', { length: 32 }).notNull(),
-    // CREATED | VALIDATED | EXPORTED | ISSUED | CANCELLED | REFUNDED | ERROR
+    // ex) REQUESTED | EXPORTED | ISSUED_CONFIRMED | FAILED | CANCELLED | NEEDS_MODIFICATION
 
     // 상태 변경 추적
-    previousStatus: varchar('previous_status', { length: 16 }),
-    newStatus: varchar('new_status', { length: 16 }),
+    previousStatus: varchar('previous_status', { length: 32 }),
+    newStatus: varchar('new_status', { length: 32 }),
 
-    // 금액 변경 추적 (수정세금계산서)
+    // 금액 변경 추적 (수정세금계산서 등)
     previousAmount: bigint('previous_amount', { mode: 'number' }),
     newAmount: bigint('new_amount', { mode: 'number' }),
 
-    // 사유 (명시적)
+    // 원인 코드 / 상세
     reasonCode: varchar('reason_code', { length: 32 }),
-    // CUSTOMER_REQUEST | WRONG_AMOUNT | DUPLICATE | SYSTEM_ERROR | ADMIN_ACTION
+    // ex) CUSTOMER_REQUEST | WRONG_AMOUNT | SYSTEM_ERROR | ADMIN_ACTION
     reasonDetail: text('reason_detail'),
 
-    // 배치 정보
-    batchId: varchar('batch_id', { length: 36 }),
-
-    // 실행자
+    // 실행자 (USER / ADMIN / SYSTEM / CRON / 등)
     actor: varchar('actor', { length: 64 }).notNull().default('SYSTEM'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -1011,99 +1031,56 @@ export const taxInvoiceEvents = pgTable(
     index('idx_tie_invoice').on(t.invoiceId),
     index('idx_tie_type').on(t.eventType),
     index('idx_tie_created').on(t.createdAt),
-    index('idx_tie_batch').on(t.batchId),
   ],
 );
 
 // ────────────────────────────────────────────
-// 3️⃣ 상세 테이블 (무거운 데이터 격리)
+// 3️⃣ 발행 당시 전체 스냅샷 (JSON payload)
 // ────────────────────────────────────────────
-
-export const taxInvoiceEventDetails = pgTable(
-  'tax_invoice_events_details',
-  {
-    id: varchar('id', { length: 36 })
-      .primaryKey()
-      .$defaultFn(() => generateUUIDv7()),
-
-    // 1:1 관계 - 한 인보이스당 한 개의 상세 레코드
-    invoiceId: varchar('invoice_id', { length: 36 })
-      .notNull()
-      .references(() => taxInvoices.id, { onDelete: 'cascade' })
-      .unique(),
-
-    // 결제 참조
-    paymentIntentId: varchar('payment_intent_id', { length: 36 }).references(
-      () => paymentIntents.id,
-      { onDelete: 'set null' },
-    ),
-    paymentAttemptId: varchar('payment_attempt_id', { length: 36 }),
-
-    // 세금계산서 종류/수정 정보
-    kind: varchar('kind', { length: 16 }).notNull().default('NORMAL'),
-    // NORMAL | MODIFICATION
-
-    modificationType: varchar('modification_type', { length: 16 }),
-    // INCREASE | DECREASE | CANCEL
-
-    originalInvoiceId: varchar('original_invoice_id', {
-      length: 36,
-    }).references(() => taxInvoices.id, { onDelete: 'restrict' }),
-
-    // 고객 정보 스냅샷
-    customerName: varchar('customer_name', { length: 128 }).notNull(),
-    customerBusinessNumber: varchar('customer_business_number', {
-      length: 20,
-    }),
-
-    // 날짜
-    issueDate: date('issue_date').notNull(),
-
-    // 금액
-    supplyAmount: bigint('supply_amount', { mode: 'number' }).notNull(),
-    taxAmount: bigint('tax_amount', { mode: 'number' }).notNull(),
-
-    refundedAmount: bigint('refunded_amount', { mode: 'number' })
-      .notNull()
-      .default(0),
-
-    netAmount: bigint('net_amount', { mode: 'number' }).notNull(),
-
-    // 배치 처리 정보
-    batchId: varchar('batch_id', { length: 36 }),
-    batchExportedAt: timestamp('batch_exported_at', { withTimezone: true }),
-    batchSequence: integer('batch_sequence'),
-    batchPeriod: varchar('batch_period', { length: 10 }), // '2024-01' 등
-
-    // 추가 확장용 필드 (원인 파악용 메타 등)
-    extra: jsonb('extra'),
-  },
-  (t) => [
-    index('idx_tied_invoice').on(t.invoiceId),
-    index('idx_tied_batch').on(t.batchId),
-  ],
-);
-
-// ────────────────────────────────────────────
-// 2️⃣ 세금계산서 발행 당시 전체 스냅샷
-// ────────────────────────────────────────────
+//
+// - 주문/주문라인/배송/사업자/결제 등
+//   "우리가 홈택스로 던지려는 최종 DTO"를 그대로 저장
+// - payload 스키마는 앱 레벨에서 타입으로 관리
 
 export const taxInvoiceSnapshots = pgTable(
   'tax_invoice_snapshots',
   {
-    // 1:1 관계를 강하게 보장하려면 invoiceId를 PK + FK로 써도 됨
     invoiceId: varchar('invoice_id', { length: 36 })
       .primaryKey()
       .references(() => taxInvoices.id, { onDelete: 'cascade' }),
 
-    // 발행 당시 주문/결제/사업자/주소/라인아이템 전체 JSON 스냅샷
-    payload: jsonb('payload').notNull(),
+    payload: jsonb('payload').notNull(), // { order, lines, businessInfo, amounts, ... }
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [index('idx_tis_invoice').on(t.invoiceId)],
+);
+
+// ────────────────────────────────────────────
+// 4️⃣ 사용자 세금계산서 기본 설정 (Preference)
+// ────────────────────────────────────────────
+
+export const userTaxInvoicePreferences = pgTable(
+  'user_tax_invoice_preferences',
+  {
+    userId: varchar('user_id', { length: 64 }).primaryKey(),
+
+    // 기본 신청 여부 (true면 주문 시 자동 신청 체크)
+    defaultEnabled: integer('default_enabled').notNull().default(0), // 0=false, 1=true (boolean 대신 integer로 가면 driz + pg 쉽게)
+
+    // 기본 사용할 사업자 정보 (스냅샷 아님, 설정용)
+    defaultBusinessInfo: jsonb('default_business_info'),
+    // { name, businessNumber, address, ownerName }
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
 );
 
 // 원천 이벤트 로그
@@ -1317,30 +1294,12 @@ export const checkoutSessions = pgTable(
 );
 
 export const taxInvoicesRelations = relations(taxInvoices, ({ one, many }) => ({
-  detail: one(taxInvoiceEventDetails, {
+  detail: one(taxInvoiceSnapshots, {
     fields: [taxInvoices.id],
-    references: [taxInvoiceEventDetails.invoiceId],
+    references: [taxInvoiceSnapshots.invoiceId],
   }),
   events: many(taxInvoiceEvents),
 }));
-
-export const taxInvoiceEventsDetailsRelations = relations(
-  taxInvoiceEventDetails,
-  ({ one }) => ({
-    invoice: one(taxInvoices, {
-      fields: [taxInvoiceEventDetails.invoiceId],
-      references: [taxInvoices.id],
-    }),
-    originalInvoice: one(taxInvoices, {
-      fields: [taxInvoiceEventDetails.originalInvoiceId],
-      references: [taxInvoices.id],
-    }),
-    paymentIntent: one(paymentIntents, {
-      fields: [taxInvoiceEventDetails.paymentIntentId],
-      references: [paymentIntents.id],
-    }),
-  }),
-);
 
 export const taxInvoiceEventsRelations = relations(
   taxInvoiceEvents,
@@ -1401,7 +1360,7 @@ export const walletSchema = {
 
   // Utility Tables (Tax Invoice)
   taxInvoices,
-  taxInvoiceEventDetails,
+  taxInvoiceSnapshots,
   taxInvoiceEvents,
 
   idempotencyKeys,
