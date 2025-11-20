@@ -25,6 +25,7 @@ import {
   lte,
   isNotNull,
   SQL,
+  inArray,
 } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import {
@@ -943,8 +944,44 @@ export class InventoryService implements OnModuleInit {
 
       // Map to DTOs
       const uniqueSkuIds = [...new Set(results.map((row) => row.sku.id))];
+
+      // 모든 SKU의 재고 정보를 한 번에 조회
+      const stockInfoMap = new Map<string, number>();
+      if (uniqueSkuIds.length > 0) {
+        // 조건 배열 구성
+        const stockConditions: SQL[] = [
+          inArray(wmsSchema.stockSummary.skuId, uniqueSkuIds),
+        ];
+
+        // 창고 필터가 있으면 조건에 추가
+        if (filters.warehouseId) {
+          stockConditions.push(
+            eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId),
+          );
+        }
+
+        const stockSummaries = await trx
+          .select({
+            skuId: wmsSchema.stockSummary.skuId,
+            totalOnHand: sql<number>`COALESCE(SUM(${wmsSchema.stockSummary.onHandQty}), 0)`,
+          })
+          .from(wmsSchema.stockSummary)
+          .where(and(...stockConditions))
+          .groupBy(wmsSchema.stockSummary.skuId);
+
+        stockSummaries.forEach((summary) => {
+          stockInfoMap.set(summary.skuId, summary.totalOnHand);
+        });
+      }
+
       const items = await Promise.all(
-        uniqueSkuIds.map((skuId) => this.getSkuById(skuId, trx)),
+        uniqueSkuIds.map(async (skuId) => {
+          const sku = await this.getSkuById(skuId, trx);
+          return {
+            ...sku,
+            currentStock: stockInfoMap.get(skuId) ?? 0,
+          };
+        }),
       );
 
       return {
