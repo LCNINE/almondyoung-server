@@ -138,15 +138,6 @@ export class AdvancedInventoryFiltersDto {
     @Type(() => Boolean)
     isGrouped?: boolean;
 
-    @ApiProperty({
-        description: 'Inventory Master ID (WMS-internal master)',
-        required: false,
-        example: '550e8400-e29b-41d4-a716-446655440004',
-    })
-    @IsUUID()
-    @IsOptional()
-    inventoryMasterId?: string;
-
     // Pagination
     @ApiProperty({
         description: 'Page limit',
