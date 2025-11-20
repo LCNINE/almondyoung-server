@@ -6,7 +6,6 @@ import { EventsModule } from '@app/events';
 // import { validateWalletEnv } from './config/env.validation';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 import { PaymentController } from './controllers/payment.controller';
-import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 
 import { IntentService } from './services/intents/intent.service';
 import { IntentReader } from './services/intents/intent.reader';
@@ -41,12 +40,11 @@ import { HmsBnplRegistrar } from './providers/hms-bnpl.registrar';
 import { HmsCardChargeProvider } from './providers/hms-card.charge';
 import { HmsBnplChargeProvider } from './providers/hms-bnpl.charge';
 import { HmsBnplCashReceiptProvider } from './providers/hms-bnpl.cash-receipt';
-import { HmsBnplTaxInvoiceProvider } from './providers/hms-bnpl.tax-invoice';
+
 import { TossChargeProvider } from './providers/toss.charge';
 import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
 import { IdempotencyService } from './services/idempotency.service';
-import { TaxInvoiceService } from './services/tax-invoice.service';
 import { BnplService } from './services/bnpl/bnpl.service';
 import { BnplAccountReader } from './services/bnpl/bnpl-account.reader';
 import { BnplAccountCreator } from './services/bnpl/bnpl-account.creator';
@@ -80,13 +78,12 @@ import { PointRepository } from './services/points/point.repository';
   controllers: [
     // === 신규 아키텍처 ===
     PaymentController,
-    TaxInvoiceController,
   ],
   providers: [
     PaymentService,
     IntentService,
     PaymentProfileService,
-    TaxInvoiceService,
+
     BnplService,
     BnplSettlementService,
     RefundService,
@@ -138,7 +135,7 @@ import { PointRepository } from './services/points/point.repository';
     HmsCardChargeProvider,
     HmsBnplChargeProvider,
     HmsBnplCashReceiptProvider,
-    HmsBnplTaxInvoiceProvider,
+
     TossChargeProvider,
     HmsCardRefundProvider,
     TossRefundProvider,
