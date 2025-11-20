@@ -75,8 +75,13 @@ export default async function MembershipFormPage() {
         existingFmsMember={
           hmsCardProfile && hmsCardProfile.details
             ? {
-                paymentCompany: hmsCardProfile.details.paymentCompany || "",
+                paymentCompany:
+                  hmsCardProfile.details.paymentCompany || "알 수 없음",
+                paymentCompanyName:
+                  hmsCardProfile.details.paymentCompanyName || "알 수 없음",
                 paymentNumber: hmsCardProfile.details.paymentNumber || "",
+                cardLast4: hmsCardProfile.details.cardLast4 || "",
+                payerName: hmsCardProfile.details.payerName || "",
               }
             : null
         }
