@@ -38,9 +38,9 @@ export class PaymentProfileService {
     private readonly profilesRepo: PaymentProfilesRepository,
     private readonly cmsCardRepo: CmsCardProfilesRepository,
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
-  ) { }
+  ) {}
 
-  // 결제 프로필 목록 조회 (payment_profiles 테이블만 조회)
+  // 결제 프로필 목록 조회 (상세 정보 포함)
   async getPaymentProfiles(userId: string) {
     return this.db.db.transaction(async (tx) => {
       // 사용자의 모든 결제 프로필 조회
@@ -49,15 +49,51 @@ export class PaymentProfileService {
         .from(schema.paymentProfiles)
         .where(eq(schema.paymentProfiles.userId, userId));
 
-      // 프로필 정보만 반환 (하위 테이블 조회 없음)
-      return profiles.map((profile) => ({
-        id: profile.id,
-        kind: profile.kind,
-        provider: profile.provider,
-        status: profile.status,
-        name: profile.name,
-        createdAt: profile.createdAt,
-      }));
+      // 각 프로필에 대해 상세 정보 조회
+      const profilesWithDetails = await Promise.all(
+        profiles.map(async (profile) => {
+          let details: {
+            paymentCompany: string | null;
+            paymentNumber: string | null;
+            cardBrand: string | null;
+            payerName: string | null;
+            phoneMask: string | null;
+          } | null = null;
+
+          // HMS 카드 프로필인 경우 cms_card_profiles 테이블 조인
+          if (profile.provider === 'HMS_CARD' && profile.kind === 'CARD') {
+            const [cardProfile] = await tx
+              .select()
+              .from(schema.cmsCardProfiles)
+              .where(eq(schema.cmsCardProfiles.id, profile.id))
+              .limit(1);
+
+            if (cardProfile) {
+              details = {
+                paymentCompany: cardProfile.paymentCompany,
+                paymentNumber: cardProfile.cardLast4
+                  ? `****-****-****-${cardProfile.cardLast4}`
+                  : null,
+                cardBrand: cardProfile.cardBrand,
+                payerName: cardProfile.payerName,
+                phoneMask: cardProfile.phoneMask,
+              };
+            }
+          }
+
+          return {
+            id: profile.id,
+            kind: profile.kind,
+            provider: profile.provider,
+            status: profile.status,
+            name: profile.name,
+            details,
+            createdAt: profile.createdAt,
+          };
+        }),
+      );
+
+      return profilesWithDetails;
     });
   }
 
