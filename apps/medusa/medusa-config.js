@@ -116,7 +116,11 @@ module.exports = defineConfig({
   ],
   plugins: [
     {
-      resolve: 'medusa-digital-asset-plugin',
+      resolve: '@medusajs/draft-order',
+      options: {},
+    },
+    {
+      resolve: 'almond-digital-asset-plugin',
       options: {},
     },
   ],
