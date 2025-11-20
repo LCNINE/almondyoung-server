@@ -5,32 +5,20 @@ import {
   PaymentResult,
   ProviderType,
 } from './payment-provider.interface';
-import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
+import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 @Injectable()
 export class HmsCardChargeProvider
   implements ChargePort<ProviderType.HMS_CARD>
 {
   private readonly logger = new Logger(HmsCardChargeProvider.name);
-  private readonly hmsApi: HmsAPI;
+  private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   constructor() {
-    const isTest = process.env.NODE_ENV !== 'production';
-    this.logger.warn(
-      `🔍 HMS Card Charge 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
-    );
-    
-    // 카드 결제도 api-test를 사용
-    const baseURL = isTest 
-      ? 'https://api-test.hyosungcms.co.kr/v1'
-      : 'https://api.hyosungcms.co.kr/v1';
-    
-    this.hmsApi = new (require('hms-api-wrapper').HmsAPI)({
-      swKey: process.env.SW_KEY || '',
-      custKey: process.env.CUST_KEY || '',
-      isTest: isTest,
-      baseURL: baseURL,
-    });
+    // HmsApiFactory를 사용하여 프록시 지원
+    this.hmsApi = HmsApiFactory.createForCard();
+    this.logger.log('🔧 HMS Card Charge 초기화 완료 (Factory 사용)');
   }
 
   async process(payload: HmsCardPayload): Promise<PaymentResult> {
