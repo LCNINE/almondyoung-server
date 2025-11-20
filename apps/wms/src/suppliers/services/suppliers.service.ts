@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
-import { DbService } from '@app/db';
+import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
 import { 
