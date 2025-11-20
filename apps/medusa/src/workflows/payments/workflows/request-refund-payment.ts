@@ -1,21 +1,16 @@
 import {
   createWorkflow,
   transform,
-  when,
   WorkflowData,
   WorkflowResponse,
 } from '@medusajs/framework/workflows-sdk';
 import {
-  RefundPaymentsWorkflowInput,
   RefundPaymentWorkflowInput,
   useQueryGraphStep,
   useRemoteQueryStep,
   validatePaymentsRefundStep,
-  validateRefundStep,
 } from '@medusajs/medusa/core-flows';
-import { requestRefundPaymentsStep } from '../steps/request-refund-payments';
 import { requestRefundPaymentStep } from '../steps/request-refund-payment';
-import { MathBN } from '@medusajs/framework/utils';
 
 export const requestRefundPaymentWorkFlowId = 'request-refund-payment-workflow';
 /**
@@ -38,24 +33,35 @@ export const requestRefundPaymentWorkFlow = createWorkflow(
       throw_if_key_not_found: true,
     });
 
-    const orderPaymentCollection = useRemoteQueryStep({
-      entry_point: 'order_payment_collection',
-      fields: ['order.id'],
-      variables: { payment_collection_id: payment.payment_collection_id },
-      list: false,
-      throw_if_key_not_found: true,
-    }).config({ name: 'order-payment-collection' });
+    const paymentsQuery = useQueryGraphStep({
+      entity: 'payments',
+      fields: [
+        'id',
+        'currency_code',
+        'provider_id',
+        'amount',
+        'refunds.id',
+        'refunds.amount',
+        'captures.id',
+        'captures.amount',
+        'payment_collection.order.id',
+        'payment_collection.order.currency_code',
+      ],
+      filters: { id: [input.payment_id] },
+      options: { throwIfKeyNotFound: true },
+    }).config({ name: 'get-payment' });
 
-    const order = useRemoteQueryStep({
-      entry_point: 'order',
-      fields: ['id', 'summary', 'currency_code', 'region_id'],
-      variables: { id: orderPaymentCollection.order.id },
-      throw_if_key_not_found: true,
-      list: false,
-    }).config({ name: 'order' });
+    const payments = transform(
+      { paymentsQuery },
+      ({ paymentsQuery }) => paymentsQuery.data,
+    );
 
-    // 환불 가능 여부 검증
-    validateRefundStep({ order, payment, amount: input.amount });
+    // 환불 가능 여부 검증 (단일 payment를 배열로 감싸서 전달)
+    validatePaymentsRefundStep({
+      payments,
+      input: transform({ input }, ({ input }) => [input]),
+    });
+
     // 외부 시스템으로 환불 요청 전송
     requestRefundPaymentStep({ payment, input });
 
