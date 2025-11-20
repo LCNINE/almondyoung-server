@@ -1,39 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProfileRegistrar } from './payment-provider.interface';
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsAPI } from 'hms-api-wrapper';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 @Injectable()
 export class HmsCardRegistrar
   implements
-  ProfileRegistrar<
-    // Input Type: 프로필 등록에 필요한 정보
-    {
-      userId: string;
-      payerName: string;
-      phone: string;
-      paymentCompany?: string;
-      // ... HmsCardProfileRequest에서 필요했던 다른 필드들
-      memberId: string; // 예시: 외부에서 생성된 ID
-      paymentNumber: string; // 카드번호 등
-      validYear: string;
-      validMonth: string;
-      password?: string;
-      memberName: string;
-    },
-    // Meta Type: 등록 후 반환할 추가 정보
-    {
-      cardBrand?: string;
-      last4?: string;
-    }
-  > {
+    ProfileRegistrar<
+      // Input Type: 프로필 등록에 필요한 정보
+      {
+        userId: string;
+        payerName: string;
+        phone: string;
+        paymentCompany?: string;
+        // ... HmsCardProfileRequest에서 필요했던 다른 필드들
+        memberId: string; // 예시: 외부에서 생성된 ID
+        paymentNumber: string; // 카드번호 등
+        validYear: string;
+        validMonth: string;
+        password?: string;
+        memberName: string;
+      },
+      // Meta Type: 등록 후 반환할 추가 정보
+      {
+        cardBrand?: string;
+        last4?: string;
+      }
+    >
+{
   private readonly logger = new Logger(HmsCardRegistrar.name);
-  private readonly hmsApi: HmsAPI | MockHmsAPI;
+  private readonly hmsApi: HmsAPI;
 
   constructor() {
-    // HmsApiFactory를 사용하여 프록시 지원
+    // HmsApiFactory를 사용하여 프록시 지원 (Real API만)
     this.hmsApi = HmsApiFactory.createForCard();
-    this.logger.log('🔧 HMS Card Registrar 초기화 완료 (Factory 사용)');
+    this.logger.log('🔧 HMS Card Registrar 초기화 완료 (Real API)');
   }
 
   async register(input: any, ctx: { tx: any }) {
@@ -53,7 +54,10 @@ export class HmsCardRegistrar
       paymentCompany: input.paymentCompany || '', // 기본값 설정
     };
 
-    this.logger.debug(`📤 HMS API 요청 데이터:`, JSON.stringify(requestData, null, 2));
+    this.logger.debug(
+      `📤 HMS API 요청 데이터:`,
+      JSON.stringify(requestData, null, 2),
+    );
 
     try {
       this.logger.log(`⏳ HMS API 호출 시작...`);
