@@ -88,9 +88,9 @@ type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 const cardDetailsSchema = z.object({
   phone: z
     .string()
-    .max(12, "전화번호 형식이 잘못되었습니다")
-    .min(1, "전화번호를 입력해주세요")
-    .regex(/^\d+$/, "숫자만 입력해주세요"),
+    .min(10, "전화번호는 10-11자리여야 합니다")
+    .max(11, "전화번호는 10-11자리여야 합니다")
+    .regex(/^01[0-9]{8,9}$/, "올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)"),
   payerNumber: z
     .string()
     .max(10, "10자 이내로 입력해주세요")
@@ -369,8 +369,15 @@ export function MembershipForm({
                       <FormItem>
                         <FormLabel>전화번호</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input
+                            {...field}
+                            placeholder="01012345678"
+                            maxLength={11}
+                          />
                         </FormControl>
+                        <p className="text-xs text-gray-500">
+                          하이픈 없이 10-11자리 입력
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}

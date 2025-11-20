@@ -106,9 +106,12 @@ export default function AddCardForm() {
             onChange={handleChange}
             placeholder="01012345678"
             className="rounded-md border border-gray-300 px-4 py-3"
-            maxLength={12}
+            maxLength={11}
             required
           />
+          <p className="mt-1 text-xs text-gray-500">
+            하이픈 없이 10-11자리 입력 (예: 01012345678)
+          </p>
         </div>
 
         {/* 카드번호 */}
