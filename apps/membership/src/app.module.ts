@@ -80,6 +80,7 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     SubscriptionCancellationService,
     EntitlementService,
     SavingsService,
+
     // Implementation Layer (Readers & Managers)
     EntitlementReader,
     EntitlementManager,
