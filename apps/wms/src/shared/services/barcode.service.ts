@@ -1,7 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
+import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { DbService } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import * as bwipjs from 'bwip-js';
 

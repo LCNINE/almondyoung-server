@@ -1,6 +1,5 @@
 import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
-import { DbService } from '@app/db';
+import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { eq, and, gte, sql, desc, asc, sum } from 'drizzle-orm';
 

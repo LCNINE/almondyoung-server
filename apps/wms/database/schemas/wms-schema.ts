@@ -1,5 +1,5 @@
 // apps/wms/database/schemas/wms-schema.ts
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, type InferSelectModel, type InferInsertModel } from 'drizzle-orm';
 import {
     pgTable,
     pgView,
@@ -2691,3 +2691,243 @@ export const wmsSchema = {
 } as const;
 
 export type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
+
+/*───────────────────────────
+ * TABLE TYPES (Select/Insert)
+ *──────────────────────────*/
+
+// Supplier Types
+export type Supplier = InferSelectModel<typeof suppliers>;
+export type NewSupplier = InferInsertModel<typeof suppliers>;
+
+export type SupplierCategory = InferSelectModel<typeof supplierCategories>;
+export type NewSupplierCategory = InferInsertModel<typeof supplierCategories>;
+
+export type SupplierCategoryMapping = InferSelectModel<typeof supplierCategoryMappings>;
+export type NewSupplierCategoryMapping = InferInsertModel<typeof supplierCategoryMappings>;
+
+// Holder Types
+export type Holder = InferSelectModel<typeof holders>;
+export type NewHolder = InferInsertModel<typeof holders>;
+
+// SKU Types
+export type Sku = InferSelectModel<typeof skus>;
+export type NewSku = InferInsertModel<typeof skus>;
+
+export type SkuSupplier = InferSelectModel<typeof skuSuppliers>;
+export type NewSkuSupplier = InferInsertModel<typeof skuSuppliers>;
+
+export type SkuBarcode = InferSelectModel<typeof skuBarcodes>;
+export type NewSkuBarcode = InferInsertModel<typeof skuBarcodes>;
+
+export type Category = InferSelectModel<typeof categories>;
+export type NewCategory = InferInsertModel<typeof categories>;
+
+export type SkuCategory = InferSelectModel<typeof skuCategories>;
+export type NewSkuCategory = InferInsertModel<typeof skuCategories>;
+
+export type SkuVariantPricing = InferSelectModel<typeof skuVariantPricing>;
+export type NewSkuVariantPricing = InferInsertModel<typeof skuVariantPricing>;
+
+export type SkuManager = InferSelectModel<typeof skuManagers>;
+export type NewSkuManager = InferInsertModel<typeof skuManagers>;
+
+export type SkuLocationMovement = InferSelectModel<typeof skuLocationMovements>;
+export type NewSkuLocationMovement = InferInsertModel<typeof skuLocationMovements>;
+
+export type InventoryProductMaster = InferSelectModel<typeof inventoryProductMasters>;
+export type NewInventoryProductMaster = InferInsertModel<typeof inventoryProductMasters>;
+
+export type SkuGroup = InferSelectModel<typeof skuGroups>;
+export type NewSkuGroup = InferInsertModel<typeof skuGroups>;
+
+export type DeliveryProfile = InferSelectModel<typeof deliveryProfiles>;
+export type NewDeliveryProfile = InferInsertModel<typeof deliveryProfiles>;
+
+// Warehouse & Location Types
+export type Warehouse = InferSelectModel<typeof warehouses>;
+export type NewWarehouse = InferInsertModel<typeof warehouses>;
+
+export type LocationColumn = InferSelectModel<typeof locationColumns>;
+export type NewLocationColumn = InferInsertModel<typeof locationColumns>;
+
+export type LocationRack = InferSelectModel<typeof locationRacks>;
+export type NewLocationRack = InferInsertModel<typeof locationRacks>;
+
+export type Location = InferSelectModel<typeof locations>;
+export type NewLocation = InferInsertModel<typeof locations>;
+
+// Stock Types
+export type StockJournal = InferSelectModel<typeof stockJournals>;
+export type NewStockJournal = InferInsertModel<typeof stockJournals>;
+
+export type StockEvent = InferSelectModel<typeof stockEvents>;
+export type NewStockEvent = InferInsertModel<typeof stockEvents>;
+
+export type StockLedger = InferSelectModel<typeof stockLedgers>;
+export type NewStockLedger = InferInsertModel<typeof stockLedgers>;
+
+// StockSummary is a view, so it doesn't have an insert type
+export type StockSummary = {
+  skuId: string;
+  warehouseId: string;
+  skuName: string | null;
+  warehouseName: string | null;
+  onHandQty: number;
+  defectiveQty: number;
+  inTransferQty: number;
+  reservedQty: number;
+  availableQty: number;
+  inboundPendingQty: number;
+  onOrderQty: number;
+  transferPendingQty: number;
+  projectedAvailableQty: number;
+  lastCalculatedAt: Date;
+};
+
+// Product Matching Types
+export type ProductMatching = InferSelectModel<typeof productMatchings>;
+export type NewProductMatching = InferInsertModel<typeof productMatchings>;
+
+export type ProductVariantSkuLink = InferSelectModel<typeof productVariantSkuLinks>;
+export type NewProductVariantSkuLink = InferInsertModel<typeof productVariantSkuLinks>;
+
+// Sales Order Types
+export type SalesOrder = InferSelectModel<typeof salesOrders>;
+export type NewSalesOrder = InferInsertModel<typeof salesOrders>;
+
+export type SalesOrderLine = InferSelectModel<typeof salesOrderLines>;
+export type NewSalesOrderLine = InferInsertModel<typeof salesOrderLines>;
+
+export type OrderEvent = InferSelectModel<typeof orderEvents>;
+export type NewOrderEvent = InferInsertModel<typeof orderEvents>;
+
+export type MergeGroup = InferSelectModel<typeof mergeGroups>;
+export type NewMergeGroup = InferInsertModel<typeof mergeGroups>;
+
+// Reservation Types
+export type StockReservation = InferSelectModel<typeof stockReservations>;
+export type NewStockReservation = InferInsertModel<typeof stockReservations>;
+
+// Fulfillment Types
+export type FulfillmentOrder = InferSelectModel<typeof fulfillmentOrders>;
+export type NewFulfillmentOrder = InferInsertModel<typeof fulfillmentOrders>;
+
+export type FulfillmentOrderLine = InferSelectModel<typeof fulfillmentOrderLines>;
+export type NewFulfillmentOrderLine = InferInsertModel<typeof fulfillmentOrderLines>;
+
+export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
+export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
+
+// Outbound Types
+export type OutboundTask = InferSelectModel<typeof outboundTasks>;
+export type NewOutboundTask = InferInsertModel<typeof outboundTasks>;
+
+export type OutboundTaskOrder = InferSelectModel<typeof outboundTaskOrders>;
+export type NewOutboundTaskOrder = InferInsertModel<typeof outboundTaskOrders>;
+
+export type OutboundTaskItem = InferSelectModel<typeof outboundTaskItems>;
+export type NewOutboundTaskItem = InferInsertModel<typeof outboundTaskItems>;
+
+export type OutboundTaskLine = InferSelectModel<typeof outboundTaskLines>;
+export type NewOutboundTaskLine = InferInsertModel<typeof outboundTaskLines>;
+
+export type OutboundBatch = InferSelectModel<typeof outboundBatches>;
+export type NewOutboundBatch = InferInsertModel<typeof outboundBatches>;
+
+export type FulfillmentOrderBatch = InferSelectModel<typeof fulfillmentOrderBatches>;
+export type NewFulfillmentOrderBatch = InferInsertModel<typeof fulfillmentOrderBatches>;
+
+// Shipment Types
+export type Shipment = InferSelectModel<typeof shipments>;
+export type NewShipment = InferInsertModel<typeof shipments>;
+
+export type ShipmentTracking = InferSelectModel<typeof shipmentTracking>;
+export type NewShipmentTracking = InferInsertModel<typeof shipmentTracking>;
+
+// Return Types
+export type Return = InferSelectModel<typeof returns>;
+export type NewReturn = InferInsertModel<typeof returns>;
+
+export type ReturnItem = InferSelectModel<typeof returnItems>;
+export type NewReturnItem = InferInsertModel<typeof returnItems>;
+
+// Policy & Settings Types
+export type SalesVariantPolicy = InferSelectModel<typeof salesVariantPolicies>;
+export type NewSalesVariantPolicy = InferInsertModel<typeof salesVariantPolicies>;
+
+export type Setting = InferSelectModel<typeof settings>;
+export type NewSetting = InferInsertModel<typeof settings>;
+
+export type Holiday = InferSelectModel<typeof holidays>;
+export type NewHoliday = InferInsertModel<typeof holidays>;
+
+// Purchase Order Types
+export type PurchaseOrder = InferSelectModel<typeof purchaseOrders>;
+export type NewPurchaseOrder = InferInsertModel<typeof purchaseOrders>;
+
+export type PurchaseOrderLine = InferSelectModel<typeof purchaseOrderLines>;
+export type NewPurchaseOrderLine = InferInsertModel<typeof purchaseOrderLines>;
+
+export type PurchaseOrderCart = InferSelectModel<typeof purchaseOrderCart>;
+export type NewPurchaseOrderCart = InferInsertModel<typeof purchaseOrderCart>;
+
+// Inbound Types
+export type InboundList = InferSelectModel<typeof inboundLists>;
+export type NewInboundList = InferInsertModel<typeof inboundLists>;
+
+export type InboundReceipt = InferSelectModel<typeof inboundReceipts>;
+export type NewInboundReceipt = InferInsertModel<typeof inboundReceipts>;
+
+export type InboundReceiptLine = InferSelectModel<typeof inboundReceiptLines>;
+export type NewInboundReceiptLine = InferInsertModel<typeof inboundReceiptLines>;
+
+export type InboundPlan = InferSelectModel<typeof inboundPlans>;
+export type NewInboundPlan = InferInsertModel<typeof inboundPlans>;
+
+export type InboundPlanItem = InferSelectModel<typeof inboundPlanItems>;
+export type NewInboundPlanItem = InferInsertModel<typeof inboundPlanItems>;
+
+export type InboundWorkLog = InferSelectModel<typeof inboundWorkLogs>;
+export type NewInboundWorkLog = InferInsertModel<typeof inboundWorkLogs>;
+
+// Movement Types
+export type MovementJob = InferSelectModel<typeof movementJobs>;
+export type NewMovementJob = InferInsertModel<typeof movementJobs>;
+
+export type MovementJobLine = InferSelectModel<typeof movementJobLines>;
+export type NewMovementJobLine = InferInsertModel<typeof movementJobLines>;
+
+export type MovementWorkLog = InferSelectModel<typeof movementWorkLogs>;
+export type NewMovementWorkLog = InferInsertModel<typeof movementWorkLogs>;
+
+// Audit Types
+export type AuditLog = InferSelectModel<typeof auditLogs>;
+export type NewAuditLog = InferInsertModel<typeof auditLogs>;
+
+export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
+export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
+
+// Stocktaking Types
+export type StocktakingSession = InferSelectModel<typeof stocktakingSessions>;
+export type NewStocktakingSession = InferInsertModel<typeof stocktakingSessions>;
+
+export type StocktakingLine = InferSelectModel<typeof stocktakingLines>;
+export type NewStocktakingLine = InferInsertModel<typeof stocktakingLines>;
+
+export type StocktakingAdjustment = InferSelectModel<typeof stocktakingAdjustments>;
+export type NewStocktakingAdjustment = InferInsertModel<typeof stocktakingAdjustments>;
+
+// Product-SKU Mapping Types
+export type ProductSkuMapping = InferSelectModel<typeof productSkuMappings>;
+export type NewProductSkuMapping = InferInsertModel<typeof productSkuMappings>;
+
+export type ProductSkuMappingItem = InferSelectModel<typeof productSkuMappingItems>;
+export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMappingItems>;
+
+export type ProductSkuMappingSnapshot = InferSelectModel<typeof productSkuMappingSnapshots>;
+export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMappingSnapshots>;
+
+// Invoice Types
+export type Invoice = InferSelectModel<typeof invoices>;
+export type NewInvoice = InferInsertModel<typeof invoices>;

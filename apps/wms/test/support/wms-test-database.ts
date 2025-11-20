@@ -1,15 +1,24 @@
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as postgres from 'postgres';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import * as path from 'path';
 import * as fs from 'fs';
 
+// 파일 상단에 헬퍼 함수 추가
+const shouldLog = () => process.env.TEST_VERBOSE === 'true' || process.env.TEST_DEBUG === 'true';
+const testLog = (message: string) => {
+  if (shouldLog()) {
+    console.log(message);
+  }
+};
+
 export class WmsTestDatabase {
   private static container: StartedPostgreSqlContainer | undefined;
   private static connection: postgres.Sql<{}> | undefined;
-  private static db: ReturnType<typeof drizzle<typeof wmsTables>> | undefined;
+  private static db: ReturnType<typeof drizzle<typeof wmsSchema>> | undefined;
   private static isInitialized = false;
 
   static async setup(): Promise<void> {
@@ -17,7 +26,7 @@ export class WmsTestDatabase {
       return;
     }
 
-    console.log('🐳 Starting PostgreSQL test container...');
+    testLog('🐳 Starting PostgreSQL test container...');
 
     this.container = await new PostgreSqlContainer('postgres:15-alpine')
       .withDatabase('wms_test')
@@ -26,15 +35,18 @@ export class WmsTestDatabase {
       .withExposedPorts(5432)
       .start();
 
-    console.log(`✅ PostgreSQL container started on port ${this.container.getMappedPort(5432)}`);
+    testLog(`✅ PostgreSQL container started on port ${this.container.getMappedPort(5432)}`);
 
     // Create connection
     const connectionString = this.container.getConnectionUri();
-    this.connection = postgres(connectionString, { max: 1 });
-    this.db = drizzle(this.connection, { schema: wmsTables });
+    this.connection = postgres(connectionString, { 
+      max: 1,
+      onnotice: () => {} // NOTICE 메시지 무시
+    });
+    this.db = drizzle(this.connection, { schema: wmsSchema });
 
     // Enable required extensions and create simple uuid_v7 function
-    console.log('🔧 Setting up PostgreSQL extensions and functions...');
+    testLog('🔧 Setting up PostgreSQL extensions and functions...');
     await this.connection`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`;
 
     // Create a simplified uuid_v7 function for testing (using gen_random_uuid for compatibility)
@@ -46,26 +58,20 @@ export class WmsTestDatabase {
       $$ LANGUAGE plpgsql VOLATILE;
     `;
 
-    // Create WMS tables using drizzle-kit push
-    console.log('📋 Creating WMS tables from schema...');
+    // Create WMS tables using migrations
+    testLog('📋 Creating WMS tables from schema...');
     try {
-      const { execSync } = require('child_process');
-      const env = {
-        ...process.env,
-        DATABASE_URL: connectionString
-      };
-
-      execSync('npx drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts', {
-        env,
-        stdio: 'inherit'
+      const migrationsPath = path.resolve(__dirname, '../../database/drizzle');
+      await migrate(this.db, {
+        migrationsFolder: migrationsPath,
       });
 
-      console.log('✅ WMS schema tables created successfully');
+      testLog('✅ WMS schema tables created successfully');
 
       this.isInitialized = true;
 
       // Create basic infrastructure data
-      console.log('🏗️ Creating basic infrastructure data...');
+      testLog('🏗️ Creating basic infrastructure data...');
       await this.createBasicInfrastructure();
     } catch (error) {
       console.error('❌ Failed to create WMS schema tables:', error.message);
@@ -82,7 +88,7 @@ export class WmsTestDatabase {
       return;
     }
 
-    console.log('🧹 Cleaning up test database...');
+    testLog('🧹 Cleaning up test database...');
 
     try {
       if (this.connection) {
@@ -96,7 +102,7 @@ export class WmsTestDatabase {
     try {
       if (this.container) {
         await this.container.stop();
-        console.log('✅ PostgreSQL container stopped');
+        testLog('✅ PostgreSQL container stopped');
       }
     } catch (error) {
       console.warn('Warning: Container stop failed:', error.message);
@@ -125,7 +131,7 @@ export class WmsTestDatabase {
   static async clearAllTables(): Promise<void> {
     const db = this.getDb();
 
-    console.log('🧽 Clearing all tables...');
+    testLog('🧽 Clearing all tables...');
 
     // Disable foreign key checks temporarily
     await db.execute(sql`SET session_replication_role = 'replica'`);
@@ -160,7 +166,7 @@ export class WmsTestDatabase {
     // Re-enable foreign key checks
     await db.execute(sql`SET session_replication_role = 'origin'`);
 
-    console.log('✅ All tables cleared');
+    testLog('✅ All tables cleared');
   }
 
   static async resetSequences(): Promise<void> {
@@ -168,7 +174,7 @@ export class WmsTestDatabase {
 
     // Reset any auto-increment sequences if needed
     // PostgreSQL uses UUIDs mostly, so this might not be necessary
-    console.log('🔄 Resetting sequences (if any)...');
+    testLog('🔄 Resetting sequences (if any)...');
   }
 
   static async getTableCounts(): Promise<Record<string, number>> {
@@ -207,7 +213,7 @@ export class WmsTestDatabase {
       contactInfo: { email: 'test@example.com', phone: '010-1234-5678' }
     }).onConflictDoNothing();
 
-    console.log('✅ Basic infrastructure data created');
+    testLog('✅ Basic infrastructure data created');
   }
 }
 

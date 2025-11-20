@@ -1,7 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
+import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { DbService } from '@app/db';
 import { eq, and, like, count, asc, SQL } from 'drizzle-orm';
 import { HolderQueryDto } from '../dto/holder/holder-query.dto';
 import { CreateHolderDto } from '../dto/holder/holder-create.dto';
