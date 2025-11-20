@@ -1,5 +1,5 @@
 // apps/wms/database/schemas/wms-schema.ts
-import { sql, eq, type InferSelectModel, type InferInsertModel } from 'drizzle-orm';
+import { sql, eq, type InferSelectModel, type InferInsertModel, InferSelectViewModel } from 'drizzle-orm';
 import {
     pgTable,
     pgView,
@@ -18,6 +18,7 @@ import {
     date,
     index,
     check,
+    AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 /*───────────────────────────
@@ -26,7 +27,7 @@ import {
 export const barcodeTypeEnum = pgEnum('barcode_type', ['standard']);
 export const sourceTypeEnum = pgEnum('source_type', ['direct', 'in_house', 'overseas']);
 
-export const eventStatusEnum = pgEnum('event_status', ['PENDING','POSTED','VOIDED']);
+export const eventStatusEnum = pgEnum('event_status', ['PENDING', 'POSTED', 'VOIDED']);
 export const stockStateEnum = pgEnum("stock_state", [
     "ON_HAND",         // 출고가능 or 가용재고
     "DEFECTIVE",       // 불량
@@ -47,7 +48,7 @@ export const transitionTypeEnum = pgEnum("transition_type", [
     // 수동 조정 (reason 필드로 상세 사유 기록)
     "ADJUST_UP",               // null → ON_HAND (재고 증가)
     "ADJUST_DOWN",             // ON_HAND → null (재고 감소)
-  ]);
+]);
 
 
 // 확장된 이벤트 타입
@@ -238,46 +239,43 @@ export const inventoryMasterStatusEnum = pgEnum('inventory_master_status', ['act
 export const suppliers = pgTable('suppliers', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
-    
+
     // Contact information
     phone: varchar('phone', { length: 50 }),
     fax: varchar('fax', { length: 50 }),
     email: varchar('email', { length: 255 }),
-    
+
     // Address information
     zipcode: varchar('zipcode', { length: 20 }),
     address1: varchar('address1', { length: 500 }),
     address2: varchar('address2', { length: 500 }),
-    
+
     // Business information
     businessRegNo: varchar('business_reg_no', { length: 50 }),
     businessType: varchar('business_type', { length: 100 }),
     ceoName: varchar('ceo_name', { length: 100 }),
-    
+
     // Purchase settings
     isDirectDelivery: boolean('is_direct_delivery').default(false),
     orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
-    
+
     // Payment information
     bankName: varchar('bank_name', { length: 100 }),
     bankAccountNo: varchar('bank_account_no', { length: 100 }),
     bankAccountHolder: varchar('bank_account_holder', { length: 100 }),
     // NOTE: Common values: 'prepaid', 'postpaid', 'monthly'. Kept as varchar for flexibility
     paymentMethod: varchar('payment_method', { length: 50 }),
-    
+
     // Additional metadata
     description: text('description'),
     memo: text('memo'),
-    
+
     // NOTE: References user-service users table (separate DB), stored as string without FK
     purchaseManagerId: varchar('purchase_manager_id', { length: 36 }),
-    
-    // DEPRECATED: Will be removed in future migration, use individual fields above
-    contactInfo: json('contact_info'),
-    
+
     defaultWarehouseId: uuid('default_warehouse_id')
         .references(() => warehouses.id, { onDelete: 'restrict' }),
-    
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -374,63 +372,63 @@ export const skus = pgTable('skus', {
     sale1m: integer('sale_1m'),
     sale3m: integer('sale_3m'),
     safetyStock: integer('safety_stock').notNull().default(0), // 안전 재고
-    
+
     // ===== Extended Metadata Fields (Phase 2 - Step 4) =====
-    
+
     // 기본 정보 확장
     businessProductName: varchar('business_product_name', { length: 255 }),
     importDeclarationNumber: varchar('import_declaration_number', { length: 100 }),
     logisticsPartnerId: uuid('logistics_partner_id').references(() => suppliers.id, { onDelete: 'set null' }),
     discount: varchar('discount', { length: 100 }),
     manufacturerStar: varchar('manufacturer_star', { length: 100 }),
-    
+
     // 물리 속성
     productWeight: integer('product_weight'), // in grams
     dimensionWidth: integer('dimension_width'), // in cm
     dimensionHeight: integer('dimension_height'), // in cm
     dimensionDepth: integer('dimension_depth'), // in cm
     productMaterial: text('product_material'),
-    
+
     // 추가 메타데이터
     koreanName: varchar('korean_name', { length: 255 }),
     maxDiscountQuantity: integer('max_discount_quantity'),
     packagingImporterName: varchar('packaging_importer_name', { length: 255 }),
-    
+
     // 판매 정보
     productDescription: text('product_description'),
     moq: integer('moq'), // Minimum Order Quantity
     memo2: text('memo2'),
     memo3: text('memo3'),
-    
+
     // 이미지 관리
     mainImageUrl: varchar('main_image_url', { length: 512 }),
     currentStock: integer('current_stock').default(0), // Calculated/cached
-    
+
     // 유효기간 및 날짜 관리
     expiryDateManagement: boolean('expiry_date_management').default(false),
     expiryStartDate: timestamp('expiry_start_date', { withTimezone: true }),
     expiryEndDate: timestamp('expiry_end_date', { withTimezone: true }),
     manufacturingDateManagement: boolean('manufacturing_date_management').default(false),
     isGeneralInventory: boolean('is_general_inventory').default(true),
-    
+
     // 유효 기간
     validityStartDate: timestamp('validity_start_date', { withTimezone: true }),
     validityEndDate: timestamp('validity_end_date', { withTimezone: true }),
-    
+
     // 로케이션 추적
     primaryLocationId: uuid('primary_location_id').references(() => locations.id, { onDelete: 'set null' }),
     secondaryLocationId: uuid('secondary_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    
+
     // 옵션 그룹
     variantGroupCode: varchar('variant_group_code', { length: 64 }),
-    
+
     // ===== WMS-Internal Grouping (Phase 3 - Week 7) =====
     // Optional grouping for warehouse organization (nullable - most SKUs won't have a group)
     // ON DELETE SET NULL: SKUs survive when group is deleted
     groupId: uuid('group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
-    
+
     // ===== End Extended Metadata =====
-    
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -490,17 +488,17 @@ export const skuVariantPricing = pgTable('sku_variant_pricing', {
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
-    
+
     // 3단계 가격
     retailPrice: integer('retail_price'), // 소매가
     specialSalePrice: integer('special_sale_price'), // 특가
     wholesalePrice: integer('wholesale_price'), // 도매가
     sellingPrice: integer('selling_price'), // 현재 판매가
-    
+
     // 가격 유효기간
     priceEffectiveDate: timestamp('price_effective_date', { withTimezone: true }),
     priceExpiryDate: timestamp('price_expiry_date', { withTimezone: true }),
-    
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -513,12 +511,12 @@ export const skuManagers = pgTable('sku_managers', {
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
-    
+
     // 담당자 역할 (모두 nullable - 모든 SKU에 담당자가 필요한 것은 아님)
     designerId: uuid('designer_id'), // 상품디자이너
     purchaseManagerId: uuid('purchase_manager_id'), // 발주담당자
     registrationManagerId: uuid('registration_manager_id'), // 상품등록자
-    
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -531,9 +529,9 @@ export const skuLocationMovements = pgTable('sku_location_movements', {
     skuId: uuid('sku_id')
         .references(() => skus.id, { onDelete: 'cascade' })
         .notNull(),
-    
+
     barcode: varchar('barcode', { length: 64 }).notNull(),
-    
+
     // 위치 추적
     fromLocationId: uuid('from_location_id')
         .references(() => locations.id, { onDelete: 'restrict' })
@@ -541,16 +539,16 @@ export const skuLocationMovements = pgTable('sku_location_movements', {
     toLocationId: uuid('to_location_id')
         .references(() => locations.id, { onDelete: 'restrict' })
         .notNull(),
-    
+
     // 이동 상세
     quantity: integer('quantity'), // Nullable for full SKU moves
     reason: text('reason'),
     status: varchar('status', { length: 20 }).notNull().default('completed'),
-    
+
     // 감사
     movedBy: uuid('moved_by'),
     movementTimestamp: timestamp('movement_timestamp', { withTimezone: true }).notNull().defaultNow(),
-    
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -618,7 +616,7 @@ export function generateSkuGroupCode(name: string, masterId?: string): string {
         .replace(/[^A-Z0-9]/g, '-')
         .substring(0, 20);
     const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    
+
     return `GROUP-${sanitizedName}-${timestamp}-${random}`;
 }
 
@@ -719,75 +717,75 @@ export const stockJournals = pgTable("stock_journals", {
     sourceId: uuid("source_id"),
     idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
     actorId: uuid("actor_id"),
-  });
+});
 
 
-  export const stockEvents = pgTable(
+export const stockEvents = pgTable(
     "stock_events",
     {
-      id: uuid("id").primaryKey().default(sql`uuid_v7()`),
-  
-      journalId: uuid("journal_id").references(() => stockJournals.id),
-  
-      skuId: uuid("sku_id").notNull().references(() => skus.id),
-  
-      fromWarehouseId: uuid("from_warehouse_id").references(() => warehouses.id),
-      fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
-      toWarehouseId: uuid("to_warehouse_id").references(() => warehouses.id),
-      toLocationId: uuid("to_location_id").references(() => locations.id, { onDelete: "set null" }),
-  
-      fromState: stockStateEnum("from_state"),
-      toState: stockStateEnum("to_state"),
-      transitionType: transitionTypeEnum("transition_type").notNull(),
-  
-      quantity: integer("quantity").notNull(), // 항상 양수
-  
-      occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-      recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
-  
-      idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
-      eventStatus: eventStatusEnum("event_status").notNull().default("POSTED"),
-      reversalOfEventId: uuid("reversal_of_event_id"),
-      voidedByEventId: uuid("voided_by_event_id"),
-      reason: varchar("reason", { length: 255 }),
+        id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+
+        journalId: uuid("journal_id").references(() => stockJournals.id),
+
+        skuId: uuid("sku_id").notNull().references(() => skus.id),
+
+        fromWarehouseId: uuid("from_warehouse_id").references(() => warehouses.id),
+        fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
+        toWarehouseId: uuid("to_warehouse_id").references(() => warehouses.id),
+        toLocationId: uuid("to_location_id").references(() => locations.id, { onDelete: "set null" }),
+
+        fromState: stockStateEnum("from_state"),
+        toState: stockStateEnum("to_state"),
+        transitionType: transitionTypeEnum("transition_type").notNull(),
+
+        quantity: integer("quantity").notNull(), // 항상 양수
+
+        occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+        recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+
+        idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+        eventStatus: eventStatusEnum("event_status").notNull().default("POSTED"),
+        reversalOfEventId: uuid("reversal_of_event_id"),
+        voidedByEventId: uuid("voided_by_event_id"),
+        reason: varchar("reason", { length: 255 }),
     },
     (t) => ({
-      ixGrainTime: index("ix_stock_events_grain_time").on(
-        t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
-      ),
-      ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
-      ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
-      ckSidePresent: check(
-        "ck_events_side_present",
-        sql`(${t.fromState} is not null) or (${t.toState} is not null)`
-      ),
-      ckFromLocNeedsWh: check(
-        "ck_events_fromloc_has_wh",
-        sql`(${t.fromLocationId} is null) or (${t.fromWarehouseId} is not null)`
-      ),
-      ckToLocNeedsWh: check(
-        "ck_events_toloc_has_wh",
-        sql`(${t.toLocationId} is null) or (${t.toWarehouseId} is not null)`
-      ),
+        ixGrainTime: index("ix_stock_events_grain_time").on(
+            t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
+        ),
+        ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
+        ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
+        ckSidePresent: check(
+            "ck_events_side_present",
+            sql`(${t.fromState} is not null) or (${t.toState} is not null)`
+        ),
+        ckFromLocNeedsWh: check(
+            "ck_events_fromloc_has_wh",
+            sql`(${t.fromLocationId} is null) or (${t.fromWarehouseId} is not null)`
+        ),
+        ckToLocNeedsWh: check(
+            "ck_events_toloc_has_wh",
+            sql`(${t.toLocationId} is null) or (${t.toWarehouseId} is not null)`
+        ),
     })
-  );
+);
 
 
 export const stockLedgers = pgTable(
-  "stock_ledgers",
-  {
-    skuId: uuid("sku_id").notNull().references(() => skus.id, { onDelete: "restrict" }),
-    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
-    locationId: uuid("location_id").notNull().references(() => locations.id),
-    stockState: stockStateEnum("stock_state").notNull(),
-    qty: integer("qty").notNull().default(0),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
-    ckNonNegative: check("ck_ledgers_non_negative", sql`${t.qty} >= 0`),
-    ixLookup: index("ix_ledgers_lookup").on(t.skuId, t.warehouseId, t.locationId, t.stockState),
-  })
+    "stock_ledgers",
+    {
+        skuId: uuid("sku_id").notNull().references(() => skus.id, { onDelete: "restrict" }),
+        warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
+        locationId: uuid("location_id").notNull().references(() => locations.id),
+        stockState: stockStateEnum("stock_state").notNull(),
+        qty: integer("qty").notNull().default(0),
+        updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => ({
+        pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
+        ckNonNegative: check("ck_ledgers_non_negative", sql`${t.qty} >= 0`),
+        ixLookup: index("ix_ledgers_lookup").on(t.skuId, t.warehouseId, t.locationId, t.stockState),
+    })
 );
 
 // 재고 현황 테이블
@@ -1442,7 +1440,7 @@ export const inboundPlans = pgTable('inbound_plans', {
 
     // 이중 입고 계획을 위한 새 필드들
     planType: planTypeEnum('plan_type').notNull().default('destination'), // 'source' | 'destination'
-    parentPlanId: uuid('parent_plan_id').references(() => inboundPlans.id), // destination → source 참조
+    parentPlanId: uuid('parent_plan_id').references((): AnyPgColumn => inboundPlans.id), // destination → source 참조
     linkedPurchaseOrderId: uuid('linked_purchase_order_id').references(() => purchaseOrders.id).notNull(), // 원본 발주 추적
 
     // 기존 필드들 (하위 호환성 유지)
@@ -1454,14 +1452,14 @@ export const inboundPlans = pgTable('inbound_plans', {
     status: inboundStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => ({
-    idxInboundPlansWhDate: index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
-    idxInboundPlansDestination: index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
+}, t => ([
+    index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
+    index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
     // 이중 입고 계획을 위한 새 인덱스들
-    idxInboundPlansWarehouseTypeStatus: index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
-    idxInboundPlansParent: index('idx_inbound_plans_parent').on(t.parentPlanId),
-    idxInboundPlansPurchaseOrder: index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
-}));
+    index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
+    index('idx_inbound_plans_parent').on(t.parentPlanId),
+    index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
+]));
 
 export const inboundPlanItems = pgTable('inbound_plan_items', {
     id: uuid('id').primaryKey().defaultRandom(),
@@ -2430,8 +2428,8 @@ export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => 
     parentPlan: one(inboundPlans, {
         fields: [inboundPlans.parentPlanId],
         references: [inboundPlans.id],
+        relationName: 'parentChildPlans',
     }),
-    childPlans: many(inboundPlans),
     items: many(inboundPlanItems),
 }));
 
@@ -2608,7 +2606,7 @@ export const wmsRelations = {
 
     // Inventory Master Relations
     inventoryProductMastersRelations,
-    
+
 
     // Warehouse & Location Relations
     warehousesRelations,
@@ -2767,23 +2765,7 @@ export type NewStockEvent = InferInsertModel<typeof stockEvents>;
 export type StockLedger = InferSelectModel<typeof stockLedgers>;
 export type NewStockLedger = InferInsertModel<typeof stockLedgers>;
 
-// StockSummary is a view, so it doesn't have an insert type
-export type StockSummary = {
-  skuId: string;
-  warehouseId: string;
-  skuName: string | null;
-  warehouseName: string | null;
-  onHandQty: number;
-  defectiveQty: number;
-  inTransferQty: number;
-  reservedQty: number;
-  availableQty: number;
-  inboundPendingQty: number;
-  onOrderQty: number;
-  transferPendingQty: number;
-  projectedAvailableQty: number;
-  lastCalculatedAt: Date;
-};
+export type StockSummary = InferSelectViewModel<typeof stockSummary>;
 
 // Product Matching Types
 export type ProductMatching = InferSelectModel<typeof productMatchings>;
