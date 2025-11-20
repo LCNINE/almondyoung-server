@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProfileRegistrar } from './payment-provider.interface';
-// 실제 HMS API 클라이언트를 사용한다고 가정합니다.
-import { HmsAPI, ApiClientFactory } from 'hms-api-wrapper'; // 실제 라이브러리 경로로 수정하세요.
+import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 @Injectable()
 export class HmsCardRegistrar
@@ -28,29 +28,12 @@ export class HmsCardRegistrar
     }
   > {
   private readonly logger = new Logger(HmsCardRegistrar.name);
-  private readonly hmsApi: HmsAPI; // API 클라이언트를 주입받거나 직접 생성합니다.
+  private readonly hmsApi: HmsAPI | MockHmsAPI;
 
   constructor() {
-    // API 클라이언트 초기화 로직을 여기로 가져옵니다.
-    // 더 좋은 방법은 API 클라이언트를 별도 Provider로 만들어 주입(Inject)받는 것입니다.
-    const isTest = process.env.NODE_ENV !== 'production';
-    this.logger.warn(
-      `🔍 HMS Card Registrar 초기화 - NODE_ENV: ${process.env.NODE_ENV}, isTest: ${isTest}`,
-    );
-
-    // 카드 등록은 api-test를 사용해야 함 (add-test가 아님!)
-    const baseURL = isTest
-      ? 'https://api-test.hyosungcms.co.kr/v1'
-      : 'https://api.hyosungcms.co.kr/v1';
-
-    // HmsAPI를 직접 생성하여 baseURL 설정
-    this.hmsApi = new (require('hms-api-wrapper').HmsAPI)({
-      swKey: process.env.SW_KEY || '',
-      custKey: process.env.CUST_KEY || '',
-      isTest: isTest,
-      baseURL: baseURL,
-      timeout: 60000, // 60초 타임아웃
-    });
+    // HmsApiFactory를 사용하여 프록시 지원
+    this.hmsApi = HmsApiFactory.createForCard();
+    this.logger.log('🔧 HMS Card Registrar 초기화 완료 (Factory 사용)');
   }
 
   async register(input: any, ctx: { tx: any }) {
