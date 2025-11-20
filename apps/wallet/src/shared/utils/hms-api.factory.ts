@@ -19,6 +19,8 @@ export class HmsApiFactory {
 
   /**
    * BNPL용 HMS API - 동의자료 등록 (add-test)
+   *
+   * 배치CMS는 테스트 서버 승인이 수기 처리라 Mock 서버 지원
    */
   static createForBnpl(): HmsAPI | MockHmsAPI {
     const swKey = process.env.SW_KEY;
@@ -64,54 +66,55 @@ export class HmsApiFactory {
 
   /**
    * 신용카드용 HMS API - 일반 API (api-test)
+   *
+   * 카드 결제는 테스트 서버가 자동 응답하므로 Mock 불필요
+   * MVP 출시 앞두고 있어 Real API만 지원
    */
-  static createForCard(): HmsAPI | MockHmsAPI {
+  static createForCard(): HmsAPI {
     const swKey = process.env.SW_KEY;
     const custKey = process.env.CUST_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
     const proxyUrl = process.env.HYOSUNG_PROXY_URL;
 
-    // 키가 있으면 Real API, 없으면 Mock
-    if (swKey && custKey) {
-      let baseURL: string;
-
-      if (isProduction) {
-        // 운영: 직접 호출
-        baseURL = 'https://api.hyosungcms.co.kr/v1';
-        this.logger.warn(`🔥 신용카드용 HMS API 생성 (운영) - ${baseURL}`);
-      } else if (proxyUrl) {
-        // 개발/테스트 + 프록시: 프록시 경유 (/* 경로)
-        baseURL = `${proxyUrl}/v1`;
-        this.logger.log(`🎯 신용카드용 HMS API 생성 (프록시) - ${baseURL}`);
-      } else {
-        // 개발/테스트: 직접 호출
-        baseURL = 'https://api-test.hyosungcms.co.kr/v1';
-        this.logger.log(`🎯 신용카드용 HMS API 생성 (직접) - ${baseURL}`);
-      }
-
-      return new HmsAPI({
-        swKey,
-        custKey,
-        isTest: !isProduction,
-        baseURL,
-        timeout: 30000,
-      });
+    // 키가 필수 (MVP 환경이므로)
+    if (!swKey || !custKey) {
+      this.logger.error(
+        '❌ HMS API 키가 설정되지 않았습니다 (SW_KEY, CUST_KEY)',
+      );
+      throw new Error(
+        'HMS API 키가 필요합니다. 환경변수를 확인하세요: SW_KEY, CUST_KEY',
+      );
     }
 
-    // 키 없음 → Mock
-    this.logger.warn('🧪 신용카드용 HMS Mock API 사용 (키 없음)');
-    return new MockHmsAPI({
-      swKey: 'mock-sw-key',
-      custKey: 'mock-cust-key',
-      isTest: true,
+    let baseURL: string;
+
+    if (isProduction) {
+      // 운영: 직접 호출
+      baseURL = 'https://api.hyosungcms.co.kr/v1';
+      this.logger.warn(`🔥 신용카드용 HMS API 생성 (운영) - ${baseURL}`);
+    } else if (proxyUrl) {
+      // 개발/테스트 + 프록시: 프록시 경유 (/* 경로)
+      baseURL = `${proxyUrl}/v1`;
+      this.logger.log(`🎯 신용카드용 HMS API 생성 (프록시) - ${baseURL}`);
+    } else {
+      // 개발/테스트: 직접 호출
+      baseURL = 'https://api-test.hyosungcms.co.kr/v1';
+      this.logger.log(`🎯 신용카드용 HMS API 생성 (직접) - ${baseURL}`);
+    }
+
+    return new HmsAPI({
+      swKey,
+      custKey,
+      isTest: !isProduction,
+      baseURL,
+      timeout: 30000,
     });
   }
 
   /**
-   * 통합 API (기존 호환성용 - createForCard와 동일한 로직 사용 권장)
+   * 통합 API (기존 호환성용 - createForCard와 동일)
    */
-  static createFromEnv(): HmsAPI | MockHmsAPI {
-    // 범용 Factory도 Card와 동일한 명시적 로직을 사용하도록 통일
+  static createFromEnv(): HmsAPI {
     return this.createForCard();
   }
 }

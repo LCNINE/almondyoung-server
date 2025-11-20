@@ -5,7 +5,7 @@ import {
   PaymentResult,
   ProviderType,
 } from './payment-provider.interface';
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsAPI } from 'hms-api-wrapper';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 @Injectable()
@@ -13,12 +13,12 @@ export class HmsCardChargeProvider
   implements ChargePort<ProviderType.HMS_CARD>
 {
   private readonly logger = new Logger(HmsCardChargeProvider.name);
-  private readonly hmsApi: HmsAPI | MockHmsAPI;
+  private readonly hmsApi: HmsAPI;
 
   constructor() {
-    // HmsApiFactory를 사용하여 프록시 지원
+    // HmsApiFactory를 사용하여 프록시 지원 (Real API만)
     this.hmsApi = HmsApiFactory.createForCard();
-    this.logger.log('🔧 HMS Card Charge 초기화 완료 (Factory 사용)');
+    this.logger.log('🔧 HMS Card Charge 초기화 완료 (Real API)');
   }
 
   async process(payload: HmsCardPayload): Promise<PaymentResult> {
