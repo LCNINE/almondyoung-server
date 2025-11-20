@@ -1,9 +1,9 @@
 "use client"
 
 import { PageTitle } from "@components/common/page-title"
-import MembershipStatusSection from "../../../../../domains/membership/components/status-selection"
-import SubscriberSection from "../../../../../domains/membership/home/components/subscriber/subscriber-section"
-import NonSubscriberSection from "../../../../../domains/membership/home/components/non-subscriber/non-subscriber-section"
+import MembershipStatusSection from "../components/status-selection"
+import SubscriberSection from "./components/subscriber/subscriber-section"
+import NonSubscriberSection from "./components/non-subscriber/non-subscriber-section"
 import Image from "next/image"
 interface MembershipPageClientProps {
   isMember: boolean

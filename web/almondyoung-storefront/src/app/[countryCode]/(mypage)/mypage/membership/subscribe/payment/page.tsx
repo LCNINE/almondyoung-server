@@ -73,10 +73,10 @@ export default async function MembershipFormPage() {
         monthlyPlan={monthlyPlan}
         yearlyPlan={yearlyPlan}
         existingFmsMember={
-          hmsCardProfile
+          hmsCardProfile && hmsCardProfile.details
             ? {
-                paymentCompany: hmsCardProfile.details?.paymentCompany || "",
-                paymentNumber: hmsCardProfile.details?.paymentNumber || "",
+                paymentCompany: hmsCardProfile.details.paymentCompany || "",
+                paymentNumber: hmsCardProfile.details.paymentNumber || "",
               }
             : null
         }

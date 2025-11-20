@@ -237,6 +237,9 @@ export function MembershipForm({
             password: data.password,
           }),
         })
+        
+        // 카드 등록 후 페이지 데이터 새로고침
+        router.refresh()
       }
 
       // // 2단계: 멤버십 구독 생성
@@ -431,10 +434,7 @@ export function MembershipForm({
                       <Badge variant="outline">
                         {existingFmsMember.paymentCompany}
                       </Badge>
-                      <p>
-                        {existingFmsMember.paymentNumber.slice(0, 4)} - #### -
-                        #### - ####
-                      </p>
+                      <p>{existingFmsMember.paymentNumber}</p>
                     </div>
                   </TabsContent>
                 )}
