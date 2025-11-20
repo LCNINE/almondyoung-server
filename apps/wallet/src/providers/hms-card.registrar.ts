@@ -40,13 +40,24 @@ export class HmsCardRegistrar
   async register(input: any, ctx: { tx: any }) {
     this.logger.log(`➡️ HMS 카드 프로필 등록 요청: ${input.userId}`);
 
+    // 전화번호 형식 변환 (01012345678 -> 010-1234-5678)
+    const formatPhone = (phone: string): string => {
+      const cleaned = phone.replace(/\D/g, ''); // 숫자만 추출
+      if (cleaned.length === 11) {
+        return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 7)}-${cleaned.slice(7)}`;
+      } else if (cleaned.length === 10) {
+        return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+      }
+      return phone; // 형식이 맞지 않으면 원본 반환
+    };
+
     const requestData = {
       memberId: input.memberId,
       paymentKind: 'CARD' as const,
       payerNumber: input.payerNumber,
       paymentNumber: input.paymentNumber,
       payerName: input.payerName,
-      phone: input.phone,
+      phone: formatPhone(input.phone),
       memberName: input.memberName,
       validYear: input.validYear,
       validMonth: input.validMonth,
