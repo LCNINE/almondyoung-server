@@ -23,37 +23,38 @@ export class HmsApiFactory {
   static createForBnpl(): HmsAPI | MockHmsAPI {
     const swKey = process.env.SW_KEY;
     const custKey = process.env.CUST_KEY;
-    const isTest = process.env.NODE_ENV !== 'production';
-    const proxyUrl = process.env.HYOSUNG_PROXY_URL; // http://15.164.160.156
+    const isProduction = process.env.NODE_ENV === 'production';
+    const proxyUrl = process.env.HYOSUNG_PROXY_URL;
 
+    // 키가 있으면 Real API, 없으면 Mock
     if (swKey && custKey) {
       let baseURL: string;
 
-      if (isTest && proxyUrl) {
-        // 테스트 환경 + 프록시 사용: 프록시 경유 (/add/* 경로)
-        baseURL = `${proxyUrl}/add/v1`;
-        this.logger.log(`🔧 BNPL용 HMS API 생성 (프록시 경유) - ${baseURL}`);
-      } else if (isTest) {
-        // 테스트 환경 + 프록시 미사용: 직접 호출
-        baseURL = 'https://add-test.hyosungcms.co.kr/v1';
-        this.logger.log(`🔧 BNPL용 HMS API 생성 (직접 호출) - ${baseURL}`);
-      } else {
-        // 운영 환경: 프록시 없이 직접 호출
+      if (isProduction) {
+        // 운영: 직접 호출
         baseURL = 'https://add.hyosungcms.co.kr/v1';
-        this.logger.warn(`🔥 BNPL용 HMS API 생성 (운영 환경) - ${baseURL}`);
+        this.logger.warn(`🔥 BNPL용 HMS API 생성 (운영) - ${baseURL}`);
+      } else if (proxyUrl) {
+        // 개발/테스트 + 프록시: 프록시 경유 (/add/* 경로)
+        baseURL = `${proxyUrl}/add/v1`;
+        this.logger.log(`🔧 BNPL용 HMS API 생성 (프록시) - ${baseURL}`);
+      } else {
+        // 개발/테스트: 직접 호출
+        baseURL = 'https://add-test.hyosungcms.co.kr/v1';
+        this.logger.log(`🔧 BNPL용 HMS API 생성 (직접) - ${baseURL}`);
       }
 
       return new HmsAPI({
-        swKey: swKey,
-        custKey: custKey,
-        isTest: isTest,
-        baseURL: baseURL,
+        swKey,
+        custKey,
+        isTest: !isProduction,
+        baseURL,
         timeout: 60000,
       });
     }
 
-    // 키가 없으면 Mock 사용
-    this.logger.warn('🔧 BNPL용 HMS Mock API 생성 (키 없음)');
+    // 키 없음 → Mock
+    this.logger.warn('🧪 BNPL용 HMS Mock API 사용 (키 없음)');
     return new MockHmsAPI({
       swKey: 'mock-sw-key',
       custKey: 'mock-cust-key',
@@ -68,53 +69,37 @@ export class HmsApiFactory {
     const swKey = process.env.SW_KEY;
     const custKey = process.env.CUST_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
-    const useRealApi = process.env.USE_REAL_HMS_API === 'true'; // 명시적 플래그
-    const proxyUrl = process.env.HYOSUNG_PROXY_URL; // http://15.164.160.156
+    const proxyUrl = process.env.HYOSUNG_PROXY_URL;
 
-    // 운영 환경일 경우 isTest: false로 실제 API 사용 (주의!)
-    if (swKey && custKey && isProduction) {
-      // 운영 환경: 프록시 없이 직접 호출
-      this.logger.warn('🔥 신용카드용 HMS Real API 생성 (운영 환경)');
-      return new HmsAPI({
-        swKey: swKey,
-        custKey: custKey,
-        isTest: false,
-        baseURL: 'https://api.hyosungcms.co.kr/v1',
-        timeout: 30000,
-      });
-    }
-
-    // 개발 환경에서 실제 API 사용 (USE_REAL_HMS_API=true일 때만)
-    if (swKey && custKey && !isProduction && useRealApi) {
+    // 키가 있으면 Real API, 없으면 Mock
+    if (swKey && custKey) {
       let baseURL: string;
 
-      if (proxyUrl) {
-        // 테스트 환경 + 프록시 사용: 프록시 경유 (/* 경로)
+      if (isProduction) {
+        // 운영: 직접 호출
+        baseURL = 'https://api.hyosungcms.co.kr/v1';
+        this.logger.warn(`🔥 신용카드용 HMS API 생성 (운영) - ${baseURL}`);
+      } else if (proxyUrl) {
+        // 개발/테스트 + 프록시: 프록시 경유 (/* 경로)
         baseURL = `${proxyUrl}/v1`;
-        this.logger.log(
-          `🎯 신용카드용 HMS Test API 생성 (프록시 경유) - ${baseURL}`,
-        );
+        this.logger.log(`🎯 신용카드용 HMS API 생성 (프록시) - ${baseURL}`);
       } else {
-        // 테스트 환경 + 프록시 미사용: 직접 호출
+        // 개발/테스트: 직접 호출
         baseURL = 'https://api-test.hyosungcms.co.kr/v1';
-        this.logger.log(
-          `🎯 신용카드용 HMS Test API 생성 (직접 호출) - ${baseURL}`,
-        );
+        this.logger.log(`🎯 신용카드용 HMS API 생성 (직접) - ${baseURL}`);
       }
 
       return new HmsAPI({
-        swKey: swKey,
-        custKey: custKey,
-        isTest: true,
-        baseURL: baseURL,
+        swKey,
+        custKey,
+        isTest: !isProduction,
+        baseURL,
         timeout: 30000,
       });
     }
 
-    // 그 외 모든 경우 Mock으로 안전하게 폴백
-    this.logger.warn(
-      `🧪 HMS Mock API 사용 (USE_REAL_HMS_API=${useRealApi}, NODE_ENV=${process.env.NODE_ENV})`,
-    );
+    // 키 없음 → Mock
+    this.logger.warn('🧪 신용카드용 HMS Mock API 사용 (키 없음)');
     return new MockHmsAPI({
       swKey: 'mock-sw-key',
       custKey: 'mock-cust-key',
