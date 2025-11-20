@@ -33,11 +33,14 @@ export class OmsClientMock implements IOmsClient {
         {
           itemId: 'item_001',
           itemName: '테스트 상품 A',
+          specification: '규격 A',
           quantity: 2,
           unitPrice: 50000,
           totalPrice: 100000,
         },
       ],
+      paymentMethod: 'CARD',
+      memo: '테스트 주문',
       createdAt: new Date('2025-01-10'),
       updatedAt: new Date('2025-01-15'),
     });

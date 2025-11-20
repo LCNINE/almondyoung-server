@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { TaxInvoicePreferenceRepository } from './tax-invoice-preference.repository';
+import { TaxInvoiceRepository } from './tax-invoice.repository';
 import type {
   UserTaxInvoicePreference,
   BusinessInfo,
@@ -15,9 +15,7 @@ import type { WalletExecutor } from '../../shared/database';
 export class TaxInvoicePreferenceService {
   private readonly logger = new Logger(TaxInvoicePreferenceService.name);
 
-  constructor(
-    private readonly preferenceRepo: TaxInvoicePreferenceRepository,
-  ) {}
+  constructor(private readonly repo: TaxInvoiceRepository) {}
 
   /**
    * 사용자 기본 설정 조회
@@ -26,7 +24,7 @@ export class TaxInvoicePreferenceService {
     userId: string,
     tx?: WalletExecutor,
   ): Promise<UserTaxInvoicePreference | null> {
-    return await this.preferenceRepo.findByUserId(userId, tx);
+    return await this.repo.findPreferenceByUserId(userId, tx);
   }
 
   /**
@@ -36,7 +34,7 @@ export class TaxInvoicePreferenceService {
     userId: string,
     tx?: WalletExecutor,
   ): Promise<UserTaxInvoicePreference> {
-    const preference = await this.preferenceRepo.findByUserId(userId, tx);
+    const preference = await this.repo.findPreferenceByUserId(userId, tx);
 
     if (preference) return preference;
 
@@ -69,7 +67,7 @@ export class TaxInvoicePreferenceService {
     }
 
     // Upsert
-    const result = await this.preferenceRepo.upsert(
+    const result = await this.repo.upsertPreference(
       {
         userId,
         defaultEnabled: defaultEnabled ? 1 : 0,
@@ -110,7 +108,7 @@ export class TaxInvoicePreferenceService {
    * 기본 설정 삭제
    */
   async deletePreference(userId: string, tx?: WalletExecutor): Promise<void> {
-    await this.preferenceRepo.delete(userId, tx);
+    await this.repo.deletePreference(userId, tx);
     this.logger.log(`TaxInvoicePreference deleted for user: ${userId}`);
   }
 }

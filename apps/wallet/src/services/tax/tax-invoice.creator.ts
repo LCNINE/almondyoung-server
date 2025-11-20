@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TaxInvoiceRepository } from './tax-invoice.repository';
-import { TaxInvoiceSnapshotRepository } from './tax-invoice-snapshot.repository';
-import { TaxInvoiceEventRepository } from './tax-invoice-event.repository';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { SUPPLIER_PROFILE } from '../../config/supplier-profile';
 import type {
   TaxInvoice,
   NewTaxInvoice,
@@ -12,24 +11,12 @@ import type {
   TaxInvoiceSnapshotPayload,
 } from '../../shared/database/types';
 import type { WalletExecutor } from '../../shared/database';
+import type { OmsOrder } from './oms-client.interface';
 
 export interface CreateTaxInvoiceParams {
   userId: string;
-  orderId: string;
-  orderCompletedAt: Date;
-  orderAmount: number;
+  order: OmsOrder;
   businessInfo: BusinessInfo;
-  orderDetails?: {
-    orderNumber?: string;
-    items?: Array<{
-      itemName: string;
-      quantity: number;
-      unitPrice: number;
-      supplyAmount: number;
-      taxAmount: number;
-    }>;
-  };
-  metadata?: Record<string, any>;
 }
 
 /**
@@ -41,11 +28,7 @@ export interface CreateTaxInvoiceParams {
 export class TaxInvoiceCreator {
   private readonly logger = new Logger(TaxInvoiceCreator.name);
 
-  constructor(
-    private readonly taxInvoiceRepo: TaxInvoiceRepository,
-    private readonly snapshotRepo: TaxInvoiceSnapshotRepository,
-    private readonly eventRepo: TaxInvoiceEventRepository,
-  ) {}
+  constructor(private readonly repo: TaxInvoiceRepository) {}
 
   /**
    * 세금계산서 생성
@@ -58,16 +41,17 @@ export class TaxInvoiceCreator {
     this.validateParams(params);
 
     // 2. 금액 계산 (부가세 역산: totalAmount = supplyAmount + taxAmount)
-    const amounts = this.calculateAmounts(params.orderAmount);
+    const amounts = this.calculateAmounts(params.order.amount);
 
     // 3. 공급시기 (주문 완료일)
-    const supplyDate = this.formatDate(params.orderCompletedAt);
+    const completedAt = params.order.completedAt || params.order.updatedAt;
+    const supplyDate = this.formatDate(completedAt);
 
     // 4. 세금계산서 데이터 생성
     const newInvoice: NewTaxInvoice = {
       id: generateUUIDv7(),
       userId: params.userId,
-      orderId: params.orderId,
+      orderId: params.order.orderId,
       status: 'REQUESTED',
       supplyDate,
       businessName: params.businessInfo.name,
@@ -80,9 +64,9 @@ export class TaxInvoiceCreator {
     };
 
     // 5. DB 저장
-    const created = await this.taxInvoiceRepo.create(newInvoice, tx);
+    const created = await this.repo.create(newInvoice, tx);
 
-    // 6. 스냅샷 생성 (홈택스 제출용)
+    // 6. 스냅샷 생성 (홈택스 제출용 - 확장 버전)
     await this.createSnapshot(created, params, amounts, tx);
 
     // 7. Audit 로그
@@ -92,13 +76,13 @@ export class TaxInvoiceCreator {
         eventType: 'TAX_INVOICE_REQUESTED',
         newStatus: 'REQUESTED',
         actor: params.userId,
-        reasonDetail: `세금계산서 신청 - 주문 ID: ${params.orderId}`,
+        reasonDetail: `세금계산서 신청 - 주문 ID: ${params.order.orderId}`,
       },
       tx,
     );
 
     this.logger.log(
-      `TaxInvoice created: ${created.id} for order ${params.orderId}`,
+      `TaxInvoice created: ${created.id} for order ${params.order.orderId}`,
     );
     return created;
   }
@@ -108,9 +92,10 @@ export class TaxInvoiceCreator {
    */
   private validateParams(params: CreateTaxInvoiceParams): void {
     if (!params.userId) throw new Error('User ID required');
-    if (!params.orderId) throw new Error('Order ID required');
-    if (params.orderAmount <= 0) throw new Error('Invalid order amount');
-    if (params.orderAmount < 10000) {
+    if (!params.order) throw new Error('Order info required');
+    if (!params.order.orderId) throw new Error('Order ID required');
+    if (params.order.amount <= 0) throw new Error('Invalid order amount');
+    if (params.order.amount < 10000) {
       throw new Error('1만원 이상 주문만 발행 가능');
     }
     if (!params.businessInfo) throw new Error('Business info required');
@@ -137,7 +122,7 @@ export class TaxInvoiceCreator {
     // 총액 = 공급가액 + 세액
     // 세율 10%: 총액 = 공급가액 * 1.1
     // 공급가액 = 총액 / 1.1
-    const supplyAmount = Math.floor(totalAmount / 1.1);
+    const supplyAmount = Math.round(totalAmount / 1.1);
     const taxAmount = totalAmount - supplyAmount;
 
     return {
@@ -155,7 +140,7 @@ export class TaxInvoiceCreator {
   }
 
   /**
-   * 스냅샷 생성 (홈택스 제출용 완전한 데이터)
+   * 스냅샷 생성 (홈택스 제출용 완전한 데이터 - 확장 버전)
    */
   private async createSnapshot(
     invoice: TaxInvoice,
@@ -163,20 +148,50 @@ export class TaxInvoiceCreator {
     amounts: { supplyAmount: number; taxAmount: number; totalAmount: number },
     tx: WalletExecutor,
   ): Promise<void> {
+    const completedAt = params.order.completedAt || params.order.updatedAt;
+    const issueDate = this.formatDate(completedAt);
+
     const payload: TaxInvoiceSnapshotPayload = {
+      supplier: {
+        businessNumber: SUPPLIER_PROFILE.businessNumber,
+        name: SUPPLIER_PROFILE.name,
+        ownerName: SUPPLIER_PROFILE.ownerName,
+        address: SUPPLIER_PROFILE.address,
+        businessType: SUPPLIER_PROFILE.businessType,
+        businessItem: SUPPLIER_PROFILE.businessItem,
+        email: SUPPLIER_PROFILE.email,
+      },
+      buyer: {
+        businessNumber: params.businessInfo.businessNumber,
+        name: params.businessInfo.name,
+        ownerName: params.businessInfo.ownerName,
+        address: params.businessInfo.address,
+        businessType: params.businessInfo.businessType,
+        businessItem: params.businessInfo.businessItem,
+        email: params.businessInfo.email,
+      },
       order: {
-        orderId: params.orderId,
-        orderNumber: params.orderDetails?.orderNumber,
-        completedAt: params.orderCompletedAt,
+        orderId: params.order.orderId,
+        orderNumber: params.order.orderNumber,
+        completedAt: completedAt.toISOString(),
+        status: this.mapOrderStatus(params.order.status),
+        paymentMethod: params.order.paymentMethod || 'CARD',
+        memo: params.order.memo,
+        lines:
+          params.order.items?.map((item) => ({
+            productName: item.itemName,
+            specification: item.specification,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            amount: Math.floor(item.totalPrice / 1.1), // 공급가액
+          })) || [],
       },
       amounts: {
         supplyAmount: amounts.supplyAmount,
         taxAmount: amounts.taxAmount,
         totalAmount: amounts.totalAmount,
+        issueDate,
       },
-      businessInfo: params.businessInfo,
-      items: params.orderDetails?.items,
-      metadata: params.metadata,
     };
 
     const snapshotData: NewTaxInvoiceSnapshot = {
@@ -184,7 +199,18 @@ export class TaxInvoiceCreator {
       payload: payload as any,
     };
 
-    await this.snapshotRepo.create(snapshotData, tx);
+    await this.repo.createSnapshot(snapshotData, tx);
+  }
+
+  /**
+   * OMS 주문 상태 → 스냅샷 상태 매핑
+   */
+  private mapOrderStatus(
+    status: string,
+  ): 'COMPLETED' | 'CANCELLED' | 'REFUNDED' {
+    if (status === 'CANCELLED') return 'CANCELLED';
+    if (status === 'REFUNDED') return 'REFUNDED';
+    return 'COMPLETED';
   }
 
   /**
@@ -217,7 +243,6 @@ export class TaxInvoiceCreator {
       actor: data.actor,
     };
 
-    await this.eventRepo.create(eventData, tx);
+    await this.repo.createEvent(eventData, tx);
   }
 }
-

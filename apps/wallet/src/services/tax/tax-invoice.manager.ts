@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TaxInvoiceRepository } from './tax-invoice.repository';
-import { TaxInvoiceSnapshotRepository } from './tax-invoice-snapshot.repository';
-import { TaxInvoiceEventRepository } from './tax-invoice-event.repository';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
 import type {
   TaxInvoice,
@@ -33,9 +31,7 @@ export class TaxInvoiceManager {
     };
 
   constructor(
-    private readonly taxInvoiceRepo: TaxInvoiceRepository,
-    private readonly snapshotRepo: TaxInvoiceSnapshotRepository,
-    private readonly eventRepo: TaxInvoiceEventRepository,
+    private readonly repo: TaxInvoiceRepository,
   ) {}
 
   /**
@@ -76,7 +72,7 @@ export class TaxInvoiceManager {
       exportedBy: operator,
     };
 
-    await this.taxInvoiceRepo.update(invoice.id, updateData, tx);
+    await this.repo.update(invoice.id, updateData, tx);
 
     // 3. Audit 로그
     await this.logEvent(
@@ -108,7 +104,7 @@ export class TaxInvoiceManager {
     this.validateTransition(invoice.status, 'ISSUED_CONFIRMED');
 
     // 2. 홈택스 번호 중복 체크
-    const existing = await this.taxInvoiceRepo.findByHometaxIssueNo(
+    const existing = await this.repo.findByHometaxIssueNo(
       hometaxIssueNo,
       tx,
     );
@@ -124,7 +120,7 @@ export class TaxInvoiceManager {
       uploadedAt: new Date(),
     };
 
-    await this.taxInvoiceRepo.update(invoice.id, updateData, tx);
+    await this.repo.update(invoice.id, updateData, tx);
 
     // 4. Audit 로그
     await this.logEvent(
@@ -164,7 +160,7 @@ export class TaxInvoiceManager {
       errorCode,
     };
 
-    await this.taxInvoiceRepo.update(invoice.id, updateData, tx);
+    await this.repo.update(invoice.id, updateData, tx);
 
     // 3. Audit 로그
     await this.logEvent(
@@ -201,7 +197,7 @@ export class TaxInvoiceManager {
       cancelReason,
     };
 
-    await this.taxInvoiceRepo.update(invoice.id, updateData, tx);
+    await this.repo.update(invoice.id, updateData, tx);
 
     // 3. Audit 로그
     await this.logEvent(
@@ -228,8 +224,6 @@ export class TaxInvoiceManager {
     newAmount?: number,
     tx?: WalletExecutor,
   ): Promise<void> {
-    const executor = tx || this.taxInvoiceRepo;
-
     // 1. 상태 전이 검증
     this.validateTransition(invoice.status, 'NEEDS_MODIFICATION');
 
@@ -238,7 +232,7 @@ export class TaxInvoiceManager {
       status: 'NEEDS_MODIFICATION',
     };
 
-    await this.taxInvoiceRepo.update(invoice.id, updateData, tx);
+    await this.repo.update(invoice.id, updateData, tx);
 
     // 3. Audit 로그
     await this.logEvent(
@@ -324,7 +318,7 @@ export class TaxInvoiceManager {
       const newTotalAmount = invoice.totalAmount - refundAmount;
       const amounts = this.calculateAmounts(newTotalAmount);
 
-      await this.taxInvoiceRepo.update(
+      await this.repo.update(
         invoice.id,
         {
           supplyAmount: amounts.supplyAmount,
@@ -432,7 +426,7 @@ export class TaxInvoiceManager {
       actor: data.actor,
     };
 
-    await this.eventRepo.create(eventData, tx);
+    await this.repo.createEvent(eventData, tx);
   }
 }
 
