@@ -608,7 +608,7 @@ describe('AllocationStrategyService - Unit Tests', () => {
       const [location] = await db.insert(wmsTables.locations).values({
         warehouseId: warehouse.id,
         code: 'LOC-RESERVED',
-        locationType: 'standard',
+        locationType: 'zone',
       }).returning();
 
       await db.insert(wmsTables.stockLedgers).values({
@@ -649,7 +649,7 @@ describe('AllocationStrategyService - Unit Tests', () => {
       const [location] = await db.insert(wmsTables.locations).values({
         warehouseId: warehouse.id,
         code: 'TEST-LOC',
-        locationType: 'standard',
+        locationType: 'zone',
       }).returning();
 
       await db.insert(wmsTables.stockLedgers).values({
