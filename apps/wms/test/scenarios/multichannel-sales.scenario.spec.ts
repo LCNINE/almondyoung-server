@@ -27,8 +27,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const stock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: sku.id,
-        currentQuantity: 100,
-        availableQuantity: 100
+        onHandQty: 100,
+        availableQty: 100
       });
 
       // When: 네이버 주문 생성
@@ -73,8 +73,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const stock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: sku.id,
-        currentQuantity: 200,
-        availableQuantity: 200
+        onHandQty: 200,
+        availableQty: 200
       });
 
       // When: 쿠팡 주문 생성
@@ -121,8 +121,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const stock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: sku.id,
-        currentQuantity: 50,
-        availableQuantity: 50
+        onHandQty: 50,
+        availableQty: 50
       });
 
       // When: 자체몰 주문 생성 (더 상세한 정보)
@@ -173,8 +173,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const limitedStock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: hotItem.id,
-        currentQuantity: 10,  // 총 10개만 재고
-        availableQuantity: 10
+        onHandQty: 10,  // 총 10개만 재고
+        availableQty: 10
       });
 
       // When: 동시에 여러 채널에서 주문
@@ -229,7 +229,7 @@ describe('Multi-Channel Sales Scenarios', () => {
       expect(totalOrderQty).toBe(12);  // 4 + 3 + 5 = 12개 주문
 
       // 재고 부족 상황 (10개 재고, 12개 주문)
-      expect(totalOrderQty).toBeGreaterThan(limitedStock.currentQuantity);
+      expect(totalOrderQty).toBeGreaterThan(limitedStock.onHandQty);
 
       // 각 채널별 주문 확인
       expect(orderLines[0].quantity).toBe(4);  // 네이버
@@ -248,8 +248,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const stock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: premiumSku.id,
-        currentQuantity: 5,
-        availableQuantity: 5
+        onHandQty: 5,
+        availableQty: 5
       });
 
       // When: 서로 다른 우선순위 주문
@@ -307,8 +307,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       // 총 주문량 vs 재고 (7개 주문, 5개 재고)
       const totalDemand = vipLine.quantity + regularLine1.quantity + regularLine2.quantity;
       expect(totalDemand).toBe(7);
-      expect(stock.currentQuantity).toBe(5);
-      expect(totalDemand).toBeGreaterThan(stock.currentQuantity);
+      expect(stock.onHandQty).toBe(5);
+      expect(totalDemand).toBeGreaterThan(stock.onHandQty);
     });
   });
 
@@ -328,8 +328,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const rocketStock = await WmsTestFactory.createStock({
         warehouseId: rocketWarehouse.id,
         skuId: rocketSku.id,
-        currentQuantity: 1000,
-        availableQuantity: 1000
+        onHandQty: 1000,
+        availableQty: 1000
       });
 
       // When: 로켓배송 주문 (당일 출고 필수)
@@ -368,7 +368,7 @@ describe('Multi-Channel Sales Scenarios', () => {
       // Then: 로켓배송 요구사항 충족
       expect(rocketOrder.salesChannel).toBe('coupang');
       expect(rocketFulfillment.status).toBe('ready');
-      expect(rocketStock.availableQuantity).toBeGreaterThanOrEqual(rocketOrderLine.quantity);
+      expect(rocketStock.availableQty).toBeGreaterThanOrEqual(rocketOrderLine.quantity);
 
       // 당일 주문, 당일 처리 가능
       const orderDate = new Date(rocketOrder.orderDate);
@@ -390,8 +390,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const eventStock = await WmsTestFactory.createStock({
         warehouseId: naverWarehouse.id,
         skuId: eventSku.id,
-        currentQuantity: 500,  // 이벤트용 대량 준비
-        availableQuantity: 500
+        onHandQty: 500,  // 이벤트용 대량 준비
+        availableQty: 500
       });
 
       // When: 이벤트 시작 후 대량 주문 유입
@@ -432,7 +432,7 @@ describe('Multi-Channel Sales Scenarios', () => {
       console.log(`Total event orders: ${totalEventQty} items from 50 customers`);
 
       // 재고 충분성 확인
-      expect(eventStock.currentQuantity).toBeGreaterThanOrEqual(totalEventQty);
+      expect(eventStock.onHandQty).toBeGreaterThanOrEqual(totalEventQty);
     });
 
     it('자체몰 회원 등급별 혜택 처리', async () => {
@@ -446,8 +446,8 @@ describe('Multi-Channel Sales Scenarios', () => {
       const stock = await WmsTestFactory.createStock({
         warehouseId: warehouse.id,
         skuId: premiumSku.id,
-        currentQuantity: 100,
-        availableQuantity: 100
+        onHandQty: 100,
+        availableQty: 100
       });
 
       // When: 등급별 주문 생성
