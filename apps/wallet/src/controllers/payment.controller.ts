@@ -848,6 +848,7 @@ export class PaymentController {
       throw new HttpException(errorMessage, HttpStatus.NOT_FOUND); // 404
     }
 
+    // 유효성 검증 에러 및 HMS API 에러 처리
     if (
       message.includes('already processed') ||
       message.includes('exceeds') ||
@@ -856,7 +857,13 @@ export class PaymentController {
       message.includes('failed') ||
       message.includes('cannot') ||
       message.includes('not in') ||
-      message.includes('not supported')
+      message.includes('not supported') ||
+      message.includes('입력해') ||
+      message.includes('올바른') ||
+      message.includes('형식') ||
+      message.includes('등록') ||
+      message.includes('인증') ||
+      message.includes('유효하지')
     ) {
       throw new BadRequestException(errorMessage); // 400
     }
