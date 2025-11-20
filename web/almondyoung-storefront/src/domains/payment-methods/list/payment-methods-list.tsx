@@ -1,9 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { ChevronRight } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ChevronRight, Plus } from "lucide-react"
 import { PageTitle } from "@components/common/page-title"
 import { useRouter } from "next/navigation"
+import { refundGetPaymentProfiles, PaymentProfile } from "../api"
+import { PaymentCardUI, PaymentCardListItem } from "./payment-card-ui"
+import { toast } from "sonner"
 
 // 🎯 Card 컴포넌트 개선 (재사용성을 위해 유지)
 function Card({
@@ -246,36 +249,106 @@ const NoLatePaymentSummary = () => {
 // 🎯 페이지 본문
 export default function PaymentManagement() {
   const router = useRouter()
-  // ⭐️ 조건부 처리를 위한 변수
-  const isLatePaymentSubscriber = true // 실제로는 API나 Context로 받아와야 함
+  const [profiles, setProfiles] = useState<PaymentProfile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    null
+  )
+
+  // 결제 프로필 목록 가져오기
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      try {
+        const data = await refundGetPaymentProfiles()
+        setProfiles(data)
+      } catch (error) {
+        console.error("결제 프로필 조회 실패:", error)
+        toast.error("결제 프로필을 불러오는데 실패했습니다.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProfiles()
+  }, [])
+
+  // HMS 카드 프로필 필터링
+  const hmsCardProfiles = profiles.filter(
+    (p) => p.kind === "CARD" && p.provider === "HMS_CARD"
+  )
 
   return (
-    // min-h-screen으로 화면 전체 높이 확보 (고정 높이 X)
-    <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
+    <div className="min-h-screen bg-gray-50 px-3 py-4 md:px-6">
       <PageTitle>결제수단 관리</PageTitle>
 
-      {/* ⭐️ 조건부 렌더링 */}
-      {isLatePaymentSubscriber ? (
-        <LatePaymentSummary />
-      ) : (
-        <NoLatePaymentSummary />
-      )}
+      {/* 등록된 카드 섹션 */}
+      <section className="mt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">등록된 카드</h2>
+          <button
+            onClick={() => router.push("/kr/mypage/payment-methods/add")}
+            className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+          >
+            <Plus className="h-4 w-4" />
+            카드 추가
+          </button>
+        </div>
 
-      {/* --- */}
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
+          </div>
+        ) : hmsCardProfiles.length === 0 ? (
+          <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-8 text-center">
+            <p className="text-gray-500">등록된 카드가 없습니다</p>
+            <button
+              onClick={() => router.push("/kr/mypage/payment-methods/add")}
+              className="mt-4 rounded-lg bg-amber-500 px-6 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
+            >
+              첫 카드 등록하기
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {hmsCardProfiles.map((profile) => (
+              <PaymentCardUI
+                key={profile.id}
+                profile={profile}
+                onClick={() => setSelectedProfileId(profile.id)}
+                selected={selectedProfileId === profile.id}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
-      {/* 메뉴 네비게이션 - nav 시맨틱 태그 사용 */}
+      {/* 적립금 및 기타 정보 */}
+      <section className="mt-8 space-y-3">
+        <ArticleCard title="아몬드영 적립금">
+          <p className="flex items-end gap-2 text-black">
+            <span className="text-2xl font-bold">0</span>
+            <span className="text-base">원</span>
+          </p>
+        </ArticleCard>
+
+        <ArticleCard title="적립예정 아몬드영 적립금" isLink>
+          <p className="flex items-center gap-1 text-black">
+            <span className="text-base">0 원</span>
+            <ChevronRight className="h-5 w-5 text-gray-400" />
+          </p>
+        </ArticleCard>
+      </section>
+
+      {/* 메뉴 네비게이션 */}
       <nav
-        aria-label="계좌 관련 메뉴"
-        className="mx-4 mt-10 rounded-lg bg-white shadow-sm md:mx-0"
+        aria-label="결제 관련 메뉴"
+        className="mt-8 rounded-lg bg-white shadow-sm"
       >
         <ul className="divide-y divide-gray-200">
-          {" "}
-          {/* divide-muted 대신 Tailwind 기본값 사용 */}
           {ACCOUNT_MENU_ITEMS.map((item) => (
             <li key={item.label}>
               <a
                 href={item.href}
-                // 견고한 CSS: Flexbox를 사용한 양쪽 정렬
                 className="flex items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
               >
                 <span className="text-base font-normal text-black md:text-lg">
