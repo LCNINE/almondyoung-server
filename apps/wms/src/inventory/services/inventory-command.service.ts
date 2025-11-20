@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
-import { DbService } from '@app/db';
+import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 
