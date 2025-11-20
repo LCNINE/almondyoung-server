@@ -3,7 +3,7 @@ import { DbModule, DbService } from '@app/db';
 import { getTsid } from 'tsid-ts';
 
 // 테스트 대상 모듈 및 서비스
-import { TaxInvoiceModule } from '../../modules/tax-invoice.module';
+
 import { TaxInvoiceService } from '../tax/tax-invoice.service';
 import { TaxInvoiceAdminService } from '../tax/tax-invoice-admin.service';
 import { TaxInvoicePreferenceService } from '../tax/tax-invoice-preference.service';
@@ -12,7 +12,10 @@ import { OmsClientMock } from '../tax/oms-client.mock';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
 import { eq } from 'drizzle-orm';
-
+import { TaxInvoiceReader } from '../tax/tax-invoice.reader';
+import { TaxInvoiceCreator } from '../tax/tax-invoice.creator';
+import { TaxInvoiceManager } from '../tax/tax-invoice.manager';
+import { TaxInvoiceRepository } from '../tax/tax-invoice.repository';
 describe('세금계산서 통합 테스트 - 전체 플로우', () => {
   let module: TestingModule;
   let dbService: DbService<typeof walletSchema>;
@@ -33,7 +36,16 @@ describe('세금계산서 통합 테스트 - 전체 플로우', () => {
           },
           schema: walletSchema,
         }),
-        TaxInvoiceModule,
+      ],
+      providers: [
+        TaxInvoiceService,
+        TaxInvoiceAdminService,
+        TaxInvoicePreferenceService,
+        TaxInvoiceReader,
+        TaxInvoiceCreator,
+        TaxInvoiceManager,
+        TaxInvoiceRepository,
+        OmsClientMock,
       ],
     }).compile();
 
@@ -505,6 +517,105 @@ describe('세금계산서 통합 테스트 - 전체 플로우', () => {
       const cancelledInvoice = await adminService.getInvoiceById(invoice.id);
       expect(cancelledInvoice?.status).toBe('CANCELLED');
       expect(cancelledInvoice?.cancelReason).toBe(cancelReason);
+    }, 15000);
+
+    it('🎯 [성공] 홈택스 엑셀 Export 데이터 조회', async () => {
+      // =======================================================
+      // 1. Given
+      // =======================================================
+      const userId = `user_${getTsid().toString()}`;
+      const orderId = `order_${getTsid().toString()}`;
+      const operatorId = `admin_${getTsid().toString()}`;
+
+      const businessInfo = {
+        name: 'Export테스트 주식회사',
+        businessNumber: '444-55-66777',
+        address: '서울시 Export구 테스트로 111',
+        ownerName: '윤대표',
+        businessType: '제조업',
+        businessItem: '화장품',
+        email: 'test@example.com',
+      };
+
+      // OMS에 Mock 주문 데이터 추가
+      omsClient.addMockOrder({
+        orderId,
+        orderNumber: 'ORD-TEST-008',
+        userId,
+        amount: 110000,
+        status: 'DELIVERED',
+        completedAt: new Date('2025-01-15'),
+        items: [
+          {
+            itemId: 'item_001',
+            itemName: '테스트 상품 A',
+            specification: '규격 A',
+            quantity: 2,
+            unitPrice: 50000,
+            totalPrice: 100000,
+          },
+        ],
+        paymentMethod: 'CARD',
+        memo: 'Export 테스트 주문',
+        createdAt: new Date('2025-01-10'),
+        updatedAt: new Date('2025-01-15'),
+      });
+
+      // 세금계산서 신청
+      const invoice = await taxInvoiceService.createIntent(userId, {
+        orderId,
+        businessInfo,
+      });
+
+      // 엑셀 내보내기 처리 (EXPORTED 상태로 변경)
+      await adminService.markExported([invoice.id], operatorId);
+
+      // =======================================================
+      // 2. When
+      // =======================================================
+
+      // Export 데이터 조회
+      const exportData = await adminService.getExportCandidates({
+        status: 'EXPORTED',
+      });
+
+      // =======================================================
+      // 3. Then
+      // =======================================================
+      expect(exportData).toBeDefined();
+      expect(exportData.length).toBeGreaterThan(0);
+
+      const exportRow = exportData.find(
+        (row) => row.taxInvoiceId === invoice.id,
+      );
+      expect(exportRow).toBeDefined();
+
+      // 공급자 정보 확인 (SUPPLIER_PROFILE 상수)
+      expect(exportRow?.supplierBusinessNumber).toBe('123-45-67890');
+      expect(exportRow?.supplierName).toBe('알몬드영 주식회사');
+      expect(exportRow?.supplierOwnerName).toBe('홍길동');
+
+      // 공급받는자 정보 확인
+      expect(exportRow?.buyerBusinessNumber).toBe(businessInfo.businessNumber);
+      expect(exportRow?.buyerName).toBe(businessInfo.name);
+      expect(exportRow?.buyerOwnerName).toBe(businessInfo.ownerName);
+      expect(exportRow?.buyerBusinessType).toBe(businessInfo.businessType);
+      expect(exportRow?.buyerBusinessItem).toBe(businessInfo.businessItem);
+      expect(exportRow?.buyerEmail).toBe(businessInfo.email);
+
+      // 거래 정보 확인
+      expect(exportRow?.supplyAmount).toBe(100000);
+      expect(exportRow?.taxAmount).toBe(10000);
+      expect(exportRow?.totalAmount).toBe(110000);
+
+      // 품목 요약 확인
+      expect(exportRow?.productSummary).toContain('테스트 상품 A');
+
+      // 결제수단 확인
+      expect(exportRow?.paymentMethod).toBe('신용카드');
+
+      // 비고 확인
+      expect(exportRow?.remark).toBe('Export 테스트 주문');
     }, 15000);
   });
 

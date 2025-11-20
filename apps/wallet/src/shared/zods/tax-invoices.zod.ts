@@ -1,29 +1,26 @@
+import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 // ===============================
 // 기본 검증 스키마들
-// ===============================
-const businessNumberSchema = z
-  .string()
-  .regex(/^\d{3}-?\d{2}-?\d{5}$/, {
-    message: '사업자등록번호는 000-00-00000 형식이어야 합니다.',
-  });
 
 // ===============================
 // 사업자 정보 스키마
 // ===============================
 export const BusinessInfoSchema = z.object({
-  name: z.string().min(1, '사업자명이 필요합니다.'),
-  businessNumber: businessNumberSchema,
-  address: z.string().min(1, '사업장 주소가 필요합니다.'),
-  ownerName: z.string().min(1, '대표자명이 필요합니다.'),
+  name: z.string().min(1, { message: '사업자명이 필요합니다.' }),
+  businessNumber: z.string().regex(/^\d{3}-?\d{2}-?\d{5}$/, {
+    message: '사업자등록번호는 000-00-00000 형식이어야 합니다.',
+  }),
+  address: z.string().min(1, { message: '사업장 주소가 필요합니다.' }),
+  ownerName: z.string().min(1, { message: '대표자명이 필요합니다.' }),
 });
 
 // ===============================
 // 세금계산서 신청 DTO (명세서 기준)
 // ===============================
 export const CreateIntentSchema = z.object({
-  orderId: z.string().min(1, '주문 ID가 필요합니다.'),
+  orderId: z.string().min(1, { message: '주문 ID가 필요합니다.' }),
   businessInfo: BusinessInfoSchema.optional(), // preference 없을 때 필수
 });
 
@@ -41,8 +38,8 @@ export const UpdatePreferenceSchema = z.object({
 export const MarkExportedSchema = z.object({
   invoiceIds: z
     .array(z.string().min(1))
-    .min(1, '최소 1개의 세금계산서 ID가 필요합니다.'),
-  operator: z.string().min(1, '담당자 ID가 필요합니다.'),
+    .min(1, { message: '최소 1개의 세금계산서 ID가 필요합니다.' }),
+  operator: z.string().min(1, { message: '담당자 ID가 필요합니다.' }),
 });
 
 // ===============================
@@ -74,12 +71,16 @@ export const CancelInvoiceSchema = z.object({
 // OMS 웹훅 이벤트 DTO
 // ===============================
 export const OmsOrderUpdatedSchema = z.object({
-  eventId: z.string().min(1, '이벤트 ID가 필요합니다.'),
-  orderId: z.string().min(1, '주문 ID가 필요합니다.'),
-  userId: z.string().min(1, '사용자 ID가 필요합니다.'),
+  eventId: z.string().min(1, { message: '이벤트 ID가 필요합니다.' }),
+  orderId: z.string().min(1, { message: '주문 ID가 필요합니다.' }),
+  userId: z.string().min(1, { message: '사용자 ID가 필요합니다.' }),
   eventType: z.enum(['CANCELLED', 'REFUNDED', 'PARTIAL_REFUNDED']),
-  amount: z.number().int().min(0, '금액은 음수가 될 수 없습니다.').optional(),
-  timestamp: z.string().datetime(),
+  amount: z
+    .number()
+    .int()
+    .min(0, { message: '금액은 음수가 될 수 없습니다.' })
+    .optional(),
+  timestamp: z.iso.datetime(),
 });
 
 // ===============================
@@ -96,8 +97,14 @@ export const GetMyInvoicesSchema = z.object({
       'NEEDS_MODIFICATION',
     ])
     .optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -113,9 +120,9 @@ export const GetAdminInvoicesSchema = z.object({
       'NEEDS_MODIFICATION',
     ])
     .optional(),
-  userId: z.string().optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  userId: z.string({ message: '문자열이어야 합니다.' }).optional(),
+  fromDate: z.string({ message: '날짜 형식이어야 합니다.' }).optional(),
+  toDate: z.string({ message: '날짜 형식이어야 합니다.' }).optional(),
   limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -123,13 +130,13 @@ export const GetAdminInvoicesSchema = z.object({
 // ===============================
 // DTO 타입 추론
 // ===============================
-export type BusinessInfoDto = z.infer<typeof BusinessInfoSchema>;
-export type CreateIntentDto = z.infer<typeof CreateIntentSchema>;
-export type UpdatePreferenceDto = z.infer<typeof UpdatePreferenceSchema>;
-export type MarkExportedDto = z.infer<typeof MarkExportedSchema>;
-export type ConfirmIssuedDto = z.infer<typeof ConfirmIssuedSchema>;
-export type MarkFailedDto = z.infer<typeof MarkFailedSchema>;
-export type CancelInvoiceDto = z.infer<typeof CancelInvoiceSchema>;
-export type OmsOrderUpdatedDto = z.infer<typeof OmsOrderUpdatedSchema>;
-export type GetMyInvoicesDto = z.infer<typeof GetMyInvoicesSchema>;
-export type GetAdminInvoicesDto = z.infer<typeof GetAdminInvoicesSchema>;
+export class BusinessInfoDto extends createZodDto(BusinessInfoSchema) {}
+export class CreateIntentDto extends createZodDto(CreateIntentSchema) {}
+export class UpdatePreferenceDto extends createZodDto(UpdatePreferenceSchema) {}
+export class MarkExportedDto extends createZodDto(MarkExportedSchema) {}
+export class ConfirmIssuedDto extends createZodDto(ConfirmIssuedSchema) {}
+export class MarkFailedDto extends createZodDto(MarkFailedSchema) {}
+export class CancelInvoiceDto extends createZodDto(CancelInvoiceSchema) {}
+export class OmsOrderUpdatedDto extends createZodDto(OmsOrderUpdatedSchema) {}
+export class GetMyInvoicesDto extends createZodDto(GetMyInvoicesSchema) {}
+export class GetAdminInvoicesDto extends createZodDto(GetAdminInvoicesSchema) {}
