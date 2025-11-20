@@ -817,7 +817,15 @@ export class PaymentController {
    * 컨트롤러에서 발생하는 에러를 중앙에서 처리하여 HTTP 응답으로 변환합니다.
    *
    * [CTO 스타일] 서비스에서 던진 일반 Error를 전송 방식에 맞게 변환합니다.
-   * 에러 매핑은 문자열 패턴 기반으로 처리합니다.
+   *
+   * 기본 정책:
+   * - 대부분의 에러는 400(BadRequest)으로 처리하여 사용자에게 구체적 메시지 전달
+   * - 404(Not Found)는 명시적인 리소스 없음 상황만
+   * - 500(Internal Server Error)은 정말 예외적인 시스템 에러만
+   *
+   * 환경별 처리:
+   * - 개발 환경: 모든 에러 메시지를 그대로 전달 (디버깅 편의)
+   * - 운영 환경: 시스템 에러는 메시지 숨김, 비즈니스 에러는 전달
    *
    * @param error 발생한 에러 객체
    * @param context 에러가 발생한 컨텍스트 (로깅용)
@@ -825,6 +833,7 @@ export class PaymentController {
   private handleError(error: unknown, context: string): never {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
+    const isDevelopment = process.env.NODE_ENV !== 'production';
 
     this.logger.error(`❌ ${context} 실패: ${errorMessage}`, errorStack);
 
@@ -844,27 +853,32 @@ export class PaymentController {
     // 문자열 패턴 기반 에러 매핑 (CTO 스타일)
     const message = errorMessage.toLowerCase();
 
+    // 404: 리소스를 찾을 수 없는 경우
     if (message.includes('not found')) {
       throw new HttpException(errorMessage, HttpStatus.NOT_FOUND); // 404
     }
 
-    if (
-      message.includes('already processed') ||
-      message.includes('exceeds') ||
-      message.includes('required') ||
-      message.includes('invalid') ||
-      message.includes('failed') ||
-      message.includes('cannot') ||
-      message.includes('not in') ||
-      message.includes('not supported')
-    ) {
-      throw new BadRequestException(errorMessage); // 400
+    // 500: 정말 예외적인 시스템 에러만 (DB 연결 실패, 예기치 않은 null 등)
+    // 스택 트레이스를 통해 시스템 에러인지 판단
+    const isSystemError =
+      errorStack &&
+      (errorStack.includes('ECONNREFUSED') || // DB 연결 실패
+        errorStack.includes('ETIMEDOUT') || // 타임아웃
+        errorStack.includes('Cannot read property') || // null/undefined 접근
+        errorStack.includes('is not a function')); // 타입 에러
+
+    if (isSystemError) {
+      // 개발 환경: 디버깅을 위해 실제 에러 메시지 노출
+      // 운영 환경: 민감한 정보 숨김
+      const clientMessage = isDevelopment
+        ? `[DEV] ${errorMessage}`
+        : '서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+
+      throw new HttpException(clientMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    // 예측하지 못한 모든 에러는 500 서버 에러로 처리
-    throw new HttpException(
-      '서버 내부 오류가 발생했습니다.',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    // 기본값: 400 BadRequest - 비즈니스 로직/유효성 에러는 모두 여기로
+    // 서비스에서 던진 에러 메시지를 그대로 사용자에게 전달
+    throw new BadRequestException(errorMessage);
   }
 }
