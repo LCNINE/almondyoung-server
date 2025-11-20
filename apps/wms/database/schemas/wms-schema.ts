@@ -1272,7 +1272,7 @@ export const purchaseOrderCart = pgTable('purchase_order_cart', {
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
   quantity: integer('quantity').notNull(),
   type: poTypeEnum('type').notNull(),
-  supplierInfo: json('supplier_info'),
+  supplierId: uuid('supplier_id').references(() => suppliers.id, { onDelete: 'restrict' }),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

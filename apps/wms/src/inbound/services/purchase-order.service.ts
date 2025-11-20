@@ -480,7 +480,7 @@ export class PurchaseOrderService {
                 .update(wmsTables.purchaseOrderCart)
                 .set({
                     quantity: existingItem.quantity + addDto.quantity,
-                    supplierInfo: addDto.supplierInfo || existingItem.supplierInfo,
+                    supplierId: addDto.supplierId || existingItem.supplierId,
                     updatedAt: new Date(),
                 })
                 .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id))
@@ -493,7 +493,7 @@ export class PurchaseOrderService {
                     skuId: addDto.skuId,
                     quantity: addDto.quantity,
                     type: addDto.type,
-                    supplierInfo: addDto.supplierInfo,
+                    supplierId: addDto.supplierId,
                     createdBy: userId,
                 })
                 .returning(), tx);
@@ -526,7 +526,7 @@ export class PurchaseOrderService {
             .update(wmsTables.purchaseOrderCart)
             .set({
                 quantity: updateDto.quantity,
-                supplierInfo: updateDto.supplierInfo ?? existingItem.supplierInfo,
+                supplierId: updateDto.supplierId ?? existingItem.supplierId,
                 updatedAt: new Date(),
             })
             .where(eq(wmsTables.purchaseOrderCart.id, itemId))
@@ -568,7 +568,8 @@ export class PurchaseOrderService {
                 skuId: wmsTables.purchaseOrderCart.skuId,
                 quantity: wmsTables.purchaseOrderCart.quantity,
                 type: wmsTables.purchaseOrderCart.type,
-                supplierInfo: wmsTables.purchaseOrderCart.supplierInfo,
+                supplierId: wmsTables.purchaseOrderCart.supplierId,
+                supplierName: wmsTables.suppliers.name,
                 createdAt: wmsTables.purchaseOrderCart.createdAt,
                 updatedAt: wmsTables.purchaseOrderCart.updatedAt,
                 skuName: wmsTables.skus.name,
@@ -576,6 +577,7 @@ export class PurchaseOrderService {
             })
             .from(wmsTables.purchaseOrderCart)
             .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
+            .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
             .where(and(...conditions as [any, ...any[]]))
             .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
             , tx);
@@ -585,7 +587,10 @@ export class PurchaseOrderService {
             skuId: item.skuId,
             quantity: item.quantity,
             type: item.type as PurchaseOrderType,
-            supplierInfo: item.supplierInfo,
+            supplier: item.supplierId && item.supplierName ? {
+                id: item.supplierId,
+                name: item.supplierName,
+            } : null,
             createdAt: item.createdAt!,
             updatedAt: item.updatedAt!,
             sku: {
@@ -606,7 +611,8 @@ export class PurchaseOrderService {
                     skuId: wmsTables.purchaseOrderCart.skuId,
                     quantity: wmsTables.purchaseOrderCart.quantity,
                     type: wmsTables.purchaseOrderCart.type,
-                    supplierInfo: wmsTables.purchaseOrderCart.supplierInfo,
+                    supplierId: wmsTables.purchaseOrderCart.supplierId,
+                    supplierName: wmsTables.suppliers.name,
                     createdAt: wmsTables.purchaseOrderCart.createdAt,
                     updatedAt: wmsTables.purchaseOrderCart.updatedAt,
                     skuName: wmsTables.skus.name,
@@ -614,6 +620,7 @@ export class PurchaseOrderService {
                 })
                 .from(wmsTables.purchaseOrderCart)
                 .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
+                .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
                 .where(and(
                     eq(wmsTables.purchaseOrderCart.id, itemId),
                     eq(wmsTables.purchaseOrderCart.createdBy, userId)
@@ -631,7 +638,10 @@ export class PurchaseOrderService {
             skuId: item.skuId,
             quantity: item.quantity,
             type: item.type as PurchaseOrderType,
-            supplierInfo: item.supplierInfo,
+            supplier: item.supplierId && item.supplierName ? {
+                id: item.supplierId,
+                name: item.supplierName,
+            } : null,
             createdAt: item.createdAt!,
             updatedAt: item.updatedAt!,
             sku: {
