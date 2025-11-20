@@ -127,6 +127,33 @@ export class TaxInvoiceAdminController {
   }
 
   /**
+   * GET /admin/tax-invoices/export/candidates
+   * 홈택스 엑셀 Export용 데이터 조회
+   */
+  @Get('export/candidates')
+  async getExportCandidates(
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+    @Query('status') status?: string,
+  ) {
+    try {
+      const exportData = await this.adminService.getExportCandidates({
+        fromDate,
+        toDate,
+        status,
+      });
+
+      return {
+        success: true,
+        data: exportData,
+        count: exportData.length,
+      };
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /**
    * POST /admin/tax-invoices/mark-exported
    * 엑셀 내보내기 처리 (일괄)
    * REQUESTED -> EXPORTED

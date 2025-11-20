@@ -252,31 +252,118 @@ export type BusinessInfo = {
   businessNumber: string;
   address: string;
   ownerName: string;
+  businessType?: string;
+  businessItem?: string;
+  email?: string;
 };
 
 /**
- * 세금계산서 스냅샷 페이로드 (홈택스 제출용)
+ * 세금계산서 스냅샷 페이로드 (홈택스 제출용 - 확장 버전)
  */
 export type TaxInvoiceSnapshotPayload = {
+  supplier: {
+    businessNumber: string;
+    name: string;
+    ownerName: string;
+    address: string;
+    businessType?: string;
+    businessItem?: string;
+    email?: string;
+  };
+  buyer: {
+    businessNumber: string;
+    name: string;
+    ownerName: string;
+    address: string;
+    businessType?: string;
+    businessItem?: string;
+    email?: string;
+  };
   order: {
     orderId: string;
     orderNumber?: string;
-    completedAt: Date | string;
+    completedAt: string;
+    status: 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
+    paymentMethod?: 'CASH' | 'CHECK' | 'NOTE' | 'CREDIT' | 'CARD';
+    memo?: string;
+    lines: Array<{
+      productName: string;
+      specification?: string;
+      quantity: number;
+      unitPrice: number;
+      amount: number;
+    }>;
   };
   amounts: {
     supplyAmount: number;
     taxAmount: number;
     totalAmount: number;
+    issueDate: string;
   };
-  businessInfo: BusinessInfo;
-  items?: Array<{
-    itemName: string;
+};
+
+/**
+ * OMS → Wallet용 DTO (세금계산서 발행에 필요한 주문 데이터)
+ */
+export type TaxInvoiceOrderData = {
+  orderId: string;
+  userId: string;
+  status: 'COMPLETED' | 'CANCELLED' | 'REFUNDED';
+  completedAt: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  paymentMethod: 'CASH' | 'CHECK' | 'NOTE' | 'CREDIT' | 'CARD';
+  lines: Array<{
+    productName: string;
+    specification?: string;
     quantity: number;
     unitPrice: number;
-    supplyAmount: number;
-    taxAmount: number;
+    amount: number;
   }>;
-  metadata?: Record<string, any>;
+  memo?: string;
+};
+
+/**
+ * 홈택스 엑셀 Export용 응답 DTO
+ */
+export type HometaxExportRow = {
+  // 내부 추적용
+  taxInvoiceId: string;
+  orderId: string;
+
+  // 공급자 (우리 회사)
+  supplierBusinessNumber: string;
+  supplierName: string;
+  supplierOwnerName: string;
+  supplierAddress: string;
+  supplierBusinessType?: string;
+  supplierBusinessItem?: string;
+  supplierEmail?: string;
+
+  // 공급받는자 (고객)
+  buyerBusinessNumber: string;
+  buyerName: string;
+  buyerOwnerName: string;
+  buyerAddress: string;
+  buyerBusinessType?: string;
+  buyerBusinessItem?: string;
+  buyerEmail?: string;
+
+  // 거래 정보
+  issueDate: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+
+  // 품목 요약
+  productSummary: string;
+
+  // 비고
+  remark?: string;
+
+  // 결제수단
+  paymentMethod?: string;
 };
 
 /**

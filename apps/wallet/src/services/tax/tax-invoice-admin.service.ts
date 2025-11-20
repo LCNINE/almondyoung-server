@@ -5,7 +5,12 @@ import { TaxInvoiceReader } from './tax-invoice.reader';
 import { TaxInvoiceManager } from './tax-invoice.manager';
 import { TaxInvoiceRepository } from './tax-invoice.repository';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
-import type { TaxInvoice } from '../../shared/database/types';
+import { SUPPLIER_PROFILE } from '../../config/supplier-profile';
+import type {
+  TaxInvoice,
+  TaxInvoiceSnapshotPayload,
+  HometaxExportRow,
+} from '../../shared/database/types';
 
 /**
  * TaxInvoiceAdminService
@@ -209,5 +214,119 @@ export class TaxInvoiceAdminService {
   async getInvoiceById(invoiceId: string): Promise<TaxInvoice | null> {
     return await this.reader.findById(invoiceId);
   }
-}
 
+  /**
+   * 홈택스 엑셀 Export용 데이터 조회
+   * EXPORTED 상태의 세금계산서를 엑셀 포맷으로 변환
+   */
+  async getExportCandidates(params?: {
+    fromDate?: string;
+    toDate?: string;
+    status?: string;
+  }): Promise<HometaxExportRow[]> {
+    // EXPORTED 상태의 세금계산서 조회
+    const invoices = await this.reader.findAll({
+      status: params?.status || 'EXPORTED',
+      fromDate: params?.fromDate,
+      toDate: params?.toDate,
+      limit: 1000,
+      offset: 0,
+    });
+
+    const exportRows: HometaxExportRow[] = [];
+
+    for (const invoice of invoices) {
+      // 스냅샷 조회
+      const invoiceWithSnapshot = await this.reader.findWithSnapshot(
+        invoice.id,
+      );
+
+      if (!invoiceWithSnapshot?.snapshot) {
+        this.logger.warn(
+          `Snapshot not found for invoice ${invoice.id}, skipping`,
+        );
+        continue;
+      }
+
+      const payload = invoiceWithSnapshot.snapshot
+        .payload as TaxInvoiceSnapshotPayload;
+
+      // 품목 요약 생성
+      const productSummary = this.generateProductSummary(payload.order.lines);
+
+      // Export Row 생성
+      const row: HometaxExportRow = {
+        taxInvoiceId: invoice.id,
+        orderId: invoice.orderId,
+
+        // 공급자 (우리 회사)
+        supplierBusinessNumber: payload.supplier.businessNumber,
+        supplierName: payload.supplier.name,
+        supplierOwnerName: payload.supplier.ownerName,
+        supplierAddress: payload.supplier.address,
+        supplierBusinessType: payload.supplier.businessType,
+        supplierBusinessItem: payload.supplier.businessItem,
+        supplierEmail: payload.supplier.email,
+
+        // 공급받는자 (고객)
+        buyerBusinessNumber: payload.buyer.businessNumber,
+        buyerName: payload.buyer.name,
+        buyerOwnerName: payload.buyer.ownerName,
+        buyerAddress: payload.buyer.address,
+        buyerBusinessType: payload.buyer.businessType,
+        buyerBusinessItem: payload.buyer.businessItem,
+        buyerEmail: payload.buyer.email,
+
+        // 거래 정보
+        issueDate: payload.amounts.issueDate,
+        supplyAmount: payload.amounts.supplyAmount,
+        taxAmount: payload.amounts.taxAmount,
+        totalAmount: payload.amounts.totalAmount,
+
+        // 품목 요약
+        productSummary,
+
+        // 비고
+        remark: payload.order.memo,
+
+        // 결제수단
+        paymentMethod: this.mapPaymentMethod(payload.order.paymentMethod),
+      };
+
+      exportRows.push(row);
+    }
+
+    this.logger.log(
+      `Export candidates retrieved: ${exportRows.length} invoices`,
+    );
+
+    return exportRows;
+  }
+
+  /**
+   * 품목 요약 생성
+   */
+  private generateProductSummary(
+    lines: Array<{ productName: string; quantity: number }>,
+  ): string {
+    if (lines.length === 0) return '품목 없음';
+    if (lines.length === 1) {
+      return `${lines[0].productName} ${lines[0].quantity}개`;
+    }
+    return `${lines[0].productName} 외 ${lines.length - 1}건`;
+  }
+
+  /**
+   * 결제수단 매핑
+   */
+  private mapPaymentMethod(method?: string): string {
+    const methodMap: Record<string, string> = {
+      CASH: '현금',
+      CHECK: '수표',
+      NOTE: '어음',
+      CREDIT: '외상미수금',
+      CARD: '신용카드',
+    };
+    return method ? methodMap[method] || method : '신용카드';
+  }
+}

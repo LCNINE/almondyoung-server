@@ -82,21 +82,8 @@ export class TaxInvoiceService {
       const invoice = await this.creator.create(
         {
           userId,
-          orderId: dto.orderId,
-          orderCompletedAt: order.completedAt || order.updatedAt,
-          orderAmount: order.amount,
+          order,
           businessInfo,
-          orderDetails: {
-            orderNumber: order.orderNumber,
-            items: order.items?.map((item) => ({
-              itemName: item.itemName,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              supplyAmount: Math.floor(item.totalPrice / 1.1),
-              taxAmount:
-                item.totalPrice - Math.floor(item.totalPrice / 1.1),
-            })),
-          },
         },
         tx,
       );

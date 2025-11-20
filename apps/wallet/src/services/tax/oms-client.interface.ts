@@ -11,10 +11,13 @@ export interface OmsOrder {
   items?: Array<{
     itemId: string;
     itemName: string;
+    specification?: string;
     quantity: number;
     unitPrice: number;
     totalPrice: number;
   }>;
+  paymentMethod?: 'CASH' | 'CHECK' | 'NOTE' | 'CREDIT' | 'CARD';
+  memo?: string;
   createdAt: Date;
   updatedAt: Date;
 }

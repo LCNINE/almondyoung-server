@@ -2,24 +2,40 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
-import { eq, and, gte, lte, inArray, sql, type SQL } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, sql, desc, type SQL } from 'drizzle-orm';
 import type {
   TaxInvoice,
   NewTaxInvoice,
   UpdateTaxInvoice,
+  TaxInvoiceSnapshot,
+  NewTaxInvoiceSnapshot,
+  TaxInvoiceSnapshotPayload,
+  TaxInvoiceEvent,
+  NewTaxInvoiceEvent,
+  UserTaxInvoicePreference,
+  NewUserTaxInvoicePreference,
+  UpdateUserTaxInvoicePreference,
 } from '../../shared/database/types';
 import type { WalletExecutor } from '../../shared/database';
 
 /**
- * TaxInvoiceRepository (Data Access Layer)
+ * TaxInvoiceRepository (Unified Data Access Layer)
  *
- * 책임: TaxInvoice 데이터 접근 (순수 DB 접근만)
+ * 책임: 세금계산서 도메인의 모든 데이터 접근 (순수 DB 접근만)
+ * - 세금계산서 메인 데이터
+ * - 스냅샷 (홈택스 제출용)
+ * - 감사 이벤트 로그
+ * - 사용자 기본 설정
  */
 @Injectable()
 export class TaxInvoiceRepository {
   private readonly logger = new Logger(TaxInvoiceRepository.name);
 
   constructor(private readonly db: DbService<typeof walletSchema>) {}
+
+  // ========================================
+  // 세금계산서 메인 메소드
+  // ========================================
 
   /**
    * ID로 세금계산서 조회
@@ -280,5 +296,217 @@ export class TaxInvoiceRepository {
       .where(eq(schema.taxInvoices.id, invoiceId));
 
     this.logger.warn(`TaxInvoice deleted: ${invoiceId}`);
+  }
+
+  // ========================================
+  // 스냅샷 메소드
+  // ========================================
+
+  /**
+   * 세금계산서 ID로 스냅샷 조회
+   */
+  async findSnapshotByInvoiceId(
+    invoiceId: string,
+    tx?: WalletExecutor,
+  ): Promise<TaxInvoiceSnapshot | null> {
+    const executor = tx || this.db.db;
+    const [snapshot] = await executor
+      .select()
+      .from(schema.taxInvoiceSnapshots)
+      .where(eq(schema.taxInvoiceSnapshots.invoiceId, invoiceId))
+      .limit(1);
+    return snapshot ?? null;
+  }
+
+  /**
+   * 스냅샷 생성 (홈택스 제출용 완전한 데이터)
+   */
+  async createSnapshot(
+    data: NewTaxInvoiceSnapshot,
+    tx?: WalletExecutor,
+  ): Promise<TaxInvoiceSnapshot> {
+    const executor = tx || this.db.db;
+    const [created] = await executor
+      .insert(schema.taxInvoiceSnapshots)
+      .values(data)
+      .returning();
+
+    this.logger.log(
+      `TaxInvoiceSnapshot created for invoice: ${created.invoiceId}`,
+    );
+    return created;
+  }
+
+  /**
+   * 스냅샷 업데이트 (부분 환불 등으로 금액 변경 시)
+   */
+  async updateSnapshot(
+    invoiceId: string,
+    payload: TaxInvoiceSnapshotPayload,
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    const executor = tx || this.db.db;
+    await executor
+      .update(schema.taxInvoiceSnapshots)
+      .set({ payload: payload as any })
+      .where(eq(schema.taxInvoiceSnapshots.invoiceId, invoiceId));
+
+    this.logger.log(`TaxInvoiceSnapshot updated for invoice: ${invoiceId}`);
+  }
+
+  /**
+   * 스냅샷 삭제
+   */
+  async deleteSnapshot(invoiceId: string, tx?: WalletExecutor): Promise<void> {
+    const executor = tx || this.db.db;
+    await executor
+      .delete(schema.taxInvoiceSnapshots)
+      .where(eq(schema.taxInvoiceSnapshots.invoiceId, invoiceId));
+
+    this.logger.warn(`TaxInvoiceSnapshot deleted for invoice: ${invoiceId}`);
+  }
+
+  // ========================================
+  // 감사 이벤트 메소드
+  // ========================================
+
+  /**
+   * 감사 이벤트 생성
+   */
+  async createEvent(
+    data: NewTaxInvoiceEvent,
+    tx?: WalletExecutor,
+  ): Promise<TaxInvoiceEvent> {
+    const executor = tx || this.db.db;
+    const [created] = await executor
+      .insert(schema.taxInvoiceEvents)
+      .values(data)
+      .returning();
+
+    this.logger.log(
+      `TaxInvoiceEvent logged: ${created.eventType} for invoice ${created.invoiceId}`,
+    );
+    return created;
+  }
+
+  /**
+   * 특정 세금계산서의 모든 이벤트 조회
+   */
+  async findEventsByInvoiceId(
+    invoiceId: string,
+    tx?: WalletExecutor,
+  ): Promise<TaxInvoiceEvent[]> {
+    const executor = tx || this.db.db;
+    return await executor
+      .select()
+      .from(schema.taxInvoiceEvents)
+      .where(eq(schema.taxInvoiceEvents.invoiceId, invoiceId))
+      .orderBy(desc(schema.taxInvoiceEvents.createdAt));
+  }
+
+  /**
+   * 특정 이벤트 타입으로 조회
+   */
+  async findEventsByType(
+    eventType: string,
+    limit: number = 100,
+  ): Promise<TaxInvoiceEvent[]> {
+    return await this.db.db
+      .select()
+      .from(schema.taxInvoiceEvents)
+      .where(eq(schema.taxInvoiceEvents.eventType, eventType))
+      .orderBy(desc(schema.taxInvoiceEvents.createdAt))
+      .limit(limit);
+  }
+
+  // ========================================
+  // 사용자 기본 설정 메소드
+  // ========================================
+
+  /**
+   * 사용자 ID로 기본 설정 조회
+   */
+  async findPreferenceByUserId(
+    userId: string,
+    tx?: WalletExecutor,
+  ): Promise<UserTaxInvoicePreference | null> {
+    const executor = tx || this.db.db;
+    const [preference] = await executor
+      .select()
+      .from(schema.userTaxInvoicePreferences)
+      .where(eq(schema.userTaxInvoicePreferences.userId, userId))
+      .limit(1);
+    return preference ?? null;
+  }
+
+  /**
+   * 기본 설정 생성
+   */
+  async createPreference(
+    data: NewUserTaxInvoicePreference,
+    tx?: WalletExecutor,
+  ): Promise<UserTaxInvoicePreference> {
+    const executor = tx || this.db.db;
+    const [created] = await executor
+      .insert(schema.userTaxInvoicePreferences)
+      .values(data)
+      .returning();
+
+    this.logger.log(`TaxInvoicePreference created for user: ${created.userId}`);
+    return created;
+  }
+
+  /**
+   * 기본 설정 업데이트
+   */
+  async updatePreference(
+    userId: string,
+    data: UpdateUserTaxInvoicePreference,
+    tx?: WalletExecutor,
+  ): Promise<void> {
+    const executor = tx || this.db.db;
+    await executor
+      .update(schema.userTaxInvoicePreferences)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(schema.userTaxInvoicePreferences.userId, userId));
+
+    this.logger.log(`TaxInvoicePreference updated for user: ${userId}`);
+  }
+
+  /**
+   * 기본 설정 생성 또는 업데이트 (Upsert)
+   */
+  async upsertPreference(
+    data: NewUserTaxInvoicePreference,
+    tx?: WalletExecutor,
+  ): Promise<UserTaxInvoicePreference> {
+    const executor = tx || this.db.db;
+    const [result] = await executor
+      .insert(schema.userTaxInvoicePreferences)
+      .values(data)
+      .onConflictDoUpdate({
+        target: schema.userTaxInvoicePreferences.userId,
+        set: {
+          defaultEnabled: data.defaultEnabled,
+          defaultBusinessInfo: data.defaultBusinessInfo as any,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+
+    this.logger.log(`TaxInvoicePreference upserted for user: ${result.userId}`);
+    return result;
+  }
+
+  /**
+   * 기본 설정 삭제
+   */
+  async deletePreference(userId: string, tx?: WalletExecutor): Promise<void> {
+    const executor = tx || this.db.db;
+    await executor
+      .delete(schema.userTaxInvoicePreferences)
+      .where(eq(schema.userTaxInvoicePreferences.userId, userId));
+
+    this.logger.warn(`TaxInvoicePreference deleted for user: ${userId}`);
   }
 }

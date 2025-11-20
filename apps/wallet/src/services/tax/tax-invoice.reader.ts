@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { TaxInvoiceRepository } from './tax-invoice.repository';
-import { TaxInvoiceSnapshotRepository } from './tax-invoice-snapshot.repository';
-import { TaxInvoiceEventRepository } from './tax-invoice-event.repository';
 import type {
   TaxInvoice,
   TaxInvoiceSnapshot,
@@ -19,9 +17,7 @@ import type { WalletExecutor } from '../../shared/database';
 @Injectable()
 export class TaxInvoiceReader {
   constructor(
-    private readonly taxInvoiceRepo: TaxInvoiceRepository,
-    private readonly snapshotRepo: TaxInvoiceSnapshotRepository,
-    private readonly eventRepo: TaxInvoiceEventRepository,
+    private readonly repo: TaxInvoiceRepository,
   ) {}
 
   /**
@@ -31,7 +27,7 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoice | null> {
-    return await this.taxInvoiceRepo.findById(invoiceId, tx);
+    return await this.repo.findById(invoiceId, tx);
   }
 
   /**
@@ -41,7 +37,7 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoice> {
-    const invoice = await this.taxInvoiceRepo.findById(invoiceId, tx);
+    const invoice = await this.repo.findById(invoiceId, tx);
     if (!invoice) throw new Error('Tax invoice not found');
     return invoice;
   }
@@ -53,7 +49,7 @@ export class TaxInvoiceReader {
     orderId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoice | null> {
-    return await this.taxInvoiceRepo.findByOrderId(orderId, tx);
+    return await this.repo.findByOrderId(orderId, tx);
   }
 
   /**
@@ -63,10 +59,10 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoiceWithSnapshot | null> {
-    const invoice = await this.taxInvoiceRepo.findById(invoiceId, tx);
+    const invoice = await this.repo.findById(invoiceId, tx);
     if (!invoice) return null;
 
-    const snapshot = await this.snapshotRepo.findByInvoiceId(invoiceId, tx);
+    const snapshot = await this.repo.findSnapshotByInvoiceId(invoiceId, tx);
 
     return {
       ...invoice,
@@ -81,10 +77,10 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoiceWithEvents | null> {
-    const invoice = await this.taxInvoiceRepo.findById(invoiceId, tx);
+    const invoice = await this.repo.findById(invoiceId, tx);
     if (!invoice) return null;
 
-    const events = await this.eventRepo.findByInvoiceId(invoiceId, tx);
+    const events = await this.repo.findEventsByInvoiceId(invoiceId, tx);
 
     return {
       ...invoice,
@@ -99,7 +95,7 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoiceSnapshot | null> {
-    return await this.snapshotRepo.findByInvoiceId(invoiceId, tx);
+    return await this.repo.findSnapshotByInvoiceId(invoiceId, tx);
   }
 
   /**
@@ -109,7 +105,7 @@ export class TaxInvoiceReader {
     invoiceId: string,
     tx?: WalletExecutor,
   ): Promise<TaxInvoiceEvent[]> {
-    return await this.eventRepo.findByInvoiceId(invoiceId, tx);
+    return await this.repo.findEventsByInvoiceId(invoiceId, tx);
   }
 
   /**
@@ -123,7 +119,7 @@ export class TaxInvoiceReader {
     limit: number;
     offset: number;
   }): Promise<TaxInvoice[]> {
-    return await this.taxInvoiceRepo.findByUserId(params);
+    return await this.repo.findByUserId(params);
   }
 
   /**
@@ -137,14 +133,14 @@ export class TaxInvoiceReader {
     limit: number;
     offset: number;
   }): Promise<TaxInvoice[]> {
-    return await this.taxInvoiceRepo.findAll(params);
+    return await this.repo.findAll(params);
   }
 
   /**
    * 발행 대기 중인 세금계산서 목록 조회
    */
   async findRequested(limit: number, offset: number): Promise<TaxInvoice[]> {
-    return await this.taxInvoiceRepo.findRequested(limit, offset);
+    return await this.repo.findRequested(limit, offset);
   }
 }
 
