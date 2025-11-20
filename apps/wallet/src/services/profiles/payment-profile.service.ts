@@ -54,10 +54,13 @@ export class PaymentProfileService {
         profiles.map(async (profile) => {
           let details: {
             paymentCompany: string | null;
+            paymentCompanyName: string;
             paymentNumber: string | null;
+            cardLast4: string | null;
             cardBrand: string | null;
             payerName: string | null;
             phoneMask: string | null;
+            cmsStatus: string | null;
           } | null = null;
 
           // HMS 카드 프로필인 경우 cms_card_profiles 테이블 조인
@@ -71,12 +74,16 @@ export class PaymentProfileService {
             if (cardProfile) {
               details = {
                 paymentCompany: cardProfile.paymentCompany,
+                // HMS API는 이미 한글 카드사명을 반환함 (예: "신한카드")
+                paymentCompanyName: cardProfile.paymentCompany || '알 수 없음',
                 paymentNumber: cardProfile.cardLast4
                   ? `****-****-****-${cardProfile.cardLast4}`
                   : null,
+                cardLast4: cardProfile.cardLast4,
                 cardBrand: cardProfile.cardBrand,
                 payerName: cardProfile.payerName,
                 phoneMask: cardProfile.phoneMask,
+                cmsStatus: cardProfile.cmsStatus,
               };
             }
           }

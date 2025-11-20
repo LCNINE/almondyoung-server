@@ -874,10 +874,7 @@ export class PaymentController {
         ? `[DEV] ${errorMessage}`
         : '서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 
-      throw new HttpException(
-        clientMessage,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException(clientMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     // 기본값: 400 BadRequest - 비즈니스 로직/유효성 에러는 모두 여기로
