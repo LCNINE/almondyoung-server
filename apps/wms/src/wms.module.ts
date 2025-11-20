@@ -12,6 +12,9 @@ import { DbModule } from '@app/db';
 import { wmsSchema } from '../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 import { validateWmsEnv } from './config/env.validation';
+import { AuthCoreModule } from '@app/auth-core';
+import { AuthorizationModule } from '@app/authorization';
+import { WMS_SCOPES } from './auth/wms.scopes';
 
 @Module({
   imports: [
@@ -24,6 +27,11 @@ import { validateWmsEnv } from './config/env.validation';
         connectionString: process.env.DATABASE_URL ?? '',
       },
       schema: wmsSchema,
+    }),
+    AuthCoreModule.forRootAsync(),
+    AuthorizationModule.forRoot({
+      microserviceName: 'wms',
+      scopes: WMS_SCOPES,
     }),
     InventoryModule,
     MovementModule,

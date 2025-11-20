@@ -1,25 +1,26 @@
 // apps/wms/database/schemas/wms-schema.ts
 import { sql, eq, type InferSelectModel, type InferInsertModel, InferSelectViewModel } from 'drizzle-orm';
 import {
-    pgTable,
-    pgView,
-    uuid,
-    varchar,
-    boolean,
-    integer,
-    timestamp,
-    json,
-    jsonb,
-    text,
-    pgEnum,
-    primaryKey,
-    unique,
-    decimal,
-    date,
-    index,
-    check,
-    AnyPgColumn,
+  pgTable,
+  pgView,
+  uuid,
+  varchar,
+  boolean,
+  integer,
+  timestamp,
+  json,
+  jsonb,
+  text,
+  pgEnum,
+  primaryKey,
+  unique,
+  decimal,
+  date,
+  index,
+  check,
+  AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import { authorizationSchema } from '@app/authorization';
 
 /*───────────────────────────
  * ENUM DECLARATIONS
@@ -29,58 +30,58 @@ export const sourceTypeEnum = pgEnum('source_type', ['direct', 'in_house', 'over
 
 export const eventStatusEnum = pgEnum('event_status', ['PENDING', 'POSTED', 'VOIDED']);
 export const stockStateEnum = pgEnum("stock_state", [
-    "ON_HAND",         // 출고가능 or 가용재고
-    "DEFECTIVE",       // 불량
-    "IN_TRANSFER",     // 창고간 운송중
+  "ON_HAND",         // 출고가능 or 가용재고
+  "DEFECTIVE",       // 불량
+  "IN_TRANSFER",     // 창고간 운송중
 ]);
 /** 상태 전이 타입(enum) */
 export const transitionTypeEnum = pgEnum("transition_type", [
-    // 기본 흐름
-    "RECEIVE",                 // null → ON_HAND (입고)
-    "SHIP",                    // ON_HAND → null (출고) - 예약 없이 직접 출고
-    "MOVE",                    // 이동 (창고내/창고간 통합)
+  // 기본 흐름
+  "RECEIVE",                 // null → ON_HAND (입고)
+  "SHIP",                    // ON_HAND → null (출고) - 예약 없이 직접 출고
+  "MOVE",                    // 이동 (창고내/창고간 통합)
 
-    // 품질 관리
-    "MARK_DEFECT",             // ON_HAND → DEFECTIVE (불량 지정)
-    "REWORK_GOOD",             // DEFECTIVE → ON_HAND (불량 양품화)
-    "SCRAP",                   // (ON_HAND|DEFECTIVE) → null (폐기)
+  // 품질 관리
+  "MARK_DEFECT",             // ON_HAND → DEFECTIVE (불량 지정)
+  "REWORK_GOOD",             // DEFECTIVE → ON_HAND (불량 양품화)
+  "SCRAP",                   // (ON_HAND|DEFECTIVE) → null (폐기)
 
-    // 수동 조정 (reason 필드로 상세 사유 기록)
-    "ADJUST_UP",               // null → ON_HAND (재고 증가)
-    "ADJUST_DOWN",             // ON_HAND → null (재고 감소)
+  // 수동 조정 (reason 필드로 상세 사유 기록)
+  "ADJUST_UP",               // null → ON_HAND (재고 증가)
+  "ADJUST_DOWN",             // ON_HAND → null (재고 감소)
 ]);
 
 
 // 확장된 이벤트 타입
 export const eventTypeEnum = pgEnum('event_type', [
-    // 입고 관련
-    'IN',                     // 일반 입고
-    'IN_DOMESTIC',           // 국내 거래처 입고
-    'IN_OVERSEAS',           // 해외 거래처 입고
-    'IN_RETURN',             // 반품 입고
+  // 입고 관련
+  'IN',                     // 일반 입고
+  'IN_DOMESTIC',           // 국내 거래처 입고
+  'IN_OVERSEAS',           // 해외 거래처 입고
+  'IN_RETURN',             // 반품 입고
 
-    // 출고 관련
-    'OUT',                   // 일반 출고
-    'OUT_ORDER',             // 주문 출고
-    'OUT_DAMAGE',            // 파손 출고
-    'OUT_LOSS',              // 분실 출고
-    'OUT_DISPOSAL',          // 폐기 출고
+  // 출고 관련
+  'OUT',                   // 일반 출고
+  'OUT_ORDER',             // 주문 출고
+  'OUT_DAMAGE',            // 파손 출고
+  'OUT_LOSS',              // 분실 출고
+  'OUT_DISPOSAL',          // 폐기 출고
 
-    // 이동 관련
-    'MOVE',                  // 일반 이동
-    'MOVE_INTER_WAREHOUSE',  // 창고 간 이동
-    'MOVE_INTRA_WAREHOUSE',  // 창고 내 이동
+  // 이동 관련
+  'MOVE',                  // 일반 이동
+  'MOVE_INTER_WAREHOUSE',  // 창고 간 이동
+  'MOVE_INTRA_WAREHOUSE',  // 창고 내 이동
 
-    // 조정 관련
-    'ADJUST',                // 일반 조정
-    'ADJUST_MANUAL',         // 관리자 수동 조정
-    'ADJUST_INVENTORY',      // 재고 실사 조정
+  // 조정 관련
+  'ADJUST',                // 일반 조정
+  'ADJUST_MANUAL',         // 관리자 수동 조정
+  'ADJUST_INVENTORY',      // 재고 실사 조정
 
-    // 예약 관련
-    'RESERVE',
-    'CONFIRM',
-    'RELEASE',
-    'CANCEL'
+  // 예약 관련
+  'RESERVE',
+  'CONFIRM',
+  'RELEASE',
+  'CANCEL'
 ]);
 
 // 창고 타입 추가
@@ -101,16 +102,16 @@ export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_exp
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
 export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
 export const poAuditStatusEnum = pgEnum('po_audit_status', [
-    'draft',           // 초안 - Not yet submitted
-    'pending_audit',   // 검토 대기 - Submitted for approval
-    'approved',        // 승인됨 - Approved
-    'rejected',        // 거부됨 - Rejected
+  'draft',           // 초안 - Not yet submitted
+  'pending_audit',   // 검토 대기 - Submitted for approval
+  'approved',        // 승인됨 - Approved
+  'rejected',        // 거부됨 - Rejected
 ]);
 export const inboundStatusEnum = pgEnum('inbound_status', [
-    'pending',      // 입고 대기 - Initial state
-    'applied',      // 입고신청 - Applied for inbound
-    'receiving',    // 입고 중 - Currently receiving
-    'confirmed',    // 입고 완료 - Completed
+  'pending',      // 입고 대기 - Initial state
+  'applied',      // 입고신청 - Applied for inbound
+  'receiving',    // 입고 중 - Currently receiving
+  'confirmed',    // 입고 완료 - Completed
 ]);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
@@ -119,18 +120,18 @@ export const planTypeEnum = pgEnum('plan_type', ['source', 'destination']);
 
 // Stocktaking status enum
 export const stocktakingStatusEnum = pgEnum('stocktaking_status', [
-    'draft',        // 작성 중 - Being created
-    'in_progress',  // 진행 중 - Actively counting
-    'completed',    // 완료 - Counting finished
-    'cancelled',    // 취소 - Cancelled
+  'draft',        // 작성 중 - Being created
+  'in_progress',  // 진행 중 - Actively counting
+  'completed',    // 완료 - Counting finished
+  'cancelled',    // 취소 - Cancelled
 ]);
 
 // Inbound domain enums
 export const inboundMethodEnum = pgEnum('inbound_method', [
-    'individual',           // 개별입고
-    'simple',               // 간편입고
-    'simple_fullscan',      // 전수검사 간편입고
-    'planned',              // 입고예정검수 기반 실입고
+  'individual',           // 개별입고
+  'simple',               // 간편입고
+  'simple_fullscan',      // 전수검사 간편입고
+  'planned',              // 입고예정검수 기반 실입고
 ]);
 export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['posted', 'voided']);
 export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
@@ -138,60 +139,60 @@ export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTA
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
 // 시스템 로케이션 역할(enum)
 export const systemLocationRoleEnum = pgEnum('system_location_role', [
-    'inbound_default',
-    'return_default',
+  'inbound_default',
+  'return_default',
 ]);
 
 // 주문 관련 enum 추가
 export const orderStatusEnum = pgEnum('order_status', [
-    'pending',        // 주문 생성 (결제 대기)
-    'confirmed',      // 주문 확정 (결제 완료)
-    'processing',     // 처리 중 (일괄주문확정 완료)
-    'shipped',        // 출고 완료
-    'delivered',      // 배송 완료
-    'cancelled',      // 취소
-    'timeout'         // 타임아웃
+  'pending',        // 주문 생성 (결제 대기)
+  'confirmed',      // 주문 확정 (결제 완료)
+  'processing',     // 처리 중 (일괄주문확정 완료)
+  'shipped',        // 출고 완료
+  'delivered',      // 배송 완료
+  'cancelled',      // 취소
+  'timeout'         // 타임아웃
 ]);
 
 export const orderItemStatusEnum = pgEnum('order_item_status', [
-    'pending',            // 대기 중
-    'matched',            // 재고 매칭 완료
-    'stock_deducted',     // 재고 차감 완료
-    'stock_unavailable',  // 재고 부족
-    'cancelled'           // 취소
+  'pending',            // 대기 중
+  'matched',            // 재고 매칭 완료
+  'stock_deducted',     // 재고 차감 완료
+  'stock_unavailable',  // 재고 부족
+  'cancelled'           // 취소
 ]);
 
 export const salesChannelEnum = pgEnum('sales_channel', [
-    'medusa',         // 메두사 (자체 몰)
-    'naver',          // 네이버 스마트스토어
-    'coupang',        // 쿠팡
-    '3pl'    // 3PL
+  'medusa',         // 메두사 (자체 몰)
+  'naver',          // 네이버 스마트스토어
+  'coupang',        // 쿠팡
+  '3pl'    // 3PL
 ]);
 
 export const eventTypeOrderEnum = pgEnum('event_type_order', [
-    'ORDER_CREATED',     // 주문 생성
-    'ORDER_CONFIRMED',   // 주문 확정
-    'ORDER_MODIFIED',    // 주문 수정
-    'ORDER_CANCELLED'    // 주문 취소
+  'ORDER_CREATED',     // 주문 생성
+  'ORDER_CONFIRMED',   // 주문 확정
+  'ORDER_MODIFIED',    // 주문 수정
+  'ORDER_CANCELLED'    // 주문 취소
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
-    'created',
-    'reserving',
-    'ready',
-    'labeled',
-    'shipped',
-    'canceled',
-    // 에러 로그에서 필요한 추가 상태들
-    'pending',
-    'allocated',
-    'picking',
-    'picked',
-    'inspecting',
-    'invoiced',
-    'completed',
-    'forwarded',
+  'created',
+  'reserving',
+  'ready',
+  'labeled',
+  'shipped',
+  'canceled',
+  // 에러 로그에서 필요한 추가 상태들
+  'pending',
+  'allocated',
+  'picking',
+  'picked',
+  'inspecting',
+  'invoiced',
+  'completed',
+  'forwarded',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
@@ -204,345 +205,345 @@ export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'printed', 
 
 // Audit system enums
 export const auditEventTypeEnum = pgEnum('audit_event_type', [
-    // 사용자 액션
-    'USER_LOGIN', 'USER_LOGOUT', 'USER_ACTION',
+  // 사용자 액션
+  'USER_LOGIN', 'USER_LOGOUT', 'USER_ACTION',
 
-    // 재고 관련
-    'STOCK_CREATED', 'STOCK_UPDATED', 'STOCK_DELETED',
-    'STOCK_RESERVED', 'STOCK_UNRESERVED', 'STOCK_MOVED',
+  // 재고 관련
+  'STOCK_CREATED', 'STOCK_UPDATED', 'STOCK_DELETED',
+  'STOCK_RESERVED', 'STOCK_UNRESERVED', 'STOCK_MOVED',
 
-    // 주문 관련
-    'ORDER_CREATED', 'ORDER_CONFIRMED', 'ORDER_CANCELLED', 'ORDER_MERGED',
-    'FULFILLMENT_CREATED', 'FULFILLMENT_READY', 'FULFILLMENT_SHIPPED',
+  // 주문 관련
+  'ORDER_CREATED', 'ORDER_CONFIRMED', 'ORDER_CANCELLED', 'ORDER_MERGED',
+  'FULFILLMENT_CREATED', 'FULFILLMENT_READY', 'FULFILLMENT_SHIPPED',
 
-    // SKU/상품 관련
-    'SKU_CREATED', 'SKU_UPDATED', 'SKU_DELETED',
-    'PRODUCT_MATCHED', 'PRODUCT_MATCHING_RESOLVED',
+  // SKU/상품 관련
+  'SKU_CREATED', 'SKU_UPDATED', 'SKU_DELETED',
+  'PRODUCT_MATCHED', 'PRODUCT_MATCHING_RESOLVED',
 
-    // 시스템 이벤트
-    'SYSTEM_STARTUP', 'SYSTEM_ERROR', 'SYSTEM_WARNING',
+  // 시스템 이벤트
+  'SYSTEM_STARTUP', 'SYSTEM_ERROR', 'SYSTEM_WARNING',
 
-    // 설정 변경
-    'CONFIG_CHANGED', 'POLICY_CHANGED'
+  // 설정 변경
+  'CONFIG_CHANGED', 'POLICY_CHANGED'
 ]);
 
 export const auditSeverityEnum = pgEnum('audit_severity', [
-    'INFO', 'WARN', 'ERROR', 'CRITICAL'
+  'INFO', 'WARN', 'ERROR', 'CRITICAL'
 ]);
 
 
 export const suppliers = pgTable('suppliers', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 255 }).notNull(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
 
-    // Contact information
-    phone: varchar('phone', { length: 50 }),
-    fax: varchar('fax', { length: 50 }),
-    email: varchar('email', { length: 255 }),
+  // Contact information
+  phone: varchar('phone', { length: 50 }),
+  fax: varchar('fax', { length: 50 }),
+  email: varchar('email', { length: 255 }),
 
-    // Address information
-    zipcode: varchar('zipcode', { length: 20 }),
-    address1: varchar('address1', { length: 500 }),
-    address2: varchar('address2', { length: 500 }),
+  // Address information
+  zipcode: varchar('zipcode', { length: 20 }),
+  address1: varchar('address1', { length: 500 }),
+  address2: varchar('address2', { length: 500 }),
 
-    // Business information
-    businessRegNo: varchar('business_reg_no', { length: 50 }),
-    businessType: varchar('business_type', { length: 100 }),
-    ceoName: varchar('ceo_name', { length: 100 }),
+  // Business information
+  businessRegNo: varchar('business_reg_no', { length: 50 }),
+  businessType: varchar('business_type', { length: 100 }),
+  ceoName: varchar('ceo_name', { length: 100 }),
 
-    // Purchase settings
-    isDirectDelivery: boolean('is_direct_delivery').default(false),
-    orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
+  // Purchase settings
+  isDirectDelivery: boolean('is_direct_delivery').default(false),
+  orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
 
-    // Payment information
-    bankName: varchar('bank_name', { length: 100 }),
-    bankAccountNo: varchar('bank_account_no', { length: 100 }),
-    bankAccountHolder: varchar('bank_account_holder', { length: 100 }),
-    // NOTE: Common values: 'prepaid', 'postpaid', 'monthly'. Kept as varchar for flexibility
-    paymentMethod: varchar('payment_method', { length: 50 }),
+  // Payment information
+  bankName: varchar('bank_name', { length: 100 }),
+  bankAccountNo: varchar('bank_account_no', { length: 100 }),
+  bankAccountHolder: varchar('bank_account_holder', { length: 100 }),
+  // NOTE: Common values: 'prepaid', 'postpaid', 'monthly'. Kept as varchar for flexibility
+  paymentMethod: varchar('payment_method', { length: 50 }),
 
-    // Additional metadata
-    description: text('description'),
-    memo: text('memo'),
+  // Additional metadata
+  description: text('description'),
+  memo: text('memo'),
 
-    // NOTE: References user-service users table (separate DB), stored as string without FK
-    purchaseManagerId: varchar('purchase_manager_id', { length: 36 }),
+  // NOTE: References user-service users table (separate DB), stored as string without FK
+  purchaseManagerId: varchar('purchase_manager_id', { length: 36 }),
 
-    defaultWarehouseId: uuid('default_warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' }),
+  defaultWarehouseId: uuid('default_warehouse_id')
+    .references(() => warehouses.id, { onDelete: 'restrict' }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const supplierCategories = pgTable('supplier_categories', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 255 }).notNull().unique(),
-    description: text('description'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const supplierCategoryMappings = pgTable('supplier_category_mappings', {
-    supplierId: uuid('supplier_id')
-        .references(() => suppliers.id, { onDelete: 'cascade' })
-        .notNull(),
-    categoryId: uuid('category_id')
-        .references(() => supplierCategories.id, { onDelete: 'cascade' })
-        .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  supplierId: uuid('supplier_id')
+    .references(() => suppliers.id, { onDelete: 'cascade' })
+    .notNull(),
+  categoryId: uuid('category_id')
+    .references(() => supplierCategories.id, { onDelete: 'cascade' })
+    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey({ columns: [t.supplierId, t.categoryId] }),
+  pk: primaryKey({ columns: [t.supplierId, t.categoryId] }),
 }));
 
 /*───────────────────────────
  * MOVEMENT JOBS (헤더/라인/타임라인)
  *──────────────────────────*/
 export const movementJobs = pgTable('movement_jobs', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
-    totalQuantity: integer('total_quantity').notNull().default(0),
-    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
-    actorId: uuid('actor_id'),
-    memo: varchar('memo', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  totalQuantity: integer('total_quantity').notNull().default(0),
+  journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+  actorId: uuid('actor_id'),
+  memo: varchar('memo', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxMovementJobsWhTime: index('idx_movement_jobs_wh_time').on(t.warehouseId, t.occurredAt),
+  idxMovementJobsWhTime: index('idx_movement_jobs_wh_time').on(t.warehouseId, t.occurredAt),
 }));
 
 export const movementJobLines = pgTable('movement_job_lines', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
-    memo: varchar('memo', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+  memo: varchar('memo', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxMovementLinesJob: index('idx_movement_lines_job').on(t.jobId),
-    idxMovementLinesSku: index('idx_movement_lines_sku').on(t.skuId),
+  idxMovementLinesJob: index('idx_movement_lines_job').on(t.jobId),
+  idxMovementLinesSku: index('idx_movement_lines_sku').on(t.skuId),
 }));
 
 export const movementWorkLogs = pgTable('movement_work_logs', {
-    id: uuid('id').primaryKey().default(sql`uuid_v7()`),
-    type: varchar('type', { length: 32 }).notNull().default('MOVE'),
-    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
-    jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'set null' }),
-    lineId: uuid('line_id').references(() => movementJobLines.id, { onDelete: 'set null' }),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
-    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    quantity: integer('quantity'),
-    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
-    reason: varchar('reason', { length: 255 }),
+  id: uuid('id').primaryKey().default(sql`uuid_v7()`),
+  type: varchar('type', { length: 32 }).notNull().default('MOVE'),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  jobId: uuid('job_id').references(() => movementJobs.id, { onDelete: 'set null' }),
+  lineId: uuid('line_id').references(() => movementJobLines.id, { onDelete: 'set null' }),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+  fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  quantity: integer('quantity'),
+  eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+  reason: varchar('reason', { length: 255 }),
 }, t => ({
-    idxMovementWorkTime: index('idx_movement_work_time').on(t.timestamp),
+  idxMovementWorkTime: index('idx_movement_work_time').on(t.timestamp),
 }));
 
 export const holders = pgTable('holders', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 255 }).notNull(),
-    isOurAsset: boolean('is_our_asset').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  isOurAsset: boolean('is_our_asset').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const skus = pgTable('skus', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
-    groupId: uuid('group_id').references(() => skuGroups.id),
-    optionKey: varchar('option_key', { length: 255 }),
+  id: uuid('id').primaryKey().defaultRandom(),
+  holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
+  groupId: uuid('group_id').references(() => skuGroups.id),
+  optionKey: varchar('option_key', { length: 255 }),
 
-    name: varchar('name', { length: 255 }).notNull(),
-    code: varchar('code', { length: 64 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
+  code: varchar('code', { length: 64 }).notNull().unique(),
 
-    defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
-    stockType: stockTypeEnum('stock_type').notNull().default('physical'),
-    deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
-    sale1m: integer('sale_1m'),
-    sale3m: integer('sale_3m'),
-    safetyStock: integer('safety_stock').notNull().default(0), // 안전 재고
+  defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
+  stockType: stockTypeEnum('stock_type').notNull().default('physical'),
+  deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
+  sale1m: integer('sale_1m'),
+  sale3m: integer('sale_3m'),
+  safetyStock: integer('safety_stock').notNull().default(0), // 안전 재고
 
-    // ===== Extended Metadata Fields (Phase 2 - Step 4) =====
+  // ===== Extended Metadata Fields (Phase 2 - Step 4) =====
 
-    // 기본 정보 확장
-    businessProductName: varchar('business_product_name', { length: 255 }),
-    importDeclarationNumber: varchar('import_declaration_number', { length: 100 }),
-    logisticsPartnerId: uuid('logistics_partner_id').references(() => suppliers.id, { onDelete: 'set null' }),
-    discount: varchar('discount', { length: 100 }),
-    manufacturerStar: varchar('manufacturer_star', { length: 100 }),
+  // 기본 정보 확장
+  businessProductName: varchar('business_product_name', { length: 255 }),
+  importDeclarationNumber: varchar('import_declaration_number', { length: 100 }),
+  logisticsPartnerId: uuid('logistics_partner_id').references(() => suppliers.id, { onDelete: 'set null' }),
+  discount: varchar('discount', { length: 100 }),
+  manufacturerStar: varchar('manufacturer_star', { length: 100 }),
 
-    // 물리 속성
-    productWeight: integer('product_weight'), // in grams
-    dimensionWidth: integer('dimension_width'), // in cm
-    dimensionHeight: integer('dimension_height'), // in cm
-    dimensionDepth: integer('dimension_depth'), // in cm
-    productMaterial: text('product_material'),
+  // 물리 속성
+  productWeight: integer('product_weight'), // in grams
+  dimensionWidth: integer('dimension_width'), // in cm
+  dimensionHeight: integer('dimension_height'), // in cm
+  dimensionDepth: integer('dimension_depth'), // in cm
+  productMaterial: text('product_material'),
 
-    // 추가 메타데이터
-    koreanName: varchar('korean_name', { length: 255 }),
-    maxDiscountQuantity: integer('max_discount_quantity'),
-    packagingImporterName: varchar('packaging_importer_name', { length: 255 }),
+  // 추가 메타데이터
+  koreanName: varchar('korean_name', { length: 255 }),
+  maxDiscountQuantity: integer('max_discount_quantity'),
+  packagingImporterName: varchar('packaging_importer_name', { length: 255 }),
 
-    // 판매 정보
-    productDescription: text('product_description'),
-    moq: integer('moq'), // Minimum Order Quantity
-    memo2: text('memo2'),
-    memo3: text('memo3'),
+  // 판매 정보
+  productDescription: text('product_description'),
+  moq: integer('moq'), // Minimum Order Quantity
+  memo2: text('memo2'),
+  memo3: text('memo3'),
 
-    // 이미지 관리
-    mainImageUrl: varchar('main_image_url', { length: 512 }),
-    currentStock: integer('current_stock').default(0), // Calculated/cached
+  // 이미지 관리
+  mainImageUrl: varchar('main_image_url', { length: 512 }),
+  currentStock: integer('current_stock').default(0), // Calculated/cached
 
-    // 유효기간 및 날짜 관리
-    expiryDateManagement: boolean('expiry_date_management').default(false),
-    expiryStartDate: timestamp('expiry_start_date', { withTimezone: true }),
-    expiryEndDate: timestamp('expiry_end_date', { withTimezone: true }),
-    manufacturingDateManagement: boolean('manufacturing_date_management').default(false),
-    isGeneralInventory: boolean('is_general_inventory').default(true),
+  // 유효기간 및 날짜 관리
+  expiryDateManagement: boolean('expiry_date_management').default(false),
+  expiryStartDate: timestamp('expiry_start_date', { withTimezone: true }),
+  expiryEndDate: timestamp('expiry_end_date', { withTimezone: true }),
+  manufacturingDateManagement: boolean('manufacturing_date_management').default(false),
+  isGeneralInventory: boolean('is_general_inventory').default(true),
 
-    // 유효 기간
-    validityStartDate: timestamp('validity_start_date', { withTimezone: true }),
-    validityEndDate: timestamp('validity_end_date', { withTimezone: true }),
+  // 유효 기간
+  validityStartDate: timestamp('validity_start_date', { withTimezone: true }),
+  validityEndDate: timestamp('validity_end_date', { withTimezone: true }),
 
-    // 로케이션 추적
-    primaryLocationId: uuid('primary_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    secondaryLocationId: uuid('secondary_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  // 로케이션 추적
+  primaryLocationId: uuid('primary_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  secondaryLocationId: uuid('secondary_location_id').references(() => locations.id, { onDelete: 'set null' }),
 
-    // 옵션 그룹
-    variantGroupCode: varchar('variant_group_code', { length: 64 }),
+  // 옵션 그룹
+  variantGroupCode: varchar('variant_group_code', { length: 64 }),
 
 
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    // 성능 최적화 인덱스
-    idxSkusSafetyStock: index('idx_skus_safety_stock').on(t.safetyStock),
-    idxSkusVariantGroup: index('idx_skus_variant_group').on(t.variantGroupCode),
-    idxSkusPrimaryLocation: index('idx_skus_primary_location').on(t.primaryLocationId),
-    idxSkusWeight: index('idx_skus_weight').on(t.productWeight),
-    idxSkusMoq: index('idx_skus_moq').on(t.moq),
-    idxSkusGroupId: index('idx_skus_group_id').on(t.groupId), // WMS-internal grouping
+  // 성능 최적화 인덱스
+  idxSkusSafetyStock: index('idx_skus_safety_stock').on(t.safetyStock),
+  idxSkusVariantGroup: index('idx_skus_variant_group').on(t.variantGroupCode),
+  idxSkusPrimaryLocation: index('idx_skus_primary_location').on(t.primaryLocationId),
+  idxSkusWeight: index('idx_skus_weight').on(t.productWeight),
+  idxSkusMoq: index('idx_skus_moq').on(t.moq),
+  idxSkusGroupId: index('idx_skus_group_id').on(t.groupId), // WMS-internal grouping
 }));
 
 export const skuSuppliers = pgTable('sku_suppliers', {
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
-    supplierId: uuid('supplier_id')
-        .references(() => suppliers.id, { onDelete: 'cascade' })
-        .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'cascade' })
+    .notNull(),
+  supplierId: uuid('supplier_id')
+    .references(() => suppliers.id, { onDelete: 'cascade' })
+    .notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey(t.skuId, t.supplierId),
+  pk: primaryKey(t.skuId, t.supplierId),
 }));
 
 export const skuBarcodes = pgTable('sku_barcodes', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    barcode: varchar('barcode', { length: 64 }).notNull().unique(), // 실제 바코드 값
-    barcodeType: barcodeTypeEnum('barcode_type').notNull(),
-    packingUnit: varchar('packing_unit', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
+  barcode: varchar('barcode', { length: 64 }).notNull().unique(), // 실제 바코드 값
+  barcodeType: barcodeTypeEnum('barcode_type').notNull(),
+  packingUnit: varchar('packing_unit', { length: 64 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const categories = pgTable('categories', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 255 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const skuCategories = pgTable('sku_categories', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
+  categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ===== Phase 2 Step 4: New SKU Related Tables =====
 
 // SKU Variant Pricing: 다단계 가격 관리
 export const skuVariantPricing = pgTable('sku_variant_pricing', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'cascade' })
+    .notNull(),
 
-    // 3단계 가격
-    retailPrice: integer('retail_price'), // 소매가
-    specialSalePrice: integer('special_sale_price'), // 특가
-    wholesalePrice: integer('wholesale_price'), // 도매가
-    sellingPrice: integer('selling_price'), // 현재 판매가
+  // 3단계 가격
+  retailPrice: integer('retail_price'), // 소매가
+  specialSalePrice: integer('special_sale_price'), // 특가
+  wholesalePrice: integer('wholesale_price'), // 도매가
+  sellingPrice: integer('selling_price'), // 현재 판매가
 
-    // 가격 유효기간
-    priceEffectiveDate: timestamp('price_effective_date', { withTimezone: true }),
-    priceExpiryDate: timestamp('price_expiry_date', { withTimezone: true }),
+  // 가격 유효기간
+  priceEffectiveDate: timestamp('price_effective_date', { withTimezone: true }),
+  priceExpiryDate: timestamp('price_expiry_date', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uniqueSkuPricing: unique().on(t.skuId),
+  uniqueSkuPricing: unique().on(t.skuId),
 }));
 
 // SKU Managers: SKU별 담당자 관리
 export const skuManagers = pgTable('sku_managers', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'cascade' })
+    .notNull(),
 
-    // 담당자 역할 (모두 nullable - 모든 SKU에 담당자가 필요한 것은 아님)
-    designerId: uuid('designer_id'), // 상품디자이너
-    purchaseManagerId: uuid('purchase_manager_id'), // 발주담당자
-    registrationManagerId: uuid('registration_manager_id'), // 상품등록자
+  // 담당자 역할 (모두 nullable - 모든 SKU에 담당자가 필요한 것은 아님)
+  designerId: uuid('designer_id'), // 상품디자이너
+  purchaseManagerId: uuid('purchase_manager_id'), // 발주담당자
+  registrationManagerId: uuid('registration_manager_id'), // 상품등록자
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uniqueSkuManager: unique().on(t.skuId),
+  uniqueSkuManager: unique().on(t.skuId),
 }));
 
 // SKU Location Movements: SKU 위치 이동 추적
 export const skuLocationMovements = pgTable('sku_location_movements', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'cascade' })
+    .notNull(),
 
-    barcode: varchar('barcode', { length: 64 }).notNull(),
+  barcode: varchar('barcode', { length: 64 }).notNull(),
 
-    // 위치 추적
-    fromLocationId: uuid('from_location_id')
-        .references(() => locations.id, { onDelete: 'restrict' })
-        .notNull(),
-    toLocationId: uuid('to_location_id')
-        .references(() => locations.id, { onDelete: 'restrict' })
-        .notNull(),
+  // 위치 추적
+  fromLocationId: uuid('from_location_id')
+    .references(() => locations.id, { onDelete: 'restrict' })
+    .notNull(),
+  toLocationId: uuid('to_location_id')
+    .references(() => locations.id, { onDelete: 'restrict' })
+    .notNull(),
 
-    // 이동 상세
-    quantity: integer('quantity'), // Nullable for full SKU moves
-    reason: text('reason'),
-    status: varchar('status', { length: 20 }).notNull().default('completed'),
+  // 이동 상세
+  quantity: integer('quantity'), // Nullable for full SKU moves
+  reason: text('reason'),
+  status: varchar('status', { length: 20 }).notNull().default('completed'),
 
-    // 감사
-    movedBy: uuid('moved_by'),
-    movementTimestamp: timestamp('movement_timestamp', { withTimezone: true }).notNull().defaultNow(),
+  // 감사
+  movedBy: uuid('moved_by'),
+  movementTimestamp: timestamp('movement_timestamp', { withTimezone: true }).notNull().defaultNow(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxMovementSku: index('idx_movement_sku').on(t.skuId),
-    idxMovementBarcode: index('idx_movement_barcode').on(t.barcode),
-    idxMovementTimestamp: index('idx_movement_timestamp').on(t.movementTimestamp),
+  idxMovementSku: index('idx_movement_sku').on(t.skuId),
+  idxMovementBarcode: index('idx_movement_barcode').on(t.barcode),
+  idxMovementTimestamp: index('idx_movement_timestamp').on(t.movementTimestamp),
 }));
 
 
@@ -550,105 +551,105 @@ export const skuLocationMovements = pgTable('sku_location_movements', {
 // Groups are metadata labels for organizing similar SKUs (e.g., color/size variants)
 // Key design: Groups do NOT cascade delete - SKUs survive when group is deleted (ON DELETE SET NULL)
 export const skuGroups = pgTable('sku_groups', {
-    id: uuid('id').primaryKey().defaultRandom(),
+  id: uuid('id').primaryKey().defaultRandom(),
 
-    // Basic info
-    name: varchar('name', { length: 255 }).notNull(),
-    code: varchar('code', { length: 100 }).notNull().unique(),
-    description: text('description'),
+  // Basic info
+  name: varchar('name', { length: 255 }).notNull(),
+  code: varchar('code', { length: 100 }).notNull().unique(),
+  description: text('description'),
 
-    // Metadata
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  // Metadata
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxSkuGroupsCode: index('idx_sku_groups_code').on(t.code),
-    idxSkuGroupsName: index('idx_sku_groups_name').on(t.name),
+  idxSkuGroupsCode: index('idx_sku_groups_code').on(t.code),
+  idxSkuGroupsName: index('idx_sku_groups_name').on(t.name),
 }));
 
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 128 }).notNull(),
-    sourceType: sourceTypeEnum('source_type').notNull(),
-    avgDeliveryDays: integer('avg_delivery_days'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 128 }).notNull(),
+  sourceType: sourceTypeEnum('source_type').notNull(),
+  avgDeliveryDays: integer('avg_delivery_days'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // warehouses 테이블에 type 필드 추가
 export const warehouses = pgTable('warehouses', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 128 }).notNull(),
-    type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
-    location: varchar('location', { length: 256 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 128 }).notNull(),
+  type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
+  location: varchar('location', { length: 256 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * LOCATION
  *──────────────────────────*/
 export const locationColumns = pgTable('location_columns', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    columnName: varchar('column_name', { length: 10 }).notNull(),
-    displayOrder: integer('display_order'),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  columnName: varchar('column_name', { length: 10 }).notNull(),
+  displayOrder: integer('display_order'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uqWarehouseColumn: unique().on(t.warehouseId, t.columnName),
-    idxColumnsWarehouseName: index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName),
+  uqWarehouseColumn: unique().on(t.warehouseId, t.columnName),
+  idxColumnsWarehouseName: index('idx_columns_warehouse_name').on(t.warehouseId, t.columnName),
 }));
 
 export const locationRacks = pgTable('location_racks', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    columnId: uuid('column_id').references(() => locationColumns.id, { onDelete: 'cascade' }).notNull(),
-    rackNumber: integer('rack_number').notNull(),
-    defaultBinStart: integer('default_bin_start').notNull().default(1),
-    defaultBinEnd: integer('default_bin_end').notNull().default(20),
-    autoGenerateBins: boolean('auto_generate_bins').notNull().default(true),
-    physicalWidth: integer('physical_width'),
-    physicalHeight: integer('physical_height'),
-    notes: text('notes'),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  columnId: uuid('column_id').references(() => locationColumns.id, { onDelete: 'cascade' }).notNull(),
+  rackNumber: integer('rack_number').notNull(),
+  defaultBinStart: integer('default_bin_start').notNull().default(1),
+  defaultBinEnd: integer('default_bin_end').notNull().default(20),
+  autoGenerateBins: boolean('auto_generate_bins').notNull().default(true),
+  physicalWidth: integer('physical_width'),
+  physicalHeight: integer('physical_height'),
+  notes: text('notes'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uqColumnRack: unique().on(t.columnId, t.rackNumber),
-    idxRacksColumnNumber: index('idx_racks_column_number').on(t.columnId, t.rackNumber),
+  uqColumnRack: unique().on(t.columnId, t.rackNumber),
+  idxRacksColumnNumber: index('idx_racks_column_number').on(t.columnId, t.rackNumber),
 }));
 
 export const locations = pgTable('locations', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    code: varchar('code', { length: 64 }).notNull(),
-    locationType: locationTypeEnum('location_type').notNull(),
-    rackId: uuid('rack_id').references(() => locationRacks.id, { onDelete: 'cascade' }),
-    binIdentifier: varchar('bin_identifier', { length: 20 }),
-    displayName: varchar('display_name', { length: 128 }),
-    capacityLimit: integer('capacity_limit'),
-    fifoRank: integer('fifo_rank'),
-    isExpirySeparated: boolean('is_expiry_separated'),
-    isActive: boolean('is_active').notNull().default(true),
-    notes: text('notes'),
-    // 시스템 로케이션 보호 필드
-    isSystem: boolean('is_system').notNull().default(false),
-    systemRole: systemLocationRoleEnum('system_role'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  code: varchar('code', { length: 64 }).notNull(),
+  locationType: locationTypeEnum('location_type').notNull(),
+  rackId: uuid('rack_id').references(() => locationRacks.id, { onDelete: 'cascade' }),
+  binIdentifier: varchar('bin_identifier', { length: 20 }),
+  displayName: varchar('display_name', { length: 128 }),
+  capacityLimit: integer('capacity_limit'),
+  fifoRank: integer('fifo_rank'),
+  isExpirySeparated: boolean('is_expiry_separated'),
+  isActive: boolean('is_active').notNull().default(true),
+  notes: text('notes'),
+  // 시스템 로케이션 보호 필드
+  isSystem: boolean('is_system').notNull().default(false),
+  systemRole: systemLocationRoleEnum('system_role'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uqWarehouseCode: unique().on(t.warehouseId, t.code),
-    uqWarehouseSystemRole: unique().on(t.warehouseId, t.systemRole),
-    ckLocationsType: check('ck_locations_type', sql`(
+  uqWarehouseCode: unique().on(t.warehouseId, t.code),
+  uqWarehouseSystemRole: unique().on(t.warehouseId, t.systemRole),
+  ckLocationsType: check('ck_locations_type', sql`(
         (location_type = 'standard' AND rack_id IS NOT NULL AND bin_identifier IS NOT NULL)
         OR 
         (location_type = 'zone' AND rack_id IS NULL AND bin_identifier IS NULL)
     )`),
-    ckLocationsSystemRole: check('ck_locations_system_role', sql`( (is_system = true AND system_role IS NOT NULL) OR (is_system = false AND system_role IS NULL) )`),
-    ckLocationsSystemZone: check('ck_locations_system_zone', sql`( is_system = false OR location_type = 'zone' )`),
-    locationsWarehouseType: index('idx_locations_warehouse_type').on(t.warehouseId, t.locationType),
-    locationsRackBin: index('idx_locations_rack_bin').on(t.rackId, t.binIdentifier),
+  ckLocationsSystemRole: check('ck_locations_system_role', sql`( (is_system = true AND system_role IS NOT NULL) OR (is_system = false AND system_role IS NULL) )`),
+  ckLocationsSystemZone: check('ck_locations_system_zone', sql`( is_system = false OR location_type = 'zone' )`),
+  locationsWarehouseType: index('idx_locations_warehouse_type').on(t.warehouseId, t.locationType),
+  locationsRackBin: index('idx_locations_rack_bin').on(t.rackId, t.binIdentifier),
 }));
 
 // indexes moved into table definitions above
@@ -657,108 +658,108 @@ export const locations = pgTable('locations', {
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockJournals = pgTable("stock_journals", {
-    id: uuid("id").primaryKey().default(sql`uuid_v7()`),
-    sourceType: varchar("source_type", { length: 64 }),
-    sourceId: uuid("source_id"),
-    idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
-    actorId: uuid("actor_id"),
+  id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+  sourceType: varchar("source_type", { length: 64 }),
+  sourceId: uuid("source_id"),
+  idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+  actorId: uuid("actor_id"),
 });
 
 
 export const stockEvents = pgTable(
-    "stock_events",
-    {
-        id: uuid("id").primaryKey().default(sql`uuid_v7()`),
+  "stock_events",
+  {
+    id: uuid("id").primaryKey().default(sql`uuid_v7()`),
 
-        journalId: uuid("journal_id").references(() => stockJournals.id),
+    journalId: uuid("journal_id").references(() => stockJournals.id),
 
-        skuId: uuid("sku_id").notNull().references(() => skus.id),
+    skuId: uuid("sku_id").notNull().references(() => skus.id),
 
-        fromWarehouseId: uuid("from_warehouse_id").references(() => warehouses.id),
-        fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
-        toWarehouseId: uuid("to_warehouse_id").references(() => warehouses.id),
-        toLocationId: uuid("to_location_id").references(() => locations.id, { onDelete: "set null" }),
+    fromWarehouseId: uuid("from_warehouse_id").references(() => warehouses.id),
+    fromLocationId: uuid("from_location_id").references(() => locations.id, { onDelete: "set null" }),
+    toWarehouseId: uuid("to_warehouse_id").references(() => warehouses.id),
+    toLocationId: uuid("to_location_id").references(() => locations.id, { onDelete: "set null" }),
 
-        fromState: stockStateEnum("from_state"),
-        toState: stockStateEnum("to_state"),
-        transitionType: transitionTypeEnum("transition_type").notNull(),
+    fromState: stockStateEnum("from_state"),
+    toState: stockStateEnum("to_state"),
+    transitionType: transitionTypeEnum("transition_type").notNull(),
 
-        quantity: integer("quantity").notNull(), // 항상 양수
+    quantity: integer("quantity").notNull(), // 항상 양수
 
-        occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-        recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
 
-        idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
-        eventStatus: eventStatusEnum("event_status").notNull().default("POSTED"),
-        reversalOfEventId: uuid("reversal_of_event_id"),
-        voidedByEventId: uuid("voided_by_event_id"),
-        reason: varchar("reason", { length: 255 }),
-    },
-    (t) => ({
-        ixGrainTime: index("ix_stock_events_grain_time").on(
-            t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
-        ),
-        ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
-        ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
-        ckSidePresent: check(
-            "ck_events_side_present",
-            sql`(${t.fromState} is not null) or (${t.toState} is not null)`
-        ),
-        ckFromLocNeedsWh: check(
-            "ck_events_fromloc_has_wh",
-            sql`(${t.fromLocationId} is null) or (${t.fromWarehouseId} is not null)`
-        ),
-        ckToLocNeedsWh: check(
-            "ck_events_toloc_has_wh",
-            sql`(${t.toLocationId} is null) or (${t.toWarehouseId} is not null)`
-        ),
-    })
+    idempotencyKey: varchar("idempotency_key", { length: 128 }).unique(),
+    eventStatus: eventStatusEnum("event_status").notNull().default("POSTED"),
+    reversalOfEventId: uuid("reversal_of_event_id"),
+    voidedByEventId: uuid("voided_by_event_id"),
+    reason: varchar("reason", { length: 255 }),
+  },
+  (t) => ({
+    ixGrainTime: index("ix_stock_events_grain_time").on(
+      t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
+    ),
+    ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
+    ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
+    ckSidePresent: check(
+      "ck_events_side_present",
+      sql`(${t.fromState} is not null) or (${t.toState} is not null)`
+    ),
+    ckFromLocNeedsWh: check(
+      "ck_events_fromloc_has_wh",
+      sql`(${t.fromLocationId} is null) or (${t.fromWarehouseId} is not null)`
+    ),
+    ckToLocNeedsWh: check(
+      "ck_events_toloc_has_wh",
+      sql`(${t.toLocationId} is null) or (${t.toWarehouseId} is not null)`
+    ),
+  })
 );
 
 
 export const stockLedgers = pgTable(
-    "stock_ledgers",
-    {
-        skuId: uuid("sku_id").notNull().references(() => skus.id, { onDelete: "restrict" }),
-        warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
-        locationId: uuid("location_id").notNull().references(() => locations.id),
-        stockState: stockStateEnum("stock_state").notNull(),
-        qty: integer("qty").notNull().default(0),
-        updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-    },
-    (t) => ({
-        pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
-        ckNonNegative: check("ck_ledgers_non_negative", sql`${t.qty} >= 0`),
-        ixLookup: index("ix_ledgers_lookup").on(t.skuId, t.warehouseId, t.locationId, t.stockState),
-    })
+  "stock_ledgers",
+  {
+    skuId: uuid("sku_id").notNull().references(() => skus.id, { onDelete: "restrict" }),
+    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
+    locationId: uuid("location_id").notNull().references(() => locations.id),
+    stockState: stockStateEnum("stock_state").notNull(),
+    qty: integer("qty").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
+    ckNonNegative: check("ck_ledgers_non_negative", sql`${t.qty} >= 0`),
+    ixLookup: index("ix_ledgers_lookup").on(t.skuId, t.warehouseId, t.locationId, t.stockState),
+  })
 );
 
 // 재고 현황 테이블
 // stockSummary를 VIEW로 전환 - 실시간 집계를 위한 PostgreSQL VIEW
 export const stockSummary = pgView('stock_summary_view', {
-    skuId: uuid('sku_id').notNull(),
-    warehouseId: uuid('warehouse_id').notNull(),
-    skuName: varchar('sku_name', { length: 255 }),
-    warehouseName: varchar('warehouse_name', { length: 255 }),
+  skuId: uuid('sku_id').notNull(),
+  warehouseId: uuid('warehouse_id').notNull(),
+  skuName: varchar('sku_name', { length: 255 }),
+  warehouseName: varchar('warehouse_name', { length: 255 }),
 
-    // 물리적 재고
-    onHandQty: integer('on_hand_qty').notNull().default(0),
-    defectiveQty: integer('defective_qty').notNull().default(0),
-    inTransferQty: integer('in_transfer_qty').notNull().default(0),
+  // 물리적 재고
+  onHandQty: integer('on_hand_qty').notNull().default(0),
+  defectiveQty: integer('defective_qty').notNull().default(0),
+  inTransferQty: integer('in_transfer_qty').notNull().default(0),
 
-    // 예약 상태
-    reservedQty: integer('reserved_qty').notNull().default(0),
-    availableQty: integer('available_qty').notNull().default(0),
+  // 예약 상태
+  reservedQty: integer('reserved_qty').notNull().default(0),
+  availableQty: integer('available_qty').notNull().default(0),
 
-    // 예정 상태
-    inboundPendingQty: integer('inbound_pending_qty').notNull().default(0),
-    onOrderQty: integer('on_order_qty').notNull().default(0),
-    transferPendingQty: integer('transfer_pending_qty').notNull().default(0),
+  // 예정 상태
+  inboundPendingQty: integer('inbound_pending_qty').notNull().default(0),
+  onOrderQty: integer('on_order_qty').notNull().default(0),
+  transferPendingQty: integer('transfer_pending_qty').notNull().default(0),
 
-    // 계산된 전망
-    projectedAvailableQty: integer('projected_available_qty').notNull().default(0),
+  // 계산된 전망
+  projectedAvailableQty: integer('projected_available_qty').notNull().default(0),
 
-    lastCalculatedAt: timestamp('last_calculated_at', { withTimezone: true }).notNull(),
+  lastCalculatedAt: timestamp('last_calculated_at', { withTimezone: true }).notNull(),
 }).as(sql`
     SELECT
         s.id as sku_id,
@@ -831,38 +832,38 @@ export const stockSummary = pgView('stock_summary_view', {
  * PRODUCT / VARIANT / SKU MAPPING
  *──────────────────────────*/
 export const productMatchings = pgTable('product_matchings', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
-    skuGroupId: uuid('sku_group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
-    status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
-    priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
-    strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
-    isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
-    // 재고 정책 필드들 (skus에서 이동)
-    inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
-    preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
-    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
+  id: uuid('id').primaryKey().defaultRandom(),
+  variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+  skuGroupId: uuid('sku_group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
+  status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
+  priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
+  strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
+  isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
+  // 재고 정책 필드들 (skus에서 이동)
+  inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
+  preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
+  alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
 
-    // isGift 제거 (사은품 속성은 판매주문 라인 등 상위로 이동)
+  // isGift 제거 (사은품 속성은 판매주문 라인 등 상위로 이동)
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
+  uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
 }));
 
 // product_variant_sku_links: variant와 sku의 N:M 관계를 위한 연결 테이블
 export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
-    productMatchingId: uuid('product_matching_id')
-        .references(() => productMatchings.id, { onDelete: 'cascade' })
-        .notNull(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'cascade' })
-        .notNull(),
-    quantity: integer('quantity').notNull().default(1), // 구성 수량 (세트 상품용)
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  productMatchingId: uuid('product_matching_id')
+    .references(() => productMatchings.id, { onDelete: 'cascade' })
+    .notNull(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'cascade' })
+    .notNull(),
+  quantity: integer('quantity').notNull().default(1), // 구성 수량 (세트 상품용)
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey(t.productMatchingId, t.skuId),
+  pk: primaryKey(t.productMatchingId, t.skuId),
 }));
 
 /*───────────────────────────
@@ -870,88 +871,88 @@ export const productVariantSkuLinks = pgTable('product_variant_sku_links', {
  *──────────────────────────*/
 // 주문 테이블 추가
 export const salesOrders = pgTable('sales_orders', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
-    salesChannel: salesChannelEnum('sales_channel').notNull(),
-    status: orderStatusEnum('status').notNull().default('pending'),
+  id: uuid('id').primaryKey().defaultRandom(),
+  channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(), // 채널별 주문 ID
+  salesChannel: salesChannelEnum('sales_channel').notNull(),
+  status: orderStatusEnum('status').notNull().default('pending'),
 
-    // 고객 정보
-    customerName: varchar('customer_name', { length: 255 }),
-    customerEmail: varchar('customer_email', { length: 255 }),
-    customerPhone: varchar('customer_phone', { length: 50 }),
+  // 고객 정보
+  customerName: varchar('customer_name', { length: 255 }),
+  customerEmail: varchar('customer_email', { length: 255 }),
+  customerPhone: varchar('customer_phone', { length: 50 }),
 
-    // 배송 정보
-    shippingAddress: json('shipping_address').notNull(), // 배송지 전체 정보
-    shippingAddressHash: varchar('shipping_address_hash', { length: 64 }), // 합배송 처리용 해시
+  // 배송 정보
+  shippingAddress: json('shipping_address').notNull(), // 배송지 전체 정보
+  shippingAddressHash: varchar('shipping_address_hash', { length: 64 }), // 합배송 처리용 해시
 
-    // 금액 정보
-    totalAmount: integer('total_amount'), // 총 주문 금액
-    shippingFee: integer('shipping_fee').notNull().default(0), // 배송비
+  // 금액 정보
+  totalAmount: integer('total_amount'), // 총 주문 금액
+  shippingFee: integer('shipping_fee').notNull().default(0), // 배송비
 
-    // 합배송 정보
-    mergeGroupId: varchar('merge_group_id', { length: 64 }), // 합배송 그룹 ID
-    isMerged: boolean('is_merged').notNull().default(false), // 합배송 여부
+  // 합배송 정보
+  mergeGroupId: varchar('merge_group_id', { length: 64 }), // 합배송 그룹 ID
+  isMerged: boolean('is_merged').notNull().default(false), // 합배송 여부
 
-    // 타임스탬프
-    orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
-    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
-    processedAt: timestamp('processed_at', { withTimezone: true }),
+  // 타임스탬프
+  orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
+  uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
 }));
 
 // 주문 상품 테이블 추가
 export const salesOrderLines = pgTable('sales_order_lines', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    salesOrderId: uuid('sales_order_id')
-        .references(() => salesOrders.id, { onDelete: 'cascade' })
-        .notNull(),
-    variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
-    productMatchingId: uuid('product_matching_id')
-        .references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
+  id: uuid('id').primaryKey().defaultRandom(),
+  salesOrderId: uuid('sales_order_id')
+    .references(() => salesOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+  productMatchingId: uuid('product_matching_id')
+    .references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
 
-    productName: varchar('product_name', { length: 255 }).notNull(),
-    quantity: integer('quantity').notNull(),
-    unitPrice: integer('unit_price'), // 단가
-    totalPrice: integer('total_price'), // 총 가격
+  productName: varchar('product_name', { length: 255 }).notNull(),
+  quantity: integer('quantity').notNull(),
+  unitPrice: integer('unit_price'), // 단가
+  totalPrice: integer('total_price'), // 총 가격
 
-    status: orderItemStatusEnum('status').notNull().default('pending'),
-    suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
-    unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보
+  status: orderItemStatusEnum('status').notNull().default('pending'),
+  suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
+  unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보
 
-    deductedAt: timestamp('deducted_at', { withTimezone: true }), // 재고 차감 시간
+  deductedAt: timestamp('deducted_at', { withTimezone: true }), // 재고 차감 시간
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 주문 이벤트 로그 테이블 추가
 export const orderEvents = pgTable('order_events', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    eventId: varchar('event_id', { length: 255 }).notNull().unique(), // 멱등성 체크용
-    orderId: uuid('order_id')
-        .references(() => salesOrders.id, { onDelete: 'cascade' })
-        .notNull(),
-    eventType: eventTypeOrderEnum('event_type').notNull(),
-    payload: json('payload').notNull(), // 이벤트 데이터
-    processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventId: varchar('event_id', { length: 255 }).notNull().unique(), // 멱등성 체크용
+  orderId: uuid('order_id')
+    .references(() => salesOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  eventType: eventTypeOrderEnum('event_type').notNull(),
+  payload: json('payload').notNull(), // 이벤트 데이터
+  processedAt: timestamp('processed_at', { withTimezone: true }).notNull().defaultNow(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 합배송 그룹 테이블 추가
 export const mergeGroups = pgTable('merge_groups', {
-    id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
-    customerEmail: varchar('customer_email', { length: 255 }).notNull(),
-    shippingAddressHash: varchar('shipping_address_hash', { length: 64 }).notNull(),
-    totalShippingFee: integer('total_shipping_fee').notNull().default(0),
-    orderCount: integer('order_count').notNull().default(0),
+  id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
+  customerEmail: varchar('customer_email', { length: 255 }).notNull(),
+  shippingAddressHash: varchar('shipping_address_hash', { length: 64 }).notNull(),
+  totalShippingFee: integer('total_shipping_fee').notNull().default(0),
+  orderCount: integer('order_count').notNull().default(0),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -962,332 +963,333 @@ export const mergeGroups = pgTable('merge_groups', {
 
 // Fulfillment Orders (FO)
 export const fulfillmentOrders = pgTable('fulfillment_orders', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'cascade' }),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
-    ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
-    status: fulfillmentStatusEnum('status').notNull().default('created'),
+  id: uuid('id').primaryKey().defaultRandom(),
+  salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'cascade' }),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+  ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
+  status: fulfillmentStatusEnum('status').notNull().default('created'),
 
-    // 배치 및 출고 관련 필드들
-    batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
-    fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
-    priority: taskPriorityEnum('priority').notNull().default('normal'),
+  // 배치 및 출고 관련 필드들
+  batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
+  fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
+  priority: taskPriorityEnum('priority').notNull().default('normal'),
 
-    // 수량 관련 필드들
-    totalItems: integer('total_items').notNull().default(0),
-    totalQty: integer('total_qty').notNull().default(0),
-    totalReservedQty: integer('total_reserved_qty').notNull().default(0),
+  // 수량 관련 필드들
+  totalItems: integer('total_items').notNull().default(0),
+  totalQty: integer('total_qty').notNull().default(0),
+  totalReservedQty: integer('total_reserved_qty').notNull().default(0),
 
-    // 타임스탬프 필드들
-    allocatedAt: timestamp('allocated_at', { withTimezone: true }),
-    shippedAt: timestamp('shipped_at', { withTimezone: true }),
-    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  // 타임스탬프 필드들
+  allocatedAt: timestamp('allocated_at', { withTimezone: true }),
+  shippedAt: timestamp('shipped_at', { withTimezone: true }),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
 
-    shippingAddress: json('shipping_address'),
-    labelNo: varchar('label_no', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  shippingAddress: json('shipping_address'),
+  labelNo: varchar('label_no', { length: 64 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-        .notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    reservedQty: integer('reserved_qty').notNull().default(0),
-    pickedQty: integer('picked_qty').notNull().default(0),
-    shippedQty: integer('shipped_qty').notNull().default(0),
-    status: varchar('status', { length: 32 }).notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  fulfillmentOrderId: uuid('fulfillment_order_id')
+    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  reservedQty: integer('reserved_qty').notNull().default(0),
+  pickedQty: integer('picked_qty').notNull().default(0),
+  shippedQty: integer('shipped_qty').notNull().default(0),
+  status: varchar('status', { length: 32 }).notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
 export const stockReservations = pgTable('stock_reservations', {
-    id: uuid('id').primaryKey().defaultRandom(),
+  id: uuid('id').primaryKey().defaultRandom(),
 
-    // 통합 예약 대상 정보
-    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
-    targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
+  // 통합 예약 대상 정보
+  targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
+  targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
 
-    // 기존 FO 호환성을 위해 유지 (nullable로 변경)
-    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
-        .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' }),
+  // 기존 FO 호환성을 위해 유지 (nullable로 변경)
+  fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+    .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' }),
 
-    // 예약 기본 정보
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    status: reservationStatusEnum('status').notNull().default('pending'),
+  // 예약 기본 정보
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  status: reservationStatusEnum('status').notNull().default('pending'),
 
-    // 예약 메타 정보
-    timeoutAt: timestamp('timeout_at', { withTimezone: true }),
-    reason: text('reason'), // 예약 사유
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  // 예약 메타 정보
+  timeoutAt: timestamp('timeout_at', { withTimezone: true }),
+  reason: text('reason'), // 예약 사유
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    // 인덱스 추가
-    targetIdx: index('stock_reservations_target_idx').on(t.targetType, t.targetId),
-    skuWarehouseIdx: index('stock_reservations_sku_warehouse_idx').on(t.skuId, t.warehouseId),
-    statusIdx: index('stock_reservations_status_idx').on(t.status),
+  // 인덱스 추가
+  targetIdx: index('stock_reservations_target_idx').on(t.targetType, t.targetId),
+  skuWarehouseIdx: index('stock_reservations_sku_warehouse_idx').on(t.skuId, t.warehouseId),
+  statusIdx: index('stock_reservations_status_idx').on(t.status),
 }));
 
 /*───────────────────────────
  * OUTBOUND TASKS
  *──────────────────────────*/
 export const outboundTasks = pgTable('outbound_tasks', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
-    mergeGroupId: varchar('merge_group_id', { length: 64 })
-        .references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
-    status: taskStatusEnum('status').notNull().default('created'),
-    priority: taskPriorityEnum('priority').notNull().default('normal'),
+  id: uuid('id').primaryKey().defaultRandom(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
+  mergeGroupId: varchar('merge_group_id', { length: 64 })
+    .references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
+  status: taskStatusEnum('status').notNull().default('created'),
+  priority: taskPriorityEnum('priority').notNull().default('normal'),
 
-    totalItems: integer('total_items').notNull().default(0), // 총 품목 수
-    totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
+  totalItems: integer('total_items').notNull().default(0), // 총 품목 수
+  totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
 
-    assignedTo: uuid('assigned_to'), // 작업자 ID
-    requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
-    temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
+  assignedTo: uuid('assigned_to'), // 작업자 ID
+  requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
+  temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
 
-    unavailableReason: unavailableReasonEnum('unavailable_reason'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  unavailableReason: unavailableReasonEnum('unavailable_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // 바구니와 주문 연결 테이블 추가
 export const outboundTaskOrders = pgTable('outbound_task_orders', {
-    taskId: uuid('task_id')
-        .references(() => outboundTasks.id, { onDelete: 'cascade' })
-        .notNull(),
-    orderId: uuid('order_id')
-        .references(() => salesOrders.id, { onDelete: 'cascade' })
-        .notNull(),
+  taskId: uuid('task_id')
+    .references(() => outboundTasks.id, { onDelete: 'cascade' })
+    .notNull(),
+  orderId: uuid('order_id')
+    .references(() => salesOrders.id, { onDelete: 'cascade' })
+    .notNull(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey(t.taskId, t.orderId),
+  pk: primaryKey(t.taskId, t.orderId),
 }));
 
 // outbound_task_items 수정
 export const outboundTaskItems = pgTable('outbound_task_items', {
-    taskId: uuid('task_id')
-        .references(() => outboundTasks.id, { onDelete: 'cascade' })
-        .notNull(),
-    skuId: uuid('sku_id').references(() => skus.id).notNull(),
+  taskId: uuid('task_id')
+    .references(() => outboundTasks.id, { onDelete: 'cascade' })
+    .notNull(),
+  skuId: uuid('sku_id').references(() => skus.id).notNull(),
 
-    quantityPending: integer('quantity_pending').notNull().default(0),
-    quantityPicking: integer('quantity_picking').notNull().default(0),
-    quantityPicked: integer('quantity_picked').notNull().default(0),
+  quantityPending: integer('quantity_pending').notNull().default(0),
+  quantityPicking: integer('quantity_picking').notNull().default(0),
+  quantityPicked: integer('quantity_picked').notNull().default(0),
 
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey(t.taskId, t.skuId),
+  pk: primaryKey(t.taskId, t.skuId),
 }));
 
 export const outboundTaskLines = pgTable('outbound_task_lines', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    taskId: uuid('task_id').references(() => outboundTasks.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-    scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  taskId: uuid('task_id').references(() => outboundTasks.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+  scannedBarcode: varchar('scanned_barcode', { length: 64 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * SHIPMENTS
  *──────────────────────────*/
 export const shipments = pgTable('shipments', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-    status: shipmentStatusEnum('status').notNull().default('created'),
-    eta: timestamp('eta', { withTimezone: true }),
-    splitStatus: boolean('split_status').notNull().default(false),
-    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
-    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
+  status: shipmentStatusEnum('status').notNull().default('created'),
+  eta: timestamp('eta', { withTimezone: true }),
+  splitStatus: boolean('split_status').notNull().default(false),
+  fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const shipmentTracking = pgTable('shipment_tracking', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'cascade' }).notNull(),
-    status: shipmentStatusEnum('status').notNull(),
-    location: varchar('location', { length: 255 }),
-    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'cascade' }).notNull(),
+  status: shipmentStatusEnum('status').notNull(),
+  location: varchar('location', { length: 255 }),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * SALES VARIANT POLICIES
  *──────────────────────────*/
 export const salesVariantPolicies = pgTable('sales_variant_policies', {
-    variantId: uuid('variant_id').primaryKey(),
-    inventoryManagement: boolean('inventory_management').notNull().default(false),
-    preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
-    alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
-    fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
-    effectiveFrom: timestamp('effective_from', { withTimezone: true }),
-    effectiveTo: timestamp('effective_to', { withTimezone: true }),
-    updatedBy: uuid('updated_by'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  variantId: uuid('variant_id').primaryKey(),
+  inventoryManagement: boolean('inventory_management').notNull().default(false),
+  preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
+  alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
+  fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
+  effectiveFrom: timestamp('effective_from', { withTimezone: true }),
+  effectiveTo: timestamp('effective_to', { withTimezone: true }),
+  updatedBy: uuid('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * RETURNS
  *──────────────────────────*/
 export const returns = pgTable('returns', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
-    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    status: returnStatusEnum('status').notNull().default('requested'),
-    returnReason: varchar('return_reason', { length: 500 }), // 반품 사유
-    qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
-    qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
-    qcNotes: text('qc_notes'), // QC 검사 노트
-    restockQuantity: integer('restock_quantity').default(0),
-    disposeQuantity: integer('dispose_quantity').default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
+  shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+  status: returnStatusEnum('status').notNull().default('requested'),
+  returnReason: varchar('return_reason', { length: 500 }), // 반품 사유
+  qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
+  qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
+  qcNotes: text('qc_notes'), // QC 검사 노트
+  restockQuantity: integer('restock_quantity').default(0),
+  disposeQuantity: integer('dispose_quantity').default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    warehouseIdx: index('returns_warehouse_idx').on(t.warehouseId),
-    statusIdx: index('returns_status_idx').on(t.status),
-    orderIdx: index('returns_order_idx').on(t.orderId),
+  warehouseIdx: index('returns_warehouse_idx').on(t.warehouseId),
+  statusIdx: index('returns_status_idx').on(t.status),
+  orderIdx: index('returns_order_idx').on(t.orderId),
 }));
 
 export const returnItems = pgTable('return_items', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    returnId: uuid('return_id').references(() => returns.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
-    receivedQuantity: integer('received_quantity').default(0), // 실제 입고 수량
-    qcPassedQuantity: integer('qc_passed_quantity').default(0), // QC 통과 수량
-    qcFailedQuantity: integer('qc_failed_quantity').default(0), // QC 실패 수량
-    restockedQuantity: integer('restocked_quantity').default(0), // 재입고 수량
-    disposedQuantity: integer('disposed_quantity').default(0), // 폐기 수량
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
-    qcStatus: varchar('qc_status', { length: 50 }).default('pending'), // pending, passed, failed
-    qcReason: text('qc_reason'), // QC 결과 사유
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  returnId: uuid('return_id').references(() => returns.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
+  receivedQuantity: integer('received_quantity').default(0), // 실제 입고 수량
+  qcPassedQuantity: integer('qc_passed_quantity').default(0), // QC 통과 수량
+  qcFailedQuantity: integer('qc_failed_quantity').default(0), // QC 실패 수량
+  restockedQuantity: integer('restocked_quantity').default(0), // 재입고 수량
+  disposedQuantity: integer('disposed_quantity').default(0), // 폐기 수량
+  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
+  qcStatus: varchar('qc_status', { length: 50 }).default('pending'), // pending, passed, failed
+  qcReason: text('qc_reason'), // QC 결과 사유
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    returnIdx: index('return_items_return_idx').on(t.returnId),
-    skuIdx: index('return_items_sku_idx').on(t.skuId),
-    qcStatusIdx: index('return_items_qc_status_idx').on(t.qcStatus),
+  returnIdx: index('return_items_return_idx').on(t.returnId),
+  skuIdx: index('return_items_sku_idx').on(t.skuId),
+  qcStatusIdx: index('return_items_qc_status_idx').on(t.qcStatus),
 }));
 
 /*───────────────────────────
  * SETTINGS & HOLIDAYS
  *──────────────────────────*/
 export const settings = pgTable('settings', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    key: settingKeyEnum('key').notNull(),
-    value: text('value').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  key: settingKeyEnum('key').notNull(),
+  value: text('value').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const holidays = pgTable('holidays', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    date: timestamp('date', { mode: 'date' }).notNull(),
-    name: varchar('name', { length: 128 }).notNull(),
-    isCustom: boolean('is_custom').notNull().default(false),
-    source: varchar('source', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  date: timestamp('date', { mode: 'date' }).notNull(),
+  name: varchar('name', { length: 128 }).notNull(),
+  isCustom: boolean('is_custom').notNull().default(false),
+  source: varchar('source', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * OUTBOX (EVENT DISPATCH)
  *──────────────────────────*/
 export const outboxEvents = pgTable('outbox_events', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    eventType: varchar('event_type', { length: 128 }).notNull(),
-    aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
-    aggregateId: uuid('aggregate_id').notNull(),
-    partitionKey: varchar('partition_key', { length: 128 }).notNull(),
-    payload: json('payload').notNull(),
-    status: outboxStatusEnum('status').notNull().default('pending'),
-    attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    publishedAt: timestamp('published_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventType: varchar('event_type', { length: 128 }).notNull(),
+  aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
+  aggregateId: uuid('aggregate_id').notNull(),
+  partitionKey: varchar('partition_key', { length: 128 }).notNull(),
+  payload: json('payload').notNull(),
+  status: outboxStatusEnum('status').notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
+  idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
 }));
 
 /*───────────────────────────
  * PURCHASE ORDERS
  *──────────────────────────*/
 export const purchaseOrders = pgTable('purchase_orders', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    type: poTypeEnum('type').notNull(),
-    supplierId: uuid('supplier_id').references(() => suppliers.id), // 공급사 참조 추가
-    expectedArrival: timestamp('expected_arrival', { mode: 'date' }),
-    status: poStatusEnum('status').notNull().default('created'),
+  id: uuid('id').primaryKey().defaultRandom(),
+  type: poTypeEnum('type').notNull(),
+  supplierId: uuid('supplier_id').references(() => suppliers.id), // 공급사 참조 추가
+  expectedArrival: timestamp('expected_arrival', { mode: 'date' }),
+  status: poStatusEnum('status').notNull().default('created'),
 
-    // 최종 목적지 창고 추적을 위한 새 필드들
-    sourceWarehouseId: uuid('source_warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' })
-        .notNull(), // 직접 입고될 창고 (중국/부천)
-    destinationWarehouseId: uuid('destination_warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' })
-        .notNull(), // 최종 목적지 창고 (보통 부천)
-    requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
+  // 최종 목적지 창고 추적을 위한 새 필드들
+  sourceWarehouseId: uuid('source_warehouse_id')
+    .references(() => warehouses.id, { onDelete: 'restrict' })
+    .notNull(), // 직접 입고될 창고 (중국/부천)
+  destinationWarehouseId: uuid('destination_warehouse_id')
+    .references(() => warehouses.id, { onDelete: 'restrict' })
+    .notNull(), // 최종 목적지 창고 (보통 부천)
+  requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
-    // Audit workflow fields
-    auditStatus: poAuditStatusEnum('audit_status').default('draft'),
-    submittedForAuditAt: timestamp('submitted_for_audit_at', { withTimezone: true }),
-    submittedForAuditBy: uuid('submitted_for_audit_by'),
-    auditedAt: timestamp('audited_at', { withTimezone: true }),
-    auditedBy: uuid('audited_by'),
-    auditNotes: text('audit_notes'),
+  // Audit workflow fields
+  auditStatus: poAuditStatusEnum('audit_status').default('draft'),
+  submittedForAuditAt: timestamp('submitted_for_audit_at', { withTimezone: true }),
+  submittedForAuditBy: uuid('submitted_for_audit_by'),
+  auditedAt: timestamp('audited_at', { withTimezone: true }),
+  auditedBy: uuid('audited_by'),
+  auditNotes: text('audit_notes'),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const purchaseOrderLines = pgTable('purchase_order_lines', {
-    poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    unitPrice: integer('unit_price'), // 단가 추가
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  unitPrice: integer('unit_price'), // 단가 추가
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    pk: primaryKey(t.poId, t.skuId),
+  pk: primaryKey(t.poId, t.skuId),
 }));
 
 /*───────────────────────────
  * PURCHASE ORDER CART
  *──────────────────────────*/
 export const purchaseOrderCart = pgTable('purchase_order_cart', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    type: poTypeEnum('type').notNull(),
-    supplierInfo: json('supplier_info'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  type: poTypeEnum('type').notNull(),
+  supplierInfo: json('supplier_info'),
+  createdBy: uuid('created_by').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
  * INBOUND LISTS
  *──────────────────────────*/
 export const inboundLists = pgTable('inbound_lists', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    barcode: varchar('barcode', { length: 64 }),
-    status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  barcode: varchar('barcode', { length: 64 }),
+  status: inboundStatusEnum('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /*───────────────────────────
@@ -1295,224 +1297,224 @@ export const inboundLists = pgTable('inbound_lists', {
  *──────────────────────────*/
 // Stocktaking sessions table
 export const stocktakingSessions = pgTable('stocktaking_sessions', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    warehouseId: uuid('warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' })
-        .notNull(),
-    sessionName: varchar('session_name', { length: 255 }).notNull(),
-    status: stocktakingStatusEnum('status').notNull().default('draft'),
-    startedAt: timestamp('started_at', { withTimezone: true }),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    startedBy: uuid('started_by'), // FK to users (if available)
-    notes: text('notes'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  warehouseId: uuid('warehouse_id')
+    .references(() => warehouses.id, { onDelete: 'restrict' })
+    .notNull(),
+  sessionName: varchar('session_name', { length: 255 }).notNull(),
+  status: stocktakingStatusEnum('status').notNull().default('draft'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  startedBy: uuid('started_by'), // FK to users (if available)
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Stocktaking lines table (individual count records)
 export const stocktakingLines = pgTable('stocktaking_lines', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-        .references(() => stocktakingSessions.id, { onDelete: 'cascade' })
-        .notNull(),
-    skuId: uuid('sku_id')
-        .references(() => skus.id, { onDelete: 'restrict' })
-        .notNull(),
-    locationId: uuid('location_id')
-        .references(() => locations.id, { onDelete: 'restrict' }),
-    expectedQuantity: integer('expected_quantity').notNull(),
-    countedQuantity: integer('counted_quantity'),
-    variance: integer('variance'), // Calculated: countedQuantity - expectedQuantity
-    scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, counted, verified
-    countedAt: timestamp('counted_at', { withTimezone: true }),
-    countedBy: uuid('counted_by'), // FK to users
-    notes: text('notes'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id')
+    .references(() => stocktakingSessions.id, { onDelete: 'cascade' })
+    .notNull(),
+  skuId: uuid('sku_id')
+    .references(() => skus.id, { onDelete: 'restrict' })
+    .notNull(),
+  locationId: uuid('location_id')
+    .references(() => locations.id, { onDelete: 'restrict' }),
+  expectedQuantity: integer('expected_quantity').notNull(),
+  countedQuantity: integer('counted_quantity'),
+  variance: integer('variance'), // Calculated: countedQuantity - expectedQuantity
+  scannedBarcode: varchar('scanned_barcode', { length: 64 }),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, counted, verified
+  countedAt: timestamp('counted_at', { withTimezone: true }),
+  countedBy: uuid('counted_by'), // FK to users
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
-    idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
-    idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+  idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
+  idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
+  idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
 }));
 
 // Stocktaking adjustments table (generated from variances)
 export const stocktakingAdjustments = pgTable('stocktaking_adjustments', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-        .references(() => stocktakingSessions.id, { onDelete: 'restrict' })
-        .notNull(),
-    lineId: uuid('line_id')
-        .references(() => stocktakingLines.id, { onDelete: 'restrict' })
-        .notNull(),
-    stockEventId: uuid('stock_event_id')
-        .references(() => stockEvents.id, { onDelete: 'restrict' }),
-    adjustmentQuantity: integer('adjustment_quantity').notNull(),
-    adjustmentType: varchar('adjustment_type', { length: 20 }).notNull(), // 'INCREASE' or 'DECREASE'
-    reason: varchar('reason', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    appliedBy: uuid('applied_by'),
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id')
+    .references(() => stocktakingSessions.id, { onDelete: 'restrict' })
+    .notNull(),
+  lineId: uuid('line_id')
+    .references(() => stocktakingLines.id, { onDelete: 'restrict' })
+    .notNull(),
+  stockEventId: uuid('stock_event_id')
+    .references(() => stockEvents.id, { onDelete: 'restrict' }),
+  adjustmentQuantity: integer('adjustment_quantity').notNull(),
+  adjustmentType: varchar('adjustment_type', { length: 20 }).notNull(), // 'INCREASE' or 'DECREASE'
+  reason: varchar('reason', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  appliedBy: uuid('applied_by'),
 }, t => ({
-    idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
-    idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+  idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
+  idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
 }));
 
 /*───────────────────────────
  * INBOUND RECEIPTS (헤더/라인)
  *──────────────────────────*/
 export const inboundReceipts = pgTable('inbound_receipts', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    method: inboundMethodEnum('method').notNull(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
-    status: inboundReceiptStatusEnum('status').notNull().default('posted'),
-    totalQuantity: integer('total_quantity').notNull().default(0),
-    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  method: inboundMethodEnum('method').notNull(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  status: inboundReceiptStatusEnum('status').notNull().default('posted'),
+  totalQuantity: integer('total_quantity').notNull().default(0),
+  journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxInboundReceiptsWhTime: index('idx_inbound_receipts_wh_time').on(t.warehouseId, t.occurredAt),
+  idxInboundReceiptsWhTime: index('idx_inbound_receipts_wh_time').on(t.warehouseId, t.occurredAt),
 }));
 
 export const inboundPlans = pgTable('inbound_plans', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    expectedDate: timestamp('expected_date', { mode: 'date' }),
+  id: uuid('id').primaryKey().defaultRandom(),
+  expectedDate: timestamp('expected_date', { mode: 'date' }),
 
-    // 기존 warehouseId는 입고될 창고 (source)
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
+  // 기존 warehouseId는 입고될 창고 (source)
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'cascade' }).notNull(),
 
-    // 이중 입고 계획을 위한 새 필드들
-    planType: planTypeEnum('plan_type').notNull().default('destination'), // 'source' | 'destination'
-    parentPlanId: uuid('parent_plan_id').references((): AnyPgColumn => inboundPlans.id), // destination → source 참조
-    linkedPurchaseOrderId: uuid('linked_purchase_order_id').references(() => purchaseOrders.id).notNull(), // 원본 발주 추적
+  // 이중 입고 계획을 위한 새 필드들
+  planType: planTypeEnum('plan_type').notNull().default('destination'), // 'source' | 'destination'
+  parentPlanId: uuid('parent_plan_id').references((): AnyPgColumn => inboundPlans.id), // destination → source 참조
+  linkedPurchaseOrderId: uuid('linked_purchase_order_id').references(() => purchaseOrders.id).notNull(), // 원본 발주 추적
 
-    // 기존 필드들 (하위 호환성 유지)
-    destinationWarehouseId: uuid('destination_warehouse_id')
-        .references(() => warehouses.id, { onDelete: 'restrict' })
-        .notNull(), // 최종 목적지 창고 (stockSummary 집계 기준)
-    requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
+  // 기존 필드들 (하위 호환성 유지)
+  destinationWarehouseId: uuid('destination_warehouse_id')
+    .references(() => warehouses.id, { onDelete: 'restrict' })
+    .notNull(), // 최종 목적지 창고 (stockSummary 집계 기준)
+  requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
-    status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  status: inboundStatusEnum('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ([
-    index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
-    index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
-    // 이중 입고 계획을 위한 새 인덱스들
-    index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
-    index('idx_inbound_plans_parent').on(t.parentPlanId),
-    index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
+  index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
+  index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
+  // 이중 입고 계획을 위한 새 인덱스들
+  index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
+  index('idx_inbound_plans_parent').on(t.parentPlanId),
+  index('idx_inbound_plans_purchase_order').on(t.linkedPurchaseOrderId),
 ]));
 
 export const inboundPlanItems = pgTable('inbound_plan_items', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    planId: uuid('plan_id').references(() => inboundPlans.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    expectedQty: integer('expected_qty').notNull(),
-    receivedQty: integer('received_qty').notNull().default(0),
-    status: inboundStatusEnum('status').notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  planId: uuid('plan_id').references(() => inboundPlans.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  expectedQty: integer('expected_qty').notNull(),
+  receivedQty: integer('received_qty').notNull().default(0),
+  status: inboundStatusEnum('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
-    idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
+  idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
+  idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
 }));
 
 export const inboundReceiptLines = pgTable('inbound_receipt_lines', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'cascade' }).notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    quantity: integer('quantity').notNull(),
-    originLocationId: uuid('origin_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
-    memo: varchar('memo', { length: 255 }),
-    // counters for domain invariants
-    returnedQty: integer('returned_qty').notNull().default(0),
-    canceledQty: integer('canceled_qty').notNull().default(0),
-    putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
-    // optional link to plan item
-    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'cascade' }).notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  quantity: integer('quantity').notNull(),
+  originLocationId: uuid('origin_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+  memo: varchar('memo', { length: 255 }),
+  // counters for domain invariants
+  returnedQty: integer('returned_qty').notNull().default(0),
+  canceledQty: integer('canceled_qty').notNull().default(0),
+  putawayFromOriginQty: integer('putaway_from_origin_qty').notNull().default(0),
+  // optional link to plan item
+  planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxInboundLinesReceipt: index('idx_inbound_lines_receipt').on(t.receiptId),
-    idxInboundLinesSku: index('idx_inbound_lines_sku').on(t.skuId),
+  idxInboundLinesReceipt: index('idx_inbound_lines_receipt').on(t.receiptId),
+  idxInboundLinesSku: index('idx_inbound_lines_sku').on(t.skuId),
 }));
 
 /*───────────────────────────
  * INBOUND WORK LOGS (타임라인)
  *──────────────────────────*/
 export const inboundWorkLogs = pgTable('inbound_work_logs', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    type: inboundWorkTypeEnum('type').notNull(),
-    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
-    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
-    lineId: uuid('line_id').references(() => inboundReceiptLines.id, { onDelete: 'set null' }),
-    planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
-    fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
-    quantity: integer('quantity'),
-    method: inboundMethodEnum('method'),
-    reason: varchar('reason', { length: 255 }),
-    eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+  id: uuid('id').primaryKey().defaultRandom(),
+  type: inboundWorkTypeEnum('type').notNull(),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
+  lineId: uuid('line_id').references(() => inboundReceiptLines.id, { onDelete: 'set null' }),
+  planItemId: uuid('plan_item_id').references(() => inboundPlanItems.id, { onDelete: 'set null' }),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'set null' }),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+  fromLocationId: uuid('from_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  toLocationId: uuid('to_location_id').references(() => locations.id, { onDelete: 'set null' }),
+  quantity: integer('quantity'),
+  method: inboundMethodEnum('method'),
+  reason: varchar('reason', { length: 255 }),
+  eventId: uuid('event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
 }, t => ({
-    idxInboundWorkTime: index('idx_inbound_work_time').on(t.timestamp),
+  idxInboundWorkTime: index('idx_inbound_work_time').on(t.timestamp),
 }));
 
 /*───────────────────────────
  * AUDIT LOGS
  *──────────────────────────*/
 export const auditLogs = pgTable('audit_logs', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    eventType: auditEventTypeEnum('event_type').notNull(),
-    severity: auditSeverityEnum('severity').notNull().default('INFO'),
-    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventType: auditEventTypeEnum('event_type').notNull(),
+  severity: auditSeverityEnum('severity').notNull().default('INFO'),
+  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
 
-    // 사용자 정보
-    userId: varchar('user_id', { length: 255 }),
-    userAgent: text('user_agent'),
-    ipAddress: varchar('ip_address', { length: 45 }),
+  // 사용자 정보
+  userId: varchar('user_id', { length: 255 }),
+  userAgent: text('user_agent'),
+  ipAddress: varchar('ip_address', { length: 45 }),
 
-    // 리소스 정보
-    resourceType: varchar('resource_type', { length: 100 }), // 'order', 'sku', 'stock' 등
-    resourceId: varchar('resource_id', { length: 255 }),
-    resourceName: text('resource_name'),
+  // 리소스 정보
+  resourceType: varchar('resource_type', { length: 100 }), // 'order', 'sku', 'stock' 등
+  resourceId: varchar('resource_id', { length: 255 }),
+  resourceName: text('resource_name'),
 
-    // 변경 정보 (before/after)
-    changesBefore: jsonb('changes_before'),
-    changesAfter: jsonb('changes_after'),
+  // 변경 정보 (before/after)
+  changesBefore: jsonb('changes_before'),
+  changesAfter: jsonb('changes_after'),
 
-    // 컨텍스트 정보
-    action: varchar('action', { length: 100 }).notNull(), // 'create', 'update', 'delete' 등
-    module: varchar('module', { length: 50 }).notNull(), // 'inventory', 'order', 'fulfillment' 등
-    description: text('description'), // 사람이 읽을 수 있는 설명
+  // 컨텍스트 정보
+  action: varchar('action', { length: 100 }).notNull(), // 'create', 'update', 'delete' 등
+  module: varchar('module', { length: 50 }).notNull(), // 'inventory', 'order', 'fulfillment' 등
+  description: text('description'), // 사람이 읽을 수 있는 설명
 
-    // 추가 메타데이터
-    metadata: jsonb('metadata'), // 추가적인 컨텍스트 정보
-    errorMessage: text('error_message'), // 에러 발생 시
-    stackTrace: text('stack_trace'), // 에러 스택 트레이스
+  // 추가 메타데이터
+  metadata: jsonb('metadata'), // 추가적인 컨텍스트 정보
+  errorMessage: text('error_message'), // 에러 발생 시
+  stackTrace: text('stack_trace'), // 에러 스택 트레이스
 
-    // 상관관계 ID (같은 트랜잭션/요청의 로그들을 그룹화)
-    correlationId: varchar('correlation_id', { length: 255 }),
+  // 상관관계 ID (같은 트랜잭션/요청의 로그들을 그룹화)
+  correlationId: varchar('correlation_id', { length: 255 }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, t => ({
-    // 인덱스 생성
-    idxAuditTimestamp: index('idx_audit_timestamp').on(t.timestamp.desc()),
-    idxAuditEventType: index('idx_audit_event_type').on(t.eventType),
-    idxAuditResourceType: index('idx_audit_resource_type').on(t.resourceType),
-    idxAuditResourceId: index('idx_audit_resource_id').on(t.resourceId),
-    idxAuditModule: index('idx_audit_module').on(t.module),
-    idxAuditSeverity: index('idx_audit_severity').on(t.severity),
-    idxAuditUserId: index('idx_audit_user_id').on(t.userId),
-    idxAuditCorrelationId: index('idx_audit_correlation_id').on(t.correlationId),
+  // 인덱스 생성
+  idxAuditTimestamp: index('idx_audit_timestamp').on(t.timestamp.desc()),
+  idxAuditEventType: index('idx_audit_event_type').on(t.eventType),
+  idxAuditResourceType: index('idx_audit_resource_type').on(t.resourceType),
+  idxAuditResourceId: index('idx_audit_resource_id').on(t.resourceId),
+  idxAuditModule: index('idx_audit_module').on(t.module),
+  idxAuditSeverity: index('idx_audit_severity').on(t.severity),
+  idxAuditUserId: index('idx_audit_user_id').on(t.userId),
+  idxAuditCorrelationId: index('idx_audit_correlation_id').on(t.correlationId),
 
-    // 복합 인덱스
-    idxAuditResourceSearch: index('idx_audit_resource_search').on(t.resourceType, t.resourceId),
-    idxAuditTimeModule: index('idx_audit_time_module').on(t.timestamp.desc(), t.module),
+  // 복합 인덱스
+  idxAuditResourceSearch: index('idx_audit_resource_search').on(t.resourceType, t.resourceId),
+  idxAuditTimeModule: index('idx_audit_time_module').on(t.timestamp.desc(), t.module),
 }));
 
 /*───────────────────────────
@@ -1523,49 +1525,49 @@ export const auditLogs = pgTable('audit_logs', {
  * 판매상품→재고상품 매핑 규칙 (현재 활성 매핑)
  */
 export const productSkuMappings = pgTable('product_sku_mappings', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    productId: varchar('product_id', { length: 255 }).notNull(), // PIM의 판매상품 ID
-    version: integer('version').notNull().default(1),
-    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
-    isActive: boolean('is_active').notNull().default(true),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  productId: varchar('product_id', { length: 255 }).notNull(), // PIM의 판매상품 ID
+  version: integer('version').notNull().default(1),
+  effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
+  isActive: boolean('is_active').notNull().default(true),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxProductWarehouse: index('idx_product_sku_mappings_product_warehouse').on(t.productId, t.warehouseId),
-    idxActiveVersion: index('idx_product_sku_mappings_active').on(t.productId, t.warehouseId, t.isActive),
+  idxProductWarehouse: index('idx_product_sku_mappings_product_warehouse').on(t.productId, t.warehouseId),
+  idxActiveVersion: index('idx_product_sku_mappings_active').on(t.productId, t.warehouseId, t.isActive),
 }));
 
 export const productSkuMappingItems = pgTable('product_sku_mapping_items', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'cascade' }).notNull(),
-    variantId: uuid('variant_id').notNull(),
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    qtyPerProduct: integer('qty_per_product').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'cascade' }).notNull(),
+  variantId: uuid('variant_id').notNull(),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  qtyPerProduct: integer('qty_per_product').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxMapping: index('idx_product_sku_mapping_items_mapping').on(t.mappingId),
-    uqMappingVariant: index('uq_product_sku_mapping_items_mapping_variant').on(t.mappingId, t.variantId),
+  idxMapping: index('idx_product_sku_mapping_items_mapping').on(t.mappingId),
+  uqMappingVariant: index('uq_product_sku_mapping_items_mapping_variant').on(t.mappingId, t.variantId),
 }));
 
 /**
  * 주문시점 매핑 스냅샷 (불변)
  */
 export const productSkuMappingSnapshots = pgTable('product_sku_mapping_snapshots', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    productId: varchar('product_id', { length: 255 }).notNull(),
-    sourceVersion: integer('source_version').notNull(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
+  id: uuid('id').primaryKey().defaultRandom(),
+  productId: varchar('product_id', { length: 255 }).notNull(),
+  sourceVersion: integer('source_version').notNull(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+  snapshotData: json('snapshot_data').notNull(), // { items: [{ skuId, qtyPerProduct }] }
 
-    // 에러 로그에서 필요한 추가 컬럼들
-    variantId: uuid('variant_id').notNull(), // PIM variant ID
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
-    quantity: integer('quantity').notNull(),
-    mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
+  // 에러 로그에서 필요한 추가 컬럼들
+  variantId: uuid('variant_id').notNull(), // PIM variant ID
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+  quantity: integer('quantity').notNull(),
+  mappingId: uuid('mapping_id').references(() => productSkuMappings.id, { onDelete: 'restrict' }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
+  idxProduct: index('idx_product_sku_mapping_snapshots_product').on(t.productId),
 }));
 
 /*───────────────────────────
@@ -1576,33 +1578,33 @@ export const productSkuMappingSnapshots = pgTable('product_sku_mapping_snapshots
  * 출고주문 아이템 - SO의 판매상품을 SKU로 변환하여 저장
  */
 export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-        .notNull(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  fulfillmentOrderId: uuid('fulfillment_order_id')
+    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+    .notNull(),
 
-    // 추적 정보
-    salesOrderId: varchar('sales_order_id', { length: 255 }).notNull(), // 원본 SO ID
-    salesOrderLineId: varchar('sales_order_line_id', { length: 255 }).notNull(), // 원본 SOL ID
-    mappingSnapshotId: uuid('mapping_snapshot_id')
-        .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
-        .notNull(),
+  // 추적 정보
+  salesOrderId: varchar('sales_order_id', { length: 255 }).notNull(), // 원본 SO ID
+  salesOrderLineId: varchar('sales_order_line_id', { length: 255 }).notNull(), // 원본 SOL ID
+  mappingSnapshotId: uuid('mapping_snapshot_id')
+    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
+    .notNull(),
 
-    // 실제 출고 정보
-    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-    qty: integer('qty').notNull(),
+  // 실제 출고 정보
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
+  qty: integer('qty').notNull(),
 
-    // 진행 상태
-    reservedQty: integer('reserved_qty').notNull().default(0),
-    pickedQty: integer('picked_qty').notNull().default(0),
-    shippedQty: integer('shipped_qty').notNull().default(0),
+  // 진행 상태
+  reservedQty: integer('reserved_qty').notNull().default(0),
+  pickedQty: integer('picked_qty').notNull().default(0),
+  shippedQty: integer('shipped_qty').notNull().default(0),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
-    idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
-    idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
+  idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
+  idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
+  idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
 }));
 
 /*───────────────────────────
@@ -1610,42 +1612,42 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
  *──────────────────────────*/
 
 export const outboundBatches = pgTable('outbound_batches', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    batchNumber: varchar('batch_number', { length: 64 }).notNull().unique(),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    status: batchStatusEnum('status').notNull().default('created'),
-    pickingMethod: pickingMethodEnum('picking_method').notNull(),
-    cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
-    assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
+  id: uuid('id').primaryKey().defaultRandom(),
+  batchNumber: varchar('batch_number', { length: 64 }).notNull().unique(),
+  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+  status: batchStatusEnum('status').notNull().default('created'),
+  pickingMethod: pickingMethodEnum('picking_method').notNull(),
+  cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
+  assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
 
-    // 에러 로그에서 필요한 추가 컬럼들
-    name: varchar('name', { length: 255 }),
-    totalItems: integer('total_items').notNull().default(0),
-    totalQty: integer('total_qty').notNull().default(0),
-    scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
-    startedAt: timestamp('started_at', { withTimezone: true }),
-    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+  // 에러 로그에서 필요한 추가 컬럼들
+  name: varchar('name', { length: 255 }),
+  totalItems: integer('total_items').notNull().default(0),
+  totalQty: integer('total_qty').notNull().default(0),
+  scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  canceledAt: timestamp('canceled_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
 }, t => ({
-    idxWarehouseStatus: index('idx_outbound_batches_warehouse_status').on(t.warehouseId, t.status),
-    idxBatchNumber: index('idx_outbound_batches_number').on(t.batchNumber),
+  idxWarehouseStatus: index('idx_outbound_batches_warehouse_status').on(t.warehouseId, t.status),
+  idxBatchNumber: index('idx_outbound_batches_number').on(t.batchNumber),
 }));
 
 export const fulfillmentOrderBatches = pgTable('fulfillment_order_batches', {
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-        .notNull(),
-    batchId: uuid('batch_id')
-        .references(() => outboundBatches.id, { onDelete: 'cascade' })
-        .notNull(),
-    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-    removeReason: varchar('remove_reason', { length: 255 }),
+  fulfillmentOrderId: uuid('fulfillment_order_id')
+    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  batchId: uuid('batch_id')
+    .references(() => outboundBatches.id, { onDelete: 'cascade' })
+    .notNull(),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
+  removedAt: timestamp('removed_at', { withTimezone: true }),
+  removeReason: varchar('remove_reason', { length: 255 }),
 }, t => ({
-    pk: primaryKey(t.fulfillmentOrderId, t.batchId),
-    idxBatch: index('idx_fulfillment_order_batches_batch').on(t.batchId),
+  pk: primaryKey(t.fulfillmentOrderId, t.batchId),
+  idxBatch: index('idx_fulfillment_order_batches_batch').on(t.batchId),
 }));
 
 /*───────────────────────────
@@ -1653,105 +1655,105 @@ export const fulfillmentOrderBatches = pgTable('fulfillment_order_batches', {
  *──────────────────────────*/
 
 export const invoices = pgTable('invoices', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-        .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-        .notNull(),
-    invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
-    carrierCode: varchar('carrier_code', { length: 32 }),
-    issueMethod: invoiceMethodEnum('issue_method').notNull(),
-    goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
-    status: invoiceStatusEnum('status').notNull().default('issued'),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    printedAt: timestamp('printed_at', { withTimezone: true }),
-    shippedAt: timestamp('shipped_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id: uuid('id').primaryKey().defaultRandom(),
+  fulfillmentOrderId: uuid('fulfillment_order_id')
+    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+    .notNull(),
+  invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
+  carrierCode: varchar('carrier_code', { length: 32 }),
+  issueMethod: invoiceMethodEnum('issue_method').notNull(),
+  goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
+  status: invoiceStatusEnum('status').notNull().default('issued'),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
+  printedAt: timestamp('printed_at', { withTimezone: true }),
+  shippedAt: timestamp('shipped_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
-    idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
-    idxStatus: index('idx_invoices_status').on(t.status),
+  idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
+  idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
+  idxStatus: index('idx_invoices_status').on(t.status),
 }));
 
 /*───────────────────────────
  * TABLES ONLY SCHEMA (for TypedDatabase)
  *──────────────────────────*/
 export const wmsTables = {
-    suppliers,
-    supplierCategories,
-    supplierCategoryMappings,
-    holders,
-    skus,
-    skuSuppliers,
-    skuBarcodes,
-    categories,
-    skuCategories,
-    skuVariantPricing,
-    skuManagers,
-    skuLocationMovements,
-    skuGroups,
-    deliveryProfiles,
-    warehouses,
-    locationColumns,
-    locationRacks,
-    locations,
-    stockJournals,
-    stockEvents,
-    stockLedgers,
-    productMatchings,
-    productVariantSkuLinks,
-    salesOrders,
-    salesOrderLines,
-    orderEvents,
-    mergeGroups,
-    stockReservations,
-    fulfillmentOrders,
-    fulfillmentOrderLines,
-    outboundTasks,
-    outboundTaskOrders,
-    outboundTaskItems,
-    outboundTaskLines,
-    shipments,
-    shipmentTracking,
-    returns,
-    returnItems,
-    salesVariantPolicies,
-    settings,
-    holidays,
-    purchaseOrders,
-    purchaseOrderLines,
-    purchaseOrderCart,
-    inboundLists,
-    inboundReceipts,
-    inboundReceiptLines,
-    inboundPlans,
-    inboundPlanItems,
-    inboundWorkLogs,
-    movementJobs,
-    movementJobLines,
-    movementWorkLogs,
-    auditLogs,
-    outboxEvents,
+  suppliers,
+  supplierCategories,
+  supplierCategoryMappings,
+  holders,
+  skus,
+  skuSuppliers,
+  skuBarcodes,
+  categories,
+  skuCategories,
+  skuVariantPricing,
+  skuManagers,
+  skuLocationMovements,
+  skuGroups,
+  deliveryProfiles,
+  warehouses,
+  locationColumns,
+  locationRacks,
+  locations,
+  stockJournals,
+  stockEvents,
+  stockLedgers,
+  productMatchings,
+  productVariantSkuLinks,
+  salesOrders,
+  salesOrderLines,
+  orderEvents,
+  mergeGroups,
+  stockReservations,
+  fulfillmentOrders,
+  fulfillmentOrderLines,
+  outboundTasks,
+  outboundTaskOrders,
+  outboundTaskItems,
+  outboundTaskLines,
+  shipments,
+  shipmentTracking,
+  returns,
+  returnItems,
+  salesVariantPolicies,
+  settings,
+  holidays,
+  purchaseOrders,
+  purchaseOrderLines,
+  purchaseOrderCart,
+  inboundLists,
+  inboundReceipts,
+  inboundReceiptLines,
+  inboundPlans,
+  inboundPlanItems,
+  inboundWorkLogs,
+  movementJobs,
+  movementJobLines,
+  movementWorkLogs,
+  auditLogs,
+  outboxEvents,
 
-    // Stocktaking
-    stocktakingSessions,
-    stocktakingLines,
-    stocktakingAdjustments,
+  // Stocktaking
+  stocktakingSessions,
+  stocktakingLines,
+  stocktakingAdjustments,
 
-    // FOI 기반 확장 스키마
-    productSkuMappings,
-    productSkuMappingItems,
-    productSkuMappingSnapshots,
-    fulfillmentOrderItems,
-    outboundBatches,
-    fulfillmentOrderBatches,
-    invoices,
+  // FOI 기반 확장 스키마
+  productSkuMappings,
+  productSkuMappingItems,
+  productSkuMappingSnapshots,
+  fulfillmentOrderItems,
+  outboundBatches,
+  fulfillmentOrderBatches,
+  invoices,
 } as const;
 
 /*───────────────────────────
  * VIEWS ONLY SCHEMA
  *──────────────────────────*/
 export const wmsViews = {
-    stockSummary,
+  stockSummary,
 } as const;
 
 /*───────────────────────────
@@ -1762,837 +1764,838 @@ import { relations } from 'drizzle-orm';
 import { TypedDatabase } from '@app/db/types';
 
 export const holdersRelations = relations(holders, ({ many }) => ({
-    skus: many(skus),
-    fulfillmentOrders: many(fulfillmentOrders),
+  skus: many(skus),
+  fulfillmentOrders: many(fulfillmentOrders),
 }));
 
 export const suppliersRelations = relations(suppliers, ({ many }) => ({
-    purchaseOrders: many(purchaseOrders),
-    skuSuppliers: many(skuSuppliers),
-    supplierCategoryMappings: many(supplierCategoryMappings),
+  purchaseOrders: many(purchaseOrders),
+  skuSuppliers: many(skuSuppliers),
+  supplierCategoryMappings: many(supplierCategoryMappings),
 }));
 
 export const supplierCategoriesRelations = relations(supplierCategories, ({ many }) => ({
-    supplierCategoryMappings: many(supplierCategoryMappings),
+  supplierCategoryMappings: many(supplierCategoryMappings),
 }));
 
 export const supplierCategoryMappingsRelations = relations(supplierCategoryMappings, ({ one }) => ({
-    supplier: one(suppliers, {
-        fields: [supplierCategoryMappings.supplierId],
-        references: [suppliers.id],
-    }),
-    category: one(supplierCategories, {
-        fields: [supplierCategoryMappings.categoryId],
-        references: [supplierCategories.id],
-    }),
+  supplier: one(suppliers, {
+    fields: [supplierCategoryMappings.supplierId],
+    references: [suppliers.id],
+  }),
+  category: one(supplierCategories, {
+    fields: [supplierCategoryMappings.categoryId],
+    references: [supplierCategories.id],
+  }),
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
-    skuCategories: many(skuCategories),
+  skuCategories: many(skuCategories),
 }));
 
 export const deliveryProfilesRelations = relations(deliveryProfiles, ({ many }) => ({
-    skus: many(skus),
+  skus: many(skus),
 }));
 
 // SKU Relations (핵심)
 export const skusRelations = relations(skus, ({ one, many }) => ({
-    holder: one(holders, {
-        fields: [skus.holderId],
-        references: [holders.id],
-    }),
-    deliveryProfile: one(deliveryProfiles, {
-        fields: [skus.deliveryProfileId],
-        references: [deliveryProfiles.id],
-    }),
-    // Many-to-many relations
-    skuSuppliers: many(skuSuppliers),
-    skuCategories: many(skuCategories),
-    skuBarcodes: many(skuBarcodes),
-    // Phase 2 Step 4: New relations
-    pricing: one(skuVariantPricing, {
-        fields: [skus.id],
-        references: [skuVariantPricing.skuId],
-    }),
-    managers: one(skuManagers, {
-        fields: [skus.id],
-        references: [skuManagers.skuId],
-    }),
-    locationMovements: many(skuLocationMovements),
-    group: one(skuGroups, {
-        fields: [skus.groupId],
-        references: [skuGroups.id],
-    }),
-    // Location references
-    primaryLocation: one(locations, {
-        fields: [skus.primaryLocationId],
-        references: [locations.id],
-        relationName: 'primaryLocation',
-    }),
-    secondaryLocation: one(locations, {
-        fields: [skus.secondaryLocationId],
-        references: [locations.id],
-        relationName: 'secondaryLocation',
-    }),
-    logisticsPartner: one(suppliers, {
-        fields: [skus.logisticsPartnerId],
-        references: [suppliers.id],
-        relationName: 'logisticsPartner',
-    }),
-    // Stock relations
-    stockEvents: many(stockEvents),
-    stockLedgers: many(stockLedgers),
-    stockReservations: many(stockReservations),
-    // Order relations
-    fulfillmentOrderLines: many(fulfillmentOrderLines),
-    fulfillmentOrderItems: many(fulfillmentOrderItems),
-    outboundTaskItems: many(outboundTaskItems),
-    outboundTaskLines: many(outboundTaskLines),
-    // Purchase/Inbound relations
-    purchaseOrderLines: many(purchaseOrderLines),
-    purchaseOrderCart: many(purchaseOrderCart),
-    inboundPlanItems: many(inboundPlanItems),
-    inboundReceiptLines: many(inboundReceiptLines),
-    inboundLists: many(inboundLists),
-    // Movement relations
-    movementJobLines: many(movementJobLines),
-    // Matching relations
-    productVariantSkuLinks: many(productVariantSkuLinks),
-    // Mapping relations
-    productSkuMappingItems: many(productSkuMappingItems),
-    productSkuMappingSnapshots: many(productSkuMappingSnapshots),
+  holder: one(holders, {
+    fields: [skus.holderId],
+    references: [holders.id],
+  }),
+  deliveryProfile: one(deliveryProfiles, {
+    fields: [skus.deliveryProfileId],
+    references: [deliveryProfiles.id],
+  }),
+  // Many-to-many relations
+  skuSuppliers: many(skuSuppliers),
+  skuCategories: many(skuCategories),
+  skuBarcodes: many(skuBarcodes),
+  // Phase 2 Step 4: New relations
+  pricing: one(skuVariantPricing, {
+    fields: [skus.id],
+    references: [skuVariantPricing.skuId],
+  }),
+  managers: one(skuManagers, {
+    fields: [skus.id],
+    references: [skuManagers.skuId],
+  }),
+  locationMovements: many(skuLocationMovements),
+  group: one(skuGroups, {
+    fields: [skus.groupId],
+    references: [skuGroups.id],
+  }),
+  // Location references
+  primaryLocation: one(locations, {
+    fields: [skus.primaryLocationId],
+    references: [locations.id],
+    relationName: 'primaryLocation',
+  }),
+  secondaryLocation: one(locations, {
+    fields: [skus.secondaryLocationId],
+    references: [locations.id],
+    relationName: 'secondaryLocation',
+  }),
+  logisticsPartner: one(suppliers, {
+    fields: [skus.logisticsPartnerId],
+    references: [suppliers.id],
+    relationName: 'logisticsPartner',
+  }),
+  // Stock relations
+  stockEvents: many(stockEvents),
+  stockLedgers: many(stockLedgers),
+  stockReservations: many(stockReservations),
+  // Order relations
+  fulfillmentOrderLines: many(fulfillmentOrderLines),
+  fulfillmentOrderItems: many(fulfillmentOrderItems),
+  outboundTaskItems: many(outboundTaskItems),
+  outboundTaskLines: many(outboundTaskLines),
+  // Purchase/Inbound relations
+  purchaseOrderLines: many(purchaseOrderLines),
+  purchaseOrderCart: many(purchaseOrderCart),
+  inboundPlanItems: many(inboundPlanItems),
+  inboundReceiptLines: many(inboundReceiptLines),
+  inboundLists: many(inboundLists),
+  // Movement relations
+  movementJobLines: many(movementJobLines),
+  // Matching relations
+  productVariantSkuLinks: many(productVariantSkuLinks),
+  // Mapping relations
+  productSkuMappingItems: many(productSkuMappingItems),
+  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
 }));
 
 export const skuSuppliersRelations = relations(skuSuppliers, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuSuppliers.skuId],
-        references: [skus.id],
-    }),
-    supplier: one(suppliers, {
-        fields: [skuSuppliers.supplierId],
-        references: [suppliers.id],
-    }),
+  sku: one(skus, {
+    fields: [skuSuppliers.skuId],
+    references: [skus.id],
+  }),
+  supplier: one(suppliers, {
+    fields: [skuSuppliers.supplierId],
+    references: [suppliers.id],
+  }),
 }));
 
 export const skuCategoriesRelations = relations(skuCategories, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuCategories.skuId],
-        references: [skus.id],
-    }),
-    category: one(categories, {
-        fields: [skuCategories.categoryId],
-        references: [categories.id],
-    }),
+  sku: one(skus, {
+    fields: [skuCategories.skuId],
+    references: [skus.id],
+  }),
+  category: one(categories, {
+    fields: [skuCategories.categoryId],
+    references: [categories.id],
+  }),
 }));
 
 export const skuBarcodesRelations = relations(skuBarcodes, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuBarcodes.skuId],
-        references: [skus.id],
-    }),
+  sku: one(skus, {
+    fields: [skuBarcodes.skuId],
+    references: [skus.id],
+  }),
 }));
 
 // ===== Phase 2 Step 4: New Table Relations =====
 
 export const skuVariantPricingRelations = relations(skuVariantPricing, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuVariantPricing.skuId],
-        references: [skus.id],
-    }),
+  sku: one(skus, {
+    fields: [skuVariantPricing.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const skuManagersRelations = relations(skuManagers, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuManagers.skuId],
-        references: [skus.id],
-    }),
+  sku: one(skus, {
+    fields: [skuManagers.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const skuLocationMovementsRelations = relations(skuLocationMovements, ({ one }) => ({
-    sku: one(skus, {
-        fields: [skuLocationMovements.skuId],
-        references: [skus.id],
-    }),
-    fromLocation: one(locations, {
-        fields: [skuLocationMovements.fromLocationId],
-        references: [locations.id],
-        relationName: 'movementFrom',
-    }),
-    toLocation: one(locations, {
-        fields: [skuLocationMovements.toLocationId],
-        references: [locations.id],
-        relationName: 'movementTo',
-    }),
+  sku: one(skus, {
+    fields: [skuLocationMovements.skuId],
+    references: [skus.id],
+  }),
+  fromLocation: one(locations, {
+    fields: [skuLocationMovements.fromLocationId],
+    references: [locations.id],
+    relationName: 'movementFrom',
+  }),
+  toLocation: one(locations, {
+    fields: [skuLocationMovements.toLocationId],
+    references: [locations.id],
+    relationName: 'movementTo',
+  }),
 }));
 
 // Warehouse & Location Relations
 export const warehousesRelations = relations(warehouses, ({ many }) => ({
-    locationColumns: many(locationColumns),
-    locations: many(locations),
-    stockEvents: many(stockEvents),
-    stockLedgers: many(stockLedgers),
-    stockReservations: many(stockReservations),
-    fulfillmentOrders: many(fulfillmentOrders),
-    outboundTasks: many(outboundTasks),
-    outboundBatches: many(outboundBatches),
-    movementJobs: many(movementJobs),
-    inboundReceipts: many(inboundReceipts),
-    inboundPlans: many(inboundPlans),
-    inboundPlansAsDestination: many(inboundPlans, {
-        relationName: 'destinationWarehouse',
-    }),
-    purchaseOrdersAsSource: many(purchaseOrders, {
-        relationName: 'sourceWarehouse',
-    }),
-    purchaseOrdersAsDestination: many(purchaseOrders, {
-        relationName: 'destinationWarehouse',
-    }),
-    productSkuMappings: many(productSkuMappings),
-    productSkuMappingSnapshots: many(productSkuMappingSnapshots),
-    settings: many(settings),
+  locationColumns: many(locationColumns),
+  locations: many(locations),
+  stockEvents: many(stockEvents),
+  stockLedgers: many(stockLedgers),
+  stockReservations: many(stockReservations),
+  fulfillmentOrders: many(fulfillmentOrders),
+  outboundTasks: many(outboundTasks),
+  outboundBatches: many(outboundBatches),
+  movementJobs: many(movementJobs),
+  inboundReceipts: many(inboundReceipts),
+  inboundPlans: many(inboundPlans),
+  inboundPlansAsDestination: many(inboundPlans, {
+    relationName: 'destinationWarehouse',
+  }),
+  purchaseOrdersAsSource: many(purchaseOrders, {
+    relationName: 'sourceWarehouse',
+  }),
+  purchaseOrdersAsDestination: many(purchaseOrders, {
+    relationName: 'destinationWarehouse',
+  }),
+  productSkuMappings: many(productSkuMappings),
+  productSkuMappingSnapshots: many(productSkuMappingSnapshots),
+  settings: many(settings),
 }));
 
 export const locationColumnsRelations = relations(locationColumns, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [locationColumns.warehouseId],
-        references: [warehouses.id],
-    }),
-    locationRacks: many(locationRacks),
+  warehouse: one(warehouses, {
+    fields: [locationColumns.warehouseId],
+    references: [warehouses.id],
+  }),
+  locationRacks: many(locationRacks),
 }));
 
 export const locationRacksRelations = relations(locationRacks, ({ one, many }) => ({
-    column: one(locationColumns, {
-        fields: [locationRacks.columnId],
-        references: [locationColumns.id],
-    }),
-    locations: many(locations),
+  column: one(locationColumns, {
+    fields: [locationRacks.columnId],
+    references: [locationColumns.id],
+  }),
+  locations: many(locations),
 }));
 
 export const locationsRelations = relations(locations, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [locations.warehouseId],
-        references: [warehouses.id],
-    }),
-    rack: one(locationRacks, {
-        fields: [locations.rackId],
-        references: [locationRacks.id],
-    }),
-    stockEvents: many(stockEvents),
-    stockLedgers: many(stockLedgers),
-    inboundReceipts: many(inboundReceipts),
-    inboundReceiptLines: many(inboundReceiptLines),
-    movementJobLines: many(movementJobLines),
-    outboundTaskLines: many(outboundTaskLines),
+  warehouse: one(warehouses, {
+    fields: [locations.warehouseId],
+    references: [warehouses.id],
+  }),
+  rack: one(locationRacks, {
+    fields: [locations.rackId],
+    references: [locationRacks.id],
+  }),
+  stockEvents: many(stockEvents),
+  stockLedgers: many(stockLedgers),
+  inboundReceipts: many(inboundReceipts),
+  inboundReceiptLines: many(inboundReceiptLines),
+  movementJobLines: many(movementJobLines),
+  outboundTaskLines: many(outboundTaskLines),
 }));
 
 // Stock Relations
 export const stockJournalsRelations = relations(stockJournals, ({ many }) => ({
-    stockEvents: many(stockEvents),
-    movementJobs: many(movementJobs),
-    inboundReceipts: many(inboundReceipts),
+  stockEvents: many(stockEvents),
+  movementJobs: many(movementJobs),
+  inboundReceipts: many(inboundReceipts),
 }));
 
 export const stockEventsRelations = relations(stockEvents, ({ one }) => ({
-    journal: one(stockJournals, {
-        fields: [stockEvents.journalId],
-        references: [stockJournals.id],
-    }),
-    sku: one(skus, {
-        fields: [stockEvents.skuId],
-        references: [skus.id],
-    }),
-    fromWarehouse: one(warehouses, {
-        fields: [stockEvents.fromWarehouseId],
-        references: [warehouses.id],
-    }),
-    toWarehouse: one(warehouses, {
-        fields: [stockEvents.toWarehouseId],
-        references: [warehouses.id],
-    }),
-    fromLocation: one(locations, {
-        fields: [stockEvents.fromLocationId],
-        references: [locations.id],
-    }),
-    toLocation: one(locations, {
-        fields: [stockEvents.toLocationId],
-        references: [locations.id],
-    }),
+  journal: one(stockJournals, {
+    fields: [stockEvents.journalId],
+    references: [stockJournals.id],
+  }),
+  sku: one(skus, {
+    fields: [stockEvents.skuId],
+    references: [skus.id],
+  }),
+  fromWarehouse: one(warehouses, {
+    fields: [stockEvents.fromWarehouseId],
+    references: [warehouses.id],
+  }),
+  toWarehouse: one(warehouses, {
+    fields: [stockEvents.toWarehouseId],
+    references: [warehouses.id],
+  }),
+  fromLocation: one(locations, {
+    fields: [stockEvents.fromLocationId],
+    references: [locations.id],
+  }),
+  toLocation: one(locations, {
+    fields: [stockEvents.toLocationId],
+    references: [locations.id],
+  }),
 }));
 
 export const stockLedgersRelations = relations(stockLedgers, ({ one }) => ({
-    sku: one(skus, {
-        fields: [stockLedgers.skuId],
-        references: [skus.id],
-    }),
-    warehouse: one(warehouses, {
-        fields: [stockLedgers.warehouseId],
-        references: [warehouses.id],
-    }),
-    location: one(locations, {
-        fields: [stockLedgers.locationId],
-        references: [locations.id],
-    }),
+  sku: one(skus, {
+    fields: [stockLedgers.skuId],
+    references: [skus.id],
+  }),
+  warehouse: one(warehouses, {
+    fields: [stockLedgers.warehouseId],
+    references: [warehouses.id],
+  }),
+  location: one(locations, {
+    fields: [stockLedgers.locationId],
+    references: [locations.id],
+  }),
 }));
 
 export const stockReservationsRelations = relations(stockReservations, ({ one }) => ({
-    sku: one(skus, {
-        fields: [stockReservations.skuId],
-        references: [skus.id],
-    }),
-    warehouse: one(warehouses, {
-        fields: [stockReservations.warehouseId],
-        references: [warehouses.id],
-    }),
-    fulfillmentOrderItem: one(fulfillmentOrderItems, {
-        fields: [stockReservations.fulfillmentOrderItemId],
-        references: [fulfillmentOrderItems.id],
-    }),
+  sku: one(skus, {
+    fields: [stockReservations.skuId],
+    references: [skus.id],
+  }),
+  warehouse: one(warehouses, {
+    fields: [stockReservations.warehouseId],
+    references: [warehouses.id],
+  }),
+  fulfillmentOrderItem: one(fulfillmentOrderItems, {
+    fields: [stockReservations.fulfillmentOrderItemId],
+    references: [fulfillmentOrderItems.id],
+  }),
 }));
 
 // Product Matching Relations
 export const productMatchingsRelations = relations(productMatchings, ({ one, many }) => ({
-    productVariantSkuLinks: many(productVariantSkuLinks),
-    salesOrderLines: many(salesOrderLines),
+  productVariantSkuLinks: many(productVariantSkuLinks),
+  salesOrderLines: many(salesOrderLines),
 }));
 
 export const productVariantSkuLinksRelations = relations(productVariantSkuLinks, ({ one }) => ({
-    productMatching: one(productMatchings, {
-        fields: [productVariantSkuLinks.productMatchingId],
-        references: [productMatchings.id],
-    }),
-    sku: one(skus, {
-        fields: [productVariantSkuLinks.skuId],
-        references: [skus.id],
-    }),
+  productMatching: one(productMatchings, {
+    fields: [productVariantSkuLinks.productMatchingId],
+    references: [productMatchings.id],
+  }),
+  sku: one(skus, {
+    fields: [productVariantSkuLinks.skuId],
+    references: [skus.id],
+  }),
 }));
 
 // Sales Order Relations
 export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
-    lines: many(salesOrderLines),
-    fulfillmentOrders: many(fulfillmentOrders),
-    orderEvents: many(orderEvents),
-    outboundTaskOrders: many(outboundTaskOrders),
-    returns: many(returns),
+  lines: many(salesOrderLines),
+  fulfillmentOrders: many(fulfillmentOrders),
+  orderEvents: many(orderEvents),
+  outboundTaskOrders: many(outboundTaskOrders),
+  returns: many(returns),
 }));
 
 export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => ({
-    salesOrder: one(salesOrders, {
-        fields: [salesOrderLines.salesOrderId],
-        references: [salesOrders.id],
-    }),
-    productMatching: one(productMatchings, {
-        fields: [salesOrderLines.productMatchingId],
-        references: [productMatchings.id],
-    }),
+  salesOrder: one(salesOrders, {
+    fields: [salesOrderLines.salesOrderId],
+    references: [salesOrders.id],
+  }),
+  productMatching: one(productMatchings, {
+    fields: [salesOrderLines.productMatchingId],
+    references: [productMatchings.id],
+  }),
 }));
 
 export const orderEventsRelations = relations(orderEvents, ({ one }) => ({
-    order: one(salesOrders, {
-        fields: [orderEvents.orderId],
-        references: [salesOrders.id],
-    }),
+  order: one(salesOrders, {
+    fields: [orderEvents.orderId],
+    references: [salesOrders.id],
+  }),
 }));
 
 export const mergeGroupsRelations = relations(mergeGroups, ({ many }) => ({
-    outboundTasks: many(outboundTasks),
+  outboundTasks: many(outboundTasks),
 }));
 
 // Fulfillment Order Relations
 export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, many }) => ({
-    salesOrder: one(salesOrders, {
-        fields: [fulfillmentOrders.salesOrderId],
-        references: [salesOrders.id],
-    }),
-    warehouse: one(warehouses, {
-        fields: [fulfillmentOrders.warehouseId],
-        references: [warehouses.id],
-    }),
-    owner: one(holders, {
-        fields: [fulfillmentOrders.ownerId],
-        references: [holders.id],
-    }),
-    batch: one(outboundBatches, {
-        fields: [fulfillmentOrders.batchId],
-        references: [outboundBatches.id],
-    }),
-    lines: many(fulfillmentOrderLines),
-    items: many(fulfillmentOrderItems),
-    shipments: many(shipments),
-    fulfillmentOrderBatches: many(fulfillmentOrderBatches),
-    invoices: many(invoices),
+  salesOrder: one(salesOrders, {
+    fields: [fulfillmentOrders.salesOrderId],
+    references: [salesOrders.id],
+  }),
+  warehouse: one(warehouses, {
+    fields: [fulfillmentOrders.warehouseId],
+    references: [warehouses.id],
+  }),
+  owner: one(holders, {
+    fields: [fulfillmentOrders.ownerId],
+    references: [holders.id],
+  }),
+  batch: one(outboundBatches, {
+    fields: [fulfillmentOrders.batchId],
+    references: [outboundBatches.id],
+  }),
+  lines: many(fulfillmentOrderLines),
+  items: many(fulfillmentOrderItems),
+  shipments: many(shipments),
+  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
+  invoices: many(invoices),
 }));
 
 export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
-    fulfillmentOrder: one(fulfillmentOrders, {
-        fields: [fulfillmentOrderLines.fulfillmentOrderId],
-        references: [fulfillmentOrders.id],
-    }),
-    sku: one(skus, {
-        fields: [fulfillmentOrderLines.skuId],
-        references: [skus.id],
-    }),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [fulfillmentOrderLines.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
+  sku: one(skus, {
+    fields: [fulfillmentOrderLines.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, ({ one, many }) => ({
-    fulfillmentOrder: one(fulfillmentOrders, {
-        fields: [fulfillmentOrderItems.fulfillmentOrderId],
-        references: [fulfillmentOrders.id],
-    }),
-    sku: one(skus, {
-        fields: [fulfillmentOrderItems.skuId],
-        references: [skus.id],
-    }),
-    mappingSnapshot: one(productSkuMappingSnapshots, {
-        fields: [fulfillmentOrderItems.mappingSnapshotId],
-        references: [productSkuMappingSnapshots.id],
-    }),
-    stockReservations: many(stockReservations),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [fulfillmentOrderItems.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
+  sku: one(skus, {
+    fields: [fulfillmentOrderItems.skuId],
+    references: [skus.id],
+  }),
+  mappingSnapshot: one(productSkuMappingSnapshots, {
+    fields: [fulfillmentOrderItems.mappingSnapshotId],
+    references: [productSkuMappingSnapshots.id],
+  }),
+  stockReservations: many(stockReservations),
 }));
 
 // Outbound Relations
 export const outboundTasksRelations = relations(outboundTasks, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [outboundTasks.warehouseId],
-        references: [warehouses.id],
-    }),
-    mergeGroup: one(mergeGroups, {
-        fields: [outboundTasks.mergeGroupId],
-        references: [mergeGroups.id],
-    }),
-    outboundTaskOrders: many(outboundTaskOrders),
-    outboundTaskItems: many(outboundTaskItems),
-    outboundTaskLines: many(outboundTaskLines),
+  warehouse: one(warehouses, {
+    fields: [outboundTasks.warehouseId],
+    references: [warehouses.id],
+  }),
+  mergeGroup: one(mergeGroups, {
+    fields: [outboundTasks.mergeGroupId],
+    references: [mergeGroups.id],
+  }),
+  outboundTaskOrders: many(outboundTaskOrders),
+  outboundTaskItems: many(outboundTaskItems),
+  outboundTaskLines: many(outboundTaskLines),
 }));
 
 export const outboundTaskOrdersRelations = relations(outboundTaskOrders, ({ one }) => ({
-    task: one(outboundTasks, {
-        fields: [outboundTaskOrders.taskId],
-        references: [outboundTasks.id],
-    }),
-    order: one(salesOrders, {
-        fields: [outboundTaskOrders.orderId],
-        references: [salesOrders.id],
-    }),
+  task: one(outboundTasks, {
+    fields: [outboundTaskOrders.taskId],
+    references: [outboundTasks.id],
+  }),
+  order: one(salesOrders, {
+    fields: [outboundTaskOrders.orderId],
+    references: [salesOrders.id],
+  }),
 }));
 
 export const outboundTaskItemsRelations = relations(outboundTaskItems, ({ one }) => ({
-    task: one(outboundTasks, {
-        fields: [outboundTaskItems.taskId],
-        references: [outboundTasks.id],
-    }),
-    sku: one(skus, {
-        fields: [outboundTaskItems.skuId],
-        references: [skus.id],
-    }),
+  task: one(outboundTasks, {
+    fields: [outboundTaskItems.taskId],
+    references: [outboundTasks.id],
+  }),
+  sku: one(skus, {
+    fields: [outboundTaskItems.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const outboundTaskLinesRelations = relations(outboundTaskLines, ({ one }) => ({
-    task: one(outboundTasks, {
-        fields: [outboundTaskLines.taskId],
-        references: [outboundTasks.id],
-    }),
-    sku: one(skus, {
-        fields: [outboundTaskLines.skuId],
-        references: [skus.id],
-    }),
-    location: one(locations, {
-        fields: [outboundTaskLines.locationId],
-        references: [locations.id],
-    }),
+  task: one(outboundTasks, {
+    fields: [outboundTaskLines.taskId],
+    references: [outboundTasks.id],
+  }),
+  sku: one(skus, {
+    fields: [outboundTaskLines.skuId],
+    references: [skus.id],
+  }),
+  location: one(locations, {
+    fields: [outboundTaskLines.locationId],
+    references: [locations.id],
+  }),
 }));
 
 export const outboundBatchesRelations = relations(outboundBatches, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [outboundBatches.warehouseId],
-        references: [warehouses.id],
-    }),
-    fulfillmentOrders: many(fulfillmentOrders),
-    fulfillmentOrderBatches: many(fulfillmentOrderBatches),
+  warehouse: one(warehouses, {
+    fields: [outboundBatches.warehouseId],
+    references: [warehouses.id],
+  }),
+  fulfillmentOrders: many(fulfillmentOrders),
+  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
 }));
 
 export const fulfillmentOrderBatchesRelations = relations(fulfillmentOrderBatches, ({ one }) => ({
-    fulfillmentOrder: one(fulfillmentOrders, {
-        fields: [fulfillmentOrderBatches.fulfillmentOrderId],
-        references: [fulfillmentOrders.id],
-    }),
-    batch: one(outboundBatches, {
-        fields: [fulfillmentOrderBatches.batchId],
-        references: [outboundBatches.id],
-    }),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [fulfillmentOrderBatches.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
+  batch: one(outboundBatches, {
+    fields: [fulfillmentOrderBatches.batchId],
+    references: [outboundBatches.id],
+  }),
 }));
 
 // Shipment Relations
 export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
-    fulfillmentOrder: one(fulfillmentOrders, {
-        fields: [shipments.fulfillmentOrderId],
-        references: [fulfillmentOrders.id],
-    }),
-    shipmentTracking: many(shipmentTracking),
-    returns: many(returns),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [shipments.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
+  shipmentTracking: many(shipmentTracking),
+  returns: many(returns),
 }));
 
 export const shipmentTrackingRelations = relations(shipmentTracking, ({ one }) => ({
-    shipment: one(shipments, {
-        fields: [shipmentTracking.shipmentId],
-        references: [shipments.id],
-    }),
+  shipment: one(shipments, {
+    fields: [shipmentTracking.shipmentId],
+    references: [shipments.id],
+  }),
 }));
 
 export const returnsRelations = relations(returns, ({ one }) => ({
-    order: one(salesOrders, {
-        fields: [returns.orderId],
-        references: [salesOrders.id],
-    }),
-    shipment: one(shipments, {
-        fields: [returns.shipmentId],
-        references: [shipments.id],
-    }),
+  order: one(salesOrders, {
+    fields: [returns.orderId],
+    references: [salesOrders.id],
+  }),
+  shipment: one(shipments, {
+    fields: [returns.shipmentId],
+    references: [shipments.id],
+  }),
 }));
 
 // Invoice Relations
 export const invoicesRelations = relations(invoices, ({ one }) => ({
-    fulfillmentOrder: one(fulfillmentOrders, {
-        fields: [invoices.fulfillmentOrderId],
-        references: [fulfillmentOrders.id],
-    }),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [invoices.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
 }));
 
 // Purchase Order Relations
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
-    lines: many(purchaseOrderLines),
-    supplier: one(suppliers, {
-        fields: [purchaseOrders.supplierId],
-        references: [suppliers.id],
-    }),
-    sourceWarehouse: one(warehouses, {
-        fields: [purchaseOrders.sourceWarehouseId],
-        references: [warehouses.id],
-        relationName: 'sourceWarehouse',
-    }),
-    destinationWarehouse: one(warehouses, {
-        fields: [purchaseOrders.destinationWarehouseId],
-        references: [warehouses.id],
-        relationName: 'destinationWarehouse',
-    }),
-    inboundPlans: many(inboundPlans),
+  lines: many(purchaseOrderLines),
+  supplier: one(suppliers, {
+    fields: [purchaseOrders.supplierId],
+    references: [suppliers.id],
+  }),
+  sourceWarehouse: one(warehouses, {
+    fields: [purchaseOrders.sourceWarehouseId],
+    references: [warehouses.id],
+    relationName: 'sourceWarehouse',
+  }),
+  destinationWarehouse: one(warehouses, {
+    fields: [purchaseOrders.destinationWarehouseId],
+    references: [warehouses.id],
+    relationName: 'destinationWarehouse',
+  }),
+  inboundPlans: many(inboundPlans),
 }));
 
 export const purchaseOrderLinesRelations = relations(purchaseOrderLines, ({ one }) => ({
-    purchaseOrder: one(purchaseOrders, {
-        fields: [purchaseOrderLines.poId],
-        references: [purchaseOrders.id],
-    }),
-    sku: one(skus, {
-        fields: [purchaseOrderLines.skuId],
-        references: [skus.id],
-    }),
+  purchaseOrder: one(purchaseOrders, {
+    fields: [purchaseOrderLines.poId],
+    references: [purchaseOrders.id],
+  }),
+  sku: one(skus, {
+    fields: [purchaseOrderLines.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const purchaseOrderCartRelations = relations(purchaseOrderCart, ({ one }) => ({
-    sku: one(skus, {
-        fields: [purchaseOrderCart.skuId],
-        references: [skus.id],
-    }),
+  sku: one(skus, {
+    fields: [purchaseOrderCart.skuId],
+    references: [skus.id],
+  }),
 }));
 
 // Inbound Relations
 export const inboundListsRelations = relations(inboundLists, ({ one }) => ({
-    purchaseOrder: one(purchaseOrders, {
-        fields: [inboundLists.poId],
-        references: [purchaseOrders.id],
-    }),
-    sku: one(skus, {
-        fields: [inboundLists.skuId],
-        references: [skus.id],
-    }),
+  purchaseOrder: one(purchaseOrders, {
+    fields: [inboundLists.poId],
+    references: [purchaseOrders.id],
+  }),
+  sku: one(skus, {
+    fields: [inboundLists.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const inboundReceiptsRelations = relations(inboundReceipts, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [inboundReceipts.warehouseId],
-        references: [warehouses.id],
-    }),
-    location: one(locations, {
-        fields: [inboundReceipts.locationId],
-        references: [locations.id],
-    }),
-    journal: one(stockJournals, {
-        fields: [inboundReceipts.journalId],
-        references: [stockJournals.id],
-    }),
-    lines: many(inboundReceiptLines),
+  warehouse: one(warehouses, {
+    fields: [inboundReceipts.warehouseId],
+    references: [warehouses.id],
+  }),
+  location: one(locations, {
+    fields: [inboundReceipts.locationId],
+    references: [locations.id],
+  }),
+  journal: one(stockJournals, {
+    fields: [inboundReceipts.journalId],
+    references: [stockJournals.id],
+  }),
+  lines: many(inboundReceiptLines),
 }));
 
 export const inboundPlansRelations = relations(inboundPlans, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [inboundPlans.warehouseId],
-        references: [warehouses.id],
-    }),
-    destinationWarehouse: one(warehouses, {
-        fields: [inboundPlans.destinationWarehouseId],
-        references: [warehouses.id],
-        relationName: 'destinationWarehouse',
-    }),
-    linkedPurchaseOrder: one(purchaseOrders, {
-        fields: [inboundPlans.linkedPurchaseOrderId],
-        references: [purchaseOrders.id],
-    }),
-    parentPlan: one(inboundPlans, {
-        fields: [inboundPlans.parentPlanId],
-        references: [inboundPlans.id],
-        relationName: 'parentChildPlans',
-    }),
-    items: many(inboundPlanItems),
+  warehouse: one(warehouses, {
+    fields: [inboundPlans.warehouseId],
+    references: [warehouses.id],
+  }),
+  destinationWarehouse: one(warehouses, {
+    fields: [inboundPlans.destinationWarehouseId],
+    references: [warehouses.id],
+    relationName: 'destinationWarehouse',
+  }),
+  linkedPurchaseOrder: one(purchaseOrders, {
+    fields: [inboundPlans.linkedPurchaseOrderId],
+    references: [purchaseOrders.id],
+  }),
+  parentPlan: one(inboundPlans, {
+    fields: [inboundPlans.parentPlanId],
+    references: [inboundPlans.id],
+    relationName: 'parentChildPlans',
+  }),
+  items: many(inboundPlanItems),
 }));
 
 export const inboundPlanItemsRelations = relations(inboundPlanItems, ({ one, many }) => ({
-    plan: one(inboundPlans, {
-        fields: [inboundPlanItems.planId],
-        references: [inboundPlans.id],
-    }),
-    sku: one(skus, {
-        fields: [inboundPlanItems.skuId],
-        references: [skus.id],
-    }),
-    receiptLines: many(inboundReceiptLines),
+  plan: one(inboundPlans, {
+    fields: [inboundPlanItems.planId],
+    references: [inboundPlans.id],
+  }),
+  sku: one(skus, {
+    fields: [inboundPlanItems.skuId],
+    references: [skus.id],
+  }),
+  receiptLines: many(inboundReceiptLines),
 }));
 
 export const inboundReceiptLinesRelations = relations(inboundReceiptLines, ({ one }) => ({
-    receipt: one(inboundReceipts, {
-        fields: [inboundReceiptLines.receiptId],
-        references: [inboundReceipts.id],
-    }),
-    sku: one(skus, {
-        fields: [inboundReceiptLines.skuId],
-        references: [skus.id],
-    }),
-    originLocation: one(locations, {
-        fields: [inboundReceiptLines.originLocationId],
-        references: [locations.id],
-    }),
-    stockEvent: one(stockEvents, {
-        fields: [inboundReceiptLines.eventId],
-        references: [stockEvents.id],
-    }),
-    planItem: one(inboundPlanItems, {
-        fields: [inboundReceiptLines.planItemId],
-        references: [inboundPlanItems.id],
-    }),
+  receipt: one(inboundReceipts, {
+    fields: [inboundReceiptLines.receiptId],
+    references: [inboundReceipts.id],
+  }),
+  sku: one(skus, {
+    fields: [inboundReceiptLines.skuId],
+    references: [skus.id],
+  }),
+  originLocation: one(locations, {
+    fields: [inboundReceiptLines.originLocationId],
+    references: [locations.id],
+  }),
+  stockEvent: one(stockEvents, {
+    fields: [inboundReceiptLines.eventId],
+    references: [stockEvents.id],
+  }),
+  planItem: one(inboundPlanItems, {
+    fields: [inboundReceiptLines.planItemId],
+    references: [inboundPlanItems.id],
+  }),
 }));
 
 // Movement Relations
 export const movementJobsRelations = relations(movementJobs, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [movementJobs.warehouseId],
-        references: [warehouses.id],
-    }),
-    journal: one(stockJournals, {
-        fields: [movementJobs.journalId],
-        references: [stockJournals.id],
-    }),
-    lines: many(movementJobLines),
+  warehouse: one(warehouses, {
+    fields: [movementJobs.warehouseId],
+    references: [warehouses.id],
+  }),
+  journal: one(stockJournals, {
+    fields: [movementJobs.journalId],
+    references: [stockJournals.id],
+  }),
+  lines: many(movementJobLines),
 }));
 
 export const movementJobLinesRelations = relations(movementJobLines, ({ one }) => ({
-    job: one(movementJobs, {
-        fields: [movementJobLines.jobId],
-        references: [movementJobs.id],
-    }),
-    sku: one(skus, {
-        fields: [movementJobLines.skuId],
-        references: [skus.id],
-    }),
-    fromLocation: one(locations, {
-        fields: [movementJobLines.fromLocationId],
-        references: [locations.id],
-    }),
-    toLocation: one(locations, {
-        fields: [movementJobLines.toLocationId],
-        references: [locations.id],
-    }),
-    event: one(stockEvents, {
-        fields: [movementJobLines.eventId],
-        references: [stockEvents.id],
-    }),
+  job: one(movementJobs, {
+    fields: [movementJobLines.jobId],
+    references: [movementJobs.id],
+  }),
+  sku: one(skus, {
+    fields: [movementJobLines.skuId],
+    references: [skus.id],
+  }),
+  fromLocation: one(locations, {
+    fields: [movementJobLines.fromLocationId],
+    references: [locations.id],
+  }),
+  toLocation: one(locations, {
+    fields: [movementJobLines.toLocationId],
+    references: [locations.id],
+  }),
+  event: one(stockEvents, {
+    fields: [movementJobLines.eventId],
+    references: [stockEvents.id],
+  }),
 }));
 
 // Product-SKU Mapping Relations
 export const productSkuMappingsRelations = relations(productSkuMappings, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [productSkuMappings.warehouseId],
-        references: [warehouses.id],
-    }),
-    items: many(productSkuMappingItems),
+  warehouse: one(warehouses, {
+    fields: [productSkuMappings.warehouseId],
+    references: [warehouses.id],
+  }),
+  items: many(productSkuMappingItems),
 }));
 
 export const productSkuMappingItemsRelations = relations(productSkuMappingItems, ({ one }) => ({
-    mapping: one(productSkuMappings, {
-        fields: [productSkuMappingItems.mappingId],
-        references: [productSkuMappings.id],
-    }),
-    sku: one(skus, {
-        fields: [productSkuMappingItems.skuId],
-        references: [skus.id],
-    }),
+  mapping: one(productSkuMappings, {
+    fields: [productSkuMappingItems.mappingId],
+    references: [productSkuMappings.id],
+  }),
+  sku: one(skus, {
+    fields: [productSkuMappingItems.skuId],
+    references: [skus.id],
+  }),
 }));
 
 export const productSkuMappingSnapshotsRelations = relations(productSkuMappingSnapshots, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [productSkuMappingSnapshots.warehouseId],
-        references: [warehouses.id],
-    }),
-    sku: one(skus, {
-        fields: [productSkuMappingSnapshots.skuId],
-        references: [skus.id],
-    }),
-    mapping: one(productSkuMappings, {
-        fields: [productSkuMappingSnapshots.mappingId],
-        references: [productSkuMappings.id],
-    }),
-    fulfillmentOrderItems: many(fulfillmentOrderItems),
+  warehouse: one(warehouses, {
+    fields: [productSkuMappingSnapshots.warehouseId],
+    references: [warehouses.id],
+  }),
+  sku: one(skus, {
+    fields: [productSkuMappingSnapshots.skuId],
+    references: [skus.id],
+  }),
+  mapping: one(productSkuMappings, {
+    fields: [productSkuMappingSnapshots.mappingId],
+    references: [productSkuMappings.id],
+  }),
+  fulfillmentOrderItems: many(fulfillmentOrderItems),
 }));
 
 // Settings Relations
 export const settingsRelations = relations(settings, ({ one }) => ({
-    warehouse: one(warehouses, {
-        fields: [settings.warehouseId],
-        references: [warehouses.id],
-    }),
+  warehouse: one(warehouses, {
+    fields: [settings.warehouseId],
+    references: [warehouses.id],
+  }),
 }));
 
 // Stocktaking Relations
 export const stocktakingSessionsRelations = relations(stocktakingSessions, ({ one, many }) => ({
-    warehouse: one(warehouses, {
-        fields: [stocktakingSessions.warehouseId],
-        references: [warehouses.id],
-    }),
-    lines: many(stocktakingLines),
-    adjustments: many(stocktakingAdjustments),
+  warehouse: one(warehouses, {
+    fields: [stocktakingSessions.warehouseId],
+    references: [warehouses.id],
+  }),
+  lines: many(stocktakingLines),
+  adjustments: many(stocktakingAdjustments),
 }));
 
 export const stocktakingLinesRelations = relations(stocktakingLines, ({ one }) => ({
-    session: one(stocktakingSessions, {
-        fields: [stocktakingLines.sessionId],
-        references: [stocktakingSessions.id],
-    }),
-    sku: one(skus, {
-        fields: [stocktakingLines.skuId],
-        references: [skus.id],
-    }),
-    location: one(locations, {
-        fields: [stocktakingLines.locationId],
-        references: [locations.id],
-    }),
+  session: one(stocktakingSessions, {
+    fields: [stocktakingLines.sessionId],
+    references: [stocktakingSessions.id],
+  }),
+  sku: one(skus, {
+    fields: [stocktakingLines.skuId],
+    references: [skus.id],
+  }),
+  location: one(locations, {
+    fields: [stocktakingLines.locationId],
+    references: [locations.id],
+  }),
 }));
 
 export const stocktakingAdjustmentsRelations = relations(stocktakingAdjustments, ({ one }) => ({
-    session: one(stocktakingSessions, {
-        fields: [stocktakingAdjustments.sessionId],
-        references: [stocktakingSessions.id],
-    }),
-    line: one(stocktakingLines, {
-        fields: [stocktakingAdjustments.lineId],
-        references: [stocktakingLines.id],
-    }),
-    stockEvent: one(stockEvents, {
-        fields: [stocktakingAdjustments.stockEventId],
-        references: [stockEvents.id],
-    }),
+  session: one(stocktakingSessions, {
+    fields: [stocktakingAdjustments.sessionId],
+    references: [stocktakingSessions.id],
+  }),
+  line: one(stocktakingLines, {
+    fields: [stocktakingAdjustments.lineId],
+    references: [stocktakingLines.id],
+  }),
+  stockEvent: one(stockEvents, {
+    fields: [stocktakingAdjustments.stockEventId],
+    references: [stockEvents.id],
+  }),
 }));
 
 
 export const wmsRelations = {
-    holdersRelations,
-    suppliersRelations,
-    supplierCategoriesRelations,
-    supplierCategoryMappingsRelations,
-    categoriesRelations,
-    deliveryProfilesRelations,
+  holdersRelations,
+  suppliersRelations,
+  supplierCategoriesRelations,
+  supplierCategoryMappingsRelations,
+  categoriesRelations,
+  deliveryProfilesRelations,
 
-    // SKU Relations
-    skusRelations,
-    skuSuppliersRelations,
-    skuCategoriesRelations,
-    skuBarcodesRelations,
+  // SKU Relations
+  skusRelations,
+  skuSuppliersRelations,
+  skuCategoriesRelations,
+  skuBarcodesRelations,
 
-    // Warehouse & Location Relations
-    warehousesRelations,
-    locationColumnsRelations,
-    locationRacksRelations,
-    locationsRelations,
+  // Warehouse & Location Relations
+  warehousesRelations,
+  locationColumnsRelations,
+  locationRacksRelations,
+  locationsRelations,
 
-    // Stock Relations
-    stockJournalsRelations,
-    stockEventsRelations,
-    stockLedgersRelations,
-    stockReservationsRelations,
+  // Stock Relations
+  stockJournalsRelations,
+  stockEventsRelations,
+  stockLedgersRelations,
+  stockReservationsRelations,
 
-    // Product Matching Relations
-    productMatchingsRelations,
-    productVariantSkuLinksRelations,
+  // Product Matching Relations
+  productMatchingsRelations,
+  productVariantSkuLinksRelations,
 
-    // Sales Order Relations
-    salesOrdersRelations,
-    salesOrderLinesRelations,
-    orderEventsRelations,
-    mergeGroupsRelations,
+  // Sales Order Relations
+  salesOrdersRelations,
+  salesOrderLinesRelations,
+  orderEventsRelations,
+  mergeGroupsRelations,
 
-    // Fulfillment Order Relations
-    fulfillmentOrdersRelations,
-    fulfillmentOrderLinesRelations,
-    fulfillmentOrderItemsRelations,
+  // Fulfillment Order Relations
+  fulfillmentOrdersRelations,
+  fulfillmentOrderLinesRelations,
+  fulfillmentOrderItemsRelations,
 
-    // Outbound Relations
-    outboundTasksRelations,
-    outboundTaskOrdersRelations,
-    outboundTaskItemsRelations,
-    outboundTaskLinesRelations,
-    outboundBatchesRelations,
-    fulfillmentOrderBatchesRelations,
+  // Outbound Relations
+  outboundTasksRelations,
+  outboundTaskOrdersRelations,
+  outboundTaskItemsRelations,
+  outboundTaskLinesRelations,
+  outboundBatchesRelations,
+  fulfillmentOrderBatchesRelations,
 
-    // Shipment Relations
-    shipmentsRelations,
-    shipmentTrackingRelations,
-    returnsRelations,
+  // Shipment Relations
+  shipmentsRelations,
+  shipmentTrackingRelations,
+  returnsRelations,
 
-    // Invoice Relations
-    invoicesRelations,
+  // Invoice Relations
+  invoicesRelations,
 
-    // Purchase Order Relations
-    purchaseOrdersRelations,
-    purchaseOrderLinesRelations,
-    purchaseOrderCartRelations,
+  // Purchase Order Relations
+  purchaseOrdersRelations,
+  purchaseOrderLinesRelations,
+  purchaseOrderCartRelations,
 
-    // Inbound Relations
-    inboundListsRelations,
-    inboundReceiptsRelations,
-    inboundPlansRelations,
-    inboundPlanItemsRelations,
-    inboundReceiptLinesRelations,
+  // Inbound Relations
+  inboundListsRelations,
+  inboundReceiptsRelations,
+  inboundPlansRelations,
+  inboundPlanItemsRelations,
+  inboundReceiptLinesRelations,
 
-    // Movement Relations
-    movementJobsRelations,
-    movementJobLinesRelations,
+  // Movement Relations
+  movementJobsRelations,
+  movementJobLinesRelations,
 
-    // Product-SKU Mapping Relations
-    productSkuMappingsRelations,
-    productSkuMappingItemsRelations,
-    productSkuMappingSnapshotsRelations,
+  // Product-SKU Mapping Relations
+  productSkuMappingsRelations,
+  productSkuMappingItemsRelations,
+  productSkuMappingSnapshotsRelations,
 
-    // Settings Relations
-    settingsRelations,
+  // Settings Relations
+  settingsRelations,
 
-    // Stocktaking Relations
-    stocktakingSessionsRelations,
-    stocktakingLinesRelations,
-    stocktakingAdjustmentsRelations,
+  // Stocktaking Relations
+  stocktakingSessionsRelations,
+  stocktakingLinesRelations,
+  stocktakingAdjustmentsRelations,
 } as const;
 
 // Complete schema for queries (includes both tables and views)
 export const wmsSchema = {
-    ...wmsTables,
-    ...wmsViews,
-    ...wmsRelations,
+  ...wmsTables,
+  ...wmsViews,
+  ...wmsRelations,
+  ...authorizationSchema,
 } as const;
 
 export type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
