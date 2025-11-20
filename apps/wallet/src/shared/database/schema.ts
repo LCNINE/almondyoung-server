@@ -934,29 +934,22 @@ export const taxInvoices = pgTable(
       .primaryKey()
       .$defaultFn(() => generateUUIDv7()),
 
-    // 핵심 식별자
     userId: varchar('user_id', { length: 64 }).notNull(),
-    externalOrderId: varchar('external_order_id', { length: 128 }),
-    // 'ord_12345' (단일 주문)
-    // 'agg_user123_2024-01' (합산)
-    // 'manual_20240115_001' (수동)
 
-    // 핵심 정보만
+    // 핵심 링크 (범용 스코프)
+    scopeType: varchar('scope_type', { length: 32 }).notNull(),
+    // ORDER | PAYMENT | BNPL_STATEMENT | MANUAL
+    //외부 id ex)주문 id or 결제 id or 나중결제 id or 수동 입력 id
+    scopeId: varchar('scope_id', { length: 128 }).notNull(),
+
     supplyDate: date('supply_date').notNull(),
     totalAmount: bigint('total_amount', { mode: 'number' }).notNull(),
 
-    // 상태
     status: varchar('status', { length: 16 }).notNull().default('PENDING'),
-    // PENDING | ISSUED | CANCELLED
-
-    // 홈택스 결과
     hometaxApprovalNumber: varchar('hometax_approval_number', { length: 64 }),
 
-    // 취소/에러 (명시적)
     cancelReason: varchar('cancel_reason', { length: 32 }),
-    // CHANGE_OF_MIND | DEFECTIVE | WRONG_DELIVERY | DUPLICATE | ADMIN_REQUEST
     errorCode: varchar('error_code', { length: 32 }),
-    // VALIDATION_FAILED | HOMETAX_ERROR | NETWORK_ERROR | DUPLICATE_REQUEST
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -964,9 +957,9 @@ export const taxInvoices = pgTable(
   },
   (t) => [
     index('idx_ti_user_date').on(t.userId, t.supplyDate),
+    index('idx_ti_scope').on(t.scopeType, t.scopeId),
     index('idx_ti_status').on(t.status),
-    index('idx_ti_order').on(t.externalOrderId),
-    uniqueIndex('uq_ti_order').on(t.externalOrderId),
+    uniqueIndex('uq_ti_scope').on(t.scopeType, t.scopeId),
   ],
 );
 
@@ -1026,19 +1019,18 @@ export const taxInvoiceEvents = pgTable(
 // 3️⃣ 상세 테이블 (무거운 데이터 격리)
 // ────────────────────────────────────────────
 
-export const taxInvoiceEventsDetails = pgTable(
+export const taxInvoiceEventDetails = pgTable(
   'tax_invoice_events_details',
   {
     id: varchar('id', { length: 36 })
       .primaryKey()
-      .$defaultFn(() => {
-        return generateUUIDv7();
-      }),
+      .$defaultFn(() => generateUUIDv7()),
 
+    // 1:1 관계 - 한 인보이스당 한 개의 상세 레코드
     invoiceId: varchar('invoice_id', { length: 36 })
       .notNull()
       .references(() => taxInvoices.id, { onDelete: 'cascade' })
-      .unique(), // 1:1 관계
+      .unique(),
 
     // 결제 참조
     paymentIntentId: varchar('payment_intent_id', { length: 36 }).references(
@@ -1047,112 +1039,71 @@ export const taxInvoiceEventsDetails = pgTable(
     ),
     paymentAttemptId: varchar('payment_attempt_id', { length: 36 }),
 
-    // 세금계산서 종류
+    // 세금계산서 종류/수정 정보
     kind: varchar('kind', { length: 16 }).notNull().default('NORMAL'),
     // NORMAL | MODIFICATION
+
     modificationType: varchar('modification_type', { length: 16 }),
     // INCREASE | DECREASE | CANCEL
+
     originalInvoiceId: varchar('original_invoice_id', {
       length: 36,
     }).references(() => taxInvoices.id, { onDelete: 'restrict' }),
 
-    // 합산 발행 정보
-    aggregationType: varchar('aggregation_type', { length: 16 }),
-    // SINGLE | DAILY | WEEKLY | MONTHLY
-    aggregationKey: varchar('aggregation_key', { length: 128 }),
-    // 'user123_2024-01' (월 합산)
-    // 'user123_2024-W03' (주 합산)
-
-    // 고객 정보
+    // 고객 정보 스냅샷
     customerName: varchar('customer_name', { length: 128 }).notNull(),
-    customerBusinessNumber: varchar('customer_business_number', { length: 20 }),
+    customerBusinessNumber: varchar('customer_business_number', {
+      length: 20,
+    }),
 
-    // 날짜 상세
+    // 날짜
     issueDate: date('issue_date').notNull(),
 
-    // 금액 상세
+    // 금액
     supplyAmount: bigint('supply_amount', { mode: 'number' }).notNull(),
     taxAmount: bigint('tax_amount', { mode: 'number' }).notNull(),
 
-    // 환불 추적
     refundedAmount: bigint('refunded_amount', { mode: 'number' })
       .notNull()
       .default(0),
+
     netAmount: bigint('net_amount', { mode: 'number' }).notNull(),
 
-    // 배치 처리
+    // 배치 처리 정보
     batchId: varchar('batch_id', { length: 36 }),
     batchExportedAt: timestamp('batch_exported_at', { withTimezone: true }),
     batchSequence: integer('batch_sequence'),
-    batchPeriod: varchar('batch_period', { length: 10 }), // '2024-01'
-    exportedFilePath: text('exported_file_path'),
+    batchPeriod: varchar('batch_period', { length: 10 }), // '2024-01' 등
 
-    // 검증
-    isValidated: boolean('is_validated').notNull().default(false),
-    validationFailedReason: varchar('validation_failed_reason', { length: 64 }),
-    // INVALID_BUSINESS_NUMBER | AMOUNT_MISMATCH | MISSING_REQUIRED | DATE_ERROR
+    // 추가 확장용 필드 (원인 파악용 메타 등)
+    extra: jsonb('extra'),
+  },
+  (t) => [
+    index('idx_tied_invoice').on(t.invoiceId),
+    index('idx_tied_batch').on(t.batchId),
+  ],
+);
 
-    // 홈택스 발행 시각
-    hometaxIssuedAt: timestamp('hometax_issued_at', { withTimezone: true }),
+// ────────────────────────────────────────────
+// 2️⃣ 세금계산서 발행 당시 전체 스냅샷
+// ────────────────────────────────────────────
 
-    // 오류 상세
-    errorMessage: text('error_message'),
+export const taxInvoiceSnapshots = pgTable(
+  'tax_invoice_snapshots',
+  {
+    // 1:1 관계를 강하게 보장하려면 invoiceId를 PK + FK로 써도 됨
+    invoiceId: varchar('invoice_id', { length: 36 })
+      .primaryKey()
+      .references(() => taxInvoices.id, { onDelete: 'cascade' }),
 
-    // 불변 스냅샷 (구조화된 불변 데이터)
-    invoiceSnapshot: jsonb('invoice_snapshot')
-      .$type<{
-        supplier: {
-          businessNumber: string;
-          name: string;
-          ceoName: string;
-          address: string;
-          email?: string;
-          businessType?: string;
-          businessCategory?: string;
-        };
-        customer: {
-          businessNumber?: string;
-          name: string;
-          ceoName?: string;
-          address?: string;
-          email?: string;
-        };
-        items: Array<{
-          name: string;
-          spec?: string;
-          quantity?: number;
-          unitPrice?: number;
-          supplyAmount: number;
-          taxAmount: number;
-        }>;
-        orderMeta?: {
-          orderDate?: string;
-          deliveryDate?: string;
-          shippingAddress?: string;
-        };
-        aggregatedOrderIds?: string[]; // 합산시 원본 주문들
-      }>()
-      .notNull(),
+    // 발행 당시 주문/결제/사업자/주소/라인아이템 전체 JSON 스냅샷
+    payload: jsonb('payload').notNull(),
 
-    // 감사
-    createdBy: varchar('created_by', { length: 64 })
-      .notNull()
-      .default('SYSTEM'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
   },
-  (t) => [
-    index('idx_tid_invoice').on(t.invoiceId),
-    index('idx_tid_payment').on(t.paymentIntentId),
-    index('idx_tid_batch').on(t.batchId),
-    index('idx_tid_original').on(t.originalInvoiceId),
-    index('idx_tid_period').on(t.batchPeriod),
-    index('idx_tid_aggregation').on(t.aggregationType, t.aggregationKey),
-  ],
+  (t) => [index('idx_tis_invoice').on(t.invoiceId)],
 );
 
 // 원천 이벤트 로그
@@ -1366,26 +1317,26 @@ export const checkoutSessions = pgTable(
 );
 
 export const taxInvoicesRelations = relations(taxInvoices, ({ one, many }) => ({
-  detail: one(taxInvoiceEventsDetails, {
+  detail: one(taxInvoiceEventDetails, {
     fields: [taxInvoices.id],
-    references: [taxInvoiceEventsDetails.invoiceId],
+    references: [taxInvoiceEventDetails.invoiceId],
   }),
   events: many(taxInvoiceEvents),
 }));
 
 export const taxInvoiceEventsDetailsRelations = relations(
-  taxInvoiceEventsDetails,
+  taxInvoiceEventDetails,
   ({ one }) => ({
     invoice: one(taxInvoices, {
-      fields: [taxInvoiceEventsDetails.invoiceId],
+      fields: [taxInvoiceEventDetails.invoiceId],
       references: [taxInvoices.id],
     }),
     originalInvoice: one(taxInvoices, {
-      fields: [taxInvoiceEventsDetails.originalInvoiceId],
+      fields: [taxInvoiceEventDetails.originalInvoiceId],
       references: [taxInvoices.id],
     }),
     paymentIntent: one(paymentIntents, {
-      fields: [taxInvoiceEventsDetails.paymentIntentId],
+      fields: [taxInvoiceEventDetails.paymentIntentId],
       references: [paymentIntents.id],
     }),
   }),
@@ -1450,7 +1401,7 @@ export const walletSchema = {
 
   // Utility Tables (Tax Invoice)
   taxInvoices,
-  taxInvoiceEventsDetails,
+  taxInvoiceEventDetails,
   taxInvoiceEvents,
 
   idempotencyKeys,
