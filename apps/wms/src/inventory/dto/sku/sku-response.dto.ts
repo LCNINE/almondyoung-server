@@ -31,6 +31,12 @@ export class SkuResponseDto {
   @ApiProperty({ required: false, nullable: true })
   deliveryProfileId?: string | null;
 
+  @ApiProperty({
+    description: '재고 유형',
+    enum: ['physical', 'infinite', 'drop_shipped', 'consignment'],
+    default: 'physical'
+  })
+  stockType: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
 
   @ApiProperty({ required: false, nullable: true })
   sale1m?: number | null;
