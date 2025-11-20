@@ -104,9 +104,9 @@ export const CreateHmsCardProfileSchema = z.object({
   memberName: z.string().min(1).max(25, '회원명은 25자 이내여야 합니다.'),
   phone: z
     .string()
-    .max(12, '전화번호 형식이 잘못되었습니다')
-    .min(1, '전화번호를 입력해주세요')
-    .regex(/^\d+$/, '숫자만 입력해주세요'),
+    .min(10, '전화번호는 10-11자리여야 합니다')
+    .max(11, '전화번호는 10-11자리여야 합니다')
+    .regex(/^01[0-9]{8,9}$/, '올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)'),
   payerNumber: z
     .string()
     .max(10, '10자 이내로 입력해주세요')
