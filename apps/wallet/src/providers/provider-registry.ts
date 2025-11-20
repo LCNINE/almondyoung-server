@@ -6,7 +6,6 @@ import { HmsCardRefundProvider } from './hms-card.refund';
 import { HmsBnplRegistrar } from './hms-bnpl.registrar';
 import { HmsBnplChargeProvider } from './hms-bnpl.charge';
 import { HmsBnplCashReceiptProvider } from './hms-bnpl.cash-receipt';
-import { HmsBnplTaxInvoiceProvider } from './hms-bnpl.tax-invoice';
 import { TossChargeProvider } from './toss.charge';
 
 @Injectable()
@@ -22,7 +21,6 @@ export class ProviderRegistry {
     private readonly hmsBnplRegistrar: HmsBnplRegistrar,
     private readonly hmsBnplCharge: HmsBnplChargeProvider,
     private readonly hmsBnplCashReceipt: HmsBnplCashReceiptProvider,
-    private readonly hmsBnplTaxInvoice: HmsBnplTaxInvoiceProvider,
     // (BNPL 환불/취소 프로바이더가 있다면 여기에 추가)
 
     // Toss 전문가 그룹
@@ -56,7 +54,6 @@ export class ProviderRegistry {
           refund: null, // BNPL이 환불을 지원하지 않는다면 null
           cancel: null, // BNPL이 취소를 지원하지 않는다면 null
           cashReceipt: this.hmsBnplCashReceipt, // 현금영수증 발급
-          taxInvoice: this.hmsBnplTaxInvoice, // 세금계산서 생성
         };
 
       case ProviderType.TOSS:
