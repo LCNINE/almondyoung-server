@@ -2,8 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
-import { 
-  CreateSupplierDto, 
+import {
+  CreateSupplierDto,
   UpdateSupplierDto,
   SupplierFiltersDto,
   SupplierResponseDto,
@@ -22,9 +22,9 @@ export class SuppliersService {
   private readonly logger = new Logger(SuppliersService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() 
+    @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -327,76 +327,7 @@ export class SuppliersService {
   }
 
   private mapToResponseDto(supplier: any, categories: any[]): SupplierResponseDto {
-    const contact: SupplierContactDto | null =
-      supplier.phone || supplier.fax || supplier.email
-        ? {
-            phone: supplier.phone,
-            fax: supplier.fax,
-            email: supplier.email,
-          }
-        : null;
-
-    const address: SupplierAddressDto | null =
-      supplier.zipcode || supplier.address1 || supplier.address2
-        ? {
-            zipcode: supplier.zipcode,
-            address1: supplier.address1,
-            address2: supplier.address2,
-          }
-        : null;
-
-    const businessInfo: SupplierBusinessInfoDto | null =
-      supplier.businessRegNo || supplier.businessType || supplier.ceoName
-        ? {
-            businessRegNo: supplier.businessRegNo,
-            businessType: supplier.businessType,
-            ceoName: supplier.ceoName,
-          }
-        : null;
-
-    const purchaseSettings: SupplierPurchaseSettingsDto | null =
-      supplier.isDirectDelivery !== null || supplier.orderCutoffTime
-        ? {
-            isDirectDelivery: supplier.isDirectDelivery,
-            orderCutoffTime: supplier.orderCutoffTime,
-          }
-        : null;
-
-    const paymentInfo: SupplierPaymentInfoDto | null =
-      supplier.bankName ||
-      supplier.bankAccountNo ||
-      supplier.bankAccountHolder ||
-      supplier.paymentMethod
-        ? {
-            bankName: supplier.bankName,
-            bankAccountNo: supplier.bankAccountNo,
-            bankAccountHolder: supplier.bankAccountHolder,
-            paymentMethod: supplier.paymentMethod,
-          }
-        : null;
-
-    const categoryInfos: SupplierCategoryInfoDto[] = categories.map(cat => ({
-      id: cat.id,
-      name: cat.name,
-      description: cat.description,
-    }));
-
-    return {
-      id: supplier.id,
-      name: supplier.name,
-      contact,
-      address,
-      businessInfo,
-      purchaseSettings,
-      paymentInfo,
-      description: supplier.description,
-      memo: supplier.memo,
-      purchaseManagerId: supplier.purchaseManagerId,
-      defaultWarehouseId: supplier.defaultWarehouseId,
-      categories: categoryInfos,
-      createdAt: supplier.createdAt.toISOString(),
-      updatedAt: supplier.updatedAt.toISOString(),
-    };
+    return SupplierResponseDto.fromDbRow(supplier, categories);
   }
 }
 

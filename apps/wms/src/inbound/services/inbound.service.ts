@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenEx
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
-import { and, eq, sql, gte, lte, desc } from 'drizzle-orm';
+import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { InventoryCommandService } from '../../inventory/services/inventory-command.service';
 import { LocationService } from '../../inventory/services/location.service';
@@ -10,6 +10,7 @@ import { StockEventStore } from '../../inventory/repositories/stock-event.store'
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 import { CancelInboundDto, PutawayRequestDto, ReturnInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ReceiveFromPlanDto, ListPlanItemsQueryDto, InboundPendingListResponse } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
+import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 @Injectable()
 export class InboundService {
@@ -257,59 +258,159 @@ export class InboundService {
             return { success: true, receiptId: receipt.id };
         }, tx);
     }
-    // 레거시 제거: processInbound/createStockEntry 삭제
 
     // 입고 예정 목록 조회 (이중 입고 계획 지원)
     async getInboundPending(warehouseId?: string, tx?: DbTx): Promise<InboundPendingListResponse> {
         return this.inTx(async (tx) => {
-            // 🔥 개선: planType 필터링 없이 warehouse 기준으로만 조회
-            const plans = await tx.query.inboundPlans.findMany({
-                where: and(
-                    eq(wmsTables.inboundPlans.status, 'pending'),
-                    warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined
-                ),
-                with: {
-                    items: {
-                        where: eq(wmsTables.inboundPlanItems.status, 'pending'),
-                        with: {
-                            sku: true
-                        }
-                    },
-                    linkedPurchaseOrder: {
-                        with: {
-                            supplier: true
-                        }
-                    },
-                    parentPlan: true // source plan 정보 포함
-                }
-            });
+            const { inboundPlans, inboundPlanItems, purchaseOrders, suppliers, skus } = wmsTables;
 
-            const inboundPending = plans.map(plan => ({
-                planId: plan.id,
-                planType: plan.planType,
-                warehouseId: plan.warehouseId,
-                expectedDate: plan.expectedDate,
-                isLinkedPlan: !!plan.parentPlanId, // destination plan 여부
-                sourcePlanStatus: plan.parentPlan?.status, // 중국 plan 상태
-                purchaseOrder: {
-                    id: plan.linkedPurchaseOrder.id,
-                    type: plan.linkedPurchaseOrder.type,
-                    supplier: plan.linkedPurchaseOrder.supplier ? {
-                        name: plan.linkedPurchaseOrder.supplier.name,
-                        contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo
-                    } : undefined
-                },
-                items: plan.items.map(item => ({
-                    skuId: item.skuId,
-                    skuName: item.sku.name,
-                    skuCode: item.sku.code,
-                    expectedQty: item.expectedQty,
-                    receivedQty: item.receivedQty,
-                    pendingQty: item.expectedQty - item.receivedQty
-                })),
-                totalQuantity: plan.items.reduce((sum, item) => sum + item.expectedQty, 0),
-                totalPendingQuantity: plan.items.reduce((sum, item) => sum + (item.expectedQty - item.receivedQty), 0)
-            }));
+            // 1. pending 상태의 plans 조회
+            const planConditions = [eq(inboundPlans.status, 'pending')];
+            if (warehouseId) {
+                planConditions.push(eq(inboundPlans.warehouseId, warehouseId));
+            }
+
+            const plansData = await tx
+                .select({
+                    planId: inboundPlans.id,
+                    planType: inboundPlans.planType,
+                    warehouseId: inboundPlans.warehouseId,
+                    expectedDate: inboundPlans.expectedDate,
+                    parentPlanId: inboundPlans.parentPlanId,
+                    linkedPurchaseOrderId: inboundPlans.linkedPurchaseOrderId,
+                    poId: purchaseOrders.id,
+                    poType: purchaseOrders.type,
+                    // Supplier 전체 정보
+                    supplierId: suppliers.id,
+                    supplierName: suppliers.name,
+                    supplierPhone: suppliers.phone,
+                    supplierFax: suppliers.fax,
+                    supplierEmail: suppliers.email,
+                    supplierZipcode: suppliers.zipcode,
+                    supplierAddress1: suppliers.address1,
+                    supplierAddress2: suppliers.address2,
+                    supplierBusinessRegNo: suppliers.businessRegNo,
+                    supplierBusinessType: suppliers.businessType,
+                    supplierCeoName: suppliers.ceoName,
+                    supplierIsDirectDelivery: suppliers.isDirectDelivery,
+                    supplierOrderCutoffTime: suppliers.orderCutoffTime,
+                    supplierBankName: suppliers.bankName,
+                    supplierBankAccountNo: suppliers.bankAccountNo,
+                    supplierBankAccountHolder: suppliers.bankAccountHolder,
+                    supplierPaymentMethod: suppliers.paymentMethod,
+                    supplierDescription: suppliers.description,
+                    supplierMemo: suppliers.memo,
+                    supplierPurchaseManagerId: suppliers.purchaseManagerId,
+                    supplierDefaultWarehouseId: suppliers.defaultWarehouseId,
+                    supplierCreatedAt: suppliers.createdAt,
+                    supplierUpdatedAt: suppliers.updatedAt,
+                })
+                .from(inboundPlans)
+                .innerJoin(purchaseOrders, eq(inboundPlans.linkedPurchaseOrderId, purchaseOrders.id))
+                .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+                .where(and(...planConditions));
+
+            if (plansData.length === 0) {
+                return {
+                    warehouseId,
+                    totalPendingPlans: 0,
+                    totalPendingQuantity: 0,
+                    pendingPlans: [],
+                };
+            }
+
+            const planIds = plansData.map(p => p.planId);
+
+            // 2. pending items 조회 (SKU 정보 포함)
+            const itemsData = await tx
+                .select({
+                    planId: inboundPlanItems.planId,
+                    skuId: inboundPlanItems.skuId,
+                    skuName: skus.name,
+                    skuCode: skus.code,
+                    expectedQty: inboundPlanItems.expectedQty,
+                    receivedQty: inboundPlanItems.receivedQty,
+                })
+                .from(inboundPlanItems)
+                .innerJoin(skus, eq(inboundPlanItems.skuId, skus.id))
+                .where(and(
+                    inArray(inboundPlanItems.planId, planIds),
+                    eq(inboundPlanItems.status, 'pending')
+                ));
+
+            // 3. parent plans 조회 (있는 경우에만)
+            const parentPlanIds = plansData
+                .map(p => p.parentPlanId)
+                .filter(id => id !== null) as string[];
+
+            const parentPlansMap = new Map<string, { status: string }>();
+            if (parentPlanIds.length > 0) {
+                const parentPlansData = await tx
+                    .select({
+                        id: inboundPlans.id,
+                        status: inboundPlans.status,
+                    })
+                    .from(inboundPlans)
+                    .where(inArray(inboundPlans.id, parentPlanIds));
+
+                parentPlansData.forEach(p => {
+                    parentPlansMap.set(p.id, { status: p.status });
+                });
+            }
+
+            // 4. 데이터 조합
+            const inboundPending = plansData.map(plan => {
+                const planItems = itemsData.filter(item => item.planId === plan.planId);
+                const parentPlan = plan.parentPlanId ? parentPlansMap.get(plan.parentPlanId) : null;
+
+                return {
+                    planId: plan.planId,
+                    planType: plan.planType,
+                    warehouseId: plan.warehouseId,
+                    expectedDate: plan.expectedDate,
+                    isLinkedPlan: !!plan.parentPlanId,
+                    sourcePlanStatus: parentPlan?.status,
+                    purchaseOrder: {
+                        id: plan.poId,
+                        type: plan.poType,
+                        supplier: plan.supplierId ? SupplierResponseDto.fromDbRow({
+                            id: plan.supplierId,
+                            name: plan.supplierName!,
+                            phone: plan.supplierPhone,
+                            fax: plan.supplierFax,
+                            email: plan.supplierEmail,
+                            zipcode: plan.supplierZipcode,
+                            address1: plan.supplierAddress1,
+                            address2: plan.supplierAddress2,
+                            businessRegNo: plan.supplierBusinessRegNo,
+                            businessType: plan.supplierBusinessType,
+                            ceoName: plan.supplierCeoName,
+                            isDirectDelivery: plan.supplierIsDirectDelivery,
+                            orderCutoffTime: plan.supplierOrderCutoffTime,
+                            bankName: plan.supplierBankName,
+                            bankAccountNo: plan.supplierBankAccountNo,
+                            bankAccountHolder: plan.supplierBankAccountHolder,
+                            paymentMethod: plan.supplierPaymentMethod,
+                            description: plan.supplierDescription,
+                            memo: plan.supplierMemo,
+                            purchaseManagerId: plan.supplierPurchaseManagerId,
+                            defaultWarehouseId: plan.supplierDefaultWarehouseId,
+                            createdAt: plan.supplierCreatedAt!,
+                            updatedAt: plan.supplierUpdatedAt!,
+                        }) : undefined,
+                    },
+                    items: planItems.map(item => ({
+                        skuId: item.skuId,
+                        skuName: item.skuName,
+                        skuCode: item.skuCode,
+                        expectedQty: item.expectedQty,
+                        receivedQty: item.receivedQty,
+                        pendingQty: item.expectedQty - item.receivedQty,
+                    })),
+                    totalQuantity: planItems.reduce((sum, item) => sum + item.expectedQty, 0),
+                    totalPendingQuantity: planItems.reduce((sum, item) => sum + (item.expectedQty - item.receivedQty), 0),
+                };
+            });
 
             return {
                 warehouseId,
@@ -322,7 +423,7 @@ export class InboundService {
 
     // 입고내역(현황) 조회 - (sku, quantity, occurredAt, method)
     async listInboundReceipts(params: {
-        skuId?: string; warehouseId?: string; method?: 'individual'|'simple'|'simple_fullscan'|'planned';
+        skuId?: string; warehouseId?: string; method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
         startDate?: string; endDate?: string; limit?: number; offset?: number;
     }, tx?: DbTx) {
         const { skuId, warehouseId, method, startDate, endDate, limit = 50, offset = 0 } = params;
@@ -348,7 +449,7 @@ export class InboundService {
                 method ? eq(wmsTables.inboundReceipts.method as any, method as any) : undefined,
                 skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
                 startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
-                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
             ))
             .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
             .limit(limit)
@@ -359,7 +460,7 @@ export class InboundService {
 
     // 입고 작업 타임라인 조회
     async listInboundWorkLogs(params: {
-        warehouseId?: string; skuId?: string; type?: 'INBOUND'|'PUTAWAY'|'RETURN'|'CANCEL'; method?: 'individual'|'simple'|'simple_fullscan'|'planned';
+        warehouseId?: string; skuId?: string; type?: 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL'; method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned';
         startDate?: string; endDate?: string; limit?: number; offset?: number;
     }, tx?: DbTx) {
         const { warehouseId, skuId, type, method, startDate, endDate, limit = 100, offset = 0 } = params;
@@ -388,7 +489,7 @@ export class InboundService {
                 type ? eq(wmsTables.inboundWorkLogs.type as any, type as any) : undefined,
                 method ? eq(wmsTables.inboundWorkLogs.method as any, method as any) : undefined,
                 startDate ? gte(wmsTables.inboundWorkLogs.timestamp, new Date(startDate)) : undefined,
-                endDate ? lte(wmsTables.inboundWorkLogs.timestamp, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+                endDate ? lte(wmsTables.inboundWorkLogs.timestamp, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
             ))
             .orderBy(desc(wmsTables.inboundWorkLogs.timestamp))
             .limit(limit)
@@ -425,7 +526,7 @@ export class InboundService {
                 warehouseId ? eq(wmsTables.inboundReceipts.warehouseId, warehouseId) : undefined,
                 skuId ? eq(wmsTables.inboundReceiptLines.skuId, skuId) : undefined,
                 startDate ? gte(wmsTables.inboundReceipts.occurredAt, new Date(startDate)) : undefined,
-                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+                endDate ? lte(wmsTables.inboundReceipts.occurredAt, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
             ))
             .orderBy(desc(wmsTables.inboundReceipts.occurredAt))
             .limit(limit)
@@ -444,11 +545,35 @@ export class InboundService {
     // 입고예정 생성
     async createInboundPlan(dto: CreateInboundPlanDto, tx?: DbTx) {
         return this.inTx(async (tx) => {
+            const { purchaseOrders } = wmsTables;
+
+            // 발주 존재 여부 확인
+            const [po] = await tx
+                .select({ id: purchaseOrders.id })
+                .from(purchaseOrders)
+                .where(eq(purchaseOrders.id, dto.linkedPurchaseOrderId))
+                .limit(1);
+
+            if (!po) {
+                throw new Error(`Purchase order not found: ${dto.linkedPurchaseOrderId}`);
+            }
+
+            // destinationWarehouseId가 없으면 warehouseId를 사용
+            const destinationWarehouseId = dto.destinationWarehouseId ?? dto.warehouseId;
+            const planType = dto.planType ?? 'destination';
+            const requiresTransfer = dto.requiresTransfer ?? false;
+
             const [plan] = await tx.insert(wmsTables.inboundPlans).values({
                 expectedDate: new Date(dto.expectedDate),
                 warehouseId: dto.warehouseId,
+                destinationWarehouseId,
+                linkedPurchaseOrderId: dto.linkedPurchaseOrderId,
+                planType,
+                requiresTransfer,
+                parentPlanId: dto.parentPlanId,
                 status: 'pending',
             }).returning();
+
             return plan;
         }, tx);
     }
@@ -491,7 +616,7 @@ export class InboundService {
                 warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined,
                 skuId ? eq(wmsTables.inboundPlanItems.skuId, skuId) : undefined,
                 startDate ? gte(wmsTables.inboundPlans.expectedDate, new Date(startDate)) : undefined,
-                endDate ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23,59,59,999))) : undefined,
+                endDate ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23, 59, 59, 999))) : undefined,
             ))
             .orderBy(desc(wmsTables.inboundPlans.expectedDate));
         return { total: rows.length, items: rows };

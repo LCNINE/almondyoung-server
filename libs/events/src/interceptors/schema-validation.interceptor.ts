@@ -51,6 +51,10 @@ export class SchemaValidationInterceptor implements NestInterceptor {
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+    if (context.getType() === 'http') {
+      return next.handle();
+    }
+    
     // 스키마 검증이 비활성화된 경우 바로 통과
     if (!this.validationOptions.validateOnConsume) {
       return next.handle();

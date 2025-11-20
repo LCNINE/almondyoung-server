@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsUUID, IsEnum, IsOptional, IsDateString, IsNumber, IsPositive, IsArray, ValidateNested } from 'class-validator';
+import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 export enum PurchaseOrderType {
     DOMESTIC = 'domestic',
@@ -132,10 +133,7 @@ export interface PurchaseOrderResponse {
             barcode: string | null;
         };
     }[];
-    supplier?: {
-        name: string;
-        contactInfo: any;
-    };
+    supplier?: SupplierResponseDto;
 }
 
 export interface CartItemResponse {

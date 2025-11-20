@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsUUID, IsNotEmpty, IsArray, ValidateNested, IsNumber, Min, IsOptional, IsDateString, IsString, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 export class SimpleInboundItemDto {
   @ApiProperty({ description: 'SKU ID' })
@@ -103,10 +104,39 @@ export class CreateInboundPlanDto {
   @IsDateString()
   expectedDate: string;
 
-  @ApiProperty({ description: '창고 ID' })
+  @ApiProperty({ description: '입고될 창고 ID (source warehouse)' })
   @IsUUID()
   @IsNotEmpty()
   warehouseId: string;
+
+  @ApiProperty({ description: '최종 목적지 창고 ID (destination warehouse)', required: false })
+  @IsUUID()
+  @IsOptional()
+  destinationWarehouseId?: string;
+
+  @ApiProperty({ description: '연결된 발주 ID' })
+  @IsUUID()
+  @IsNotEmpty()
+  linkedPurchaseOrderId: string;
+
+  @ApiProperty({
+    description: '계획 타입 (source: 중국창고, destination: 최종창고)',
+    enum: ['source', 'destination'],
+    required: false,
+    default: 'destination'
+  })
+  @IsOptional()
+  @IsString()
+  planType?: 'source' | 'destination';
+
+  @ApiProperty({ description: '창고간 이동 필요 여부', required: false, default: false })
+  @IsOptional()
+  requiresTransfer?: boolean;
+
+  @ApiProperty({ description: '부모 계획 ID (destination 계획인 경우 source 계획 참조)', required: false })
+  @IsUUID()
+  @IsOptional()
+  parentPlanId?: string;
 }
 
 export class InboundPlanItemInputDto {
@@ -199,10 +229,7 @@ export interface InboundPendingResponse {
   purchaseOrder: {
     id: string;
     type: 'domestic' | 'foreign';
-    supplier?: {
-      name: string;
-      contactInfo: string;
-    };
+    supplier?: SupplierResponseDto;
   };
 
   // 아이템 목록

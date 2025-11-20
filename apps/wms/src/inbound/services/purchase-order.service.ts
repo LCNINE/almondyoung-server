@@ -17,6 +17,7 @@ import {
 } from '../dto/purchase-order.dto';
 import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
+import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -25,7 +26,7 @@ export class PurchaseOrderService {
     constructor(
         @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
         private readonly transactionService: TransactionService,
-    ) {}
+    ) { }
 
     private get db() {
         return this.dbService.db;
@@ -151,7 +152,7 @@ export class PurchaseOrderService {
     async updatePurchaseOrderStatus(
         poId: string,
         updateDto: UpdatePurchaseOrderStatusDto
-    , tx?: DbTx): Promise<PurchaseOrderResponse> {
+        , tx?: DbTx): Promise<PurchaseOrderResponse> {
         return this.inTx(async (trx) => {
             const [existingPO] = await trx
                 .select()
@@ -329,7 +330,7 @@ export class PurchaseOrderService {
      * 발주 조회
      */
     async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
-        return this.inTx(async (trx) => {
+        return this.inTx(async (trx: DbTx) => {
             const [po] = await trx
                 .select()
                 .from(wmsTables.purchaseOrders)
@@ -353,7 +354,7 @@ export class PurchaseOrderService {
                 .where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
             const supplier = po.supplierId ? (() => trx
-                .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
+                .select()
                 .from(wmsTables.suppliers)
                 .where(eq(wmsTables.suppliers.id, po.supplierId))
                 .limit(1)
@@ -378,10 +379,7 @@ export class PurchaseOrderService {
                         barcode: line.skuBarcode ?? '',
                     },
                 })),
-                supplier: supplierRow ? {
-                    name: supplierRow.name ?? '공급사 없음',
-                    contactInfo: supplierRow.contactInfo ?? '공급사 없음',
-                } : undefined,
+                supplier: supplierRow ? SupplierResponseDto.fromDbRow(supplierRow) : undefined
             };
         }, tx);
     }
@@ -394,7 +392,7 @@ export class PurchaseOrderService {
         type?: PurchaseOrderType,
         limit = 50,
         offset = 0
-    , tx?: DbTx): Promise<PurchaseOrderResponse[]> {
+        , tx?: DbTx): Promise<PurchaseOrderResponse[]> {
         const conditions: any[] = [];
 
         if (status) {
@@ -412,7 +410,7 @@ export class PurchaseOrderService {
             .orderBy(desc(wmsTables.purchaseOrders.createdAt))
             .limit(limit)
             .offset(offset)
-        , tx);
+            , tx);
         const results = [] as PurchaseOrderResponse[];
         for (const po of purchaseOrders) {
             const lines = await this.inTx(async (trx) => trx
@@ -426,11 +424,11 @@ export class PurchaseOrderService {
                 .from(wmsTables.purchaseOrderLines)
                 .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
                 .where(eq(wmsTables.purchaseOrderLines.poId, po.id))
-            , tx);
+                , tx);
 
             const supplier = po.supplierId ? await this.inTx(async (trx) => {
                 const [row] = await trx
-                    .select({ name: wmsTables.suppliers.name, contactInfo: wmsTables.suppliers.contactInfo })
+                    .select()
                     .from(wmsTables.suppliers)
                     .where(eq(wmsTables.suppliers.id, po.supplierId!))
                     .limit(1);
@@ -438,13 +436,13 @@ export class PurchaseOrderService {
             }, tx) : undefined;
 
             results.push({
-            id: po.id,
-            type: po.type as PurchaseOrderType,
-            supplierId: po.supplierId,
-            expectedArrival: po.expectedArrival,
-            status: po.status as PurchaseOrderStatus,
-            createdAt: po.createdAt!,
-            updatedAt: po.updatedAt!,
+                id: po.id,
+                type: po.type as PurchaseOrderType,
+                supplierId: po.supplierId,
+                expectedArrival: po.expectedArrival,
+                status: po.status as PurchaseOrderStatus,
+                createdAt: po.createdAt!,
+                updatedAt: po.updatedAt!,
                 lines: lines.map(line => ({
                     skuId: line.skuId,
                     quantity: line.quantity,
@@ -454,10 +452,7 @@ export class PurchaseOrderService {
                         barcode: line.skuBarcode ?? '',
                     },
                 })),
-                supplier: supplier ? {
-                    name: supplier.name ?? '',
-                    contactInfo: supplier.contactInfo ?? '',
-                } : undefined,
+                supplier: supplier ? SupplierResponseDto.fromDbRow(supplier) : undefined,
             });
         }
         return results;
@@ -492,7 +487,7 @@ export class PurchaseOrderService {
                     updatedAt: new Date(),
                 })
                 .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id))
-            , tx);
+                , tx);
             return this.getCartItemById(existingItem.id, tx);
         } else {
             // 새 아이템 추가
@@ -535,7 +530,7 @@ export class PurchaseOrderService {
                 updatedAt: new Date(),
             })
             .where(eq(wmsTables.purchaseOrderCart.id, itemId))
-        , tx);
+            , tx);
         return this.getCartItemById(itemId, tx);
     }
 
@@ -575,7 +570,7 @@ export class PurchaseOrderService {
             .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
             .where(type ? eq(wmsTables.purchaseOrderCart.type, type) : undefined)
             .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
-        , tx);
+            , tx);
 
         return cartItems.map(item => ({
             id: item.id,
@@ -643,11 +638,11 @@ export class PurchaseOrderService {
             await this.inTx(async (trx) => trx
                 .delete(wmsTables.purchaseOrderCart)
                 .where(eq(wmsTables.purchaseOrderCart.type, type))
-            , tx);
+                , tx);
         } else {
             await this.inTx(async (trx) => trx
                 .delete(wmsTables.purchaseOrderCart)
-            , tx);
+                , tx);
         }
 
         this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''}`);
