@@ -230,12 +230,7 @@ export const auditSeverityEnum = pgEnum('audit_severity', [
     'INFO', 'WARN', 'ERROR', 'CRITICAL'
 ]);
 
-// Inventory master enums
-export const inventoryMasterStatusEnum = pgEnum('inventory_master_status', ['active', 'archived']);
 
-/*───────────────────────────
- * MASTER DATA
- *──────────────────────────*/
 export const suppliers = pgTable('suppliers', {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 255 }).notNull(),
@@ -360,12 +355,12 @@ export const holders = pgTable('holders', {
 export const skus = pgTable('skus', {
     id: uuid('id').primaryKey().defaultRandom(),
     holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
-    // 필수 Master 귀속
-    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'restrict' }).notNull(),
+    groupId: uuid('group_id').references(() => skuGroups.id),
+    optionKey: varchar('option_key', { length: 255 }),
+
     name: varchar('name', { length: 255 }).notNull(),
     code: varchar('code', { length: 64 }).notNull().unique(),
-    // 옵션 식별자 (1차원 문자열, 예: "M / 블랙")
-    optionKey: varchar('option_key', { length: 255 }),
+
     defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
     stockType: stockTypeEnum('stock_type').notNull().default('physical'),
     deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
@@ -422,18 +417,11 @@ export const skus = pgTable('skus', {
     // 옵션 그룹
     variantGroupCode: varchar('variant_group_code', { length: 64 }),
 
-    // ===== WMS-Internal Grouping (Phase 3 - Week 7) =====
-    // Optional grouping for warehouse organization (nullable - most SKUs won't have a group)
-    // ON DELETE SET NULL: SKUs survive when group is deleted
-    groupId: uuid('group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
 
-    // ===== End Extended Metadata =====
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
-    // (master_id, option_key) 유니크 제약으로 옵션 조합 중복 방지
-    uqSkuMasterOption: unique().on(t.masterId, t.optionKey),
     // 성능 최적화 인덱스
     idxSkusSafetyStock: index('idx_skus_safety_stock').on(t.safetyStock),
     idxSkusVariantGroup: index('idx_skus_variant_group').on(t.variantGroupCode),
@@ -557,23 +545,6 @@ export const skuLocationMovements = pgTable('sku_location_movements', {
     idxMovementTimestamp: index('idx_movement_timestamp').on(t.movementTimestamp),
 }));
 
-// ===== End Phase 2 Step 4 Tables =====
-
-// Inventory Product Masters: 상위 재고상품 설계 단위(옵션 스키마/정책 보유)
-export const inventoryProductMasters = pgTable('inventory_product_masters', {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 255 }).notNull(),
-    masterCode: varchar('master_code', { length: 64 }).notNull(),
-    // DEPRECATED: WMS는 더 이상 옵션 조합을 생성하지 않음
-    // UI 호환성을 위해 유지, 향후 제거 예정
-    optionSchema: json('option_schema'),
-    defaultPolicy: json('default_policy'),
-    status: inventoryMasterStatusEnum('status').notNull().default('active'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => ({
-    uqMasterCode: unique().on(t.masterCode),
-}));
 
 // ===== SKU GROUPS (WMS-internal warehouse organization) =====
 // Groups are metadata labels for organizing similar SKUs (e.g., color/size variants)
@@ -586,39 +557,13 @@ export const skuGroups = pgTable('sku_groups', {
     code: varchar('code', { length: 100 }).notNull().unique(),
     description: text('description'),
 
-    // Optional link to WMS inventory master for consistency
-    inventoryMasterId: uuid('inventory_master_id')
-        .references(() => inventoryProductMasters.id, { onDelete: 'set null' }),
-
     // Metadata
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     idxSkuGroupsCode: index('idx_sku_groups_code').on(t.code),
     idxSkuGroupsName: index('idx_sku_groups_name').on(t.name),
-    idxSkuGroupsMaster: index('idx_sku_groups_master').on(t.inventoryMasterId),
 }));
-
-/**
- * Helper function to generate SKU group code
- * Customize this function to change the naming convention
- * 
- * @param name - Group name
- * @param masterId - Optional inventory master ID
- * @returns Generated group code
- * 
- * Example output: "GROUP-LASH-20251027-ABC1" 
- */
-export function generateSkuGroupCode(name: string, masterId?: string): string {
-    const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const sanitizedName = name
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '-')
-        .substring(0, 20);
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-
-    return `GROUP-${sanitizedName}-${timestamp}-${random}`;
-}
 
 
 export const deliveryProfiles = pgTable('delivery_profiles', {
@@ -888,7 +833,7 @@ export const stockSummary = pgView('stock_summary_view', {
 export const productMatchings = pgTable('product_matchings', {
     id: uuid('id').primaryKey().defaultRandom(),
     variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
-    masterId: uuid('master_id').references(() => inventoryProductMasters.id, { onDelete: 'set null' }),
+    skuGroupId: uuid('sku_group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
     status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
     priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
     strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
@@ -904,7 +849,6 @@ export const productMatchings = pgTable('product_matchings', {
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
     uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
-    idxMasterId: index('idx_product_matchings_master_id').on(t.masterId),
 }));
 
 // product_variant_sku_links: variant와 sku의 N:M 관계를 위한 연결 테이블
@@ -1741,12 +1685,9 @@ export const wmsTables = {
     skuBarcodes,
     categories,
     skuCategories,
-    // Phase 2 Step 4: New SKU tables
     skuVariantPricing,
     skuManagers,
     skuLocationMovements,
-    inventoryProductMasters,
-    // Phase 3 Week 7: SKU Groups
     skuGroups,
     deliveryProfiles,
     warehouses,
@@ -1820,7 +1761,6 @@ export const wmsViews = {
 import { relations } from 'drizzle-orm';
 import { TypedDatabase } from '@app/db/types';
 
-// Core Master Data Relations
 export const holdersRelations = relations(holders, ({ many }) => ({
     skus: many(skus),
     fulfillmentOrders: many(fulfillmentOrders),
@@ -1861,10 +1801,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
         fields: [skus.holderId],
         references: [holders.id],
     }),
-    master: one(inventoryProductMasters, {
-        fields: [skus.masterId],
-        references: [inventoryProductMasters.id],
-    }),
     deliveryProfile: one(deliveryProfiles, {
         fields: [skus.deliveryProfileId],
         references: [deliveryProfiles.id],
@@ -1883,7 +1819,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
         references: [skuManagers.skuId],
     }),
     locationMovements: many(skuLocationMovements),
-    // WMS-internal group relation (Phase 3 - Week 7)
     group: one(skuGroups, {
         fields: [skus.groupId],
         references: [skuGroups.id],
@@ -1989,25 +1924,6 @@ export const skuLocationMovementsRelations = relations(skuLocationMovements, ({ 
         relationName: 'movementTo',
     }),
 }));
-
-// ===== End Phase 2 Step 4 Relations =====
-
-// Inventory Master Relations
-export const inventoryProductMastersRelations = relations(inventoryProductMasters, ({ many }) => ({
-    skus: many(skus),
-    productMatchings: many(productMatchings),
-    skuGroups: many(skuGroups),
-}));
-
-// SKU Groups Relations (Phase 3 - Week 7)
-export const skuGroupsRelations = relations(skuGroups, ({ one, many }) => ({
-    inventoryMaster: one(inventoryProductMasters, {
-        fields: [skuGroups.inventoryMasterId],
-        references: [inventoryProductMasters.id],
-    }),
-    skus: many(skus),
-}));
-
 
 // Warehouse & Location Relations
 export const warehousesRelations = relations(warehouses, ({ many }) => ({
@@ -2135,10 +2051,6 @@ export const stockReservationsRelations = relations(stockReservations, ({ one })
 
 // Product Matching Relations
 export const productMatchingsRelations = relations(productMatchings, ({ one, many }) => ({
-    master: one(inventoryProductMasters, {
-        fields: [productMatchings.masterId],
-        references: [inventoryProductMasters.id],
-    }),
     productVariantSkuLinks: many(productVariantSkuLinks),
     salesOrderLines: many(salesOrderLines),
 }));
@@ -2590,7 +2502,6 @@ export const stocktakingAdjustmentsRelations = relations(stocktakingAdjustments,
 
 
 export const wmsRelations = {
-    // 모든 관계들 - Core Master Data Relations
     holdersRelations,
     suppliersRelations,
     supplierCategoriesRelations,
@@ -2603,10 +2514,6 @@ export const wmsRelations = {
     skuSuppliersRelations,
     skuCategoriesRelations,
     skuBarcodesRelations,
-
-    // Inventory Master Relations
-    inventoryProductMastersRelations,
-
 
     // Warehouse & Location Relations
     warehousesRelations,
@@ -2732,9 +2639,6 @@ export type NewSkuManager = InferInsertModel<typeof skuManagers>;
 
 export type SkuLocationMovement = InferSelectModel<typeof skuLocationMovements>;
 export type NewSkuLocationMovement = InferInsertModel<typeof skuLocationMovements>;
-
-export type InventoryProductMaster = InferSelectModel<typeof inventoryProductMasters>;
-export type NewInventoryProductMaster = InferInsertModel<typeof inventoryProductMasters>;
 
 export type SkuGroup = InferSelectModel<typeof skuGroups>;
 export type NewSkuGroup = InferInsertModel<typeof skuGroups>;

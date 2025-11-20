@@ -1,10 +1,12 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
 import { eq } from 'drizzle-orm';
 
 @Injectable()
 export class MatchingsService {
+  private readonly logger = new Logger(MatchingsService.name);
+  
   constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -22,10 +24,14 @@ export class MatchingsService {
   async upsert(dto: { variantId: string; masterId?: string | null; links: Array<{ skuId: string; quantity: number }>; policy?: Partial<{ inventoryManagement: boolean; preStockSellable: boolean; alwaysSellableZeroStock: boolean; }> }, tx?: DbTx) {
     return this.inTx(async (trx) => {
       if (!dto.variantId) throw new BadRequestException('variantId required');
+      
+      if (dto.masterId) {
+        this.logger.warn(`masterId is deprecated and will be ignored. Use skuGroupId instead.`);
+      }
+      
       const existing = await trx.query.productMatchings.findFirst({ where: (m, { eq }) => eq(m.variantId, dto.variantId) });
       const base = {
         variantId: dto.variantId,
-        masterId: dto.masterId ?? null,
         status: 'matched' as any,
         priority: 'normal' as any,
         strategy: 'variant' as any,

@@ -52,7 +52,6 @@ export class SkuGroupController {
         type: SkuGroupResponseDto,
     })
     @ApiResponse({ status: 409, description: '그룹 코드가 이미 존재합니다. (Group code already exists)' })
-    @ApiResponse({ status: 404, description: 'Inventory Master를 찾을 수 없습니다. (Inventory master not found)' })
     async createSkuGroup(@Body() createDto: CreateSkuGroupDto): Promise<SkuGroupResponseDto> {
         return this.skuGroupService.createSkuGroup(createDto);
     }
