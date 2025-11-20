@@ -3251,7 +3251,8 @@ export const purchaseOrdersRelations = relations(
       references: [warehouses.id],
       relationName: 'destinationWarehouse',
     }),
-    inboundPlans: many(inboundPlans),
+    // inboundPlans 제거 - 순환 참조 문제 회피 (inboundPlans에서 linkedPurchaseOrder로 접근 가능)
+    // inboundPlans: many(inboundPlans),
   }),
 );
 
@@ -3612,7 +3613,7 @@ export const wmsRelations = {
   // Inbound Relations
   inboundListsRelations,
   inboundReceiptsRelations,
-  inboundPlansRelations,
+  // inboundPlansRelations, // 임시 제거 - 관계 문제 디버깅
   inboundPlanItemsRelations,
   inboundReceiptLinesRelations,
 

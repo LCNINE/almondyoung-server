@@ -12,7 +12,7 @@ import {
   DbTx,
 } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
-import { and, eq, sql, gte, lte, desc } from 'drizzle-orm';
+import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
 import { InventoryCommandService } from '../../inventory/services/inventory-command.service';
 import { LocationService } from '../../inventory/services/location.service';
@@ -350,63 +350,158 @@ export class InboundService {
   ): Promise<InboundPendingListResponse> {
     return this.inTx(async (tx) => {
       // 🔥 개선: planType 필터링 없이 warehouse 기준으로만 조회
-      const plans = await tx.query.inboundPlans.findMany({
-        where: and(
-          eq(wmsTables.inboundPlans.status, 'pending'),
-          warehouseId
-            ? eq(wmsTables.inboundPlans.warehouseId, warehouseId)
-            : undefined,
-        ),
-        with: {
-          items: {
-            where: eq(wmsTables.inboundPlanItems.status, 'pending'),
-            with: {
-              sku: true,
-            },
-          },
-          linkedPurchaseOrder: {
-            with: {
-              supplier: true,
-            },
-          },
-          parentPlan: true, // source plan 정보 포함
-        },
-      });
+      // relation 문제를 피하기 위해 직접 select로 변경
+      const plans = await tx
+        .select()
+        .from(wmsTables.inboundPlans)
+        .where(
+          and(
+            eq(wmsTables.inboundPlans.status, 'pending'),
+            warehouseId
+              ? eq(wmsTables.inboundPlans.warehouseId, warehouseId)
+              : undefined,
+          ),
+        );
 
-      const inboundPending = plans.map((plan) => ({
-        planId: plan.id,
-        planType: plan.planType,
-        warehouseId: plan.warehouseId,
-        expectedDate: plan.expectedDate,
-        isLinkedPlan: !!plan.parentPlanId, // destination plan 여부
-        sourcePlanStatus: plan.parentPlan?.status, // 중국 plan 상태
-        purchaseOrder: {
-          id: plan.linkedPurchaseOrder.id,
-          type: plan.linkedPurchaseOrder.type,
-          supplier: plan.linkedPurchaseOrder.supplier
+      // items 별도 조회 (relation 문제 회피)
+      const planIds = plans.map((p) => p.id);
+      const items =
+        planIds.length > 0
+          ? await tx
+              .select()
+              .from(wmsTables.inboundPlanItems)
+              .where(
+                and(
+                  inArray(wmsTables.inboundPlanItems.planId, planIds),
+                  eq(wmsTables.inboundPlanItems.status, 'pending'),
+                ),
+              )
+          : [];
+
+      // parentPlan 별도 조회 (relation 문제 회피)
+      const parentPlanIds = plans
+        .map((p) => p.parentPlanId)
+        .filter(Boolean) as string[];
+      let parentPlanMap = new Map();
+      if (parentPlanIds.length > 0) {
+        const parentPlans = await tx
+          .select({
+            id: wmsTables.inboundPlans.id,
+            status: wmsTables.inboundPlans.status,
+          })
+          .from(wmsTables.inboundPlans)
+          .where(inArray(wmsTables.inboundPlans.id, parentPlanIds));
+        parentPlanMap = new Map(parentPlans.map((p) => [p.id, p]));
+      }
+
+      // linkedPurchaseOrder와 supplier는 별도로 조회 (relation 문제 회피)
+      const purchaseOrderIds = plans
+        .map((p) => p.linkedPurchaseOrderId)
+        .filter(Boolean) as string[];
+      let poMap = new Map();
+      if (purchaseOrderIds.length > 0) {
+        const purchaseOrders = await tx
+          .select()
+          .from(wmsTables.purchaseOrders)
+          .where(inArray(wmsTables.purchaseOrders.id, purchaseOrderIds));
+
+        const supplierIds = purchaseOrders
+          .map((po) => po.supplierId)
+          .filter(Boolean) as string[];
+        const suppliers =
+          supplierIds.length > 0
+            ? await tx
+                .select()
+                .from(wmsTables.suppliers)
+                .where(inArray(wmsTables.suppliers.id, supplierIds))
+            : [];
+        const supplierMap = new Map(suppliers.map((s) => [s.id, s]));
+
+        poMap = new Map(
+          purchaseOrders.map((po) => [
+            po.id,
+            {
+              ...po,
+              supplier: po.supplierId ? supplierMap.get(po.supplierId) : null,
+            },
+          ]),
+        );
+      }
+
+      // SKU 별도 조회 (relation 문제 회피)
+      const skuIds = items
+        .map((item) => item.skuId)
+        .filter(Boolean) as string[];
+      let skuMap = new Map();
+      if (skuIds.length > 0) {
+        const skus = await tx
+          .select({
+            id: wmsTables.skus.id,
+            name: wmsTables.skus.name,
+            code: wmsTables.skus.code,
+          })
+          .from(wmsTables.skus)
+          .where(inArray(wmsTables.skus.id, skuIds));
+        skuMap = new Map(skus.map((s) => [s.id, s]));
+      }
+
+      // items를 planId별로 그룹화
+      const itemsByPlanId = new Map<string, typeof items>();
+      for (const item of items) {
+        if (!itemsByPlanId.has(item.planId)) {
+          itemsByPlanId.set(item.planId, []);
+        }
+        itemsByPlanId.get(item.planId)!.push(item);
+      }
+
+      const inboundPending = plans.map((plan) => {
+        const planItems = itemsByPlanId.get(plan.id) ?? [];
+        const parentPlan = plan.parentPlanId
+          ? parentPlanMap.get(plan.parentPlanId)
+          : null;
+        const po = plan.linkedPurchaseOrderId
+          ? poMap.get(plan.linkedPurchaseOrderId)
+          : null;
+        return {
+          planId: plan.id,
+          planType: plan.planType,
+          warehouseId: plan.warehouseId,
+          expectedDate: plan.expectedDate,
+          isLinkedPlan: !!plan.parentPlanId, // destination plan 여부
+          sourcePlanStatus: parentPlan?.status, // 중국 plan 상태
+          purchaseOrder: po
             ? {
-                name: plan.linkedPurchaseOrder.supplier.name,
-                contactInfo: plan.linkedPurchaseOrder.supplier.contactInfo,
+                id: po.id,
+                type: po.type,
+                supplier: po.supplier
+                  ? {
+                      name: po.supplier.name,
+                      contactInfo: po.supplier.contactInfo,
+                    }
+                  : undefined,
               }
             : undefined,
-        },
-        items: plan.items.map((item) => ({
-          skuId: item.skuId,
-          skuName: item.sku.name,
-          skuCode: item.sku.code,
-          expectedQty: item.expectedQty,
-          receivedQty: item.receivedQty,
-          pendingQty: item.expectedQty - item.receivedQty,
-        })),
-        totalQuantity: plan.items.reduce(
-          (sum, item) => sum + item.expectedQty,
-          0,
-        ),
-        totalPendingQuantity: plan.items.reduce(
-          (sum, item) => sum + (item.expectedQty - item.receivedQty),
-          0,
-        ),
-      }));
+          items: planItems.map((item) => {
+            const sku = skuMap.get(item.skuId);
+            return {
+              skuId: item.skuId,
+              skuName: sku?.name ?? '',
+              skuCode: sku?.code ?? '',
+              expectedQty: item.expectedQty,
+              receivedQty: item.receivedQty,
+              pendingQty: item.expectedQty - item.receivedQty,
+            };
+          }),
+          totalQuantity: planItems.reduce(
+            (sum, item) => sum + item.expectedQty,
+            0,
+          ),
+          totalPendingQuantity: planItems.reduce(
+            (sum, item) => sum + (item.expectedQty - item.receivedQty),
+            0,
+          ),
+        };
+      });
 
       return {
         warehouseId,
