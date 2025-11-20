@@ -8,11 +8,8 @@ export * from './tax-invoice.reader';
 export * from './tax-invoice.creator';
 export * from './tax-invoice.manager';
 
-// Repositories
+// Repository (Unified)
 export * from './tax-invoice.repository';
-export * from './tax-invoice-snapshot.repository';
-export * from './tax-invoice-event.repository';
-export * from './tax-invoice-preference.repository';
 
 // OMS Client
 export * from './oms-client.interface';
