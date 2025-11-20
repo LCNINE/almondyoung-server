@@ -1,6 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { SkuGroupDto, SkuGroupResponseDto } from '../sku-groups/sku-group-response.dto';
 
+export class SupplierInfoDto {
+  @ApiProperty({ description: 'Supplier ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Supplier name' })
+  name: string;
+}
+
 export class BarcodeDto {
   @ApiProperty()
   id: string;
@@ -65,8 +73,8 @@ export class SkuResponseDto {
   @ApiProperty({ type: [BarcodeDto] })
   barcodes: BarcodeDto[];
 
-  @ApiProperty({ type: [String] })
-  supplierNames: string[];
+  @ApiProperty({ type: [SupplierInfoDto], description: 'Supplier information (ID and name)' })
+  suppliers: SupplierInfoDto[];
 
   @ApiProperty({ type: [String] })
   categoryNames: string[];

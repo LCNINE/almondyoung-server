@@ -240,6 +240,7 @@ export class InventoryService implements OnModuleInit {
 
     const suppliers = await this.inTx(async (trx) => trx
       .select({
+        id: wmsTables.suppliers.id,
         name: wmsTables.suppliers.name,
       })
       .from(wmsTables.skuSuppliers)
@@ -273,7 +274,7 @@ export class InventoryService implements OnModuleInit {
         barcodeType: b.barcodeType,
         packingUnit: b.packingUnit ?? undefined,
       })),
-      supplierNames: suppliers.map(s => s.name),
+      suppliers: suppliers,
       categoryNames: categories.map(c => c.name),
     };
   }
@@ -331,9 +332,9 @@ export class InventoryService implements OnModuleInit {
       if (!acc[sku.id]) {
         acc[sku.id] = {
           ...sku,
-          skuGroup: row.group ?? undefined, // group 정보 응답에 추가
+          skuGroup: row.group ?? undefined,
           barcodes: new Map(),
-          supplierNames: new Set<string>(),
+          suppliers: new Map<string, { id: string; name: string }>(),
           categoryNames: new Set<string>(),
         };
       }
@@ -348,7 +349,10 @@ export class InventoryService implements OnModuleInit {
       }
 
       if (row.supplier) {
-        acc[sku.id].supplierNames.add(row.supplier.name);
+        acc[sku.id].suppliers.set(row.supplier.id, {
+          id: row.supplier.id,
+          name: row.supplier.name,
+        });
       }
 
       if (row.category) {
@@ -361,9 +365,9 @@ export class InventoryService implements OnModuleInit {
     return Object.values(aggregatedSkus).map(sku => ({
       ...sku,
       barcodes: Array.from(sku.barcodes.values()),
-      supplierNames: Array.from(sku.supplierNames),
+      suppliers: Array.from(sku.suppliers.values()),
       categoryNames: Array.from(sku.categoryNames),
-      skuGroup: sku.skuGroup, // 최종 응답에 group 정보 포함
+      skuGroup: sku.skuGroup,
     }));
   }
 
