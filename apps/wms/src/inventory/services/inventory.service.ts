@@ -1,7 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
-import { InjectTypedDb } from '@app/db/decorators';
+import { InjectTypedDb, TypedDatabase, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { TypedDatabase, DbService } from '@app/db';
 import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/inventory/advanced-filters.dto';

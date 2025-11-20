@@ -44,7 +44,7 @@ module.exports = {
   clearMocks: true,
 
   // Verbose output for better debugging
-  verbose: true,
+  verbose: false,
 
   // Transform @faker-js/faker ESM module
   transformIgnorePatterns: [
