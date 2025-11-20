@@ -37,7 +37,7 @@ export const walletSchema = {
   // Tax Invoice System
   taxInvoices: schema.taxInvoices,
   taxInvoiceEvents: schema.taxInvoiceEvents,
-  taxInvoiceEventsDetails: schema.taxInvoiceEventsDetails,
+  taxInvoiceEventDetails: schema.taxInvoiceEventDetails,
 
   // Cash Receipt System
   cashReceiptEvents: schema.cashReceiptEvents,
@@ -207,10 +207,10 @@ export type NewTaxInvoiceEvent = InferInsertModel<
 >;
 
 export type TaxInvoiceEventsDetail = InferSelectModel<
-  typeof schema.taxInvoiceEventsDetails
+  typeof schema.taxInvoiceEventDetails
 >;
 export type NewTaxInvoiceEventsDetail = InferInsertModel<
-  typeof schema.taxInvoiceEventsDetails
+  typeof schema.taxInvoiceEventDetails
 >;
 export type UpdateTaxInvoiceEventsDetail = Partial<
   Omit<NewTaxInvoiceEventsDetail, 'id' | 'createdAt' | 'updatedAt'>
