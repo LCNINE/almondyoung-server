@@ -13,7 +13,6 @@ export const walletSchema = {
   paymentIntents: schema.paymentIntents,
   paymentAttempts: schema.paymentAttempts,
   paymentRefunds: schema.paymentRefunds,
-  checkoutSessions: schema.checkoutSessions,
 
   // Payment Profiles
   paymentProfiles: schema.paymentProfiles,
@@ -82,13 +81,6 @@ export type UpdatePaymentRefund = Partial<
 // ===============================
 // Checkout Session 타입들
 // ===============================
-export type CheckoutSession = InferSelectModel<typeof schema.checkoutSessions>;
-export type NewCheckoutSession = InferInsertModel<
-  typeof schema.checkoutSessions
->;
-export type UpdateCheckoutSession = Partial<
-  Omit<NewCheckoutSession, 'id' | 'createdAt'>
->;
 
 // ===============================
 // Payment Profile 타입들

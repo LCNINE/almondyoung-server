@@ -44,7 +44,7 @@ export class PaymentPointManager {
       return {
         pointEventId: null,
         pointsUsed: 0,
-        finalAmount: Number(intent.amount),
+        finalAmount: Number(intent.finalAmount),
         isFullPayment: false,
         discounts: [],
       };
@@ -91,7 +91,7 @@ export class PaymentPointManager {
       },
     ];
 
-    const finalAmount = Number(intent.amount) - usePoints;
+    const finalAmount = Number(intent.finalAmount) - usePoints;
     const isFullPayment = finalAmount === 0;
 
     // 6. Intent에 할인 정보 업데이트
@@ -135,7 +135,7 @@ export class PaymentPointManager {
       attemptId: null,
       pointEventId: pointResult.pointEventId,
       breakdown: {
-        totalAmount: Number(intent.amount),
+        originalAmount: Number(intent.originalAmount),
         pointsUsed: pointResult.pointsUsed,
         finalAmount: 0,
       },
