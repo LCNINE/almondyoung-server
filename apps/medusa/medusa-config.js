@@ -119,7 +119,7 @@ module.exports = defineConfig({
     vite: () => {
       return {
         server: {
-          allowedHosts: ['api-gateway-development-10ed.up.railway.app'],
+          allowedHosts: ['medusa-dev.up.railway.app'],
         },
       };
     },
