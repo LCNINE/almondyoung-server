@@ -6,6 +6,8 @@ import { eq, and, inArray, sql, asc, desc } from 'drizzle-orm';
 import {
     CreatePurchaseOrderDto,
     UpdatePurchaseOrderStatusDto,
+    UpdatePurchaseOrderLinesDto,
+    UpdatePurchaseOrderLineDto,
     AddToCartDto,
     UpdateCartItemDto,
     CreatePurchaseOrderFromCartDto,
@@ -180,6 +182,106 @@ export class PurchaseOrderService {
 
             return this.getPurchaseOrderById(poId, trx);
         }, tx);
+    }
+
+    /**
+     * 발주 라인 수정 (created/confirmed 모두 가능)
+     * - created: 자유롭게 수정 가능
+     * - confirmed: PO lines만 수정 (inbound_plan_items는 이미 입고 시작되었을 수 있음)
+     */
+    async updatePurchaseOrderLines(
+        poId: string,
+        updateDto: UpdatePurchaseOrderLinesDto,
+        tx?: DbTx
+    ): Promise<PurchaseOrderResponse> {
+        return this.inTx(async (trx) => {
+            // 1. PO 존재 및 상태 확인
+            const [po] = await trx
+                .select()
+                .from(wmsTables.purchaseOrders)
+                .where(eq(wmsTables.purchaseOrders.id, poId))
+                .limit(1);
+
+            if (!po) {
+                throw new NotFoundException(`Purchase order ${poId} not found`);
+            }
+
+            // 2. received 상태는 수정 불가
+            if (po.status === 'received') {
+                throw new BadRequestException(
+                    'Cannot modify purchase order lines after fully received'
+                );
+            }
+
+            // 3. 기존 라인 삭제
+            await trx
+                .delete(wmsTables.purchaseOrderLines)
+                .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+
+            // 4. 새 라인 삽입
+            await trx
+                .insert(wmsTables.purchaseOrderLines)
+                .values(
+                    updateDto.lines.map(line => ({
+                        poId,
+                        skuId: line.skuId,
+                        quantity: line.quantity,
+                        unitPrice: line.unitPrice ?? null,
+                    }))
+                );
+
+            // 5. confirmed 상태면 inbound_plan_items도 업데이트 시도
+            if (po.status === 'confirmed') {
+                await this.syncInboundPlanItems(trx, poId, updateDto.lines);
+            }
+
+            this.logger.log(`Updated ${updateDto.lines.length} lines for PO ${poId}`);
+
+            return this.getPurchaseOrderById(poId, trx);
+        }, tx);
+    }
+
+    /**
+     * confirmed 상태 PO의 inbound_plan_items 동기화
+     * - pending 상태 items만 업데이트 (이미 입고 시작된 건은 건드리지 않음)
+     */
+    private async syncInboundPlanItems(
+        tx: DbTx,
+        poId: string,
+        newLines: UpdatePurchaseOrderLineDto[]
+    ): Promise<void> {
+        // 1. 해당 PO의 모든 plan 조회
+        const plans = await tx
+            .select()
+            .from(wmsTables.inboundPlans)
+            .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
+
+        for (const plan of plans) {
+            // 2. pending 상태 items만 삭제
+            await tx
+                .delete(wmsTables.inboundPlanItems)
+                .where(
+                    and(
+                        eq(wmsTables.inboundPlanItems.planId, plan.id),
+                        eq(wmsTables.inboundPlanItems.status, 'pending')
+                    )
+                );
+
+            // 3. 새 items 삽입
+            await tx
+                .insert(wmsTables.inboundPlanItems)
+                .values(
+                    newLines.map(line => ({
+                        planId: plan.id,
+                        skuId: line.skuId,
+                        expectedQty: line.quantity,
+                        receivedQty: 0,
+                        status: 'pending' as const,
+                    }))
+                );
+        }
+
+        this.logger.log(`Synced inbound plan items for ${plans.length} plans`);
     }
 
     /**

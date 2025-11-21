@@ -12,7 +12,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/almondyoung-server/test/jest-e2e.json",
-    "migrate:auth": "ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts",
+    "migrate:auth": "NODE_OPTIONS='--no-network-family-autoselection --dns-result-order=ipv4first' ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
     "build:main": "nest build almondyoung-server",

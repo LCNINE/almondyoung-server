@@ -66,6 +66,30 @@ export class UpdatePurchaseOrderStatusDto {
   expectedArrival?: string;
 }
 
+export class UpdatePurchaseOrderLineDto {
+  @ApiProperty({ description: 'SKU ID' })
+  @IsUUID()
+  skuId: string;
+
+  @ApiProperty({ description: '발주 수량' })
+  @IsNumber()
+  @IsPositive()
+  quantity: number;
+
+  @ApiPropertyOptional({ description: '단가' })
+  @IsOptional()
+  @IsNumber()
+  unitPrice?: number;
+}
+
+export class UpdatePurchaseOrderLinesDto {
+  @ApiProperty({ type: [UpdatePurchaseOrderLineDto], description: '발주 라인 목록' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdatePurchaseOrderLineDto)
+  lines: UpdatePurchaseOrderLineDto[];
+}
+
 export class AddToCartDto {
   @ApiProperty({ description: 'SKU ID' })
   @IsUUID()

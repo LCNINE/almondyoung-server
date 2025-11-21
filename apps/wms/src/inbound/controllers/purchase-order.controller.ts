@@ -17,6 +17,7 @@ import { PurchaseOrderService } from '../services/purchase-order.service';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderStatusDto,
+  UpdatePurchaseOrderLinesDto,
   AddToCartDto,
   UpdateCartItemDto,
   CreatePurchaseOrderFromCartDto,
@@ -202,6 +203,19 @@ export class PurchaseOrderController {
     @Body() updateDto: UpdatePurchaseOrderStatusDto
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto);
+  }
+
+  @Put(':id/lines')
+  @ApiOperation({ summary: '발주 라인 수정 (created/confirmed 상태)' })
+  @ApiResponse({
+    status: 200,
+    description: '발주 라인이 성공적으로 수정됨',
+  })
+  async updatePurchaseOrderLines(
+    @Param('id') id: string,
+    @Body() updateDto: UpdatePurchaseOrderLinesDto
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.updatePurchaseOrderLines(id, updateDto);
   }
 
   // ========== Audit Workflow ==========
