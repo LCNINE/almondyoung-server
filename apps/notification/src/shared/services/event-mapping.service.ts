@@ -36,7 +36,7 @@ interface NewNotificationEvent {
 export class EventMappingService {
     constructor(
         @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>
-    ) {}
+    ) { }
 
     async createEvent(dto: CreateEventDto): Promise<NotificationEvent> {
         const [newEvent] = await this.db.db
@@ -163,12 +163,23 @@ export class EventMappingService {
         } as NotificationEvent;
     }
 
+    /**
+     * @deprecated 이 메서드는 실제로 알림을 발송하지 않음
+     * HTTP 엔드포인트에서 이벤트를 트리거하려면 NotificationDispatcherService.processEvent()를 사용
+     * 
+
+     */
     async triggerEvent(dto: TriggerEventDto): Promise<any> {
         const event = await this.getEventByKey(dto.eventKey);
-        
+
+        // 실제 알림 발송은 하지 않고 이벤트 정보만 반환
+        // TODO: NotificationDispatcherService.processEvent()로 리팩토링 필요
         return {
             message: `Event ${dto.eventKey} triggered successfully`,
+            eventKey: event.eventKey,
+            eventId: event.eventId,
             notificationIds: [],
+            warning: 'This endpoint does not actually send notifications. Use NotificationDispatcherService.processEvent() instead.',
         };
     }
 }
