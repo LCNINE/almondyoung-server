@@ -29,7 +29,7 @@ import {
 
 @Injectable()
 export class ChannelProductsService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -147,6 +147,8 @@ export class ChannelProductsService {
           id: salesChannels.id,
           type: salesChannels.type,
           name: salesChannels.name,
+          site: salesChannels.site,                    // 추가
+          categoryId: salesChannels.categoryId,        // 추가
           isActive: salesChannels.isActive,
           apiConfig: salesChannels.apiConfig,
           supportedFeatures: salesChannels.supportedFeatures,
