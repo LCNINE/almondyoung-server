@@ -5,7 +5,9 @@ import type {
   AddPointsParams,
   RedeemParams,
   CancelPointsParams,
+  PointHistoryItem,
 } from './point.repository';
+
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { walletSchema } from '../../shared/database/schema';
 
@@ -25,7 +27,7 @@ export class PointService {
   constructor(
     private readonly pointReader: PointReader,
     private readonly pointManager: PointManager,
-  ) {}
+  ) { }
 
   /**
    * 잔액 조회
@@ -42,8 +44,20 @@ export class PointService {
   }
 
   /**
+   * 포인트 내역 조회
+   */
+  async getHistory(
+    partnerId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: PointHistoryItem[]; total: number }> {
+    return await this.pointReader.getHistory(partnerId, limit, offset);
+  }
+
+  /**
    * 포인트 적립
    */
+
   async addPoints(params: AddPointsParams, tx?: DbTx) {
     return await this.pointManager.addPoints(params, tx);
   }
