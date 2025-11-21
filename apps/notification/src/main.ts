@@ -24,6 +24,11 @@ async function bootstrap() {
         verify: rawBodyBuffer
     }));
 
+    // Kakao 웹훅 경로에도 raw body 파서 적용
+    app.use('/api/v1/webhooks/kakao', bodyParser.json({
+        verify: rawBodyBuffer
+    }));
+
     // 나머지 경로에는 일반 JSON 파서 적용
     app.use(bodyParser.json({ verify: rawBodyBuffer }));
     app.use(bodyParser.urlencoded({ extended: true }));

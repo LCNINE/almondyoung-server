@@ -1,3 +1,4 @@
+// apps/notification/src/bulk/bulk.module.ts
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';

@@ -1,5 +1,5 @@
-import { Notification } from '../services/notification-dispatcher.service';
 // apps/notification/src/dispatcher/controllers/notification.controller.ts
+import { Notification } from '../services/notification-dispatcher.service';
 import {
     Controller,
     Post,

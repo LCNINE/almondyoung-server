@@ -139,12 +139,40 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
     getPrimaryProviderForChannel(channel: Channel): NotificationProvider | null {
         const providers = this.providersByChannel.get(channel) || [];
+
+        if (providers.length === 0) {
+            this.logger.warn('No providers configured for channel', { channel });
+            return null;
+        }
+
         return providers[0] || null;
     }
 
     async getAvailableProviderForChannel(channel: Channel): Promise<NotificationProvider | null> {
         const providers = this.providersByChannel.get(channel) || [];
 
+        // 채널에 등록된 프로바이더가 없는 경우
+        if (providers.length === 0) {
+            this.logger.error('No providers configured for channel', {
+                channel,
+                availableChannels: Array.from(this.providersByChannel.keys()),
+            });
+
+            await this.alertService.createAlert({
+                type: 'provider_not_configured',
+                severity: 'critical',
+                title: `No providers configured for channel ${channel}`,
+                message: `Channel ${channel} has no registered providers. Please configure at least one provider for this channel.`,
+                context: {
+                    channel,
+                    availableChannels: Array.from(this.providersByChannel.keys()),
+                },
+            });
+
+            return null;
+        }
+
+        // 사용 가능한 프로바이더 찾기
         for (const provider of providers) {
             try {
                 if (await provider.isAvailable()) {
@@ -153,17 +181,24 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
             } catch (error: any) {
                 this.logger.warn('Provider availability check failed', {
                     providerId: provider.getProviderId(),
+                    channel,
                     error: error.message,
                 });
             }
         }
 
         // 모든 provider가 unavailable한 경우
+        this.logger.error('All providers unavailable for channel', {
+            channel,
+            providerCount: providers.length,
+            providerIds: providers.map(p => p.getProviderId()),
+        });
+
         await this.alertService.createAlert({
             type: 'provider_unavailable',
             severity: 'critical',
             title: `No available providers for ${channel}`,
-            message: `All providers for channel ${channel} are unavailable`,
+            message: `All ${providers.length} provider(s) for channel ${channel} are unavailable`,
             context: {
                 channel,
                 attemptedProviders: providers.map(p => p.getProviderId()),

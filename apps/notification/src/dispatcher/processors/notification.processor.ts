@@ -106,12 +106,31 @@ export class NotificationProcessor {
 
             const latency = Date.now() - startTime;
 
+            // providerResponse에서 requestId/messageId 추출하여 metadata에 저장
+            // (웹훅에서 notification을 찾기 위해 필요)
+            const providerResponse = result.providerResponse || {};
+            const requestId = providerResponse.requestId || result.messageId;
+            const updateMetadata: Record<string, any> = {
+                ...metadata,
+            };
+
+            // Kakao의 경우 requestId를 metadata에 저장
+            if (notification.channel === 'KAKAO' && requestId) {
+                updateMetadata.requestId = requestId;
+            }
+
+            // Twilio의 경우 messageSid를 metadata에 저장
+            if (notification.channel === 'SMS' && result.messageId) {
+                updateMetadata.messageSid = result.messageId;
+            }
+
             await this.db
                 .update(notifications)
                 .set({
                     status: NotificationStatus.SENT,
                     sentAt: new Date(),
                     providerId: provider.getProviderId(),
+                    metadata: updateMetadata,
                     updatedAt: new Date(),
                 })
                 .where(eq(notifications.notificationId, notificationId));

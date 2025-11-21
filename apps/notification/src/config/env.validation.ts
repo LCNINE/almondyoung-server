@@ -38,6 +38,7 @@ export const notificationEnvSchema = z.object({
   NHN_SENDER_KEY: z.string().optional(),
   NHN_PLUS_FRIEND_ID: z.string().optional(),
   NHN_SMS_APP_KEY: z.string().optional(),
+  NHN_WEBHOOK_SIGNATURE: z.string().optional(), // NHN KakaoTalk 웹훅 서명
   DEFAULT_SMS_NUMBER: z.string().optional(),
 
   // Kakao Provider (Legacy Config)

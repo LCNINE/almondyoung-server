@@ -1,3 +1,4 @@
+// apps/notification/src/template/template.module.ts
 import { Module } from '@nestjs/common';
 import { DbModule } from '@app/db';
 import { notificationTables } from '../../database/schemas/notification-schema';
