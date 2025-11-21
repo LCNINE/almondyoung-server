@@ -133,15 +133,15 @@ export class PaymentAttemptRepository {
    * providerResponseSnapshot에서 에러 정보를 파싱합니다.
    */
   getErrorMessage(attempt: PaymentAttempt): string | null {
-    if (!attempt.providerResponseSnapshot) {
+    if (!attempt.provider_raw_response) {
       return null;
     }
 
     try {
       const response =
-        typeof attempt.providerResponseSnapshot === 'string'
-          ? JSON.parse(attempt.providerResponseSnapshot)
-          : attempt.providerResponseSnapshot;
+        typeof attempt.provider_raw_response === 'string'
+          ? JSON.parse(attempt.provider_raw_response)
+          : attempt.provider_raw_response;
 
       // Provider별 에러 메시지 추출
       switch (attempt.provider) {
