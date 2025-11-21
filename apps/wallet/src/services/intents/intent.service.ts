@@ -54,18 +54,6 @@ export class IntentService {
   }
 
   /**
-   * 할인 적용
-   */
-  async applyDiscounts(
-    intentId: string,
-    discounts: any[],
-    tx?: WalletExecutor,
-  ): Promise<void> {
-    const intent = await this.intentReader.findById(intentId);
-    await this.intentManager.applyDiscounts(intent, discounts, tx);
-  }
-
-  /**
    * 포인트 전액 결제 완료
    */
   async completeAsPointOnly(

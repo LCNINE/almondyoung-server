@@ -44,37 +44,6 @@ export class IntentManager {
   }
 
   /**
-   * Intent에 할인 정보를 적용합니다.
-   */
-  async applyDiscounts(
-    intent: PaymentIntent | null,
-    discounts: any[],
-    tx?: WalletExecutor,
-  ): Promise<void> {
-    if (!intent) throw new Error('Intent not found');
-
-    const discountsTotal = discounts.reduce(
-      (sum: number, d: any) => sum + (d.amount || 0),
-      0,
-    );
-    const finalAmount = intent.amount - discountsTotal;
-
-    if (finalAmount < 0) throw new Error('Invalid discount amount');
-
-    await this.repo.updateDiscounts(
-      intent.id,
-      discounts,
-      discountsTotal,
-      finalAmount,
-      tx,
-    );
-
-    this.logger.log(
-      `Discounts applied to intent ${intent.id}: ${discountsTotal}`,
-    );
-  }
-
-  /**
    * Intent를 포인트 전액 결제로 완료 처리합니다.
    */
   async completeAsPointOnly(
