@@ -119,7 +119,7 @@ module.exports = defineConfig({
     vite: () => {
       return {
         server: {
-          allowedHosts: ['medusa-dev.up.railway.app'],
+          allowedHosts: ['localhost', '127.0.0.1', 'medusa-dev.up.railway.app'],
         },
       };
     },
