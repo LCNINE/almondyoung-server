@@ -985,6 +985,13 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   canceledAt: timestamp('canceled_at', { withTimezone: true }),
 
   shippingAddress: json('shipping_address'),
+
+  // TODO: 송화인(발송인) 정보 추가 필요
+  // - 주문 출고 시 salesOrder.channelId로 PIM의 channel 조회
+  // - channel.config.sender가 있으면 senderAddress로 사용
+  // - sender 구조: { name, phone, zipcode, address, detailAddress }
+  // 예: senderAddress: json('sender_address'),
+
   labelNo: varchar('label_no', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

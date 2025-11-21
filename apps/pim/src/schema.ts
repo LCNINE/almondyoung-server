@@ -62,14 +62,14 @@ export const productCategories = pgTable(
     path: varchar('path', { length: 1000 }).notNull().default(''),
     sortOrder: integer('sort_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
-    
+
     // ===== Phase 2 NEW FIELDS START =====
     visibility: boolean('visibility').notNull().default(true),
     displaySettings: jsonb('display_settings').$type<CategoryDisplaySettings>(),
     seoConfig: jsonb('seo_config').$type<CategorySeoConfig>(),
     templateConfig: jsonb('template_config').$type<CategoryTemplateConfig>(),
     // ===== Phase 2 NEW FIELDS END =====
-    
+
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     createdBy: uuid('created_by'),
@@ -98,7 +98,7 @@ export const productMasters = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    
+
     // ===== VERSION MANAGEMENT FIELDS START =====
     masterId: uuid('master_id').notNull(),
     version: integer('version').notNull().default(1),
@@ -108,7 +108,7 @@ export const productMasters = pgTable(
       .default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
     // ===== VERSION MANAGEMENT FIELDS END =====
-    
+
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
@@ -429,11 +429,11 @@ export const productVariants = pgTable(
     displayOrder: integer('display_order').default(0), // 표시 순서
     status: varchar('status', { length: 20 }).default('active'), // active, inactive
     isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
-    
+
     // Phase 1 new fields
     variantCode: varchar('variant_code', { length: 100 }).unique(),
     variantImages: jsonb('variant_images').$type<string[]>(),
-    
+
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -469,28 +469,50 @@ export const variantOptionValues = pgTable(
   ],
 );
 
-// ===== 7. SALES CHANNELS =====
+// ===== 7. CHANNEL CATEGORIES =====
+export const channelCategories = pgTable(
+  'channel_categories',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    name: varchar('name', { length: 100 }).notNull(),
+    description: text('description'),
+    displayOrder: integer('display_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_channel_categories_order').on(table.displayOrder),
+  ],
+);
+
+// ===== 8. SALES CHANNELS =====
 export const salesChannels = pgTable(
   'sales_channels',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    type: varchar('type', { length: 50 }).notNull().unique(), // 'medusa', 'coupang', 'smartstore'
-    name: varchar('name', { length: 100 }).notNull(), // '메두사', '쿠팡', '스마트스토어'
+    type: varchar('type', { length: 50 }).notNull().default('ONLINE'),
+    site: varchar('site', { length: 50 }).notNull(),
+    categoryId: uuid('category_id').references(() => channelCategories.id, { onDelete: 'set null' }),
+    name: varchar('name', { length: 100 }).notNull(),
     isActive: boolean('is_active').default(true),
-    apiConfig: jsonb('api_config'), // 각 채널별 설정 (선택사항)
-    supportedFeatures: jsonb('supported_features'), // 지원 기능들
+    apiConfig: jsonb('api_config'),
+    supportedFeatures: jsonb('supported_features'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
   (table) => [
     index('idx_sales_channels_type').on(table.type),
+    index('idx_sales_channels_site').on(table.site),
+    index('idx_sales_channels_category').on(table.categoryId),
     index('idx_sales_channels_active').on(table.isActive),
   ],
 );
 
-// ===== 8. CHANNEL PRODUCTS =====
+// ===== 9. CHANNEL PRODUCTS =====
 export const channelProducts = pgTable(
   'channel_products',
   {
@@ -522,7 +544,7 @@ export const channelProducts = pgTable(
   ],
 );
 
-// ===== 9. PRICING RULES (규칙 기반 가격 정책) =====
+// ===== 10. PRICING RULES (규칙 기반 가격 정책) =====
 export const pricingRules = pgTable(
   'pricing_rules',
   {
@@ -676,6 +698,7 @@ export const pimSchema = {
   productOptionValues,
   productVariants,
   variantOptionValues,
+  channelCategories,
   salesChannels,
   channelProducts,
   pricingRules,
@@ -715,6 +738,38 @@ export const productMasterCategoriesRelations = relations(
     category: one(productCategories, {
       fields: [productMasterCategories.categoryId],
       references: [productCategories.id],
+    }),
+  }),
+);
+
+export const channelCategoriesRelations = relations(
+  channelCategories,
+  ({ many }) => ({
+    channels: many(salesChannels),
+  }),
+);
+
+export const salesChannelsRelations = relations(
+  salesChannels,
+  ({ one, many }) => ({
+    category: one(channelCategories, {
+      fields: [salesChannels.categoryId],
+      references: [channelCategories.id],
+    }),
+    channelProducts: many(channelProducts),
+  }),
+);
+
+export const channelProductsRelations = relations(
+  channelProducts,
+  ({ one }) => ({
+    master: one(productMasters, {
+      fields: [channelProducts.masterId],
+      references: [productMasters.id],
+    }),
+    channel: one(salesChannels, {
+      fields: [channelProducts.channelId],
+      references: [salesChannels.id],
     }),
   }),
 );

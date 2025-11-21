@@ -1,13 +1,28 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsUrl, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateSalesChannelDto {
   @ApiProperty({ 
-    description: '판매 채널 타입',
-    enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE']
+    description: '채널 유형',
+    enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
+    default: 'ONLINE',
+    required: false
   })
+  @IsOptional()
   @IsEnum(['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'])
-  type: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
+  type?: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
+
+  @ApiProperty({
+    description: '판매처 사이트 (필수)',
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
+  })
+  @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
+  site: string;
+
+  @ApiProperty({ description: '판매처 분류 ID', required: false })
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
 
   @ApiProperty({ 
     description: '판매 채널 이름',

@@ -1,14 +1,33 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ChannelCategoryDto } from '../channel-categories';
 
 export class SalesChannelDto {
   @ApiProperty({ description: '판매 채널 ID (UUID 형식)' })
   id: string;
 
   @ApiProperty({ 
-    description: '판매 채널 타입',
-    enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE']
+    description: '채널 유형 (기본값: ONLINE)',
+    enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
+    default: 'ONLINE'
   })
   type: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
+
+  @ApiProperty({
+    description: '판매처 사이트',
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
+  })
+  site: string;
+
+  @ApiProperty({ description: '판매처 분류 ID', nullable: true })
+  categoryId: string | null;
+
+  @ApiProperty({ 
+    description: '판매처 분류 정보', 
+    type: ChannelCategoryDto, 
+    nullable: true,
+    required: false
+  })
+  category?: ChannelCategoryDto | null;
 
   @ApiProperty({ description: '판매 채널 이름' })
   name: string;
@@ -16,7 +35,18 @@ export class SalesChannelDto {
   @ApiProperty({ description: '채널 설명', nullable: true })
   description: string | null;
 
-  @ApiProperty({ description: '채널별 설정 정보' })
+  @ApiProperty({ 
+    description: '채널 설정 (sender 정보 포함)',
+    example: {
+      sender: {
+        name: '아몬드영',
+        phone: '010-1234-5678',
+        zipcode: '12345',
+        address: '서울시 강남구',
+        detailAddress: '101호'
+      }
+    }
+  })
   config: Record<string, any>;
 
   @ApiProperty({ description: '활성 상태' })
