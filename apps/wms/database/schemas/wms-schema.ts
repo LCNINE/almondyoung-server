@@ -1279,20 +1279,6 @@ export const purchaseOrderCart = pgTable('purchase_order_cart', {
 });
 
 /*───────────────────────────
- * INBOUND LISTS
- *──────────────────────────*/
-export const inboundLists = pgTable('inbound_lists', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  poId: uuid('po_id').references(() => purchaseOrders.id, { onDelete: 'cascade' }).notNull(),
-  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
-  quantity: integer('quantity').notNull(),
-  barcode: varchar('barcode', { length: 64 }),
-  status: inboundStatusEnum('status').notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-/*───────────────────────────
  * STOCKTAKING (재고 실사)
  *──────────────────────────*/
 // Stocktaking sessions table
@@ -1722,7 +1708,6 @@ export const wmsTables = {
   purchaseOrders,
   purchaseOrderLines,
   purchaseOrderCart,
-  inboundLists,
   inboundReceipts,
   inboundReceiptLines,
   inboundPlans,
@@ -1855,7 +1840,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   purchaseOrderCart: many(purchaseOrderCart),
   inboundPlanItems: many(inboundPlanItems),
   inboundReceiptLines: many(inboundReceiptLines),
-  inboundLists: many(inboundLists),
   // Movement relations
   movementJobLines: many(movementJobLines),
   // Matching relations
@@ -2298,17 +2282,6 @@ export const purchaseOrderCartRelations = relations(purchaseOrderCart, ({ one })
 }));
 
 // Inbound Relations
-export const inboundListsRelations = relations(inboundLists, ({ one }) => ({
-  purchaseOrder: one(purchaseOrders, {
-    fields: [inboundLists.poId],
-    references: [purchaseOrders.id],
-  }),
-  sku: one(skus, {
-    fields: [inboundLists.skuId],
-    references: [skus.id],
-  }),
-}));
-
 export const inboundReceiptsRelations = relations(inboundReceipts, ({ one, many }) => ({
   warehouse: one(warehouses, {
     fields: [inboundReceipts.warehouseId],
@@ -2566,7 +2539,6 @@ export const wmsRelations = {
   purchaseOrderCartRelations,
 
   // Inbound Relations
-  inboundListsRelations,
   inboundReceiptsRelations,
   inboundPlansRelations,
   inboundPlanItemsRelations,
@@ -2762,9 +2734,6 @@ export type PurchaseOrderCart = InferSelectModel<typeof purchaseOrderCart>;
 export type NewPurchaseOrderCart = InferInsertModel<typeof purchaseOrderCart>;
 
 // Inbound Types
-export type InboundList = InferSelectModel<typeof inboundLists>;
-export type NewInboundList = InferInsertModel<typeof inboundLists>;
-
 export type InboundReceipt = InferSelectModel<typeof inboundReceipts>;
 export type NewInboundReceipt = InferInsertModel<typeof inboundReceipts>;
 
