@@ -1,7 +1,7 @@
 "use client"
 
 import { USER_SERVICE_BASE_URL } from "@lib/api/api.config"
-import { signout } from "@lib/data/customer"
+import { signout } from "@lib/api/medusa/customer"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef } from "react"
 

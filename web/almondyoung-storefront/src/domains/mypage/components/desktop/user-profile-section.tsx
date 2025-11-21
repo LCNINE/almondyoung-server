@@ -2,7 +2,7 @@
 
 import { CustomButton } from "@components/common/custom-buttons/custom-button"
 import { Spinner } from "@components/common/spinner"
-import { signout } from "@lib/data/customer"
+import { signout } from "@lib/api/medusa/customer"
 import { useUser } from "contexts/user-context"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useRouter } from "next/navigation"

@@ -9,7 +9,7 @@ export default function LoginTemplate() {
       {/* TODO: 추후 svg로 변경해서 아몬드 로고쪽에 애니메이션 효과 주면 좋을듯 */}
       <LocalizedClientLink href="/" className="mb-16">
         <Image
-          src="/images/almond-logo-blakc 3.png"
+          src="/images/almond-logo-black.png"
           alt="login logo"
           width={280}
           height={26}

@@ -3,7 +3,7 @@
 import { ApiError } from "@lib/api/api-error"
 import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
-import { medusaLogin, transferCart } from "@lib/data/customer"
+import { medusaLogin, transferCart } from "@lib/api/medusa/customer"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { serverApi } from "../server-api"

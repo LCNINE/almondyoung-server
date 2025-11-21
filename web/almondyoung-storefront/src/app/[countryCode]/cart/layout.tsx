@@ -2,7 +2,7 @@ import { Metadata } from "next"
 import React from "react"
 
 import { listCartOptions, retrieveCart } from "@lib/data/cart"
-import { retrieveCustomer } from "@lib/data/customer"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
 
 import { getBaseURL } from "@lib/utils/env"
 import { ThemeToggle } from "@components/common/thema-toggle"

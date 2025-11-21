@@ -6,7 +6,7 @@ import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
-import { MEDUSA_BASE_URL, USER_SERVICE_BASE_URL } from "../api/api.config"
+import { MEDUSA_BASE_URL, USER_SERVICE_BASE_URL } from "../api.config"
 import {
   getAuthHeaders,
   getCacheOptions,
@@ -17,7 +17,7 @@ import {
   removeMedusaAuthToken,
   removeRefreshToken,
   setMedusaAuthToken,
-} from "./cookies"
+} from "../../data/cookies"
 
 type MedusaSignupRequest = {
   email: string
