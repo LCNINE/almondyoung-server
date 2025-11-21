@@ -63,6 +63,13 @@ export class PointService {
   }
 
   /**
+   * 관리자 수동 지급
+   */
+  async grantByAdmin(params: AddPointsParams, tx?: DbTx) {
+    return await this.pointManager.grantByAdmin(params, tx);
+  }
+
+  /**
    * 포인트 사용
    */
   async redeem(params: RedeemParams, tx?: DbTx) {
