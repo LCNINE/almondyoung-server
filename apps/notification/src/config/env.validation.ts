@@ -59,6 +59,11 @@ export const notificationEnvSchema = z.object({
 export type NotificationEnvConfig = z.infer<typeof notificationEnvSchema>;
 
 export function validateNotificationEnv(config: Record<string, unknown>) {
+  // Swagger 문서 생성 모드에서는 검증 스킵
+  if (process.env.GENERATE_SWAGGER === 'true') {
+    return config as NotificationEnvConfig;
+  }
+
   const parsed = notificationEnvSchema.safeParse(config);
 
   if (!parsed.success) {
