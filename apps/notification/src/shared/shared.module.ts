@@ -9,6 +9,10 @@ import { NotificationLoggerService } from './services/notification-logger.servic
 import { AlertService } from './services/alert.service';
 import { WebhookService } from './services/webhook.service';
 import { EventMappingService } from './services/event-mapping.service';
+import { MetadataController } from './controllers/metadata.controller';
+import { TestFcmController } from './controllers/test-fcm.controller';
+import { LogController } from './controllers/log.controller';
+import { MetricsController } from './controllers/metrics.controller';
 
 @Module({
   imports: [
@@ -18,6 +22,7 @@ import { EventMappingService } from './services/event-mapping.service';
     DbModule,
     EventsModule,
   ],
+  controllers: [MetadataController, TestFcmController, LogController, MetricsController],
   providers: [
     NotificationLoggerService,
     AlertService,

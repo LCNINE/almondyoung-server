@@ -58,7 +58,20 @@ async function bootstrap() {
         .addTag('bulk', '대량 발송')
         .addTag('dispatcher', '알림 디스패처')
         .addTag('event-handlers', '이벤트 핸들러')
-        .addBearerAuth()
+        .addTag('webhooks', '웹훅 처리')
+        .addTag('metrics', '메트릭 조회')
+        .addTag('logs', '로그 조회')
+        .addBearerAuth(
+            {
+                type: 'http',
+                scheme: 'bearer',
+                bearerFormat: 'JWT',
+                name: 'JWT',
+                description: 'Enter JWT token',
+                in: 'header',
+            },
+            'access-token',
+        )
         .build();
 
     const document = SwaggerModule.createDocument(app, config);

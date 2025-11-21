@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/api/v1/notifications/send": {
+    "/notifications/send": {
       "post": {
         "description": "단일 또는 다중 채널로 알림을 즉시 발송합니다.",
         "operationId": "NotificationController_send",
@@ -34,7 +34,7 @@
         ]
       }
     },
-    "/api/v1/notifications/{id}": {
+    "/notifications/{id}": {
       "get": {
         "description": "ID로 특정 알림의 상세 정보와 발송 상태를 조회합니다.",
         "operationId": "NotificationController_getOne",
@@ -63,7 +63,7 @@
         ]
       }
     },
-    "/api/v1/notifications/users/{userId}": {
+    "/notifications/users/{userId}": {
       "get": {
         "description": "특정 사용자가 받은 알림 목록을 조회합니다.",
         "operationId": "NotificationController_getUserNotifications",
@@ -101,7 +101,7 @@
         ]
       }
     },
-    "/api/v1/notifications/events/process": {
+    "/notifications/events/process": {
       "post": {
         "description": "특정 이벤트 발생 시 해당 사용자에게 알림을 발송합니다.",
         "operationId": "NotificationController_processEvent",
@@ -164,7 +164,7 @@
         ]
       }
     },
-    "/api/v1/notifications/events/kafka": {
+    "/notifications/events/kafka": {
       "post": {
         "description": "Kafka에서 수신한 이벤트를 처리하여 알림을 발송합니다.",
         "operationId": "NotificationController_handleKafkaEvent",
@@ -228,7 +228,157 @@
         ]
       }
     },
-    "/api/v1/providers": {
+    "/events/trigger": {
+      "post": {
+        "description": "특정 이벤트를 수동으로 트리거하여 연결된 알림을 발송합니다.",
+        "operationId": "EventController_triggerEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "트리거할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "이벤트 트리거 성공"
+          },
+          "400": {
+            "description": "잘못된 이벤트 데이터"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 트리거",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/events": {
+      "get": {
+        "description": "시스템에 등록된 모든 이벤트 매핑 정보를 조회합니다.",
+        "operationId": "EventController_getAllEvents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "이벤트 목록 조회 성공"
+          }
+        },
+        "summary": "전체 이벤트 목록 조회",
+        "tags": [
+          "event-handlers"
+        ]
+      },
+      "post": {
+        "description": "새로운 이벤트 매핑을 생성합니다.",
+        "operationId": "EventController_createEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "생성할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "이벤트 생성 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "409": {
+            "description": "이미 존재하는 이벤트 키"
+          }
+        },
+        "summary": "이벤트 생성",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/events/{eventKey}": {
+      "get": {
+        "description": "이벤트 키로 특정 이벤트의 상세 정보를 조회합니다.",
+        "operationId": "EventController_findOne",
+        "parameters": [
+          {
+            "name": "eventKey",
+            "required": true,
+            "in": "path",
+            "description": "이벤트 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "이벤트 조회 성공"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 상세 조회",
+        "tags": [
+          "event-handlers"
+        ]
+      },
+      "put": {
+        "description": "기존 이벤트 매핑을 수정합니다.",
+        "operationId": "EventController_updateEvent",
+        "parameters": [
+          {
+            "name": "eventKey",
+            "required": true,
+            "in": "path",
+            "description": "이벤트 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "수정할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "이벤트 수정 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 수정",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/providers": {
       "get": {
         "description": "필터 조건에 따라 프로바이더 목록을 조회합니다.",
         "operationId": "ProviderController_findAll",
@@ -325,7 +475,7 @@
         ]
       }
     },
-    "/api/v1/providers/{id}": {
+    "/providers/{id}": {
       "get": {
         "description": "특정 프로바이더의 상세 정보를 조회합니다.",
         "operationId": "ProviderController_findOne",
@@ -421,7 +571,7 @@
         ]
       }
     },
-    "/api/v1/providers/{id}/toggle": {
+    "/providers/{id}/toggle": {
       "put": {
         "description": "프로바이더의 활성화 상태를 토글합니다.",
         "operationId": "ProviderController_toggle",
@@ -451,7 +601,7 @@
         ]
       }
     },
-    "/api/v1/providers/{id}/test": {
+    "/providers/{id}/test": {
       "post": {
         "description": "프로바이더의 동작을 테스트합니다.",
         "operationId": "ProviderController_testProvider",
@@ -498,7 +648,7 @@
         ]
       }
     },
-    "/api/v1/providers/{id}/health": {
+    "/providers/{id}/health": {
       "get": {
         "description": "프로바이더의 상태와 가용성을 확인합니다.",
         "operationId": "ProviderController_checkHealth",
@@ -528,7 +678,7 @@
         ]
       }
     },
-    "/api/v1/providers/channels/{channel}/primary": {
+    "/providers/channels/{channel}/primary": {
       "get": {
         "description": "특정 채널의 주 프로바이더를 조회합니다.",
         "operationId": "ProviderController_getPrimaryProvider",
@@ -558,7 +708,7 @@
         ]
       }
     },
-    "/api/v1/templates/kakao/list": {
+    "/templates/kakao/list": {
       "get": {
         "description": "NHN 카카오 비즈메시지 템플릿 목록을 조회합니다.",
         "operationId": "TemplateController_getKakaoTemplateList",
@@ -577,7 +727,7 @@
         ]
       }
     },
-    "/api/v1/templates/sms/list": {
+    "/templates/sms/list": {
       "get": {
         "description": "SMS 템플릿 목록을 조회합니다.",
         "operationId": "TemplateController_getSmsTemplates",
@@ -596,7 +746,7 @@
         ]
       }
     },
-    "/api/v1/templates": {
+    "/templates": {
       "get": {
         "description": "필터 조건에 따라 템플릿 목록을 조회합니다.",
         "operationId": "TemplateController_findAll",
@@ -674,7 +824,7 @@
         ]
       }
     },
-    "/api/v1/templates/register-kakao/{key}": {
+    "/templates/register-kakao/{key}": {
       "post": {
         "description": "카카오 비즈메시지 템플릿을 NHN에 등록합니다.",
         "operationId": "TemplateController_registerKakaoTemplate",
@@ -717,7 +867,7 @@
         ]
       }
     },
-    "/api/v1/templates/register-sms/{key}": {
+    "/templates/register-sms/{key}": {
       "post": {
         "description": "SMS 템플릿을 외부 서비스에 등록합니다.",
         "operationId": "TemplateController_registerSmsTemplate",
@@ -749,7 +899,7 @@
         ]
       }
     },
-    "/api/v1/templates/by-id/{id}": {
+    "/templates/by-id/{id}": {
       "get": {
         "description": "ID로 특정 템플릿의 상세 정보를 조회합니다.",
         "operationId": "TemplateController_findOne",
@@ -860,7 +1010,7 @@
         ]
       }
     },
-    "/api/v1/templates/preview/{id}": {
+    "/templates/preview/{id}": {
       "post": {
         "description": "템플릿을 특정 채널로 미리보기합니다.",
         "operationId": "TemplateController_previewTemplate",
@@ -903,7 +1053,7 @@
         ]
       }
     },
-    "/api/v1/templates/{key}/test/{channel}": {
+    "/templates/{key}/test/{channel}": {
       "post": {
         "description": "특정 채널로 템플릿을 테스트 발송합니다.",
         "operationId": "TemplateController_testTemplateWithChannel",
@@ -955,6 +1105,35 @@
         ]
       }
     },
+    "/templates/by-id/{id}/kakao/sync": {
+      "post": {
+        "description": "NHN 콘솔에서 카카오 템플릿 상태를 동기화합니다.",
+        "operationId": "TemplateController_syncKakaoTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "동기화 성공"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "카카오 템플릿 상태 동기화",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
     "/bulk-notifications": {
       "post": {
         "description": "다수의 사용자에게 동시에 알림을 발송하는 캠페인을 시작합니다.",
@@ -989,7 +1168,7 @@
                     },
                     "status": {
                       "type": "string",
-                      "example": "INITIATED"
+                      "example": "PROCESSING"
                     }
                   }
                 }
@@ -1007,155 +1186,206 @@
         "tags": [
           "bulk"
         ]
-      }
-    },
-    "/api/v1/events/trigger": {
-      "post": {
-        "description": "특정 이벤트를 수동으로 트리거하여 연결된 알림을 발송합니다.",
-        "operationId": "EventController_triggerEvent",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "트리거할 이벤트 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TriggerEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "이벤트 트리거 성공"
-          },
-          "400": {
-            "description": "잘못된 이벤트 데이터"
-          },
-          "404": {
-            "description": "이벤트를 찾을 수 없음"
-          }
-        },
-        "summary": "이벤트 트리거",
-        "tags": [
-          "event-handlers"
-        ]
-      }
-    },
-    "/api/v1/events": {
-      "get": {
-        "description": "시스템에 등록된 모든 이벤트 매핑 정보를 조회합니다.",
-        "operationId": "EventController_getAllEvents",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "이벤트 목록 조회 성공"
-          }
-        },
-        "summary": "전체 이벤트 목록 조회",
-        "tags": [
-          "event-handlers"
-        ]
       },
-      "post": {
-        "description": "새로운 이벤트 매핑을 생성합니다.",
-        "operationId": "EventController_createEvent",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "description": "생성할 이벤트 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateEventDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "이벤트 생성 성공"
-          },
-          "400": {
-            "description": "잘못된 요청 데이터"
-          },
-          "409": {
-            "description": "이미 존재하는 이벤트 키"
-          }
-        },
-        "summary": "이벤트 생성",
-        "tags": [
-          "event-handlers"
-        ]
-      }
-    },
-    "/api/v1/events/{eventKey}": {
       "get": {
-        "description": "이벤트 키로 특정 이벤트의 상세 정보를 조회합니다.",
-        "operationId": "EventController_findOne",
+        "description": "대량 알림 캠페인 목록을 조회합니다.",
+        "operationId": "BulkNotificationController_findAllCampaigns",
         "parameters": [
           {
-            "name": "eventKey",
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "상태 필터 (예: PROCESSING,COMPLETED)",
+            "schema": {
+              "example": "PROCESSING,COMPLETED",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "카테고리 필터",
+            "schema": {
+              "example": "MARKETING",
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdBy",
+            "required": false,
+            "in": "query",
+            "description": "생성자 필터",
+            "schema": {
+              "example": "admin-user-123",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "페이지 크기",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "오프셋",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "캠페인 목록 조회 성공"
+          }
+        },
+        "summary": "캠페인 목록 조회",
+        "tags": [
+          "bulk"
+        ]
+      }
+    },
+    "/bulk-notifications/{campaignId}": {
+      "get": {
+        "description": "특정 캠페인의 상세 정보를 조회합니다.",
+        "operationId": "BulkNotificationController_findCampaignById",
+        "parameters": [
+          {
+            "name": "campaignId",
             "required": true,
             "in": "path",
-            "description": "이벤트 키",
+            "description": "캠페인 ID",
             "schema": {
+              "example": "campaign_123456789",
               "type": "string"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "이벤트 조회 성공"
+            "description": "캠페인 상세 조회 성공"
           },
           "404": {
-            "description": "이벤트를 찾을 수 없음"
+            "description": "캠페인을 찾을 수 없음"
           }
         },
-        "summary": "이벤트 상세 조회",
+        "summary": "캠페인 상세 조회",
         "tags": [
-          "event-handlers"
+          "bulk"
         ]
-      },
-      "put": {
-        "description": "기존 이벤트 매핑을 수정합니다.",
-        "operationId": "EventController_updateEvent",
+      }
+    },
+    "/bulk-notifications/{campaignId}/cancel": {
+      "post": {
+        "description": "진행 중이거나 예약된 캠페인을 취소합니다.",
+        "operationId": "BulkNotificationController_cancelCampaign",
         "parameters": [
           {
-            "name": "eventKey",
+            "name": "campaignId",
             "required": true,
             "in": "path",
-            "description": "이벤트 키",
+            "description": "캠페인 ID",
             "schema": {
+              "example": "campaign_123456789",
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "description": "수정할 이벤트 정보",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateEventDto"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "이벤트 수정 성공"
+            "description": "캠페인 취소 성공"
           },
           "400": {
-            "description": "잘못된 요청 데이터"
+            "description": "취소할 수 없는 상태"
           },
           "404": {
-            "description": "이벤트를 찾을 수 없음"
+            "description": "캠페인을 찾을 수 없음"
           }
         },
-        "summary": "이벤트 수정",
+        "summary": "캠페인 취소",
         "tags": [
-          "event-handlers"
+          "bulk"
+        ]
+      }
+    },
+    "/bulk-notifications/{campaignId}/recipients": {
+      "get": {
+        "description": "특정 캠페인의 수신자 목록을 조회합니다.",
+        "operationId": "BulkNotificationController_getCampaignRecipients",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "required": true,
+            "in": "path",
+            "description": "캠페인 ID",
+            "schema": {
+              "example": "campaign_123456789",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "상태 필터",
+            "schema": {
+              "example": "SENT",
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "required": false,
+            "in": "query",
+            "description": "채널 필터",
+            "schema": {
+              "example": "EMAIL",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "페이지 크기",
+            "schema": {
+              "example": 100,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "오프셋",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "수신자 목록 조회 성공"
+          },
+          "404": {
+            "description": "캠페인을 찾을 수 없음"
+          }
+        },
+        "summary": "캠페인 수신자 목록 조회",
+        "tags": [
+          "bulk"
         ]
       }
     }
@@ -1190,15 +1420,30 @@
     {
       "name": "event-handlers",
       "description": "이벤트 핸들러"
+    },
+    {
+      "name": "webhooks",
+      "description": "웹훅 처리"
+    },
+    {
+      "name": "metrics",
+      "description": "메트릭 조회"
+    },
+    {
+      "name": "logs",
+      "description": "로그 조회"
     }
   ],
   "servers": [],
   "components": {
     "securitySchemes": {
-      "bearer": {
+      "access-token": {
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "type": "http"
+        "type": "http",
+        "name": "JWT",
+        "description": "Enter JWT token",
+        "in": "header"
       }
     },
     "schemas": {
@@ -1329,6 +1574,133 @@
           "channels",
           "category"
         ]
+      },
+      "TriggerEventDto": {
+        "type": "object",
+        "properties": {
+          "eventKey": {
+            "type": "string",
+            "description": "이벤트 키"
+          },
+          "userId": {
+            "type": "string",
+            "description": "사용자 ID"
+          },
+          "payload": {
+            "type": "object",
+            "description": "이벤트 페이로드"
+          },
+          "channels": {
+            "description": "발송 채널 목록 (지정하지 않으면 기본 채널 사용)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터"
+          }
+        },
+        "required": [
+          "eventKey",
+          "userId",
+          "payload"
+        ]
+      },
+      "CreateEventDto": {
+        "type": "object",
+        "properties": {
+          "eventKey": {
+            "type": "string",
+            "description": "이벤트 키"
+          },
+          "name": {
+            "type": "string",
+            "description": "이벤트 이름"
+          },
+          "description": {
+            "type": "string",
+            "description": "이벤트 설명"
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "연결된 템플릿 키"
+          },
+          "category": {
+            "type": "string",
+            "description": "이벤트 카테고리"
+          },
+          "defaultChannels": {
+            "description": "기본 채널 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "description": "이벤트 우선순위"
+          },
+          "conditions": {
+            "type": "object",
+            "description": "이벤트 조건"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "메타데이터"
+          }
+        },
+        "required": [
+          "eventKey",
+          "name",
+          "description",
+          "templateKey"
+        ]
+      },
+      "UpdateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "이벤트 이름"
+          },
+          "description": {
+            "type": "string",
+            "description": "이벤트 설명"
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "연결된 템플릿 키"
+          },
+          "category": {
+            "type": "string",
+            "description": "이벤트 카테고리"
+          },
+          "defaultChannels": {
+            "description": "기본 채널 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "description": "이벤트 우선순위"
+          },
+          "conditions": {
+            "type": "object",
+            "description": "이벤트 조건"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "활성화 상태"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "메타데이터"
+          }
+        }
       },
       "CreateProviderDto": {
         "type": "object",
@@ -1469,15 +1841,24 @@
       "TestProviderDto": {
         "type": "object",
         "properties": {
-          "providerId": {
-            "type": "string",
-            "description": "프로바이더 ID",
-            "example": "provider-123"
-          },
           "to": {
             "type": "string",
-            "description": "테스트 수신자",
-            "example": "test@example.com"
+            "description": "테스트 수신자 (이메일 주소, 전화번호, 또는 FCM 토큰)",
+            "example": "test@example.com",
+            "examples": {
+              "email": {
+                "value": "test@example.com",
+                "description": "이메일 주소 (EMAIL 채널)"
+              },
+              "phone": {
+                "value": "+821012345678",
+                "description": "전화번호 (SMS 채널)"
+              },
+              "fcmToken": {
+                "value": "dK3xYz9...",
+                "description": "FCM 토큰 (PUSH 채널)"
+              }
+            }
           },
           "subject": {
             "type": "string",
@@ -1500,7 +1881,6 @@
           }
         },
         "required": [
-          "providerId",
           "to",
           "content"
         ]
@@ -1841,6 +2221,33 @@
             "type": "string",
             "description": "템플릿 본문",
             "example": "안녕하세요 {{userName}}님..."
+          },
+          "providerTemplateId": {
+            "type": "string",
+            "description": "NHN 내부 템플릿 ID (동기화 후 자동 설정)",
+            "example": "TEMPLATE_12345"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "REQUESTED",
+              "APPROVED",
+              "REJECTED",
+              "INACTIVE"
+            ],
+            "description": "NHN 템플릿 상태",
+            "example": "PENDING"
+          },
+          "lastSyncedAt": {
+            "type": "string",
+            "description": "마지막 동기화 시각",
+            "example": "2024-01-15T10:00:00Z"
+          },
+          "lastSyncError": {
+            "type": "string",
+            "description": "동기화 에러 메시지",
+            "example": "템플릿 검수 반려: 부적절한 내용"
           }
         },
         "required": [
@@ -2157,6 +2564,35 @@
           "payload"
         ]
       },
+      "UserInfoDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "사용자 ID",
+            "example": "user-123"
+          },
+          "email": {
+            "type": "string",
+            "description": "이메일 주소",
+            "example": "user@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "전화번호",
+            "example": "010-1234-5678"
+          },
+          "isMarketingEnabled": {
+            "type": "boolean",
+            "description": "마케팅 수신 동의 여부",
+            "example": true,
+            "default": true
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
       "AudienceDto": {
         "type": "object",
         "properties": {
@@ -2168,23 +2604,26 @@
               "FILTERED_USERS"
             ],
             "description": "대상 사용자 유형",
-            "example": "ALL_USERS"
+            "example": "SELECTED_USERS"
           },
-          "userIds": {
-            "description": "선택된 사용자 ID 목록 (SELECTED_USERS일 때 사용)",
+          "users": {
+            "description": "프론트엔드에서 조인/필터링된 사용자 정보 목록 (SELECTED_USERS, FILTERED_USERS일 때 사용)",
             "example": [
-              "user1",
-              "user2",
-              "user3"
+              {
+                "userId": "user-123",
+                "email": "user@example.com",
+                "phoneNumber": "010-1234-5678",
+                "isMarketingEnabled": true
+              }
             ],
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/UserInfoDto"
             }
           },
           "criteria": {
             "type": "object",
-            "description": "필터링 기준 (FILTERED_USERS일 때 사용)",
+            "description": "필터링 기준 (FILTERED_USERS일 때 사용, 프론트에서 이미 적용됨)",
             "example": {
               "membershipType": "premium",
               "shopCategories": [
@@ -2294,6 +2733,21 @@
             "type": "string",
             "description": "생성자 ID",
             "example": "admin-user-123"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "캠페인 단위 공통 메타데이터 (payload 등)",
+            "example": {
+              "payload": {
+                "campaignName": "주문 배송 알림",
+                "orderType": "premium"
+              },
+              "tags": [
+                "marketing",
+                "order"
+              ]
+            },
+            "additionalProperties": true
           }
         },
         "required": [
@@ -2305,133 +2759,6 @@
           "priority",
           "createdBy"
         ]
-      },
-      "TriggerEventDto": {
-        "type": "object",
-        "properties": {
-          "eventKey": {
-            "type": "string",
-            "description": "이벤트 키"
-          },
-          "userId": {
-            "type": "string",
-            "description": "사용자 ID"
-          },
-          "payload": {
-            "type": "object",
-            "description": "이벤트 페이로드"
-          },
-          "channels": {
-            "description": "발송 채널 목록 (지정하지 않으면 기본 채널 사용)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "metadata": {
-            "type": "object",
-            "description": "추가 메타데이터"
-          }
-        },
-        "required": [
-          "eventKey",
-          "userId",
-          "payload"
-        ]
-      },
-      "CreateEventDto": {
-        "type": "object",
-        "properties": {
-          "eventKey": {
-            "type": "string",
-            "description": "이벤트 키"
-          },
-          "name": {
-            "type": "string",
-            "description": "이벤트 이름"
-          },
-          "description": {
-            "type": "string",
-            "description": "이벤트 설명"
-          },
-          "templateKey": {
-            "type": "string",
-            "description": "연결된 템플릿 키"
-          },
-          "category": {
-            "type": "string",
-            "description": "이벤트 카테고리"
-          },
-          "defaultChannels": {
-            "description": "기본 채널 목록",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "priority": {
-            "type": "string",
-            "description": "이벤트 우선순위"
-          },
-          "conditions": {
-            "type": "object",
-            "description": "이벤트 조건"
-          },
-          "metadata": {
-            "type": "object",
-            "description": "메타데이터"
-          }
-        },
-        "required": [
-          "eventKey",
-          "name",
-          "description",
-          "templateKey"
-        ]
-      },
-      "UpdateEventDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "이벤트 이름"
-          },
-          "description": {
-            "type": "string",
-            "description": "이벤트 설명"
-          },
-          "templateKey": {
-            "type": "string",
-            "description": "연결된 템플릿 키"
-          },
-          "category": {
-            "type": "string",
-            "description": "이벤트 카테고리"
-          },
-          "defaultChannels": {
-            "description": "기본 채널 목록",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "priority": {
-            "type": "string",
-            "description": "이벤트 우선순위"
-          },
-          "conditions": {
-            "type": "object",
-            "description": "이벤트 조건"
-          },
-          "isActive": {
-            "type": "boolean",
-            "description": "활성화 상태"
-          },
-          "metadata": {
-            "type": "object",
-            "description": "메타데이터"
-          }
-        }
       }
     }
   }

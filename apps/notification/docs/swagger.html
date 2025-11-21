@@ -27,8 +27,2774 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js"></script>
   <script>
     window.onload = function() {
+      const spec = {
+  "openapi": "3.0.0",
+  "paths": {
+    "/notifications/send": {
+      "post": {
+        "description": "단일 또는 다중 채널로 알림을 즉시 발송합니다.",
+        "operationId": "NotificationController_send",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "발송할 알림 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendNotificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "알림 발송 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "500": {
+            "description": "발송 실패"
+          }
+        },
+        "summary": "알림 발송",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/{id}": {
+      "get": {
+        "description": "ID로 특정 알림의 상세 정보와 발송 상태를 조회합니다.",
+        "operationId": "NotificationController_getOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "알림 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "알림 조회 성공"
+          },
+          "404": {
+            "description": "알림을 찾을 수 없음"
+          }
+        },
+        "summary": "알림 상세 조회",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/users/{userId}": {
+      "get": {
+        "description": "특정 사용자가 받은 알림 목록을 조회합니다.",
+        "operationId": "NotificationController_getUserNotifications",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "description": "사용자 ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "조회 개수 제한 (기본값: 50)",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "사용자 알림 목록 조회 성공"
+          },
+          "404": {
+            "description": "사용자를 찾을 수 없음"
+          }
+        },
+        "summary": "사용자 알림 목록 조회",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/events/process": {
+      "post": {
+        "description": "특정 이벤트 발생 시 해당 사용자에게 알림을 발송합니다.",
+        "operationId": "NotificationController_processEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "이벤트 데이터",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eventKey": {
+                    "type": "string",
+                    "description": "이벤트 키"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "description": "사용자 ID"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "description": "이벤트 데이터"
+                  },
+                  "channels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "발송 채널 목록"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "메타데이터"
+                  }
+                },
+                "required": [
+                  "eventKey",
+                  "userId",
+                  "payload"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "이벤트 처리 성공"
+          },
+          "400": {
+            "description": "잘못된 이벤트 데이터"
+          },
+          "404": {
+            "description": "이벤트 또는 사용자를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 기반 알림 처리",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/notifications/events/kafka": {
+      "post": {
+        "description": "Kafka에서 수신한 이벤트를 처리하여 알림을 발송합니다.",
+        "operationId": "NotificationController_handleKafkaEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "Kafka 이벤트 데이터",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "description": "Kafka 토픽"
+                  },
+                  "partition": {
+                    "type": "number",
+                    "description": "파티션 번호"
+                  },
+                  "offset": {
+                    "type": "number",
+                    "description": "오프셋"
+                  },
+                  "key": {
+                    "type": "string",
+                    "description": "메시지 키"
+                  },
+                  "value": {
+                    "type": "object",
+                    "description": "메시지 값"
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "description": "타임스탬프"
+                  }
+                },
+                "required": [
+                  "topic",
+                  "partition",
+                  "offset",
+                  "key",
+                  "value",
+                  "timestamp"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Kafka 이벤트 처리 성공"
+          },
+          "400": {
+            "description": "잘못된 Kafka 이벤트 데이터"
+          }
+        },
+        "summary": "Kafka 이벤트 처리",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/events/trigger": {
+      "post": {
+        "description": "특정 이벤트를 수동으로 트리거하여 연결된 알림을 발송합니다.",
+        "operationId": "EventController_triggerEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "트리거할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "이벤트 트리거 성공"
+          },
+          "400": {
+            "description": "잘못된 이벤트 데이터"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 트리거",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/events": {
+      "get": {
+        "description": "시스템에 등록된 모든 이벤트 매핑 정보를 조회합니다.",
+        "operationId": "EventController_getAllEvents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "이벤트 목록 조회 성공"
+          }
+        },
+        "summary": "전체 이벤트 목록 조회",
+        "tags": [
+          "event-handlers"
+        ]
+      },
+      "post": {
+        "description": "새로운 이벤트 매핑을 생성합니다.",
+        "operationId": "EventController_createEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "생성할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "이벤트 생성 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "409": {
+            "description": "이미 존재하는 이벤트 키"
+          }
+        },
+        "summary": "이벤트 생성",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/events/{eventKey}": {
+      "get": {
+        "description": "이벤트 키로 특정 이벤트의 상세 정보를 조회합니다.",
+        "operationId": "EventController_findOne",
+        "parameters": [
+          {
+            "name": "eventKey",
+            "required": true,
+            "in": "path",
+            "description": "이벤트 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "이벤트 조회 성공"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 상세 조회",
+        "tags": [
+          "event-handlers"
+        ]
+      },
+      "put": {
+        "description": "기존 이벤트 매핑을 수정합니다.",
+        "operationId": "EventController_updateEvent",
+        "parameters": [
+          {
+            "name": "eventKey",
+            "required": true,
+            "in": "path",
+            "description": "이벤트 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "수정할 이벤트 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "이벤트 수정 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "404": {
+            "description": "이벤트를 찾을 수 없음"
+          }
+        },
+        "summary": "이벤트 수정",
+        "tags": [
+          "event-handlers"
+        ]
+      }
+    },
+    "/providers": {
+      "get": {
+        "description": "필터 조건에 따라 프로바이더 목록을 조회합니다.",
+        "operationId": "ProviderController_findAll",
+        "parameters": [
+          {
+            "name": "channel",
+            "required": false,
+            "in": "query",
+            "description": "채널 필터",
+            "schema": {
+              "example": "EMAIL",
+              "type": "string",
+              "enum": [
+                "EMAIL",
+                "SMS",
+                "KAKAO",
+                "PUSH"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "상태 필터",
+            "schema": {
+              "example": "ACTIVE",
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "INACTIVE",
+                "ERROR",
+                "MAINTENANCE",
+                "RATE_LIMITED"
+              ]
+            }
+          },
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "description": "활성화 상태 필터",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "providerName",
+            "required": false,
+            "in": "query",
+            "description": "프로바이더 이름 필터",
+            "schema": {
+              "example": "sendgrid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "프로바이더 목록 조회 성공"
+          }
+        },
+        "summary": "프로바이더 목록 조회",
+        "tags": [
+          "providers"
+        ]
+      },
+      "post": {
+        "description": "새로운 알림 프로바이더를 생성합니다.",
+        "operationId": "ProviderController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProviderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "프로바이더 생성 성공"
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          }
+        },
+        "summary": "프로바이더 생성",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/providers/{id}": {
+      "get": {
+        "description": "특정 프로바이더의 상세 정보를 조회합니다.",
+        "operationId": "ProviderController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "프로바이더 상세 조회 성공"
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 상세 조회",
+        "tags": [
+          "providers"
+        ]
+      },
+      "put": {
+        "description": "기존 프로바이더의 설정을 수정합니다.",
+        "operationId": "ProviderController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProviderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "프로바이더 수정 성공"
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 수정",
+        "tags": [
+          "providers"
+        ]
+      },
+      "delete": {
+        "description": "프로바이더를 삭제합니다.",
+        "operationId": "ProviderController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "프로바이더 삭제 성공"
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 삭제",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/providers/{id}/toggle": {
+      "put": {
+        "description": "프로바이더의 활성화 상태를 토글합니다.",
+        "operationId": "ProviderController_toggle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "프로바이더 상태 토글 성공"
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 활성화/비활성화 토글",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/providers/{id}/test": {
+      "post": {
+        "description": "프로바이더의 동작을 테스트합니다.",
+        "operationId": "ProviderController_testProvider",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestProviderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "프로바이더 테스트 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestProviderResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 테스트",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/providers/{id}/health": {
+      "get": {
+        "description": "프로바이더의 상태와 가용성을 확인합니다.",
+        "operationId": "ProviderController_checkHealth",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "프로바이더 ID",
+            "schema": {
+              "example": "provider-123",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "프로바이더 상태 확인 성공"
+          },
+          "404": {
+            "description": "프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "프로바이더 상태 확인",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/providers/channels/{channel}/primary": {
+      "get": {
+        "description": "특정 채널의 주 프로바이더를 조회합니다.",
+        "operationId": "ProviderController_getPrimaryProvider",
+        "parameters": [
+          {
+            "name": "channel",
+            "required": true,
+            "in": "path",
+            "description": "채널명",
+            "schema": {
+              "example": "EMAIL",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "주 프로바이더 조회 성공"
+          },
+          "404": {
+            "description": "해당 채널의 프로바이더를 찾을 수 없음"
+          }
+        },
+        "summary": "채널별 주 프로바이더 조회",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/templates/kakao/list": {
+      "get": {
+        "description": "NHN 카카오 비즈메시지 템플릿 목록을 조회합니다.",
+        "operationId": "TemplateController_getKakaoTemplateList",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "카카오 템플릿 목록 조회 성공"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "카카오 템플릿 목록 조회",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/sms/list": {
+      "get": {
+        "description": "SMS 템플릿 목록을 조회합니다.",
+        "operationId": "TemplateController_getSmsTemplates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "SMS 템플릿 목록 조회 성공"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "SMS 템플릿 목록 조회",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates": {
+      "get": {
+        "description": "필터 조건에 따라 템플릿 목록을 조회합니다.",
+        "operationId": "TemplateController_findAll",
+        "parameters": [
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "description": "활성화 상태 필터",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "템플릿 목록 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CreateTemplateDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청"
+          }
+        },
+        "summary": "템플릿 목록 조회",
+        "tags": [
+          "templates"
+        ]
+      },
+      "post": {
+        "description": "새로운 알림 템플릿을 생성합니다.",
+        "operationId": "TemplateController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "생성할 템플릿 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "템플릿 생성 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTemplateDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "템플릿 생성",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/register-kakao/{key}": {
+      "post": {
+        "description": "카카오 비즈메시지 템플릿을 NHN에 등록합니다.",
+        "operationId": "TemplateController_registerKakaoTemplate",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "카카오 템플릿 데이터",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "카카오 템플릿 등록 성공"
+          },
+          "400": {
+            "description": "잘못된 템플릿 데이터"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "카카오 템플릿 등록",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/register-sms/{key}": {
+      "post": {
+        "description": "SMS 템플릿을 외부 서비스에 등록합니다.",
+        "operationId": "TemplateController_registerSmsTemplate",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 키",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "SMS 템플릿 등록 성공"
+          },
+          "400": {
+            "description": "잘못된 템플릿 키"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "SMS 템플릿 등록",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/by-id/{id}": {
+      "get": {
+        "description": "ID로 특정 템플릿의 상세 정보를 조회합니다.",
+        "operationId": "TemplateController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "템플릿 조회 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTemplateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "템플릿 상세 조회",
+        "tags": [
+          "templates"
+        ]
+      },
+      "put": {
+        "description": "기존 템플릿을 수정합니다.",
+        "operationId": "TemplateController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "수정할 템플릿 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "템플릿 수정 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTemplateDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "템플릿 수정",
+        "tags": [
+          "templates"
+        ]
+      },
+      "delete": {
+        "description": "기존 템플릿을 삭제합니다.",
+        "operationId": "TemplateController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "템플릿 삭제 성공"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "템플릿 삭제",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/preview/{id}": {
+      "post": {
+        "description": "템플릿을 특정 채널로 미리보기합니다.",
+        "operationId": "TemplateController_previewTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "미리보기 설정",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "미리보기 생성 성공"
+          },
+          "400": {
+            "description": "잘못된 미리보기 데이터"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "템플릿 미리보기",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/{key}/test/{channel}": {
+      "post": {
+        "description": "특정 채널로 템플릿을 테스트 발송합니다.",
+        "operationId": "TemplateController_testTemplateWithChannel",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 키",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "required": true,
+            "in": "path",
+            "description": "발송 채널 (EMAIL, SMS, KAKAO, PUSH)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "테스트 데이터",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "테스트 발송 성공"
+          },
+          "400": {
+            "description": "잘못된 테스트 데이터"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "템플릿 테스트",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/templates/by-id/{id}/kakao/sync": {
+      "post": {
+        "description": "NHN 콘솔에서 카카오 템플릿 상태를 동기화합니다.",
+        "operationId": "TemplateController_syncKakaoTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "템플릿 ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "동기화 성공"
+          },
+          "404": {
+            "description": "템플릿을 찾을 수 없음"
+          }
+        },
+        "summary": "카카오 템플릿 상태 동기화",
+        "tags": [
+          "templates"
+        ]
+      }
+    },
+    "/bulk-notifications": {
+      "post": {
+        "description": "다수의 사용자에게 동시에 알림을 발송하는 캠페인을 시작합니다.",
+        "operationId": "BulkNotificationController_createBulkNotification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "description": "대량 알림 발송 정보",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBulkNotificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "대량 알림 캠페인 시작 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Bulk notification campaign initiated"
+                    },
+                    "campaignId": {
+                      "type": "string",
+                      "example": "campaign_123456789"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "PROCESSING"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "잘못된 요청 데이터"
+          },
+          "500": {
+            "description": "서버 오류"
+          }
+        },
+        "summary": "대량 알림 발송",
+        "tags": [
+          "bulk"
+        ]
+      },
+      "get": {
+        "description": "대량 알림 캠페인 목록을 조회합니다.",
+        "operationId": "BulkNotificationController_findAllCampaigns",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "상태 필터 (예: PROCESSING,COMPLETED)",
+            "schema": {
+              "example": "PROCESSING,COMPLETED",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "카테고리 필터",
+            "schema": {
+              "example": "MARKETING",
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdBy",
+            "required": false,
+            "in": "query",
+            "description": "생성자 필터",
+            "schema": {
+              "example": "admin-user-123",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "페이지 크기",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "오프셋",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "캠페인 목록 조회 성공"
+          }
+        },
+        "summary": "캠페인 목록 조회",
+        "tags": [
+          "bulk"
+        ]
+      }
+    },
+    "/bulk-notifications/{campaignId}": {
+      "get": {
+        "description": "특정 캠페인의 상세 정보를 조회합니다.",
+        "operationId": "BulkNotificationController_findCampaignById",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "required": true,
+            "in": "path",
+            "description": "캠페인 ID",
+            "schema": {
+              "example": "campaign_123456789",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "캠페인 상세 조회 성공"
+          },
+          "404": {
+            "description": "캠페인을 찾을 수 없음"
+          }
+        },
+        "summary": "캠페인 상세 조회",
+        "tags": [
+          "bulk"
+        ]
+      }
+    },
+    "/bulk-notifications/{campaignId}/cancel": {
+      "post": {
+        "description": "진행 중이거나 예약된 캠페인을 취소합니다.",
+        "operationId": "BulkNotificationController_cancelCampaign",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "required": true,
+            "in": "path",
+            "description": "캠페인 ID",
+            "schema": {
+              "example": "campaign_123456789",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "캠페인 취소 성공"
+          },
+          "400": {
+            "description": "취소할 수 없는 상태"
+          },
+          "404": {
+            "description": "캠페인을 찾을 수 없음"
+          }
+        },
+        "summary": "캠페인 취소",
+        "tags": [
+          "bulk"
+        ]
+      }
+    },
+    "/bulk-notifications/{campaignId}/recipients": {
+      "get": {
+        "description": "특정 캠페인의 수신자 목록을 조회합니다.",
+        "operationId": "BulkNotificationController_getCampaignRecipients",
+        "parameters": [
+          {
+            "name": "campaignId",
+            "required": true,
+            "in": "path",
+            "description": "캠페인 ID",
+            "schema": {
+              "example": "campaign_123456789",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "상태 필터",
+            "schema": {
+              "example": "SENT",
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "required": false,
+            "in": "query",
+            "description": "채널 필터",
+            "schema": {
+              "example": "EMAIL",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "페이지 크기",
+            "schema": {
+              "example": 100,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "오프셋",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "수신자 목록 조회 성공"
+          },
+          "404": {
+            "description": "캠페인을 찾을 수 없음"
+          }
+        },
+        "summary": "캠페인 수신자 목록 조회",
+        "tags": [
+          "bulk"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Notification Service API",
+    "description": "알몬드영 알림 서비스 API 문서",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "templates",
+      "description": "템플릿 관리"
+    },
+    {
+      "name": "notifications",
+      "description": "알림 발송"
+    },
+    {
+      "name": "providers",
+      "description": "알림 제공업체 관리"
+    },
+    {
+      "name": "bulk",
+      "description": "대량 발송"
+    },
+    {
+      "name": "dispatcher",
+      "description": "알림 디스패처"
+    },
+    {
+      "name": "event-handlers",
+      "description": "이벤트 핸들러"
+    },
+    {
+      "name": "webhooks",
+      "description": "웹훅 처리"
+    },
+    {
+      "name": "metrics",
+      "description": "메트릭 조회"
+    },
+    {
+      "name": "logs",
+      "description": "로그 조회"
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "access-token": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "name": "JWT",
+        "description": "Enter JWT token",
+        "in": "header"
+      }
+    },
+    "schemas": {
+      "SendNotificationDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "사용자 ID",
+            "example": "user-123"
+          },
+          "channels": {
+            "type": "array",
+            "description": "발송 채널 목록",
+            "example": [
+              "EMAIL",
+              "KAKAO"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "EMAIL",
+                "SMS",
+                "KAKAO",
+                "PUSH"
+              ]
+            }
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "TRANSACTIONAL",
+              "MARKETING",
+              "SYSTEM",
+              "ADMIN",
+              "OPERATIONAL",
+              "CUSTOMER_SERVICE"
+            ],
+            "description": "알림 카테고리",
+            "example": "TRANSACTIONAL"
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "템플릿 키",
+            "example": "order-confirmation-template"
+          },
+          "eventKey": {
+            "type": "string",
+            "description": "이벤트 키",
+            "example": "order.created"
+          },
+          "content": {
+            "type": "object",
+            "description": "채널별 콘텐츠",
+            "example": {
+              "EMAIL": {
+                "subject": "주문 확인",
+                "body": "주문이 성공적으로 접수되었습니다.",
+                "metadata": {
+                  "orderId": "12345"
+                }
+              },
+              "KAKAO": {
+                "body": "주문이 성공적으로 접수되었습니다.",
+                "metadata": {
+                  "orderId": "12345"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "payload": {
+            "type": "object",
+            "description": "추가 페이로드 데이터",
+            "example": {
+              "orderId": "12345",
+              "amount": 50000,
+              "items": [
+                "item1",
+                "item2"
+              ]
+            },
+            "additionalProperties": true
+          },
+          "variables": {
+            "type": "object",
+            "description": "템플릿 변수",
+            "example": {
+              "userName": "홍길동",
+              "orderNumber": "ORD-12345",
+              "totalAmount": "50,000원"
+            },
+            "additionalProperties": true
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "상관관계 ID (트래킹용)",
+            "example": "corr-12345"
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "예약 발송 시간 (ISO 날짜 문자열)",
+            "example": "2024-01-15T10:00:00Z"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "URGENT",
+              "HIGH",
+              "NORMAL",
+              "LOW"
+            ],
+            "description": "알림 우선순위",
+            "example": "HIGH"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "source": "order-service",
+              "version": "1.0"
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "userId",
+          "channels",
+          "category"
+        ]
+      },
+      "TriggerEventDto": {
+        "type": "object",
+        "properties": {
+          "eventKey": {
+            "type": "string",
+            "description": "이벤트 키"
+          },
+          "userId": {
+            "type": "string",
+            "description": "사용자 ID"
+          },
+          "payload": {
+            "type": "object",
+            "description": "이벤트 페이로드"
+          },
+          "channels": {
+            "description": "발송 채널 목록 (지정하지 않으면 기본 채널 사용)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터"
+          }
+        },
+        "required": [
+          "eventKey",
+          "userId",
+          "payload"
+        ]
+      },
+      "CreateEventDto": {
+        "type": "object",
+        "properties": {
+          "eventKey": {
+            "type": "string",
+            "description": "이벤트 키"
+          },
+          "name": {
+            "type": "string",
+            "description": "이벤트 이름"
+          },
+          "description": {
+            "type": "string",
+            "description": "이벤트 설명"
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "연결된 템플릿 키"
+          },
+          "category": {
+            "type": "string",
+            "description": "이벤트 카테고리"
+          },
+          "defaultChannels": {
+            "description": "기본 채널 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "description": "이벤트 우선순위"
+          },
+          "conditions": {
+            "type": "object",
+            "description": "이벤트 조건"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "메타데이터"
+          }
+        },
+        "required": [
+          "eventKey",
+          "name",
+          "description",
+          "templateKey"
+        ]
+      },
+      "UpdateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "이벤트 이름"
+          },
+          "description": {
+            "type": "string",
+            "description": "이벤트 설명"
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "연결된 템플릿 키"
+          },
+          "category": {
+            "type": "string",
+            "description": "이벤트 카테고리"
+          },
+          "defaultChannels": {
+            "description": "기본 채널 목록",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "description": "이벤트 우선순위"
+          },
+          "conditions": {
+            "type": "object",
+            "description": "이벤트 조건"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "활성화 상태"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "메타데이터"
+          }
+        }
+      },
+      "CreateProviderDto": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "EMAIL",
+              "SMS",
+              "KAKAO",
+              "PUSH"
+            ],
+            "description": "알림 채널",
+            "example": "EMAIL"
+          },
+          "providerName": {
+            "type": "string",
+            "description": "프로바이더 이름",
+            "example": "sendgrid"
+          },
+          "config": {
+            "type": "object",
+            "description": "프로바이더별 설정",
+            "example": {
+              "apiKey": "your-api-key",
+              "fromEmail": "noreply@example.com",
+              "fromName": "Almond Young"
+            },
+            "additionalProperties": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "활성화 상태",
+            "example": true,
+            "default": true
+          },
+          "priority": {
+            "type": "number",
+            "description": "우선순위 (높을수록 우선)",
+            "example": 0,
+            "default": 0
+          },
+          "capabilities": {
+            "type": "object",
+            "description": "프로바이더 기능",
+            "example": {
+              "bulkSend": true,
+              "scheduling": true,
+              "tracking": true,
+              "templating": true,
+              "personalization": true,
+              "maxRecipientsPerRequest": 1000,
+              "rateLimit": {
+                "requests": 100,
+                "period": "1m"
+              }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "version": "1.0",
+              "region": "us-east-1"
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "channel",
+          "providerName",
+          "config"
+        ]
+      },
+      "UpdateProviderDto": {
+        "type": "object",
+        "properties": {
+          "config": {
+            "type": "object",
+            "description": "프로바이더 설정",
+            "example": {
+              "apiKey": "new-api-key",
+              "fromEmail": "new@example.com"
+            },
+            "additionalProperties": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "ERROR",
+              "MAINTENANCE",
+              "RATE_LIMITED"
+            ],
+            "description": "프로바이더 상태",
+            "example": "ACTIVE"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "활성화 상태",
+            "example": true
+          },
+          "priority": {
+            "type": "number",
+            "description": "우선순위",
+            "example": 1
+          },
+          "capabilities": {
+            "type": "object",
+            "description": "프로바이더 기능",
+            "example": {
+              "bulkSend": true,
+              "scheduling": true,
+              "tracking": true,
+              "templating": true,
+              "personalization": true,
+              "maxRecipientsPerRequest": 1000,
+              "rateLimit": {
+                "requests": 100,
+                "period": "1m"
+              }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "version": "1.1",
+              "updatedBy": "admin"
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "TestProviderDto": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "테스트 수신자 (이메일 주소, 전화번호, 또는 FCM 토큰)",
+            "example": "test@example.com",
+            "examples": {
+              "email": {
+                "value": "test@example.com",
+                "description": "이메일 주소 (EMAIL 채널)"
+              },
+              "phone": {
+                "value": "+821012345678",
+                "description": "전화번호 (SMS 채널)"
+              },
+              "fcmToken": {
+                "value": "dK3xYz9...",
+                "description": "FCM 토큰 (PUSH 채널)"
+              }
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "테스트 제목",
+            "example": "테스트 알림"
+          },
+          "content": {
+            "type": "string",
+            "description": "테스트 내용",
+            "example": "이것은 테스트 메시지입니다."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "testMode": true,
+              "timestamp": "2024-01-15T10:00:00Z"
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "to",
+          "content"
+        ]
+      },
+      "TestProviderResponseDto": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "프로바이더 ID",
+            "example": "provider-123"
+          },
+          "providerName": {
+            "type": "string",
+            "description": "프로바이더 이름",
+            "example": "SendGrid"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "EMAIL",
+              "SMS",
+              "KAKAO",
+              "PUSH"
+            ],
+            "description": "채널",
+            "example": "EMAIL"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "성공 여부",
+            "example": true
+          },
+          "messageId": {
+            "type": "string",
+            "description": "메시지 ID",
+            "example": "msg-12345"
+          },
+          "error": {
+            "type": "string",
+            "description": "에러 메시지",
+            "example": "Invalid API key"
+          },
+          "latencyMs": {
+            "type": "number",
+            "description": "응답 시간 (밀리초)",
+            "example": 250
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string",
+            "description": "테스트 시간",
+            "example": "2024-01-15T10:00:00Z"
+          },
+          "providerResponse": {
+            "type": "object",
+            "description": "프로바이더 응답",
+            "example": {
+              "messageId": "msg-12345",
+              "status": "sent"
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "providerId",
+          "providerName",
+          "channel",
+          "success",
+          "latencyMs",
+          "timestamp"
+        ]
+      },
+      "FCMNotificationConfig": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "알림 제목",
+            "example": "새로운 주문이 도착했습니다"
+          },
+          "body": {
+            "type": "string",
+            "description": "알림 본문",
+            "example": "주문번호 #12345가 배송 준비 중입니다."
+          },
+          "icon": {
+            "type": "string",
+            "description": "알림 아이콘",
+            "example": "ic_notification"
+          },
+          "color": {
+            "type": "string",
+            "description": "알림 색상",
+            "example": "#FF0000"
+          },
+          "sound": {
+            "type": "string",
+            "description": "알림 사운드",
+            "example": "default"
+          },
+          "tag": {
+            "type": "string",
+            "description": "알림 태그",
+            "example": "order-notification"
+          },
+          "channelId": {
+            "type": "string",
+            "description": "Android 채널 ID",
+            "example": "order_channel"
+          },
+          "priority": {
+            "type": "number",
+            "description": "우선순위 (1-10)",
+            "example": 5
+          },
+          "imageUrl": {
+            "type": "string",
+            "description": "알림 이미지 URL",
+            "example": "https://example.com/image.jpg"
+          }
+        }
+      },
+      "FCMDataMessage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "커스텀 데이터",
+            "example": {
+              "orderId": "12345",
+              "type": "order_update"
+            },
+            "additionalProperties": true
+          },
+          "collapseKey": {
+            "type": "string",
+            "description": "콜랩스 키",
+            "example": "order-updates"
+          },
+          "ttl": {
+            "type": "number",
+            "description": "Time to live (초)",
+            "example": 3600
+          },
+          "topic": {
+            "type": "string",
+            "description": "FCM 토픽",
+            "example": "order-updates"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FCMConfig": {
+        "type": "object",
+        "properties": {
+          "notification": {
+            "description": "FCM 알림 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FCMNotificationConfig"
+              }
+            ]
+          },
+          "data": {
+            "description": "FCM 데이터 메시지",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FCMDataMessage"
+              }
+            ]
+          },
+          "clickAction": {
+            "type": "string",
+            "description": "클릭 시 액션",
+            "example": "OPEN_ORDER_DETAIL"
+          },
+          "link": {
+            "type": "string",
+            "description": "딥링크 URL",
+            "example": "almondyoung://order/12345"
+          }
+        }
+      },
+      "EmailAttachment": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "파일명",
+            "example": "invoice.pdf"
+          },
+          "content": {
+            "type": "string",
+            "description": "Base64 인코딩된 파일 내용",
+            "example": "JVBERi0xLjQKJcfsj6IK..."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "MIME 타입",
+            "example": "application/pdf"
+          },
+          "cid": {
+            "type": "string",
+            "description": "인라인 이미지용 Content-ID",
+            "example": "logo"
+          }
+        },
+        "required": [
+          "filename",
+          "content",
+          "contentType"
+        ]
+      },
+      "EmailConfig": {
+        "type": "object",
+        "properties": {
+          "htmlTemplate": {
+            "type": "string",
+            "description": "HTML 템플릿",
+            "example": "<html>...</html>"
+          },
+          "textTemplate": {
+            "type": "string",
+            "description": "텍스트 템플릿",
+            "example": "{{title}}\n\n{{content}}"
+          },
+          "attachments": {
+            "description": "첨부파일 목록",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmailAttachment"
+            }
+          },
+          "replyTo": {
+            "type": "string",
+            "description": "답장 주소",
+            "example": "support@almondyoung.com"
+          },
+          "fromName": {
+            "type": "string",
+            "description": "발신자 이름",
+            "example": "Almond Young"
+          },
+          "fromEmail": {
+            "type": "string",
+            "description": "발신자 이메일",
+            "example": "noreply@almondyoung.com"
+          },
+          "cc": {
+            "description": "참조",
+            "example": [
+              "manager@almondyoung.com"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bcc": {
+            "description": "숨은 참조",
+            "example": [
+              "admin@almondyoung.com"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "high",
+              "normal",
+              "low"
+            ],
+            "description": "우선순위",
+            "example": "normal"
+          }
+        }
+      },
+      "SMSConfig": {
+        "type": "object",
+        "properties": {
+          "fromNumber": {
+            "type": "string",
+            "description": "발신번호",
+            "example": "+1234567890"
+          },
+          "sendAsMms": {
+            "type": "boolean",
+            "description": "MMS로 발송 여부",
+            "example": false
+          },
+          "validityPeriod": {
+            "type": "string",
+            "description": "유효기간",
+            "example": "24h"
+          },
+          "maxPrice": {
+            "type": "string",
+            "description": "최대 가격",
+            "example": "0.05"
+          },
+          "smartEncoded": {
+            "type": "boolean",
+            "description": "스마트 인코딩",
+            "example": true
+          },
+          "mediaUrls": {
+            "description": "MMS 미디어 URL들",
+            "example": [
+              "https://example.com/image.jpg"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "KakaoTemplateConfig": {
+        "type": "object",
+        "properties": {
+          "templateCode": {
+            "type": "string",
+            "description": "NHN 템플릿 코드",
+            "example": "ORDER_CONFIRM"
+          },
+          "templateName": {
+            "type": "string",
+            "description": "NHN 템플릿명",
+            "example": "주문 확인 알림"
+          },
+          "templateContent": {
+            "type": "string",
+            "description": "템플릿 본문",
+            "example": "안녕하세요 {{userName}}님..."
+          },
+          "providerTemplateId": {
+            "type": "string",
+            "description": "NHN 내부 템플릿 ID (동기화 후 자동 설정)",
+            "example": "TEMPLATE_12345"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "REQUESTED",
+              "APPROVED",
+              "REJECTED",
+              "INACTIVE"
+            ],
+            "description": "NHN 템플릿 상태",
+            "example": "PENDING"
+          },
+          "lastSyncedAt": {
+            "type": "string",
+            "description": "마지막 동기화 시각",
+            "example": "2024-01-15T10:00:00Z"
+          },
+          "lastSyncError": {
+            "type": "string",
+            "description": "동기화 에러 메시지",
+            "example": "템플릿 검수 반려: 부적절한 내용"
+          }
+        },
+        "required": [
+          "templateCode",
+          "templateName",
+          "templateContent"
+        ]
+      },
+      "CreateTemplateDto": {
+        "type": "object",
+        "properties": {
+          "templateKey": {
+            "type": "string",
+            "description": "템플릿 키",
+            "example": "order-confirmation-template"
+          },
+          "name": {
+            "type": "string",
+            "description": "템플릿 이름",
+            "example": "주문 확인 템플릿"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "TRANSACTIONAL",
+              "MARKETING",
+              "SYSTEM",
+              "ADMIN",
+              "OPERATIONAL",
+              "CUSTOMER_SERVICE"
+            ],
+            "description": "알림 카테고리",
+            "example": "TRANSACTIONAL"
+          },
+          "contents": {
+            "type": "object",
+            "description": "채널별 콘텐츠",
+            "example": {
+              "ko": {
+                "EMAIL": {
+                  "subject": "주문 확인",
+                  "body": "안녕하세요 {{userName}}님, 주문이 성공적으로 접수되었습니다.",
+                  "metadata": {
+                    "template": "order-confirmation"
+                  }
+                },
+                "KAKAO": {
+                  "body": "안녕하세요 {{userName}}님, 주문이 성공적으로 접수되었습니다.",
+                  "metadata": {
+                    "template": "order-confirmation"
+                  }
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "variablesSchema": {
+            "type": "object",
+            "description": "변수 스키마",
+            "example": {
+              "userName": {
+                "type": "string",
+                "required": true,
+                "description": "사용자 이름"
+              },
+              "orderNumber": {
+                "type": "string",
+                "required": true,
+                "description": "주문번호"
+              },
+              "totalAmount": {
+                "type": "string",
+                "required": true,
+                "description": "총 금액"
+              }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "version": "1.0",
+              "author": "admin"
+            },
+            "additionalProperties": true
+          },
+          "supportedChannels": {
+            "description": "지원 채널 목록",
+            "example": [
+              "EMAIL",
+              "KAKAO",
+              "SMS",
+              "PUSH"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fcmConfig": {
+            "description": "FCM 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FCMConfig"
+              }
+            ]
+          },
+          "emailConfig": {
+            "description": "이메일 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailConfig"
+              }
+            ]
+          },
+          "smsConfig": {
+            "description": "SMS 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SMSConfig"
+              }
+            ]
+          },
+          "kakaoTemplateConfig": {
+            "description": "카카오 템플릿 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KakaoTemplateConfig"
+              }
+            ]
+          }
+        },
+        "required": [
+          "templateKey",
+          "name",
+          "category",
+          "contents",
+          "variablesSchema",
+          "supportedChannels"
+        ]
+      },
+      "UpdateTemplateDto": {
+        "type": "object",
+        "properties": {
+          "templateKey": {
+            "type": "string",
+            "description": "템플릿 키",
+            "example": "order-confirmation-template"
+          },
+          "name": {
+            "type": "string",
+            "description": "템플릿 이름",
+            "example": "주문 확인 템플릿"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "TRANSACTIONAL",
+              "MARKETING",
+              "SYSTEM",
+              "ADMIN",
+              "OPERATIONAL",
+              "CUSTOMER_SERVICE"
+            ],
+            "description": "알림 카테고리",
+            "example": "TRANSACTIONAL"
+          },
+          "contents": {
+            "type": "object",
+            "description": "채널별 콘텐츠",
+            "example": {
+              "ko": {
+                "EMAIL": {
+                  "subject": "주문 확인",
+                  "body": "안녕하세요 {{userName}}님, 주문이 성공적으로 접수되었습니다.",
+                  "metadata": {
+                    "template": "order-confirmation"
+                  }
+                },
+                "KAKAO": {
+                  "body": "안녕하세요 {{userName}}님, 주문이 성공적으로 접수되었습니다.",
+                  "metadata": {
+                    "template": "order-confirmation"
+                  }
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "variablesSchema": {
+            "type": "object",
+            "description": "변수 스키마",
+            "example": {
+              "userName": {
+                "type": "string",
+                "required": true,
+                "description": "사용자 이름"
+              },
+              "orderNumber": {
+                "type": "string",
+                "required": true,
+                "description": "주문번호"
+              },
+              "totalAmount": {
+                "type": "string",
+                "required": true,
+                "description": "총 금액"
+              }
+            },
+            "additionalProperties": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "추가 메타데이터",
+            "example": {
+              "version": "1.0",
+              "author": "admin"
+            },
+            "additionalProperties": true
+          },
+          "supportedChannels": {
+            "description": "지원 채널 목록",
+            "example": [
+              "EMAIL",
+              "KAKAO",
+              "SMS",
+              "PUSH"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fcmConfig": {
+            "description": "FCM 설정 업데이트",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FCMConfig"
+              }
+            ]
+          },
+          "emailConfig": {
+            "description": "이메일 설정 업데이트",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailConfig"
+              }
+            ]
+          },
+          "smsConfig": {
+            "description": "SMS 설정 업데이트",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SMSConfig"
+              }
+            ]
+          },
+          "kakaoTemplateConfig": {
+            "description": "카카오 템플릿 설정 업데이트",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KakaoTemplateConfig"
+              }
+            ]
+          }
+        }
+      },
+      "PreviewTemplateDto": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "description": "미리보기할 채널들",
+            "example": [
+              "EMAIL",
+              "KAKAO"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "EMAIL",
+                "SMS",
+                "KAKAO",
+                "PUSH"
+              ]
+            }
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ko",
+              "en"
+            ],
+            "description": "언어",
+            "example": "ko"
+          },
+          "payload": {
+            "type": "object",
+            "description": "템플릿 변수 데이터",
+            "example": {
+              "userName": "홍길동",
+              "orderNumber": "ORD-12345",
+              "totalAmount": "50,000원",
+              "productName": "아몬드 영 셔츠",
+              "deliveryDate": "2024-01-20"
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "channels",
+          "language",
+          "payload"
+        ]
+      },
+      "UserInfoDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "사용자 ID",
+            "example": "user-123"
+          },
+          "email": {
+            "type": "string",
+            "description": "이메일 주소",
+            "example": "user@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "전화번호",
+            "example": "010-1234-5678"
+          },
+          "isMarketingEnabled": {
+            "type": "boolean",
+            "description": "마케팅 수신 동의 여부",
+            "example": true,
+            "default": true
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      },
+      "AudienceDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ALL_USERS",
+              "SELECTED_USERS",
+              "FILTERED_USERS"
+            ],
+            "description": "대상 사용자 유형",
+            "example": "SELECTED_USERS"
+          },
+          "users": {
+            "description": "프론트엔드에서 조인/필터링된 사용자 정보 목록 (SELECTED_USERS, FILTERED_USERS일 때 사용)",
+            "example": [
+              {
+                "userId": "user-123",
+                "email": "user@example.com",
+                "phoneNumber": "010-1234-5678",
+                "isMarketingEnabled": true
+              }
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserInfoDto"
+            }
+          },
+          "criteria": {
+            "type": "object",
+            "description": "필터링 기준 (FILTERED_USERS일 때 사용, 프론트에서 이미 적용됨)",
+            "example": {
+              "membershipType": "premium",
+              "shopCategories": [
+                "fashion"
+              ]
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "CreateBulkNotificationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "알림 이름",
+            "example": "주문 배송 알림"
+          },
+          "description": {
+            "type": "string",
+            "description": "알림 설명",
+            "example": "주문 배송 상태 변경 시 발송되는 알림"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "TRANSACTIONAL",
+              "MARKETING",
+              "SYSTEM",
+              "ADMIN",
+              "OPERATIONAL",
+              "CUSTOMER_SERVICE"
+            ],
+            "description": "알림 카테고리",
+            "example": "TRANSACTIONAL"
+          },
+          "channels": {
+            "type": "array",
+            "description": "발송 채널 목록",
+            "example": [
+              "EMAIL",
+              "KAKAO"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "EMAIL",
+                "SMS",
+                "KAKAO",
+                "PUSH"
+              ]
+            }
+          },
+          "templateKey": {
+            "type": "string",
+            "description": "사전 정의된 템플릿 키",
+            "example": "order-shipping-template"
+          },
+          "content": {
+            "type": "object",
+            "description": "채널별 직접 콘텐츠",
+            "example": {
+              "EMAIL": {
+                "subject": "주문 배송 알림",
+                "body": "주문번호 #12345가 배송 준비 중입니다.",
+                "metadata": {
+                  "orderId": "12345"
+                }
+              },
+              "KAKAO": {
+                "body": "주문번호 #12345가 배송 준비 중입니다.",
+                "metadata": {
+                  "orderId": "12345"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "sendAt": {
+            "type": "string",
+            "description": "예약 발송 시간 (ISO 날짜 문자열)",
+            "example": "2024-01-15T10:00:00Z"
+          },
+          "audience": {
+            "description": "대상 사용자 설정",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AudienceDto"
+              }
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "URGENT",
+              "HIGH",
+              "NORMAL",
+              "LOW"
+            ],
+            "description": "알림 우선순위",
+            "example": "HIGH"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "생성자 ID",
+            "example": "admin-user-123"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "캠페인 단위 공통 메타데이터 (payload 등)",
+            "example": {
+              "payload": {
+                "campaignName": "주문 배송 알림",
+                "orderType": "premium"
+              },
+              "tags": [
+                "marketing",
+                "order"
+              ]
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "channels",
+          "content",
+          "audience",
+          "priority",
+          "createdBy"
+        ]
+      }
+    }
+  }
+};
+      
       const ui = SwaggerUIBundle({
-        url: './swagger.json',
+        spec: spec,
         dom_id: '#swagger-ui',
         deepLinking: true,
         presets: [
