@@ -55,20 +55,29 @@ export class IntentRepository {
 
   async updateDiscounts(
     intentId: string,
-    discounts: any[],
-    discountsTotal: number,
     finalAmount: number,
+    discountAmount: number,
+    metadata?: Record<string, any>, // 👈 추가: 상세 내역 업데이트용
     tx?: WalletExecutor,
   ): Promise<void> {
     const executor = tx || this.db.db;
+
+    // 업데이트할 데이터 객체 구성
+    const updateData: any = {
+      discountAmount,
+      finalAmount,
+      updatedAt: new Date(),
+    };
+
+    // 메타데이터가 파라미터로 넘어왔을 때만 업데이트 (기존 데이터 덮어쓰기 주의)
+    // 필요하다면 기존 메타데이터와 병합(merge)하는 로직이 서비스 레이어에 있어야 함
+    if (metadata) {
+      updateData.metadata = metadata;
+    }
+
     await executor
       .update(schema.paymentIntents)
-      .set({
-        discounts: discounts as any,
-        discountsTotal,
-        finalAmount,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(schema.paymentIntents.id, intentId));
   }
 
