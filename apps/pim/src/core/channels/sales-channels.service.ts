@@ -1,15 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { 
+import {
   SalesChannel,
   NewSalesChannel,
   UpdateSalesChannel,
-  DbTransaction 
+  DbTransaction
 } from '../../types';
-import { 
+import {
   type PimSchema,
   salesChannels,
-  channelProducts
+  channelProducts,
+  channelCategories
 } from '../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql } from 'drizzle-orm';
 
@@ -17,7 +18,7 @@ import { eq, and, or, like, ilike, count, asc, desc, sql } from 'drizzle-orm';
 export class SalesChannelsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -25,54 +26,86 @@ export class SalesChannelsService {
 
 
   async createChannel(data: NewSalesChannel, tx?: DbTransaction): Promise<SalesChannel> {
-    if (!data.type || !data.name) {
-      throw new Error('Channel type and name are required');
+    if (!data.site || !data.name) {
+      throw new Error('Channel site and name are required');
     }
-    
+
     const client = this.getClient(tx);
-    
-    const existingChannel = await client
-      .select({ id: salesChannels.id })
-      .from(salesChannels)
-      .where(eq(salesChannels.type, data.type));
-    
-    if (existingChannel.length > 0) {
-      throw new Error(`Channel type '${data.type}' already exists`);
+
+    if (data.categoryId) {
+      const category = await client
+        .select({ id: channelCategories.id })
+        .from(channelCategories)
+        .where(eq(channelCategories.id, data.categoryId));
+
+      if (category.length === 0) {
+        throw new Error(`Category not found: ${data.categoryId}`);
+      }
     }
-    
+
     const channelData = {
-      type: data.type,
+      type: data.type || 'ONLINE',
+      site: data.site,
+      categoryId: data.categoryId || null,
       name: data.name,
       isActive: data.isActive !== false,
       apiConfig: data.apiConfig || null,
       supportedFeatures: data.supportedFeatures || null,
     };
-    
+
     const result = await client
       .insert(salesChannels)
       .values(channelData)
       .returning();
-    
+
     if (result.length === 0) {
       throw new Error('Failed to create channel');
     }
-    
+
     return result[0];
   }
 
-  async getChannelById(channelId: string, tx?: DbTransaction): Promise<SalesChannel | null> {
+  async getChannelById(channelId: string, tx?: DbTransaction): Promise<any> {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const result = await client
-      .select()
+      .select({
+        id: salesChannels.id,
+        type: salesChannels.type,
+        site: salesChannels.site,
+        categoryId: salesChannels.categoryId,
+        name: salesChannels.name,
+        isActive: salesChannels.isActive,
+        apiConfig: salesChannels.apiConfig,
+        supportedFeatures: salesChannels.supportedFeatures,
+        createdAt: salesChannels.createdAt,
+        updatedAt: salesChannels.updatedAt,
+        category: {
+          id: channelCategories.id,
+          name: channelCategories.name,
+          description: channelCategories.description,
+          displayOrder: channelCategories.displayOrder,
+          createdAt: channelCategories.createdAt,
+          updatedAt: channelCategories.updatedAt,
+        },
+      })
       .from(salesChannels)
+      .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
       .where(eq(salesChannels.id, channelId));
-    
-    return result.length > 0 ? result[0] : null;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const channel = result[0];
+    return {
+      ...channel,
+      category: channel.category ? channel.category.id : null,
+    };
   }
 
   async getChannels(filters?: {
@@ -88,11 +121,11 @@ export class SalesChannelsService {
     limit: number;
   }> {
     const client = this.getClient(tx);
-    
+
     const page = filters?.page || 1;
     const limit = Math.min(filters?.limit || 20, 100);
     const offset = (page - 1) * limit;
-    
+
     const whereConditions: any[] = [];
     if (filters?.isActive !== undefined) {
       whereConditions.push(eq(salesChannels.isActive, filters.isActive));
@@ -103,30 +136,54 @@ export class SalesChannelsService {
     if (filters?.search) {
       whereConditions.push(ilike(salesChannels.name, `%${filters.search}%`));
     }
-    
+
     const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
     const countQuery = client
       .select({ count: count() })
       .from(salesChannels);
-      
+
     if (whereClause) {
       countQuery.where(whereClause);
     }
-    
+
     const [{ count: total }] = await countQuery;
     const dataQuery = client
-      .select()
+      .select({
+        id: salesChannels.id,
+        type: salesChannels.type,
+        site: salesChannels.site,
+        categoryId: salesChannels.categoryId,
+        name: salesChannels.name,
+        isActive: salesChannels.isActive,
+        apiConfig: salesChannels.apiConfig,
+        supportedFeatures: salesChannels.supportedFeatures,
+        createdAt: salesChannels.createdAt,
+        updatedAt: salesChannels.updatedAt,
+        category: {
+          id: channelCategories.id,
+          name: channelCategories.name,
+          description: channelCategories.description,
+          displayOrder: channelCategories.displayOrder,
+          createdAt: channelCategories.createdAt,
+          updatedAt: channelCategories.updatedAt,
+        },
+      })
       .from(salesChannels)
+      .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
       .orderBy(asc(salesChannels.name))
       .limit(limit)
       .offset(offset);
-      
+
     if (whereClause) {
       dataQuery.where(whereClause);
     }
-    
-    const data = await dataQuery;
-    
+
+    const rawData = await dataQuery;
+    const data = rawData.map(channel => ({
+      ...channel,
+      category: channel.category ? channel.category.id : null,
+    }));
+
     return {
       data,
       total,
@@ -137,13 +194,13 @@ export class SalesChannelsService {
 
   async getActiveChannels(tx?: DbTransaction): Promise<SalesChannel[]> {
     const client = this.getClient(tx);
-    
+
     const channels = await client
       .select()
       .from(salesChannels)
       .where(eq(salesChannels.isActive, true))
       .orderBy(asc(salesChannels.name));
-    
+
     return channels;
   }
 
@@ -151,43 +208,43 @@ export class SalesChannelsService {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existing = await this.getChannelById(channelId, tx);
     if (!existing) {
       throw new Error(`Channel not found: ${channelId}`);
     }
-    if (data.type && data.type !== existing.type) {
-      const duplicateChannel = await client
-        .select({ id: salesChannels.id })
-        .from(salesChannels)
-        .where(and(
-          eq(salesChannels.type, data.type),
-          sql`${salesChannels.id} != ${channelId}`
-        ));
-      
-      if (duplicateChannel.length > 0) {
-        throw new Error(`Channel type '${data.type}' already exists`);
+
+    if (data.categoryId) {
+      const category = await client
+        .select({ id: channelCategories.id })
+        .from(channelCategories)
+        .where(eq(channelCategories.id, data.categoryId));
+
+      if (category.length === 0) {
+        throw new Error(`Category not found: ${data.categoryId}`);
       }
     }
-    
+
     const updateData = {
       ...data,
       updatedAt: new Date(),
     };
     delete (updateData as any).id;
     delete (updateData as any).createdAt;
+    delete (updateData as any).category;
+
     const result = await client
       .update(salesChannels)
       .set(updateData)
       .where(eq(salesChannels.id, channelId))
       .returning();
-    
+
     if (result.length === 0) {
       throw new Error(`Failed to update channel: ${channelId}`);
     }
-    
+
     return result[0];
   }
 
@@ -195,9 +252,9 @@ export class SalesChannelsService {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existing = await this.getChannelById(channelId, tx);
     if (!existing) {
       throw new Error(`Channel not found: ${channelId}`);
@@ -206,7 +263,7 @@ export class SalesChannelsService {
       .select({ count: count() })
       .from(channelProducts)
       .where(eq(channelProducts.channelId, channelId));
-    
+
     if (relatedProducts[0].count > 0) {
       throw new Error(`Cannot delete channel with existing products. Found ${relatedProducts[0].count} related products.`);
     }
@@ -219,16 +276,16 @@ export class SalesChannelsService {
     if (!channelId) {
       throw new Error('Channel ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsChannel(channelId, tx);
     if (!exists) {
       throw new Error(`Channel not found: ${channelId}`);
     }
     await client
       .update(salesChannels)
-      .set({ 
+      .set({
         isActive,
         updatedAt: new Date()
       })
@@ -239,30 +296,58 @@ export class SalesChannelsService {
     if (!channelId) {
       return false;
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const result = await client
       .select({ count: count() })
       .from(salesChannels)
       .where(eq(salesChannels.id, channelId));
-    
+
     return result[0].count > 0;
   }
 
-  async getChannelByType(type: string, tx?: DbTransaction): Promise<SalesChannel | null> {
+  async getChannelByType(type: string, tx?: DbTransaction): Promise<any> {
     if (!type) {
       throw new Error('Channel type is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const result = await client
-      .select()
+      .select({
+        id: salesChannels.id,
+        type: salesChannels.type,
+        site: salesChannels.site,
+        categoryId: salesChannels.categoryId,
+        name: salesChannels.name,
+        isActive: salesChannels.isActive,
+        apiConfig: salesChannels.apiConfig,
+        supportedFeatures: salesChannels.supportedFeatures,
+        createdAt: salesChannels.createdAt,
+        updatedAt: salesChannels.updatedAt,
+        category: {
+          id: channelCategories.id,
+          name: channelCategories.name,
+          description: channelCategories.description,
+          displayOrder: channelCategories.displayOrder,
+          createdAt: channelCategories.createdAt,
+          updatedAt: channelCategories.updatedAt,
+        },
+      })
       .from(salesChannels)
+      .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
       .where(eq(salesChannels.type, type));
-    
-    return result.length > 0 ? result[0] : null;
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    const channel = result[0];
+    return {
+      ...channel,
+      category: channel.category ? channel.category.id : null,
+    };
   }
 
   async validateChannelConfig(type: string, config: any): Promise<{
@@ -275,34 +360,34 @@ export class SalesChannelsService {
         errors: ['Channel type is required']
       };
     }
-    
+
     const errors: string[] = [];
-    
+
     switch (type) {
       case 'medusa':
         if (config?.apiConfig && !config.apiConfig.baseUrl) {
           errors.push('Medusa channel requires baseUrl in apiConfig');
         }
         break;
-        
+
       case 'coupang':
         if (config?.apiConfig && (!config.apiConfig.accessKey || !config.apiConfig.secretKey)) {
           errors.push('Coupang channel requires accessKey and secretKey in apiConfig');
         }
         break;
-        
+
       case 'smartstore':
         if (config?.apiConfig && (!config.apiConfig.clientId || !config.apiConfig.clientSecret)) {
           errors.push('SmartStore channel requires clientId and clientSecret in apiConfig');
         }
         break;
-        
+
       default:
         if (!['medusa', 'coupang', 'smartstore'].includes(type)) {
           errors.push(`Unsupported channel type: ${type}. Supported types are: medusa, coupang, smartstore`);
         }
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
