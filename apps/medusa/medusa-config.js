@@ -114,6 +114,17 @@ module.exports = defineConfig({
       },
     },
   ],
+
+  admin: {
+    vite: () => {
+      return {
+        server: {
+          allowedHosts: ['api-gateway-development-10ed.up.railway.app'],
+        },
+      };
+    },
+  },
+
   plugins: [
     {
       resolve: '@medusajs/draft-order',
