@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { USER_STREAM, ORDER_STREAM, WALLET_STREAM } from '@packages/event-contracts';
+import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { SharedModule } from '../shared/shared.module';
 
 import { ProviderModule } from '../provider/provider.module';
@@ -21,7 +21,7 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
     ProviderModule,
     SharedModule,
     EventsModule.forConsumerModule({
-      streams: [USER_STREAM, ORDER_STREAM, WALLET_STREAM],
+      streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
       groupId: 'notification-consumer',
       enableAutoDLQ: true,
       validation: {
@@ -45,4 +45,4 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
   ],
   exports: [NotificationDispatcherService],
 })
-export class DispatcherModule {}
+export class DispatcherModule { }

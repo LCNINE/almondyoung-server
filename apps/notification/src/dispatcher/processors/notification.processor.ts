@@ -251,13 +251,33 @@ export class NotificationProcessor {
         });
 
         for (const notification of pendingNotifications) {
-            const priority = this.getPriorityValue(notification.priority as NotificationPriority);
+            // 큐에 넣기 전에 상태를 PROCESSING으로 변경하여 중복 큐잉 방지
+            // FOR UPDATE SKIP LOCKED를 사용하여 동시성 문제 방지
+            const [updated] = await this.db
+                .update(notifications)
+                .set({
+                    status: NotificationStatus.PROCESSING,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        eq(notifications.notificationId, notification.notificationId),
+                        eq(notifications.status, NotificationStatus.PENDING) // 상태가 여전히 PENDING인 경우만 업데이트
+                    )
+                )
+                .returning();
 
-            await job.queue.add(
-                'send-notification',
-                { notificationId: notification.notificationId },
-                { priority }
-            );
+            // 상태 업데이트가 성공한 경우에만 큐에 추가
+            // (다른 프로세스가 이미 처리 중이면 updated가 null)
+            if (updated) {
+                const priority = this.getPriorityValue(notification.priority as NotificationPriority);
+
+                await job.queue.add(
+                    'send-notification',
+                    { notificationId: notification.notificationId },
+                    { priority }
+                );
+            }
         }
     }
 

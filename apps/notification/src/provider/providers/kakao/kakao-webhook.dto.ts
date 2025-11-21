@@ -38,6 +38,7 @@ export interface KakaoMessageResultUpdateHook {
     recipientNo: string;
     resultCode: string;
     resultCodeName?: string;
+    messageStatus?: string; // COMPLETED, FAILED, CANCEL (NHN API 응답에 따라 optional)
     senderGroupingKey?: string;
     recipientGroupingKey?: string;
     _links?: {

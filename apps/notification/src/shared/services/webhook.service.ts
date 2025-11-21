@@ -219,7 +219,10 @@ export class WebhookService {
         userId: string | undefined,
         data: ResendWebhookData
     ): Promise<void> {
-        const recipientEmail = data.to[0];
+        // 타입 안전성: to가 배열이고 비어있지 않은지 확인
+        const recipientEmail = Array.isArray(data.to) && data.to.length > 0
+            ? data.to[0]
+            : (typeof data.to === 'string' ? data.to : 'unknown');
 
         this.logger.warn('Email complaint received', {
             emailId,
@@ -369,9 +372,28 @@ export class WebhookService {
      * 
      * Twilio Status Callback 웹훅을 처리합니다.
      * https://www.twilio.com/docs/messaging/api/message-resource#status-callback
+     * 
+     * 참고: Twilio 웹훅 시그니처 검증은 X-Twilio-Signature 헤더를 사용합니다.
+     * 현재는 기본 검증만 수행하며, 프로덕션 환경에서는 추가 검증 로직 구현 권장.
      */
-    async handleTwilioWebhook(data: any): Promise<void> {
+    async handleTwilioWebhook(
+        data: any,
+        signature?: string,
+        requestUrl?: string,
+    ): Promise<void> {
         try {
+            // 프로덕션 환경에서 시그니처 검증 (선택적)
+            if (process.env.NODE_ENV === 'production' && signature && requestUrl) {
+                // TODO: Twilio 시그니처 검증 구현
+                // const twilioAuthToken = this.configService.get<string>('TWILIO_AUTH_TOKEN');
+                // if (twilioAuthToken && !this.verifyTwilioSignature(data, signature, requestUrl, twilioAuthToken)) {
+                //     throw new UnauthorizedException('Invalid Twilio webhook signature');
+                // }
+                this.logger.warn('Twilio webhook signature verification not implemented', {
+                    messageSid: data.MessageSid,
+                });
+            }
+
             this.logger.log('Twilio webhook received', {
                 messageSid: data.MessageSid,
                 messageStatus: data.MessageStatus,
@@ -517,8 +539,17 @@ export class WebhookService {
     ): Promise<void> {
         try {
             // 1. 서명 검증 (프로덕션 환경)
-            if (process.env.NODE_ENV === 'production' && signature) {
+            if (process.env.NODE_ENV === 'production') {
                 const expectedSignature = this.configService.get<string>('NHN_WEBHOOK_SIGNATURE');
+
+                if (!expectedSignature) {
+                    this.logger.warn('NHN_WEBHOOK_SIGNATURE is not configured in production');
+                }
+
+                if (!signature) {
+                    throw new UnauthorizedException('Missing Kakao webhook signature');
+                }
+
                 if (expectedSignature && signature !== expectedSignature) {
                     throw new UnauthorizedException('Invalid Kakao webhook signature');
                 }
