@@ -2,7 +2,7 @@ import { callbackSignup } from "@lib/api/users/callback-signup"
 import { fetchUserByUserId } from "@lib/api/users/get-user"
 import { appConfig } from "@lib/app-config"
 import { setTokenCookies } from "@lib/data/cookies"
-import { medusaSignup, retrieveCustomer } from "@lib/data/customer"
+import { medusaSignup, retrieveCustomer } from "@lib/api/medusa/customer"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 

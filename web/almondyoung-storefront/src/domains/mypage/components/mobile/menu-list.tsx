@@ -20,9 +20,7 @@ export function MenuList({ items }: MenuListProps) {
               className={`flex w-full items-center gap-4 p-4 transition-colors hover:bg-gray-50 ${index > 0 ? "border-muted border-t" : ""}`}
             >
               <ListIcon>{item.icon}</ListIcon>
-              <span className="flex-grow text-base text-gray-800">
-                {item.label}
-              </span>
+              <span className="grow text-base text-gray-800">{item.label}</span>
               <ChevronRight className="h-5 w-5" />
             </Link>
           </li>

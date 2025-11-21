@@ -4,7 +4,7 @@
  * 추후 쓰일수 있음
  */
 import { sdk } from "@lib/app-config"
-import { getAuthHeaders, getCacheOptions } from "./cookies"
+import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
 import { HttpTypes } from "@medusajs/types"
 
 export const listCartPaymentMethods = async (regionId: string) => {

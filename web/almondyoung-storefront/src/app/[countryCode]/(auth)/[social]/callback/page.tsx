@@ -1,6 +1,6 @@
 import { fetchCurrentUser } from "@lib/api/users/me"
 import { appConfig } from "@lib/app-config"
-import { medusaSignup, retrieveCustomer } from "@lib/data/customer"
+import { medusaSignup, retrieveCustomer } from "@lib/api/medusa/customer"
 import { AuthCallback } from "domains/auth/components/auth-callback"
 import { cookies as nextCookies } from "next/headers"
 import { redirect } from "next/navigation"
