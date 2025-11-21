@@ -136,16 +136,27 @@ export class WebhookController {
     summary: 'Twilio 웹훅 처리',
     description: 'Twilio SMS 서비스의 웹훅 이벤트를 처리합니다.',
   })
+  @ApiHeader({
+    name: 'X-Twilio-Signature',
+    description: 'Twilio 웹훅 서명 (프로덕션 환경 권장)',
+    required: false,
+  })
   @ApiBody({
     schema: {
       type: 'object',
-      example: { message: 'hello', status: 'sent' },
-      additionalProperties: true, // 👈 Swagger 스키마 에러 방지
+      example: { MessageSid: 'SM123', MessageStatus: 'delivered', To: '+1234567890' },
+      additionalProperties: true,
     },
   })
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
-  async handleTwilio(@Body() data: any) {
-    await this.webhookService.handleTwilioWebhook(data);
+  @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
+  async handleTwilio(
+    @Req() req: Request,
+    @Body() data: any,
+    @Headers('X-Twilio-Signature') signature?: string,
+  ) {
+    const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+    await this.webhookService.handleTwilioWebhook(data, signature, requestUrl);
     return { received: true };
   }
 
