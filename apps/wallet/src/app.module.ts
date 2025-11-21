@@ -8,6 +8,8 @@ import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 import { PaymentController } from './controllers/payment.controller';
 import { PointController } from './controllers/point.controller';
+import { PointAdminController } from './controllers/point-admin.controller';
+
 
 
 import { IntentService } from './services/intents/intent.service';
@@ -99,7 +101,9 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     // === 신규 아키텍처 ===
     PaymentController,
     PointController,
+    PointAdminController,
     TaxInvoiceController,
+
 
     TaxInvoiceAdminController,
   ],
