@@ -38,9 +38,20 @@ export interface CancelPointsParams {
   memo?: string;
 }
 
+export interface PointHistoryItem {
+  id: number;
+  partnerId: string;
+  eventType: string;
+  amount: number;
+  balance: number;
+  reason: string | null;
+  createdAt: Date;
+  [key: string]: unknown; // Fix for Drizzle execute generic constraint
+}
+
 @Injectable()
 export class PointRepository {
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
 
   /**
    * ✅ WMS 패턴: 트랜잭션 헬퍼
@@ -73,6 +84,49 @@ export class PointRepository {
                  OR ${schema.pointEvents.withdrawalAvailableAt} <= ${now})`,
     );
     return Number(sum ?? 0);
+  }
+
+  /**
+   * 포인트 내역 조회 (Running Balance 포함)
+   */
+  async getHistory(
+    partnerId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: PointHistoryItem[]; total: number }> {
+    // 1. 전체 카운트
+    const [{ count }] = await this.db.db.execute<{ count: number }>(
+      sql`SELECT COUNT(*) as count FROM ${schema.pointEvents} WHERE ${schema.pointEvents.partnerId} = ${partnerId}`,
+    );
+
+    // 2. 내역 조회 (Window Function으로 잔액 계산)
+    const rows = await this.db.db.execute<PointHistoryItem>(
+      sql`
+        WITH calculated_balance AS (
+          SELECT 
+            id,
+            partner_id as "partnerId",
+            event_type as "eventType",
+            amount,
+            reason,
+            created_at as "createdAt",
+            SUM(amount) OVER (
+              PARTITION BY partner_id 
+              ORDER BY created_at ASC, id ASC
+            ) as balance
+          FROM ${schema.pointEvents}
+          WHERE partner_id = ${partnerId}
+        )
+        SELECT * FROM calculated_balance
+        ORDER BY "createdAt" DESC, id DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+    );
+
+    return {
+      items: rows,
+      total: Number(count),
+    };
   }
 
   /** 적립(ADD_POINTS): 헤더 + 디테일 1건(자기참조) 생성 */
