@@ -7,6 +7,8 @@ import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 // import { validateWalletEnv } from './config/env.validation';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 import { PaymentController } from './controllers/payment.controller';
+import { PointController } from './controllers/point.controller';
+
 
 import { IntentService } from './services/intents/intent.service';
 import { IntentReader } from './services/intents/intent.reader';
@@ -96,7 +98,9 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
   controllers: [
     // === 신규 아키텍처 ===
     PaymentController,
+    PointController,
     TaxInvoiceController,
+
     TaxInvoiceAdminController,
   ],
   providers: [
@@ -189,4 +193,4 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule {}
+export class AppModule { }

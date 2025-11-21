@@ -18,7 +18,8 @@ import {
   pgEnum,
   jsonb,
   serial,
-  date, // Supabase에서 사용하는 serial 추가
+  date,
+  check, // Supabase에서 사용하는 serial 추가
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -255,7 +256,12 @@ export type BnplEventStatus = (typeof bnplEventStatusEnum.enumValues)[number];
 // ────────────────────────────────────────────
 // Payment Method Schemas - 정규화된 구조 (민감값 저장 금지)
 // ────────────────────────────────────────────
-
+// 결제 수단 유형 (명시적 Enum으로 전환 추천)
+export const paymentKindEnum = pgEnum('payment_kind', [
+  'CARD', // 신용/체크카드
+  'BANK_ACCOUNT', // 계좌 (BNPL 포함)
+  'WALLET', // 간편결제/포인트
+]);
 /** 공통 결제 프로필(추상 슬롯) */
 export const paymentProfiles = pgTable(
   'payment_profiles',
@@ -263,17 +269,21 @@ export const paymentProfiles = pgTable(
     id: varchar('id', { length: 36 })
       .primaryKey()
       .$defaultFn(() => generateUUIDv7()),
+
     userId: varchar('user_id', { length: 64 }).notNull(),
 
-    kind: varchar('kind', { length: 16 })
-      .$type<'CARD' | 'BANK_ACCOUNT' | 'WALLET'>()
-      .notNull(),
-    provider: varchar('provider', { length: 16 })
-      .$type<'HMS_CARD' | 'HMS_BNPL' | 'TOSS' | 'POINTS'>()
-      .notNull(),
-    status: paymentProfileStatusEnum('status').notNull().default('PENDING'),
+    // ✅ Enum 사용으로 타입 안정성 확보
+    kind: paymentKindEnum('kind').notNull(),
+    provider: paymentProviderEnum('provider').notNull(),
 
-    name: varchar('name', { length: 64 }),
+    status: paymentProfileStatusEnum('status').notNull().default('PENDING'),
+    name: varchar('name', { length: 64 }), // 사용자 별칭 (예: "내 월급통장")
+
+    // ✅ 기본 결제 수단 여부
+    isDefault: boolean('is_default').notNull().default(false),
+
+    // ✅ Soft Delete (삭제 시각이 기록되면 삭제된 것으로 간주)
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -283,8 +293,27 @@ export const paymentProfiles = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index('idx_payment_profiles_user').on(table.userId),
-    index('idx_payment_profiles_kind').on(table.kind),
+    // 1. 조회 성능 최적화 (삭제 안 된 내역만 조회)
+    index('idx_pp_user_active').on(table.userId, table.deletedAt),
+
+    // 2. ✅ Partial Unique Index (핵심)
+    // "삭제되지 않은(deleted_at IS NULL) 레코드 중, 유저별로 is_default=true는 단 하나만 존재해야 한다"
+    uniqueIndex('uq_pp_user_default_active')
+      .on(table.userId)
+      .where(sql`${table.isDefault} = true AND ${table.deletedAt} IS NULL`),
+
+    // 3. ✅ CHECK Constraints (데이터 무결성 보장)
+    // 올바른 Kind와 Provider 조합만 허용
+    check(
+      'valid_provider_kind_mapping',
+      sql`
+        (
+          (${table.kind} = 'CARD' AND ${table.provider} IN ('HMS_CARD', 'TOSS')) OR
+          (${table.kind} = 'BANK_ACCOUNT' AND ${table.provider} IN ('HMS_BNPL', 'TOSS')) OR
+          (${table.kind} = 'WALLET' AND ${table.provider} IN ('POINTS', 'KAKAOPAY'))
+        )
+      `,
+    ),
   ],
 );
 
@@ -294,50 +323,44 @@ export const cmsCardProfiles = pgTable(
   {
     id: varchar('id', { length: 36 })
       .primaryKey()
-      .references(() => paymentProfiles.id, { onDelete: 'cascade' }),
+      .references(() => paymentProfiles.id, { onDelete: 'cascade' }), // 부모 삭제 시 같이 삭제 (Soft Delete 시엔 로직으로 처리)
 
-    memberId: varchar('member_id', { length: 20 }).notNull().unique(),
-    cmsStatus: varchar('cms_status', { length: 16 }).notNull(),
+    memberId: varchar('member_id', { length: 20 }).notNull(), // 효성 회원번호
+    cmsStatus: varchar('cms_status', { length: 16 }).notNull(), // 효성측 상태
 
-    paymentCompany: varchar('payment_company', { length: 3 }),
+    paymentCompany: varchar('payment_company', { length: 10 }), // 카드사 이름
     cardLast4: varchar('card_last4', { length: 4 }),
     cardBrand: varchar('card_brand', { length: 32 }),
     payerName: varchar('payer_name', { length: 64 }),
     phoneMask: varchar('phone_mask', { length: 20 }),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    // 자식 테이블은 별도의 deletedAt 없이 부모의 deletedAt을 따름 (Join 조회)
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
   (table) => [
-    uniqueIndex('uq_cms_card_member').on(table.memberId),
-    index('idx_cms_card_status').on(table.cmsStatus),
+    // 효성 회원번호 유니크 (단, 삭제된 프로필은 제외하고 싶다면 Partial Index 고려)
+    // 여기서는 재가입 등을 고려해 단순 인덱스로 두거나, 비즈니스 로직 체크 추천
+    index('idx_cms_card_member').on(table.memberId),
   ],
 );
 
-/** 효성 배치 CMS(TE-0046) 최소 + UX 요약 */
+/** 효성 배치 CMS(TE-0046) — 계좌/BNPL */
 export const cmsBatchProfiles = pgTable('cms_batch_profiles', {
   id: varchar('id', { length: 36 })
     .primaryKey()
     .references(() => paymentProfiles.id, { onDelete: 'cascade' }),
 
-  memberId: varchar('member_id', { length: 20 }).notNull().unique(),
+  memberId: varchar('member_id', { length: 20 }).notNull(),
   cmsStatus: varchar('cms_status', { length: 16 }).notNull(),
 
-  paymentCompany: varchar('payment_company', { length: 3 }),
+  paymentCompany: varchar('payment_company', { length: 10 }), // 은행 코드
   payerName: varchar('payer_name', { length: 64 }),
   phoneMask: varchar('phone_mask', { length: 20 }),
-  billingDay: integer('billing_day'),
+  billingDay: varchar('billing_day', { length: 2 }), // 출금일
 
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
 export const cmsBatchConsents = pgTable(

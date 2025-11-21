@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PointRepository } from './point.repository';
+import { PointRepository, PointHistoryItem } from './point.repository';
+
 
 /**
  * PointReader (Implementation Layer)
@@ -8,7 +9,7 @@ import { PointRepository } from './point.repository';
  */
 @Injectable()
 export class PointReader {
-  constructor(private readonly repo: PointRepository) {}
+  constructor(private readonly repo: PointRepository) { }
 
   async getBalance(partnerId: string): Promise<number> {
     return await this.repo.getBalance(partnerId);
@@ -17,4 +18,13 @@ export class PointReader {
   async getWithdrawable(partnerId: string, now?: Date): Promise<number> {
     return await this.repo.getWithdrawable(partnerId, now);
   }
+
+  async getHistory(
+    partnerId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: PointHistoryItem[]; total: number }> {
+    return await this.repo.getHistory(partnerId, limit, offset);
+  }
 }
+
