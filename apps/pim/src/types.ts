@@ -14,6 +14,7 @@ import {
   productOptionValues,
   productVariants,
   variantOptionValues,
+  channelCategories,
   salesChannels,
   channelProducts,
   pricingRules,
@@ -165,6 +166,13 @@ export type NewVariantOptionValue = InferInsertModel<
 >;
 export type UpdateVariantOptionValue = Partial<
   Omit<NewVariantOptionValue, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== CHANNEL CATEGORIES 타입 =====
+export type ChannelCategory = InferSelectModel<typeof channelCategories>;
+export type NewChannelCategory = InferInsertModel<typeof channelCategories>;
+export type UpdateChannelCategory = Partial<
+  Omit<NewChannelCategory, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
 // ===== SALES CHANNELS 타입 =====
