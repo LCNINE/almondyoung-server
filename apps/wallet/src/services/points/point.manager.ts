@@ -21,7 +21,7 @@ type DbTx = Parameters<
 export class PointManager {
   private readonly logger = new Logger(PointManager.name);
 
-  constructor(private readonly repo: PointRepository) {}
+  constructor(private readonly repo: PointRepository) { }
 
   /**
    * 포인트 적립
@@ -38,6 +38,38 @@ export class PointManager {
     // 3. 로깅
     this.logger.log(
       `ADD_POINTS: partner=${params.partnerId} amount=${params.amount} event=${res.eventId}`,
+    );
+
+    return res;
+  }
+
+  /**
+   * 관리자 수동 지급
+   */
+  async grantByAdmin(params: AddPointsParams, tx?: DbTx) {
+    // 1. 검증
+    if (params.amount <= 0) {
+      throw new Error('지급 금액은 양수여야 합니다.');
+    }
+
+    // 2. 실행
+    // 안전하게: params.memo가 있으면 앞에 붙이고, 없으면 기본값
+    // 중복 태깅 방지: 이미 [Admin Manual Grant]가 있으면 그대로 둠
+    let adminMemo = params.memo || '';
+    if (!adminMemo.includes('[Admin Manual Grant]')) {
+      adminMemo = adminMemo
+        ? `[Admin Manual Grant] ${adminMemo}`
+        : `[Admin Manual Grant]`;
+    }
+
+    const res = await this.repo.addPoints({
+      ...params,
+      memo: adminMemo,
+    }, tx);
+
+    // 3. 로깅 (별도 키워드 사용)
+    this.logger.log(
+      `ADMIN_GRANT: partner=${params.partnerId} amount=${params.amount} event=${res.eventId} reason=${params.reason}`,
     );
 
     return res;
