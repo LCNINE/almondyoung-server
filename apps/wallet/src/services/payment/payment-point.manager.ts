@@ -93,13 +93,13 @@ export class PaymentPointManager {
 
     const finalAmount = Number(intent.finalAmount) - usePoints;
     const isFullPayment = finalAmount === 0;
+    const discountAmount = usePoints; //추후 다시 볼것, 포인트또한 할인개념이며 쿠폰으로 인한 할인도 생길수있음
 
     // 6. Intent에 할인 정보 업데이트
     await this.intentRepo.updateDiscounts(
       intent.id,
-      discounts,
-      usePoints,
-      finalAmount,
+      intent.finalAmount,
+      discountAmount,
       tx,
     );
 
