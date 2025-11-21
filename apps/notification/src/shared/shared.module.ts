@@ -10,7 +10,6 @@ import { AlertService } from './services/alert.service';
 import { WebhookService } from './services/webhook.service';
 import { EventMappingService } from './services/event-mapping.service';
 import { MetadataController } from './controllers/metadata.controller';
-import { TestFcmController } from './controllers/test-fcm.controller';
 import { LogController } from './controllers/log.controller';
 import { MetricsController } from './controllers/metrics.controller';
 
@@ -22,7 +21,7 @@ import { MetricsController } from './controllers/metrics.controller';
     DbModule,
     EventsModule,
   ],
-  controllers: [MetadataController, TestFcmController, LogController, MetricsController],
+  controllers: [MetadataController, LogController, MetricsController],
   providers: [
     NotificationLoggerService,
     AlertService,
@@ -36,4 +35,4 @@ import { MetricsController } from './controllers/metrics.controller';
     EventMappingService,
   ],
 })
-export class SharedModule {}
+export class SharedModule { }
