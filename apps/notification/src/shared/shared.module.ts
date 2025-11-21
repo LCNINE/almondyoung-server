@@ -9,6 +9,7 @@ import { NotificationLoggerService } from './services/notification-logger.servic
 import { AlertService } from './services/alert.service';
 import { WebhookService } from './services/webhook.service';
 import { EventMappingService } from './services/event-mapping.service';
+import { MetricsService } from './services/metrics.service';
 import { MetadataController } from './controllers/metadata.controller';
 import { LogController } from './controllers/log.controller';
 import { MetricsController } from './controllers/metrics.controller';
@@ -27,12 +28,14 @@ import { MetricsController } from './controllers/metrics.controller';
     AlertService,
     WebhookService,
     EventMappingService,
+    MetricsService,
   ],
   exports: [
     NotificationLoggerService,
     AlertService,
     WebhookService,
     EventMappingService,
+    MetricsService,
   ],
 })
 export class SharedModule { }
