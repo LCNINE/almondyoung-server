@@ -1,5 +1,5 @@
 // apps/notification/src/shared/services/event-mapping.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { notificationEvents, notificationTables } from '../../../database/schemas/notification-schema';
 import { eq } from 'drizzle-orm';
@@ -39,35 +39,45 @@ export class EventMappingService {
     ) { }
 
     async createEvent(dto: CreateEventDto): Promise<NotificationEvent> {
-        const [newEvent] = await this.db.db
-            .insert(notificationEvents)
-            .values({
-                eventKey: dto.eventKey,
-                name: dto.name,
-                description: dto.description,
-                templateKey: dto.templateKey,
-                category: dto.category as any,
-                defaultChannels: dto.defaultChannels as any,
-                priority: (dto.priority || "NORMAL") as any,
-                conditions: dto.conditions,
-                isActive: true,
-            })
-            .returning();
+        try {
+            const [newEvent] = await this.db.db
+                .insert(notificationEvents)
+                .values({
+                    eventKey: dto.eventKey,
+                    name: dto.name,
+                    description: dto.description,
+                    templateKey: dto.templateKey,
+                    category: dto.category as any,
+                    defaultChannels: dto.defaultChannels as any,
+                    priority: (dto.priority || "NORMAL") as any,
+                    conditions: dto.conditions,
+                    isActive: true,
+                })
+                .returning();
 
-        return {
-            eventId: newEvent.eventId,
-            eventKey: newEvent.eventKey,
-            name: newEvent.name,
-            description: newEvent.description,
-            templateKey: newEvent.templateKey,
-            category: newEvent.category,
-            defaultChannels: newEvent.defaultChannels as string[],
-            priority: newEvent.priority,
-            conditions: newEvent.conditions,
-            isActive: newEvent.isActive,
-            createdAt: newEvent.createdAt,
-            updatedAt: newEvent.updatedAt,
-        } as NotificationEvent;
+            return {
+                eventId: newEvent.eventId,
+                eventKey: newEvent.eventKey,
+                name: newEvent.name,
+                description: newEvent.description,
+                templateKey: newEvent.templateKey,
+                category: newEvent.category,
+                defaultChannels: newEvent.defaultChannels as string[],
+                priority: newEvent.priority,
+                conditions: newEvent.conditions,
+                isActive: newEvent.isActive,
+                createdAt: newEvent.createdAt,
+                updatedAt: newEvent.updatedAt,
+            } as NotificationEvent;
+        } catch (error: any) {
+            // PostgreSQL unique constraint violation (error code 23505)
+            // 또는 다른 DB의 unique constraint 에러 처리
+            if (error.code === '23505' || error.code === 'SQLITE_CONSTRAINT_UNIQUE' ||
+                (error.message && error.message.includes('UNIQUE constraint'))) {
+                throw new ConflictException(`Event key "${dto.eventKey}" already exists`);
+            }
+            throw error;
+        }
     }
 
     async getAllEvents(): Promise<NotificationEvent[]> {
@@ -127,19 +137,23 @@ export class EventMappingService {
     }
 
     async updateEvent(eventKey: string, dto: UpdateEventDto): Promise<NotificationEvent> {
+        // undefined 필드는 업데이트하지 않도록 필터링
+        const updateData: any = {
+            updatedAt: new Date(),
+        };
+
+        if (dto.name !== undefined) updateData.name = dto.name;
+        if (dto.description !== undefined) updateData.description = dto.description;
+        if (dto.templateKey !== undefined) updateData.templateKey = dto.templateKey;
+        if (dto.category !== undefined) updateData.category = dto.category as any;
+        if (dto.defaultChannels !== undefined) updateData.defaultChannels = dto.defaultChannels as any;
+        if (dto.priority !== undefined) updateData.priority = dto.priority as any;
+        if (dto.conditions !== undefined) updateData.conditions = dto.conditions;
+        if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+
         const [updatedEvent] = await this.db.db
             .update(notificationEvents)
-            .set({
-                name: dto.name,
-                description: dto.description,
-                templateKey: dto.templateKey,
-                category: dto.category as any,
-                defaultChannels: dto.defaultChannels as any,
-                priority: dto.priority as any,
-                conditions: dto.conditions,
-                isActive: dto.isActive,
-                updatedAt: new Date(),
-            })
+            .set(updateData)
             .where(eq(notificationEvents.eventKey, eventKey))
             .returning();
 

@@ -14,7 +14,10 @@ export async function* batchProcess<T>(
  * @param items 처리할 아이템 배열
  * @param processor 각 아이템을 처리하는 비동기 함수
  * @param concurrency 동시에 실행할 최대 워커 수
- * @returns 처리 결과 배열 (입력 순서와 동일)
+ * @returns 처리 결과 배열 (처리 완료 순서, 입력 순서와 다를 수 있음)
+ * 
+ * 주의: 결과 배열의 순서는 처리 완료 순서이며, 입력 배열 순서와 동일하지 않을 수 있습니다.
+ * 입력 순서가 중요한 경우, 결과에 원본 인덱스를 포함하거나 다른 방식으로 매칭해야 합니다.
  */
 export async function processBatchWithConcurrency<T, R>(
     items: T[],
