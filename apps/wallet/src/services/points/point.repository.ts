@@ -1,6 +1,7 @@
 // apps/wallet/src/repositories/point.repository.ts
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, sql, or, isNull, lte } from 'drizzle-orm';
+
 import * as schema from '../../shared/database/schema'; // 질문에 준 Drizzle 스키마 (point_* 테이블)
 import { walletSchema } from '../../shared/database/schema';
 import { DbService } from '@app/db';
@@ -61,14 +62,24 @@ export class PointRepository {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
+  /**
+   * 파트너(유저) Row Lock (동시성 제어)
+   * member_id 기준으로 partners 테이블을 잠금
+   */
+  private async lockPartner(tx: DbTx, partnerId: string): Promise<void> {
+    // partnerId가 memberId라고 가정 (스키마 주석 기반)
+    await tx.execute(
+      sql`SELECT id FROM ${schema.partners} WHERE ${schema.partners.memberId} = ${partnerId} FOR UPDATE`,
+    );
+  }
+
   /** 파트너 총 잔액 (모든 포인트 합) */
   async getBalance(partnerId: string): Promise<number> {
-    const [{ sum }] = await this.db.db.execute<{ sum: number }>(
-      sql`SELECT COALESCE(SUM(${schema.pointEvents.amount}), 0) AS sum
-          FROM ${schema.pointEvents}
-          WHERE ${schema.pointEvents.partnerId} = ${partnerId}`,
-    );
-    return Number(sum ?? 0);
+    const [result] = await this.db.db
+      .select({ sum: sql<number>`COALESCE(SUM(${schema.pointEvents.amount}), 0)` })
+      .from(schema.pointEvents)
+      .where(eq(schema.pointEvents.partnerId, partnerId));
+    return Number(result?.sum ?? 0);
   }
 
   /** 출금 가능 잔액 (출금 가능일 도달/정책 반영은 서비스단에서 파라미터로 제어해도 됨) */
@@ -76,14 +87,19 @@ export class PointRepository {
     partnerId: string,
     now: Date = new Date(),
   ): Promise<number> {
-    const [{ sum }] = await this.db.db.execute<{ sum: number }>(
-      sql`SELECT COALESCE(SUM(${schema.pointEvents.amount}), 0) AS sum
-          FROM ${schema.pointEvents}
-          WHERE ${schema.pointEvents.partnerId} = ${partnerId}
-            AND (${schema.pointEvents.withdrawalAvailableAt} IS NULL
-                 OR ${schema.pointEvents.withdrawalAvailableAt} <= ${now})`,
-    );
-    return Number(sum ?? 0);
+    const [result] = await this.db.db
+      .select({ sum: sql<number>`COALESCE(SUM(${schema.pointEvents.amount}), 0)` })
+      .from(schema.pointEvents)
+      .where(
+        and(
+          eq(schema.pointEvents.partnerId, partnerId),
+          or(
+            isNull(schema.pointEvents.withdrawalAvailableAt),
+            lte(schema.pointEvents.withdrawalAvailableAt, now),
+          ),
+        ),
+      );
+    return Number(result?.sum ?? 0);
   }
 
   /**
@@ -135,6 +151,9 @@ export class PointRepository {
     tx?: DbTx,
   ): Promise<{ eventId: number; detailId: number }> {
     return await this.inTx(async (trx) => {
+      // 0) Lock
+      await this.lockPartner(trx, p.partnerId);
+
       // 1) 이벤트 헤더 생성
       const [ev] = await trx
         .insert(schema.pointEvents)
@@ -194,6 +213,9 @@ export class PointRepository {
     tx?: DbTx,
   ): Promise<{ eventId: number; used: number }> {
     return await this.inTx(async (trx) => {
+      // 0) Lock
+      await this.lockPartner(trx, p.partnerId);
+
       // 1) REDEEM 헤더 생성 (amount는 총합(-))
       const [ev] = await trx
         .insert(schema.pointEvents)
@@ -215,110 +237,41 @@ export class PointRepository {
       let remaining = p.amount;
       let used = 0;
 
-      // 2) 전체 디테일 조회 (ORM 사용)
-      const allDetails = await trx
-        .select({
-          id: schema.pointEventDetails.id,
-          earnedEventDetailId: schema.pointEventDetails.earnedEventDetailId,
-          amount: schema.pointEventDetails.amount,
-          eventId: schema.pointEventDetails.pointEventId,
-        })
-        .from(schema.pointEventDetails)
-        .where(eq(schema.pointEventDetails.partnerId, p.partnerId));
+      // 2) 가용 버킷 조회 (최적화된 쿼리)
+      // - earned_event_detail_id 별로 그룹핑하여 잔액이 양수인 것만 조회
+      // - 만료일 오름차순 정렬 (FIFO)
+      const buckets = await trx.execute<{
+        earnedEventDetailId: number;
+        amountSum: number;
+        expiresAt: Date | null;
+      }>(
+        sql`
+          SELECT
+            d.earned_event_detail_id as "earnedEventDetailId",
+            SUM(d.amount) as "amountSum",
+            MIN(root_ev.expires_at) as "expiresAt"
+          FROM ${schema.pointEventDetails} d
+          JOIN ${schema.pointEventDetails} root_d ON d.earned_event_detail_id = root_d.id
+          JOIN ${schema.pointEvents} root_ev ON root_d.point_event_id = root_ev.id
+          WHERE d.partner_id = ${p.partnerId}
+            AND d.earned_event_detail_id IS NOT NULL
+          GROUP BY d.earned_event_detail_id
+          HAVING SUM(d.amount) > 0
+          ORDER BY MIN(root_ev.expires_at) ASC NULLS LAST
+        `,
+      );
 
-      // 3) root 이벤트의 만료일 조회
-      const rootEventIds = [
-        ...new Set(
-          allDetails.map((d) => d.earnedEventDetailId).filter(Boolean),
-        ),
-      ];
-
-      // 빈 배열이면 포인트가 없는 것
-      if (rootEventIds.length === 0) {
-        throw new Error('포인트가 부족합니다. 부족액: ' + p.amount);
+      if (buckets.length === 0) {
+        throw new Error('포인트가 부족합니다. (가용 포인트 없음)');
       }
 
-      const rootDetails = await trx
-        .select({
-          id: schema.pointEventDetails.id,
-          eventId: schema.pointEventDetails.pointEventId,
-        })
-        .from(schema.pointEventDetails)
-        .where(
-          sql`${schema.pointEventDetails.id} IN (${sql.join(
-            rootEventIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        );
-
-      const rootEventMap = new Map(rootDetails.map((r) => [r.id, r.eventId]));
-
-      const eventIdsToFetch = [...rootEventMap.values()];
-      if (eventIdsToFetch.length === 0) {
-        throw new Error('포인트가 부족합니다. 부족액: ' + p.amount);
-      }
-
-      const events = await trx
-        .select({
-          id: schema.pointEvents.id,
-          expiresAt: schema.pointEvents.expiresAt,
-        })
-        .from(schema.pointEvents)
-        .where(
-          sql`${schema.pointEvents.id} IN (${sql.join(
-            eventIdsToFetch.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-        );
-
-      const eventExpiresMap = new Map(events.map((e) => [e.id, e.expiresAt]));
-
-      // 4) JavaScript에서 집계 (버킷별 합계 계산)
-      const bucketMap = new Map<
-        number,
-        { sum: number; expiresAt: Date | null }
-      >();
-
-      for (const detail of allDetails) {
-        const earnedId = detail.earnedEventDetailId;
-        if (!earnedId) continue;
-
-        const bucket = bucketMap.get(earnedId) || {
-          sum: 0,
-          expiresAt: null,
-        };
-        bucket.sum += detail.amount;
-
-        if (!bucket.expiresAt) {
-          const rootEventId = rootEventMap.get(earnedId);
-          if (rootEventId) {
-            bucket.expiresAt = eventExpiresMap.get(rootEventId) || null;
-          }
-        }
-
-        bucketMap.set(earnedId, bucket);
-      }
-
-      // 5) 양수 버킷만 필터링하고 만료일 순 정렬 (FIFO)
-      const buckets = Array.from(bucketMap.entries())
-        .filter(([_, b]) => b.sum > 0)
-        .map(([earnedId, b]) => ({
-          earned_event_detail_id: earnedId,
-          amount_sum: b.sum,
-          expires_at: b.expiresAt,
-        }))
-        .sort((a, b) => {
-          if (!a.expires_at && !b.expires_at) return 0;
-          if (!a.expires_at) return 1;
-          if (!b.expires_at) return -1;
-          return a.expires_at.getTime() - b.expires_at.getTime();
-        });
-
-      // 6) 차감 루프
+      // 3) 차감 루프
       for (const b of buckets) {
         if (remaining <= 0) break;
 
-        const slice = Math.min(b.amount_sum, remaining);
+        // b.amountSum은 string으로 올 수 있으므로 Number 변환 필요할 수 있음 (driver 의존)
+        const bucketAmount = Number(b.amountSum);
+        const slice = Math.min(bucketAmount, remaining);
 
         const [detail] = await trx
           .insert(schema.pointEventDetails)
@@ -327,7 +280,7 @@ export class PointRepository {
             partnerId: p.partnerId,
             eventType: 'REDEEM',
             amount: -slice,
-            earnedEventDetailId: b.earned_event_detail_id,
+            earnedEventDetailId: b.earnedEventDetailId,
             originalEventDetailId: null,
           })
           .returning({ id: schema.pointEventDetails.id });
@@ -359,6 +312,9 @@ export class PointRepository {
     tx?: DbTx,
   ): Promise<{ eventId: number; cancel: number }> {
     return await this.inTx(async (trx) => {
+      // 0) Lock
+      await this.lockPartner(trx, p.partnerId);
+
       // 1) 원본 EARN의 root detail 찾기
       const [root] = await trx
         .select({
