@@ -1,6 +1,6 @@
 /**
  * Streams Module - Public API
- * 
+ *
  * 모든 도메인 스트림 설정을 export
  */
 
@@ -17,7 +17,6 @@ export * from './order.stream';
 export * from './payment.stream';
 
 // Wallet Stream
-export * from './wallet.stream';
 
 // Channel Adapter Stream
 export * from './adapter.stream';

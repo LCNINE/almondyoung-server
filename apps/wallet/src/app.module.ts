@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 // import { validateWalletEnv } from './config/env.validation';
 import { AuthCoreModule } from '../../../libs/auth-core/src';
 import { PaymentController } from './controllers/payment.controller';
@@ -64,6 +65,8 @@ import { TaxInvoiceRepository } from './services/tax/tax-invoice.repository';
 import { OmsClientMock } from './services/tax/oms-client.mock';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.controller';
+import { OutboxService } from './services/outbox/outbox.service';
+import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -76,13 +79,19 @@ import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.contr
     ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
-        connectionString:
-          process.env.DATABASE_URL ||
-          'postgresql://neondb_owner:npg_UdDYLFvO5Tq2@ep-young-pine-a149ey1z-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+        connectionString: process.env.DATABASE_URL || '',
       },
       schema: { ...walletSchema },
     }),
-    EventsModule,
+    EventsModule.forRoot({
+      streams: [PAYMENT_STREAM],
+      serviceName: process.env.SERVICE_NAME || 'wallet',
+      enableDLQ: true,
+      validation: {
+        validateOnPublish: true,
+        throwOnValidationError: true,
+      },
+    }),
   ],
   controllers: [
     // === 신규 아키텍처 ===
@@ -106,6 +115,10 @@ import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.contr
     PointRepository,
 
     IdempotencyService,
+
+    // --- Outbox Pattern ---
+    OutboxService,
+    OutboxDispatcher,
 
     // --- Intent Implementation Layer ---
     IntentReader,
