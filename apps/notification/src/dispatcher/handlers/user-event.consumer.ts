@@ -1,3 +1,4 @@
+// apps/notification/src/dispatcher/handlers/user-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
