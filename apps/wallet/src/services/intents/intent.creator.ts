@@ -10,7 +10,8 @@ import type { WalletExecutor } from '../../shared/database';
 
 export interface CreateIntentParams {
   customerId: string;
-  amount: number;
+  originalAmount: number;
+  discountAmount: number;
   type: PaymentIntentType;
   expiresInMinutes?: number;
   metadata?: Record<string, any>;
@@ -32,17 +33,16 @@ export class IntentCreator {
     tx?: WalletExecutor,
   ): Promise<PaymentIntent> {
     // 1. 검증
-    if (params.amount <= 0) throw new Error('Invalid amount');
+    if (params.originalAmount <= 0) throw new Error('Invalid amount');
     if (!params.customerId) throw new Error('Customer ID required');
 
     // 2. Intent 데이터 생성
     const newIntent: NewPaymentIntent = {
       id: generateUUIDv7(),
       customerId: params.customerId,
-      amount: params.amount,
-      totalAmount: params.amount,
-      finalAmount: params.amount,
-      type: params.type,
+      discountAmount: params.discountAmount,
+      originalAmount: params.originalAmount,
+      finalAmount: params.originalAmount - params.discountAmount,
       status: 'PENDING',
       expiresAt: new Date(
         Date.now() + (params.expiresInMinutes || 30) * 60 * 1000,

@@ -123,6 +123,13 @@ export const pointActionEnum = pgEnum('point_action', [
 // 레거시 호환성용 (기존 코드에서 사용)
 export const pointTransactionTypeEnum = pointActionEnum;
 
+// Outbox Status (Transactional Outbox Pattern)
+export const outboxStatusEnum = pgEnum('outbox_status', [
+  'PENDING',
+  'PUBLISHED',
+  'FAILED',
+]);
+
 export const TaxInvoiceStatus = {
   PENDING: 'PENDING',
   ISSUED: 'ISSUED',
@@ -1143,27 +1150,21 @@ export const paymentIntents = pgTable(
   {
     id: varchar('id', { length: 36 }).primaryKey(),
     customerId: varchar('customer_id', { length: 64 }).notNull(),
-
+    merchantReferenceId: varchar('merchant_reference_id', { length: 128 }),
+    referenceType: varchar('reference_type', { length: 32 }).default('ORDER'),
     // 금액 필드 (포인트 통합 지원) - 모두 정수(원 단위)로 통일
-    amount: bigint('amount', { mode: 'number' }).notNull(), // 레거시 호환용 (totalAmount와 동일)
-    totalAmount: bigint('total_amount', { mode: 'number' }).notNull(), // 원래 금액
-    discounts: jsonb('discounts')
-      .default(sql`'[]'::jsonb`)
-      .$type<DiscountLine[]>(), // 할인 내역
-    discountsTotal: bigint('discounts_total', { mode: 'number' })
-      .notNull()
-      .default(0), // 할인 총액
+    discountAmount: bigint('discount_amount', { mode: 'number' }).notNull(),
+    originalAmount: bigint('original_amount', { mode: 'number' }).notNull(),
     finalAmount: bigint('final_amount', { mode: 'number' }).notNull(), // 실제 결제액 (totalAmount - discountsTotal)
 
     status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
-    type: paymentIntentTypeEnum('type').notNull().default('ORDER'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    metadata: jsonb('metadata'),
     refundedAmount: bigint('refunded_amount', { mode: 'number' })
       .notNull()
       .default(0),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),
     capturedAt: timestamp('captured_at', { withTimezone: true }),
+    metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1174,7 +1175,9 @@ export const paymentIntents = pgTable(
   (table) => [
     index('idx_payment_intents_customer_id').on(table.customerId),
     index('idx_payment_intents_status').on(table.status),
-    index('idx_payment_intents_type').on(table.type),
+    index('idx_payment_intents_merchant_reference_id').on(
+      table.merchantReferenceId,
+    ),
   ],
 );
 
@@ -1190,22 +1193,22 @@ export const paymentAttempts = pgTable(
       .references(() => paymentIntents.id, { onDelete: 'cascade' }),
     profileId: varchar('profile_id', { length: 36 }),
     provider: paymentProviderEnum('provider').notNull(),
+    transactionId: varchar('transaction_id', { length: 255 }),
+    approvalNumber: varchar('approval_number', { length: 255 }),
     amount: bigint('amount', { mode: 'number' }).notNull(),
     status: transactionStatusEnum('status').notNull(),
     actor: text('actor')
       .$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>()
       .notNull()
       .default('USER'),
-    requestMetadata: jsonb('request_metadata'),
-    providerResponseSnapshot: jsonb('provider_response_snapshot'),
+    request_payload: jsonb('request_payload'),
+    provider_raw_response: jsonb('provider_raw_response'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
-    transactionId: varchar('transaction_id', { length: 255 }),
-    approvalNumber: varchar('approval_number', { length: 255 }),
   },
   (table) => [
     index('idx_payment_attempts_intent_created').on(
@@ -1248,51 +1251,6 @@ export const paymentRefunds = pgTable(
   ],
 );
 
-/**
- * CheckoutSession 테이블 - 웹 리다이렉트 UX용 경량 컨테이너 (provider 없음)
- */
-export const checkoutSessions = pgTable(
-  'checkout_sessions',
-  {
-    id: varchar('id', { length: 36 }).primaryKey(), // cs_xxxxx
-    intentId: varchar('intent_id', { length: 36 })
-      .notNull()
-      .references(() => paymentIntents.id, { onDelete: 'cascade' }),
-    redirectUrl: text('redirect_url').notNull(), // 우리 호스트 결제 UI or 지갑 허브
-    returnUrl: text('return_url').notNull(), // 복귀 URL
-    cancelUrl: text('cancel_url').notNull(),
-    status: varchar('status', { length: 24 })
-      .$type<'PENDING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED'>()
-      .notNull()
-      .default('PENDING'),
-    // 세션이 생성된 컨텍스트(디바이스/언어 등) 정도만 메타로 보관
-    metadata: jsonb('metadata')
-      .$type<{
-        deviceInfo?: {
-          userAgent?: string;
-          platform?: string;
-          language?: string;
-        };
-        source?: string;
-        referrer?: string;
-        [key: string]: any; // 추가 필드 허용
-      }>()
-      .default(sql`'{}'::jsonb`)
-      .notNull(), // NOT NULL이지만 기본값이 있어서 문제없음
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    // 성능 최적화 인덱스
-    index('idx_checkout_sessions_intent_id').on(table.intentId),
-    index('idx_checkout_sessions_status').on(table.status),
-    index('idx_checkout_sessions_created_at').on(table.createdAt),
-    index('idx_checkout_sessions_expires_at').on(table.expiresAt),
-  ],
-);
-
 export const taxInvoicesRelations = relations(taxInvoices, ({ one, many }) => ({
   detail: one(taxInvoiceSnapshots, {
     fields: [taxInvoices.id],
@@ -1326,9 +1284,73 @@ export const cashReceiptEventsRelations = relations(
 // settlement_batch_item = BNPL Invoice Item
 // settlement_process_event = BNPL Collection Event
 
-// ===============================
+// ═══════════════════════════════════════════════
+// OUTBOX EVENTS (Transactional Outbox Pattern)
+// ═══════════════════════════════════════════════
+/**
+ * Outbox Events 테이블
+ *
+ * 목적: DB 트랜잭션과 이벤트 발행의 원자성 보장
+ * - DB 변경과 이벤트 저장을 동일 트랜잭션에서 처리
+ * - OutboxDispatcher가 주기적으로 폴링하여 Kafka로 발행
+ * - 이벤트 손실 방지 및 재시도 메커니즘
+ */
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
+
+    // 이벤트 메타데이터
+    eventType: varchar('event_type', { length: 128 }).notNull(),
+    aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
+    aggregateId: varchar('aggregate_id', { length: 128 }).notNull(),
+
+    // Kafka 파티셔닝
+    partitionKey: varchar('partition_key', { length: 128 }).notNull(),
+
+    // 이벤트 페이로드 (JSON)
+    payload: jsonb('payload').notNull().$type<Record<string, any>>(),
+
+    // 메타데이터 (선택적)
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+
+    // 발행 상태
+    status: outboxStatusEnum('status').notNull().default('PENDING'),
+
+    // 재시도 관리
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    errorMessage: text('error_message'),
+
+    // 발행 시각
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+
+    // 감사 필드
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // 미발행 이벤트 조회용 인덱스 (OutboxDispatcher 성능 최적화)
+    index('idx_outbox_status_next').on(table.status, table.nextAttemptAt),
+
+    // 중복 발행 방지용 인덱스
+    index('idx_outbox_aggregate').on(
+      table.aggregateType,
+      table.aggregateId,
+      table.eventType,
+    ),
+  ],
+);
+
+// ═══════════════════════════════════════════════
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
-// ===============================
+// ═══════════════════════════════════════════════
 // 주의: DbService의 타입 체크를 위해 walletSchema만 사용하세요
 // import * as schema를 사용하면 newMemberId 같은 함수도 포함되어 타입 에러 발생
 export const walletSchema = {
@@ -1336,7 +1358,6 @@ export const walletSchema = {
   paymentIntents,
   paymentAttempts,
   paymentRefunds,
-  checkoutSessions,
 
   // Payment Profiles
   paymentProfiles,
@@ -1362,6 +1383,9 @@ export const walletSchema = {
   taxInvoices,
   taxInvoiceSnapshots,
   taxInvoiceEvents,
+
+  // Outbox Pattern
+  outboxEvents,
 
   idempotencyKeys,
 } as const;

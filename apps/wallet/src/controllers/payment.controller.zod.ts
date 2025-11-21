@@ -19,7 +19,8 @@ const ErrorResponseSchema = z.object({
 // Intent 관련 스키마
 export const CreateIntentSchema = z.object({
   customerId: z.string().min(1, '고객 ID는 필수입니다.'),
-  amount: z.number().int().positive('금액은 양수여야 합니다.'),
+  originalAmount: z.number().int().positive('금액은 양수여야 합니다.'),
+  discountAmount: z.number().int().positive('할인 금액은 양수여야 합니다.'),
   type: z.enum(['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE'], {
     error: '유효하지 않은 결제 타입입니다.',
   }),
@@ -106,7 +107,10 @@ export const CreateHmsCardProfileSchema = z.object({
     .string()
     .min(10, '전화번호는 10-11자리여야 합니다')
     .max(11, '전화번호는 10-11자리여야 합니다')
-    .regex(/^01[0-9]{8,9}$/, '올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)'),
+    .regex(
+      /^01[0-9]{8,9}$/,
+      '올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)',
+    ),
   payerNumber: z
     .string()
     .max(10, '10자 이내로 입력해주세요')
