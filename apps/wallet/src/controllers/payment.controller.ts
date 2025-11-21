@@ -355,7 +355,7 @@ export class PaymentController {
         attemptId: result.attemptId,
         status: 'AUTHORIZED',
         provider: dto.provider,
-        amount: intent.amount,
+        amount: intent.finalAmount,
         paymentKey:
           dto.provider === 'TOSS' && dto.authParams
             ? dto.authParams.paymentKey

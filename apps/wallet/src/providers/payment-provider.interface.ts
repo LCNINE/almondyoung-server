@@ -34,7 +34,7 @@ export interface PaymentResult {
   // 포인트 통합 결제 관련
   pointEventId?: number | null; // 포인트 차감 이벤트 ID
   breakdown?: {
-    totalAmount: number; // 원래 금액
+    originalAmount: number; // 원래 금액
     pointsUsed: number; // 사용한 포인트
     finalAmount: number; // 실제 결제 금액
   };

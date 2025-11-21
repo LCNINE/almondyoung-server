@@ -53,7 +53,7 @@ export class PaymentProviderManager {
     );
 
     // 1. 정책 검증
-    this.validatePolicy(providerType, intent.type);
+    this.validatePolicy(providerType, intent.referenceType as string);
 
     // 2. BNPL 특별 처리
     if (providerType === 'HMS_BNPL') {

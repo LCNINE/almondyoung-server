@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TaxInvoiceRepository } from './tax-invoice.repository';
 import { generateUUIDv7 } from '../../shared/utils/id-generator';
+import { OutboxService } from '../outbox/outbox.service';
 import type {
   TaxInvoice,
   UpdateTaxInvoice,
@@ -20,18 +21,18 @@ export class TaxInvoiceManager {
   private readonly logger = new Logger(TaxInvoiceManager.name);
 
   // 상태 전이 매트릭스
-  private readonly TRANSITIONS: Record<TaxInvoiceStatus, TaxInvoiceStatus[]> =
-    {
-      REQUESTED: ['EXPORTED', 'CANCELLED'],
-      EXPORTED: ['ISSUED_CONFIRMED', 'FAILED'],
-      ISSUED_CONFIRMED: ['NEEDS_MODIFICATION'],
-      FAILED: ['REQUESTED'],
-      CANCELLED: ['REQUESTED'],
-      NEEDS_MODIFICATION: ['EXPORTED'],
-    };
+  private readonly TRANSITIONS: Record<TaxInvoiceStatus, TaxInvoiceStatus[]> = {
+    REQUESTED: ['EXPORTED', 'CANCELLED'],
+    EXPORTED: ['ISSUED_CONFIRMED', 'FAILED'],
+    ISSUED_CONFIRMED: ['NEEDS_MODIFICATION'],
+    FAILED: ['REQUESTED'],
+    CANCELLED: ['REQUESTED'],
+    NEEDS_MODIFICATION: ['EXPORTED'],
+  };
 
   constructor(
     private readonly repo: TaxInvoiceRepository,
+    private readonly outboxService: OutboxService,
   ) {}
 
   /**
@@ -104,10 +105,7 @@ export class TaxInvoiceManager {
     this.validateTransition(invoice.status, 'ISSUED_CONFIRMED');
 
     // 2. 홈택스 번호 중복 체크
-    const existing = await this.repo.findByHometaxIssueNo(
-      hometaxIssueNo,
-      tx,
-    );
+    const existing = await this.repo.findByHometaxIssueNo(hometaxIssueNo, tx);
     if (existing && existing.id !== invoice.id) {
       throw new Error('중복된 홈택스 발행번호');
     }
@@ -176,7 +174,9 @@ export class TaxInvoiceManager {
       tx,
     );
 
-    this.logger.warn(`TaxInvoice ${invoice.id} marked as FAILED: ${failReason}`);
+    this.logger.warn(
+      `TaxInvoice ${invoice.id} marked as FAILED: ${failReason}`,
+    );
   }
 
   /**
@@ -287,7 +287,12 @@ export class TaxInvoiceManager {
   ): Promise<void> {
     if (invoice.status === 'REQUESTED') {
       // 발행 전 취소 -> CANCELLED
-      await this.cancel(invoice, `주문 취소 (OMS Event: ${eventId})`, 'SYSTEM', tx as WalletExecutor);
+      await this.cancel(
+        invoice,
+        `주문 취소 (OMS Event: ${eventId})`,
+        'SYSTEM',
+        tx as WalletExecutor,
+      );
     } else if (invoice.status === 'ISSUED_CONFIRMED') {
       // 발행 후 취소 -> NEEDS_MODIFICATION
       await this.markAsNeedsModification(
@@ -429,4 +434,3 @@ export class TaxInvoiceManager {
     await this.repo.createEvent(eventData, tx);
   }
 }
-

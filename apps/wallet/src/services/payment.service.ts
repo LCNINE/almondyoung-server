@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { walletSchema } from '../shared/database/schema';
+import { OutboxService } from './outbox/outbox.service';
 import {
   PaymentResult,
   RefundResult,
@@ -39,6 +40,7 @@ export class PaymentService {
     private readonly pointManager: PaymentPointManager,
     private readonly providerManager: PaymentProviderManager,
     private readonly attemptRepo: PaymentAttemptRepository,
+    private readonly outboxService: OutboxService,
   ) {}
 
   /**
@@ -135,10 +137,39 @@ export class PaymentService {
         result.attemptId = attemptId;
         result.pointEventId = pointResult.pointEventId;
         result.breakdown = {
-          totalAmount: Number(intent.amount),
+          originalAmount: Number(intent.originalAmount),
           pointsUsed: pointResult.pointsUsed,
           finalAmount: pointResult.finalAmount,
         };
+
+        // 10. Outbox에 이벤트 저장 - PaymentAuthorized
+        const intentMetadata = intent.metadata as any;
+        await this.outboxService.enqueue(
+          {
+            eventType: 'PaymentAuthorized',
+            aggregateType: 'Payment',
+            aggregateId: intent.id,
+            partitionKey: intent.customerId,
+            payload: {
+              intentId: intent.id,
+              paymentId: attemptId,
+              customerId: intent.customerId,
+              amount: pointResult.finalAmount,
+              currency: 'KRW',
+              providerType: providerType,
+              providerTransactionId: result.transactionId,
+              orderId: intentMetadata?.orderId,
+              metadata: {
+                pointsUsed: pointResult.pointsUsed,
+                originalAmount: Number(intent.originalAmount),
+                source: options.source || 'api',
+                actor: options.actor || 'SYSTEM',
+              },
+              authorizedAt: new Date().toISOString(),
+            },
+          },
+          tx,
+        );
 
         this.logger.log(
           `Authorization successful for Intent: ${intent.id}, Success: ${result.success}`,
@@ -182,6 +213,31 @@ export class PaymentService {
           },
           failedResult,
           'FAILED',
+          tx,
+        );
+
+        // Outbox에 이벤트 저장 - PaymentFailed
+        const intentMetadata = intent.metadata as any;
+        await this.outboxService.enqueue(
+          {
+            eventType: 'PaymentFailed',
+            aggregateType: 'Payment',
+            aggregateId: intent.id,
+            partitionKey: intent.customerId,
+            payload: {
+              intentId: intent.id,
+              paymentId: attemptId,
+              customerId: intent.customerId,
+              amount: pointResult.finalAmount,
+              currency: 'KRW',
+              providerType: providerType,
+              errorCode: error.code || 'UNKNOWN_ERROR',
+              errorMessage: error.message || 'Payment authorization failed',
+              orderId: intentMetadata?.orderId,
+              isRetryable: error.retryable !== false,
+              failedAt: new Date().toISOString(),
+            },
+          },
           tx,
         );
 
@@ -235,6 +291,34 @@ export class PaymentService {
           tx,
         );
 
+        // 4. Outbox에 이벤트 저장 - PaymentCaptured
+        const intent = await this.paymentReader.findIntent(intentId);
+        const intentMetadata = intent.metadata as any;
+        await this.outboxService.enqueue(
+          {
+            eventType: 'PaymentCaptured',
+            aggregateType: 'Payment',
+            aggregateId: intentId,
+            partitionKey: intent.customerId,
+            payload: {
+              intentId: intentId,
+              paymentId: attemptId,
+              customerId: intent.customerId,
+              amount: captureAmount,
+              currency: 'KRW',
+              providerType: attempt.provider,
+              providerTransactionId: result.transactionId,
+              orderId: intentMetadata?.orderId,
+              metadata: {
+                source: options.source || 'api',
+                actor: options.actor || 'SYSTEM',
+              },
+              capturedAt: new Date().toISOString(),
+            },
+          },
+          tx,
+        );
+
         this.logger.log(
           `Capture successful for Intent: ${intentId}, Attempt: ${attemptId}`,
         );
@@ -256,6 +340,32 @@ export class PaymentService {
           attemptId,
           'CAPTURE_FAILED',
           failedResult,
+          tx,
+        );
+
+        // Outbox에 이벤트 저장 - PaymentFailed (Capture 단계)
+        const intent = await this.paymentReader.findIntent(intentId);
+        const intentMetadata = intent.metadata as any;
+        await this.outboxService.enqueue(
+          {
+            eventType: 'PaymentFailed',
+            aggregateType: 'Payment',
+            aggregateId: intentId,
+            partitionKey: intent.customerId,
+            payload: {
+              intentId: intentId,
+              paymentId: attemptId,
+              customerId: intent.customerId,
+              amount: captureAmount,
+              currency: 'KRW',
+              providerType: attempt.provider,
+              errorCode: error.code || 'CAPTURE_FAILED',
+              errorMessage: error.message || 'Payment capture failed',
+              orderId: intentMetadata?.orderId,
+              isRetryable: false,
+              failedAt: new Date().toISOString(),
+            },
+          },
           tx,
         );
 
@@ -313,5 +423,86 @@ export class PaymentService {
    */
   getAllowedProviders(paymentType: PaymentType): ProviderType[] {
     return PaymentPolicy.getAllowedProviders(paymentType);
+  }
+
+  /**
+   * Phase 2 - 결제 취소 (Intent 기반)
+   *
+   * 결제가 완료되기 전(PENDING, AUTHORIZED)에 취소
+   * CAPTURED 상태는 refundPayment 사용
+   */
+  async cancelPaymentByIntent(
+    intentId: string,
+    cancelReason: string = 'CUSTOMER_REQUEST',
+    cancelledBy?: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    this.logger.log(`결제 취소 시작: intentId=${intentId}`);
+
+    return this.db.db.transaction(async (tx) => {
+      // 1. Intent 조회
+      const intent = await this.paymentReader.findIntent(intentId);
+
+      // 2. 취소 가능 상태 체크
+      if (!['PENDING', 'AUTHORIZED'].includes(intent.status)) {
+        throw new Error(
+          `Cannot cancel payment in ${intent.status} status. Use refund instead.`,
+        );
+      }
+
+      // 3. 활성 Attempt 취소 (반환값은 취소된 Attempt ID 목록)
+      const cancelledIds = await this.paymentManager.cancelActiveAttempts(
+        intentId,
+        tx,
+      );
+
+      // 4. Intent 상태 업데이트
+      await this.paymentManager.updateStatus(
+        intentId,
+        null,
+        'CANCELLED',
+        { reason: cancelReason },
+        tx,
+      );
+
+      // 5. 포인트 복원은 이미 cancelActiveAttempts에서 처리됨
+      // (PaymentManager.cancelActiveAttempts가 내부적으로 처리)
+
+      // 6. Outbox에 이벤트 저장 - PaymentCancelled
+      const metadata = intent.metadata as any;
+      const paymentId = cancelledIds.length > 0 ? cancelledIds[0] : '';
+
+      await this.outboxService.enqueue(
+        {
+          eventType: 'PaymentCancelled',
+          aggregateType: 'Payment',
+          aggregateId: intentId,
+          partitionKey: intent.customerId,
+          payload: {
+            intentId: intentId,
+            paymentId: paymentId,
+            customerId: intent.customerId,
+            amount: intent.finalAmount,
+            currency: 'KRW',
+            reason: cancelReason,
+            cancelledBy: cancelledBy,
+            orderId: metadata?.orderId,
+            cancelledAt: new Date().toISOString(),
+          },
+        },
+        tx,
+      );
+
+      this.logger.log(
+        `PaymentCancelled 이벤트 발행 완료: intentId=${intentId}`,
+      );
+
+      return {
+        success: true,
+        message: `Payment cancelled successfully`,
+      };
+    });
   }
 }
