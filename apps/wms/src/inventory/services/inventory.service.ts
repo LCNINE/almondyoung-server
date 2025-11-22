@@ -48,7 +48,7 @@ export class InventoryService implements OnModuleInit {
 
   async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.inTx(async (trx) => {
-      const { supplierIds, categoryIds, source, skuGroupId, ...skuData } = createSkuDto;
+      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = createSkuDto;
 
       const [newSku] = await trx.insert(wmsTables.skus).values({
         ...skuData,
@@ -74,13 +74,24 @@ export class InventoryService implements OnModuleInit {
         );
       }
 
+      if (imageUploadIds && imageUploadIds.length > 0) {
+        const imageRecords = imageUploadIds.map((uploadId, index) => ({
+          skuId: newSku.id,
+          uploadId,
+          isPrimary: index === 0,
+          sortOrder: index,
+        }));
+
+        await trx.insert(wmsTables.skuImages).values(imageRecords);
+      }
+
       return this.getSkuById(newSku.id, trx);
     }, tx);
   }
 
   async updateSku(skuId: string, updateSkuDto: UpdateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.inTx(async (trx) => {
-      const { supplierIds, categoryIds, skuGroupId, ...updateData } = updateSkuDto;
+      const { supplierIds, categoryIds, skuGroupId, imageUploadIds, ...updateData } = updateSkuDto;
 
       const skuUpdatePayload = {
         ...updateData,
@@ -118,6 +129,22 @@ export class InventoryService implements OnModuleInit {
               categoryId,
             }))
           );
+        }
+      }
+
+      if (imageUploadIds !== undefined) {
+        await trx.delete(wmsTables.skuImages)
+          .where(eq(wmsTables.skuImages.skuId, skuId));
+
+        if (imageUploadIds.length > 0) {
+          const imageRecords = imageUploadIds.map((uploadId, index) => ({
+            skuId,
+            uploadId,
+            isPrimary: index === 0,
+            sortOrder: index,
+          }));
+
+          await trx.insert(wmsTables.skuImages).values(imageRecords);
         }
       }
 
@@ -257,6 +284,13 @@ export class InventoryService implements OnModuleInit {
       .where(eq(wmsTables.skuCategories.skuId, skuId))
       , tx);
 
+    const images = await this.inTx(async (trx) => trx
+      .select()
+      .from(wmsTables.skuImages)
+      .where(eq(wmsTables.skuImages.skuId, skuId))
+      .orderBy(wmsTables.skuImages.sortOrder)
+      , tx);
+
     // 타입 안전성과 type inference를 유지하기 위해 객체 spread와 nullish coalescing 사용
     const sku = {
       ...result.sku,
@@ -276,6 +310,14 @@ export class InventoryService implements OnModuleInit {
       })),
       suppliers: suppliers,
       categoryNames: categories.map(c => c.name),
+      images: images.map(img => ({
+        id: img.id,
+        uploadId: img.uploadId,
+        url: '', // TODO: Fetch from File Service
+        isPrimary: img.isPrimary ?? false,
+        sortOrder: img.sortOrder ?? 0,
+        createdAt: img.createdAt,
+      })),
     };
   }
 
