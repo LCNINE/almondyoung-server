@@ -6,7 +6,6 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { PimModule } from './pim.module';
-import { join } from 'path';
 import fastifyMultipart from '@fastify/multipart';
 
 async function bootstrap() {
@@ -14,12 +13,6 @@ async function bootstrap() {
     PimModule,
     new FastifyAdapter(),
   );
-
-  // 정적 파일 서빙 설정 (이미지 파일 접근용)
-  app.useStaticAssets({
-    root: join(process.cwd(), 'images'),
-    prefix: '/images/',
-  });
 
   // Fastify multipart 지원
   await app.register(fastifyMultipart, {
