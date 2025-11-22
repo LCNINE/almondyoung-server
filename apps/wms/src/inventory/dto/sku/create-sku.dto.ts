@@ -1,5 +1,6 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsNumber, IsEnum, IsArray, MaxLength, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export enum SkuCreationSource {
   AUTO_MATCHING = 'auto_matching',
@@ -168,10 +169,20 @@ export class CreateSkuDto {
   memo3?: string;
 
   // 이미지 관리
-  @ApiProperty({ description: '메인 이미지 URL', required: false })
+  @ApiProperty({ description: '메인 이미지 URL', required: false, deprecated: true })
   @IsString()
   @IsOptional()
   mainImageUrl?: string;
+
+  @ApiProperty({
+    description: 'File Service upload IDs for images',
+    type: [String],
+    required: false
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  imageUploadIds?: string[];
 
   @ApiProperty({ description: '현재 재고 (계산/캐시)', required: false, default: 0 })
   @IsNumber()
