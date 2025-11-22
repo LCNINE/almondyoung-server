@@ -6,6 +6,9 @@ export const fileServiceEnvSchema = z
     DATABASE_URL: z.url(),
     PORT: z.string().regex(/^\d+$/),
 
+    // Authentication
+    AUTH_SECRET: z.string().min(1),
+
     // Kafka Configuration
     KAFKA_CLIENT_ID_PREFIX: z.string(),
     KAFKA_BROKERS: z.string(),
@@ -46,10 +49,9 @@ export function validateFileServiceEnv(config: Record<string, unknown>) {
 
   if (!parsed.success) {
     console.error('❌ [File Service] Invalid environment variables:');
-    // @deprecated — Use the z.treeifyError(err) function instead.
-    const errors = z.treeifyError(parsed.error);
-    Object.entries(errors.properties ?? {}).forEach(([key, value]) => {
-      console.error(`  - ${key}: ${value?.errors?.join(', ')}`);
+    const errors = parsed.error.flatten().fieldErrors;
+    Object.entries(errors).forEach(([key, messages]) => {
+      console.error(`  - ${key}: ${messages?.join(', ')}`);
     });
     throw new Error('[File Service] Invalid environment variables');
   }

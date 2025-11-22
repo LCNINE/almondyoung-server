@@ -31,7 +31,10 @@ export class S3StorageProvider
   constructor(private readonly configService: ConfigService) { }
 
   onModuleInit() {
-    this.initializeS3Client();
+    const storageProvider = this.configService.get<string>('STORAGE_PROVIDER', 'S3');
+    if (storageProvider === 'S3') {
+      this.initializeS3Client();
+    }
   }
 
   private initializeS3Client(): void {
