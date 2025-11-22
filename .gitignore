@@ -106,8 +106,8 @@ template-data.json
 final-summary.md
 
 # Drizzle ORM migration files
-apps/*/database/drizzle/
-**/drizzle/
+apps/*/database/drizzle/*.sql
+**/drizzle/*.sql
 **/meta/
 **/*.sql
 
