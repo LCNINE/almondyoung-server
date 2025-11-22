@@ -1,21 +1,25 @@
 import { Controller, Get, Param, Query, ParseUUIDPipe, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { RequireScopes } from '@app/authorization';
 import { DownloadService } from './download.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
 
 @ApiTags('Download')
+@ApiBearerAuth()
+@ApiSecurity('cookie')
 @Controller('api/v1/files')
 export class DownloadController {
-  constructor(private readonly downloadService: DownloadService) {}
+  constructor(private readonly downloadService: DownloadService) { }
 
   @Get(':fileId/download')
+  @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get signed URL for file download' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
-  @ApiQuery({ 
-    name: 'expiresIn', 
-    description: 'Expiration time in seconds', 
-    required: false, 
+  @ApiQuery({
+    name: 'expiresIn',
+    description: 'Expiration time in seconds',
+    required: false,
     type: 'number',
     example: 3600,
   })
@@ -30,6 +34,7 @@ export class DownloadController {
   }
 
   @Get(':fileId/metadata')
+  @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get file metadata' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiResponse({ status: 200, description: 'File metadata', type: FileMetadataResponseDto })

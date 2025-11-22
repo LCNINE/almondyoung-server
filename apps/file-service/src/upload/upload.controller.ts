@@ -8,12 +8,21 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
+import { User } from '@app/auth-core';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 
+interface JwtPayload {
+  userId: string;
+  email: string;
+  roles: string[];
+}
+
 @ApiTags('Upload')
+@ApiBearerAuth()
+@ApiSecurity('cookie')
 @Controller('api/v1/files')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) { }
@@ -47,14 +56,13 @@ export class UploadController {
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadFileDto,
+    @User() user: JwtPayload,
   ): Promise<UploadResponseDto> {
-    const userId = 'temp-user-id';
-
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    return this.uploadService.uploadFile(file, dto, userId);
+    return this.uploadService.uploadFile(file, dto, user.userId);
   }
 
   @Post('batch-upload')
@@ -89,13 +97,12 @@ export class UploadController {
   async batchUploadFiles(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() dto: UploadFileDto,
+    @User() user: JwtPayload,
   ): Promise<BatchUploadResponseDto> {
-    const userId = 'temp-user-id';
-
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
-    return this.uploadService.batchUploadFiles(files, dto, userId);
+    return this.uploadService.batchUploadFiles(files, dto, user.userId);
   }
 }
