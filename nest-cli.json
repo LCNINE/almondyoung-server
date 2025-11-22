@@ -47,6 +47,15 @@
         "tsConfigPath": "apps/events-test/tsconfig.json"
       }
     },
+    "file-service": {
+      "type": "application",
+      "root": "apps/file-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/file-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/file-service/tsconfig.app.json"
+      }
+    },
     "membership": {
       "type": "application",
       "root": "apps/membership",

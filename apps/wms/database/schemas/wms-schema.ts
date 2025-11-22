@@ -397,7 +397,7 @@ export const skus = pgTable('skus', {
   memo3: text('memo3'),
 
   // 이미지 관리
-  mainImageUrl: varchar('main_image_url', { length: 512 }),
+  mainImageUrl: varchar('main_image_url', { length: 512 }), // @deprecated - Use skuImages table
   currentStock: integer('current_stock').default(0), // Calculated/cached
 
   // 유효기간 및 날짜 관리
@@ -453,6 +453,25 @@ export const skuBarcodes = pgTable('sku_barcodes', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const skuImages = pgTable('sku_images', {
+  id: uuid('id').primaryKey().defaultRandom(),
+
+  skuId: uuid('sku_id')
+    .notNull()
+    .references(() => skus.id, { onDelete: 'cascade' }),
+
+  uploadId: uuid('upload_id').notNull(),
+
+  isPrimary: boolean('is_primary').default(true),
+  sortOrder: integer('sort_order').default(0),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+  idxSkuImagesSkuId: index('idx_sku_images_sku_id').on(t.skuId),
+  idxSkuImagesPrimary: index('idx_sku_images_primary').on(t.skuId, t.isPrimary),
+  idxSkuImagesSort: index('idx_sku_images_sort').on(t.skuId, t.sortOrder),
+}));
 
 export const categories = pgTable('categories', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1678,6 +1697,7 @@ export const wmsTables = {
   skus,
   skuSuppliers,
   skuBarcodes,
+  skuImages,
   categories,
   skuCategories,
   skuVariantPricing,
@@ -1803,6 +1823,7 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   skuSuppliers: many(skuSuppliers),
   skuCategories: many(skuCategories),
   skuBarcodes: many(skuBarcodes),
+  images: many(skuImages),
   // Phase 2 Step 4: New relations
   pricing: one(skuVariantPricing, {
     fields: [skus.id],
@@ -1881,6 +1902,13 @@ export const skuCategoriesRelations = relations(skuCategories, ({ one }) => ({
 export const skuBarcodesRelations = relations(skuBarcodes, ({ one }) => ({
   sku: one(skus, {
     fields: [skuBarcodes.skuId],
+    references: [skus.id],
+  }),
+}));
+
+export const skuImagesRelations = relations(skuImages, ({ one }) => ({
+  sku: one(skus, {
+    fields: [skuImages.skuId],
     references: [skus.id],
   }),
 }));
@@ -2496,6 +2524,7 @@ export const wmsRelations = {
   skuSuppliersRelations,
   skuCategoriesRelations,
   skuBarcodesRelations,
+  skuImagesRelations,
 
   // Warehouse & Location Relations
   warehousesRelations,
@@ -2606,6 +2635,9 @@ export type NewSkuSupplier = InferInsertModel<typeof skuSuppliers>;
 
 export type SkuBarcode = InferSelectModel<typeof skuBarcodes>;
 export type NewSkuBarcode = InferInsertModel<typeof skuBarcodes>;
+
+export type SkuImage = InferSelectModel<typeof skuImages>;
+export type NewSkuImage = InferInsertModel<typeof skuImages>;
 
 export type Category = InferSelectModel<typeof categories>;
 export type NewCategory = InferInsertModel<typeof categories>;
