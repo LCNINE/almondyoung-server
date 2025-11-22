@@ -22,14 +22,13 @@ import {
 
 @Injectable()
 export class S3StorageProvider
-  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort
-{
+  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(S3StorageProvider.name);
   private s3Client: S3Client;
   private bucketName: string;
   private region: string;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) { }
 
   onModuleInit() {
     this.initializeS3Client();
@@ -108,13 +107,13 @@ export class S3StorageProvider
       const command =
         request.operation === 'put'
           ? new PutObjectCommand({
-              Bucket: this.bucketName,
-              Key: request.key,
-            })
+            Bucket: this.bucketName,
+            Key: request.key,
+          })
           : new GetObjectCommand({
-              Bucket: this.bucketName,
-              Key: request.key,
-            });
+            Bucket: this.bucketName,
+            Key: request.key,
+          });
 
       const signedUrl = await getSignedUrl(this.s3Client, command, {
         expiresIn: request.expiresIn,
