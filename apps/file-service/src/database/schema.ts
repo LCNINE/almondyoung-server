@@ -1,0 +1,82 @@
+import { pgTable, uuid, varchar, text, integer, boolean, timestamp, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
+import { v7 as uuidv7 } from 'uuid';
+
+export const uploads = pgTable(
+  'uploads',
+  {
+    id: uuid('id').primaryKey().$defaultFn(() => uuidv7()),
+    
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    originalName: varchar('original_name', { length: 255 }).notNull(),
+    mimeType: varchar('mime_type', { length: 100 }).notNull(),
+    size: integer('size').notNull(),
+    
+    filePath: text('file_path').notNull(),
+    url: text('url').notNull(),
+    storageProvider: varchar('storage_provider', { length: 20 }).default('s3').notNull(),
+    
+    status: varchar('status', { length: 20 }).default('pending').notNull(),
+    
+    context: varchar('context', { length: 50 }),
+    
+    relatedType: varchar('related_type', { length: 50 }),
+    relatedId: uuid('related_id'),
+    
+    metadata: jsonb('metadata').$type<{
+      width?: number;
+      height?: number;
+      duration?: number;
+      pages?: number;
+      [key: string]: any;
+    }>(),
+    
+    uploadedBy: uuid('uploaded_by').notNull(),
+    isPublic: boolean('is_public').default(false),
+    
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at'),
+    activatedAt: timestamp('activated_at'),
+  },
+  (table) => [
+    index('idx_uploads_status').on(table.status),
+    index('idx_uploads_context').on(table.context),
+    index('idx_uploads_related').on(table.relatedType, table.relatedId),
+    index('idx_uploads_uploaded_by').on(table.uploadedBy),
+    index('idx_uploads_created_at').on(table.createdAt),
+  ],
+);
+
+export const fileReferences = pgTable(
+  'file_references',
+  {
+    id: uuid('id').primaryKey().$defaultFn(() => uuidv7()),
+    uploadId: uuid('upload_id')
+      .notNull()
+      .references(() => uploads.id, { onDelete: 'cascade' }),
+    
+    serviceType: varchar('service_type', { length: 50 }).notNull(),
+    entityType: varchar('entity_type', { length: 50 }).notNull(),
+    entityId: uuid('entity_id').notNull(),
+    
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_file_refs_upload').on(table.uploadId),
+    index('idx_file_refs_entity').on(table.serviceType, table.entityType, table.entityId),
+    uniqueIndex('unique_file_reference').on(
+      table.uploadId,
+      table.serviceType,
+      table.entityType,
+      table.entityId,
+    ),
+  ],
+);
+
+export const fileServiceSchema = {
+  uploads,
+  fileReferences,
+};
+
+export type FileServiceSchema = typeof fileServiceSchema;
+

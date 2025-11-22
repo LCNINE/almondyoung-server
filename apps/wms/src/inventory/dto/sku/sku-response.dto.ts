@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { SkuGroupDto, SkuGroupResponseDto } from '../sku-groups/sku-group-response.dto';
+import { SkuImageDto } from './sku-image.dto';
 
 export class SupplierInfoDto {
   @ApiProperty({ description: 'Supplier ID' })
@@ -137,8 +138,15 @@ export class SkuResponseDto {
   memo3?: string | null;
 
   // 이미지 관리
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, deprecated: true })
   mainImageUrl?: string | null;
+
+  @ApiProperty({
+    description: 'SKU images',
+    type: [SkuImageDto],
+    required: false
+  })
+  images?: SkuImageDto[];
 
   @ApiProperty({ required: false, default: 0 })
   currentStock?: number | null;
