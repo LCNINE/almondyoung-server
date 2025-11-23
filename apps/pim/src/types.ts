@@ -24,6 +24,8 @@ import {
   productAuditLog,
   tagGroups,
   tagValues,
+  categoryTagGroups,
+  productTagValues,
   type PimSchema,
 } from './schema';
 
@@ -372,6 +374,14 @@ export type NewTagValue = InferInsertModel<typeof tagValues>;
 export type UpdateTagValue = Partial<
   Omit<NewTagValue, 'id' | 'createdAt' | 'updatedAt'>
 >;
+
+// ===== CATEGORY TAG GROUPS 타입 =====
+export type CategoryTagGroup = InferSelectModel<typeof categoryTagGroups>;
+export type NewCategoryTagGroup = InferInsertModel<typeof categoryTagGroups>;
+
+// ===== PRODUCT TAG VALUES 타입 =====
+export type ProductTagValue = InferSelectModel<typeof productTagValues>;
+export type NewProductTagValue = InferInsertModel<typeof productTagValues>;
 
 // ===== VERSION MANAGEMENT DTO =====
 
