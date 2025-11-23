@@ -847,8 +847,8 @@ export const banners = pgTable(
       .references(() => bannerGroups.id, { onDelete: 'cascade' }),
     title: varchar('title', { length: 255 }).notNull(),
     description: text('description'),
-    pcImageUrl: text('pc_image_url').notNull(),
-    mobileImageUrl: text('mobile_image_url').notNull(),
+    pcImageFileId: uuid('pc_image_file_id').notNull(),
+    mobileImageFileId: uuid('mobile_image_file_id').notNull(),
     linkUrl: text('link_url'),
     linkedProductMasterIds: jsonb('linked_product_master_ids')
       .$type<string[]>()

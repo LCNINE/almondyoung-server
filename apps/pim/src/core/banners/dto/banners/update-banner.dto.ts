@@ -13,15 +13,15 @@ export class UpdateBannerDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'PC 이미지 URL', required: false })
+  @ApiProperty({ description: 'PC 이미지 파일 ID (file-service)', required: false })
   @IsOptional()
   @IsString()
-  pcImageUrl?: string;
+  pcImageFileId?: string;
 
-  @ApiProperty({ description: '모바일 이미지 URL', required: false })
+  @ApiProperty({ description: '모바일 이미지 파일 ID (file-service)', required: false })
   @IsOptional()
   @IsString()
-  mobileImageUrl?: string;
+  mobileImageFileId?: string;
 
   @ApiProperty({ description: '클릭 시 이동할 URL', required: false })
   @IsOptional()

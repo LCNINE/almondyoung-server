@@ -53,35 +53,6 @@ export class ProductMastersService {
     private readonly productVersionsService: ProductVersionsService,
   ) { }
 
-  private async _linkImages(
-    versionId: string,
-    data: CreateMasterDto,
-    tx: DbTransaction,
-  ): Promise<void> {
-    // 썸네일 URL 직접 사용 (외부 URL 그대로)
-    if ((data as any).thumbnailUrl) {
-      await tx
-        .update(productMasterVersions)
-        .set({ thumbnail: (data as any).thumbnailUrl })
-        .where(eq(productMasterVersions.id, versionId));
-    }
-    // 기존 업로드 방식도 지원 (하위 호환성)
-    else if ((data as any).thumbnailUploadId) {
-      const uploadResult = await tx
-        .select({ url: uploads.url })
-        .from(uploads)
-        .where(eq(uploads.id, (data as any).thumbnailUploadId))
-        .limit(1);
-
-      if (uploadResult.length > 0) {
-        await tx
-          .update(productMasterVersions)
-          .set({ thumbnail: uploadResult[0].url })
-          .where(eq(productMasterVersions.id, versionId));
-      }
-    }
-  }
-
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
   }
@@ -172,7 +143,7 @@ export class ProductMastersService {
       name: data.name || '새 상품',
       description: data.description ?? null,
       brand: data.brand ?? null,
-      thumbnail: data.thumbnail ?? null,
+      thumbnail: (data as any).thumbnailFileId ?? null,
       descriptionHtml: data.description ?? null,
       tags: data.tags ?? [],
       images: data.images ?? null,
@@ -868,11 +839,18 @@ export class ProductMastersService {
         ...masterUpdateData
       } = data;
 
+      // Map thumbnailFileId to thumbnail for schema compatibility
+      const updateData: any = { ...masterUpdateData };
+      if ((data as any).thumbnailFileId !== undefined) {
+        updateData.thumbnail = (data as any).thumbnailFileId;
+        delete updateData.thumbnailFileId;
+      }
+
       // Update version basic info with type safety
       const [updated] = await txClient
         .update(productMasterVersions)
         .set({
-          ...(masterUpdateData as any),
+          ...updateData,
           updatedAt: new Date()
         })
         .where(eq(productMasterVersions.id, masterId))
