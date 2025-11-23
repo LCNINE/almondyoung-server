@@ -27,6 +27,8 @@ import {
   tagValues,
   categoryTagGroups,
   productTagValues,
+  bannerGroups,
+  banners,
   type PimSchema,
 } from './schema';
 
@@ -397,6 +399,20 @@ export type NewCategoryTagGroup = InferInsertModel<typeof categoryTagGroups>;
 // ===== PRODUCT TAG VALUES 타입 =====
 export type ProductTagValue = InferSelectModel<typeof productTagValues>;
 export type NewProductTagValue = InferInsertModel<typeof productTagValues>;
+
+// ===== BANNER GROUPS 타입 =====
+export type BannerGroup = InferSelectModel<typeof bannerGroups>;
+export type NewBannerGroup = InferInsertModel<typeof bannerGroups>;
+export type UpdateBannerGroup = Partial<
+  Omit<NewBannerGroup, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== BANNERS 타입 =====
+export type Banner = InferSelectModel<typeof banners>;
+export type NewBanner = InferInsertModel<typeof banners>;
+export type UpdateBanner = Partial<
+  Omit<NewBanner, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== VERSION MANAGEMENT DTO =====
 
