@@ -22,6 +22,8 @@ import {
   productImages,
   productApprovalHistory,
   productAuditLog,
+  tagGroups,
+  tagValues,
   type PimSchema,
 } from './schema';
 
@@ -356,6 +358,20 @@ export interface VariantPriceSet {
   membershipPrice: number;
   tieredPrices: TieredPriceInfo[];
 }
+
+// ===== TAG GROUPS 타입 =====
+export type TagGroup = InferSelectModel<typeof tagGroups>;
+export type NewTagGroup = InferInsertModel<typeof tagGroups>;
+export type UpdateTagGroup = Partial<
+  Omit<NewTagGroup, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== TAG VALUES 타입 =====
+export type TagValue = InferSelectModel<typeof tagValues>;
+export type NewTagValue = InferInsertModel<typeof tagValues>;
+export type UpdateTagValue = Partial<
+  Omit<NewTagValue, 'id' | 'createdAt' | 'updatedAt'>
+>;
 
 // ===== VERSION MANAGEMENT DTO =====
 
