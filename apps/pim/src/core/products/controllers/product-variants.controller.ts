@@ -32,7 +32,7 @@ import {
 export class ProductVariantsController {
   constructor(
     private readonly productVariantsService: ProductVariantsService,
-  ) {}
+  ) { }
 
   @Get('masters/:masterId')
   @ApiOperation({
@@ -89,11 +89,11 @@ export class ProductVariantsController {
         limit: query.limit ? parseInt(query.limit) : undefined,
       };
 
-      return (await this.productVariantsService.getVariantsByMaster(
+      return await this.productVariantsService.getVariantsByMaster(
         masterId,
         undefined, // version (optional)
         filters,
-      )) as unknown as VariantListResponseDto;
+      );
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -129,7 +129,7 @@ export class ProductVariantsController {
         throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
       }
 
-      return variant as unknown as VariantWithPriceDto;
+      return variant;
     } catch (error) {
       if (
         error.message === 'Variant not found' ||
@@ -176,7 +176,7 @@ export class ProductVariantsController {
       );
       return {
         success: true,
-        data: updatedVariant as unknown as VariantWithPriceDto,
+        data: updatedVariant as any as VariantWithPriceDto,
       };
     } catch (error) {
       if (error.message.includes('not found')) {

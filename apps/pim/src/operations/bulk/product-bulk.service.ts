@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   type PimSchema,
-  productMasters,
+  productMasterVersions,
   productAuditLog,
 } from '../../schema';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
@@ -29,20 +29,24 @@ export class ProductBulkService {
 
     if (dto.status) updateData.status = dto.status;
     if (dto.approvalStatus) updateData.approvalStatus = dto.approvalStatus;
-    if (dto.basePrice !== undefined) updateData.basePrice = dto.basePrice;
     if (dto.brand) updateData.brand = dto.brand;
     if (dto.seller) updateData.seller = dto.seller;
 
     const updated = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set(updateData)
-      .where(inArray(productMasters.id, dto.productIds))
+      .where(
+        and(
+          inArray(productMasterVersions.id, dto.productIds),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      )
       .returning();
 
     // Log bulk update
     for (const product of updated) {
       await client.insert(productAuditLog).values({
-        productId: product.id,
+        versionId: product.id,
         action: 'bulk_updated',
         changes: updateData,
         userId,
@@ -60,19 +64,24 @@ export class ProductBulkService {
     const client = this.getClient(tx);
 
     const deleted = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         deletedAt: new Date(),
         deletedBy: userId,
         updatedAt: new Date(),
       })
-      .where(inArray(productMasters.id, dto.productIds))
+      .where(
+        and(
+          inArray(productMasterVersions.id, dto.productIds),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      )
       .returning();
 
     // Log bulk delete
     for (const product of deleted) {
       await client.insert(productAuditLog).values({
-        productId: product.id,
+        versionId: product.id,
         action: 'bulk_deleted',
         changes: { deletedAt: product.deletedAt },
         userId,
@@ -90,19 +99,24 @@ export class ProductBulkService {
     const client = this.getClient(tx);
 
     const restored = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         deletedAt: null,
         deletedBy: null,
         updatedAt: new Date(),
       })
-      .where(inArray(productMasters.id, dto.productIds))
+      .where(
+        and(
+          inArray(productMasterVersions.id, dto.productIds),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      )
       .returning();
 
     // Log bulk restore
     for (const product of restored) {
       await client.insert(productAuditLog).values({
-        productId: product.id,
+        versionId: product.id,
         action: 'bulk_restored',
         changes: { deletedAt: null },
         userId,
