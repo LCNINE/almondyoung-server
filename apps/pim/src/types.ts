@@ -53,6 +53,7 @@ export type UpdateProductMaster = Partial<
   primaryCategoryId?: string;
   migrationData?: any;
   optionDiff?: OptionDiff;
+  tagValueIds?: string[];
 };
 
 // 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)

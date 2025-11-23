@@ -97,7 +97,12 @@ export class TagsService {
     const tagValues = await client
       .select()
       .from(pimSchema.tagValues)
-      .where(eq(pimSchema.tagValues.groupId, id))
+      .where(
+        and(
+          eq(pimSchema.tagValues.groupId, id),
+          eq(pimSchema.tagValues.isActive, true)
+        )
+      )
       .orderBy(pimSchema.tagValues.displayOrder, pimSchema.tagValues.name);
 
     const response: TagGroupDetailResponseDto = {
@@ -115,9 +120,8 @@ export class TagsService {
     const client = this.getClient(tx);
 
     const conditions: SQL[] = [];
-    if (filters?.isActive !== undefined) {
-      conditions.push(eq(pimSchema.tagGroups.isActive, filters.isActive));
-    }
+    const isActiveFilter = filters?.isActive !== undefined ? filters.isActive : true;
+    conditions.push(eq(pimSchema.tagGroups.isActive, isActiveFilter));
 
     const tagGroups = await client
       .select()
@@ -186,7 +190,11 @@ export class TagsService {
     }
 
     await client
-      .delete(pimSchema.tagGroups)
+      .update(pimSchema.tagGroups)
+      .set({
+        isActive: false,
+        updatedAt: new Date(),
+      })
       .where(eq(pimSchema.tagGroups.id, id));
   }
 
@@ -272,7 +280,12 @@ export class TagsService {
     const tagValues = await client
       .select()
       .from(pimSchema.tagValues)
-      .where(eq(pimSchema.tagValues.groupId, groupId))
+      .where(
+        and(
+          eq(pimSchema.tagValues.groupId, groupId),
+          eq(pimSchema.tagValues.isActive, true)
+        )
+      )
       .orderBy(pimSchema.tagValues.displayOrder, pimSchema.tagValues.name);
 
     return tagValues.map(this.mapTagValueToResponse);
@@ -330,7 +343,11 @@ export class TagsService {
     await this.getTagValue(id, tx);
 
     await client
-      .delete(pimSchema.tagValues)
+      .update(pimSchema.tagValues)
+      .set({
+        isActive: false,
+        updatedAt: new Date(),
+      })
       .where(eq(pimSchema.tagValues.id, id));
   }
 

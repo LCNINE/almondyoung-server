@@ -1,10 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsBoolean, IsPositive, MinLength, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsNumber, IsUrl, IsArray, IsEnum, IsBoolean, IsPositive, MinLength, ValidateNested, ArrayUnique } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OptionDiffDto } from './option-diff.dto';
 
 export class UpdateProductMasterDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '제품 마스터 이름',
     minLength: 1,
     required: false
@@ -19,19 +19,19 @@ export class UpdateProductMasterDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '카테고리 ID 배열 (기존 카테고리를 모두 대체)',
     type: [String],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
   categoryIds?: string[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '주 카테고리 ID',
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsUUID()
@@ -54,7 +54,7 @@ export class UpdateProductMasterDto {
   @IsOptional()
   attributes?: Record<string, any>;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '제품 상태',
     enum: ['active', 'inactive', 'draft'],
     required: false
@@ -127,14 +127,26 @@ export class UpdateProductMasterDto {
   @IsBoolean()
   isMembershipOnly?: boolean;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '옵션 변경사항',
     type: OptionDiffDto,
-    required: false 
+    required: false
   })
   @IsOptional()
   @ValidateNested()
   @Type(() => OptionDiffDto)
   optionDiff?: OptionDiffDto;
+
+  @ApiProperty({
+    description: '태그 값 ID 배열 (기존 태그를 모두 대체)',
+    type: [String],
+    required: false,
+    example: ['550e8400-e29b-41d4-a716-446655440000']
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique({ message: 'Tag value IDs must be unique' })
+  @IsUUID('4', { each: true })
+  tagValueIds?: string[];
 }
 
