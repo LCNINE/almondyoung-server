@@ -15,6 +15,7 @@ import { CategoriesModule } from './core/categories/categories.module';
 import { ProductsModule } from './core/products/products.module';
 import { ChannelsModule } from './core/channels/channels.module';
 import { PricingModule } from './core/pricing/pricing.module';
+import { TagsModule } from './core/tags/tags.module';
 import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
 import { CsvModule } from './operations/csv/csv.module';
@@ -45,6 +46,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ProductsModule,
     ChannelsModule,
     PricingModule,
+    TagsModule,
     // Operations modules
     ApprovalModule,
     BulkModule,

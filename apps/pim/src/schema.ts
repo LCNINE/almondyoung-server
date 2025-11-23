@@ -684,6 +684,50 @@ export const promotionProducts = pgTable('promotion_products', {
   variantId: uuid('variant_id').references(() => productVariants.id),
 });
 
+// ===== 15. TAG GROUPS =====
+export const tagGroups = pgTable(
+  'tag_groups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    name: varchar('name', { length: 100 }).notNull(),
+    description: text('description'),
+    displayOrder: integer('display_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_tag_groups_active').on(table.isActive),
+    index('idx_tag_groups_display_order').on(table.displayOrder),
+  ],
+);
+
+// ===== 16. TAG VALUES =====
+export const tagValues = pgTable(
+  'tag_values',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => tagGroups.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    displayOrder: integer('display_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_tag_values_group_id').on(table.groupId),
+    index('idx_tag_values_active').on(table.isActive),
+    index('idx_tag_values_display_order').on(table.groupId, table.displayOrder),
+    uniqueIndex('unique_tag_values_group_name').on(table.groupId, table.name),
+  ],
+);
+
 // PIM 전체 스키마 통합
 export const pimSchema = {
   productCategories,
@@ -706,6 +750,8 @@ export const pimSchema = {
   productImages,
   productApprovalHistory,
   productAuditLog,
+  tagGroups,
+  tagValues,
 };
 
 // ===== RELATIONS =====
@@ -773,6 +819,17 @@ export const channelProductsRelations = relations(
     }),
   }),
 );
+
+export const tagGroupsRelations = relations(tagGroups, ({ many }) => ({
+  values: many(tagValues),
+}));
+
+export const tagValuesRelations = relations(tagValues, ({ one }) => ({
+  group: one(tagGroups, {
+    fields: [tagValues.groupId],
+    references: [tagGroups.id],
+  }),
+}));
 
 // 스키마 타입 추출
 export type PimSchema = typeof pimSchema;
