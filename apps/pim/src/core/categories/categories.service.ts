@@ -12,6 +12,9 @@ import {
   UpdateDisplaySettingsDto,
   UpdateSeoConfigDto,
   UpdateTemplateConfigDto,
+  CategoryTagGroupLinkDto,
+  CategoryTagGroupsResponseDto,
+  CategoryTagGroupItemDto,
 } from './dto';
 import {
   ProductMaster,
@@ -28,10 +31,11 @@ import {
   CategoryTemplateConfig,
 } from '../../schema';
 import { eq, isNull, like, inArray, and, or, sql } from 'drizzle-orm';
+import { RowList } from 'postgres';
 
 @Injectable()
 export class ProductCategoriesService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -42,19 +46,26 @@ export class ProductCategoriesService {
     data: CreateCategoryDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.db.db.transaction(async (trx) => {
+      const client = tx ?? trx;
 
-    const newCategoryData: NewProductCategory = {
-      ...data,
-      slug: data.slug ?? Math.random().toString(36).slice(2, 8),
-    };
-    const [newCategory] = await client
-      .insert(pimSchema.productCategories)
-      .values(newCategoryData)
-      .returning();
+      const { tagGroupLinks, ...categoryData } = data;
+      const newCategoryData: NewProductCategory = {
+        ...categoryData,
+        slug: categoryData.slug ?? Math.random().toString(36).slice(2, 8),
+      };
+      const [newCategory] = await client
+        .insert(pimSchema.productCategories)
+        .values(newCategoryData)
+        .returning();
 
-    const responseDto: CategoryResponseDto = newCategory;
-    return responseDto;
+      if (tagGroupLinks && tagGroupLinks.length > 0) {
+        await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
+      }
+
+      const responseDto: CategoryResponseDto = newCategory;
+      return responseDto;
+    });
   }
 
   async updateCategory(
@@ -62,20 +73,33 @@ export class ProductCategoriesService {
     data: UpdateCategoryDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.db.db.transaction(async (trx) => {
+      const client = tx ?? trx;
 
-    const updatingCategoryData: UpdateProductCategory = data;
-    const [updatedCategory] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        ...updatingCategoryData,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      const { tagGroupLinks, ...categoryData } = data;
+      const updatingCategoryData: UpdateProductCategory = categoryData;
+      const [updatedCategory] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          ...updatingCategoryData,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    const responseDto: CategoryResponseDto = updatedCategory;
-    return responseDto;
+      if (tagGroupLinks !== undefined) {
+        await client
+          .delete(pimSchema.categoryTagGroups)
+          .where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
+
+        if (tagGroupLinks.length > 0) {
+          await this._linkTagGroups(categoryId, tagGroupLinks, client);
+        }
+      }
+
+      const responseDto: CategoryResponseDto = updatedCategory;
+      return responseDto;
+    });
   }
 
   async deleteCategory(
@@ -1219,5 +1243,272 @@ export class ProductCategoriesService {
 
     const responseDto: CategoryResponseDto = updated;
     return responseDto;
+  }
+
+  // ===== TAG GROUP MANAGEMENT =====
+
+  /**
+   * 카테고리의 모든 조상 카테고리 조회 (재귀 CTE)
+   * @param categoryId 조회할 카테고리 ID
+   * @param tx 트랜잭션 컨텍스트
+   * @returns 조상 카테고리 목록 (level 0 = 자기 자신, level 1 = 부모, level 2 = 조부모...)
+   */
+  private async _getAncestorCategoryIds(
+    categoryId: string,
+    tx: DbTransaction,
+  ): Promise<Array<{ id: string; name: string; level: number }>> {
+    const recursiveQuery = sql`
+      WITH RECURSIVE ancestor_categories AS (
+        -- Base case: 자기 자신
+        SELECT 
+          id, 
+          name, 
+          parent_id,
+          0 as level
+        FROM ${pimSchema.productCategories}
+        WHERE id = ${categoryId}
+        
+        UNION ALL
+        
+        -- Recursive case: 부모들
+        SELECT 
+          pc.id,
+          pc.name,
+          pc.parent_id,
+          ac.level + 1 as level
+        FROM ${pimSchema.productCategories} pc
+        INNER JOIN ancestor_categories ac ON pc.id = ac.parent_id
+      )
+      SELECT id, name, level
+      FROM ancestor_categories
+      ORDER BY level ASC
+    `;
+
+    const result = await tx.execute(recursiveQuery);
+    const rows = result as RowList<{ id: string; name: string; level: number }[]>;
+    return rows.map((row) => ({ id: row.id, name: row.name, level: row.level }));
+  }
+
+  /**
+   * 카테고리에 태그 그룹 연결 (내부 헬퍼)
+   */
+  private async _linkTagGroups(
+    categoryId: string,
+    links: CategoryTagGroupLinkDto[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!links || links.length === 0) {
+      return;
+    }
+
+    const tagGroupIds = links.map((link) => link.tagGroupId);
+    const existingGroups = await tx
+      .select({ id: pimSchema.tagGroups.id })
+      .from(pimSchema.tagGroups)
+      .where(inArray(pimSchema.tagGroups.id, tagGroupIds));
+
+    const existingGroupIds = existingGroups.map((g) => g.id);
+    const missingGroupIds = tagGroupIds.filter(
+      (id) => !existingGroupIds.includes(id),
+    );
+
+    if (missingGroupIds.length > 0) {
+      throw new Error(`Tag groups not found: ${missingGroupIds.join(', ')}`);
+    }
+
+    // 조상 카테고리로부터 상속받은 태그 그룹 조회
+    const ancestors = await this._getAncestorCategoryIds(categoryId, tx);
+    const ancestorIds = ancestors.filter((a) => a.level > 0).map((a) => a.id);
+
+    if (ancestorIds.length > 0) {
+      const inheritedTagGroups = await tx
+        .select({
+          tagGroupId: pimSchema.categoryTagGroups.tagGroupId,
+          categoryId: pimSchema.categoryTagGroups.categoryId,
+          categoryName: pimSchema.productCategories.name,
+        })
+        .from(pimSchema.categoryTagGroups)
+        .innerJoin(
+          pimSchema.productCategories,
+          eq(pimSchema.categoryTagGroups.categoryId, pimSchema.productCategories.id),
+        )
+        .where(
+          and(
+            inArray(pimSchema.categoryTagGroups.categoryId, ancestorIds),
+            eq(pimSchema.categoryTagGroups.appliesToDescendants, true),
+          ),
+        );
+
+      // 중복 검증
+      for (const link of links) {
+        const inherited = inheritedTagGroups.find(
+          (itg) => itg.tagGroupId === link.tagGroupId,
+        );
+        if (inherited) {
+          throw new Error(
+            `Tag group ${link.tagGroupId} is already inherited from ancestor category ${inherited.categoryName}`,
+          );
+        }
+      }
+    }
+
+    const linkValues = links.map((link, index) => ({
+      categoryId,
+      tagGroupId: link.tagGroupId,
+      displayOrder: link.displayOrder ?? index,
+      isRequired: link.isRequired ?? false,
+      appliesToDescendants: link.appliesToDescendants ?? false,
+      createdAt: new Date(),
+    }));
+
+    await tx.insert(pimSchema.categoryTagGroups).values(linkValues);
+  }
+
+  /**
+   * 카테고리의 태그 그룹 연결 교체
+   */
+  async replaceTagGroupLinks(
+    categoryId: string,
+    links: CategoryTagGroupLinkDto[],
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.db.db.transaction(async (trx) => {
+      const client = tx ?? trx;
+
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .limit(1);
+
+      if (!category) {
+        throw new Error(`Category not found: ${categoryId}`);
+      }
+
+      await client
+        .delete(pimSchema.categoryTagGroups)
+        .where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
+
+      if (links.length > 0) {
+        await this._linkTagGroups(categoryId, links, client);
+      }
+    });
+  }
+
+  /**
+   * 카테고리의 태그 그룹 및 태그 값 조회 (상속 포함)
+   */
+  async getCategoryTagGroups(
+    categoryId: string,
+    tx?: DbTransaction,
+  ): Promise<CategoryTagGroupsResponseDto> {
+    const client = this.getClient(tx);
+
+    const [category] = await client
+      .select({ id: pimSchema.productCategories.id, name: pimSchema.productCategories.name })
+      .from(pimSchema.productCategories)
+      .where(eq(pimSchema.productCategories.id, categoryId))
+      .limit(1);
+
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    // 조상 카테고리 조회
+    const ancestors = await this._getAncestorCategoryIds(categoryId, client);
+    const allCategoryIds = ancestors.map((a) => a.id);
+
+    // 자신 + 조상들의 태그 그룹 연결 조회 (조상은 appliesToDescendants=true만)
+    const result = await client
+      .select({
+        tagGroup: pimSchema.tagGroups,
+        link: pimSchema.categoryTagGroups,
+        category: {
+          id: pimSchema.productCategories.id,
+          name: pimSchema.productCategories.name,
+        },
+        tagValue: pimSchema.tagValues,
+      })
+      .from(pimSchema.categoryTagGroups)
+      .innerJoin(
+        pimSchema.productCategories,
+        eq(pimSchema.categoryTagGroups.categoryId, pimSchema.productCategories.id),
+      )
+      .innerJoin(
+        pimSchema.tagGroups,
+        eq(pimSchema.categoryTagGroups.tagGroupId, pimSchema.tagGroups.id),
+      )
+      .leftJoin(
+        pimSchema.tagValues,
+        eq(pimSchema.tagValues.groupId, pimSchema.tagGroups.id),
+      )
+      .where(
+        and(
+          inArray(pimSchema.categoryTagGroups.categoryId, allCategoryIds),
+          or(
+            eq(pimSchema.categoryTagGroups.categoryId, categoryId),
+            eq(pimSchema.categoryTagGroups.appliesToDescendants, true),
+          ),
+        ),
+      );
+
+    const groupedData: Record<string, CategoryTagGroupItemDto> = {};
+
+    for (const row of result) {
+      const groupId = row.tagGroup.id;
+      const isInherited = row.category.id !== categoryId;
+
+      // 동일 태그 그룹 중복 검증 (정합성 체크)
+      if (groupedData[groupId]) {
+        throw new Error(
+          `Data integrity error: Tag group ${groupId} is linked multiple times for category ${categoryId}`,
+        );
+      }
+
+      groupedData[groupId] = {
+        id: row.tagGroup.id,
+        name: row.tagGroup.name,
+        description: row.tagGroup.description,
+        displayOrder: row.link.displayOrder,
+        isRequired: row.link.isRequired,
+        appliesToDescendants: row.link.appliesToDescendants,
+        isInherited,
+        inheritedFromCategoryId: isInherited ? row.category.id : null,
+        inheritedFromCategoryName: isInherited ? row.category.name : null,
+        isActive: row.tagGroup.isActive,
+        values: [],
+      };
+    }
+
+    // 태그 값 추가
+    for (const row of result) {
+      const groupId = row.tagGroup.id;
+      if (row.tagValue && row.tagValue.isActive && groupedData[groupId]) {
+        const existingValue = groupedData[groupId].values.find(
+          (v) => v.id === row.tagValue!.id,
+        );
+        if (!existingValue) {
+          groupedData[groupId].values.push({
+            id: row.tagValue.id,
+            name: row.tagValue.name,
+            displayOrder: row.tagValue.displayOrder,
+            isActive: row.tagValue.isActive,
+            createdAt: row.tagValue.createdAt,
+            updatedAt: row.tagValue.updatedAt,
+          });
+        }
+      }
+    }
+
+    // displayOrder로 정렬
+    const sortedTagGroups = Object.values(groupedData).sort(
+      (a, b) => a.displayOrder - b.displayOrder,
+    );
+
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      tagGroups: sortedTagGroups,
+    };
   }
 }
