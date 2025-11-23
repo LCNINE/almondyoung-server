@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 
 @Injectable()
 export class MatchingsService {
@@ -25,13 +25,10 @@ export class MatchingsService {
     return this.inTx(async (trx) => {
       if (!dto.variantId) throw new BadRequestException('variantId required');
       
-      if (dto.masterId) {
-        this.logger.warn(`masterId is deprecated and will be ignored. Use skuGroupId instead.`);
-      }
-      
       const existing = await trx.query.productMatchings.findFirst({ where: (m, { eq }) => eq(m.variantId, dto.variantId) });
       const base = {
         variantId: dto.variantId,
+        masterId: dto.masterId || null,
         status: 'matched' as any,
         priority: 'normal' as any,
         strategy: 'variant' as any,
@@ -56,6 +53,52 @@ export class MatchingsService {
         );
       }
       return this.getByVariant(dto.variantId, trx);
+    }, tx);
+  }
+
+  async getMastersBatchStats(masterIds: string[], tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      if (!masterIds || masterIds.length === 0) {
+        return [];
+      }
+
+      const results = await trx
+        .select({
+          masterId: wmsTables.productMatchings.masterId,
+          totalVariants: sql<number>`count(*)::int`,
+          matchedVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.isResolved} = true)::int`,
+          pendingVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'pending')::int`,
+          ignoredVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'ignored')::int`,
+        })
+        .from(wmsTables.productMatchings)
+        .where(inArray(wmsTables.productMatchings.masterId, masterIds))
+        .groupBy(wmsTables.productMatchings.masterId);
+
+      const statsMap = results.reduce((acc, stat) => {
+        if (stat.masterId) {
+          acc[stat.masterId] = {
+            totalVariants: stat.totalVariants,
+            matchedVariants: stat.matchedVariants,
+            pendingVariants: stat.pendingVariants,
+            ignoredVariants: stat.ignoredVariants,
+            matchingRate: stat.totalVariants > 0
+              ? Math.round((stat.matchedVariants / stat.totalVariants) * 100)
+              : 0,
+          };
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
+      return masterIds.map(masterId => ({
+        masterId,
+        ...(statsMap[masterId] || {
+          totalVariants: 0,
+          matchedVariants: 0,
+          pendingVariants: 0,
+          ignoredVariants: 0,
+          matchingRate: 0,
+        }),
+      }));
     }, tx);
   }
 }
