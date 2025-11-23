@@ -92,16 +92,36 @@ export const productCategories = pgTable(
   ],
 );
 
-// ===== 2. PRODUCT MASTERS (판매상품 마스터) =====
+// ===== 2. PRODUCT MASTERS (판매상품 마스터 메타데이터) =====
 export const productMasters = pgTable(
   'product_masters',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
+    createdAt: timestamp('created_at').defaultNow(),
+    createdBy: uuid('created_by'),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+  },
+  (table) => [
+    index('idx_masters_created_at').on(table.createdAt),
+    index('idx_masters_deleted_at').on(table.deletedAt),
+  ],
+);
+
+// ===== 2.1. PRODUCT MASTER VERSIONS (판매상품 버전별 데이터) =====
+export const productMasterVersions = pgTable(
+  'product_master_versions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
 
     // ===== VERSION MANAGEMENT FIELDS START =====
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull().default(1),
     parentVersionId: uuid('parent_version_id'),
     versionStatus: varchar('version_status', { length: 20 })
@@ -125,7 +145,7 @@ export const productMasters = pgTable(
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
     // 고지훈 임시 시연용수정 - 상품 상세설명 (HTML 에디터용)
     descriptionHtml: text('description_html'), // 상품 상세설명 HTML (단일 필드)
-    status: varchar('status', { length: 20 }).default('active'), // active, inactive, draft
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive, draft
     // 구매제한 관련 필드들
     isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
     isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
@@ -186,34 +206,32 @@ export const productMasters = pgTable(
     updatedBy: uuid('updated_by'),
   },
   (table) => [
-    index('idx_masters_status').on(table.status),
-    index('idx_masters_name').on(table.name),
-    index('idx_masters_brand').on(table.brand),
-    index('idx_masters_created_at').on(table.createdAt),
-    // Phase 1 new indexes
-    index('idx_masters_product_type').on(table.productType),
-    index('idx_masters_product_code').on(table.productCode),
-    index('idx_masters_approval_status').on(table.approvalStatus),
-    index('idx_masters_deleted_at').on(table.deletedAt),
-    index('idx_masters_supplier').on(table.supplierId),
-    index('idx_masters_sales_dates').on(table.salesStartDate, table.salesEndDate),
-    // Version management indexes
-    index('idx_masters_master_id').on(table.masterId),
-    index('idx_masters_version_status').on(table.versionStatus),
-    index('idx_masters_master_id_version').on(table.masterId, table.version),
-    uniqueIndex('unique_master_active_version')
-      .on(table.masterId)
-      .where(sql`${table.versionStatus} = 'active'`),
-    uniqueIndex('unique_master_version').on(table.masterId, table.version),
-    // Self-referencing foreign key for parent version
+    // FK constraints
     foreignKey({
       columns: [table.parentVersionId],
       foreignColumns: [table.id],
     }),
+    // Indexes
+    index('idx_versions_master_id').on(table.masterId),
+    index('idx_versions_status').on(table.versionStatus),
+    index('idx_versions_master_version').on(table.masterId, table.version),
+    index('idx_versions_name').on(table.name),
+    index('idx_versions_brand').on(table.brand),
+    index('idx_versions_created_at').on(table.createdAt),
+    index('idx_versions_product_type').on(table.productType),
+    index('idx_versions_product_code').on(table.productCode),
+    index('idx_versions_approval_status').on(table.approvalStatus),
+    index('idx_versions_deleted_at').on(table.deletedAt),
+    index('idx_versions_supplier').on(table.supplierId),
+    index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
+    uniqueIndex('unique_master_active_version')
+      .on(table.masterId)
+      .where(sql`${table.versionStatus} = 'active'`),
+    uniqueIndex('unique_master_version').on(table.masterId, table.version),
   ],
 );
 
-// ===== 2.1. PRODUCT MASTER CATEGORIES (Many-to-Many Junction Table) =====
+// ===== 2.2. PRODUCT MASTER CATEGORIES (Many-to-Many Junction Table) =====
 export const productMasterCategories = pgTable(
   'product_master_categories',
   {
@@ -226,26 +244,29 @@ export const productMasterCategories = pgTable(
     categoryId: uuid('category_id')
       .notNull()
       .references(() => productCategories.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
     isPrimary: boolean('is_primary').default(false), // 주 카테고리 여부
     createdAt: timestamp('created_at').defaultNow(),
     createdBy: uuid('created_by'),
   },
   (table) => [
-    index('idx_master_categories_master').on(table.masterId),
+    index('idx_master_categories_master_version').on(table.masterId, table.version),
     index('idx_master_categories_category').on(table.categoryId),
     index('idx_master_categories_primary').on(table.masterId, table.isPrimary),
-    uniqueIndex('unique_master_category').on(table.masterId, table.categoryId),
+    uniqueIndex('unique_master_category_version').on(table.masterId, table.categoryId, table.version),
   ],
 );
 
-// ===== 2.2. PRODUCT MASTER OPTION GROUPS (Mapping Table) =====
+// ===== 2.3. PRODUCT MASTER OPTION GROUPS (Mapping Table) =====
 export const productMasterOptionGroups = pgTable(
   'product_master_option_groups',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
@@ -265,14 +286,16 @@ export const productMasterOptionGroups = pgTable(
   ],
 );
 
-// ===== 2.3. PRODUCT MASTER VARIANTS (Mapping Table) =====
+// ===== 2.4. PRODUCT MASTER VARIANTS (Mapping Table) =====
 export const productMasterVariants = pgTable(
   'product_master_variants',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),
@@ -292,14 +315,16 @@ export const productMasterVariants = pgTable(
   ],
 );
 
-// ===== 2.4. PRODUCT MASTER PRICING RULES (Mapping Table) =====
+// ===== 2.5. PRODUCT MASTER PRICING RULES (Mapping Table) =====
 export const productMasterPricingRules = pgTable(
   'product_master_pricing_rules',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     pricingRuleId: uuid('pricing_rule_id')
       .notNull()
       .references(() => pricingRules.id, { onDelete: 'cascade' }),
@@ -319,7 +344,7 @@ export const productMasterPricingRules = pgTable(
   ],
 );
 
-// ===== 2.5. PRODUCT OPTION GROUP DISPLAYS (버전별/언어별 표시 정보) =====
+// ===== 2.6. PRODUCT OPTION GROUP DISPLAYS (버전별/언어별 표시 정보) =====
 export const productOptionGroupDisplays = pgTable(
   'product_option_group_displays',
   {
@@ -329,7 +354,9 @@ export const productOptionGroupDisplays = pgTable(
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
@@ -353,7 +380,7 @@ export const productOptionGroupDisplays = pgTable(
   ],
 );
 
-// ===== 2.6. PRODUCT OPTION VALUE DISPLAYS (버전별/언어별 표시 정보) =====
+// ===== 2.7. PRODUCT OPTION VALUE DISPLAYS (버전별/언어별 표시 정보) =====
 export const productOptionValueDisplays = pgTable(
   'product_option_value_displays',
   {
@@ -363,7 +390,9 @@ export const productOptionValueDisplays = pgTable(
     optionValueId: uuid('option_value_id')
       .notNull()
       .references(() => productOptionValues.id, { onDelete: 'cascade' }),
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
@@ -428,7 +457,7 @@ export const productVariants = pgTable(
     priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
     // 물리적 속성 제거: weightAdjustment 등
     displayOrder: integer('display_order').default(0), // 표시 순서
-    status: varchar('status', { length: 20 }).default('active'), // active, inactive
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
     isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
 
     // Phase 1 new fields
@@ -619,16 +648,16 @@ export const productApprovalHistory = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    productId: uuid('product_id')
+    versionId: uuid('version_id')
       .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     status: varchar('status', { length: 20 }).notNull(), // 'pending', 'approved', 'rejected'
     comment: text('comment'),
     approvedBy: uuid('approved_by').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_approval_history_product').on(table.productId),
+    index('idx_approval_history_version').on(table.versionId),
     index('idx_approval_history_status').on(table.status),
     index('idx_approval_history_date').on(table.createdAt),
   ],
@@ -641,7 +670,7 @@ export const productAuditLog = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    productId: uuid('product_id').notNull(),
+    versionId: uuid('version_id').notNull(),
     action: varchar('action', { length: 50 }).notNull(), // 'created', 'updated', 'deleted', 'restored'
     changes: jsonb('changes').$type<Record<string, any>>(),
     userId: uuid('user_id').notNull(),
@@ -651,7 +680,7 @@ export const productAuditLog = pgTable(
     userAgent: text('user_agent'),
   },
   (table) => [
-    index('idx_audit_log_product').on(table.productId),
+    index('idx_audit_log_version').on(table.versionId),
     index('idx_audit_log_action').on(table.action),
     index('idx_audit_log_timestamp').on(table.timestamp),
     index('idx_audit_log_user').on(table.userId),
@@ -756,7 +785,9 @@ export const categoryTagGroups = pgTable(
 export const productTagValues = pgTable(
   'product_tag_values',
   {
-    masterId: uuid('master_id').notNull(),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull(),
     tagValueId: uuid('tag_value_id')
       .notNull()
@@ -774,6 +805,7 @@ export const productTagValues = pgTable(
 export const pimSchema = {
   productCategories,
   productMasters,
+  productMasterVersions,
   productMasterCategories,
   productMasterOptionGroups,
   productMasterVariants,
@@ -814,7 +846,28 @@ export const productCategoriesRelations = relations(
 export const productMastersRelations = relations(
   productMasters,
   ({ many }) => ({
+    versions: many(productMasterVersions),
     productMasterCategories: many(productMasterCategories),
+    productMasterOptionGroups: many(productMasterOptionGroups),
+    productMasterVariants: many(productMasterVariants),
+    productMasterPricingRules: many(productMasterPricingRules),
+    channelProducts: many(channelProducts),
+    productImages: many(productImages),
+    productTagValues: many(productTagValues),
+  }),
+);
+
+export const productMasterVersionsRelations = relations(
+  productMasterVersions,
+  ({ one }) => ({
+    master: one(productMasters, {
+      fields: [productMasterVersions.masterId],
+      references: [productMasters.id],
+    }),
+    parentVersion: one(productMasterVersions, {
+      fields: [productMasterVersions.parentVersionId],
+      references: [productMasterVersions.id],
+    }),
   }),
 );
 

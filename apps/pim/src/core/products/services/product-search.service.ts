@@ -3,7 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
 import {
   type PimSchema,
-  productMasters,
+  productMasterVersions,
   productMasterCategories,
 } from '../../../schema';
 import { ProductQueryDto } from '../dto';
@@ -34,18 +34,21 @@ export class ProductSearchService {
   private buildConditions(query: ProductQueryDto): SQL[] {
     const conditions: SQL[] = [];
 
+    // Active version filter (default for searches)
+    conditions.push(eq(productMasterVersions.versionStatus, 'active'));
+
     // Soft delete filter
     if (!query.includeDeleted) {
-      conditions.push(isNull(productMasters.deletedAt));
+      conditions.push(isNull(productMasterVersions.deletedAt));
     }
 
     // Keyword search (name, description, product code)
     if (query.keyword) {
       const keywordCondition = or(
-        like(productMasters.name, `%${query.keyword}%`),
-        like(productMasters.description, `%${query.keyword}%`),
-        like(productMasters.productCode, `%${query.keyword}%`),
-        like(productMasters.brand, `%${query.keyword}%`),
+        like(productMasterVersions.name, `%${query.keyword}%`),
+        like(productMasterVersions.description, `%${query.keyword}%`),
+        like(productMasterVersions.productCode, `%${query.keyword}%`),
+        like(productMasterVersions.brand, `%${query.keyword}%`),
       );
       if (keywordCondition) {
         conditions.push(keywordCondition);
@@ -54,36 +57,36 @@ export class ProductSearchService {
 
     // Approval status filter
     if (query.approvalStatus) {
-      conditions.push(eq(productMasters.approvalStatus, query.approvalStatus));
+      conditions.push(eq(productMasterVersions.approvalStatus, query.approvalStatus));
     }
 
     // Status filter
     if (query.status) {
-      conditions.push(eq(productMasters.status, query.status));
+      conditions.push(eq(productMasterVersions.status, query.status));
     }
 
     // Product type filter
     if (query.productType) {
-      conditions.push(eq(productMasters.productType, query.productType));
+      conditions.push(eq(productMasterVersions.productType, query.productType));
     }
 
     // Brand filter
     if (query.brand) {
-      conditions.push(eq(productMasters.brand, query.brand));
+      conditions.push(eq(productMasterVersions.brand, query.brand));
     }
 
     // Seller filter
     if (query.seller) {
-      conditions.push(eq(productMasters.seller, query.seller));
+      conditions.push(eq(productMasterVersions.seller, query.seller));
     }
 
     // Date range
     const { startDate, endDate } = this.parseDateRange(query);
     if (startDate) {
-      conditions.push(gte(productMasters.createdAt, startDate));
+      conditions.push(gte(productMasterVersions.createdAt, startDate));
     }
     if (endDate) {
-      conditions.push(lte(productMasters.createdAt, endDate));
+      conditions.push(lte(productMasterVersions.createdAt, endDate));
     }
 
     return conditions;
@@ -106,10 +109,13 @@ export class ProductSearchService {
 
     const results = await client
       .select()
-      .from(productMasters)
+      .from(productMasterVersions)
       .innerJoin(
         productMasterCategories,
-        eq(productMasters.id, productMasterCategories.masterId),
+        and(
+          eq(productMasterCategories.masterId, productMasterVersions.masterId),
+          eq(productMasterCategories.version, productMasterVersions.version)
+        ),
       )
       .where(and(...conditions, categoryCondition))
       .orderBy(this.getSortOrder(query))
@@ -118,11 +124,14 @@ export class ProductSearchService {
 
     // Count query (동일한 조건 적용 + distinct!)
     const [{ count }] = await client
-      .select({ count: sql<number>`count(distinct ${productMasters.id})` })
-      .from(productMasters)
+      .select({ count: sql<number>`count(distinct ${productMasterVersions.id})` })
+      .from(productMasterVersions)
       .innerJoin(
         productMasterCategories,
-        eq(productMasters.id, productMasterCategories.masterId),
+        and(
+          eq(productMasterCategories.masterId, productMasterVersions.masterId),
+          eq(productMasterCategories.version, productMasterVersions.version)
+        ),
       )
       .where(and(...conditions, categoryCondition));
 
@@ -141,7 +150,7 @@ export class ProductSearchService {
     // Main query
     const results = await client
       .select()
-      .from(productMasters)
+      .from(productMasterVersions)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(this.getSortOrder(query))
       .limit(limit)
@@ -150,7 +159,7 @@ export class ProductSearchService {
     // Count query
     const [{ count }] = await client
       .select({ count: sql<number>`count(*)` })
-      .from(productMasters)
+      .from(productMasterVersions)
       .where(conditions.length > 0 ? and(...conditions) : undefined);
 
     return this.buildPaginationResponse(results, query, Number(count));
@@ -159,7 +168,7 @@ export class ProductSearchService {
   private getSortOrder(query: ProductQueryDto) {
     const sortField = query.sortBy || 'createdAt';
     const sortDirection = query.sortOrder === 'asc' ? asc : desc;
-    return sortDirection(productMasters[sortField]);
+    return sortDirection(productMasterVersions[sortField]);
   }
 
   private buildPaginationResponse(results: any[], query: ProductQueryDto, total: number) {

@@ -39,7 +39,7 @@ import {
 export class ProductCategoriesController {
   constructor(
     private readonly productCategoriesService: ProductCategoriesService,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -59,7 +59,7 @@ export class ProductCategoriesController {
   ): Promise<CategoryResponseDto> {
     return this.productCategoriesService.createCategory(
       createCategoryDto,
-    ) as unknown as Promise<CategoryResponseDto>;
+    );
   }
 
   @Put(':id')
@@ -83,7 +83,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.updateCategory(
       id,
       updateCategoryDto,
-    ) as unknown as Promise<CategoryResponseDto>;
+    );
   }
 
   @Delete(':id')
@@ -128,7 +128,7 @@ export class ProductCategoriesController {
   ): Promise<CategoryDetailResponseDto> {
     return this.productCategoriesService.getCategoryById(
       id,
-    ) as unknown as Promise<CategoryDetailResponseDto>;
+    );
   }
 
   @Get()
@@ -170,7 +170,7 @@ export class ProductCategoriesController {
   ): Promise<CategoryResponseDto[]> {
     return this.productCategoriesService.getChildCategories(
       id,
-    ) as unknown as Promise<CategoryResponseDto[]>;
+    );
   }
 
   @Get(':id/path')
@@ -190,7 +190,7 @@ export class ProductCategoriesController {
   ): Promise<CategoryPathResponseDto> {
     return this.productCategoriesService.getCategoryPath(
       id,
-    ) as unknown as Promise<CategoryPathResponseDto>;
+    );
   }
 
   @Put(':id/move')
@@ -221,7 +221,7 @@ export class ProductCategoriesController {
     return this.productCategoriesService.moveCategory(
       id,
       newParentId,
-    ) as unknown as Promise<CategoryResponseDto>;
+    );
   }
 
   @Put(':id/products')
@@ -384,7 +384,7 @@ export class ProductCategoriesController {
       return await this.productCategoriesService.updateDisplaySettings(
         categoryId,
         dto,
-      ) as unknown as Promise<CategoryResponseDto>;
+      );
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
@@ -417,7 +417,7 @@ export class ProductCategoriesController {
       return await this.productCategoriesService.updateSeoConfig(
         categoryId,
         dto,
-      ) as unknown as Promise<CategoryResponseDto>;
+      );
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
@@ -450,7 +450,7 @@ export class ProductCategoriesController {
       return await this.productCategoriesService.updateTemplateConfig(
         categoryId,
         dto,
-      ) as unknown as Promise<CategoryResponseDto>;
+      );
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
@@ -495,7 +495,7 @@ export class ProductCategoriesController {
       return await this.productCategoriesService.updateVisibility(
         categoryId,
         visible,
-      ) as unknown as Promise<CategoryResponseDto>;
+      );
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);

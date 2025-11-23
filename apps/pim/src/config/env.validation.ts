@@ -9,6 +9,11 @@ export const pimEnvSchema = z.object({
 
   // Base URL for image service
   BASE_URL: z.string().url().optional(),
+
+  // Elasticsearch Configuration
+  ELASTICSEARCH_NODE: z.string().url(),
+  ELASTICSEARCH_USERNAME: z.string().optional(),
+  ELASTICSEARCH_PASSWORD: z.string().optional(),
 });
 
 export type PimEnvConfig = z.infer<typeof pimEnvSchema>;

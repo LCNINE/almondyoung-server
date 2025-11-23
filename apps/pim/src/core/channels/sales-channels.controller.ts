@@ -32,7 +32,7 @@ import {
 @ApiTags('Sales Channels')
 @Controller('channels')
 export class SalesChannelsController {
-  constructor(private readonly salesChannelsService: SalesChannelsService) {}
+  constructor(private readonly salesChannelsService: SalesChannelsService) { }
 
   @Post()
   @ApiOperation({
@@ -64,7 +64,7 @@ export class SalesChannelsController {
 
       return (await this.salesChannelsService.createChannel(
         createDto,
-      )) as unknown as SalesChannelDto;
+      )) as any as SalesChannelDto;
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -141,7 +141,7 @@ export class SalesChannelsController {
 
       return (await this.salesChannelsService.getChannels(
         filters,
-      )) as unknown as ChannelListResponseDto;
+      )) as any as ChannelListResponseDto;
     } catch (error) {
       throw new HttpException(
         'Failed to get channels',
@@ -163,7 +163,7 @@ export class SalesChannelsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getActiveChannels(): Promise<SalesChannelDto[]> {
     try {
-      return (await this.salesChannelsService.getActiveChannels()) as unknown as SalesChannelDto[];
+      return (await this.salesChannelsService.getActiveChannels()) as any as SalesChannelDto[];
     } catch (error) {
       throw new HttpException(
         'Failed to get active channels',
@@ -194,7 +194,7 @@ export class SalesChannelsController {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
 
-      return channel as unknown as SalesChannelDto;
+      return channel as any as SalesChannelDto;
     } catch (error) {
       if (
         error.message === 'Channel not found' ||
@@ -238,7 +238,7 @@ export class SalesChannelsController {
       return (await this.salesChannelsService.updateChannel(
         id,
         updateDto,
-      )) as unknown as SalesChannelDto;
+      )) as any as SalesChannelDto;
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
@@ -352,7 +352,7 @@ export class SalesChannelsController {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
 
-      return channel as unknown as SalesChannelDto;
+      return channel as any as SalesChannelDto;
     } catch (error) {
       if (
         error.message === 'Channel not found' ||
@@ -400,7 +400,7 @@ export class SalesChannelsController {
       return (await this.salesChannelsService.validateChannelConfig(
         configDto.type,
         configDto.config,
-      )) as unknown as ChannelValidationResponseDto;
+      )) as any as ChannelValidationResponseDto;
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
