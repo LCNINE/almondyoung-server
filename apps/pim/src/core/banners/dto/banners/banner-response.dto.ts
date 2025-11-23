@@ -13,11 +13,11 @@ export class BannerResponseDto {
   @ApiProperty({ description: '배너 설명', required: false, nullable: true })
   description: string | null;
 
-  @ApiProperty({ description: 'PC 이미지 URL' })
-  pcImageUrl: string;
+  @ApiProperty({ description: 'PC 이미지 파일 ID (file-service)' })
+  pcImageFileId: string;
 
-  @ApiProperty({ description: '모바일 이미지 URL' })
-  mobileImageUrl: string;
+  @ApiProperty({ description: '모바일 이미지 파일 ID (file-service)' })
+  mobileImageFileId: string;
 
   @ApiProperty({ description: '클릭 시 이동할 URL', required: false, nullable: true })
   linkUrl: string | null;

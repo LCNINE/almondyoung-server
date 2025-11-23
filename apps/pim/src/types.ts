@@ -237,7 +237,8 @@ export interface CreateMasterDto {
   name?: string; // 선택사항, 기본값: "새 상품"
   description?: string;
   brand?: string;
-  thumbnail?: string; // 썸네일 이미지 URL (내부 또는 외부)
+  thumbnailFileId?: string; // 썸네일 파일 ID (file-service)
+  additionalImageFileIds?: string[]; // 부가 이미지 파일 ID 배열 (file-service)
   categoryIds?: string[];
   primaryCategoryId?: string;
   // basePrice removed - 가격은 전적으로 pricing rules로 결정

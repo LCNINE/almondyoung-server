@@ -48,9 +48,6 @@ export class PathBuilderService {
         return `shipments/labels/${year}/${month}/${fileId}.${extension}`;
 
       default:
-        if (status === 'pending') {
-          return `temp/pending/${year}/${month}/${fileId}.${extension}`;
-        }
         return `${context}/${year}/${month}/${fileId}.${extension}`;
     }
   }

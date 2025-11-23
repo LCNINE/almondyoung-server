@@ -65,26 +65,16 @@ export class UpdateProductMasterDto {
 
   // ========== 이미지 관련 필드 ==========
 
-  @ApiProperty({ description: '썸네일 URL', required: false })
-  @IsOptional()
-  @IsString()
-  thumbnail?: string;
-
-  @ApiProperty({ description: '썸네일 업로드 ID', required: false })
+  @ApiProperty({ description: '썸네일 파일 ID (file-service)', required: false })
   @IsOptional()
   @IsUUID()
-  thumbnailUploadId?: string;
+  thumbnailFileId?: string;
 
-  @ApiProperty({ description: '썸네일 외부 URL', required: false })
-  @IsOptional()
-  @IsUrl()
-  thumbnailUrl?: string;
-
-  @ApiProperty({ description: '부가 이미지 업로드 ID 배열 (최대 5개)', type: [String], required: false })
+  @ApiProperty({ description: '부가 이미지 파일 ID 배열 (최대 5개, file-service)', type: [String], required: false })
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })
-  additionalImageUploadIds?: string[];
+  additionalImageFileIds?: string[];
 
   // ========== 마케팅/SEO 필드 ==========
 
