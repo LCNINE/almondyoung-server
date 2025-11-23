@@ -3,7 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { eq } from 'drizzle-orm';
 import {
   type PimSchema,
-  productMasters,
+  productMasterVersions,
   productApprovalHistory,
 } from '../../schema';
 import { DbTransaction, NewProductApprovalHistory } from '../../types';
@@ -12,7 +12,7 @@ import { DbTransaction, NewProductApprovalHistory } from '../../types';
 export class ProductApprovalService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -23,8 +23,8 @@ export class ProductApprovalService {
 
     const [product] = await client
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, productId));
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.id, productId));
 
     if (!product) {
       throw new BadRequestException('Product not found');
@@ -35,17 +35,17 @@ export class ProductApprovalService {
     }
 
     const [updated] = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         approvalStatus: 'pending',
         updatedAt: new Date(),
         updatedBy: userId,
       })
-      .where(eq(productMasters.id, productId))
+      .where(eq(productMasterVersions.id, productId))
       .returning();
 
     await this.addHistory({
-      productId,
+      versionId: productId,
       status: 'pending',
       comment: 'Submitted for approval',
       approvedBy: userId,
@@ -59,8 +59,8 @@ export class ProductApprovalService {
 
     const [product] = await client
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, productId));
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.id, productId));
 
     if (!product) {
       throw new BadRequestException('Product not found');
@@ -71,7 +71,7 @@ export class ProductApprovalService {
     }
 
     const [updated] = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         approvalStatus: 'approved',
         approvedAt: new Date(),
@@ -79,11 +79,11 @@ export class ProductApprovalService {
         status: 'active', // Activate product upon approval
         updatedAt: new Date(),
       })
-      .where(eq(productMasters.id, productId))
+      .where(eq(productMasterVersions.id, productId))
       .returning();
 
     await this.addHistory({
-      productId,
+      versionId: productId,
       status: 'approved',
       comment: comment || 'Approved',
       approvedBy: userId,
@@ -97,8 +97,8 @@ export class ProductApprovalService {
 
     const [product] = await client
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, productId));
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.id, productId));
 
     if (!product) {
       throw new BadRequestException('Product not found');
@@ -109,17 +109,17 @@ export class ProductApprovalService {
     }
 
     const [updated] = await client
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         approvalStatus: 'rejected',
         rejectionReason: reason,
         updatedAt: new Date(),
       })
-      .where(eq(productMasters.id, productId))
+      .where(eq(productMasterVersions.id, productId))
       .returning();
 
     await this.addHistory({
-      productId,
+      versionId: productId,
       status: 'rejected',
       comment: reason,
       approvedBy: userId,
@@ -133,8 +133,8 @@ export class ProductApprovalService {
 
     return client
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.approvalStatus, 'pending'));
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.approvalStatus, 'pending'));
   }
 
   async getApprovalHistory(productId: string, tx?: DbTransaction) {
@@ -143,13 +143,13 @@ export class ProductApprovalService {
     return client
       .select()
       .from(productApprovalHistory)
-      .where(eq(productApprovalHistory.productId, productId))
+      .where(eq(productApprovalHistory.versionId, productId))
       .orderBy(productApprovalHistory.createdAt);
   }
 
   private async addHistory(data: NewProductApprovalHistory, tx?: DbTransaction) {
     const client = this.getClient(tx);
-    
+
     await client.insert(productApprovalHistory).values(data);
   }
 }
