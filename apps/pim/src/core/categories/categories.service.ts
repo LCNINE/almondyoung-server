@@ -574,36 +574,41 @@ export class ProductCategoriesService {
     // 해당 카테고리(들)의 상품들 조회
     const products = await client
       .select({
-        id: pimSchema.productMasters.id,
-        name: pimSchema.productMasters.name,
-        description: pimSchema.productMasters.description,
-        brand: pimSchema.productMasters.brand,
-        thumbnail: pimSchema.productMasters.thumbnail, // thumbnail 필드 추가
-        tags: pimSchema.productMasters.tags,
-        images: pimSchema.productMasters.images,
-        attributes: pimSchema.productMasters.attributes,
-        seoTitle: pimSchema.productMasters.seoTitle,
-        seoDescription: pimSchema.productMasters.seoDescription,
-        seoKeywords: pimSchema.productMasters.seoKeywords,
-        descriptionHtml: pimSchema.productMasters.descriptionHtml,
-        status: pimSchema.productMasters.status,
-        isWholesaleOnly: pimSchema.productMasters.isWholesaleOnly,
-        isMembershipOnly: pimSchema.productMasters.isMembershipOnly,
-        createdAt: pimSchema.productMasters.createdAt,
-        updatedAt: pimSchema.productMasters.updatedAt,
-        createdBy: pimSchema.productMasters.createdBy,
-        updatedBy: pimSchema.productMasters.updatedBy,
+        id: pimSchema.productMasterVersions.id,
+        name: pimSchema.productMasterVersions.name,
+        description: pimSchema.productMasterVersions.description,
+        brand: pimSchema.productMasterVersions.brand,
+        thumbnail: pimSchema.productMasterVersions.thumbnail,
+        tags: pimSchema.productMasterVersions.tags,
+        images: pimSchema.productMasterVersions.images,
+        attributes: pimSchema.productMasterVersions.attributes,
+        seoTitle: pimSchema.productMasterVersions.seoTitle,
+        seoDescription: pimSchema.productMasterVersions.seoDescription,
+        seoKeywords: pimSchema.productMasterVersions.seoKeywords,
+        descriptionHtml: pimSchema.productMasterVersions.descriptionHtml,
+        status: pimSchema.productMasterVersions.status,
+        isWholesaleOnly: pimSchema.productMasterVersions.isWholesaleOnly,
+        isMembershipOnly: pimSchema.productMasterVersions.isMembershipOnly,
+        createdAt: pimSchema.productMasterVersions.createdAt,
+        updatedAt: pimSchema.productMasterVersions.updatedAt,
+        createdBy: pimSchema.productMasterVersions.createdBy,
+        updatedBy: pimSchema.productMasterVersions.updatedBy,
       })
-      .from(pimSchema.productMasters)
+      .from(pimSchema.productMasterVersions)
       .innerJoin(
         pimSchema.productMasterCategories,
-        eq(
-          pimSchema.productMasters.id,
-          pimSchema.productMasterCategories.masterId,
+        and(
+          eq(pimSchema.productMasterCategories.masterId, pimSchema.productMasterVersions.masterId),
+          eq(pimSchema.productMasterCategories.version, pimSchema.productMasterVersions.version)
         ),
       )
-      .where(inArray(pimSchema.productMasterCategories.categoryId, categoryIds))
-      .orderBy(pimSchema.productMasters.name);
+      .where(
+        and(
+          inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
+          eq(pimSchema.productMasterVersions.versionStatus, 'active')
+        )
+      )
+      .orderBy(pimSchema.productMasterVersions.name);
 
     return products;
   }
@@ -640,18 +645,21 @@ export class ProductCategoriesService {
     // 상품 수 카운트 (중복 제거를 위해 DISTINCT 사용)
     const [result] = await client
       .select({
-        count: sql<number>`COUNT(DISTINCT ${pimSchema.productMasters.id})`,
+        count: sql<number>`COUNT(DISTINCT ${pimSchema.productMasterVersions.id})`,
       })
-      .from(pimSchema.productMasters)
+      .from(pimSchema.productMasterVersions)
       .innerJoin(
         pimSchema.productMasterCategories,
-        eq(
-          pimSchema.productMasters.id,
-          pimSchema.productMasterCategories.masterId,
+        and(
+          eq(pimSchema.productMasterCategories.masterId, pimSchema.productMasterVersions.masterId),
+          eq(pimSchema.productMasterCategories.version, pimSchema.productMasterVersions.version)
         ),
       )
       .where(
-        inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
+        and(
+          inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
+          eq(pimSchema.productMasterVersions.versionStatus, 'active')
+        )
       );
 
     return result.count;
@@ -679,11 +687,16 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      // 2. 상품들이 존재하는지 확인
+      // 2. 상품들이 존재하는지 확인 (active 버전만)
       const existingProducts = await txn
-        .select({ id: pimSchema.productMasters.id })
-        .from(pimSchema.productMasters)
-        .where(inArray(pimSchema.productMasters.id, productIds));
+        .select({ id: pimSchema.productMasterVersions.id })
+        .from(pimSchema.productMasterVersions)
+        .where(
+          and(
+            inArray(pimSchema.productMasterVersions.id, productIds),
+            eq(pimSchema.productMasterVersions.versionStatus, 'active')
+          )
+        );
 
       const existingProductIds = existingProducts.map((p) => p.id);
       const missingProductIds = productIds.filter(
@@ -741,11 +754,16 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      // 2. 상품들이 존재하는지 확인
+      // 2. 상품들이 존재하는지 확인 (active 버전만)
       const existingProducts = await txn
-        .select({ id: pimSchema.productMasters.id })
-        .from(pimSchema.productMasters)
-        .where(inArray(pimSchema.productMasters.id, productIds));
+        .select({ id: pimSchema.productMasterVersions.id })
+        .from(pimSchema.productMasterVersions)
+        .where(
+          and(
+            inArray(pimSchema.productMasterVersions.id, productIds),
+            eq(pimSchema.productMasterVersions.versionStatus, 'active')
+          )
+        );
 
       const existingProductIds = existingProducts.map((p) => p.id);
       const missingProductIds = productIds.filter(

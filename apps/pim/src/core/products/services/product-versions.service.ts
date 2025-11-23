@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
 import {
-  ProductMaster,
+  ProductMasterVersion,
   DbTransaction,
   VersionTreeNode,
   VersionDiffDto,
@@ -9,7 +11,7 @@ import {
 } from '../../../types';
 import {
   type PimSchema,
-  productMasters,
+  productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
@@ -30,7 +32,9 @@ export class ProductVersionsService {
 
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+    @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
+    private readonly productPublisher: StreamPublisher<ProductEvents>,
+  ) { }
 
   private get dbConn() {
     return this.db.db;
@@ -44,9 +48,9 @@ export class ProductVersionsService {
     return this.inTx(async (tx) => {
       const versions = await tx
         .select()
-        .from(productMasters)
-        .where(eq(productMasters.masterId, masterId))
-        .orderBy(productMasters.version);
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.masterId, masterId))
+        .orderBy(productMasterVersions.version);
 
       if (versions.length === 0) {
         throw new NotFoundException(`No versions found for master ${masterId}`);
@@ -88,15 +92,15 @@ export class ProductVersionsService {
     }, tx);
   }
 
-  async getActiveVersion(masterId: string, tx?: DbTransaction): Promise<ProductMaster> {
+  async getActiveVersion(masterId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.inTx(async (tx) => {
       const [activeVersion] = await tx
         .select()
-        .from(productMasters)
+        .from(productMasterVersions)
         .where(
           and(
-            eq(productMasters.masterId, masterId),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         )
         .limit(1);
@@ -109,12 +113,12 @@ export class ProductVersionsService {
     }, tx);
   }
 
-  async getVersionById(versionId: string, tx?: DbTransaction): Promise<ProductMaster> {
+  async getVersionById(versionId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.inTx(async (tx) => {
       const [version] = await tx
         .select()
-        .from(productMasters)
-        .where(eq(productMasters.id, versionId))
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId))
         .limit(1);
 
       if (!version) {
@@ -130,21 +134,21 @@ export class ProductVersionsService {
     userId: string,
     copyMappings: boolean = true,
     tx?: DbTransaction,
-  ): Promise<ProductMaster> {
+  ): Promise<ProductMasterVersion> {
     return this.inTx(async (tx) => {
       const parent = await this.getVersionById(parentVersionId, tx);
 
       const maxVersionResult = await tx
-        .select({ max: drizzleMax(productMasters.version) })
-        .from(productMasters)
-        .where(eq(productMasters.masterId, parent.masterId));
+        .select({ max: drizzleMax(productMasterVersions.version) })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.masterId, parent.masterId));
 
       const nextVersion = (maxVersionResult[0]?.max || 0) + 1;
 
       const { id, masterId, version, parentVersionId: _, versionStatus, draftOwnerId, createdAt, updatedAt, ...parentData } = parent;
 
       const [newVersion] = await tx
-        .insert(productMasters)
+        .insert(productMasterVersions)
         .values({
           ...parentData,
           id: uuidv7(),
@@ -182,7 +186,7 @@ export class ProductVersionsService {
         throw new BadRequestException('Only draft versions can be published');
       }
 
-      let previousActiveVersion: ProductMaster | null = null;
+      let previousActiveVersion: ProductMasterVersion | null = null;
 
       if (targetStatus === 'active') {
         // 기존 active 버전 조회
@@ -194,21 +198,21 @@ export class ProductVersionsService {
 
         // 기존 active를 inactive로
         await tx
-          .update(productMasters)
+          .update(productMasterVersions)
           .set({ versionStatus: 'inactive' })
           .where(
             and(
-              eq(productMasters.masterId, version.masterId),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterVersions.masterId, version.masterId),
+              eq(productMasterVersions.versionStatus, 'active'),
             ),
           );
       }
 
       // draft를 publish
       await tx
-        .update(productMasters)
+        .update(productMasterVersions)
         .set({ versionStatus: targetStatus, draftOwnerId: null, updatedAt: new Date() })
-        .where(eq(productMasters.id, versionId));
+        .where(eq(productMasterVersions.id, versionId));
 
       // 이벤트 발행: 추가/삭제된 variant만
       if (targetStatus === 'active') {
@@ -219,6 +223,13 @@ export class ProductVersionsService {
         );
       }
 
+      await this._emitActiveVersionChangedEvent(
+        version,
+        previousActiveVersion,
+        targetStatus,
+        tx,
+      );
+
       this.logger.log(
         `Published version ${version.version} of master ${version.masterId} as ${targetStatus}`,
       );
@@ -226,11 +237,52 @@ export class ProductVersionsService {
   }
 
   /**
+   * Active version 변경 이벤트 발행
+   */
+  private async _emitActiveVersionChangedEvent(
+    newVersion: ProductMasterVersion,
+    previousActiveVersion: ProductMasterVersion | null,
+    targetStatus: 'active' | 'inactive',
+    tx: DbTransaction,
+  ): Promise<void> {
+    try {
+      const changeReason = targetStatus === 'inactive'
+        ? 'unpublished'
+        : previousActiveVersion
+          ? 'rollback'
+          : 'published';
+
+      await this.productPublisher.publishEvent({
+        eventType: 'ProductMasterActiveVersionChanged',
+        aggregateId: newVersion.masterId,
+        payload: {
+          masterId: newVersion.masterId,
+          productId: targetStatus === 'active' ? newVersion.id : null,
+          version: targetStatus === 'active' ? newVersion.version : null,
+          name: targetStatus === 'active' ? newVersion.name : null,
+          previousActiveVersionId: previousActiveVersion?.id || null,
+          changeReason,
+          changedAt: new Date().toISOString(),
+        },
+      });
+
+      this.logger.log(
+        `📤 Published ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to publish ProductMasterActiveVersionChanged: ${newVersion.masterId}`,
+        error.stack,
+      );
+    }
+  }
+
+  /**
    * publish 시 variant 변경 이벤트 발행
    */
   private async _publishVariantChangeEvents(
-    newVersion: ProductMaster,
-    oldVersion: ProductMaster | null,
+    newVersion: ProductMasterVersion,
+    oldVersion: ProductMasterVersion | null,
     tx: DbTransaction,
   ): Promise<void> {
     const newVariantIds = await this.getVersionVariants(
@@ -241,10 +293,10 @@ export class ProductVersionsService {
 
     const oldVariantIds = oldVersion
       ? await this.getVersionVariants(
-          oldVersion.masterId,
-          oldVersion.version,
-          tx,
-        )
+        oldVersion.masterId,
+        oldVersion.version,
+        tx,
+      )
       : [];
 
     const addedVariantIds = newVariantIds.filter(
@@ -778,8 +830,8 @@ export class ProductVersionsService {
 
       // 4. 버전 자체 삭제
       await tx
-        .delete(productMasters)
-        .where(eq(productMasters.id, versionId));
+        .delete(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
 
       // 5. 고아 variant 정리
       if (variantIds.length > 0) {

@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
-import { pricingRules, productMasters, productMasterPricingRules, pimSchema } from '../../schema';
+import { pricingRules, productMasterVersions, productMasterPricingRules, pimSchema } from '../../schema';
 import { DbTransaction, PricingRule, VariantPriceSet } from '../../types';
 import {
   ReplacePricingRulesDto,
@@ -98,14 +98,14 @@ export class PricingService {
             eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
           )
           .innerJoin(
-            productMasters,
+            productMasterVersions,
             and(
-              eq(productMasterPricingRules.masterId, productMasters.masterId),
-              eq(productMasterPricingRules.version, productMasters.version),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
+              eq(productMasterPricingRules.version, productMasterVersions.version),
+              eq(productMasterVersions.versionStatus, 'active'),
             ),
           )
-          .where(eq(productMasters.masterId, masterId))
+          .where(eq(productMasterVersions.masterId, masterId))
           .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
       }
 
@@ -142,12 +142,12 @@ export class PricingService {
       let actualVersion = version;
       if (actualVersion === undefined) {
         const [activeMaster] = await trx
-          .select({ version: productMasters.version })
-          .from(productMasters)
+          .select({ version: productMasterVersions.version })
+          .from(productMasterVersions)
           .where(
             and(
-              eq(productMasters.masterId, masterId),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterVersions.masterId, masterId),
+              eq(productMasterVersions.versionStatus, 'active'),
             ),
           )
           .limit(1);
@@ -160,12 +160,12 @@ export class PricingService {
 
       // draft 상태 검증
       const [versionToModify] = await trx
-        .select({ versionStatus: productMasters.versionStatus })
-        .from(productMasters)
+        .select({ versionStatus: productMasterVersions.versionStatus })
+        .from(productMasterVersions)
         .where(
           and(
-            eq(productMasters.masterId, masterId),
-            eq(productMasters.version, actualVersion),
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.version, actualVersion),
           ),
         )
         .limit(1);
@@ -287,12 +287,12 @@ export class PricingService {
       let actualVersion = version;
       if (actualVersion === undefined) {
         const [activeMaster] = await trx
-          .select({ version: productMasters.version })
-          .from(productMasters)
+          .select({ version: productMasterVersions.version })
+          .from(productMasterVersions)
           .where(
             and(
-              eq(productMasters.masterId, masterId),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterVersions.masterId, masterId),
+              eq(productMasterVersions.versionStatus, 'active'),
             ),
           )
           .limit(1);
@@ -347,12 +347,12 @@ export class PricingService {
         targetVersionId = versionId;
       } else {
         const [activeVersion] = await trx
-          .select({ id: productMasters.id })
-          .from(productMasters)
+          .select({ id: productMasterVersions.id })
+          .from(productMasterVersions)
           .where(
             and(
-              eq(productMasters.masterId, masterId),
-              eq(productMasters.versionStatus, 'active'),
+              eq(productMasterVersions.masterId, masterId),
+              eq(productMasterVersions.versionStatus, 'active'),
             ),
           );
 
@@ -377,9 +377,9 @@ export class PricingService {
     tx: DbTransaction,
   ): Promise<void> {
     const masters = await tx
-      .select({ id: productMasters.id })
-      .from(productMasters)
-      .where(eq(productMasters.masterId, masterId))
+      .select({ id: productMasterVersions.id })
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.masterId, masterId))
       .limit(1);
 
     if (masters.length === 0) {
