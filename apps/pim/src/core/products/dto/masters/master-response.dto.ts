@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductTagDto } from './product-tag.dto';
 
 export class ProductMasterDto {
   @ApiProperty({ description: '제품 마스터 ID (UUID 형식)' })
@@ -206,6 +207,13 @@ export class MasterDetailDto extends ProductMasterDto {
 
   @ApiProperty({ description: '채널별 제품들', type: [ChannelProductDto] })
   channelProducts: ChannelProductDto[];
+
+  @ApiProperty({
+    description: '상품에 연결된 태그 목록',
+    type: [ProductTagDto],
+    required: false
+  })
+  tagValues?: ProductTagDto[];
 }
 
 export class MasterListItemDto {

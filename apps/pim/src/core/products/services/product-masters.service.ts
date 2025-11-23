@@ -30,6 +30,7 @@ import {
   productMasterPricingRules,
   productTagValues,
   tagValues,
+  tagGroups,
 } from '../../../schema';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
@@ -549,11 +550,51 @@ export class ProductMastersService {
 
     const channelProducts = [];
 
+    // 태그 값 조회 (masterId, version 기준)
+    const tagResults = await client
+      .select({
+        tagValueId: productTagValues.tagValueId,
+        tagValueName: tagValues.name,
+        tagValueDisplayOrder: tagValues.displayOrder,
+        tagGroupId: tagGroups.id,
+        tagGroupName: tagGroups.name,
+      })
+      .from(productTagValues)
+      .innerJoin(
+        tagValues,
+        eq(productTagValues.tagValueId, tagValues.id)
+      )
+      .innerJoin(
+        tagGroups,
+        eq(tagValues.groupId, tagGroups.id)
+      )
+      .where(
+        and(
+          eq(productTagValues.masterId, masterId),
+          eq(productTagValues.version, actualVersion),
+          eq(tagValues.isActive, true),
+          eq(tagGroups.isActive, true)
+        )
+      )
+      .orderBy(
+        asc(tagGroups.displayOrder),
+        asc(tagValues.displayOrder)
+      );
+
+    const tags = tagResults.map(r => ({
+      id: r.tagValueId,
+      name: r.tagValueName,
+      displayOrder: r.tagValueDisplayOrder,
+      groupId: r.tagGroupId,
+      groupName: r.tagGroupName,
+    }));
+
     return {
       ...master,
       optionGroups: optionGroupsWithValues,
       variants: variants.map((v) => ({ ...v, optionValues: [] })),
       channelProducts,
+      tagValues: tags,
     };
   }
 
