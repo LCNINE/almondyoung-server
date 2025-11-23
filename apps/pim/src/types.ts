@@ -270,6 +270,13 @@ export interface MasterDetailDto extends ProductMaster {
   channelProducts: (ChannelProduct & {
     channel: SalesChannel;
   })[];
+  tagValues?: Array<{
+    id: string;
+    name: string;
+    groupId: string;
+    groupName: string;
+    displayOrder: number;
+  }>;
 }
 
 // Variant 일괄 수정 DTO
