@@ -236,6 +236,12 @@ export class MasterListItemDto {
 
   @ApiProperty({ description: '생성일시', nullable: true })
   createdAt: string | null;
+
+  @ApiProperty({ description: '옵션 그룹 개수', minimum: 0 })
+  optionGroupCount: number;
+
+  @ApiProperty({ description: '변형 개수', minimum: 1 })
+  variantCount: number;
 }
 
 export class MasterListResponseDto {

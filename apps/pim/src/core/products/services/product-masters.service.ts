@@ -35,7 +35,7 @@ import {
   tagValues,
   tagGroups,
 } from '../../../schema';
-import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -630,6 +630,8 @@ export class ProductMastersService {
       isMembershipOnly: boolean | null;
       status: string | null;
       createdAt: string | null;
+      optionGroupCount: number;
+      variantCount: number;
     }[];
     total: number;
     page: number;
@@ -720,6 +722,18 @@ export class ProductMastersService {
           isMembershipOnly: productMasterVersions.isMembershipOnly,
           status: productMasterVersions.status,
           createdAt: productMasterVersions.createdAt,
+          optionGroupCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM ${productMasterOptionGroups}
+            WHERE ${productMasterOptionGroups.masterId} = ${productMasterVersions.masterId}
+              AND ${productMasterOptionGroups.version} = ${productMasterVersions.version}
+          )`.as('option_group_count'),
+          variantCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM ${productMasterVariants}
+            WHERE ${productMasterVariants.masterId} = ${productMasterVersions.masterId}
+              AND ${productMasterVariants.version} = ${productMasterVersions.version}
+          )`.as('variant_count'),
         })
         .from(productMasterVersions)
         .innerJoin(
@@ -777,6 +791,18 @@ export class ProductMastersService {
         isMembershipOnly: productMasterVersions.isMembershipOnly,
         status: productMasterVersions.status,
         createdAt: productMasterVersions.createdAt,
+        optionGroupCount: sql<number>`(
+          SELECT COUNT(*)::int
+          FROM ${productMasterOptionGroups}
+          WHERE ${productMasterOptionGroups.masterId} = ${productMasterVersions.masterId}
+            AND ${productMasterOptionGroups.version} = ${productMasterVersions.version}
+        )`.as('option_group_count'),
+        variantCount: sql<number>`(
+          SELECT COUNT(*)::int
+          FROM ${productMasterVariants}
+          WHERE ${productMasterVariants.masterId} = ${productMasterVersions.masterId}
+            AND ${productMasterVariants.version} = ${productMasterVersions.version}
+        )`.as('variant_count'),
       })
       .from(productMasterVersions)
       .orderBy(desc(productMasterVersions.createdAt));
