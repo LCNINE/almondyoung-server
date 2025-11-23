@@ -28,6 +28,8 @@ import {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productTagValues,
+  tagValues,
 } from '../../../schema';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
@@ -45,7 +47,7 @@ export class ProductMastersService {
 
     @Inject(forwardRef(() => ProductVersionsService))
     private readonly productVersionsService: ProductVersionsService,
-  ) {}
+  ) { }
 
   private async _linkImages(
     masterId: string,
@@ -130,11 +132,11 @@ export class ProductMastersService {
     data: CreateMasterDto,
     tx?: DbTransaction,
   ): Promise<ProductMaster> {
-    return tx 
+    return tx
       ? this._createMasterWithinTransaction(data, tx)
       : this.db.db.transaction(async (txn) => {
-          return this._createMasterWithinTransaction(data, txn);
-        });
+        return this._createMasterWithinTransaction(data, txn);
+      });
   }
 
   private async _createMasterWithinTransaction(
@@ -153,7 +155,7 @@ export class ProductMastersService {
       versionStatus: 'draft',
       parentVersionId: null,
       draftOwnerId: null,
-      
+
       // 제공된 필드만 사용, 나머지는 기본값
       name: data.name || '새 상품',
       description: data.description ?? null,
@@ -588,12 +590,12 @@ export class ProductMastersService {
     const offset = (page - 1) * limit;
 
     const whereConditions: any[] = [];
-    
+
     // Add soft delete filter (unless explicitly including deleted)
     if (!filters?.includeDeleted) {
       whereConditions.push(isNull(productMasters.deletedAt));
     }
-    
+
     if (filters?.status) {
       whereConditions.push(eq(productMasters.status, filters.status));
     }
@@ -769,20 +771,20 @@ export class ProductMastersService {
       // Use the new rule-based pricing API: PUT /products/:masterId/pricing-rules
 
       // 3. 기본 필드 업데이트
-      const { 
-        categoryIds, 
-        primaryCategoryId, 
+      const {
+        categoryIds,
+        primaryCategoryId,
         migrationData,
         optionDiff,
-        ...masterUpdateData 
+        ...masterUpdateData
       } = data;
 
       // Update master basic info with type safety
       const [updated] = await txClient
         .update(productMasters)
-        .set({ 
+        .set({
           ...(masterUpdateData satisfies Partial<Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>>),
-          updatedAt: new Date() 
+          updatedAt: new Date()
         })
         .where(eq(productMasters.id, masterId))
         .returning();
@@ -834,6 +836,51 @@ export class ProductMastersService {
             existingMaster.version,
             changeType,
             txClient,
+          );
+        }
+      }
+
+      // 6. 태그 값 업데이트
+      if (data.tagValueIds !== undefined) {
+        await txClient
+          .delete(productTagValues)
+          .where(
+            and(
+              eq(productTagValues.masterId, updated.masterId),
+              eq(productTagValues.version, updated.version)
+            )
+          );
+
+        if (data.tagValueIds.length > 0) {
+          const uniqueTagValueIds = [...new Set(data.tagValueIds)];
+
+          if (uniqueTagValueIds.length !== data.tagValueIds.length) {
+            throw new Error('Duplicate tag value IDs are not allowed');
+          }
+
+          const validTagValues = await txClient
+            .select({ id: tagValues.id })
+            .from(tagValues)
+            .where(
+              and(
+                inArray(tagValues.id, data.tagValueIds),
+                eq(tagValues.isActive, true)
+              )
+            );
+
+          if (validTagValues.length !== data.tagValueIds.length) {
+            const validIds = validTagValues.map(v => v.id);
+            const invalidIds = data.tagValueIds.filter(id => !validIds.includes(id));
+            throw new Error(`Tag values not found or inactive: ${invalidIds.join(', ')}`);
+          }
+
+          await txClient.insert(productTagValues).values(
+            data.tagValueIds.map((tagValueId) => ({
+              masterId: updated.masterId,
+              version: updated.version,
+              tagValueId,
+              createdAt: new Date(),
+            }))
           );
         }
       }
@@ -1964,7 +2011,7 @@ export class ProductMastersService {
     tx?: DbTransaction,
   ) {
     const client = this.getClient(tx);
-    
+
     await client.insert(productAuditLog).values({
       productId: data.productId,
       action: data.action,

@@ -18,6 +18,8 @@ import {
   variantOptionValues,
   productVariants,
   pricingRules,
+  productTagValues,
+  tagValues,
 } from '../../../schema';
 import { eq, and, sql, max as drizzleMax } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -646,9 +648,37 @@ export class ProductVersionsService {
       );
     }
 
+    const tagValueMappings = await tx
+      .select({
+        tagValueId: productTagValues.tagValueId,
+      })
+      .from(productTagValues)
+      .innerJoin(
+        tagValues,
+        eq(productTagValues.tagValueId, tagValues.id)
+      )
+      .where(
+        and(
+          eq(productTagValues.masterId, masterId),
+          eq(productTagValues.version, fromVersion),
+          eq(tagValues.isActive, true)
+        )
+      );
+
+    if (tagValueMappings.length > 0) {
+      await tx.insert(productTagValues).values(
+        tagValueMappings.map((tv) => ({
+          masterId,
+          version: toVersion,
+          tagValueId: tv.tagValueId,
+          createdAt: new Date(),
+        }))
+      );
+    }
+
     this.logger.log(
       `Copied mappings and displays from version ${fromVersion} to ${toVersion} for master ${masterId}: ` +
-      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules`,
+      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values`,
     );
   }
 
@@ -715,6 +745,15 @@ export class ProductVersionsService {
             eq(productMasterVariants.masterId, version.masterId),
             eq(productMasterVariants.version, version.version),
           ),
+        );
+
+      await tx
+        .delete(productTagValues)
+        .where(
+          and(
+            eq(productTagValues.masterId, version.masterId),
+            eq(productTagValues.version, version.version)
+          )
         );
 
       // 3. 가격 규칙 매핑 삭제 (고아 정리 포함)

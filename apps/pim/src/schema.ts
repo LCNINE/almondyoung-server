@@ -714,7 +714,7 @@ export const tagValues = pgTable(
       .$defaultFn(() => uuidv7()),
     groupId: uuid('group_id')
       .notNull()
-      .references(() => tagGroups.id, { onDelete: 'cascade' }),
+      .references(() => tagGroups.id, { onDelete: 'restrict' }),
     name: varchar('name', { length: 100 }).notNull(),
     displayOrder: integer('display_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
@@ -738,7 +738,7 @@ export const categoryTagGroups = pgTable(
       .references(() => productCategories.id, { onDelete: 'cascade' }),
     tagGroupId: uuid('tag_group_id')
       .notNull()
-      .references(() => tagGroups.id, { onDelete: 'cascade' }),
+      .references(() => tagGroups.id, { onDelete: 'restrict' }),
     displayOrder: integer('display_order').notNull().default(0),
     isRequired: boolean('is_required').notNull().default(false),
     appliesToDescendants: boolean('applies_to_descendants').notNull().default(false),
@@ -756,17 +756,16 @@ export const categoryTagGroups = pgTable(
 export const productTagValues = pgTable(
   'product_tag_values',
   {
-    productId: uuid('product_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id').notNull(),
+    version: integer('version').notNull(),
     tagValueId: uuid('tag_value_id')
       .notNull()
-      .references(() => tagValues.id, { onDelete: 'cascade' }),
+      .references(() => tagValues.id, { onDelete: 'restrict' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.productId, table.tagValueId] }),
-    index('idx_product_tag_values_product').on(table.productId),
+    primaryKey({ columns: [table.masterId, table.version, table.tagValueId] }),
+    index('idx_product_tag_values_master_version').on(table.masterId, table.version),
     index('idx_product_tag_values_tag').on(table.tagValueId),
   ],
 );
@@ -890,10 +889,6 @@ export const categoryTagGroupsRelations = relations(categoryTagGroups, ({ one })
 }));
 
 export const productTagValuesRelations = relations(productTagValues, ({ one }) => ({
-  product: one(productMasters, {
-    fields: [productTagValues.productId],
-    references: [productMasters.id],
-  }),
   tagValue: one(tagValues, {
     fields: [productTagValues.tagValueId],
     references: [tagValues.id],
