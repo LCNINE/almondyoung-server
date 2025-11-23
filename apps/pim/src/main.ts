@@ -21,15 +21,15 @@ async function bootstrap() {
     },
   });
 
-  // app.useGlobalPipes(
-  //   new ValidationPipe({
-  //     whitelist: true,
-  //     transform: true,
-  //     forbidNonWhitelisted: true,
-  //     disableErrorMessages: false,
-  //     validationError: { target: false, value: false },
-  //   }),
-  // );
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+      disableErrorMessages: false,
+      validationError: { target: false, value: false },
+    }),
+  );
   app.enableCors({
     origin: true,
     credentials: true,
@@ -39,7 +39,7 @@ async function bootstrap() {
     .setTitle('PIM API')
     .setDescription(
       '상품 정보 관리 시스템 (Product Information Management) API\n\n' +
-        '제품 마스터, 변형, 카테고리, 판매 채널, 채널별 제품 정보를 관리하는 API입니다.',
+      '제품 마스터, 변형, 카테고리, 판매 채널, 채널별 제품 정보를 관리하는 API입니다.',
     )
     .setVersion('1.0.0')
     .addTag('PIM Health', '서비스 헬스체크')
@@ -54,6 +54,7 @@ async function bootstrap() {
     .addTag('Product CSV', 'CSV 가져오기/내보내기')
     .addTag('Product Audit', '제품 감사 로그')
     .addTag('Dashboard', '대시보드 통계')
+    .addTag('Tags', '태그 관리')
     .addServer('https://pim-development.up.railway.app', '로컬 개발 서버')
     .addServer('https://pim.almondyoung.com', '프로덕션 서버')
     .build();

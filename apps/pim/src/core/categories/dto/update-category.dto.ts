@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsBoolean, IsInt, Min, MaxLength, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsInt, Min, MaxLength, IsUrl, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CategoryTagGroupLinkDto } from './category-tag-group-link.dto';
 
 export class UpdateCategoryDto {
   @ApiProperty({ 
@@ -61,5 +63,16 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiProperty({
+    description: '태그 그룹 연결 목록',
+    type: [CategoryTagGroupLinkDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoryTagGroupLinkDto)
+  tagGroupLinks?: CategoryTagGroupLinkDto[];
 }
 
