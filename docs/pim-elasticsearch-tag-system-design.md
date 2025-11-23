@@ -218,6 +218,253 @@ like(productMasters.description, `%${query.keyword}%`)
 
 ---
 
+## 태그 그룹 상속 (Inheritance)
+
+### 개념
+
+카테고리 계층 구조에서 부모 카테고리에 연결된 태그 그룹을 자식 카테고리에서도 자동으로 사용할 수 있는 기능입니다.
+
+### 핵심 필드: `applies_to_descendants`
+
+카테고리-태그 그룹 연결 시 `applies_to_descendants` 플래그를 `true`로 설정하면, 해당 태그 그룹이 모든 하위 카테고리에도 적용됩니다.
+
+```sql
+-- 예시: 속눈썹 연장 카테고리에 "재질" 태그 그룹을 연결하고 하위 카테고리에도 적용
+INSERT INTO category_tag_groups (category_id, tag_group_id, applies_to_descendants)
+VALUES ('eyelash_extensions_id', 'material_tag_group_id', true);
+```
+
+### 상속 시나리오
+
+#### 시나리오 1: 기본 상속
+
+```
+카테고리 A (속눈썹 연장)
+  - 태그 그룹: "재질" (applies_to_descendants=true)
+  └─ 카테고리 B (가모)
+      - 태그 그룹: "컬 모양" (applies_to_descendants=false)
+      └─ 카테고리 C (프리미엄 가모)
+
+GET /categories/C/tag-groups
+→ 반환:
+  - "재질" (inherited from A)
+  - "컬 모양" (inherited from B)
+```
+
+**동작**:
+- 카테고리 C는 "재질"을 A로부터, "컬 모양"을 B로부터 상속
+- 조상의 모든 `applies_to_descendants=true` 태그 그룹이 포함됨
+- 각 태그 그룹에는 `isInherited`, `inheritedFromCategoryId`, `inheritedFromCategoryName` 정보 포함
+
+#### 시나리오 2: 중복 방지
+
+```
+카테고리 A
+  - 태그 그룹: "재질" (applies_to_descendants=true)
+  └─ 카테고리 B
+
+PUT /categories/B/tag-groups
+Body: {
+  links: [
+    { tagGroupId: "material_tag_group_id", ... }  // 이미 A로부터 상속받음
+  ]
+}
+
+→ 에러: "Tag group material_tag_group_id is already inherited from ancestor category A"
+```
+
+**동작**:
+- 상속받은 태그 그룹을 직접 연결하려고 하면 에러 발생
+- 데이터 정합성 보장 (중복 연결 방지)
+
+#### 시나리오 3: 다단계 상속
+
+```
+카테고리 A (루트)
+  - "재질" (applies_to_descendants=true)
+  └─ 카테고리 B
+      - "색상" (applies_to_descendants=true)
+      - "크기" (applies_to_descendants=false)
+      └─ 카테고리 C
+          - "스타일" (applies_to_descendants=false)
+          └─ 카테고리 D
+
+GET /categories/D/tag-groups
+→ 반환:
+  - "재질" (inherited from A)
+  - "색상" (inherited from B)
+  - "스타일" (inherited from C)
+```
+
+**동작**:
+- 모든 조상 카테고리로부터 `applies_to_descendants=true`인 태그 그룹 상속
+- "크기"는 B에만 적용되고 C, D에는 적용되지 않음 (applies_to_descendants=false)
+
+### 정렬 규칙
+
+상속받은 태그 그룹과 직접 연결된 태그 그룹은 출처에 관계없이 `displayOrder`로 통합 정렬됩니다.
+
+```
+카테고리 B의 태그 그룹:
+  - "재질" (inherited, displayOrder=5)
+  - "컬 모양" (own, displayOrder=1)
+  - "길이" (own, displayOrder=10)
+
+정렬 후:
+  1. "컬 모양" (displayOrder=1)
+  2. "재질" (displayOrder=5)
+  3. "길이" (displayOrder=10)
+```
+
+### API 응답 구조
+
+```typescript
+// GET /categories/{categoryId}/tag-groups
+{
+  "categoryId": "category_b_id",
+  "categoryName": "가모",
+  "tagGroups": [
+    {
+      "id": "material_group_id",
+      "name": "재질",
+      "displayOrder": 5,
+      "isRequired": false,
+      "appliesToDescendants": true,
+      "isInherited": true,
+      "inheritedFromCategoryId": "category_a_id",
+      "inheritedFromCategoryName": "속눈썹 연장",
+      "values": [...]
+    },
+    {
+      "id": "curl_shape_group_id",
+      "name": "컬 모양",
+      "displayOrder": 1,
+      "isRequired": true,
+      "appliesToDescendants": false,
+      "isInherited": false,
+      "inheritedFromCategoryId": null,
+      "inheritedFromCategoryName": null,
+      "values": [...]
+    }
+  ]
+}
+```
+
+### 구현 세부사항
+
+#### 1. 조상 카테고리 조회 (재귀 CTE)
+
+```typescript
+private async _getAncestorCategoryIds(
+  categoryId: string,
+  tx: DbTransaction,
+): Promise<Array<{ id: string; name: string; level: number }>> {
+  const recursiveQuery = sql`
+    WITH RECURSIVE ancestor_categories AS (
+      SELECT id, name, parent_id, 0 as level
+      FROM product_categories
+      WHERE id = ${categoryId}
+      
+      UNION ALL
+      
+      SELECT pc.id, pc.name, pc.parent_id, ac.level + 1 as level
+      FROM product_categories pc
+      INNER JOIN ancestor_categories ac ON pc.id = ac.parent_id
+    )
+    SELECT id, name, level
+    FROM ancestor_categories
+    ORDER BY level ASC
+  `;
+  
+  return await tx.execute(recursiveQuery);
+}
+```
+
+#### 2. 상속 중복 검증
+
+태그 그룹 연결 시 조상으로부터 이미 상속받은 태그 그룹인지 확인:
+
+```typescript
+// 조상들의 applies_to_descendants=true 태그 그룹 조회
+const inheritedTagGroups = await tx
+  .select()
+  .from(categoryTagGroups)
+  .where(
+    and(
+      inArray(categoryTagGroups.categoryId, ancestorIds),
+      eq(categoryTagGroups.appliesToDescendants, true)
+    )
+  );
+
+// 중복 체크
+if (inheritedTagGroups.find(itg => itg.tagGroupId === newTagGroupId)) {
+  throw new Error('Already inherited from ancestor');
+}
+```
+
+#### 3. 상속 포함 조회
+
+```typescript
+// 자신 + 조상들의 태그 그룹 조회
+const result = await tx
+  .select()
+  .from(categoryTagGroups)
+  .where(
+    and(
+      inArray(categoryTagGroups.categoryId, allCategoryIds),
+      or(
+        eq(categoryTagGroups.categoryId, targetCategoryId),
+        eq(categoryTagGroups.appliesToDescendants, true)
+      )
+    )
+  );
+```
+
+### 사용 사례
+
+#### 1. 대분류에 공통 필터 적용
+
+```
+네일 (대분류)
+  - "재질" (applies_to_descendants=true)
+  - "색상" (applies_to_descendants=true)
+  ├─ 네일 팁
+  │   └─ "팁 모양" (own)
+  ├─ 네일 파츠
+  │   └─ "파츠 모양" (own)
+  └─ 네일 스티커
+      └─ "스티커 크기" (own)
+```
+
+**효과**: "재질"과 "색상"은 모든 네일 하위 카테고리에 자동 적용
+
+#### 2. 중분류별 전문 필터 추가
+
+```
+속눈썹 연장
+  - "재질" (applies_to_descendants=true)
+  ├─ 가모
+  │   - "컬 모양" (applies_to_descendants=true)
+  │   - "컬 두께" (applies_to_descendants=true)
+  │   └─ 프리미엄 가모
+  │       └─ "프리미엄 등급" (own)
+  └─ 접착제
+      └─ "접착력" (own)
+```
+
+**효과**: 
+- 프리미엄 가모: "재질", "컬 모양", "컬 두께", "프리미엄 등급"
+- 접착제: "재질", "접착력"
+
+### 주의사항
+
+1. **순환 참조 방지**: 카테고리 자체에 순환 참조가 없어야 함 (parent_id 관리)
+2. **성능 고려**: 깊은 계층 구조에서는 재귀 쿼리 성능 모니터링 필요
+3. **데이터 정합성**: 태그 그룹 변경 시 하위 카테고리에 미치는 영향 고려
+4. **UI/UX**: 프론트엔드에서 상속받은 태그 그룹을 시각적으로 구분 표시 권장
+
+---
+
 ## Elasticsearch 통합 설계
 
 ### 기능 매핑
@@ -554,6 +801,7 @@ CREATE TABLE category_tag_groups (
   tag_group_id VARCHAR(30) NOT NULL REFERENCES tag_groups(id) ON DELETE CASCADE,
   display_order INT DEFAULT 0,
   is_required BOOLEAN DEFAULT false,
+  applies_to_descendants BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW(),
   PRIMARY KEY (category_id, tag_group_id)
 );
@@ -633,6 +881,7 @@ export const categoryTagGroups = pgTable(
       .references(() => tagGroups.id, { onDelete: 'cascade' }),
     displayOrder: integer('display_order').default(0),
     isRequired: boolean('is_required').default(false),
+    appliesToDescendants: boolean('applies_to_descendants').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
@@ -831,26 +1080,35 @@ POST /pim_products/_search
 ### Phase 1: 기반 구축 (2주)
 
 #### Week 1: 데이터 모델 및 인프라
-- [ ] PostgreSQL 스키마 추가 (태그 테이블)
-- [ ] Drizzle ORM 스키마 정의
+- [x] PostgreSQL 스키마 추가 (태그 테이블)
+  - [x] `tag_groups` 테이블 정의
+  - [x] `tag_values` 테이블 정의
+  - [x] 인덱스 및 Foreign Key 설정
+- [x] Drizzle ORM 스키마 정의
+  - [x] `tagGroups`, `tagValues` 스키마
+  - [x] Relations 정의
+  - [x] TypeScript 타입 정의 (types.ts)
 - [ ] Elasticsearch 클러스터 구축 (Docker Compose)
 - [ ] Elasticsearch 인덱스 생성
 - [ ] NestJS Elasticsearch 모듈 설정
 
 #### Week 2: 기본 CRUD 및 동기화
-- [ ] 태그 관리 API 구현
-  - Tag Group CRUD
-  - Tag Value CRUD
-  - Category ↔ Tag Group 연결 API
-- [ ] 상품-태그 연결 API
-- [ ] 이벤트 기반 동기화 구현
+- [x] 태그 관리 API 구현 (기본 CRUD)
+  - [x] Tag Group CRUD
+  - [x] Tag Value CRUD
+  - [x] Category ↔ Tag Group 연결 API
+- [ ] 상품-태그 연결 API (Phase 2로 연기)
+- [ ] 이벤트 기반 동기화 구현 (Elasticsearch 통합 시)
   - Product → ES sync
   - 실패 처리 및 재시도 로직
 
 **산출물**:
-- 마이그레이션 파일
-- 태그 관리 API 문서
-- 동기화 로직 문서
+- [x] Drizzle 스키마 및 타입 정의
+- [x] 태그 관리 API 문서 (Swagger)
+- [x] 기본 CRUD 서비스 구현
+- [x] Category-Tag Group 연결 API 구현
+- [ ] 마이그레이션 파일 (사용자가 직접 수행)
+- [ ] 동기화 로직 문서
 
 ---
 
@@ -1209,11 +1467,84 @@ Response:
 
 ---
 
+## 구현 현황 (2025-11-23 기준)
+
+### ✅ 완료된 기능
+
+#### 기본 인프라
+- [x] PostgreSQL 스키마 정의 (`tag_groups`, `tag_values`, `category_tag_groups`, `product_tag_values`)
+- [x] Drizzle ORM 통합
+- [x] TypeScript 타입 정의
+- [x] NestJS 모듈 구조 (`TagsModule`)
+
+#### Tag Groups API
+- [x] 생성 (POST /tags/groups)
+- [x] 목록 조회 (GET /tags/groups?isActive=true/false)
+- [x] 단일 조회 (GET /tags/groups/:id)
+- [x] 상세 조회 with values (GET /tags/groups/:id/detail)
+- [x] 수정 (PUT /tags/groups/:id)
+- [x] 삭제 (DELETE /tags/groups/:id)
+
+#### Tag Values API
+- [x] 생성 (POST /tags/groups/:groupId/values)
+- [x] 그룹별 목록 조회 (GET /tags/groups/:groupId/values)
+- [x] 단일 조회 (GET /tags/values/:id)
+- [x] 수정 (PUT /tags/values/:id)
+- [x] 삭제 (DELETE /tags/values/:id)
+
+#### Category-Tag Group 연결 API
+- [x] 카테고리 생성/수정 시 태그 그룹 연결 (선택적)
+- [x] 태그 그룹 연결 설정 (PUT /categories/:categoryId/tag-groups)
+- [x] 카테고리의 태그 그룹 조회 (GET /categories/:categoryId/tag-groups)
+
+#### 태그 그룹 상속 기능
+- [x] `applies_to_descendants` 필드 추가 (스키마 + DTO)
+- [x] 조상 카테고리 조회 헬퍼 메소드 (재귀 CTE)
+- [x] 상속 중복 검증 (태그 그룹 연결 시)
+- [x] 상속받은 태그 그룹 포함 조회
+- [x] 상속 출처 정보 포함 (isInherited, inheritedFromCategoryId, inheritedFromCategoryName)
+- [x] displayOrder 통합 정렬
+
+#### 추가 구현 사항
+- [x] DTO validation (class-validator + class-transformer)
+- [x] Query parameter 자동 변환 (`@Transform` 데코레이터)
+- [x] 중복 name 검증 (같은 그룹 내)
+- [x] Cascade 삭제 방지 (tag group에 values가 있으면 삭제 불가)
+- [x] Swagger 문서 자동 생성
+- [x] 트랜잭션 지원
+- [x] 태그 그룹 존재 확인 및 검증
+
+### 🔄 다음 단계 (Phase 2)
+
+#### 상품-태그 연결
+- [ ] `product_tag_values` 테이블 활용
+- [ ] 상품에 태그 값 할당 API
+- [ ] 태그 기반 상품 필터링
+
+#### Elasticsearch 통합 (Phase 2-3)
+- [ ] Elasticsearch 클러스터 구축
+- [ ] 인덱스 매핑 생성
+- [ ] 이벤트 기반 동기화
+- [ ] Hybrid Search 구현
+- [ ] 태그 기반 Aggregation
+
+### 📝 주의사항
+
+1. **마이그레이션**: 사용자가 직접 `drizzle-kit generate` 및 `migrate` 실행 필요
+2. **ValidationPipe**: PIM `main.ts`에서 활성화됨 - 다른 컨트롤러에 영향 가능성 확인 필요
+3. **ID 생성**: UUID v7 사용 (PIM 전체 일관성)
+4. **RESTful 설계**: `/tags/groups/:groupId/values` 패턴 유지
+
+---
+
 ## 변경 이력
 
 | 날짜 | 버전 | 변경 내용 | 작성자 |
 |------|------|----------|--------|
 | 2025-11-23 | 1.0 | 초안 작성 | AI Agent |
+| 2025-11-23 | 1.1 | Phase 1 부분 구현 완료 (태그 기본 CRUD) | AI Agent |
+| 2025-11-23 | 1.2 | Category-Tag Group 연결 기능 구현 완료 | AI Agent |
+| 2025-11-23 | 1.3 | 태그 그룹 상속 기능 구현 완료 (applies_to_descendants) | AI Agent |
 
 ---
 
