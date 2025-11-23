@@ -1514,12 +1514,41 @@ Response:
 - [x] 트랜잭션 지원
 - [x] 태그 그룹 존재 확인 및 검증
 
-### 🔄 다음 단계 (Phase 2)
+#### 상품-태그 연결 (Phase 2 완료)
+- [x] **태그 Soft Delete 구현**
+  - [x] `deleteTagGroup()`, `deleteTagValue()`: Hard delete → Soft delete (isActive = false)
+  - [x] `listTagGroups()`, `listTagValuesByGroup()`: 기본적으로 isActive = true만 조회
+  - [x] Foreign Key Cascade 제거 (cascade → restrict)
+- [x] **`product_tag_values` 스키마 변경 (버전별 매핑)**
+  - [x] `productId` → `masterId + version` 구조로 변경
+  - [x] Primary Key: (masterId, version, tagValueId)
+  - [x] 인덱스 추가: `idx_product_tag_values_master_version`
+  - [x] Relations 수정: productMasters 관계 제거 (논리적 참조만 유지)
+- [x] **상품 수정 API에 태그 연결 기능 추가**
+  - [x] `UpdateProductMasterDto.tagValueIds` 필드 추가
+  - [x] `ProductMastersService.updateMaster()`: 태그 업데이트 로직 구현
+  - [x] 비활성화된 태그 연결 시 에러 발생
+  - [x] 중복 UUID 검증 (`@ArrayUnique()` + 서비스 레벨 체크)
+  - [x] 명확한 에러 메시지 (잘못된 ID 목록 표시)
+- [x] **Draft 버전 관리에 태그 로직 통합**
+  - [x] `ProductVersionsService._copyMappings()`: 활성화된 태그만 새 버전으로 복사
+  - [x] `ProductVersionsService.deleteDraftVersion()`: 태그 매핑 자동 삭제
+- [x] **Types 업데이트**
+  - [x] `ProductTagValue` 타입 자동 업데이트 (InferSelectModel)
+  - [x] `UpdateProductMaster` 타입에 `tagValueIds` 필드 추가
 
-#### 상품-태그 연결
-- [ ] `product_tag_values` 테이블 활용
-- [ ] 상품에 태그 값 할당 API
-- [ ] 태그 기반 상품 필터링
+#### 상품 조회 API에 태그 정보 포함 (Phase 3 완료)
+- [x] **태그 정보 DTO 정의**
+  - [x] `ProductTagDto` 클래스 생성 (플랫 배열 구조)
+  - [x] `MasterDetailDto`에 `tagValues` 필드 추가
+- [x] **상품 상세 조회에 태그 정보 포함**
+  - [x] `getMasterDetail()`: `productTagValues` JOIN 쿼리 추가
+  - [x] `tagGroups`, `tagValues` 테이블 JOIN
+  - [x] 활성화된 태그만 조회 (`isActive=true`)
+  - [x] `displayOrder` 기준 정렬
+- [ ] 상품 목록 조회에 태그 필터링 옵션 추가 (선택적, 추후 구현)
+
+### 🔄 다음 단계 (Phase 4)
 
 #### Elasticsearch 통합 (Phase 2-3)
 - [ ] Elasticsearch 클러스터 구축
@@ -1530,10 +1559,18 @@ Response:
 
 ### 📝 주의사항
 
-1. **마이그레이션**: 사용자가 직접 `drizzle-kit generate` 및 `migrate` 실행 필요
+1. **마이그레이션 필수**: `product_tag_values` 스키마 변경으로 인해 마이그레이션 필요
+   ```bash
+   cd apps/pim
+   npx drizzle-kit generate
+   npx drizzle-kit migrate
+   ```
+   - 기존 데이터가 있다면 수동 마이그레이션 필요 (productId → masterId + version)
 2. **ValidationPipe**: PIM `main.ts`에서 활성화됨 - 다른 컨트롤러에 영향 가능성 확인 필요
 3. **ID 생성**: UUID v7 사용 (PIM 전체 일관성)
 4. **RESTful 설계**: `/tags/groups/:groupId/values` 패턴 유지
+5. **태그 삭제 정책**: Soft delete 사용으로 과거 버전의 데이터 무결성 보장
+6. **버전 관리**: 삭제된 태그는 새 Draft 생성 시 자동으로 제외됨
 
 ---
 
@@ -1545,6 +1582,58 @@ Response:
 | 2025-11-23 | 1.1 | Phase 1 부분 구현 완료 (태그 기본 CRUD) | AI Agent |
 | 2025-11-23 | 1.2 | Category-Tag Group 연결 기능 구현 완료 | AI Agent |
 | 2025-11-23 | 1.3 | 태그 그룹 상속 기능 구현 완료 (applies_to_descendants) | AI Agent |
+| 2025-11-23 | 1.4 | Phase 2 구현 완료 (상품-태그 연결, 버전별 매핑, Soft Delete) | AI Agent |
+| 2025-11-23 | 1.5 | Phase 3 구현 완료 (상품 조회 API에 태그 정보 포함) | AI Agent |
+
+---
+
+## 데이터 마이그레이션 스크립트 (Phase 2)
+
+### productTagValues 스키마 변경 마이그레이션
+
+기존 `product_tag_values` 데이터가 있는 경우, 다음 SQL 스크립트로 마이그레이션:
+
+```sql
+-- 1. 기존 데이터 백업
+CREATE TABLE product_tag_values_backup AS 
+SELECT * FROM product_tag_values;
+
+-- 2. 기존 테이블 삭제 (Drizzle 마이그레이션이 새 구조로 재생성)
+DROP TABLE product_tag_values CASCADE;
+
+-- 3. Drizzle 마이그레이션 실행
+-- (drizzle-kit migrate 명령어 실행)
+
+-- 4. 데이터 복원 (productId → masterId + version 변환)
+INSERT INTO product_tag_values (master_id, version, tag_value_id, created_at)
+SELECT 
+  pm.master_id,
+  pm.version,
+  ptv_backup.tag_value_id,
+  ptv_backup.created_at
+FROM product_tag_values_backup ptv_backup
+INNER JOIN product_masters pm ON pm.id = ptv_backup.product_id
+WHERE pm.deleted_at IS NULL;  -- 삭제된 상품 제외
+
+-- 5. 마이그레이션 검증
+SELECT 
+  COUNT(*) as backup_count,
+  (SELECT COUNT(*) FROM product_tag_values) as migrated_count
+FROM product_tag_values_backup;
+
+-- 6. 검증 완료 후 백업 테이블 삭제 (선택 사항)
+-- DROP TABLE product_tag_values_backup;
+```
+
+### 마이그레이션 체크리스트
+
+- [ ] Drizzle 마이그레이션 파일 생성 (`drizzle-kit generate`)
+- [ ] 데이터베이스 백업 수행
+- [ ] 마이그레이션 SQL 스크립트 검토
+- [ ] 개발 환경에서 테스트
+- [ ] 프로덕션 마이그레이션 실행
+- [ ] 데이터 정합성 검증
+- [ ] 백업 테이블 정리
 
 ---
 
