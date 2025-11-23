@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   index,
   foreignKey,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
 
@@ -684,6 +685,92 @@ export const promotionProducts = pgTable('promotion_products', {
   variantId: uuid('variant_id').references(() => productVariants.id),
 });
 
+// ===== 15. TAG GROUPS =====
+export const tagGroups = pgTable(
+  'tag_groups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    name: varchar('name', { length: 100 }).notNull(),
+    description: text('description'),
+    displayOrder: integer('display_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_tag_groups_active').on(table.isActive),
+    index('idx_tag_groups_display_order').on(table.displayOrder),
+  ],
+);
+
+// ===== 16. TAG VALUES =====
+export const tagValues = pgTable(
+  'tag_values',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => tagGroups.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 100 }).notNull(),
+    displayOrder: integer('display_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_tag_values_group_id').on(table.groupId),
+    index('idx_tag_values_active').on(table.isActive),
+    index('idx_tag_values_display_order').on(table.groupId, table.displayOrder),
+    uniqueIndex('unique_tag_values_group_name').on(table.groupId, table.name),
+  ],
+);
+
+// ===== 17. CATEGORY TAG GROUPS (Category ↔ Tag Group 연결) =====
+export const categoryTagGroups = pgTable(
+  'category_tag_groups',
+  {
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => productCategories.id, { onDelete: 'cascade' }),
+    tagGroupId: uuid('tag_group_id')
+      .notNull()
+      .references(() => tagGroups.id, { onDelete: 'cascade' }),
+    displayOrder: integer('display_order').notNull().default(0),
+    isRequired: boolean('is_required').notNull().default(false),
+    appliesToDescendants: boolean('applies_to_descendants').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.categoryId, table.tagGroupId] }),
+    index('idx_category_tag_groups_category').on(table.categoryId),
+    index('idx_category_tag_groups_group').on(table.tagGroupId),
+    index('idx_category_tag_groups_display_order').on(table.categoryId, table.displayOrder),
+  ],
+);
+
+// ===== 18. PRODUCT TAG VALUES (Product ↔ Tag Value 연결) =====
+export const productTagValues = pgTable(
+  'product_tag_values',
+  {
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    tagValueId: uuid('tag_value_id')
+      .notNull()
+      .references(() => tagValues.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.productId, table.tagValueId] }),
+    index('idx_product_tag_values_product').on(table.productId),
+    index('idx_product_tag_values_tag').on(table.tagValueId),
+  ],
+);
+
 // PIM 전체 스키마 통합
 export const pimSchema = {
   productCategories,
@@ -706,6 +793,10 @@ export const pimSchema = {
   productImages,
   productApprovalHistory,
   productAuditLog,
+  tagGroups,
+  tagValues,
+  categoryTagGroups,
+  productTagValues,
 };
 
 // ===== RELATIONS =====
@@ -773,6 +864,41 @@ export const channelProductsRelations = relations(
     }),
   }),
 );
+
+export const tagGroupsRelations = relations(tagGroups, ({ many }) => ({
+  values: many(tagValues),
+  categories: many(categoryTagGroups),
+}));
+
+export const tagValuesRelations = relations(tagValues, ({ one, many }) => ({
+  group: one(tagGroups, {
+    fields: [tagValues.groupId],
+    references: [tagGroups.id],
+  }),
+  products: many(productTagValues),
+}));
+
+export const categoryTagGroupsRelations = relations(categoryTagGroups, ({ one }) => ({
+  category: one(productCategories, {
+    fields: [categoryTagGroups.categoryId],
+    references: [productCategories.id],
+  }),
+  tagGroup: one(tagGroups, {
+    fields: [categoryTagGroups.tagGroupId],
+    references: [tagGroups.id],
+  }),
+}));
+
+export const productTagValuesRelations = relations(productTagValues, ({ one }) => ({
+  product: one(productMasters, {
+    fields: [productTagValues.productId],
+    references: [productMasters.id],
+  }),
+  tagValue: one(tagValues, {
+    fields: [productTagValues.tagValueId],
+    references: [tagValues.id],
+  }),
+}));
 
 // 스키마 타입 추출
 export type PimSchema = typeof pimSchema;

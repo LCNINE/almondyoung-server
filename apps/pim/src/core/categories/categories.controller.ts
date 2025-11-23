@@ -30,6 +30,8 @@ import {
   UpdateDisplaySettingsDto,
   UpdateSeoConfigDto,
   UpdateTemplateConfigDto,
+  ReplaceTagGroupLinksDto,
+  CategoryTagGroupsResponseDto,
 } from './dto';
 
 @ApiTags('Categories')
@@ -500,6 +502,92 @@ export class ProductCategoriesController {
       }
       throw new HttpException(
         `Failed to update visibility: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ===== TAG GROUP MANAGEMENT =====
+
+  @Put(':categoryId/tag-groups')
+  @ApiOperation({
+    summary: '카테고리 태그 그룹 연결 설정',
+    description: '카테고리에 연결된 태그 그룹을 설정합니다. 기존 연결은 모두 삭제되고 새로운 연결로 교체됩니다.',
+  })
+  @ApiParam({
+    name: 'categoryId',
+    description: '카테고리 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiBody({
+    type: ReplaceTagGroupLinksDto,
+    description: '태그 그룹 연결 정보',
+  })
+  @ApiResponse({
+    status: HttpStatus.NO_CONTENT,
+    description: '태그 그룹 연결 설정 성공',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: '카테고리를 찾을 수 없음',
+  })
+  @ApiResponse({
+    status: HttpStatus.BAD_REQUEST,
+    description: '존재하지 않는 태그 그룹 ID',
+  })
+  async replaceTagGroupLinks(
+    @Param('categoryId') categoryId: string,
+    @Body() dto: ReplaceTagGroupLinksDto,
+  ): Promise<void> {
+    try {
+      await this.productCategoriesService.replaceTagGroupLinks(
+        categoryId,
+        dto.links,
+      );
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('Tag groups not found')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to replace tag group links: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Get(':categoryId/tag-groups')
+  @ApiOperation({
+    summary: '카테고리 태그 그룹 조회',
+    description: '카테고리에 연결된 태그 그룹 및 태그 값을 조회합니다.',
+  })
+  @ApiParam({
+    name: 'categoryId',
+    description: '카테고리 ID (UUID)',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '태그 그룹 조회 성공',
+    type: CategoryTagGroupsResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: '카테고리를 찾을 수 없음',
+  })
+  async getCategoryTagGroups(
+    @Param('categoryId') categoryId: string,
+  ): Promise<CategoryTagGroupsResponseDto> {
+    try {
+      return await this.productCategoriesService.getCategoryTagGroups(categoryId);
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+      }
+      throw new HttpException(
+        `Failed to get category tag groups: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
