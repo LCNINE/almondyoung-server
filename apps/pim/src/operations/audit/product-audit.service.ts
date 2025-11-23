@@ -10,7 +10,7 @@ export class ProductAuditService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -23,7 +23,7 @@ export class ProductAuditService {
     return this.db
       .select()
       .from(productAuditLog)
-      .where(eq(productAuditLog.productId, productId))
+      .where(eq(productAuditLog.versionId, productId))
       .orderBy(desc(productAuditLog.timestamp));
   }
 

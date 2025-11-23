@@ -56,6 +56,21 @@ export interface ProductInventoryManagementChangedPayload {
   changedAt: string;
 }
 
+export interface ProductMasterActiveVersionChangedPayload {
+  masterId: string;
+  productId: string | null;
+  version: number | null;
+  name: string | null;
+  previousActiveVersionId: string | null;
+  changeReason: 'published' | 'unpublished' | 'rollback';
+  changedAt: string;
+}
+
+export interface ProductMasterDeletedPayload {
+  masterId: string;
+  deletedAt: string;
+}
+
 // ===== Zod 스키마 정의 =====
 
 const OptionCombinationItemSchema = z.object({
@@ -104,6 +119,21 @@ const ProductInventoryManagementChangedSchema = z.object({
   changedAt: z.string().datetime(),
 });
 
+const ProductMasterActiveVersionChangedSchema = z.object({
+  masterId: z.string().min(1),
+  productId: z.string().nullable(),
+  version: z.number().nullable(),
+  name: z.string().nullable(),
+  previousActiveVersionId: z.string().nullable(),
+  changeReason: z.enum(['published', 'unpublished', 'rollback']),
+  changedAt: z.string().datetime(),
+});
+
+const ProductMasterDeletedSchema = z.object({
+  masterId: z.string().min(1),
+  deletedAt: z.string().datetime(),
+});
+
 // ===== Stream Config =====
 
 export const PRODUCT_STREAM = stream({
@@ -127,6 +157,14 @@ export const PRODUCT_STREAM = stream({
       'ProductInventoryManagementChanged',
       ProductInventoryManagementChangedPayload
     >('ProductInventoryManagementChanged', ProductInventoryManagementChangedSchema),
+    ProductMasterActiveVersionChanged: event<
+      'ProductMasterActiveVersionChanged',
+      ProductMasterActiveVersionChangedPayload
+    >('ProductMasterActiveVersionChanged', ProductMasterActiveVersionChangedSchema),
+    ProductMasterDeleted: event<'ProductMasterDeleted', ProductMasterDeletedPayload>(
+      'ProductMasterDeleted',
+      ProductMasterDeletedSchema,
+    ),
   },
 });
 

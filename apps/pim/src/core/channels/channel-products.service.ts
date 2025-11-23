@@ -5,14 +5,14 @@ import {
   ChannelProduct,
   UpdateChannelProduct,
   SalesChannel,
-  ProductMaster,
+  ProductMasterVersion,
   DbTransaction,
 } from '../../types';
 import {
   type PimSchema,
   channelProducts,
   salesChannels,
-  productMasters,
+  productMasterVersions,
 } from '../../schema';
 import {
   eq,
@@ -47,12 +47,17 @@ export class ChannelProductsService {
 
     // 1. Master 존재 확인
     const masterExists = await client
-      .select({ id: productMasters.id })
-      .from(productMasters)
-      .where(eq(productMasters.id, data.masterId));
+      .select({ id: productMasterVersions.masterId })
+      .from(productMasterVersions)
+      .where(
+        and(
+          eq(productMasterVersions.masterId, data.masterId),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      );
 
     if (masterExists.length === 0) {
-      throw new Error(`Master not found: ${data.masterId}`);
+      throw new Error(`Master not found or no active version: ${data.masterId}`);
     }
 
     // 2. Channel 존재 확인
@@ -203,7 +208,7 @@ export class ChannelProductsService {
       whereConditions.push(
         or(
           ilike(channelProducts.name, `%${filters.search}%`),
-          ilike(productMasters.name, `%${filters.search}%`),
+          ilike(productMasterVersions.name, `%${filters.search}%`),
         ),
       );
     }
@@ -217,10 +222,10 @@ export class ChannelProductsService {
       .select({ count: count() })
       .from(channelProducts)
       .innerJoin(
-        productMasters,
+        productMasterVersions,
         and(
-          eq(channelProducts.masterId, productMasters.masterId),
-          eq(productMasters.versionStatus, 'active'),
+          eq(channelProducts.masterId, productMasterVersions.masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
         ),
       );
 
@@ -242,35 +247,35 @@ export class ChannelProductsService {
         channelSpecificData: channelProducts.channelSpecificData,
         createdAt: channelProducts.createdAt,
         updatedAt: channelProducts.updatedAt,
-        // ProductMaster 필드들 (master 객체로 그룹화)
+        // ProductMasterVersion 필드들 (master 객체로 그룹화)
         master: {
-          id: productMasters.id,
-          masterId: productMasters.masterId,
-          version: productMasters.version,
-          versionStatus: productMasters.versionStatus,
-          name: productMasters.name,
-          description: productMasters.description,
-          brand: productMasters.brand,
-          thumbnail: productMasters.thumbnail, // thumbnail 필드 추가
-          tags: productMasters.tags,
-          images: productMasters.images,
-          attributes: productMasters.attributes,
-          seoTitle: productMasters.seoTitle,
-          seoDescription: productMasters.seoDescription,
-          seoKeywords: productMasters.seoKeywords,
-          status: productMasters.status,
-          createdAt: productMasters.createdAt,
-          updatedAt: productMasters.updatedAt,
-          createdBy: productMasters.createdBy,
-          updatedBy: productMasters.updatedBy,
+          id: productMasterVersions.id,
+          masterId: productMasterVersions.masterId,
+          version: productMasterVersions.version,
+          versionStatus: productMasterVersions.versionStatus,
+          name: productMasterVersions.name,
+          description: productMasterVersions.description,
+          brand: productMasterVersions.brand,
+          thumbnail: productMasterVersions.thumbnail,
+          tags: productMasterVersions.tags,
+          images: productMasterVersions.images,
+          attributes: productMasterVersions.attributes,
+          seoTitle: productMasterVersions.seoTitle,
+          seoDescription: productMasterVersions.seoDescription,
+          seoKeywords: productMasterVersions.seoKeywords,
+          status: productMasterVersions.status,
+          createdAt: productMasterVersions.createdAt,
+          updatedAt: productMasterVersions.updatedAt,
+          createdBy: productMasterVersions.createdBy,
+          updatedBy: productMasterVersions.updatedBy,
         },
       })
       .from(channelProducts)
       .innerJoin(
-        productMasters,
+        productMasterVersions,
         and(
-          eq(channelProducts.masterId, productMasters.masterId),
-          eq(productMasters.versionStatus, 'active'),
+          eq(channelProducts.masterId, productMasterVersions.masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
         ),
       )
       .orderBy(desc(channelProducts.createdAt))
@@ -388,16 +393,19 @@ export class ChannelProductsService {
           channelSpecificData: channelProducts.channelSpecificData,
         },
         master: {
-          id: productMasters.id,
-          name: productMasters.name, // 원본 이름
-          description: productMasters.description,
-          images: productMasters.images,
+          id: productMasterVersions.id,
+          name: productMasterVersions.name, // 원본 이름
+          description: productMasterVersions.description,
+          images: productMasterVersions.images,
         },
       })
       .from(channelProducts)
       .innerJoin(
-        productMasters,
-        eq(channelProducts.masterId, productMasters.id),
+        productMasterVersions,
+        and(
+          eq(channelProducts.masterId, productMasterVersions.masterId),
+          eq(productMasterVersions.versionStatus, 'active')
+        ),
       )
       .where(
         and(
@@ -562,12 +570,17 @@ export class ChannelProductsService {
 
     // 1. Master 존재 확인
     const masterExists = await client
-      .select({ id: productMasters.id })
-      .from(productMasters)
-      .where(eq(productMasters.id, masterId));
+      .select({ id: productMasterVersions.masterId })
+      .from(productMasterVersions)
+      .where(
+        and(
+          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      );
 
     if (masterExists.length === 0) {
-      errors.push(`Master not found: ${masterId}`);
+      errors.push(`Master not found or no active version: ${masterId}`);
     }
 
     // 2. Channel 존재 확인
@@ -720,12 +733,17 @@ export class ChannelProductsService {
     const executeBulkCreate = async (txn: any) => {
       // 1. Master 존재 확인
       const masterExists = await txn
-        .select({ id: productMasters.id })
-        .from(productMasters)
-        .where(eq(productMasters.id, masterId));
+        .select({ id: productMasterVersions.masterId })
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.versionStatus, 'active')
+          )
+        );
 
       if (masterExists.length === 0) {
-        throw new Error(`Master not found: ${masterId}`);
+        throw new Error(`Master not found or no active version: ${masterId}`);
       }
 
       const channelIds = channelConfigs.map((config) => config.channelId);

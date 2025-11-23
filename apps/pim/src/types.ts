@@ -4,6 +4,7 @@ import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   productCategories,
   productMasters,
+  productMasterVersions,
   productMasterCategories,
   productMasterOptionGroups,
   productMasterVariants,
@@ -43,11 +44,18 @@ export type UpdateProductCategory = Partial<
   Omit<NewProductCategory, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
-// ===== PRODUCT MASTERS 타입 =====
+// ===== PRODUCT MASTERS (메타데이터만) 타입 =====
 export type ProductMaster = InferSelectModel<typeof productMasters>;
 export type NewProductMaster = InferInsertModel<typeof productMasters>;
 export type UpdateProductMaster = Partial<
-  Omit<NewProductMaster, 'id' | 'createdAt' | 'updatedAt'>
+  Omit<NewProductMaster, 'id' | 'createdAt'>
+>;
+
+// ===== PRODUCT MASTER VERSIONS (버전별 상품 데이터) 타입 =====
+export type ProductMasterVersion = InferSelectModel<typeof productMasterVersions>;
+export type NewProductMasterVersion = InferInsertModel<typeof productMasterVersions>;
+export type UpdateProductMasterVersion = Partial<
+  Omit<NewProductMasterVersion, 'id' | 'masterId' | 'version' | 'createdAt' | 'updatedAt'>
 > & {
   categoryIds?: string[];
   primaryCategoryId?: string;
@@ -55,8 +63,6 @@ export type UpdateProductMaster = Partial<
   optionDiff?: OptionDiff;
   tagValueIds?: string[];
 };
-
-// 채널 서비스는 기존 ProductMaster 타입 그대로 사용 (CTO 코드 유지)
 
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
 export type ProductMasterCategory = InferSelectModel<
@@ -259,7 +265,7 @@ export interface MasterListItemDto {
 }
 
 // Product Master 상세 응답 DTO (모든 정보 포함)
-export interface MasterDetailDto extends ProductMaster {
+export interface MasterDetailDto extends ProductMasterVersion {
   optionGroups: (ProductOptionGroup & {
     values: ProductOptionValue[];
   })[];
@@ -291,6 +297,7 @@ export interface UpdateVariantBulkDto {
 
 // 가격 조회 응답 DTO
 export interface VariantWithPriceDto extends ProductVariant {
+  masterId: string;
   price: number;
   optionValues: ProductOptionValue[];
 }
@@ -424,3 +431,7 @@ export interface CreateDraftVersionDto {
 export interface PublishVersionDto {
   targetStatus: 'active' | 'inactive';
 }
+
+// Re-export new DTOs
+export { ProductDto, ProductListItemDto, ProductListResponseDto } from './core/products/dto/products/product-response.dto';
+export { ProductMasterMetadataDto } from './core/products/dto/products/product-master-metadata.dto';

@@ -1088,27 +1088,30 @@ POST /pim_products/_search
   - [x] `tagGroups`, `tagValues` 스키마
   - [x] Relations 정의
   - [x] TypeScript 타입 정의 (types.ts)
-- [ ] Elasticsearch 클러스터 구축 (Docker Compose)
-- [ ] Elasticsearch 인덱스 생성
-- [ ] NestJS Elasticsearch 모듈 설정
+- [x] Elasticsearch 클러스터 구축 (Railway 배포)
+- [x] Elasticsearch 인덱스 매핑 정의
+- [x] NestJS Elasticsearch 모듈 설정
 
 #### Week 2: 기본 CRUD 및 동기화
 - [x] 태그 관리 API 구현 (기본 CRUD)
   - [x] Tag Group CRUD
   - [x] Tag Value CRUD
   - [x] Category ↔ Tag Group 연결 API
-- [ ] 상품-태그 연결 API (Phase 2로 연기)
-- [ ] 이벤트 기반 동기화 구현 (Elasticsearch 통합 시)
-  - Product → ES sync
-  - 실패 처리 및 재시도 로직
+- [x] 상품-태그 연결 API (Phase 2 완료)
+- [x] 이벤트 기반 동기화 구현
+  - [x] ProductMaster 이벤트 정의
+  - [x] Kafka 이벤트 발행 로직
+  - [x] Elasticsearch 동기화 서비스
+  - [x] 에러 핸들링 및 로깅
 
 **산출물**:
 - [x] Drizzle 스키마 및 타입 정의
 - [x] 태그 관리 API 문서 (Swagger)
 - [x] 기본 CRUD 서비스 구현
 - [x] Category-Tag Group 연결 API 구현
-- [ ] 마이그레이션 파일 (사용자가 직접 수행)
-- [ ] 동기화 로직 문서
+- [x] ProductMaster 이벤트 스키마
+- [x] Elasticsearch 동기화 로직
+- [x] 초기 데이터 마이그레이션 스크립트
 
 ---
 
@@ -1548,14 +1551,129 @@ Response:
   - [x] `displayOrder` 기준 정렬
 - [ ] 상품 목록 조회에 태그 필터링 옵션 추가 (선택적, 추후 구현)
 
-### 🔄 다음 단계 (Phase 4)
+#### Elasticsearch 통합 (Phase 4 완료)
+- [x] **패키지 설치 및 환경 설정**
+  - [x] `@elastic/elasticsearch` v9.2.0 설치
+  - [x] TypeScript 타입 정의 추가 (`@types/elasticsearch`)
+  - [x] 환경 변수 추가 (`ELASTICSEARCH_NODE`, `ELASTICSEARCH_USERNAME`, `ELASTICSEARCH_PASSWORD`)
+  - [x] Zod 스키마 검증 구현 (`pimEnvSchema`)
+- [x] **ProductMaster 이벤트 시스템**
+  - [x] `ProductMasterActiveVersionChanged` 이벤트 정의
+    - Payload: masterId, productId, version, name, previousActiveVersionId, changeReason, changedAt
+    - changeReason: 'published' (신규), 'unpublished' (비활성화), 'rollback' (버전 롤백)
+    - Zod 스키마로 페이로드 검증
+  - [x] `ProductMasterDeleted` 이벤트 정의
+    - Payload: masterId, deletedAt
+    - Zod 스키마로 페이로드 검증
+  - [x] `PRODUCT_STREAM`에 이벤트 등록 (`packages/event-contracts`)
+- [x] **이벤트 발행 구현**
+  - [x] `ProductVersionsService._emitActiveVersionChangedEvent()`: 
+    - `publishVersion()` 호출 시 active 버전 변경 이벤트 발행
+    - changeReason 로직 구현 (published/unpublished/rollback)
+    - 에러 핸들링 및 로깅
+  - [x] `ProductMastersService._emitMasterDeletedEvent()`:
+    - `softDelete()` 호출 시 삭제 이벤트 발행 (active 상품만)
+    - 에러 핸들링 및 로깅
+  - [x] Kafka `StreamPublisher` DI 통합
+- [x] **Elasticsearch 모듈 구조**
+  - [x] `apps/pim/src/search/` 디렉토리 생성
+  - [x] `ElasticsearchModule` 생성 및 `PimModule`에 통합
+  - [x] `EventsModule.forConsumer` 통합 (Kafka 이벤트 소비)
+  - [x] DTO 정의:
+    - `ProductSearchRequestDto`: 검색 요청 (keyword, categoryId, tagFilters, price range 등)
+    - `ProductSearchResponseDto`: 검색 응답 (items, pagination, filters aggregation)
+    - `ProductSearchItemDto`: 검색 결과 아이템
+  - [x] 서비스 구현:
+    - `ElasticsearchService`: 클라이언트 wrapper, health check
+    - `ElasticsearchIndexService`: 인덱스 생성/삭제/매핑 업데이트
+    - `ElasticsearchSyncService`: Kafka 이벤트 리스너, 동기화 로직
+    - `ProductSearchService`: 검색 쿼리 빌더 (keyword, filter, aggregation)
+    - `ProductSearchController`: 검색 API 엔드포인트 (GET /products/search)
+- [x] **인덱스 매핑 정의**
+  - [x] `apps/pim/src/search/types/index-mappings.ts` 생성
+  - [x] 텍스트 검색 필드: name, description (Korean Nori analyzer)
+  - [x] 필터링 필드: category_id, brand, status, price, stock_quantity
+  - [x] 태그 필드: nested 구조 (group_id, group_name, value_id, value_name)
+  - [x] 플랫 배열: tag_value_ids (빠른 필터링용)
+  - [x] 벡터 필드 준비: name_embedding, full_embedding (dense_vector, 768 dims)
+  - [x] 자동완성 필드: name.autocomplete (Edge N-gram)
+  - [x] 동의어 필터 설정 준비
+- [x] **태그 필터링 로직**
+  - [x] 그룹 내 OR 연산: 같은 태그 그룹의 값들은 OR로 연결
+  - [x] 그룹 간 AND 연산: 다른 태그 그룹들은 AND로 연결
+  - [x] Nested query 구현
+  - [x] DTO validation (TagFilterDto)
+- [x] **초기 데이터 마이그레이션**
+  - [x] `apps/pim/scripts/migrate-to-elasticsearch.ts` 스크립트 생성
+  - [x] PostgreSQL에서 active 상품 조회 (JOIN: category, tags)
+  - [x] Elasticsearch 문서 변환 (비정규화)
+  - [x] Bulk indexing 구현
+  - [x] 진행 상황 로깅
+  - [x] NPM 스크립트 추가: `pim:migrate-es`
+- [x] **검색 API 구현**
+  - [x] GET `/products/search` 엔드포인트
+  - [x] 쿼리 파라미터: keyword, categoryId, tagFilters, brands, minPrice, maxPrice, sortBy, sortOrder, page, limit
+  - [x] 응답: items, pagination, filters (aggregations)
+  - [x] Swagger 문서 자동 생성
 
-#### Elasticsearch 통합 (Phase 2-3)
-- [ ] Elasticsearch 클러스터 구축
-- [ ] 인덱스 매핑 생성
-- [ ] 이벤트 기반 동기화
-- [ ] Hybrid Search 구현
-- [ ] 태그 기반 Aggregation
+#### Elasticsearch 기반 인프라 (Phase 4 완료)
+- [x] **Elasticsearch 패키지 설치**
+  - [x] `@elastic/elasticsearch` v9.2.0 설치
+  - [x] Apache Arrow 의존성 자동 설치
+- [x] **환경 변수 구성**
+  - [x] `ELASTICSEARCH_NODE` 추가 (URL 형식 검증)
+  - [x] `ELASTICSEARCH_USERNAME` 추가 (선택적)
+  - [x] `ELASTICSEARCH_PASSWORD` 추가 (선택적)
+  - [x] Zod 스키마 검증 (`pimEnvSchema`)
+- [x] **ProductMaster 이벤트 정의**
+  - [x] `ProductMasterActiveVersionChanged` 이벤트 추가
+    - Payload: masterId, productId, version, name, previousActiveVersionId, changeReason, changedAt
+    - changeReason: 'published' | 'unpublished' | 'rollback'
+  - [x] `ProductMasterDeleted` 이벤트 추가
+    - Payload: masterId, deletedAt
+  - [x] Zod 스키마 정의 및 validation
+- [x] **이벤트 발행 로직 구현**
+  - [x] `ProductVersionsService.publishVersion()`: Active version 변경 시 이벤트 발행
+  - [x] `ProductMastersService.softDelete()`: Active 상품 삭제 시 이벤트 발행
+  - [x] 에러 핸들링 및 로깅
+- [x] **Elasticsearch 모듈 구조**
+  - [x] `ElasticsearchModule` 생성 및 PIM 모듈에 통합
+  - [x] `ElasticsearchService` (클라이언트 wrapper)
+  - [x] `ElasticsearchIndexService` (인덱스 관리)
+  - [x] `ElasticsearchSyncService` (Kafka 이벤트 리스너)
+  - [x] `ProductSearchService` (검색 로직)
+  - [x] `ProductSearchController` (검색 API)
+- [x] **인덱스 매핑 정의**
+  - [x] 텍스트 검색 필드 (name, description)
+  - [x] Korean analyzer 설정 (Nori)
+  - [x] 동의어 필터 준비
+  - [x] Nested 태그 구조
+  - [x] Dense vector 필드 (embedding 준비)
+- [x] **초기 데이터 마이그레이션**
+  - [x] `apps/pim/scripts/migrate-to-elasticsearch.ts` 스크립트 생성
+  - [x] NPM 스크립트 추가: `pim:migrate-es`
+  - [x] PostgreSQL → Elasticsearch 데이터 동기화
+  - [x] 태그 정보 포함 (JOIN)
+
+### 🔄 다음 단계 (Phase 5)
+
+#### 검색 기능 고도화
+- [ ] **Hybrid Search 구현**
+  - [ ] OpenAI 임베딩 서비스 연동
+  - [ ] Vector Search + Keyword Search 융합 (RRF)
+  - [ ] 가중치 조정 및 A/B 테스트
+- [ ] **고급 검색 기능**
+  - [ ] 자동완성 API
+  - [ ] 검색어 하이라이팅
+  - [ ] 오타 교정 (Fuzzy Search)
+  - [ ] 동의어 확장
+- [ ] **태그 기반 Aggregation**
+  - [ ] 그룹별 필터 옵션 집계
+  - [ ] 동적 필터 UI 데이터 제공
+- [ ] **성능 최적화**
+  - [ ] Elasticsearch 튜닝 (shard, replica)
+  - [ ] 캐싱 전략 (Redis)
+  - [ ] 모니터링 및 알림 설정
 
 ### 📝 주의사항
 
@@ -1566,11 +1684,27 @@ Response:
    npx drizzle-kit migrate
    ```
    - 기존 데이터가 있다면 수동 마이그레이션 필요 (productId → masterId + version)
-2. **ValidationPipe**: PIM `main.ts`에서 활성화됨 - 다른 컨트롤러에 영향 가능성 확인 필요
-3. **ID 생성**: UUID v7 사용 (PIM 전체 일관성)
-4. **RESTful 설계**: `/tags/groups/:groupId/values` 패턴 유지
-5. **태그 삭제 정책**: Soft delete 사용으로 과거 버전의 데이터 무결성 보장
-6. **버전 관리**: 삭제된 태그는 새 Draft 생성 시 자동으로 제외됨
+2. **Elasticsearch 초기 설정**: 
+   ```bash
+   # 환경 변수 설정 (.env)
+   ELASTICSEARCH_NODE=https://your-railway-url:9200
+   ELASTICSEARCH_USERNAME=elastic  # 선택적
+   ELASTICSEARCH_PASSWORD=your-password  # 선택적
+   
+   # 초기 데이터 마이그레이션
+   npm run pim:migrate-es
+   ```
+   - Railway 또는 AWS OpenSearch 등 Elasticsearch 클러스터가 먼저 배포되어 있어야 함
+   - 인덱스 생성 및 초기 데이터 동기화는 마이그레이션 스크립트가 자동 수행
+3. **이벤트 기반 동기화**: 
+   - Kafka 이벤트가 정상 작동해야 실시간 동기화 가능
+   - `ProductMasterActiveVersionChanged`, `ProductMasterDeleted` 이벤트 확인
+   - 동기화 실패 시 로그 확인 및 재시도 필요
+4. **ValidationPipe**: PIM `main.ts`에서 활성화됨 - 다른 컨트롤러에 영향 가능성 확인 필요
+5. **ID 생성**: UUID v7 사용 (PIM 전체 일관성)
+6. **RESTful 설계**: `/tags/groups/:groupId/values` 패턴 유지
+7. **태그 삭제 정책**: Soft delete 사용으로 과거 버전의 데이터 무결성 보장
+8. **버전 관리**: 삭제된 태그는 새 Draft 생성 시 자동으로 제외됨
 
 ---
 
@@ -1584,6 +1718,7 @@ Response:
 | 2025-11-23 | 1.3 | 태그 그룹 상속 기능 구현 완료 (applies_to_descendants) | AI Agent |
 | 2025-11-23 | 1.4 | Phase 2 구현 완료 (상품-태그 연결, 버전별 매핑, Soft Delete) | AI Agent |
 | 2025-11-23 | 1.5 | Phase 3 구현 완료 (상품 조회 API에 태그 정보 포함) | AI Agent |
+| 2025-11-23 | 1.6 | Phase 4 구현 완료 (Elasticsearch 통합 인프라, 이벤트 시스템, 초기 마이그레이션) | AI Agent |
 
 ---
 

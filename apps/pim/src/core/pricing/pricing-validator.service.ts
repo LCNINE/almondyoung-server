@@ -6,7 +6,7 @@ import {
   productOptionValues,
   productOptionGroups,
   productVariants,
-  productMasters,
+  productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
   pimSchema 
@@ -120,16 +120,16 @@ export class PricingValidatorService {
         eq(productOptionGroups.id, productMasterOptionGroups.optionGroupId),
       )
       .innerJoin(
-        productMasters,
+        productMasterVersions,
         and(
-          eq(productMasterOptionGroups.masterId, productMasters.masterId),
-          eq(productMasterOptionGroups.version, productMasters.version),
-          eq(productMasters.versionStatus, 'active'),
+          eq(productMasterOptionGroups.masterId, productMasterVersions.masterId),
+          eq(productMasterOptionGroups.version, productMasterVersions.version),
+          eq(productMasterVersions.versionStatus, 'active'),
         ),
       )
       .where(
         and(
-          eq(productMasters.masterId, masterId),
+          eq(productMasterVersions.masterId, masterId),
           inArray(productOptionValues.id, optionValueIds),
         ),
       );
@@ -166,16 +166,16 @@ export class PricingValidatorService {
         eq(productVariants.id, productMasterVariants.variantId),
       )
       .innerJoin(
-        productMasters,
+        productMasterVersions,
         and(
-          eq(productMasterVariants.masterId, productMasters.masterId),
-          eq(productMasterVariants.version, productMasters.version),
-          eq(productMasters.versionStatus, 'active'),
+          eq(productMasterVariants.masterId, productMasterVersions.masterId),
+          eq(productMasterVariants.version, productMasterVersions.version),
+          eq(productMasterVersions.versionStatus, 'active'),
         ),
       )
       .where(
         and(
-          eq(productMasters.masterId, masterId),
+          eq(productMasterVersions.masterId, masterId),
           inArray(productVariants.id, variantIds),
         ),
       );
@@ -239,14 +239,14 @@ export class PricingValidatorService {
           eq(productMasterVariants.variantId, productVariants.id),
         )
         .innerJoin(
-          productMasters,
+          productMasterVersions,
           and(
-            eq(productMasterVariants.masterId, productMasters.masterId),
-            eq(productMasterVariants.version, productMasters.version),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVariants.masterId, productMasterVersions.masterId),
+            eq(productMasterVariants.version, productMasterVersions.version),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         )
-        .where(eq(productMasters.masterId, masterId));
+        .where(eq(productMasterVersions.masterId, masterId));
 
       if (variants.length === 0) {
         return;
