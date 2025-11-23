@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, SQL } from 'drizzle-orm';
 import {
   CreateTagGroupDto,
   UpdateTagGroupDto,
@@ -24,7 +24,7 @@ import { type PimSchema, pimSchema } from '../../schema';
 
 @Injectable()
 export class TagsService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(@InjectDb() private readonly db: DbService<PimSchema>) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -114,7 +114,7 @@ export class TagsService {
   ): Promise<TagGroupResponseDto[]> {
     const client = this.getClient(tx);
 
-    const conditions = [];
+    const conditions: SQL[] = [];
     if (filters?.isActive !== undefined) {
       conditions.push(eq(pimSchema.tagGroups.isActive, filters.isActive));
     }
