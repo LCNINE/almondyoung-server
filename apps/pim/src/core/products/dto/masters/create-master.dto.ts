@@ -7,9 +7,8 @@ export const CreateMasterSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   brand: z.string().optional(),
-  thumbnail: z.string().optional(),
-  thumbnailUploadId: z.string().uuid().optional(),
-  additionalImageUploadIds: z.array(z.string().uuid()).max(5, '부가 이미지는 최대 5개까지 가능합니다').optional(),
+  thumbnailFileId: z.string().uuid().optional(),
+  additionalImageFileIds: z.array(z.string().uuid()).max(5, '부가 이미지는 최대 5개까지 가능합니다').optional(),
   // basePrice removed - 가격은 전적으로 pricing rules로 결정
   tags: z.array(z.string()).optional(),
   images: z.array(z.string()).optional(),
@@ -18,7 +17,6 @@ export const CreateMasterSchema = z.object({
   seoDescription: z.string().optional(),
   seoKeywords: z.array(z.string()).optional(),
   descriptionHtml: z.string().optional(),
-  thumbnailUrl: z.string().url().optional(),
   isWholesaleOnly: z.boolean().optional(),
   isMembershipOnly: z.boolean().optional(),
   // optionGroups removed - use update API with optionDiff instead
@@ -43,14 +41,11 @@ export class CreateMasterDtoSwagger {
   @ApiProperty({ description: '브랜드명', required: false })
   brand?: string;
 
-  @ApiProperty({ description: '썸네일 이미지 URL', required: false })
-  thumbnail?: string;
+  @ApiProperty({ description: '썸네일 파일 ID (file-service)', required: false })
+  thumbnailFileId?: string;
 
-  @ApiProperty({ description: '썸네일 이미지 업로드 ID', required: false })
-  thumbnailUploadId?: string;
-
-  @ApiProperty({ description: '부가 이미지 업로드 ID 배열 (최대 5개)', type: [String], required: false })
-  additionalImageUploadIds?: string[];
+  @ApiProperty({ description: '부가 이미지 파일 ID 배열 (최대 5개, file-service)', type: [String], required: false })
+  additionalImageFileIds?: string[];
 
   // basePrice removed - 가격은 pricing rules API로 설정
 
@@ -74,9 +69,6 @@ export class CreateMasterDtoSwagger {
 
   @ApiProperty({ description: '상품 상세설명 HTML', required: false })
   descriptionHtml?: string;
-
-  @ApiProperty({ description: '썸네일 이미지 URL (외부 URL)', required: false })
-  thumbnailUrl?: string;
 
   @ApiProperty({ description: '도매회원 전용 여부', required: false })
   isWholesaleOnly?: boolean;

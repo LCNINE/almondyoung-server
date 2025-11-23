@@ -31,7 +31,7 @@ export class UploadService {
       fileId,
       extension,
       userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
-      status: 'pending',
+      status: 'active',
     });
 
     const uploadResult = await this.storageService.upload({
@@ -52,11 +52,12 @@ export class UploadService {
       url: uploadResult.url,
       size: file.size,
       mimeType: file.mimetype,
-      status: 'pending',
+      status: 'active',
       context: dto.context,
       uploadedBy: userId,
       storageProvider: uploadResult.provider.toLowerCase(),
       metadata: dto.metadata,
+      activatedAt: new Date(),
     });
 
     return {

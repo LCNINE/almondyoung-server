@@ -16,13 +16,13 @@ export class CreateBannerDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'PC 이미지 URL' })
+  @ApiProperty({ description: 'PC 이미지 파일 ID (file-service)', example: '01933e7a-1234-7890-abcd-0123456789ab' })
   @IsString()
-  pcImageUrl: string;
+  pcImageFileId: string;
 
-  @ApiProperty({ description: '모바일 이미지 URL' })
+  @ApiProperty({ description: '모바일 이미지 파일 ID (file-service)', example: '01933e7b-5678-7890-abcd-0123456789cd' })
   @IsString()
-  mobileImageUrl: string;
+  mobileImageFileId: string;
 
   @ApiProperty({ description: '클릭 시 이동할 URL', required: false })
   @IsOptional()
