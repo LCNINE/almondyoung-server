@@ -801,6 +801,80 @@ export const productTagValues = pgTable(
   ],
 );
 
+// ===== BANNER GROUPS =====
+export const bannerGroups = pgTable(
+  'banner_groups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    code: varchar('code', { length: 100 }).notNull().unique(),
+    title: varchar('title', { length: 255 }).notNull(),
+    category: varchar('category', { length: 100 }).notNull(),
+    pcWidth: integer('pc_width'),
+    pcHeight: integer('pc_height'),
+    mobileWidth: integer('mobile_width'),
+    mobileHeight: integer('mobile_height'),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_banner_groups_code').on(table.code),
+    index('idx_banner_groups_category').on(table.category),
+    index('idx_banner_groups_active').on(table.isActive),
+    index('idx_banner_groups_deleted_at').on(table.deletedAt),
+  ],
+);
+
+// ===== BANNERS =====
+export const banners = pgTable(
+  'banners',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    bannerGroupId: uuid('banner_group_id')
+      .notNull()
+      .references(() => bannerGroups.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    pcImageUrl: text('pc_image_url').notNull(),
+    mobileImageUrl: text('mobile_image_url').notNull(),
+    linkUrl: text('link_url'),
+    linkedProductMasterIds: jsonb('linked_product_master_ids')
+      .$type<string[]>()
+      .default([]),
+    displayStartAt: timestamp('display_start_at'),
+    displayEndAt: timestamp('display_end_at'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_banners_group_id').on(table.bannerGroupId),
+    index('idx_banners_active').on(table.isActive),
+    index('idx_banners_display_period').on(table.displayStartAt, table.displayEndAt),
+    index('idx_banners_deleted_at').on(table.deletedAt),
+    index('idx_banners_group_sort').on(table.bannerGroupId, table.sortOrder),
+  ],
+);
+
 // PIM 전체 스키마 통합
 export const pimSchema = {
   productCategories,
@@ -828,6 +902,8 @@ export const pimSchema = {
   tagValues,
   categoryTagGroups,
   productTagValues,
+  bannerGroups,
+  banners,
 };
 
 // ===== RELATIONS =====
@@ -945,6 +1021,17 @@ export const productTagValuesRelations = relations(productTagValues, ({ one }) =
   tagValue: one(tagValues, {
     fields: [productTagValues.tagValueId],
     references: [tagValues.id],
+  }),
+}));
+
+export const bannerGroupsRelations = relations(bannerGroups, ({ many }) => ({
+  banners: many(banners),
+}));
+
+export const bannersRelations = relations(banners, ({ one }) => ({
+  bannerGroup: one(bannerGroups, {
+    fields: [banners.bannerGroupId],
+    references: [bannerGroups.id],
   }),
 }));
 

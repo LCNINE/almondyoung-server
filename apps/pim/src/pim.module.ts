@@ -16,6 +16,7 @@ import { ProductsModule } from './core/products/products.module';
 import { ChannelsModule } from './core/channels/channels.module';
 import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
+import { BannersModule } from './core/banners/banners.module';
 import { ElasticsearchModule } from './search/elasticsearch.module';
 import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
@@ -48,6 +49,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ChannelsModule,
     PricingModule,
     TagsModule,
+    BannersModule,
     // Search & Elasticsearch
     ElasticsearchModule,
     // Operations modules
