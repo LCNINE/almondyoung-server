@@ -853,6 +853,7 @@ export const stockSummary = pgView('stock_summary_view', {
 export const productMatchings = pgTable('product_matchings', {
   id: uuid('id').primaryKey().defaultRandom(),
   variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
+  masterId: uuid('master_id'), // PIM의 Master ID
   skuGroupId: uuid('sku_group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
   status: matchingStatusEnum('status').notNull().default('pending'), // 매칭 상태 (pending, matched, ignored)
   priority: matchingPriorityEnum('priority').notNull().default('normal'), // 매칭 우선순위
@@ -869,6 +870,7 @@ export const productMatchings = pgTable('product_matchings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
   uniqueVariantId: unique().on(t.variantId), // variant당 하나의 매칭만 존재
+  idxMasterId: index('idx_product_matchings_master_id').on(t.masterId),
 }));
 
 // product_variant_sku_links: variant와 sku의 N:M 관계를 위한 연결 테이블
