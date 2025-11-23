@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { eq, and, gte, lte, sql, isNull } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { pimSchema, productMasters } from '../../schema';
+import { pimSchema, productMasterVersions } from '../../schema';
 import {
   DashboardMetricsResponseDto,
   StatusBreakdownDto,
@@ -34,40 +34,56 @@ export class DashboardService {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    // 1. 전체 제품 수 (소프트 삭제 제외)
+    // 1. 전체 제품 수 (소프트 삭제 제외, active 버전만)
     const [{ totalProducts }] = await this.db
       .select({ totalProducts: sql<number>`count(*)` })
-      .from(productMasters)
-      .where(isNull(productMasters.deletedAt));
+      .from(productMasterVersions)
+      .where(
+        and(
+          isNull(productMasterVersions.deletedAt),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      );
 
     // 2. 상태별 제품 수
     const productsByStatus = await this.db
       .select({
-        status: productMasters.status,
+        status: productMasterVersions.status,
         count: sql<number>`count(*)`,
       })
-      .from(productMasters)
-      .where(isNull(productMasters.deletedAt))
-      .groupBy(productMasters.status);
+      .from(productMasterVersions)
+      .where(
+        and(
+          isNull(productMasterVersions.deletedAt),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      )
+      .groupBy(productMasterVersions.status);
 
     // 3. 승인 상태별 제품 수
     const productsByApproval = await this.db
       .select({
-        approvalStatus: productMasters.approvalStatus,
+        approvalStatus: productMasterVersions.approvalStatus,
         count: sql<number>`count(*)`,
       })
-      .from(productMasters)
-      .where(isNull(productMasters.deletedAt))
-      .groupBy(productMasters.approvalStatus);
+      .from(productMasterVersions)
+      .where(
+        and(
+          isNull(productMasterVersions.deletedAt),
+          eq(productMasterVersions.versionStatus, 'active')
+        )
+      )
+      .groupBy(productMasterVersions.approvalStatus);
 
     // 4. 오늘 등록된 제품 수
     const [{ createdToday }] = await this.db
       .select({ createdToday: sql<number>`count(*)` })
-      .from(productMasters)
+      .from(productMasterVersions)
       .where(
         and(
-          isNull(productMasters.deletedAt),
-          gte(productMasters.createdAt, todayStart),
+          isNull(productMasterVersions.deletedAt),
+          eq(productMasterVersions.versionStatus, 'active'),
+          gte(productMasterVersions.createdAt, todayStart),
         ),
       );
 
@@ -105,21 +121,22 @@ export class DashboardService {
   async getTopProducts(limit = 5): Promise<TopProductItemDto[]> {
     const products = await this.db
       .select({
-        id: productMasters.id,
-        name: productMasters.name,
-        brand: productMasters.brand,
-        status: productMasters.status,
-        approvalStatus: productMasters.approvalStatus,
-        createdAt: productMasters.createdAt,
+        id: productMasterVersions.id,
+        name: productMasterVersions.name,
+        brand: productMasterVersions.brand,
+        status: productMasterVersions.status,
+        approvalStatus: productMasterVersions.approvalStatus,
+        createdAt: productMasterVersions.createdAt,
       })
-      .from(productMasters)
+      .from(productMasterVersions)
       .where(
         and(
-          isNull(productMasters.deletedAt),
-          eq(productMasters.status, 'active'),
+          isNull(productMasterVersions.deletedAt),
+          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
         ),
       )
-      .orderBy(productMasters.createdAt) // 최근 등록순
+      .orderBy(productMasterVersions.createdAt) // 최근 등록순
       .limit(limit);
 
     return products.map((p) => ({

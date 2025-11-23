@@ -5,7 +5,7 @@ import { eq, and, asc, SQL } from 'drizzle-orm';
 import { 
   pricingRules,
   productMasterPricingRules,
-  productMasters,
+  productMasterVersions,
   productVariants,
   productMasterVariants,
   variantOptionValues,
@@ -49,12 +49,12 @@ export class PricingCalculatorService {
   ): Promise<PriceCalculationResult> {
     return this.inTx(async (trx) => {
       const [activeVersion] = await trx
-        .select({ id: productMasters.id })
-        .from(productMasters)
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
         .where(
           and(
-            eq(productMasters.masterId, masterId),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         );
 
@@ -84,11 +84,11 @@ export class PricingCalculatorService {
     return this.inTx(async (trx) => {
       const [version] = await trx
         .select({
-          masterId: productMasters.masterId,
-          version: productMasters.version,
+          masterId: productMasterVersions.masterId,
+          version: productMasterVersions.version,
         })
-        .from(productMasters)
-        .where(eq(productMasters.id, versionId));
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
 
       if (!version) {
         throw new NotFoundException(`Product version ${versionId} not found`);
@@ -209,11 +209,11 @@ export class PricingCalculatorService {
     return this.inTx(async (trx) => {
       const [version] = await trx
         .select({
-          masterId: productMasters.masterId,
-          version: productMasters.version,
+          masterId: productMasterVersions.masterId,
+          version: productMasterVersions.version,
         })
-        .from(productMasters)
-        .where(eq(productMasters.id, versionId));
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
 
       if (!version) {
         throw new NotFoundException(`Product version ${versionId} not found`);
@@ -368,8 +368,8 @@ export class PricingCalculatorService {
       } else {
         // active 버전의 rules 가져오기
         const conditions: SQL[] = [
-          eq(productMasters.masterId, masterId),
-          eq(productMasters.versionStatus, 'active'),
+          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
         ];
 
         if (layer) {
@@ -395,10 +395,10 @@ export class PricingCalculatorService {
             eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
           )
           .innerJoin(
-            productMasters,
+            productMasterVersions,
             and(
-              eq(productMasterPricingRules.masterId, productMasters.masterId),
-              eq(productMasterPricingRules.version, productMasters.version),
+              eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
+              eq(productMasterPricingRules.version, productMasterVersions.version),
             ),
           )
           .where(and(...conditions))

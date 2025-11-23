@@ -1,16 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { 
+import {
   UpdateVariantBulkDto,
   VariantWithPriceDto,
   ProductVariant,
   UpdateProductVariant,
-  DbTransaction 
+  DbTransaction
 } from '../../../types';
-import { 
+import {
   type PimSchema,
   productVariants,
-  productMasters,
+  productMasterVersions,
   productMasterVariants,
   productOptionGroups,
   productOptionValues,
@@ -24,7 +24,7 @@ import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL } from 'd
 export class ProductVariantsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -45,24 +45,24 @@ export class ProductVariantsService {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const page = filters?.page || 1;
     const limit = Math.min(filters?.limit || 20, 100);
     const offset = (page - 1) * limit;
     const includePrice = filters?.includePrice !== false;
-    
+
     // version이 지정되지 않으면 active 버전 사용
     let actualVersion = version;
     if (actualVersion === undefined) {
       const [activeMaster] = await client
-        .select({ version: productMasters.version })
-        .from(productMasters)
+        .select({ version: productMasterVersions.version })
+        .from(productMasterVersions)
         .where(
           and(
-            eq(productMasters.masterId, masterId),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         )
         .limit(1);
@@ -72,19 +72,19 @@ export class ProductVariantsService {
       }
       actualVersion = activeMaster.version;
     }
-    
+
     // 매핑 테이블을 통해 variants 조회
     const whereConditions: SQL[] = [
       eq(productMasterVariants.masterId, masterId),
       eq(productMasterVariants.version, actualVersion),
     ];
-    
+
     if (filters?.status) {
       whereConditions.push(eq(productVariants.status, filters.status));
     }
-    
+
     const whereClause = and(...whereConditions);
-    
+
     const countQuery = client
       .select({ count: count() })
       .from(productMasterVariants)
@@ -93,9 +93,9 @@ export class ProductVariantsService {
         eq(productMasterVariants.variantId, productVariants.id),
       )
       .where(whereClause);
-    
+
     const [{ count: total }] = await countQuery;
-    
+
     const variants = await client
       .select()
       .from(productMasterVariants)
@@ -107,9 +107,9 @@ export class ProductVariantsService {
       .orderBy(asc(productVariants.displayOrder), asc(productVariants.createdAt))
       .limit(limit)
       .offset(offset);
-    
+
     const variantsWithPriceData: VariantWithPriceDto[] = [];
-    
+
     for (const row of variants) {
       const variant = row.product_variants;
       let price = 0;
@@ -118,7 +118,7 @@ export class ProductVariantsService {
         optionGroupId: string;
         createdAt: Date | null;
       }> = [];
-      
+
       if (includePrice) {
         try {
           price = await this.calculateVariantPrice(variant.id, tx);
@@ -127,7 +127,7 @@ export class ProductVariantsService {
           price = 0;
         }
       }
-      
+
       // TODO: Update to use Display tables with masterId and version
       // For now, returning basic info without Display data
       optionValues = await client
@@ -140,14 +140,15 @@ export class ProductVariantsService {
         .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
         .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
         .where(eq(variantOptionValues.variantId, variant.id));
-      
+
       variantsWithPriceData.push({
         ...variant,
+        masterId: row.product_master_variants.masterId,
         price,
         optionValues
       });
     }
-    
+
     return {
       data: variantsWithPriceData,
       total,
@@ -160,13 +161,13 @@ export class ProductVariantsService {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     // masterId와 version 정보 확보
     let actualMasterId = masterId;
     let actualVersion = version;
-    
+
     if (!actualMasterId || actualVersion === undefined) {
       const mappingInfo = await client
         .select({
@@ -176,26 +177,26 @@ export class ProductVariantsService {
         .from(productMasterVariants)
         .where(eq(productMasterVariants.variantId, variantId))
         .limit(1);
-      
+
       if (mappingInfo.length === 0) {
         return null;
       }
-      
+
       actualMasterId = actualMasterId || mappingInfo[0].masterId;
       actualVersion = actualVersion ?? mappingInfo[0].version;
     }
-    
+
     const variants = await client
       .select()
       .from(productVariants)
       .where(eq(productVariants.id, variantId));
-    
+
     if (variants.length === 0) {
       return null;
     }
-    
+
     const variant = variants[0];
-    
+
     // Display 테이블을 통해 optionValues 조회
     const optionValues = await client
       .select({
@@ -237,7 +238,7 @@ export class ProductVariantsService {
         asc(productOptionGroupDisplays.sortOrder),
         asc(productOptionValueDisplays.sortOrder),
       );
-    
+
     let price: number;
     try {
       price = await this.calculateVariantPrice(variantId, tx);
@@ -245,9 +246,10 @@ export class ProductVariantsService {
       console.warn(`Failed to calculate price for variant ${variantId}:`, error.message);
       price = 0;
     }
-    
+
     return {
       ...variant,
+      masterId: actualMasterId,
       price,
       optionValues
     };
@@ -268,18 +270,18 @@ export class ProductVariantsService {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
       throw new Error(`Variant not found: ${variantId}`);
     }
-    
+
     // masterId와 version 정보 확보
     let actualMasterId = masterId;
     let actualVersion = version;
-    
+
     if (!actualMasterId || actualVersion === undefined) {
       const mappingInfo = await client
         .select({
@@ -289,15 +291,15 @@ export class ProductVariantsService {
         .from(productMasterVariants)
         .where(eq(productMasterVariants.variantId, variantId))
         .limit(1);
-      
+
       if (mappingInfo.length === 0) {
         throw new Error(`Variant ${variantId} not found in mapping table`);
       }
-      
+
       actualMasterId = actualMasterId || mappingInfo[0].masterId;
       actualVersion = actualVersion ?? mappingInfo[0].version;
     }
-    
+
     // Display 테이블을 통해 optionInfo 조회
     const optionInfo = await client
       .select({
@@ -344,7 +346,7 @@ export class ProductVariantsService {
         asc(productOptionGroupDisplays.sortOrder),
         asc(productOptionValueDisplays.sortOrder),
       );
-    
+
     return optionInfo;
   }
 
@@ -353,26 +355,26 @@ export class ProductVariantsService {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
-    
+
     if (!status) {
       throw new Error('Status is required');
     }
-    
+
     const validStatuses = ['active', 'inactive'];
     if (!validStatuses.includes(status)) {
       throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
       throw new Error(`Variant not found: ${variantId}`);
     }
-    
+
     await client
       .update(productVariants)
-      .set({ 
+      .set({
         status,
         updatedAt: new Date()
       })
@@ -383,33 +385,33 @@ export class ProductVariantsService {
     if (!variantIds || variantIds.length === 0) {
       throw new Error('Variant IDs are required');
     }
-    
+
     if (!status) {
       throw new Error('Status is required');
     }
-    
+
     const validStatuses = ['active', 'inactive'];
     if (!validStatuses.includes(status)) {
       throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existingVariants = await client
       .select({ id: productVariants.id })
       .from(productVariants)
       .where(inArray(productVariants.id, variantIds));
-    
+
     const existingIds = existingVariants.map(v => v.id);
     const missingIds = variantIds.filter(id => !existingIds.includes(id));
-    
+
     if (missingIds.length > 0) {
       throw new Error(`Variants not found: ${missingIds.join(', ')}`);
     }
-    
+
     await client
       .update(productVariants)
-      .set({ 
+      .set({
         status,
         updatedAt: new Date()
       })
@@ -420,33 +422,33 @@ export class ProductVariantsService {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
       throw new Error(`Variant not found: ${variantId}`);
     }
-    
+
     const updateData = {
       ...data,
       updatedAt: new Date(),
     };
-    
+
     delete (updateData as any).id;
     delete (updateData as any).createdAt;
     delete (updateData as any).masterId;
-    
+
     const result = await client
       .update(productVariants)
       .set(updateData)
       .where(eq(productVariants.id, variantId))
       .returning();
-    
+
     if (result.length === 0) {
       throw new Error(`Failed to update variant: ${variantId}`);
     }
-    
+
     return result[0];
   }
 
@@ -454,41 +456,41 @@ export class ProductVariantsService {
     if (!data.variantIds || data.variantIds.length === 0) {
       throw new Error('Variant IDs are required');
     }
-    
+
     if (!data.updates || Object.keys(data.updates).length === 0) {
       throw new Error('Updates are required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const existingVariants = await client
       .select({ id: productVariants.id })
       .from(productVariants)
       .where(inArray(productVariants.id, data.variantIds));
-    
+
     const existingIds = existingVariants.map(v => v.id);
     const missingIds = data.variantIds.filter(id => !existingIds.includes(id));
-    
+
     if (missingIds.length > 0) {
       throw new Error(`Variants not found: ${missingIds.join(', ')}`);
     }
-    
+
     if (data.updates.status) {
       const validStatuses = ['active', 'inactive'];
       if (!validStatuses.includes(data.updates.status)) {
         throw new Error(`Invalid status: ${data.updates.status}. Valid statuses are: ${validStatuses.join(', ')}`);
       }
     }
-    
+
     if (data.updates.displayOrder !== undefined && data.updates.displayOrder < 0) {
       throw new Error('Display order must be non-negative');
     }
-    
+
     const updateData = {
       ...data.updates,
       updatedAt: new Date()
     };
-    
+
     await client
       .update(productVariants)
       .set(updateData)
@@ -517,14 +519,14 @@ export class ProductVariantsService {
     if (!variantId) {
       return false;
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const result = await client
       .select({ count: count() })
       .from(productVariants)
       .where(eq(productVariants.id, variantId));
-    
+
     return result[0].count > 0;
   }
 
@@ -532,24 +534,24 @@ export class ProductVariantsService {
     if (!variantId || !masterId) {
       return false;
     }
-    
+
     const client = this.getClient(tx);
-    
+
     // 매핑 테이블을 통해 확인
     const conditions: SQL[] = [
       eq(productMasterVariants.variantId, variantId),
       eq(productMasterVariants.masterId, masterId),
     ];
-    
+
     if (version !== undefined) {
       conditions.push(eq(productMasterVariants.version, version));
     }
-    
+
     const result = await client
       .select({ count: count() })
       .from(productMasterVariants)
       .where(and(...conditions));
-    
+
     return result[0].count > 0;
   }
 
@@ -557,19 +559,19 @@ export class ProductVariantsService {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     // version이 지정되지 않으면 active 버전 사용
     let actualVersion = version;
     if (actualVersion === undefined) {
       const [activeMaster] = await client
-        .select({ version: productMasters.version })
-        .from(productMasters)
+        .select({ version: productMasterVersions.version })
+        .from(productMasterVersions)
         .where(
           and(
-            eq(productMasters.masterId, masterId),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         )
         .limit(1);
@@ -579,7 +581,7 @@ export class ProductVariantsService {
       }
       actualVersion = activeMaster.version;
     }
-    
+
     // 매핑 테이블을 통해 active status variants 조회
     const results = await client
       .select()
@@ -596,7 +598,7 @@ export class ProductVariantsService {
         ),
       )
       .orderBy(asc(productVariants.displayOrder));
-    
+
     return results.map(r => r.product_variants);
   }
 
@@ -604,21 +606,21 @@ export class ProductVariantsService {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
-    
+
     if (displayOrder < 0) {
       throw new Error('Display order must be non-negative');
     }
-    
+
     const client = this.getClient(tx);
-    
+
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
       throw new Error(`Variant not found: ${variantId}`);
     }
-    
+
     await client
       .update(productVariants)
-      .set({ 
+      .set({
         displayOrder,
         updatedAt: new Date()
       })

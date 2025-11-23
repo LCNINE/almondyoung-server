@@ -1,10 +1,10 @@
 import type { Config } from 'drizzle-kit';
 import { config } from 'dotenv';
 
-config({ path: './apps/pim/.env' });
+config({ path: './apps/pim/.env', override: true });
 
 export default {
-  schema: './src/schema.ts',
+  schema: './apps/pim/src/schema.ts',
   out: './drizzle/migrations',
   dialect: 'postgresql',
   dbCredentials: {

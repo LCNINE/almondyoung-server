@@ -36,7 +36,7 @@ import {
 export class ChannelProductsController {
   constructor(
     private readonly channelProductsService: ChannelProductsService,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -74,7 +74,7 @@ export class ChannelProductsController {
 
       return (await this.channelProductsService.createChannelProduct(
         createDto,
-      )) as unknown as ChannelProductDto;
+      )) as any as ChannelProductDto;
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -111,7 +111,7 @@ export class ChannelProductsController {
     try {
       return (await this.channelProductsService.getChannelProductsByMaster(
         masterId,
-      )) as unknown as ChannelProductWithChannelDto[];
+      )) as any as ChannelProductWithChannelDto[];
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -181,7 +181,7 @@ export class ChannelProductsController {
       return (await this.channelProductsService.getChannelProductsByChannel(
         channelId,
         filters,
-      )) as unknown as ChannelProductListResponseDto;
+      )) as any as ChannelProductListResponseDto;
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -227,7 +227,7 @@ export class ChannelProductsController {
         updatedAt: channelProduct.updatedAt
           ? channelProduct.updatedAt.toISOString()
           : null,
-      } as unknown as ChannelProductDto;
+      } as any as ChannelProductDto;
     } catch (error) {
       if (
         error.message === 'Channel product not found' ||
@@ -281,7 +281,7 @@ export class ChannelProductsController {
         updatedAt: channelProduct.updatedAt
           ? channelProduct.updatedAt.toISOString()
           : null,
-      } as unknown as ChannelProductDto;
+      } as any as ChannelProductDto;
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(

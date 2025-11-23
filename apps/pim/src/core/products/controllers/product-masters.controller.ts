@@ -33,6 +33,8 @@ import {
   MasterListResponseDto,
   MasterUpdateResponseDto,
 } from '../dto';
+import { ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
+import { ProductMapper } from '../mappers/product.mapper';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -40,7 +42,7 @@ export class ProductMastersController {
   constructor(
     private readonly productMastersService: ProductMastersService,
     private readonly productVersionsService: ProductVersionsService,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -57,7 +59,7 @@ export class ProductMastersController {
       5. PATCH /masters/:masterId/versions/:versionId/publish - 활성화
     `,
   })
-  @ApiBody({ 
+  @ApiBody({
     type: CreateMasterDtoSwagger,
     description: '모든 필드 선택사항. 빈 객체로 호출 가능',
     required: false,
@@ -65,7 +67,7 @@ export class ProductMastersController {
   @ApiResponse({
     status: 201,
     description: '제품 마스터 생성 성공 (즉시 완료, 비동기 처리 없음)',
-    type: ProductMasterDto,
+    type: ProductDto,
   })
   @ApiResponse({
     status: 400,
@@ -75,16 +77,10 @@ export class ProductMastersController {
   async createMaster(
     @Body(new ZodValidationPipe(CreateMasterSchema))
     createMasterDto: CreateMasterDto = {},
-  ): Promise<ProductMasterDto> {
+  ): Promise<ProductDto> {
     try {
-      // 빈 draft 생성 - 모든 세부사항은 update API로 채움
       const master = await this.productMastersService.createMaster(createMasterDto);
-
-      return {
-        ...master,
-        createdAt: master.createdAt?.toISOString() || null,
-        updatedAt: master.updatedAt?.toISOString() || null,
-      } as unknown as ProductMasterDto;
+      return ProductMapper.toDto(master);
     } catch (error) {
       console.error('Create master error:', error);
       throw new HttpException(
@@ -192,16 +188,12 @@ export class ProductMastersController {
     summary: '삭제된 제품 마스터 목록 조회',
     description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
   })
-  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공' })
+  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공', type: [ProductDto] })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getDeleted(): Promise<ProductMasterDto[]> {
+  async getDeleted(): Promise<ProductDto[]> {
     try {
       const deleted = await this.productMastersService.findDeleted();
-      return deleted.map(master => ({
-        ...master,
-        createdAt: master.createdAt?.toISOString() || null,
-        updatedAt: master.updatedAt?.toISOString() || null,
-      })) as unknown as ProductMasterDto[];
+      return ProductMapper.toDtoArray(deleted);
     } catch (error) {
       throw new HttpException(
         'Failed to get deleted masters',
@@ -349,7 +341,7 @@ export class ProductMastersController {
       );
       return {
         success: true,
-        data: updatedMaster as unknown as ProductMasterDto,
+        data: ProductMapper.toDto(updatedMaster) as any,
       };
     } catch (error) {
       if (error.status === HttpStatus.FORBIDDEN) {
@@ -374,24 +366,18 @@ export class ProductMastersController {
     description: '제품 마스터를 소프트 삭제합니다. 실제로 데이터는 삭제되지 않으며 복원이 가능합니다.',
   })
   @ApiParam({ name: 'id', description: '삭제할 제품 마스터 ID' })
-  @ApiResponse({ status: 200, description: '제품 마스터 소프트 삭제 성공' })
+  @ApiResponse({ status: 200, description: '제품 마스터 소프트 삭제 성공', type: ProductDto })
   @ApiResponse({ status: 400, description: '삭제 요구사항 불충족' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async deleteMaster(
     @Param('id') id: string,
     @Body('userId') userId: string,
-  ): Promise<ProductMasterDto> {
+  ): Promise<ProductDto> {
     try {
-      // TODO: Get userId from JWT auth
       const userIdToUse = userId || 'system';
       const deleted = await this.productMastersService.softDelete(id, userIdToUse);
-
-      return {
-        ...deleted,
-        createdAt: deleted.createdAt?.toISOString() || null,
-        updatedAt: deleted.updatedAt?.toISOString() || null,
-      } as unknown as ProductMasterDto;
+      return ProductMapper.toDto(deleted);
     } catch (error) {
       if (
         error.message.includes('not found') ||
@@ -416,24 +402,18 @@ export class ProductMastersController {
     description: '소프트 삭제된 제품 마스터를 복원합니다.',
   })
   @ApiParam({ name: 'id', description: '복원할 제품 마스터 ID' })
-  @ApiResponse({ status: 200, description: '제품 마스터 복원 성공' })
+  @ApiResponse({ status: 200, description: '제품 마스터 복원 성공', type: ProductDto })
   @ApiResponse({ status: 400, description: '제품이 삭제되지 않았음' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async restore(
     @Param('id') id: string,
     @Body('userId') userId: string,
-  ): Promise<ProductMasterDto> {
+  ): Promise<ProductDto> {
     try {
-      // TODO: Get userId from JWT auth
       const userIdToUse = userId || 'system';
       const restored = await this.productMastersService.restore(id, userIdToUse);
-
-      return {
-        ...restored,
-        createdAt: restored.createdAt?.toISOString() || null,
-        updatedAt: restored.updatedAt?.toISOString() || null,
-      } as unknown as ProductMasterDto;
+      return ProductMapper.toDto(restored);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
