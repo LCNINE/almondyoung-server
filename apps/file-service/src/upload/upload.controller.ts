@@ -8,11 +8,22 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
-import { User } from '@app/auth-core';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiBody,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiSecurity,
+} from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
-import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
+import {
+  UploadResponseDto,
+  BatchUploadResponseDto,
+} from './dto/upload-response.dto';
+import { User } from '@app/authorization';
 
 interface JwtPayload {
   userId: string;
@@ -25,7 +36,7 @@ interface JwtPayload {
 @ApiSecurity('cookie')
 @Controller('api/v1/files')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) { }
+  constructor(private readonly uploadService: UploadService) {}
 
   @Post('upload')
   @ApiOperation({ summary: 'Upload a single file' })
@@ -40,7 +51,15 @@ export class UploadController {
         },
         context: {
           type: 'string',
-          enum: ['product-image', 'product-document', 'user-avatar', 'user-document', 'invoice', 'receipt', 'shipment-label'],
+          enum: [
+            'product-image',
+            'product-document',
+            'user-avatar',
+            'user-document',
+            'invoice',
+            'receipt',
+            'shipment-label',
+          ],
         },
         metadata: {
           type: 'object',
@@ -50,7 +69,11 @@ export class UploadController {
       required: ['file', 'context'],
     },
   })
-  @ApiResponse({ status: 201, description: 'File uploaded successfully', type: UploadResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'File uploaded successfully',
+    type: UploadResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
@@ -81,7 +104,15 @@ export class UploadController {
         },
         context: {
           type: 'string',
-          enum: ['product-image', 'product-document', 'user-avatar', 'user-document', 'invoice', 'receipt', 'shipment-label'],
+          enum: [
+            'product-image',
+            'product-document',
+            'user-avatar',
+            'user-document',
+            'invoice',
+            'receipt',
+            'shipment-label',
+          ],
         },
         metadata: {
           type: 'object',
@@ -91,7 +122,11 @@ export class UploadController {
       required: ['files', 'context'],
     },
   })
-  @ApiResponse({ status: 201, description: 'Files uploaded successfully', type: BatchUploadResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Files uploaded successfully',
+    type: BatchUploadResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @UseInterceptors(FilesInterceptor('files'))
   async batchUploadFiles(
