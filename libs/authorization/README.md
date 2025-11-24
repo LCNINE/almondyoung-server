@@ -1,6 +1,6 @@
 # Authorization Module
 
-MSA 환경에서 사용할 공통 인증/인가 모듈입니다. JWT 토큰의 roles를 기반으로 DB에서 scopes를 조회하여 권한을 검증합니다.
+MSA 환경에서 사용할 공통 인증/인가 모듈입니다. JWT 토큰 검증(인증)과 roles 기반 scope 검증(인가)을 제공합니다.
 
 ## 🚀 시작하기
 
@@ -15,22 +15,25 @@ cat README.md
 
 ## 특징
 
-- ✅ JWT roles 기반 권한 검증
+- ✅ JWT 토큰 검증 (인증)
+- ✅ JWT roles 기반 권한 검증 (인가)
 - ✅ DB 기반 role-scope 매핑 (실시간 권한 변경 가능)
 - ✅ 인메모리 캐싱으로 성능 최적화
 - ✅ 앱 시작 시 자동 scope 등록
 - ✅ `@RequireScopes()` 데코레이터로 간편한 사용
+- ✅ `@Public()` 데코레이터로 인증 우회
+- ✅ 서비스 레이어 분리 (AuthenticationService / AuthorizationService)
 - ✅ PostgreSQL `auth` 스키마 분리
 
 ## 아키텍처 결정
 
-| 항목 | 설명 |
-|------|------|
-| **DB 연결** | 기존 DbModule 재사용 (각 마이크로서비스가 authSchema 병합) |
-| **캐싱** | 인메모리 Map 기반 (role[] → scope[] 매핑) |
-| **Scope 등록** | 앱 시작 시 자동 등록 (OnModuleInit) |
-| **JWT Payload** | roles만 포함 (scopes는 런타임 DB 조회) |
-| **Admin API** | role-scope 매핑 CRUD만 제공 (scope 자체는 코드 관리) |
+| 항목            | 설명                                                       |
+| --------------- | ---------------------------------------------------------- |
+| **DB 연결**     | 기존 DbModule 재사용 (각 마이크로서비스가 authSchema 병합) |
+| **캐싱**        | 인메모리 Map 기반 (role[] → scope[] 매핑)                  |
+| **Scope 등록**  | 앱 시작 시 자동 등록 (OnModuleInit)                        |
+| **JWT Payload** | roles만 포함 (scopes는 런타임 DB 조회)                     |
+| **Admin API**   | role-scope 매핑 CRUD만 제공 (scope 자체는 코드 관리)       |
 
 ## 빠른 시작 (Quick Start)
 
@@ -45,6 +48,7 @@ npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
 # - DbModule에 authorizationSchema 병합
 # - AuthorizationModule.forRoot() 추가
 # - APP_GUARD로 JwtAuthGuard + ScopeGuard 설정
+# - 환경 변수 AUTH_SECRET 설정
 
 # 4. 컨트롤러에서 사용
 # @RequireScopes('resource:read')
@@ -86,6 +90,7 @@ DATABASE_URL="postgresql://..." npx drizzle-kit migrate
 ```
 
 이 명령은 PostgreSQL에 `auth` 스키마를 생성하고 다음 테이블을 만듭니다:
+
 - `auth.roles` - 역할 정의
 - `auth.scopes` - 권한 정의
 - `auth.role_scope_mapping` - 역할-권한 매핑
@@ -102,25 +107,45 @@ import { ScopeDefinition } from '@app/authorization';
 
 export const YOUR_SERVICE_SCOPES: ScopeDefinition[] = [
   { key: 'resource:read', category: 'resource', description: '리소스 조회' },
-  { key: 'resource:write', category: 'resource', description: '리소스 생성/수정' },
+  {
+    key: 'resource:write',
+    category: 'resource',
+    description: '리소스 생성/수정',
+  },
   { key: 'resource:delete', category: 'resource', description: '리소스 삭제' },
 ];
 ```
 
 **Scope 명명 규칙**:
+
 - 형식: `{resource}:{action}`
 - 예시: `product:read`, `order:write`, `user:delete`
 - 특수 scope: `master` (모든 권한 통과)
 
-### 4. AppModule 설정
+### 4. 환경 변수 설정
+
+`.env` 파일에 JWT 인증에 필요한 환경 변수를 추가합니다:
+
+```env
+AUTH_SECRET=your-jwt-secret-key
+JWT_ISSUER=almondyoung-auth  # 선택사항, 기본값: 'almondyoung-auth'
+JWT_AUDIENCE=almondyoung      # 선택사항, 기본값: 'almondyoung'
+```
+
+### 5. AppModule 설정
 
 ```typescript
 // apps/your-service/src/app.module.ts
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { DbModule } from '@app/db';
-import { AuthCoreModule, JwtAuthGuard } from '@app/auth-core';
-import { AuthorizationModule, ScopeGuard, authorizationSchema } from '@app/authorization';
+import {
+  AuthorizationModule,
+  JwtAuthGuard,
+  ScopeGuard,
+  authorizationSchema,
+} from '@app/authorization';
 import { yourServiceSchema } from './schema';
 import { YOUR_SERVICE_SCOPES } from './auth/your-service.scopes';
 
@@ -137,8 +162,7 @@ const combinedSchema = {
       config: { connectionString: process.env.DATABASE_URL },
       schema: combinedSchema, // 병합된 스키마 사용
     }),
-    AuthCoreModule.forRootAsync(), // JWT 인증
-    AuthorizationModule.forRoot({  // Scope 인가
+    AuthorizationModule.forRoot({
       microserviceName: 'your-service',
       scopes: YOUR_SERVICE_SCOPES,
     }),
@@ -150,7 +174,7 @@ const combinedSchema = {
     },
     {
       provide: APP_GUARD,
-      useClass: ScopeGuard,   // 2단계: Scope 인가
+      useClass: ScopeGuard, // 2단계: Scope 인가
     },
   ],
 })
@@ -159,40 +183,46 @@ export class AppModule {}
 
 ## 사용법
 
-### 컨트롤러에서 권한 검증
+### 컨트롤러에서 인증/인가 사용
 
 ```typescript
 import { Controller, Get, Post, Delete } from '@nestjs/common';
-import { RequireScopes } from '@app/authorization';
+import { RequireScopes, Public, User } from '@app/authorization';
 
 @Controller('products')
 export class ProductsController {
-  
-  // 인증만 필요 (scope 체크 없음)
+  // 인증 우회 (공개 엔드포인트)
   @Get('public')
+  @Public()
   async getPublicProducts() {
-    return { message: 'Anyone with JWT can access' };
+    return { message: 'Anyone can access' };
+  }
+
+  // 인증만 필요 (scope 체크 없음)
+  @Get('list')
+  async getProducts(@User() user) {
+    return { message: 'Anyone with JWT can access', userId: user.userId };
   }
 
   // 'product:read' scope 필요
   @Get()
   @RequireScopes('product:read')
-  async findAll() {
-    return { message: 'List products' };
+  async findAll(@User() user) {
+    return { message: 'List products', user };
   }
 
   // 'product:write' scope 필요
   @Post()
   @RequireScopes('product:write')
-  async create() {
-    return { message: 'Create product' };
+  async create(@User() user) {
+    return { message: 'Create product', userId: user.userId };
   }
 
   // 'product:delete' scope 필요
   @Delete(':id')
   @RequireScopes('product:delete')
-  async remove() {
-    return { message: 'Delete product' };
+  async remove(@Param('id') id: string, @User() user) {
+    return { message: 'Delete product', id, userId: user.userId };
   }
 }
 ```
@@ -221,29 +251,26 @@ Guard 방식(`@RequireScopes()`)은 요청 시작 시 한 번만 체크하지만
 
 ```typescript
 import { Controller, Get, Param } from '@nestjs/common';
-import { AuthorizationService, UserWithRoles } from '@app/authorization';
-import { User } from '@app/auth-core';
+import { AuthorizationService, UserWithRoles, User } from '@app/authorization';
 
 @Controller('products')
 export class ProductsController {
-  constructor(
-    private readonly authService: AuthorizationService,
-  ) {}
+  constructor(private readonly authService: AuthorizationService) {}
 
   @Get(':id')
-  async getProduct(
-    @Param('id') id: string,
-    @User() user: UserWithRoles,
-  ) {
+  async getProduct(@Param('id') id: string, @User() user: UserWithRoles) {
     const product = await this.productService.findOne(id);
-    
+
     // 1. hasScope - 단일 스코프 체크
-    const canViewSensitive = await this.authService.hasScope(user, 'product:admin');
-    
+    const canViewSensitive = await this.authService.hasScope(
+      user,
+      'product:admin',
+    );
+
     if (canViewSensitive) {
       return { ...product, cost: product.cost, margin: product.margin };
     }
-    
+
     return product; // 일반 사용자는 민감 정보 제외
   }
 
@@ -254,29 +281,26 @@ export class ProductsController {
       'product:admin',
       'product:read-all',
     ]);
-    
+
     if (canViewAll) {
       return this.productService.findAll(); // 모든 상품
     }
-    
+
     return this.productService.findPublicOnly(); // 공개 상품만
   }
 
   @Delete(':id')
-  async deleteProduct(
-    @Param('id') id: string,
-    @User() user: UserWithRoles,
-  ) {
+  async deleteProduct(@Param('id') id: string, @User() user: UserWithRoles) {
     const product = await this.productService.findOne(id);
-    
+
     // 3. 복합 조건 - 소유자이거나 관리자 권한 보유
     const isOwner = product.createdBy === user.userId;
     const isAdmin = await this.authService.hasScope(user, 'product:delete-all');
-    
+
     if (!isOwner && !isAdmin) {
       throw new ForbiddenException('Not authorized to delete this product');
     }
-    
+
     await this.productService.remove(id);
   }
 
@@ -287,11 +311,11 @@ export class ProductsController {
       'product:read',
       'analytics:view',
     ]);
-    
+
     if (!canViewAnalytics) {
       throw new ForbiddenException('Insufficient permissions');
     }
-    
+
     return this.analyticsService.getProductAnalytics();
   }
 
@@ -306,13 +330,13 @@ export class ProductsController {
 
 #### Guard vs 런타임 체크 비교
 
-| 구분 | Guard (`@RequireScopes()`) | 런타임 체크 (`authService.hasScope()`) |
-|------|----------------------------|----------------------------------------|
-| **시점** | 요청 시작 시 (핸들러 실행 전) | 핸들러 내부 (조건부) |
-| **용도** | 엔드포인트 전체 보호 | 조건부 로직, 동적 체크 |
-| **실패 시** | 403 Forbidden 자동 반환 | 개발자가 직접 처리 |
-| **복잡도** | 간단 (데코레이터만) | 약간 복잡 (조건문 필요) |
-| **유연성** | 낮음 (고정 스코프) | 높음 (동적 판단 가능) |
+| 구분        | Guard (`@RequireScopes()`)    | 런타임 체크 (`authService.hasScope()`) |
+| ----------- | ----------------------------- | -------------------------------------- |
+| **시점**    | 요청 시작 시 (핸들러 실행 전) | 핸들러 내부 (조건부)                   |
+| **용도**    | 엔드포인트 전체 보호          | 조건부 로직, 동적 체크                 |
+| **실패 시** | 403 Forbidden 자동 반환       | 개발자가 직접 처리                     |
+| **복잡도**  | 간단 (데코레이터만)           | 약간 복잡 (조건문 필요)                |
+| **유연성**  | 낮음 (고정 스코프)            | 높음 (동적 판단 가능)                  |
 
 #### 권장 사용 패턴
 
@@ -322,7 +346,7 @@ export class ProductsController {
 @RequireScopes('resource:read')  // 최소 권한 체크 (Guard)
 async getResource(@Param('id') id: string, @User() user: UserWithRoles) {
   const resource = await this.service.findOne(id);
-  
+
   // 소유자가 아닌 경우 추가 권한 필요 (런타임)
   if (resource.ownerId !== user.userId) {
     const canViewOthers = await this.authService.hasScope(user, 'resource:read-all');
@@ -330,7 +354,7 @@ async getResource(@Param('id') id: string, @User() user: UserWithRoles) {
       throw new ForbiddenException();
     }
   }
-  
+
   return resource;
 }
 
@@ -345,7 +369,8 @@ async getResource(@Param('id') id: string, @User() user: UserWithRoles) {
 }
 ```
 
-**💡 팁**: 
+**💡 팁**:
+
 - 엔드포인트 전체를 보호할 때는 `@RequireScopes()` Guard 사용
 - 핸들러 내부에서 조건부 로직이 필요할 때만 런타임 체크 사용
 - 두 방식을 조합하면 가장 안전하고 유연한 권한 관리 가능
@@ -369,14 +394,17 @@ Ready
 ```
 HTTP Request
   ↓
-JwtAuthGuard (auth-core)
-  ├─ 쿠키에서 JWT 토큰 추출
-  ├─ 토큰 검증
+JwtAuthGuard (authorization 모듈)
+  ├─ @Public() 체크 → 있으면 통과
+  ├─ 쿠키에서 JWT 토큰 추출 (accessToken)
+  ├─ AuthenticationService.validatePayload() 호출
+  ├─ 토큰 검증 및 payload 검증
   └─ req.user = { userId, roles, email, ... }
   ↓
-ScopeGuard (authorization)
+ScopeGuard (authorization 모듈)
   ├─ @RequireScopes() 메타데이터 읽기
-  ├─ req.user.roles → DB 조회 → scopes (캐싱)
+  ├─ 없으면 통과 (인증만 필요)
+  ├─ req.user.roles → AuthorizationService.getScopesByRoles() → DB 조회 → scopes (캐싱)
   ├─ requiredScopes vs userScopes 비교
   └─ true/false 반환
   ↓
@@ -429,33 +457,33 @@ DELETE /admin/roles/:roleId/scopes/:scopeId
 
 ### auth.roles
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid | Primary Key |
-| name | varchar(50) | 역할 이름 (unique) |
-| description | text | 설명 |
-| created_at | timestamp | 생성일시 |
-| updated_at | timestamp | 수정일시 |
+| 컬럼        | 타입        | 설명               |
+| ----------- | ----------- | ------------------ |
+| id          | uuid        | Primary Key        |
+| name        | varchar(50) | 역할 이름 (unique) |
+| description | text        | 설명               |
+| created_at  | timestamp   | 생성일시           |
+| updated_at  | timestamp   | 수정일시           |
 
 ### auth.scopes
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid | Primary Key |
-| key | varchar(100) | Scope 키 (unique) |
-| category | varchar(50) | 카테고리 |
-| description | text | 설명 |
-| microservice_name | varchar(50) | 서비스명 |
-| created_at | timestamp | 생성일시 |
+| 컬럼              | 타입         | 설명              |
+| ----------------- | ------------ | ----------------- |
+| id                | uuid         | Primary Key       |
+| key               | varchar(100) | Scope 키 (unique) |
+| category          | varchar(50)  | 카테고리          |
+| description       | text         | 설명              |
+| microservice_name | varchar(50)  | 서비스명          |
+| created_at        | timestamp    | 생성일시          |
 
 ### auth.role_scope_mapping
 
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| id | uuid | Primary Key |
-| role_id | uuid | Foreign Key → roles.id |
-| scope_id | uuid | Foreign Key → scopes.id |
-| created_at | timestamp | 생성일시 |
+| 컬럼       | 타입      | 설명                    |
+| ---------- | --------- | ----------------------- |
+| id         | uuid      | Primary Key             |
+| role_id    | uuid      | Foreign Key → roles.id  |
+| scope_id   | uuid      | Foreign Key → scopes.id |
+| created_at | timestamp | 생성일시                |
 
 **Unique Constraint**: (role_id, scope_id)
 
@@ -480,6 +508,7 @@ DATABASE_URL="postgresql://..." npx jest --config apps/test-auth-scope/test/jest
 ```
 
 test-auth-scope는 다음을 검증합니다:
+
 - ✅ JWT 기반 인증
 - ✅ Scope 기반 인가 (`todo:read-all`)
 - ✅ 일반 사용자 vs 관리자 권한 분리
@@ -499,7 +528,11 @@ export const PIM_SCOPES: ScopeDefinition[] = [
   { key: 'product:write', category: 'product', description: '상품 생성/수정' },
   { key: 'product:delete', category: 'product', description: '상품 삭제' },
   { key: 'category:read', category: 'category', description: '카테고리 조회' },
-  { key: 'category:write', category: 'category', description: '카테고리 생성/수정' },
+  {
+    key: 'category:write',
+    category: 'category',
+    description: '카테고리 생성/수정',
+  },
 ];
 ```
 
@@ -512,7 +545,7 @@ describe('AuthorizationService', () => {
   it('should cache scope lookups', async () => {
     const scopes1 = await service.getScopesByRoles(['admin']);
     const scopes2 = await service.getScopesByRoles(['admin']);
-    
+
     // 두 번째 호출은 캐시에서 반환 (DB 호출 안 함)
     expect(scopes1).toBe(scopes2);
   });
@@ -526,7 +559,7 @@ describe('ScopeGuard', () => {
   it('should allow access with correct scope', async () => {
     // JWT with roles: ['product_manager']
     // DB: product_manager has 'product:read' scope
-    
+
     const result = await request(app.getHttpServer())
       .get('/products')
       .set('Cookie', `accessToken=${validToken}`)
@@ -540,12 +573,15 @@ describe('ScopeGuard', () => {
 ### 기존 시스템에서 전환
 
 **Phase 1**: 새 서비스에 적용
+
 - PIM, WMS → authorization 모듈 사용
 
 **Phase 2**: 기존 서비스 전환
+
 - Wallet, Membership 전환
 
 **Phase 3**: user-service 마이그레이션 (별도 계획)
+
 - 기존 `libs/roles` 대체
 
 ## 트러블슈팅
@@ -557,6 +593,7 @@ describe('ScopeGuard', () => {
 **원인**: 캐시가 오래된 매핑 정보를 가지고 있음
 
 **해결**:
+
 ```typescript
 // Admin API에서 매핑 변경 후 캐시 무효화
 await authService.invalidateCache();
@@ -566,12 +603,14 @@ await authService.invalidateCache();
 
 **증상**: 앱 시작 시 scope가 DB에 추가되지 않음
 
-**원인**: 
+**원인**:
+
 - DATABASE_URL 환경 변수 누락
 - DB 연결 실패
 - auth 스키마 마이그레이션을 실행하지 않음
 
 **해결**:
+
 ```bash
 # auth 스키마가 있는지 확인
 psql -U postgres -d your_db -c "\dn"
@@ -587,6 +626,7 @@ npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
 ### 3. 타입 에러: authorizationSchema를 찾을 수 없음
 
 **해결**:
+
 ```bash
 # tsconfig 경로 확인
 npm run build
@@ -601,6 +641,7 @@ npm run build
 **원인**: auth 스키마가 DB에 생성되지 않음
 
 **해결**:
+
 ```bash
 # auth 스키마 마이그레이션 실행
 npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
@@ -613,6 +654,7 @@ npm run migrate:auth "postgresql://user:password@localhost:5432/your_db"
 **원인**: cookie-parser 미들웨어가 테스트 앱에 추가되지 않음
 
 **해결**:
+
 ```typescript
 // e2e 테스트 beforeAll
 const cookieParser = require('cookie-parser');
@@ -622,6 +664,7 @@ app.use(cookieParser());
 ### 6. 여러 DB에서 auth 스키마를 사용하고 싶음
 
 **해결**: 각 DB마다 한 번씩 마이그레이션 실행
+
 ```bash
 # DB1
 npm run migrate:auth "postgresql://user:password@localhost:5432/db1"
@@ -637,38 +680,73 @@ npm run migrate:auth "postgresql://user:password@localhost:5432/db3"
 
 ## API Reference
 
+### AuthenticationService
+
+```typescript
+class AuthenticationService {
+  // JWT payload 검증 및 사용자 객체 생성
+  validatePayload(payload: any): UserObject;
+}
+```
+
 ### AuthorizationService
 
 ```typescript
 class AuthorizationService {
   // roles → scopes 조회 (캐싱)
-  getScopesByRoles(roleNames: string[]): Promise<Set<string>>
-  
+  getScopesByRoles(roleNames: string[]): Promise<Set<string>>;
+
   // 캐시 무효화
-  invalidateCache(): void
-  
+  invalidateCache(): void;
+
   // Scope 등록 (앱 시작 시 자동 호출)
-  ensureScopesExist(microserviceName: string, scopeDefs: ScopeDefinition[]): Promise<void>
+  ensureScopesExist(
+    microserviceName: string,
+    scopeDefs: ScopeDefinition[],
+  ): Promise<void>;
+
+  // 단일 scope 체크
+  hasScope(user: UserWithRoles, scope: string): Promise<boolean>;
+
+  // 여러 scope 중 하나 (OR)
+  hasAnyScope(user: UserWithRoles, requiredScopes: string[]): Promise<boolean>;
+
+  // 모든 scope 필요 (AND)
+  hasAllScopes(user: UserWithRoles, requiredScopes: string[]): Promise<boolean>;
+
+  // 사용자의 모든 scope 조회
+  getUserScopes(user: UserWithRoles): Promise<string[]>;
 }
 ```
 
-### ScopeGuard
+### Guards
 
 ```typescript
+// JWT 인증 Guard
+class JwtAuthGuard extends AuthGuard('jwt') {
+  canActivate(context: ExecutionContext): boolean | Promise<boolean>;
+  handleRequest(err: any, user: any, info: any): any;
+}
+
+// Scope 인가 Guard
 class ScopeGuard implements CanActivate {
-  // 권한 검증
-  canActivate(context: ExecutionContext): Promise<boolean>
+  canActivate(context: ExecutionContext): Promise<boolean>;
 }
 ```
 
-### @RequireScopes()
+### Decorators
 
 ```typescript
-// 단일 scope
-@RequireScopes('product:read')
+// 인증 우회
+@Public()
 
-// 여러 scope (OR 조건)
-@RequireScopes('product:read', 'admin:read')
+// 사용자 정보 추출
+@User() user: UserObject
+@User('userId') userId: string
+
+// Scope 요구사항 지정
+@RequireScopes('product:read')                    // 단일 scope
+@RequireScopes('product:read', 'admin:read')      // 여러 scope (OR 조건)
 ```
 
 ## 마이그레이션 스크립트
@@ -676,6 +754,7 @@ class ScopeGuard implements CanActivate {
 `npm run migrate:auth` 명령어는 `libs/authorization/scripts/migrate-auth-schema.ts`를 실행합니다.
 
 이 스크립트는:
+
 - ✅ `auth` 스키마 생성
 - ✅ `auth.roles` 테이블 생성
 - ✅ `auth.scopes` 테이블 생성
@@ -683,14 +762,25 @@ class ScopeGuard implements CanActivate {
 - ✅ 멱등성 보장 (여러 번 실행해도 안전)
 
 **장점**:
+
 - 간단한 명령어 하나로 모든 DB 초기화
 - 환경 변수 또는 인자로 DATABASE_URL 전달 가능
 - 여러 마이크로서비스/DB에서 재사용 가능
 
-## 관련 모듈
+## 아키텍처
 
-- **@app/auth-core**: JWT 토큰 검증 (인증)
-- **@app/authorization**: Role-Scope 기반 권한 검증 (인가)
+### 서비스 레이어 분리
+
+모듈은 하나지만 서비스 레이어에서 인증과 인가를 명확히 분리합니다:
+
+- **AuthenticationService**: JWT 토큰 검증 로직만 담당 (인증)
+- **AuthorizationService**: Scope 기반 권한 검증 로직만 담당 (인가)
+
+이를 통해 단일 책임 원칙을 지키고 각 서비스의 역할이 명확합니다.
+
+### 관련 모듈
+
+- **@app/authorization**: JWT 인증 + Role-Scope 기반 인가 통합 모듈
 - **@app/db**: Drizzle ORM 기반 DB 연결
 
 ## 라이센스
@@ -700,4 +790,3 @@ UNLICENSED
 ---
 
 **문의**: 구현 관련 질문은 팀 슬랙 채널에서
-

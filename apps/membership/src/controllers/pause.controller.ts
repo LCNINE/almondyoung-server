@@ -38,8 +38,7 @@ import {
   ResumeSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 /**
  * 일시정지 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
