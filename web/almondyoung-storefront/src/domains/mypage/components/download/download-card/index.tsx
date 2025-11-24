@@ -127,11 +127,12 @@ export function DownloadCard({ digitalAsset, isExercised }: DownloadCardProps) {
             {digitalAsset?.digital_asset?.name}
           </h3>
 
-          <div className="text-muted-foreground flex items-center justify-between text-sm">
+          {/* todo : 구매일자 표시 추가 필요 */}
+          {/* <div className="text-muted-foreground flex items-center justify-between text-sm">
             <span>
               {format(digitalAsset?.digital_asset?.created_at, "yyyy-MM-dd")}
             </span>
-          </div>
+          </div> */}
         </div>
 
         {/* Download Button */}
@@ -180,7 +181,7 @@ function CardButton({
           }
           disabled={isDownloading}
           className="group/btn w-full cursor-pointer"
-          variant="default"
+          variant="destructive"
         >
           <Cat className="mr-2 h-4 w-4 transition-transform group-hover/btn:translate-y-0.5" />
           라이센스 사용하기
