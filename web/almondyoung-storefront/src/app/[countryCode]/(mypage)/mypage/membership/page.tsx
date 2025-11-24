@@ -2,7 +2,7 @@ import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { serverApi } from "@lib/api/server-api"
 import { MEMBERSHIP_SERVICE_BASE_URL } from "@lib/api/api.config"
-import MembershipPageClient from "./membership-page-client"
+import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
 
 /**
  * 멤버십 관리 페이지 (Server Component)

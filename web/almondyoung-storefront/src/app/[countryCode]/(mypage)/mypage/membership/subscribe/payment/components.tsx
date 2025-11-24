@@ -56,12 +56,16 @@ import {
   CardTitle,
 } from "@components/common/ui/card"
 import { Badge } from "@components/common/ui/badge"
+import { CreditCard } from "lucide-react"
 
 // 순수 UI용 타입 정의
 type SubscriptionType = "inactive" | "monthly" | "yearly" | null
 type FmsMember = {
   paymentCompany: string
+  paymentCompanyName: string
   paymentNumber: string
+  cardLast4: string
+  payerName: string
 } | null
 
 type MemberBenefitCommon = {
@@ -88,9 +92,12 @@ type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 const cardDetailsSchema = z.object({
   phone: z
     .string()
-    .max(12, "전화번호 형식이 잘못되었습니다")
-    .min(1, "전화번호를 입력해주세요")
-    .regex(/^\d+$/, "숫자만 입력해주세요"),
+    .min(10, "전화번호는 10-11자리여야 합니다")
+    .max(11, "전화번호는 10-11자리여야 합니다")
+    .regex(
+      /^01[0-9]{8,9}$/,
+      "올바른 휴대폰번호 형식이 아닙니다 (예: 01012345678)"
+    ),
   payerNumber: z
     .string()
     .max(10, "10자 이내로 입력해주세요")
@@ -237,6 +244,9 @@ export function MembershipForm({
             password: data.password,
           }),
         })
+
+        // 카드 등록 후 페이지 데이터 새로고침
+        router.refresh()
       }
 
       // // 2단계: 멤버십 구독 생성
@@ -366,8 +376,15 @@ export function MembershipForm({
                       <FormItem>
                         <FormLabel>전화번호</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                          <Input
+                            {...field}
+                            placeholder="01012345678"
+                            maxLength={11}
+                          />
                         </FormControl>
+                        <p className="text-xs text-gray-500">
+                          하이픈 없이 10-11자리 입력
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -427,14 +444,50 @@ export function MembershipForm({
 
                 {existingFmsMember && (
                   <TabsContent value="existingCard">
-                    <div className="flex flex-row gap-2 rounded-lg border-2 p-4">
-                      <Badge variant="outline">
-                        {existingFmsMember.paymentCompany}
-                      </Badge>
-                      <p>
-                        {existingFmsMember.paymentNumber.slice(0, 4)} - #### -
-                        #### - ####
-                      </p>
+                    {/* 등록된 카드 UI - 반응형 */}
+                    <div className="relative w-full rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 p-4 shadow-lg md:p-6" style={{ aspectRatio: '1.586' }}>
+                      {/* 카드 패턴 */}
+                      <div className="absolute inset-0 rounded-2xl bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMC41IiBvcGFjaXR5PSIwLjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-20" />
+
+                      {/* 카드 내용 */}
+                      <div className="relative z-10 flex h-full flex-col justify-between text-white">
+                        {/* 카드 상단 */}
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs font-medium opacity-90 md:text-sm">
+                              HMS Card
+                            </p>
+                            <h3 className="mt-0.5 text-base font-bold md:mt-1 md:text-xl">
+                              {existingFmsMember.paymentCompanyName}
+                            </h3>
+                          </div>
+                          <div className="rounded-full bg-white/20 p-1.5 backdrop-blur-sm md:p-2">
+                            <CreditCard className="h-4 w-4 md:h-6 md:w-6" />
+                          </div>
+                        </div>
+
+                        {/* 카드 중앙: 카드번호 */}
+                        <div>
+                          <p className="font-mono text-sm tracking-wider md:text-lg">
+                            {existingFmsMember.paymentNumber}
+                          </p>
+                        </div>
+
+                        {/* 카드 하단 */}
+                        <div className="flex items-end justify-between">
+                          <div>
+                            <p className="text-[10px] opacity-75 md:text-xs">
+                              카드 소유자
+                            </p>
+                            <p className="mt-0.5 text-sm font-medium md:mt-1 md:text-base">
+                              {existingFmsMember.payerName || "등록된 카드"}
+                            </p>
+                          </div>
+                          <Badge className="bg-green-500 text-xs text-white hover:bg-green-600 md:text-sm">
+                            사용 가능
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   </TabsContent>
                 )}
