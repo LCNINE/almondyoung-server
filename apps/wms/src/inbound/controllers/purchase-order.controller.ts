@@ -9,10 +9,16 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UseGuards
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { JwtAuthGuard, User } from '@app/auth-core';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+  ApiParam,
+} from '@nestjs/swagger';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import {
   CreatePurchaseOrderDto,
@@ -25,9 +31,13 @@ import {
   CartItemResponse,
   StockReorderSuggestion,
   PurchaseOrderStatus,
-  PurchaseOrderType
+  PurchaseOrderType,
 } from '../dto/purchase-order.dto';
-import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
+import {
+  SubmitForAuditDto,
+  ApprovePoDto,
+  RejectPoDto,
+} from '../dto/purchase-order/audit-po.dto';
 
 interface JwtPayload {
   userId: string;
@@ -38,7 +48,7 @@ interface JwtPayload {
 @ApiTags('Purchase Orders')
 @Controller('purchase-orders')
 export class PurchaseOrderController {
-  constructor(private readonly purchaseOrderService: PurchaseOrderService) { }
+  constructor(private readonly purchaseOrderService: PurchaseOrderService) {}
 
   // ========== 발주 관리 ==========
 
@@ -50,7 +60,7 @@ export class PurchaseOrderController {
     type: 'object', // PurchaseOrderResponse type would be defined here
   })
   async createPurchaseOrder(
-    @Body() createDto: CreatePurchaseOrderDto
+    @Body() createDto: CreatePurchaseOrderDto,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.createPurchaseOrder(createDto);
   }
@@ -64,24 +74,42 @@ export class PurchaseOrderController {
   })
   async createPurchaseOrderFromCart(
     @Body() createDto: CreatePurchaseOrderFromCartDto,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
-    return this.purchaseOrderService.createPurchaseOrderFromCart(createDto, user.userId);
+    return this.purchaseOrderService.createPurchaseOrderFromCart(
+      createDto,
+      user.userId,
+    );
   }
 
   @Get()
   @ApiOperation({ summary: '발주 목록 조회' })
   @ApiQuery({ name: 'status', enum: PurchaseOrderStatus, required: false })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
-  @ApiQuery({ name: 'limit', type: Number, required: false, description: '조회 개수 (기본: 50)' })
-  @ApiQuery({ name: 'offset', type: Number, required: false, description: '오프셋 (기본: 0)' })
+  @ApiQuery({
+    name: 'limit',
+    type: Number,
+    required: false,
+    description: '조회 개수 (기본: 50)',
+  })
+  @ApiQuery({
+    name: 'offset',
+    type: Number,
+    required: false,
+    description: '오프셋 (기본: 0)',
+  })
   async getPurchaseOrders(
     @Query('status') status?: PurchaseOrderStatus,
     @Query('type') type?: PurchaseOrderType,
     @Query('limit') limit?: number,
-    @Query('offset') offset?: number
+    @Query('offset') offset?: number,
   ): Promise<PurchaseOrderResponse[]> {
-    return this.purchaseOrderService.getPurchaseOrders(status, type, limit, offset);
+    return this.purchaseOrderService.getPurchaseOrders(
+      status,
+      type,
+      limit,
+      offset,
+    );
   }
 
   // ========== 발주대기리스트 (Cart) 관리 ==========
@@ -95,7 +123,7 @@ export class PurchaseOrderController {
   })
   async addToCart(
     @Body() addDto: AddToCartDto,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<CartItemResponse> {
     return this.purchaseOrderService.addToCart(addDto, user.userId);
   }
@@ -106,7 +134,7 @@ export class PurchaseOrderController {
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   async getCartItems(
     @Query('type') type: PurchaseOrderType | undefined,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<CartItemResponse[]> {
     return this.purchaseOrderService.getCartItems(type, user.userId);
   }
@@ -121,9 +149,13 @@ export class PurchaseOrderController {
   async updateCartItem(
     @Param('itemId') itemId: string,
     @Body() updateDto: UpdateCartItemDto,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<CartItemResponse> {
-    return this.purchaseOrderService.updateCartItem(itemId, user.userId, updateDto);
+    return this.purchaseOrderService.updateCartItem(
+      itemId,
+      user.userId,
+      updateDto,
+    );
   }
 
   @Delete('cart/:itemId')
@@ -136,7 +168,7 @@ export class PurchaseOrderController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeFromCart(
     @Param('itemId') itemId: string,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<void> {
     return this.purchaseOrderService.removeFromCart(itemId, user.userId);
   }
@@ -152,7 +184,7 @@ export class PurchaseOrderController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async clearCart(
     @Query('type') type: PurchaseOrderType | undefined,
-    @User() user: JwtPayload
+    @User() user: JwtPayload,
   ): Promise<void> {
     return this.purchaseOrderService.clearCart(type, user.userId);
   }
@@ -162,16 +194,22 @@ export class PurchaseOrderController {
   @Get('suggestions/reorder')
   @ApiOperation({
     summary: '재주문 제안 조회',
-    description: '안전재고 미만으로 떨어진 상품들의 재주문 제안 목록을 조회합니다'
+    description:
+      '안전재고 미만으로 떨어진 상품들의 재주문 제안 목록을 조회합니다',
   })
-  @ApiQuery({ name: 'warehouseId', type: String, required: false, description: '창고 ID (선택사항)' })
+  @ApiQuery({
+    name: 'warehouseId',
+    type: String,
+    required: false,
+    description: '창고 ID (선택사항)',
+  })
   @ApiResponse({
     status: 200,
     description: '재주문 제안 목록이 성공적으로 조회됨',
     type: [Object], // StockReorderSuggestion would be defined here
   })
   async getReorderSuggestions(
-    @Query('warehouseId') warehouseId?: string
+    @Query('warehouseId') warehouseId?: string,
   ): Promise<StockReorderSuggestion[]> {
     return this.purchaseOrderService.getReorderSuggestions(warehouseId);
   }
@@ -188,7 +226,9 @@ export class PurchaseOrderController {
     status: 404,
     description: '발주를 찾을 수 없음',
   })
-  async getPurchaseOrderById(@Param('id') id: string): Promise<PurchaseOrderResponse> {
+  async getPurchaseOrderById(
+    @Param('id') id: string,
+  ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.getPurchaseOrderById(id);
   }
 
@@ -200,7 +240,7 @@ export class PurchaseOrderController {
   })
   async updatePurchaseOrderStatus(
     @Param('id') id: string,
-    @Body() updateDto: UpdatePurchaseOrderStatusDto
+    @Body() updateDto: UpdatePurchaseOrderStatusDto,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto);
   }
@@ -213,7 +253,7 @@ export class PurchaseOrderController {
   })
   async updatePurchaseOrderLines(
     @Param('id') id: string,
-    @Body() updateDto: UpdatePurchaseOrderLinesDto
+    @Body() updateDto: UpdatePurchaseOrderLinesDto,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.updatePurchaseOrderLines(id, updateDto);
   }
@@ -232,15 +272,21 @@ export class PurchaseOrderController {
         id: { type: 'string', example: 'uuid' },
         auditStatus: { type: 'string', example: 'pending_audit' },
         submittedAt: { type: 'string', format: 'date-time' },
-        message: { type: 'string', example: '검토 요청이 제출되었습니다. (Submitted for audit)' }
-      }
-    }
+        message: {
+          type: 'string',
+          example: '검토 요청이 제출되었습니다. (Submitted for audit)',
+        },
+      },
+    },
   })
-  @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 draft가 아님)' })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 상태 (현재 상태가 draft가 아님)',
+  })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   async submitForAudit(
     @Param('id') id: string,
-    @Body() dto: SubmitForAuditDto
+    @Body() dto: SubmitForAuditDto,
   ): Promise<any> {
     return this.purchaseOrderService.submitForAudit(id, dto);
   }
@@ -257,15 +303,21 @@ export class PurchaseOrderController {
         id: { type: 'string', example: 'uuid' },
         auditStatus: { type: 'string', example: 'approved' },
         approvedAt: { type: 'string', format: 'date-time' },
-        message: { type: 'string', example: '발주가 승인되었습니다. (Purchase order approved)' }
-      }
-    }
+        message: {
+          type: 'string',
+          example: '발주가 승인되었습니다. (Purchase order approved)',
+        },
+      },
+    },
   })
-  @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 pending_audit가 아님)' })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
+  })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   async approvePo(
     @Param('id') id: string,
-    @Body() dto: ApprovePoDto
+    @Body() dto: ApprovePoDto,
   ): Promise<any> {
     return this.purchaseOrderService.approvePo(id, dto);
   }
@@ -282,16 +334,26 @@ export class PurchaseOrderController {
         id: { type: 'string', example: 'uuid' },
         auditStatus: { type: 'string', example: 'draft' },
         rejectedAt: { type: 'string', format: 'date-time' },
-        reason: { type: 'string', example: 'SKU quantities exceed budget limits' },
-        message: { type: 'string', example: '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)' }
-      }
-    }
+        reason: {
+          type: 'string',
+          example: 'SKU quantities exceed budget limits',
+        },
+        message: {
+          type: 'string',
+          example:
+            '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)',
+        },
+      },
+    },
   })
-  @ApiResponse({ status: 400, description: '잘못된 상태 (현재 상태가 pending_audit가 아님)' })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
+  })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   async rejectPo(
     @Param('id') id: string,
-    @Body() dto: RejectPoDto
+    @Body() dto: RejectPoDto,
   ): Promise<any> {
     return this.purchaseOrderService.rejectPo(id, dto);
   }
