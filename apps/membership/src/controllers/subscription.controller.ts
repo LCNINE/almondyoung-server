@@ -51,8 +51,7 @@ import {
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { FastifyRequest } from 'fastify';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 /**
  * 구독 관리 컨트롤러
  * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
@@ -66,7 +65,7 @@ export class SubscriptionController {
     private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly cancellationReasonReader: CancellationReasonReader,
-  ) { }
+  ) {}
 
   /**
    * 현재 구독 상태 조회
@@ -136,7 +135,10 @@ export class SubscriptionController {
     @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
     createSubscriptionDto: CreateSubscriptionRequest,
   ) {
-    console.log('📥 구독 생성 요청:', { userId, planId: createSubscriptionDto.planId });
+    console.log('📥 구독 생성 요청:', {
+      userId,
+      planId: createSubscriptionDto.planId,
+    });
 
     if (!userId) {
       throw new BadRequestException('userId가 필요합니다');

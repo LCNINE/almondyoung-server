@@ -15,8 +15,7 @@ import {
 } from '@nestjs/swagger';
 import { SavingsService } from '../services/savings/savings.service';
 import { MonthlySavingsDto, RangeSavingsDto } from '../shared/dto/savings.dto';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 
 /**
  * 멤버십 절약액 조회 컨트롤러
