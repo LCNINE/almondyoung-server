@@ -49,8 +49,7 @@ import {
   GetBulkSubscriptionsRequestDto,
 } from '../shared/dto/request.dto';
 import { FastifyRequest } from 'fastify';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { SubscriptionService } from '../services/subscription.service';
 /**
  * 관리자 운영 컨트롤러
