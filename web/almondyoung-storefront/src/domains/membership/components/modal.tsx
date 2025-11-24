@@ -32,7 +32,7 @@ export function MembershipCancelModal({
 
       {/* Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-72 rounded-[5px] bg-white pt-6 text-center sm:w-[28rem] md:w-[34rem] md:rounded-lg md:pt-8 lg:w-[38rem]">
+        <DialogContent className="w-72 rounded-[5px] bg-white pt-6 text-center sm:w-md md:w-136 md:rounded-lg md:pt-8 lg:w-152">
           <DialogHeader>
             <DialogTitle className="text-center text-xs leading-4 font-normal text-black sm:text-sm sm:leading-5 md:text-base md:leading-6 lg:text-lg lg:leading-7">
               이번 달 혜택 사용 내역이 없어

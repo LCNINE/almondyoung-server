@@ -2,8 +2,14 @@
 import { CustomButton } from "@components/common/custom-buttons"
 import { Input } from "@components/common/ui/input"
 import { useRouter } from "next/navigation"
+import { ChevronLeft } from "lucide-react"
 
-export default function AddBankForm() {
+interface AddBankFormProps {
+  onComplete?: () => void
+  onBack?: () => void
+}
+
+export default function AddBankForm({ onComplete, onBack }: AddBankFormProps) {
   const router = useRouter()
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -11,12 +17,24 @@ export default function AddBankForm() {
     // 비즈니스 로직은 추후 구현
     // 임시로 등록 완료 알림 후 결제수단 목록으로 복귀
     alert("계좌가 등록되었습니다 (임시)")
-    router.push("/kr/mypage/payment-methods")
+
+    if (onComplete) {
+      onComplete()
+    } else {
+      router.push("/kr/mypage/payment-methods")
+    }
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white p-4">
-      <h1 className="mb-6 text-2xl font-bold">계좌 등록</h1>
+    <div className="flex min-h-full flex-col bg-white p-4">
+      <div className="mb-6 flex items-center gap-2">
+        {onBack && (
+          <button onClick={onBack} className="p-1 -ml-2">
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        <h1 className="text-2xl font-bold">계좌 등록</h1>
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         {/* 은행 선택 */}

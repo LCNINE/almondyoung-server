@@ -76,7 +76,7 @@ export function PhoneVerifyDrawer({
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content className="fixed right-0 bottom-0 left-0 z-50 flex max-h-[96vh] flex-col rounded-t-[10px] bg-white">
           {/* 모바일 드래그 핸들 */}
-          <div className="mx-auto mt-4 h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-300" />
+          <div className="mx-auto mt-4 h-1.5 w-12 shrink-0 rounded-full bg-gray-300" />
           {content}
         </Drawer.Content>
       </Drawer.Portal>

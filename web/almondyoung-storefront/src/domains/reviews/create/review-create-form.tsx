@@ -219,7 +219,7 @@ function PhotoPreview({
   }
 
   return (
-    <figure className="relative h-20 w-20 flex-shrink-0">
+    <figure className="relative h-20 w-20 shrink-0">
       <img
         src={preview}
         alt={`리뷰 사진 ${file.name}`}
@@ -253,7 +253,7 @@ function ReviewSubmitFooter({ isDisabled }: { isDisabled: boolean }) {
         <button
           type="submit"
           disabled={isDisabled}
-          className="flex-grow items-center justify-center gap-2.5 rounded-[5px] px-4 py-[13px] text-center text-sm text-white enabled:bg-[#ffa500] disabled:bg-[#ffa500]/40"
+          className="grow items-center justify-center gap-2.5 rounded-[5px] px-4 py-[13px] text-center text-sm text-white enabled:bg-[#ffa500] disabled:bg-[#ffa500]/40"
         >
           리뷰 등록하기
         </button>
