@@ -70,6 +70,35 @@ async function bootstrap() {
     });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // 전역 예외 필터 (Fastify 호환) - Guard 에러를 제대로 처리하기 위해 필수!
+  app.useGlobalFilters({
+    catch(exception: any, host: any) {
+      const ctx = host.switchToHttp();
+      const response = ctx.getResponse();
+      const request = ctx.getRequest();
+
+      const status = exception.getStatus?.() || 500;
+
+      console.error('❌ [WMS] 전역 에러 발생:', {
+        timestamp: new Date().toISOString(),
+        path: request.url,
+        method: request.method,
+        status: status,
+        errorName: exception.name,
+        errorMessage: exception.message,
+      });
+
+      // Fastify 응답 처리
+      response.code(status).send({
+        statusCode: status,
+        message: exception.message,
+        error: exception.name,
+        ...(exception.response && { details: exception.response }),
+      });
+    },
+  });
+
   app.enableCors({
     origin: true,
     credentials: true,
