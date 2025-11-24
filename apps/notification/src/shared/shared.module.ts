@@ -11,6 +11,7 @@ import { AlertService } from './services/alert.service';
 import { WebhookService } from './services/webhook.service';
 import { EventMappingService } from './services/event-mapping.service';
 import { MetricsService } from './services/metrics.service';
+import { TemplateVariableMapperService } from './services/template-variable-mapper.service';
 import { MetadataController } from './controllers/metadata.controller';
 import { LogController } from './controllers/log.controller';
 import { MetricsController } from './controllers/metrics.controller';
@@ -37,6 +38,7 @@ import { MetricsController } from './controllers/metrics.controller';
     WebhookService,
     EventMappingService,
     MetricsService,
+    TemplateVariableMapperService,
   ],
   exports: [
     NotificationLoggerService,
@@ -44,6 +46,7 @@ import { MetricsController } from './controllers/metrics.controller';
     WebhookService,
     EventMappingService,
     MetricsService,
+    TemplateVariableMapperService,
   ],
 })
 export class SharedModule { }

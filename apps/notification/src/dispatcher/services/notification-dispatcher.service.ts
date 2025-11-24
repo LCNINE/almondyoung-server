@@ -18,6 +18,7 @@ import {
   NotificationPriority,
   NotificationStatus,
 } from '../../shared/enums';
+import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
 
 export interface Notification {
   notificationId: string;
@@ -39,7 +40,8 @@ export class NotificationDispatcherService {
   constructor(
     @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>,
     @InjectQueue('notification') private readonly notificationQueue: Queue,
-  ) {}
+    private readonly variableMapper: TemplateVariableMapperService,
+  ) { }
 
   /**
    * 공통 알림 발송 진입점
@@ -87,14 +89,57 @@ export class NotificationDispatcherService {
       // 채널별 override content
       const channelContentOverride = dto.content?.[channel];
 
+      // 템플릿 변수 추출 및 변환
+      // 명시적으로 전달된 variables 우선 사용
+      let finalVariables = dto.variables;
+      if (!finalVariables && template?.variablesSchema && payload) {
+        // variables가 없고 템플릿 스키마가 있으면 자동 추출
+        this.logger.debug(`[Dispatcher] Auto-extracting variables from payload for template ${dto.templateKey}`);
+        finalVariables = this.variableMapper.extractVariablesFromPayload(
+          payload,
+          template.variablesSchema
+        );
+      } else if (!finalVariables && payload && template) {
+        // 스키마가 없으면 경고 (의도된 동작일 수 있음)
+        this.logger.warn(`[Dispatcher] No variables provided and no schema found for template ${dto.templateKey}, using payload as-is`);
+        finalVariables = payload;
+      }
+
+      // 채널별 변수 매핑
+      const channelVariables = this.variableMapper.mapVariablesForChannel(
+        channel,
+        finalVariables || {},
+        {
+          kakaoTemplateCode: template?.kakaoTemplateCode,
+          providerTemplateId: template?.providerTemplateId,
+        }
+      );
+
       const renderedContent = this.renderContent({
         channel,
         language,
         template,
         contentOverride: channelContentOverride,
-        variables: dto.variables,
+        variables: finalVariables,
         payload,
       });
+
+      // metadata에 채널별 템플릿 변수 정보 추가
+      const channelMetadata = {
+        ...metadata,
+        ...(channelVariables.kakaoTemplateParameters && {
+          templateCode: channelVariables.kakaoTemplateCode,
+          templateParameters: channelVariables.kakaoTemplateParameters,
+        }),
+        ...(channelVariables.resendTemplateVariables && {
+          templateId: channelVariables.resendTemplateId,
+          templateVariables: channelVariables.resendTemplateVariables,
+        }),
+        // FCM data payload용 변수
+        ...(channelVariables.fcmDataVariables && {
+          fcmDataVariables: channelVariables.fcmDataVariables,
+        }),
+      };
 
       const [inserted] = await db
         .insert(notifications)
@@ -110,13 +155,13 @@ export class NotificationDispatcherService {
           payload: {
             ...payload,
             // 템플릿 변수도 payload에 같이 저장 (debug / 재렌더링용)
-            __variables: dto.variables ?? undefined,
+            __variables: finalVariables ?? undefined,
           },
           renderedContent,
           status: NotificationStatus.PENDING,
           sendAt,
           attempts: 0,
-          metadata,
+          metadata: channelMetadata,
         })
         .returning();
 
@@ -307,12 +352,22 @@ export class NotificationDispatcherService {
     }
 
     // 4) 변수 치환
-    if (variables && body) {
-      body = this.interpolate(body, variables);
+    // 템플릿 시스템을 사용하는 채널(KAKAO, EMAIL)은 Provider에서 처리하므로
+    // 여기서는 템플릿 시스템이 없는 채널(SMS, PUSH)만 치환
+    const usesProviderTemplate =
+      (channel === 'KAKAO' && template?.kakaoTemplateCode) ||
+      (channel === 'EMAIL' && template?.providerTemplateId);
+
+    if (!usesProviderTemplate) {
+      // 템플릿 시스템을 사용하지 않는 경우만 텍스트 치환
+      if (variables && body) {
+        body = this.interpolate(body, variables);
+      }
+      if (variables && subject) {
+        subject = this.interpolate(subject, variables);
+      }
     }
-    if (variables && subject) {
-      subject = this.interpolate(subject, variables);
-    }
+    // 템플릿 시스템을 사용하는 경우는 Provider에서 templateParameter/template.variables로 처리
 
     return {
       subject,
