@@ -608,6 +608,9 @@ export const membershipSchema = {
   billingEventsRelations,
   membershipCycleBenefitsRelations,
   membershipDiscountEventsRelations,
+
+  // Auth Schema (from @app/authorization)
+  ...authorizationSchema,
 } as const;
 
 export type MembershipSchema = typeof membershipSchema;
