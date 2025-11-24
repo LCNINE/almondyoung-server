@@ -1,5 +1,6 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
+import { authorizationSchema } from '@app/authorization';
 
 export const uploads = pgTable(
   'uploads',
@@ -76,7 +77,9 @@ export const fileReferences = pgTable(
 export const fileServiceSchema = {
   uploads,
   fileReferences,
-};
+  // Auth Schema (from @app/authorization)
+  ...authorizationSchema,
+} as const;
 
 export type FileServiceSchema = typeof fileServiceSchema;
 
