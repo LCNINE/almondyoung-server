@@ -74,7 +74,7 @@ export function AccountFindPwForm() {
                   <div className="relative">
                     <CustomInput
                       {...field}
-                      placeholder="가입시 등록한 이메일을 입력해주세요"
+                      label="이메일"
                       disabled={isLoading}
                       autoComplete="email"
                       className="pr-10"
@@ -99,7 +99,7 @@ export function AccountFindPwForm() {
                   <div className="relative">
                     <CustomInput
                       {...field}
-                      placeholder="가입시 등록한 아이디를 입력해주세요"
+                      label="아이디"
                       disabled={isLoading}
                       autoComplete="username"
                       className="pr-10"
