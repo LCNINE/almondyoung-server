@@ -12,6 +12,7 @@ import {
   HttpCode,
   Logger,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
@@ -67,7 +68,12 @@ import {
   HmsCardProfileResponseDto,
   RefundPaymentResponseDto,
   ErrorResponseDto,
-  // 타입들 (기존 호환성)
+  // BNPL DTOs
+  BnplHistoryQueryDto,
+  BnplHistoryResponseDto,
+  BnplSummaryResponseDto,
+  // Schemas
+  BnplHistoryQuerySchema,
 } from './payment.controller.zod';
 
 /**
@@ -93,7 +99,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
-  ) {}
+  ) { }
 
   @Post('intents')
   @ApiOperation({
@@ -661,6 +667,52 @@ export class PaymentController {
     }
   }
 
+  @Get('bnpl/history')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'BNPL 월별 내역 조회',
+    description: '특정 연/월의 BNPL 결제 내역을 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '조회 성공',
+    type: BnplHistoryResponseDto,
+  })
+  async getBnplHistory(
+    @User('userId') userId: string,
+    @Query(new ZodValidationPipe(BnplHistoryQuerySchema))
+    query: BnplHistoryQueryDto,
+  ) {
+    try {
+      return await this.bnplService.getBnplHistory(
+        userId,
+        query.year,
+        query.month,
+      );
+    } catch (error) {
+      this.handleError(error, 'BNPL 내역 조회');
+    }
+  }
+
+  @Get('bnpl/summary')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'BNPL 요약 정보 조회',
+    description: '이번 달 사용 금액, 한도, 결제일 정보를 조회합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '조회 성공',
+    type: BnplSummaryResponseDto,
+  })
+  async getBnplSummary(@User('userId') userId: string) {
+    try {
+      return await this.bnplService.getBnplSummary(userId);
+    } catch (error) {
+      this.handleError(error, 'BNPL 요약 조회');
+    }
+  }
+
   @Post('bnpl/accounts')
   @HttpCode(201)
   @ApiOperation({ summary: 'BNPL 계정 생성' })
@@ -777,7 +829,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {

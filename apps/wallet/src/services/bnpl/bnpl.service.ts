@@ -3,6 +3,7 @@ import { BnplAccountReader } from './bnpl-account.reader';
 import { BnplAccountCreator } from './bnpl-account.creator';
 import { BnplCreditManager } from './bnpl-credit.manager';
 import { BnplAccount } from '../../shared/database/types';
+import { BnplRepository } from './bnpl.repository';
 import { WalletExecutor } from '../../shared/database';
 
 /**
@@ -19,7 +20,8 @@ export class BnplService {
     private readonly accountReader: BnplAccountReader,
     private readonly accountCreator: BnplAccountCreator,
     private readonly creditManager: BnplCreditManager,
-  ) {}
+    private readonly repo: BnplRepository,
+  ) { }
 
   /**
    * BNPL 계정 생성
@@ -140,5 +142,95 @@ export class BnplService {
    */
   async findAccountByUserId(userId: string): Promise<BnplAccount | null> {
     return await this.accountReader.findByUserId(userId);
+  }
+
+  /**
+   * BNPL 내역 조회
+   */
+  async getBnplHistory(userId: string, year: number, month: number) {
+    const account = await this.accountReader.findByUserId(userId);
+    if (!account) {
+      throw new Error('BNPL account not found');
+    }
+
+    const events = await this.repo.findEventsByAccountIdAndPeriod(
+      account.id,
+      year,
+      month,
+    );
+
+    const totalAmount = events.reduce((sum, event) => sum + event.amount, 0);
+
+    return {
+      year,
+      month,
+      totalAmount,
+      events: events.map((event) => ({
+        id: event.id,
+        eventType: event.eventType,
+        eventCategory: event.eventCategory,
+        amount: event.amount,
+        status: event.status,
+        createdAt: event.createdAt.toISOString(),
+        title: event.externalOrderId || '알 수 없는 상점', // TODO: 상점명 연동 필요
+      })),
+    };
+  }
+
+  /**
+   * BNPL 요약 조회
+   */
+  async getBnplSummary(userId: string) {
+    const account = await this.accountReader.findByUserId(userId);
+    if (!account) {
+      return {
+        success: true,
+        hasAccount: false,
+        creditLimit: null,
+        availableLimit: null,
+        usedAmount: null,
+        nextBillingDate: null,
+        dDay: null,
+        targetYear: null,
+        targetMonth: null,
+      };
+    }
+
+    // 이번 달 사용 금액 (미정산 금액)
+    const usedAmount = await this.repo.getUnbilledAmount(account.id);
+
+    // 결제일까지 남은 일수 및 청구 대상 월 계산
+    let dDay: number | null = null;
+    let targetYear: number | null = null;
+    let targetMonth: number | null = null;
+
+    if (account.nextBillingDate) {
+      const today = new Date();
+      const billingDate = new Date(account.nextBillingDate);
+      const diffTime = billingDate.getTime() - today.getTime();
+      dDay = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // 청구 대상 월 = 결제일의 전달
+      // 예: 6월 10일 결제 -> 5월 사용분
+      const targetDate = new Date(
+        billingDate.getFullYear(),
+        billingDate.getMonth() - 1,
+        1,
+      );
+      targetYear = targetDate.getFullYear();
+      targetMonth = targetDate.getMonth() + 1;
+    }
+
+    return {
+      success: true,
+      hasAccount: true,
+      creditLimit: account.creditLimit,
+      availableLimit: account.availableLimit,
+      usedAmount,
+      nextBillingDate: account.nextBillingDate,
+      dDay,
+      targetYear,
+      targetMonth,
+    };
   }
 }
