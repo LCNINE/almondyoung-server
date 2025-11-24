@@ -22,6 +22,7 @@ import {
   check, // Supabase에서 사용하는 serial 추가
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
+import { authorizationSchema } from '@app/authorization';
 
 import { getTsid } from 'tsid-ts';
 import { generateUUIDv7 } from '../utils/id-generator';
@@ -1377,6 +1378,7 @@ export const outboxEvents = pgTable(
 // 주의: DbService의 타입 체크를 위해 walletSchema만 사용하세요
 // import * as schema를 사용하면 newMemberId 같은 함수도 포함되어 타입 에러 발생
 export const walletSchema = {
+  ...authorizationSchema, // authorization 스키마 병합
   // v2 Architecture Tables
   paymentIntents,
   paymentAttempts,

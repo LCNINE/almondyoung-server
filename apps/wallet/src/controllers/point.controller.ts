@@ -8,8 +8,7 @@ import {
     ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { PointService } from '../services/points/point.service';
 
 @ApiTags('포인트 (Points)')
