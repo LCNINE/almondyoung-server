@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { walletSchema } from '../../shared/database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { WalletExecutor } from '../../shared/database';
 import { ProviderType } from '../../providers/payment-provider.interface';
 
@@ -55,6 +55,68 @@ export class PaymentProfilesRepository {
       .where(and(eq(schema.paymentProfiles.userId, userId)))
       .limit(1);
     return row ?? null;
+  }
+
+  /**
+   * 프로필 ID로 조회 (소유자 확인용)
+   */
+  async findById(
+    profileId: string,
+    tx: WalletExecutor = this.executor,
+  ): Promise<typeof schema.paymentProfiles.$inferSelect | null> {
+    const [row] = await tx
+      .select()
+      .from(schema.paymentProfiles)
+      .where(eq(schema.paymentProfiles.id, profileId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * 기본값 변경
+   * - 기존 기본값 해제 후 새 기본값 설정
+   */
+  async setDefault(
+    userId: string,
+    profileId: string,
+    tx: WalletExecutor = this.executor,
+  ): Promise<void> {
+    // 기존 기본값 해제
+    await tx
+      .update(schema.paymentProfiles)
+      .set({ isDefault: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.paymentProfiles.userId, userId),
+          eq(schema.paymentProfiles.isDefault, true),
+          isNull(schema.paymentProfiles.deletedAt),
+        ),
+      );
+
+    // 새 기본값 설정
+    await tx
+      .update(schema.paymentProfiles)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(eq(schema.paymentProfiles.id, profileId));
+  }
+
+  /**
+   * Soft Delete
+   * - deletedAt 필드에 현재 시각 기록
+   * - 기본값인 경우 isDefault를 false로 해제
+   */
+  async softDelete(
+    profileId: string,
+    tx: WalletExecutor = this.executor,
+  ): Promise<void> {
+    await tx
+      .update(schema.paymentProfiles)
+      .set({
+        deletedAt: new Date(),
+        isDefault: false, // 기본값 해제 (자동 승계 없음)
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.paymentProfiles.id, profileId));
   }
 }
 
