@@ -7,8 +7,12 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { AuthCoreModule, JwtAuthGuard } from '@app/auth-core';
-import { AuthorizationModule, ScopeGuard, authorizationSchema } from '@app/authorization';
+import {
+  AuthorizationModule,
+  JwtAuthGuard,
+  ScopeGuard,
+  authorizationSchema,
+} from '@app/authorization';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { validatePimEnv } from '../config/env.validation';
 import { pimSchema } from '../schema';
@@ -33,7 +37,7 @@ const combinedSchema = {
       schema: combinedSchema, // Use combined schema
     }),
     // Add auth modules
-    AuthCoreModule.forRootAsync(),
+
     AuthorizationModule.forRoot({
       microserviceName: 'pim',
       scopes: PIM_SCOPES,
@@ -59,4 +63,3 @@ const combinedSchema = {
   ],
 })
 export class PimModule {}
-
