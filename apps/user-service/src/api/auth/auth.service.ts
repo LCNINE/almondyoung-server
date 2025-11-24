@@ -77,7 +77,7 @@ export class AuthService {
   }
 
   private getSocialRedirectUrl(provider: ProviderType): string {
-    return new URL(`/auth/${provider}/callback`, this.frontendUrl).toString();
+    return new URL(`/${provider}/callback`, this.frontendUrl).toString();
   }
 
   async signUp(
@@ -476,15 +476,15 @@ export class AuthService {
           transaction,
         );
 
-        // await this.eventPublisher.publishEvent({
-        //   eventType: 'UserCreated',
-        //   aggregateId: newUser.user.id,
-        //   payload: {
-        //     userId: newUser.user.id,
-        //     email: newUser.user.email,
-        //     name: newUser.user.username,
-        //   },
-        // });
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserCreated',
+          aggregateId: newUser.user.id,
+          payload: {
+            userId: newUser.user.id,
+            email: newUser.user.email,
+            name: newUser.user.username,
+          },
+        });
 
         return newUser;
       }
