@@ -1,6 +1,7 @@
 import { PimTestDatabase } from './pim-test-database';
 import {
   productMasters,
+  productMasterVersions,
   productCategories,
   productOptionGroups,
   productOptionValues,
@@ -14,16 +15,22 @@ import {
   pricingRules,
   salesChannels,
   channelProducts,
+  tagGroups,
+  tagValues,
 } from '../../src/schema';
 import type {
   NewProductMaster,
   NewProductCategory,
   ProductMaster,
+  ProductMasterVersion,
+  NewProductMasterVersion,
   ProductVariant,
   NewProductVariant,
   PricingRule,
   VersionStatus,
   DbTransaction,
+  TagGroup,
+  TagValue,
 } from '../../src/types';
 import { v7 as uuidv7 } from 'uuid';
 import { eq, and } from 'drizzle-orm';
@@ -48,8 +55,12 @@ export class PimTestFactory {
     const masterId = uuidv7();
     const versionId = uuidv7();
 
-    const [master] = await db
-      .insert(productMasters)
+    await db.insert(productMasters).values({
+      id: masterId,
+    });
+
+    const [version] = await db
+      .insert(productMasterVersions)
       .values({
         id: versionId,
         masterId: masterId,
@@ -61,7 +72,6 @@ export class PimTestFactory {
       })
       .returning();
 
-    // 기본 variant 1개 생성
     const [variant] = await db
       .insert(productVariants)
       .values({
@@ -71,14 +81,13 @@ export class PimTestFactory {
       })
       .returning();
 
-    // 매핑 테이블 연결
     await db.insert(productMasterVariants).values({
-      masterId: master.masterId,
+      masterId: masterId,
       variantId: variant.id,
-      version: master.version,
+      version: version.version,
     });
 
-    return { master, defaultVariant: variant };
+    return { master: version, defaultVariant: variant };
   }
 
   /**
@@ -98,8 +107,12 @@ export class PimTestFactory {
     const masterId = uuidv7();
     const versionId = uuidv7();
 
-    const [master] = await db
-      .insert(productMasters)
+    await db.insert(productMasters).values({
+      id: masterId,
+    });
+
+    const [version] = await db
+      .insert(productMasterVersions)
       .values({
         id: versionId,
         masterId: masterId,
@@ -114,7 +127,6 @@ export class PimTestFactory {
       })
       .returning();
 
-    // 기본 variant 1개 생성
     const [variant] = await db
       .insert(productVariants)
       .values({
@@ -125,12 +137,12 @@ export class PimTestFactory {
       .returning();
 
     await db.insert(productMasterVariants).values({
-      masterId: master.masterId,
+      masterId: masterId,
       variantId: variant.id,
-      version: master.version,
+      version: version.version,
     });
 
-    return { master, defaultVariant: variant };
+    return { master: version, defaultVariant: variant };
   }
 
   /**
@@ -167,12 +179,12 @@ export class PimTestFactory {
     const db = tx || this.getDb();
 
     const [updated] = await db
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         ...data,
         updatedAt: new Date(),
       })
-      .where(eq(productMasters.id, versionId))
+      .where(eq(productMasterVersions.id, versionId))
       .returning();
 
     return updated;
@@ -184,13 +196,13 @@ export class PimTestFactory {
   static async getMasterById(versionId: string, tx?: DbTransaction) {
     const db = tx || this.getDb();
 
-    const [master] = await db
+    const [version] = await db
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, versionId))
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.id, versionId))
       .limit(1);
 
-    return master;
+    return version;
   }
 
   // ===== 2.2 버전 관리 헬퍼 =====
@@ -206,22 +218,19 @@ export class PimTestFactory {
   ) {
     const db = tx || this.getDb();
 
-    // 부모 버전 조회
     const parent = await this.getMasterById(parentVersionId, db);
     if (!parent) {
       throw new Error(`Parent version ${parentVersionId} not found`);
     }
 
-    // 다음 버전 번호 계산
     const versions = await db
-      .select({ version: productMasters.version })
-      .from(productMasters)
-      .where(eq(productMasters.masterId, parent.masterId));
+      .select({ version: productMasterVersions.version })
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.masterId, parent.masterId));
 
     const maxVersion = Math.max(...versions.map((v) => v.version));
     const nextVersion = maxVersion + 1;
 
-    // 부모 데이터 복사 (버전 관련 필드 제외)
     const {
       id,
       masterId,
@@ -235,7 +244,7 @@ export class PimTestFactory {
     } = parent;
 
     const [newVersion] = await db
-      .insert(productMasters)
+      .insert(productMasterVersions)
       .values({
         ...parentData,
         id: uuidv7(),
@@ -249,7 +258,6 @@ export class PimTestFactory {
       })
       .returning();
 
-    // 매핑 복사
     if (copyMappings) {
       await this._copyMappings(
         db,
@@ -411,28 +419,26 @@ export class PimTestFactory {
       throw new Error('Only draft versions can be published');
     }
 
-    // active로 전환하는 경우 기존 active를 inactive로 변경
     if (targetStatus === 'active') {
       await db
-        .update(productMasters)
+        .update(productMasterVersions)
         .set({ versionStatus: 'inactive' })
         .where(
           and(
-            eq(productMasters.masterId, version.masterId),
-            eq(productMasters.versionStatus, 'active'),
+            eq(productMasterVersions.masterId, version.masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
           ),
         );
     }
 
-    // draft를 targetStatus로 변경
     const [published] = await db
-      .update(productMasters)
+      .update(productMasterVersions)
       .set({
         versionStatus: targetStatus,
         draftOwnerId: null,
         updatedAt: new Date(),
       })
-      .where(eq(productMasters.id, versionId))
+      .where(eq(productMasterVersions.id, versionId))
       .returning();
 
     return published;
@@ -446,11 +452,11 @@ export class PimTestFactory {
 
     const [activeVersion] = await db
       .select()
-      .from(productMasters)
+      .from(productMasterVersions)
       .where(
         and(
-          eq(productMasters.masterId, masterId),
-          eq(productMasters.versionStatus, 'active'),
+          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
         ),
       )
       .limit(1);
@@ -466,9 +472,9 @@ export class PimTestFactory {
 
     const versions = await db
       .select()
-      .from(productMasters)
-      .where(eq(productMasters.masterId, masterId))
-      .orderBy(productMasters.version);
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.masterId, masterId))
+      .orderBy(productMasterVersions.version);
 
     return versions;
   }
@@ -1135,11 +1141,71 @@ export class PimTestFactory {
   }
 
   /**
+   * 태그 그룹 생성
+   */
+  static async createTagGroup(
+    data: {
+      name: string;
+      description?: string;
+      displayOrder?: number;
+      isActive?: boolean;
+    },
+    tx?: DbTransaction,
+  ) {
+    const db = tx || this.getDb();
+
+    const [tagGroup] = await db
+      .insert(tagGroups)
+      .values({
+        id: uuidv7(),
+        name: data.name,
+        description: data.description,
+        displayOrder: data.displayOrder || 0,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return tagGroup;
+  }
+
+  /**
+   * 태그 값 생성
+   */
+  static async createTagValue(
+    data: {
+      groupId: string;
+      name: string;
+      displayOrder?: number;
+      isActive?: boolean;
+    },
+    tx?: DbTransaction,
+  ) {
+    const db = tx || this.getDb();
+
+    const [tagValue] = await db
+      .insert(tagValues)
+      .values({
+        id: uuidv7(),
+        groupId: data.groupId,
+        name: data.name,
+        displayOrder: data.displayOrder || 0,
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+
+    return tagValue;
+  }
+
+  /**
    * Sales Channel 생성
    */
   static async createSalesChannel(
-    type: string = 'medusa',
-    name: string = 'Medusa Store',
+    site: string = 'default-site',
+    name: string = 'Test Channel',
     tx?: DbTransaction,
   ) {
     const db = tx || this.getDb();
@@ -1148,7 +1214,7 @@ export class PimTestFactory {
       .insert(salesChannels)
       .values({
         id: uuidv7(),
-        type,
+        site,
         name,
         isActive: true,
         createdAt: new Date(),
