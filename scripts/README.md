@@ -5,7 +5,8 @@
 ## JWT Token Generator
 
 ### 📝 설명
-테스트용 JWT 토큰을 생성하는 대화형 스크립트입니다. 
+
+테스트용 JWT 토큰을 생성하는 대화형 스크립트입니다.
 거의 영구적인 유효기간(100년)을 가진 토큰을 생성할 수 있어 로컬 개발 및 테스트에 유용합니다.
 
 ### 🚀 사용 방법
@@ -51,7 +52,7 @@ node scripts/generate-jwt-token.js
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 AUTH_SECRET (필수): my-secret-key
-User ID (UUID, Enter로 자동생성): 
+User ID (UUID, Enter로 자동생성):
    → 자동 생성된 UUID: 123e4567-e89b-12d3-a456-426614174000
 Email (기본: test@almondyoung.com): admin@example.com
 Roles (쉼표로 구분, 기본: admin): admin
@@ -104,6 +105,7 @@ curl --cookie "accessToken=eyJhbGc..." \
 ### 🎯 사용 시나리오
 
 #### File Service 테스트
+
 ```bash
 npm run generate:token
 # AUTH_SECRET 입력 (file-service의 .env에 있는 값)
@@ -112,6 +114,7 @@ npm run generate:token
 ```
 
 #### 특정 사용자로 테스트
+
 ```bash
 npm run generate:token
 # User ID: 12345678-1234-1234-1234-123456789012
@@ -121,6 +124,7 @@ npm run generate:token
 ```
 
 #### 여러 역할을 가진 사용자
+
 ```bash
 npm run generate:token
 # Roles: admin,user,moderator
@@ -135,7 +139,5 @@ npm run generate:token
 
 ### 🔗 관련 문서
 
-- [Auth Core Module](../libs/auth-core/README.md)
 - [Authorization Module](../libs/authorization/README.md)
 - [Test Auth Scope App](../apps/test-auth-scope/README.md)
-

@@ -1,28 +1,43 @@
-import { pgTable, uuid, varchar, text, integer, boolean, timestamp, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  varchar,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  index,
+  uniqueIndex,
+  jsonb,
+} from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
 import { authorizationSchema } from '@app/authorization';
 
 export const uploads = pgTable(
   'uploads',
   {
-    id: uuid('id').primaryKey().$defaultFn(() => uuidv7()),
-    
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
     fileName: varchar('file_name', { length: 255 }).notNull(),
     originalName: varchar('original_name', { length: 255 }).notNull(),
     mimeType: varchar('mime_type', { length: 100 }).notNull(),
     size: integer('size').notNull(),
-    
+
     filePath: text('file_path').notNull(),
     url: text('url').notNull(),
-    storageProvider: varchar('storage_provider', { length: 20 }).default('s3').notNull(),
-    
+    storageProvider: varchar('storage_provider', { length: 20 })
+      .default('s3')
+      .notNull(),
+
     status: varchar('status', { length: 20 }).default('pending').notNull(),
-    
+
     context: varchar('context', { length: 50 }),
-    
+
     relatedType: varchar('related_type', { length: 50 }),
     relatedId: uuid('related_id'),
-    
+
     metadata: jsonb('metadata').$type<{
       width?: number;
       height?: number;
@@ -30,10 +45,10 @@ export const uploads = pgTable(
       pages?: number;
       [key: string]: any;
     }>(),
-    
+
     uploadedBy: uuid('uploaded_by').notNull(),
     isPublic: boolean('is_public').default(false),
-    
+
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
@@ -51,20 +66,26 @@ export const uploads = pgTable(
 export const fileReferences = pgTable(
   'file_references',
   {
-    id: uuid('id').primaryKey().$defaultFn(() => uuidv7()),
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
     uploadId: uuid('upload_id')
       .notNull()
       .references(() => uploads.id, { onDelete: 'cascade' }),
-    
+
     serviceType: varchar('service_type', { length: 50 }).notNull(),
     entityType: varchar('entity_type', { length: 50 }).notNull(),
     entityId: uuid('entity_id').notNull(),
-    
+
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_file_refs_upload').on(table.uploadId),
-    index('idx_file_refs_entity').on(table.serviceType, table.entityType, table.entityId),
+    index('idx_file_refs_entity').on(
+      table.serviceType,
+      table.entityType,
+      table.entityId,
+    ),
     uniqueIndex('unique_file_reference').on(
       table.uploadId,
       table.serviceType,
@@ -82,4 +103,3 @@ export const fileServiceSchema = {
 } as const;
 
 export type FileServiceSchema = typeof fileServiceSchema;
-
