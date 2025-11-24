@@ -46,17 +46,19 @@ export class ProductMastersController {
 
   @Post()
   @ApiOperation({
-    summary: '제품 마스터 생성 (간소화)',
+    summary: '제품 마스터 생성',
     description: `
-      빈 draft 상태의 판매 상품을 생성합니다.
-      모든 필드는 선택사항이며, 생성 후 PUT /masters/:id 로 정보를 채웁니다.
+      새로운 판매 상품을 생성합니다 (Master + 첫 번째 Draft 버전).
+      모든 필드는 선택사항이며, 생성 후 수정 가능합니다.
       
       워크플로우:
-      1. POST /masters {} - 빈 draft 생성 (name: "새 상품", 기본 variant 1개)
-      2. PUT /masters/:id { name, description, ... } - 기본 정보 입력
-      3. PUT /masters/:id { optionDiff: { add: [...] } } - 옵션 추가 (variants 자동 생성)
+      1. POST /masters {} - Master + Draft v1 생성 (name: "새 상품", 기본 variant 1개)
+      2. PUT /masters/:masterId/versions/:versionId { name, description, ... } - Draft 수정
+      3. PUT /masters/:masterId/versions/:versionId { optionDiff: { add: [...] } } - 옵션 추가
       4. PUT /products/:masterId/pricing { ... } - 가격 정책 설정
-      5. PATCH /masters/:masterId/versions/:versionId/publish - 활성화
+      5. PATCH /masters/:masterId/versions/:versionId/publish - Draft → Active
+      
+      **출력:** Master ID, Version ID, Version 번호 등을 포함한 응답
     `,
   })
   @ApiBody({
@@ -93,7 +95,14 @@ export class ProductMastersController {
   @Get()
   @ApiOperation({
     summary: '제품 마스터 목록 조회',
-    description: '제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.',
+    description: `
+      제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.
+      
+      **기본 동작:** Active 버전만 반환합니다.
+      **옵션:** includeAllVersions=true 시 모든 버전 상태를 포함합니다.
+      
+      각 항목은 Master ID와 active 버전의 정보를 포함합니다.
+    `,
   })
   @ApiQuery({
     name: 'page',
@@ -204,10 +213,19 @@ export class ProductMastersController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '제품 마스터 상세 조회 (이미지 포함)',
-    description: '특정 제품 마스터의 상세 정보와 연결된 이미지들을 조회합니다.',
+    summary: '제품 마스터 상세 조회 (Active 버전)',
+    description: `
+      Master ID를 받아 해당 Master의 active 버전 상세 정보를 조회합니다.
+      이미지, 옵션 그룹, Variant, 채널 제품 정보를 포함합니다.
+      
+      **입력:** Master ID (product_masters.id)
+      **출력:** Active 버전의 상세 정보
+    `,
   })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID' })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Master ID - active 버전을 자동으로 조회합니다',
+  })
   @ApiResponse({
     status: 200,
     description: '제품 마스터 상세 조회 성공',
@@ -296,79 +314,26 @@ export class ProductMastersController {
     }
   }
 
-  @Put(':id')
-  @ApiOperation({
-    summary: '제품 마스터 수정',
-    description: '기존 제품 마스터 정보를 수정합니다. draft 상태의 버전만 수정 가능합니다.',
-  })
-  @ApiParam({ name: 'id', description: '제품 마스터 ID (버전 ID)' })
-  @ApiBody({
-    type: UpdateProductMasterDto,
-    description: '수정할 제품 마스터 정보',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '제품 마스터 수정 성공',
-    type: MasterUpdateResponseDto,
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
-  @ApiResponse({ status: 403, description: 'draft 상태의 버전만 수정 가능' })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async updateMaster(
-    @Param('id') id: string,
-    @Body() updateData: UpdateProductMasterDto,
-  ): Promise<MasterUpdateResponseDto> {
-    try {
-      // TODO: JWT에서 실제 userId 추출 (현재는 'system' 사용)
-      const userId = 'system';
-
-      const canModify = await this.productVersionsService.canUserModifyVersion(
-        id,
-        userId,
-      );
-
-      if (!canModify) {
-        throw new HttpException(
-          'Only draft versions can be modified. Create a new draft version to make changes.',
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      const updatedMaster = await this.productMastersService.updateMaster(
-        id,
-        updateData,
-      );
-      return {
-        success: true,
-        data: ProductMapper.toDto(updatedMaster) as any,
-      };
-    } catch (error) {
-      if (error.status === HttpStatus.FORBIDDEN) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to update master',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   @Delete(':id')
   @ApiOperation({
-    summary: '제품 마스터 소프트 삭제',
-    description: '제품 마스터를 소프트 삭제합니다. 실제로 데이터는 삭제되지 않으며 복원이 가능합니다.',
+    summary: '제품 버전 소프트 삭제',
+    description: `
+      **현재 구현:** Version ID를 받아 특정 버전을 소프트 삭제합니다.
+      
+      **주의:** 현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
+      설계상으로는 Master ID를 받아 Master를 소프트 삭제해야 하지만,
+      현재는 Version 단위로 삭제됩니다.
+      
+      삭제된 버전은 복원이 가능합니다.
+    `,
   })
-  @ApiParam({ name: 'id', description: '삭제할 제품 마스터 ID' })
-  @ApiResponse({ status: 200, description: '제품 마스터 소프트 삭제 성공', type: ProductDto })
-  @ApiResponse({ status: 400, description: '삭제 요구사항 불충족' })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Version ID (현재 구현에서는 Master ID가 아님)',
+  })
+  @ApiResponse({ status: 200, description: '버전 소프트 삭제 성공', type: ProductDto })
+  @ApiResponse({ status: 400, description: '이미 삭제된 버전' })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async deleteMaster(
     @Param('id') id: string,
@@ -398,10 +363,17 @@ export class ProductMastersController {
   @Post(':id/restore')
   @HttpCode(200)
   @ApiOperation({
-    summary: '제품 마스터 복원',
-    description: '소프트 삭제된 제품 마스터를 복원합니다.',
+    summary: '제품 버전 복원',
+    description: `
+      소프트 삭제된 버전을 복원합니다.
+      
+      **주의:** 현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
+    `,
   })
-  @ApiParam({ name: 'id', description: '복원할 제품 마스터 ID' })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Version ID (현재 구현에서는 Master ID가 아님)',
+  })
   @ApiResponse({ status: 200, description: '제품 마스터 복원 성공', type: ProductDto })
   @ApiResponse({ status: 400, description: '제품이 삭제되지 않았음' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
@@ -430,10 +402,18 @@ export class ProductMastersController {
 
   @Delete(':id/permanent')
   @ApiOperation({
-    summary: '제품 마스터 영구 삭제',
-    description: '제품 마스터를 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다.',
+    summary: '제품 버전 영구 삭제',
+    description: `
+      **현재 구현:** Version ID를 받아 특정 버전을 영구 삭제합니다.
+      
+      **주의:** 이 작업은 되돌릴 수 없습니다.
+      현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
+    `,
   })
-  @ApiParam({ name: 'id', description: '영구 삭제할 제품 마스터 ID' })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Version ID (현재 구현에서는 Master ID가 아님)',
+  })
   @ApiResponse({ status: 200, description: '제품 마스터 영구 삭제 성공' })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })

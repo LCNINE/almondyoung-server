@@ -71,9 +71,11 @@ export class ProductMastersService {
     try {
       await this.productPublisher.publishEvent({
         eventType: 'ProductVariantCreated',
-        aggregateId: version.id,
+        aggregateId: version.masterId,
         payload: {
-          productId: version.id,
+          masterId: version.masterId,
+          versionId: version.id,
+          version: version.version,
           productName: version.name,
           variantId: variant.id,
           variantName: variant.variantName,
@@ -806,20 +808,27 @@ export class ProductMastersService {
     };
   }
 
-  async updateMaster(
-    masterId: string,
+  /**
+   * Draft 버전 수정
+   * @param versionId - Version ID (product_master_versions.id)
+   * @param data - 수정할 데이터
+   * @param tx - 트랜잭션 객체 (선택)
+   * @returns 수정된 버전
+   */
+  async updateVersion(
+    versionId: string,
     data: UpdateProductMasterVersion,
     tx?: DbTransaction,
   ): Promise<ProductMasterVersion> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
+    if (!versionId) {
+      throw new Error('Version ID is required');
     }
 
     const executeUpdate = async (txClient: DbTransaction) => {
-      // 0. 기존 마스터 조회 (masterId는 versionId임)
-      const existingMaster = await this.getVersionById(masterId, txClient);
+      // 0. 기존 버전 조회
+      const existingMaster = await this.getVersionById(versionId, txClient);
       if (!existingMaster) {
-        throw new Error(`Version not found: ${masterId}`);
+        throw new Error(`Version not found: ${versionId}`);
       }
 
       // draft 상태 검증
@@ -853,11 +862,11 @@ export class ProductMastersService {
           ...updateData,
           updatedAt: new Date()
         })
-        .where(eq(productMasterVersions.id, masterId))
+        .where(eq(productMasterVersions.id, versionId))
         .returning();
 
       if (!updated) {
-        throw new Error(`Failed to update master: ${masterId}`);
+        throw new Error(`Failed to update version: ${versionId}`);
       }
 
       // 4. 카테고리 업데이트
@@ -887,7 +896,7 @@ export class ProductMastersService {
       // 5. 옵션 diff 처리
       if (optionDiff) {
         const structureChanged = await this._applyOptionDiff(
-          masterId,
+          versionId,
           existingMaster,
           optionDiff,
           txClient,
@@ -901,7 +910,7 @@ export class ProductMastersService {
               : 'option_value_changed';
 
           this.logger.log(
-            `Option structure changed for master ${masterId}. Regenerating variants (${changeType})...`,
+            `Option structure changed for version ${versionId}. Regenerating variants (${changeType})...`,
           );
 
           await this._regenerateVariantsForVersion(
