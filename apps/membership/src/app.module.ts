@@ -39,7 +39,9 @@ import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
-import { AuthCoreModule } from '../../../libs/auth-core/src';
+import { AuthorizationModule, authorizationSchema } from '@app/authorization';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from '@app/authorization';
 
 @Module({
   imports: [
@@ -50,13 +52,16 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
         envFilePath: ['apps/membership/.env'],
       }),
     }),
-    AuthCoreModule.forRootAsync(),
+    AuthorizationModule.forRoot({
+      microserviceName: 'membership',
+      scopes: [],
+    }),
     HttpModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || '',
       },
-      schema: { ...membershipSchema },
+      schema: { ...membershipSchema, ...authorizationSchema },
     }),
   ],
   controllers: [
@@ -69,7 +74,10 @@ import { AuthCoreModule } from '../../../libs/auth-core/src';
     SavingsController,
   ],
   providers: [
-    // Auth
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
     // Business Layer (Services)
     PlanService,
     AdminOperationsService,
