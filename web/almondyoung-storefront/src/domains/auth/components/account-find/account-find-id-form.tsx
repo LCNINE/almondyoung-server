@@ -63,7 +63,7 @@ export function AccountFindIdForm() {
                   <div className="relative">
                     <CustomInput
                       {...field}
-                      placeholder="example@almondyoung.com"
+                      label="이메일"
                       disabled={isLoading}
                       autoComplete="email"
                       className="pr-10"

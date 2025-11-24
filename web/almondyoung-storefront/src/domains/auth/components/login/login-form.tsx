@@ -99,13 +99,12 @@ export function LoginForm() {
                 <CustomInput
                   type="text"
                   required
-                  // placeholder="아이디"
-                  placeholder="test"
+                  label="아이디"
                   onClear={() => {
                     form.setValue("loginId", "")
                     form.clearErrors("loginId")
                   }}
-                  hasValue={!!form.getValues("loginId")}
+                  hasValue={!!field.value}
                   error={!!form.formState.errors.loginId}
                   {...field}
                 />
@@ -124,13 +123,12 @@ export function LoginForm() {
                 <CustomInput
                   type="password"
                   required
-                  // placeholder="패스워드"
-                  placeholder="123123123"
+                  label="비밀번호"
                   onClear={() => {
                     form.setValue("password", "")
                     form.clearErrors("password")
                   }}
-                  hasValue={!!form.getValues("password")}
+                  hasValue={!!field.value}
                   error={!!form.formState.errors.password}
                   {...field}
                 />

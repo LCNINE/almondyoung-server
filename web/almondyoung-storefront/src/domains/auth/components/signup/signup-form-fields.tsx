@@ -61,10 +61,10 @@ export function SignupFormFields({ form }: SignupFormFieldsProps) {
             <FormItem>
               <FormControl>
                 <CustomInput
+                  label={fieldConfig.placeholder}
                   type={fieldConfig.type}
-                  placeholder={fieldConfig.placeholder}
                   onClear={() => form.setValue(fieldConfig.name, "")}
-                  hasValue={!!form.getValues(fieldConfig.name)}
+                  hasValue={!!field.value}
                   error={!!form.formState.errors[fieldConfig.name]}
                   autoFocus={fieldConfig.autoFocus}
                   {...field}
