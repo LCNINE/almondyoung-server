@@ -22,6 +22,7 @@ export const getDigitalAssets = async (
   )
     .then(async (res) => {
       const data = await res.json()
+
       return data
     })
     .catch((error) => {
@@ -46,7 +47,6 @@ export const updateDigitalAssetExerciseApi = async (
     .then(async (res) => {
       const data = await res.json()
 
-      console.log("data:", data)
       return data
     })
     .catch((error) => {
@@ -82,8 +82,6 @@ export const downloadDigitalAssetApi = async (
 
   const contentDisposition = res.headers.get("content-disposition")
   let filename = "download"
-
-  console.log("contentDisposition:", contentDisposition)
 
   if (contentDisposition) {
     const filenameMatch = contentDisposition.match(

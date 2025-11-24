@@ -42,7 +42,7 @@ export default function DownloadTemplate({
     )
   }, [is_exercised])
 
-  const filteredDigitalAssets = digitalAssets.licenses.filter(
+  const filteredDigitalAssets = digitalAssets.licenses?.filter(
     (asset: DigitalAssetLicense) => {
       if (filter === "new") return !asset.is_exercised
       if (filter === "used") return asset.is_exercised
@@ -92,7 +92,7 @@ export default function DownloadTemplate({
           </div>
 
           {/* Products Grid */}
-          {filteredDigitalAssets.length > 0 ? (
+          {filteredDigitalAssets?.length > 0 ? (
             <>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {filteredDigitalAssets.map((filteredDigitalAsset) => (
