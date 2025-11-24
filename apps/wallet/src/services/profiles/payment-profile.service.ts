@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { v4 as uuidv4 } from 'uuid'; // UUID 생성을 위해 라이브러리 사용 (또는 crypto)
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { ProviderRegistry } from '../../providers/provider-registry';
 import {
   PaymentError,
@@ -302,5 +302,100 @@ export class PaymentProfileService {
       'UNKNOWN_PROVIDER_FOR_PAYLOAD_RESOLUTION',
       `Provider ${providerType} not supported`,
     );
+  }
+
+  /**
+   * 기본 결제 수단 변경
+   * @param userId 사용자 ID
+   * @param profileId 변경할 프로필 ID
+   * @returns 변경된 프로필 정보
+   */
+  async setDefaultProfile(
+    userId: string,
+    profileId: string,
+  ): Promise<{ profileId: string; isDefault: boolean }> {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 프로필 조회 및 소유자 확인
+      const profile = await this.profilesRepo.findById(profileId, tx);
+      if (!profile) {
+        throw new Error('Profile not found');
+      }
+
+      if (profile.userId !== userId) {
+        throw new Error('Profile does not belong to user');
+      }
+
+      // 2. 프로필 상태 확인 (ACTIVE만 허용)
+      if (profile.status !== 'ACTIVE') {
+        throw new Error('Profile status is not ACTIVE');
+      }
+
+      // 3. 삭제 여부 확인 (deletedAt IS NULL만 허용)
+      if (profile.deletedAt !== null) {
+        throw new Error('Profile already deleted');
+      }
+
+      // 4. 🚨 [Critical] HMS_CARD 검증
+      // 멤버십 결제는 HMS_CARD만 사용하므로, 다른 프로바이더는 기본값으로 설정 불가
+      if (profile.provider !== 'HMS_CARD') {
+        throw new Error('Only HMS_CARD can be set as default');
+      }
+
+      // 5. 기본값 변경
+      await this.profilesRepo.setDefault(userId, profileId, tx);
+
+      this.logger.log(
+        `✅ 기본 결제 수단 변경 성공 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      return {
+        profileId,
+        isDefault: true,
+      };
+    });
+  }
+
+  /**
+   * 결제 프로필 삭제 (Soft Delete)
+   * @param userId 사용자 ID
+   * @param profileId 삭제할 프로필 ID
+   * @returns 삭제된 프로필 정보
+   */
+  async deleteProfile(
+    userId: string,
+    profileId: string,
+  ): Promise<{ profileId: string; deletedAt: Date }> {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 프로필 조회 및 소유자 확인
+      const profile = await this.profilesRepo.findById(profileId, tx);
+      if (!profile) {
+        throw new Error('Profile not found');
+      }
+
+      if (profile.userId !== userId) {
+        throw new Error('Profile does not belong to user');
+      }
+
+      // 2. 이미 삭제된 프로필인지 확인
+      if (profile.deletedAt !== null) {
+        throw new Error('Profile already deleted');
+      }
+
+      // 3. 기본값인 경우 isDefault를 false로 해제 (자동 승계 없음)
+      // softDelete 메서드 내부에서 처리됨
+
+      // 4. Soft Delete 수행
+      const deletedAt = new Date();
+      await this.profilesRepo.softDelete(profileId, tx);
+
+      this.logger.log(
+        `✅ 결제 프로필 삭제 성공 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      return {
+        profileId,
+        deletedAt,
+      };
+    });
   }
 }
