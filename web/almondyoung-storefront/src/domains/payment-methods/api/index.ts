@@ -9,6 +9,7 @@ export type PaymentProfile = {
   provider: "HMS_CARD" | "HMS_BNPL" | "TOSS"
   status: string
   name: string | null
+  isDefault?: boolean // 기본 결제 수단 여부
   details?: {
     paymentCompany: string | null // 카드사 코드 (예: "088")
     paymentCompanyName: string // 카드사 한글명 (예: "신한카드")
@@ -64,5 +65,39 @@ export async function refundCreateHmsCardProfile(
       body: JSON.stringify(data),
     }
   )
+  return response
+}
+
+/**
+ * 기본 결제 수단 변경
+ */
+export async function setDefaultPaymentProfile(
+  profileId: string
+): Promise<{ success: boolean; profileId: string; isDefault: boolean; message: string }> {
+  const response = await clientApi<{
+    success: boolean
+    profileId: string
+    isDefault: boolean
+    message: string
+  }>(`/api/wallet/payments/profiles/${profileId}/set-default`, {
+    method: "PUT",
+  })
+  return response
+}
+
+/**
+ * 결제 프로필 삭제
+ */
+export async function deletePaymentProfile(
+  profileId: string
+): Promise<{ success: boolean; profileId: string; deletedAt: string; message: string }> {
+  const response = await clientApi<{
+    success: boolean
+    profileId: string
+    deletedAt: string
+    message: string
+  }>(`/api/wallet/payments/profiles/${profileId}`, {
+    method: "DELETE",
+  })
   return response
 }
