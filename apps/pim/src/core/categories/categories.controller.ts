@@ -228,24 +228,24 @@ export class ProductCategoriesController {
   @ApiOperation({
     summary: '상품들을 카테고리로 이동',
     description:
-      '여러 상품을 특정 카테고리로 일괄 이동시킵니다. 기존 카테고리 관계는 삭제되고 새로운 카테고리로 대체됩니다.',
+      '여러 상품을 특정 카테고리로 일괄 이동시킵니다. 기존 카테고리 관계는 삭제되고 새로운 카테고리로 대체됩니다. **주의:** 버전 ID를 사용합니다 (일반적으로 active 버전의 ID).',
   })
   @ApiParam({ name: 'id', description: '대상 카테고리 ID' })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        productIds: {
+        versionIds: {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
-          description: '이동시킬 상품 마스터 ID 배열',
+          description: '이동시킬 상품 버전 ID 배열 (active 버전의 Version ID)',
           example: [
             '550e8400-e29b-41d4-a716-446655440000',
             '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
           ],
         },
       },
-      required: ['productIds'],
+      required: ['versionIds'],
     },
   })
   @ApiResponse({
@@ -259,24 +259,24 @@ export class ProductCategoriesController {
   })
   async moveProductsToCategory(
     @Param('id') categoryId: string,
-    @Body() body: { productIds: string[] },
+    @Body() body: { versionIds: string[] },
   ): Promise<{ message: string; movedCount: number }> {
     try {
-      if (!body.productIds || body.productIds.length === 0) {
+      if (!body.versionIds || body.versionIds.length === 0) {
         throw new HttpException(
-          'productIds are required',
+          'versionIds are required',
           HttpStatus.BAD_REQUEST,
         );
       }
 
       await this.productCategoriesService.moveProductsToCategory(
-        body.productIds,
+        body.versionIds,
         categoryId,
       );
 
       return {
         message: 'Products moved successfully',
-        movedCount: body.productIds.length,
+        movedCount: body.versionIds.length,
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -297,24 +297,24 @@ export class ProductCategoriesController {
   @ApiOperation({
     summary: '상품들을 카테고리에 추가',
     description:
-      '여러 상품을 특정 카테고리에 추가로 연결합니다. 기존 카테고리 관계는 유지됩니다 (다대다 관계 지원).',
+      '여러 상품을 특정 카테고리에 추가로 연결합니다. 기존 카테고리 관계는 유지됩니다 (다대다 관계 지원). **주의:** 버전 ID를 사용합니다 (일반적으로 active 버전의 ID).',
   })
   @ApiParam({ name: 'id', description: '대상 카테고리 ID' })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        productIds: {
+        versionIds: {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
-          description: '추가할 상품 마스터 ID 배열',
+          description: '추가할 상품 버전 ID 배열 (active 버전의 Version ID)',
           example: [
             '550e8400-e29b-41d4-a716-446655440000',
             '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
           ],
         },
       },
-      required: ['productIds'],
+      required: ['versionIds'],
     },
   })
   @ApiResponse({
@@ -328,24 +328,24 @@ export class ProductCategoriesController {
   })
   async addProductsToCategory(
     @Param('id') categoryId: string,
-    @Body() body: { productIds: string[] },
+    @Body() body: { versionIds: string[] },
   ): Promise<{ message: string; addedCount: number }> {
     try {
-      if (!body.productIds || body.productIds.length === 0) {
+      if (!body.versionIds || body.versionIds.length === 0) {
         throw new HttpException(
-          'productIds are required',
+          'versionIds are required',
           HttpStatus.BAD_REQUEST,
         );
       }
 
       await this.productCategoriesService.addProductsToCategory(
-        body.productIds,
+        body.versionIds,
         categoryId,
       );
 
       return {
         message: 'Products added successfully',
-        addedCount: body.productIds.length,
+        addedCount: body.versionIds.length,
       };
     } catch (error) {
       if (error instanceof HttpException) {
