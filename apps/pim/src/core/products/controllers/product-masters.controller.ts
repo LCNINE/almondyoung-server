@@ -314,44 +314,52 @@ export class ProductMastersController {
     }
   }
 
-  @Delete(':id')
+  @Delete(':masterId')
   @ApiOperation({
-    summary: '제품 버전 소프트 삭제',
+    summary: '제품 마스터 소프트 삭제',
     description: `
-      **현재 구현:** Version ID를 받아 특정 버전을 소프트 삭제합니다.
+      Master ID를 받아 해당 Master를 소프트 삭제합니다.
       
-      **주의:** 현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
-      설계상으로는 Master ID를 받아 Master를 소프트 삭제해야 하지만,
-      현재는 Version 단위로 삭제됩니다.
+      Master가 삭제되면 해당 Master의 모든 버전은 조회되지 않습니다.
+      Active 버전이 있었다면 WMS에 ProductMasterDeleted 이벤트를 발행합니다.
       
-      삭제된 버전은 복원이 가능합니다.
+      삭제된 Master는 복원이 가능합니다.
     `,
   })
   @ApiParam({ 
-    name: 'id', 
-    description: 'Version ID (현재 구현에서는 Master ID가 아님)',
+    name: 'masterId', 
+    description: 'Master ID (product_masters.id)',
   })
-  @ApiResponse({ status: 200, description: '버전 소프트 삭제 성공', type: ProductDto })
-  @ApiResponse({ status: 400, description: '이미 삭제된 버전' })
-  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  @ApiResponse({ status: 200, description: 'Master 소프트 삭제 성공' })
+  @ApiResponse({ status: 400, description: '이미 삭제된 Master' })
+  @ApiResponse({ status: 404, description: 'Master를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async deleteMaster(
-    @Param('id') id: string,
-    @Body('userId') userId: string,
-  ): Promise<ProductDto> {
+    @Param('masterId') masterId: string,
+    @Body('userId') userId?: string,
+  ) {
     try {
       const userIdToUse = userId || 'system';
-      const deleted = await this.productMastersService.softDelete(id, userIdToUse);
-      return ProductMapper.toDto(deleted);
+      const deleted = await this.productMastersService.softDeleteMaster(
+        masterId,
+        userIdToUse,
+      );
+      
+      return {
+        success: true,
+        message: 'Master deleted successfully',
+        masterId: deleted.id,
+        deletedAt: deleted.deletedAt?.toISOString(),
+      };
     } catch (error) {
-      if (
-        error.message.includes('not found') ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
+      if (error.message.includes('not found')) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('already deleted')) {
-        throw new HttpException('Product is already deleted', HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          'Master is already deleted',
+          HttpStatus.BAD_REQUEST,
+        );
       }
       throw new HttpException(
         `Failed to delete master: ${error.message}`,
@@ -360,38 +368,45 @@ export class ProductMastersController {
     }
   }
 
-  @Post(':id/restore')
+  @Post(':masterId/restore')
   @HttpCode(200)
   @ApiOperation({
-    summary: '제품 버전 복원',
-    description: `
-      소프트 삭제된 버전을 복원합니다.
-      
-      **주의:** 현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
-    `,
+    summary: '제품 마스터 복원',
+    description: '소프트 삭제된 Master를 복원합니다.',
   })
   @ApiParam({ 
-    name: 'id', 
-    description: 'Version ID (현재 구현에서는 Master ID가 아님)',
+    name: 'masterId', 
+    description: 'Master ID (product_masters.id)',
   })
-  @ApiResponse({ status: 200, description: '제품 마스터 복원 성공', type: ProductDto })
-  @ApiResponse({ status: 400, description: '제품이 삭제되지 않았음' })
-  @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
+  @ApiResponse({ status: 200, description: 'Master 복원 성공' })
+  @ApiResponse({ status: 400, description: 'Master가 삭제되지 않았음' })
+  @ApiResponse({ status: 404, description: 'Master를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async restore(
-    @Param('id') id: string,
-    @Body('userId') userId: string,
-  ): Promise<ProductDto> {
+    @Param('masterId') masterId: string,
+    @Body('userId') userId?: string,
+  ) {
     try {
       const userIdToUse = userId || 'system';
-      const restored = await this.productMastersService.restore(id, userIdToUse);
-      return ProductMapper.toDto(restored);
+      const restored = await this.productMastersService.restoreMaster(
+        masterId,
+        userIdToUse,
+      );
+      
+      return {
+        success: true,
+        message: 'Master restored successfully',
+        masterId: restored.id,
+      };
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
       }
       if (error.message.includes('not deleted')) {
-        throw new HttpException('Product is not deleted', HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          'Master is not deleted',
+          HttpStatus.BAD_REQUEST,
+        );
       }
       throw new HttpException(
         `Failed to restore master: ${error.message}`,

@@ -1389,6 +1389,99 @@ export class ProductMastersService {
   }
 
   /**
+   * Master 자체를 soft delete (product_masters.deletedAt 설정)
+   * Master가 삭제되면 모든 Version은 자동으로 조회되지 않음 (join 시 필터링)
+   * Active 버전이 있었다면 ProductMasterDeleted 이벤트 발행
+   */
+  async softDeleteMaster(
+    masterId: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // 1. Master 존재 및 삭제 여부 확인
+    const [master] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
+    if (master.deletedAt) {
+      throw new Error('Master is already deleted');
+    }
+
+    // 2. Active 버전 확인 (이벤트 발행용)
+    const [activeVersion] = await client
+      .select()
+      .from(productMasterVersions)
+      .where(
+        and(
+          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
+        ),
+      )
+      .limit(1);
+
+    // 3. Master soft delete
+    const [deletedMaster] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: userId,
+      })
+      .where(eq(productMasters.id, masterId))
+      .returning();
+
+    // 4. Active 버전이 있었다면 이벤트 발행
+    if (activeVersion) {
+      await this._emitMasterDeletedEvent(masterId);
+    }
+
+    return deletedMaster;
+  }
+
+  /**
+   * Master 복원 (product_masters.deletedAt = null)
+   */
+  async restoreMaster(
+    masterId: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // 1. Master 존재 확인 (includeDeleted)
+    const [master] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
+    if (!master.deletedAt) {
+      throw new Error('Master is not deleted');
+    }
+
+    // 2. Master 복원
+    const [restoredMaster] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: null,
+        deletedBy: null,
+      })
+      .where(eq(productMasters.id, masterId))
+      .returning();
+
+    return restoredMaster;
+  }
+
+  /**
    * Get all soft-deleted products
    */
   async findDeleted(tx?: DbTransaction): Promise<ProductMasterVersion[]> {
