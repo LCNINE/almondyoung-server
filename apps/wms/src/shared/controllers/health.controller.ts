@@ -4,6 +4,7 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import { HealthService } from '../services/health.service';
 
 @ApiTags('Health')
