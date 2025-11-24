@@ -354,7 +354,7 @@ export default function PaymentManagement() {
       {/* 메뉴 네비게이션 - nav 시맨틱 태그 사용 */}
       <nav
         aria-label="계좌 관련 메뉴"
-        className="md:mx-4 mt-10 rounded-lg bg-white shadow-sm md:mx-0"
+        className="mt-10 rounded-lg bg-white shadow-sm md:mx-4"
       >
         <ul className="divide-y divide-gray-200">
 
