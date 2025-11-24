@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
-import { eq, desc, and, lte, sum, inArray } from 'drizzle-orm';
+import { eq, desc, and, lte, sum, inArray, sql, between } from 'drizzle-orm';
 import { BnplAccount, BnplEvent } from '../../shared/database/types';
 import { WalletExecutor } from '../../shared/database';
 
@@ -17,7 +17,7 @@ import { WalletExecutor } from '../../shared/database';
 export class BnplRepository {
   private readonly logger = new Logger(BnplRepository.name);
 
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
 
   // ============================================
   // Account 관련
@@ -202,6 +202,24 @@ export class BnplRepository {
         ),
       );
     return Number(result[0]?.total || 0);
+  }
+
+  async findEventsByAccountIdAndPeriod(
+    accountId: string,
+    year: number,
+    month: number,
+  ): Promise<BnplEvent[]> {
+    // 해당 월의 시작일과 종료일 계산 (UTC 기준)
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+
+    return this.db.db.query.bnplEvents.findMany({
+      where: and(
+        eq(schema.bnplEvents.accountId, accountId),
+        between(schema.bnplEvents.createdAt, startDate, endDate),
+      ),
+      orderBy: [desc(schema.bnplEvents.createdAt)],
+    });
   }
 
   // ============================================

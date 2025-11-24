@@ -184,34 +184,34 @@ const RefundPaymentResponseSchema = BaseResponseSchema.extend({
 });
 
 // DTO 클래스 생성
-export class CreateIntentDto extends createZodDto(CreateIntentSchema) {}
-export class AuthorizePaymentDto extends createZodDto(AuthorizePaymentSchema) {}
-export class CapturePaymentDto extends createZodDto(CapturePaymentSchema) {}
-export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) {}
+export class CreateIntentDto extends createZodDto(CreateIntentSchema) { }
+export class AuthorizePaymentDto extends createZodDto(AuthorizePaymentSchema) { }
+export class CapturePaymentDto extends createZodDto(CapturePaymentSchema) { }
+export class RefundPaymentDto extends createZodDto(RefundPaymentSchema) { }
 export class CreateHmsCardProfileDto extends createZodDto(
   CreateHmsCardProfileSchema,
-) {}
+) { }
 
 export class CreateBnplAccountDto extends createZodDto(
   CreateBnplAccountSchema,
-) {}
+) { }
 
 // Response DTO 클래스
-export class IntentResponseDto extends createZodDto(IntentResponseSchema) {}
+export class IntentResponseDto extends createZodDto(IntentResponseSchema) { }
 export class AuthorizePaymentResponseDto extends createZodDto(
   AuthorizePaymentResponseSchema,
-) {}
+) { }
 export class CapturePaymentResponseDto extends createZodDto(
   CapturePaymentResponseSchema,
-) {}
+) { }
 export class HmsCardProfileResponseDto extends createZodDto(
   HmsCardProfileResponseSchema,
-) {}
+) { }
 
 export class RefundPaymentResponseDto extends createZodDto(
   RefundPaymentResponseSchema,
-) {}
-export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) {}
+) { }
+export class ErrorResponseDto extends createZodDto(ErrorResponseSchema) { }
 
 // 타입 추론 (기존 호환성을 위해)
 export type CreateIntentDtoType = z.infer<typeof CreateIntentSchema>;
@@ -223,3 +223,45 @@ export type CreateHmsCardProfileDtoType = z.infer<
 >;
 
 export type CreateBnplAccountDtoType = z.infer<typeof CreateBnplAccountSchema>;
+
+// BNPL History & Summary Schemas
+export const BnplHistoryQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+const BnplEventSchema = z.object({
+  id: z.string(),
+  eventType: z.string(),
+  eventCategory: z.string(),
+  amount: z.number(),
+  status: z.string(),
+  createdAt: z.string().datetime(),
+  title: z.string().optional(), // UI 표시용 (예: 상점명)
+});
+
+const BnplHistoryResponseSchema = BaseResponseSchema.extend({
+  year: z.number(),
+  month: z.number(),
+  totalAmount: z.number(),
+  events: z.array(BnplEventSchema),
+});
+
+const BnplSummaryResponseSchema = BaseResponseSchema.extend({
+  hasAccount: z.boolean(),
+  creditLimit: z.number().nullable(),
+  availableLimit: z.number().nullable(),
+  usedAmount: z.number().nullable(),
+  nextBillingDate: z.string().nullable(),
+  dDay: z.number().nullable(), // 결제일까지 남은 일수
+  targetYear: z.number().nullable(), // 청구 대상 연도
+  targetMonth: z.number().nullable(), // 청구 대상 월
+});
+
+export class BnplHistoryQueryDto extends createZodDto(BnplHistoryQuerySchema) { }
+export class BnplHistoryResponseDto extends createZodDto(
+  BnplHistoryResponseSchema,
+) { }
+export class BnplSummaryResponseDto extends createZodDto(
+  BnplSummaryResponseSchema,
+) { }
