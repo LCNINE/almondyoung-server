@@ -39,7 +39,7 @@ import { BillingReader } from './services/billing/billing.reader';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
-import { AuthorizationModule, authorizationSchema } from '@app/authorization';
+import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '@app/authorization';
 
@@ -61,7 +61,7 @@ import { JwtAuthGuard } from '@app/authorization';
       config: {
         connectionString: process.env.DATABASE_URL || '',
       },
-      schema: { ...membershipSchema, ...authorizationSchema },
+      schema: membershipSchema,
     }),
   ],
   controllers: [
