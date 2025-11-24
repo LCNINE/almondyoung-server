@@ -48,9 +48,7 @@ import { JwtAuthGuard } from '@app/authorization';
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateMembershipEnv,
-      ...(process.env.NODE_ENV !== 'production' && {
-        envFilePath: ['apps/membership/.env'],
-      }),
+      envFilePath: ['.env', 'apps/membership/.env'],
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'membership',
