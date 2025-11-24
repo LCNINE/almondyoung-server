@@ -21,6 +21,7 @@ import { WMS_SCOPES } from './auth/wms.scopes';
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateWmsEnv,
+      envFilePath: ['.env', 'apps/wms/.env'],
     }),
     DbModule.forRoot({
       config: {
