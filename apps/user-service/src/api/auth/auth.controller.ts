@@ -1,4 +1,5 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
+import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
   ConflictException,
@@ -24,14 +25,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FastifyReply, FastifyRequest } from 'fastify';
-import * as schema from '../../../database/drizzle/schema';
-import { ProviderType } from '../../commons/types';
 import { Public } from '../../commons/decorator/public.decorator';
+import { ProviderType } from '../../commons/types';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto } from './dto/change-pw.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('Auth')
 @ApiBearerAuth('access-token')
@@ -207,7 +206,6 @@ export class AuthController {
   async kakaoCallback(
     @Req() req: any,
     @Res() res: FastifyReply,
-    @Query('redirect_to') redirectTo?: string,
   ): Promise<void | { redirectUrl: string }> {
     const kakaoUser = req.user as {
       name: string;
@@ -220,7 +218,6 @@ export class AuthController {
         kakaoUser,
         ProviderType.KAKAO,
         res,
-        redirectTo,
       );
     } catch (error) {
       if (error.message.includes('already exists')) {
