@@ -207,6 +207,7 @@ export class AuthController {
   async kakaoCallback(
     @Req() req: any,
     @Res() res: FastifyReply,
+    @Query('redirect_to') redirectTo?: string,
   ): Promise<void | { redirectUrl: string }> {
     const kakaoUser = req.user as {
       name: string;
@@ -219,6 +220,7 @@ export class AuthController {
         kakaoUser,
         ProviderType.KAKAO,
         res,
+        redirectTo,
       );
     } catch (error) {
       if (error.message.includes('already exists')) {
