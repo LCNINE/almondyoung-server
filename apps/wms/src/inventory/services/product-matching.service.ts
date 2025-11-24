@@ -26,7 +26,7 @@ interface PimVariantPayload {
 }
 
 interface PimProductPayload {
-  productId: string;
+  masterId: string;
   name: string;
   variants: PimVariantPayload[];
 }
@@ -66,11 +66,11 @@ export class ProductMatchingService {
   }
 
   async handleManualMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
-    if (!payload || !payload.productId || !Array.isArray(payload.variants)) {
-      throw new BadRequestException('Invalid payload: productId and variants array are required');
+    if (!payload || !payload.masterId || !Array.isArray(payload.variants)) {
+      throw new BadRequestException('Invalid payload: masterId and variants array are required');
     }
 
-    this.logger.log(`Creating manual matching request from PIM event for product ID: ${payload.productId}`);
+    this.logger.log(`Creating manual matching request from PIM event for master ID: ${payload.masterId}`);
 
     return this.inTx(async (trx) => {
       let created = 0;
@@ -79,7 +79,7 @@ export class ProductMatchingService {
       for (const variant of payload.variants) {
         try {
           if (!variant.id) {
-            this.logger.error(`Variant missing ID in product ${payload.productId}`);
+            this.logger.error(`Variant missing ID in product ${payload.masterId}`);
             skipped++;
             continue;
           }
@@ -98,6 +98,7 @@ export class ProductMatchingService {
 
           const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
             variantId: variant.id,
+            masterId: payload.masterId,
             status: 'pending',
             priority: 'high',
             strategy: null,
@@ -123,7 +124,7 @@ export class ProductMatchingService {
   }
 
   async handleAutomaticMatchingRequest(payload: PimProductPayload, tx?: DbTx): Promise<{ created: number; skipped: number }> {
-    this.logger.log(`Handling automatic matching from PIM event for product ID: ${payload.productId}`);
+    this.logger.log(`Handling automatic matching from PIM event for master ID: ${payload.masterId}`);
     return this.inTx(async (trx) => {
       let created = 0;
       let skipped = 0;
@@ -145,6 +146,7 @@ export class ProductMatchingService {
 
             await trx.insert(wmsTables.productMatchings).values({
               variantId: variant.id,
+              masterId: payload.masterId,
               status: 'ignored',
               priority: 'normal',
               strategy: 'void',
@@ -172,6 +174,7 @@ export class ProductMatchingService {
 
           const [newProductMatching] = await trx.insert(wmsTables.productMatchings).values({
             variantId: variant.id,
+            masterId: payload.masterId,
             status: 'matched',
             priority: 'normal',
             strategy: 'variant',
