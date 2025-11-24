@@ -13,6 +13,8 @@ import {
   Logger,
   UseGuards,
   Query,
+  Put,
+  Delete,
 } from '@nestjs/common';
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
@@ -101,7 +103,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
-  ) { }
+  ) {}
 
   @Post('intents')
   @ApiOperation({
@@ -543,7 +545,7 @@ export class PaymentController {
     }
   }
 
-  @Patch('profiles/:profileId/set-default')
+  @Put('profiles/:profileId/set-default')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '기본 결제 수단 변경',
@@ -959,7 +961,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {

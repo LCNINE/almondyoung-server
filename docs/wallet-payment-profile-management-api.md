@@ -366,6 +366,7 @@ export class PaymentProfilesRepository {
 ### Race Condition 방지
 
 **문제 상황:**
+
 - 두 요청이 동시에 들어와서 같은 사용자의 기본값을 변경하려고 할 때
 - Partial Unique Index로 인한 Deadlock 또는 한쪽 요청 실패 가능
 
@@ -381,6 +382,7 @@ export class PaymentProfilesRepository {
    - 재시도 로직 구현 (선택사항, MVP에서는 에러 메시지만으로 충분)
 
 **에러 응답 예시:**
+
 ```json
 {
   "error": "Concurrent update detected. Please try again.",
@@ -391,6 +393,7 @@ export class PaymentProfilesRepository {
 ### Soft Delete와 Unique Index 충돌 시나리오
 
 **문제 상황:**
+
 1. 카드 A (Default) 삭제 → `deletedAt` 설정
 2. 카드 B를 새로 Default로 설정
 3. 카드 A 복구 시도 → `deletedAt`을 NULL로 변경
@@ -403,13 +406,14 @@ export class PaymentProfilesRepository {
 ```sql
 -- ✅ 올바른 복구 쿼리
 UPDATE payment_profiles
-SET 
+SET
     deleted_at = NULL,
     is_default = false  -- 복구 시 기본값 해제 (충돌 방지)
 WHERE id = 'profile-id';
 ```
 
 **운영 가이드:**
+
 - 백오피스에서 수동 복구 시 `isDefault`를 `false`로 설정
 - 복구된 프로필은 일반 카드로 복구됨 (기본값 아님)
 - 사용자가 명시적으로 다시 기본값으로 설정해야 함
@@ -434,6 +438,7 @@ WHERE id = 'profile-id';
 ## 📝 변경 이력
 
 ### v1.1.0 (2025-01-15)
+
 - **Critical**: HMS_CARD 검증 로직 추가 (set-default API)
 - 자동 기본값 승계 로직 제거 (MVP 정책)
 - 동시성 처리 및 엣지 케이스 섹션 추가
@@ -441,4 +446,5 @@ WHERE id = 'profile-id';
 - 아키텍처 결합도 고려사항 추가
 
 ### v1.0.0 (2025-01-15)
+
 - 초기 명세서 작성
