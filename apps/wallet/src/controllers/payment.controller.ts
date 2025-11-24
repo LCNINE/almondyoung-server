@@ -540,6 +540,150 @@ export class PaymentController {
     }
   }
 
+  @Patch('profiles/:profileId/set-default')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '기본 결제 수단 변경',
+    description: `특정 결제 프로필을 사용자의 기본 결제 수단으로 설정합니다.
+    
+**중요 제약사항:**
+- 멤버십 결제는 HMS_CARD만 사용 가능
+- HMS_CARD가 아닌 프로필은 기본값으로 설정 불가
+
+**비즈니스 로직:**
+- 프로필 존재/소유자/상태/삭제 여부 검증
+- HMS_CARD 검증 (멤버십 결제 제약)
+- 기존 기본값 해제 후 새 기본값 설정
+- 트랜잭션으로 원자성 보장`,
+  })
+  @ApiParam({
+    name: 'profileId',
+    description: '변경할 결제 프로필 ID',
+    example: '01HZ1234567890ABCDEFGHIJK',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '기본 결제 수단 변경 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        profileId: { type: 'string' },
+        isDefault: { type: 'boolean', example: true },
+        message: { type: 'string', example: '기본 결제 수단이 변경되었습니다.' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 (프로필 없음, 삭제됨, 비활성, HMS_CARD 아님)',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: '다른 사용자의 프로필에 접근 시도',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '프로필을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async setDefaultProfile(
+    @Param('profileId') profileId: string,
+    @User('userId') userId: string,
+  ) {
+    try {
+      this.logger.log(
+        `기본 결제 수단 변경 요청 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      const result = await this.profileService.setDefaultProfile(
+        userId,
+        profileId,
+      );
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        isDefault: result.isDefault,
+        message: '기본 결제 수단이 변경되었습니다.',
+      };
+    } catch (error) {
+      this.handleError(error, '기본 결제 수단 변경');
+    }
+  }
+
+  @Delete('profiles/:profileId')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '결제 프로필 삭제',
+    description: `결제 프로필을 삭제합니다. (Soft Delete)
+    
+**Soft Delete 정책:**
+- 실제 데이터는 삭제되지 않고 deletedAt 필드만 설정
+- 삭제된 프로필은 결제에 사용할 수 없음
+- 기본값인 경우 자동으로 해제 (자동 승계 없음)
+
+**주의사항:**
+- 이미 삭제된 프로필은 재삭제 불가
+- 멤버십 구독 상태 확인은 프론트엔드에서 처리 권장`,
+  })
+  @ApiParam({
+    name: 'profileId',
+    description: '삭제할 결제 프로필 ID',
+    example: '01HZ1234567890ABCDEFGHIJK',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '결제 프로필 삭제 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        profileId: { type: 'string' },
+        deletedAt: { type: 'string', format: 'date-time' },
+        message: { type: 'string', example: '결제 수단이 삭제되었습니다.' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 (이미 삭제됨)',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: '다른 사용자의 프로필에 접근 시도',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '프로필을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async deleteProfile(
+    @Param('profileId') profileId: string,
+    @User('userId') userId: string,
+  ) {
+    try {
+      this.logger.log(
+        `결제 프로필 삭제 요청 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      const result = await this.profileService.deleteProfile(userId, profileId);
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        deletedAt: result.deletedAt,
+        message: '결제 수단이 삭제되었습니다.',
+      };
+    } catch (error) {
+      this.handleError(error, '결제 프로필 삭제');
+    }
+  }
+
   @Post('profiles/hms-card')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
