@@ -101,6 +101,16 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document);
 
   await app.startAllMicroservices();
-  await app.listen(process.env.PORT ?? 3010);
+
+  // Railway는 PORT 환경변수를 제공하므로 우선 사용
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3010;
+
+  // Fastify는 기본적으로 127.0.0.1에만 바인딩하므로, Railway에서 접근 가능하도록 0.0.0.0 명시
+  await app.listen(port, '0.0.0.0');
+
+  console.log(`🚀 WMS 서비스가 0.0.0.0:${port}에서 실행 중입니다.`);
 }
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('❌ Failed to start application:', error);
+  process.exit(1);
+});
