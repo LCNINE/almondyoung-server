@@ -1,12 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronRight, Plus } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { PageTitle } from "@components/common/page-title"
 import { useRouter } from "next/navigation"
-import { refundGetPaymentProfiles, PaymentProfile } from "../api"
-import { PaymentCardUI, PaymentCardListItem } from "./payment-card-ui"
-import { toast } from "sonner"
+import { PaymentMethodAddDrawer } from "../add/payment-method-add-drawer"
+import { BnplHistoryDrawer } from "../bnpl/bnpl-history-drawer"
 
 // 🎯 Card 컴포넌트 개선 (재사용성을 위해 유지)
 function Card({
@@ -31,9 +30,38 @@ const ACCOUNT_MENU_ITEMS = [
   { label: "나중결제 약관 및 정책", href: "#" },
 ]
 
+// ⭐️ 나중결제 요약 데이터 인터페이스
+interface BnplSummary {
+  hasAccount: boolean
+  creditLimit: number | null
+  availableLimit: number | null
+  usedAmount: number | null
+  nextBillingDate: string | null
+  dDay: number | null
+  targetYear: number | null
+  targetMonth: number | null
+}
+
 // ⭐️ 나중결제 가입자 전용 컴포넌트 (견고한 CSS, 시맨틱 태그)
-const LatePaymentSummary = () => {
+const LatePaymentSummary = ({
+  summary,
+  onHistoryClick,
+}: {
+  summary: BnplSummary
+  onHistoryClick: () => void
+}) => {
   const router = useRouter()
+
+  // 날짜 포맷팅
+  const billingDate = summary.nextBillingDate
+    ? new Date(summary.nextBillingDate)
+    : null
+  const billingMonth = billingDate ? billingDate.getMonth() + 1 : 0
+  const billingDay = billingDate ? billingDate.getDate() : 0
+
+  // 내역 월 (서버에서 계산된 값 사용)
+  const historyMonth = summary.targetMonth || new Date().getMonth() + 1
+
   return (
     // 2. 나중결제 사용자의 요약 정보 섹션
     <section
@@ -55,7 +83,7 @@ const LatePaymentSummary = () => {
 
             {/* 제목: 크기만 변경 (모바일 13px -> PC 18px) */}
             <h2 className="text-[13px] font-bold text-black md:text-lg">
-              나중결제 5월 내역
+              나중결제 {historyMonth}월 내역
             </h2>
 
             {/* 화살표 */}
@@ -75,7 +103,7 @@ const LatePaymentSummary = () => {
               {/* 금액 정보 */}
               <div className="flex items-end gap-1 md:gap-[9px]">
                 <p className="text-base font-bold text-black md:text-2xl">
-                  156,000
+                  {summary.usedAmount?.toLocaleString() ?? 0}
                 </p>
                 <p className="text-xs text-black md:text-base">원</p>
               </div>
@@ -85,14 +113,18 @@ const LatePaymentSummary = () => {
                 {/* ⭐️ 핵심 변경: 날짜 요소 하나로 통합 */}
                 {/* 모바일: absolute로 우측 상단(헤더 위치)으로 이동 */}
                 {/* PC: static(기본)으로 돌아와서 이곳에 위치 */}
-                <p className="absolute top-5 right-5 text-xs text-black md:static md:text-base md:whitespace-nowrap">
-                  6월 7일 결제
-                </p>
+                {billingDate && (
+                  <p className="absolute top-5 right-5 text-xs text-black md:static md:text-base md:whitespace-nowrap">
+                    {billingMonth}월 {billingDay}일 결제
+                  </p>
+                )}
 
                 {/* 뱃지 vs SVG 점 (형태가 달라 교체 필요) */}
-                <span className="hidden h-[18px] items-center justify-center rounded-full bg-[#ffe8b3] px-2 text-xs font-semibold text-[#1c1c1e] md:flex">
-                  D-3
-                </span>
+                {summary.dDay !== null && (
+                  <span className="hidden h-[18px] items-center justify-center rounded-full bg-[#ffe8b3] px-2 text-xs font-semibold text-[#1c1c1e] md:flex">
+                    D-{summary.dDay}
+                  </span>
+                )}
 
                 {/* 은행명 */}
                 <p className="text-xs text-black md:text-base">
@@ -109,7 +141,7 @@ const LatePaymentSummary = () => {
                 type="button"
                 // 공통 스타일 + 반응형 크기/보더/폰트 적용
                 className="flex h-[27px] items-center justify-center rounded-[3px] border border-[#f29219] bg-white px-2.5 text-xs text-[#f29219] transition hover:bg-amber-50 md:h-[38px] md:rounded-[5px] md:px-4"
-                onClick={() => router.push("/kr/mypage/payment-methods/bnpl")}
+                onClick={onHistoryClick}
               >
                 내역 보기
               </button>
@@ -193,7 +225,7 @@ function ArticleCard({
 }
 
 // 🎯 비가입자 전용 컴포넌트
-const NoLatePaymentSummary = () => {
+const NoLatePaymentSummary = ({ onAddClick }: { onAddClick: () => void }) => {
   const router = useRouter()
   return (
     <section
@@ -208,7 +240,7 @@ const NoLatePaymentSummary = () => {
           </p>
           <button
             type="button"
-            onClick={() => router.push("/kr/mypage/payment-methods/add")}
+            onClick={onAddClick}
             // w-full을 md:w-48로 제한하여 반응형 크기 설정
             className="inline-flex w-full items-center justify-center gap-2.5 rounded-[5px] bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 md:w-48"
           >
@@ -249,106 +281,63 @@ const NoLatePaymentSummary = () => {
 // 🎯 페이지 본문
 export default function PaymentManagement() {
   const router = useRouter()
-  const [profiles, setProfiles] = useState<PaymentProfile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null
-  )
+  const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false)
+  const [isBnplDrawerOpen, setIsBnplDrawerOpen] = useState(false)
+  const [bnplSummary, setBnplSummary] = useState<BnplSummary | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // 결제 프로필 목록 가져오기
   useEffect(() => {
-    const fetchProfiles = async () => {
+    const fetchSummary = async () => {
       try {
-        const data = await refundGetPaymentProfiles()
-        setProfiles(data)
+        const res = await fetch('/api/wallet/payments/bnpl/summary')
+        if (res.ok) {
+          const data = await res.json()
+          setBnplSummary(data)
+        }
       } catch (error) {
-        console.error("결제 프로필 조회 실패:", error)
-        toast.error("결제 프로필을 불러오는데 실패했습니다.")
+        console.error('Failed to fetch BNPL summary:', error)
       } finally {
-        setLoading(false)
+        setIsLoading(false)
       }
     }
 
-    fetchProfiles()
+    fetchSummary()
   }, [])
 
-  // HMS 카드 프로필 필터링
-  const hmsCardProfiles = profiles.filter(
-    (p) => p.kind === "CARD" && p.provider === "HMS_CARD"
-  )
+  if (isLoading) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-3 py-4 md:px-6">
+    // min-h-screen으로 화면 전체 높이 확보 (고정 높이 X)
+    <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
       <PageTitle>결제수단 관리</PageTitle>
 
-      {/* 등록된 카드 섹션 */}
-      <section className="mt-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">등록된 카드</h2>
-          <button
-            onClick={() => router.push("/kr/mypage/payment-methods/add")}
-            className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
-          >
-            <Plus className="h-4 w-4" />
-            카드 추가
-          </button>
-        </div>
+      {/* ⭐️ 조건부 렌더링 */}
+      {bnplSummary?.hasAccount ? (
+        <LatePaymentSummary
+          summary={bnplSummary}
+          onHistoryClick={() => setIsBnplDrawerOpen(true)}
+        />
+      ) : (
+        <NoLatePaymentSummary onAddClick={() => setIsAddDrawerOpen(true)} />
+      )}
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent" />
-          </div>
-        ) : hmsCardProfiles.length === 0 ? (
-          <div className="rounded-lg border-2 border-dashed border-gray-300 bg-white p-8 text-center">
-            <p className="text-gray-500">등록된 카드가 없습니다</p>
-            <button
-              onClick={() => router.push("/kr/mypage/payment-methods/add")}
-              className="mt-4 rounded-lg bg-amber-500 px-6 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
-            >
-              첫 카드 등록하기
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {hmsCardProfiles.map((profile) => (
-              <PaymentCardUI
-                key={profile.id}
-                profile={profile}
-                onClick={() => setSelectedProfileId(profile.id)}
-                selected={selectedProfileId === profile.id}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* --- */}
 
-      {/* 적립금 및 기타 정보 */}
-      <section className="mt-8 space-y-3">
-        <ArticleCard title="아몬드영 적립금">
-          <p className="flex items-end gap-2 text-black">
-            <span className="text-2xl font-bold">0</span>
-            <span className="text-base">원</span>
-          </p>
-        </ArticleCard>
-
-        <ArticleCard title="적립예정 아몬드영 적립금" isLink>
-          <p className="flex items-center gap-1 text-black">
-            <span className="text-base">0 원</span>
-            <ChevronRight className="h-5 w-5 text-gray-400" />
-          </p>
-        </ArticleCard>
-      </section>
-
-      {/* 메뉴 네비게이션 */}
+      {/* 메뉴 네비게이션 - nav 시맨틱 태그 사용 */}
       <nav
-        aria-label="결제 관련 메뉴"
-        className="mt-8 rounded-lg bg-white shadow-sm"
+        aria-label="계좌 관련 메뉴"
+        className="md:mx-4 mt-10 rounded-lg bg-white shadow-sm md:mx-0"
       >
         <ul className="divide-y divide-gray-200">
+
+          {/* divide-muted 대신 Tailwind 기본값 사용 */}
           {ACCOUNT_MENU_ITEMS.map((item) => (
             <li key={item.label}>
               <a
                 href={item.href}
+                // 견고한 CSS: Flexbox를 사용한 양쪽 정렬
                 className="flex items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
               >
                 <span className="text-base font-normal text-black md:text-lg">
@@ -356,13 +345,22 @@ export default function PaymentManagement() {
                 </span>
                 <ChevronRight
                   className="h-5 w-5 text-gray-400"
-                  aria-hidden="true"
-                />
+                  aria-hidden="true" />
               </a>
             </li>
           ))}
         </ul>
+
       </nav>
+
+      <PaymentMethodAddDrawer
+        open={isAddDrawerOpen}
+        onOpenChange={setIsAddDrawerOpen}
+      />
+      <BnplHistoryDrawer
+        open={isBnplDrawerOpen}
+        onOpenChange={setIsBnplDrawerOpen}
+      />
     </div>
   )
 }
