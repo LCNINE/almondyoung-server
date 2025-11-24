@@ -2,6 +2,8 @@ import { MembershipForm } from "./components"
 import type { PlanWithTier } from "@lib/types/membership"
 import { serverApi } from "@lib/api/server-api"
 import { ApiError } from "@lib/api/api-error"
+import { WithHeaderLayout } from "@components/layout/with-header-layout"
+import MypageLayout from "@components/layout/mypage-layout"
 
 const mockBenefits = [
   {
@@ -68,26 +70,35 @@ export default async function MembershipFormPage() {
   )
 
   return (
-    <>
-      <MembershipForm
-        monthlyPlan={monthlyPlan}
-        yearlyPlan={yearlyPlan}
-        existingFmsMember={
-          hmsCardProfile && hmsCardProfile.details
-            ? {
-                paymentCompany:
-                  hmsCardProfile.details.paymentCompany || "알 수 없음",
-                paymentCompanyName:
-                  hmsCardProfile.details.paymentCompanyName || "알 수 없음",
-                paymentNumber: hmsCardProfile.details.paymentNumber || "",
-                cardLast4: hmsCardProfile.details.cardLast4 || "",
-                payerName: hmsCardProfile.details.payerName || "",
-              }
-            : null
-        }
-        existingSubType={null}
-        availableBenefits={mockBenefits}
-      />
-    </>
+    <WithHeaderLayout
+      config={{
+        showDesktopHeader: true,
+        showMobileHeader: false,
+        showMobileSubBackHeader: true,
+        mobileSubBackHeaderTitle: "멤버십 구독",
+      }}
+    >
+      <MypageLayout>
+        <MembershipForm
+          monthlyPlan={monthlyPlan}
+          yearlyPlan={yearlyPlan}
+          existingFmsMember={
+            hmsCardProfile && hmsCardProfile.details
+              ? {
+                  paymentCompany:
+                    hmsCardProfile.details.paymentCompany || "알 수 없음",
+                  paymentCompanyName:
+                    hmsCardProfile.details.paymentCompanyName || "알 수 없음",
+                  paymentNumber: hmsCardProfile.details.paymentNumber || "",
+                  cardLast4: hmsCardProfile.details.cardLast4 || "",
+                  payerName: hmsCardProfile.details.payerName || "",
+                }
+              : null
+          }
+          existingSubType={null}
+          availableBenefits={mockBenefits}
+        />
+      </MypageLayout>
+    </WithHeaderLayout>
   )
 }

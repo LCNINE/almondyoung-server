@@ -101,7 +101,7 @@ export default function ClassPage() {
         <div className="flex px-4 py-6 md:gap-[40px] md:px-[40px]">
           {/* 좌측 필터링 사이드바 (데스크톱만) */}
           {/* 데스크톱 필터 사이드바 */}
-          <aside className="hidden w-[233px] flex-shrink-0 md:block">
+          <aside className="hidden w-[233px] shrink-0 md:block">
             <ProductFilterSidebar />
           </aside>
 
@@ -160,7 +160,7 @@ export default function ClassPage() {
               {paginatedProducts.slice(0, 8).map((product) => (
                 <div
                   key={product.id}
-                  className="w-[calc(40%-0.375rem)] flex-shrink-0 snap-start sm:w-[45%] md:w-[calc(25%-12px)] lg:w-[calc(20%-12.8px)]"
+                  className="w-[calc(40%-0.375rem)] shrink-0 snap-start sm:w-[45%] md:w-[calc(25%-12px)] lg:w-[calc(20%-12.8px)]"
                 >
                   <BasicProductCard
                     product={{

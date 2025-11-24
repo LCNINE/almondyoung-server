@@ -4,8 +4,14 @@ import { useState } from "react"
 import { refundCreateHmsCardProfile } from "../api"
 import { toast } from "sonner"
 import { ApiError } from "@lib/api/api-error"
+import { ChevronLeft } from "lucide-react"
 
-export default function AddCardForm() {
+interface AddCardFormProps {
+  onComplete?: () => void
+  onBack?: () => void
+}
+
+export default function AddCardForm({ onComplete, onBack }: AddCardFormProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
@@ -46,7 +52,12 @@ export default function AddCardForm() {
       })
 
       toast.success("카드가 등록되었습니다!")
-      router.push("/kr/mypage/payment-methods")
+
+      if (onComplete) {
+        onComplete()
+      } else {
+        router.push("/kr/mypage/payment-methods")
+      }
       router.refresh()
     } catch (error) {
       if (error instanceof ApiError) {
@@ -61,8 +72,15 @@ export default function AddCardForm() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white p-4">
-      <h1 className="mb-6 text-2xl font-bold">HMS 카드 등록</h1>
+    <div className="flex min-h-full flex-col bg-white p-4">
+      <div className="mb-6 flex items-center gap-2">
+        {onBack && (
+          <button onClick={onBack} className="p-1 -ml-2">
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        <h1 className="text-2xl font-bold">HMS 카드 등록</h1>
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         {/* 카드 소유자명 */}

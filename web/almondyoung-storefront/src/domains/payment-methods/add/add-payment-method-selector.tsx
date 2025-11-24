@@ -49,33 +49,58 @@ const CardIcon = () => (
   </div>
 )
 
-export default function AddPaymentMethodSelector() {
+interface AddPaymentMethodSelectorProps {
+  onSelect?: (type: "bank" | "card") => void
+}
+
+export default function AddPaymentMethodSelector({
+  onSelect,
+}: AddPaymentMethodSelectorProps) {
   const router = useRouter()
+
+  const handleSelect = (type: "bank" | "card") => {
+    if (onSelect) {
+      onSelect(type)
+    } else {
+      router.push(`/kr/mypage/payment-methods/add/${type}`)
+    }
+  }
 
   const menuItems = [
     {
       icon: <BankAccountIcon />,
       label: "은행계좌",
-      action: () => router.push("/kr/mypage/payment-methods/add/bank"),
+      action: () => handleSelect("bank"),
     },
     {
       icon: <CardIcon />,
       label: "카드",
-      action: () => router.push("/kr/mypage/payment-methods/add/card"),
+      action: () => handleSelect("card"),
     },
   ]
 
   return (
-    <main className="bg-muted min-h-screen w-full font-sans">
+    <main className="bg-muted min-h-full w-full font-sans">
       {/* --- 페이지 헤더 --- */}
+      {/* 모달 내부에서는 헤더 스타일을 조금 조정하거나 유지 */}
       <header className="flex items-center border-b bg-white p-4">
-        <button aria-label="뒤로 가기" onClick={() => router.back()}>
-          <BackIcon />
-        </button>
-        <div className="flex-grow text-center">
+        {/* 모달이 아닐 때만 뒤로가기? 혹은 모달에서도 닫기 역할? 
+            모달에서는 상위 Drawer에서 닫기를 처리하므로 여기서는 숨기거나 
+            onSelect가 없을 때만 보여주는 식으로 처리 가능.
+            하지만 디자인 일관성을 위해 유지하되, 모달일 경우엔 아무 동작 안하거나 닫기?
+            현재 Drawer 구현상 백버튼은 'selector' 단계에선 닫기 역할을 함.
+            하지만 여기서는 router.back()을 호출하고 있음.
+            모달 내에서는 router.back()이 모달을 닫는 효과(popstate)를 줄 수 있으므로 그대로 둬도 됨.
+        */}
+        {!onSelect && (
+          <button aria-label="뒤로 가기" onClick={() => router.back()}>
+            <BackIcon />
+          </button>
+        )}
+        <div className={`grow text-center ${!onSelect ? "" : "pl-6"}`}>
           <h1 className="text-lg font-bold">결제 수단 등록</h1>
         </div>
-        <div className="w-6"></div> {/* 오른쪽 여백 맞추기용 */}
+        {!onSelect && <div className="w-6"></div>} {/* 오른쪽 여백 맞추기용 */}
       </header>
 
       {/* --- 메인 콘텐츠 (메뉴 목록) --- */}
@@ -91,7 +116,7 @@ export default function AddPaymentMethodSelector() {
                 className="flex w-full items-center rounded-xl bg-white p-4 shadow-sm transition-all hover:bg-gray-50 active:scale-[0.99]"
               >
                 {item.icon}
-                <span className="ml-4 flex-grow text-left text-base font-semibold text-gray-800">
+                <span className="ml-4 grow text-left text-base font-semibold text-gray-800">
                   {item.label}
                 </span>
                 <span className="text-gray-300">

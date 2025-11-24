@@ -444,8 +444,8 @@ export function MembershipForm({
 
                 {existingFmsMember && (
                   <TabsContent value="existingCard">
-                    {/* 등록된 카드 UI - 반응형 */}
-                    <div className="relative w-full rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 p-4 shadow-lg md:p-6" style={{ aspectRatio: '1.586' }}>
+                    {/* 등록된 카드 UI */}
+                    <div className="bg-linear-to-brrom-blue-500 relative h-48 w-full max-w-md rounded-2xl to-blue-700 p-6 shadow-lg">
                       {/* 카드 패턴 */}
                       <div className="absolute inset-0 rounded-2xl bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDEwIEwgNDAgMTAgTSAxMCAwIEwgMTAgNDAgTSAwIDIwIEwgNDAgMjAgTSAyMCAwIEwgMjAgNDAgTSAwIDMwIEwgNDAgMzAgTSAzMCAwIEwgMzAgNDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMC41IiBvcGFjaXR5PSIwLjEiLz48L3BhdHRlcm4+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JpZCkiLz48L3N2Zz4=')] opacity-20" />
 
@@ -454,21 +454,21 @@ export function MembershipForm({
                         {/* 카드 상단 */}
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="text-xs font-medium opacity-90 md:text-sm">
+                            <p className="text-sm font-medium opacity-90">
                               HMS Card
                             </p>
-                            <h3 className="mt-0.5 text-base font-bold md:mt-1 md:text-xl">
+                            <h3 className="mt-1 text-xl font-bold">
                               {existingFmsMember.paymentCompanyName}
                             </h3>
                           </div>
-                          <div className="rounded-full bg-white/20 p-1.5 backdrop-blur-sm md:p-2">
-                            <CreditCard className="h-4 w-4 md:h-6 md:w-6" />
+                          <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+                            <CreditCard className="h-6 w-6" />
                           </div>
                         </div>
 
                         {/* 카드 중앙: 카드번호 */}
                         <div>
-                          <p className="font-mono text-sm tracking-wider md:text-lg">
+                          <p className="font-mono text-lg tracking-wider">
                             {existingFmsMember.paymentNumber}
                           </p>
                         </div>
@@ -476,14 +476,12 @@ export function MembershipForm({
                         {/* 카드 하단 */}
                         <div className="flex items-end justify-between">
                           <div>
-                            <p className="text-[10px] opacity-75 md:text-xs">
-                              카드 소유자
-                            </p>
-                            <p className="mt-0.5 text-sm font-medium md:mt-1 md:text-base">
+                            <p className="text-xs opacity-75">카드 소유자</p>
+                            <p className="mt-1 font-medium">
                               {existingFmsMember.payerName || "등록된 카드"}
                             </p>
                           </div>
-                          <Badge className="bg-green-500 text-xs text-white hover:bg-green-600 md:text-sm">
+                          <Badge className="bg-green-500 text-white hover:bg-green-600">
                             사용 가능
                           </Badge>
                         </div>
@@ -518,7 +516,7 @@ export function MembershipForm({
                           <FormControl>
                             <Label
                               htmlFor="monthly"
-                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-[:checked]:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
                             >
                               <RadioGroupItem
                                 hidden
@@ -545,7 +543,7 @@ export function MembershipForm({
                           <FormControl>
                             <Label
                               htmlFor="yearly"
-                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-[:checked]:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
                             >
                               <RadioGroupItem
                                 hidden

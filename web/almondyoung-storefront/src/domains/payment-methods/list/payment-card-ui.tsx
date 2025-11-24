@@ -49,17 +49,16 @@ export function PaymentCardUI({
     <div
       onClick={onClick}
       className={`
-        relative w-full cursor-pointer rounded-2xl p-4 md:p-6
+        relative h-52 w-full max-w-sm cursor-pointer rounded-2xl p-6
         shadow-lg transition-all hover:shadow-xl
         ${selected ? "ring-4 ring-amber-500" : ""}
         ${!isActive ? "opacity-60 grayscale" : ""}
       `}
-      style={{ aspectRatio: '1.586' }}
     >
       {/* 카드 배경 그라데이션 */}
       <div
         className={`
-          absolute inset-0 rounded-2xl bg-gradient-to-br ${gradientColor}
+          absolute inset-0 rounded-2xl bg-linear-to-br ${gradientColor}
           opacity-90
         `}
       />
@@ -72,41 +71,33 @@ export function PaymentCardUI({
         {/* 카드 상단: 카드사명 + 아이콘 */}
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium opacity-90 md:text-sm">
-              HMS Card
-            </p>
-            <h3 className="mt-0.5 text-base font-bold md:mt-1 md:text-xl">
-              {paymentCompanyName}
-            </h3>
+            <p className="text-sm font-medium opacity-90">HMS Card</p>
+            <h3 className="mt-1 text-xl font-bold">{paymentCompanyName}</h3>
           </div>
-          <div className="rounded-full bg-white/20 p-1.5 backdrop-blur-sm md:p-2">
-            <CreditCard className="h-4 w-4 md:h-6 md:w-6" />
+          <div className="rounded-full bg-white/20 p-2 backdrop-blur-sm">
+            <CreditCard className="h-6 w-6" />
           </div>
         </div>
 
         {/* 카드 중앙: 카드번호 */}
         <div>
-          <p className="font-mono text-sm tracking-wider md:text-lg">
-            {paymentNumber}
-          </p>
+          <p className="font-mono text-lg tracking-wider">{paymentNumber}</p>
         </div>
 
         {/* 카드 하단: 소유자명 + 상태 */}
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-[10px] opacity-75 md:text-xs">카드 소유자</p>
-            <p className="mt-0.5 text-sm font-medium md:mt-1 md:text-base">
-              {payerName || "등록된 카드"}
-            </p>
+            <p className="text-xs opacity-75">카드 소유자</p>
+            <p className="mt-1 font-medium">{payerName || "등록된 카드"}</p>
           </div>
           <div className="text-right">
             {!isActive && (
-              <span className="rounded-full bg-white/20 px-2 py-1 text-[10px] font-medium backdrop-blur-sm md:text-xs">
+              <span className="rounded-full bg-white/20 px-2 py-1 text-xs font-medium backdrop-blur-sm">
                 비활성
               </span>
             )}
             {selected && (
-              <span className="rounded-full bg-amber-500 px-2 py-1 text-[10px] font-medium md:text-xs">
+              <span className="rounded-full bg-amber-500 px-2 py-1 text-xs font-medium">
                 선택됨
               </span>
             )}
@@ -142,7 +133,7 @@ export function PaymentCardListItem({
       `}
     >
       <div className="flex items-center gap-3">
-        <div className="rounded-full bg-gradient-to-br from-blue-500 to-blue-700 p-2">
+        <div className="rounded-full bg-linear-to-br from-blue-500 to-blue-700 p-2">
           <CreditCard className="h-5 w-5 text-white" />
         </div>
         <div className="text-left">

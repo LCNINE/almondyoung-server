@@ -125,7 +125,7 @@ export function MobileFilterSheet({
         - 드래그 핸들 (시각적 요소)
         - "필터" 타이틀. `flex-shrink-0`로 높이 고정.
       */}
-        <header className="flex-shrink-0">
+        <header className="shrink-0">
           <div className="flex justify-center py-3">
             <div className="h-1.5 w-10 rounded-full bg-gray-300"></div>
           </div>
@@ -138,7 +138,7 @@ export function MobileFilterSheet({
         - `<a>` 대신 `<button>` 사용.
         - `data-state`로 활성/비활성 상태 관리 (shadcn/ui 방식)
       */}
-        <nav className="scrollbar-hide flex-shrink-0 overflow-x-auto border-b border-gray-200">
+        <nav className="scrollbar-hide shrink-0 overflow-x-auto border-b border-gray-200">
           <div className="flex space-x-5 px-5 py-1">
             {tabs.map((tab) => (
               <button
@@ -206,7 +206,7 @@ export function MobileFilterSheet({
         - `flex-shrink-0`로 높이 고정.
         - `flex`와 `gap`으로 버튼 배치 (원본의 `space-between` 대체)
       */}
-        <footer className="flex flex-shrink-0 items-center gap-3 border-t border-gray-200 p-4">
+        <footer className="flex shrink-0s-center gap-3 border-t border-gray-200 p-4">
           {/* 초기화 버튼 */}
           <button
             type="button"
