@@ -12,8 +12,8 @@ import { DbModule } from '@app/db';
 import { wmsSchema } from '../database/schemas/wms-schema';
 import { ConfigModule } from '@nestjs/config';
 import { validateWmsEnv } from './config/env.validation';
-import { AuthCoreModule } from '@app/auth-core';
-import { AuthorizationModule } from '@app/authorization';
+import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
+import { APP_GUARD } from '@nestjs/core';
 import { WMS_SCOPES } from './auth/wms.scopes';
 
 @Module({
@@ -28,7 +28,6 @@ import { WMS_SCOPES } from './auth/wms.scopes';
       },
       schema: wmsSchema,
     }),
-    AuthCoreModule.forRootAsync(),
     AuthorizationModule.forRoot({
       microserviceName: 'wms',
       scopes: WMS_SCOPES,
@@ -42,6 +41,6 @@ import { WMS_SCOPES } from './auth/wms.scopes';
     SuppliersModule,
   ],
   controllers: [WmsController],
-  providers: [WmsService],
+  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }, WmsService],
 })
-export class WmsModule { }
+export class WmsModule {}
