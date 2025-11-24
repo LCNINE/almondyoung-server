@@ -170,6 +170,8 @@ html: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 **항상 텍스트 치환:**
 - `renderContent()`: `{{variable}}` 치환 수행
 - Provider: 치환된 `body`를 직접 전송
+- **참고**: Twilio는 템플릿 시스템이 없으므로 항상 완전히 치환된 메시지를 전송합니다.
+  - [Twilio Message API 문서](https://www.twilio.com/docs/messaging/api/message-resource)
 
 ```typescript
 // 템플릿 정의
@@ -186,9 +188,10 @@ html: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 // renderContent()에서 치환
 body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 
-// Provider에서 직접 전송
+// Provider에서 Twilio API 호출
 {
-  body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
+  body: "안녕하세요 홍길동님, 인증 코드는 123456입니다.",
+  to: "+821012345678"
 }
 ```
 
@@ -199,6 +202,9 @@ body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 - Provider: 
   - `notification.title`, `notification.body`: 치환된 값 사용
   - `data` payload: 변수 정보를 문자열로 포함
+- **참고**: FCM v1 API 구조에 맞춰 전송합니다.
+  - [FCM v1 API 문서](https://firebase.google.com/docs/cloud-messaging/send/v1-api?hl=ko#authorize-http-v1-send-requests)
+  - `data` 필드의 모든 값은 문자열로 변환됩니다 (FCM API 요구사항)
 
 ```typescript
 // 템플릿 정의
@@ -217,17 +223,20 @@ body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 subject: "알림"
 body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
 
-// Provider에서 전송
+// Provider에서 FCM v1 API 호출
 {
-  notification: {
-    title: "알림",
-    body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
-  },
-  data: {
-    name: "홍길동",
-    code: "123456",
-    notificationId: "...",
-    category: "..."
+  message: {
+    token: "fcm_token_...",
+    notification: {
+      title: "알림",
+      body: "안녕하세요 홍길동님, 인증 코드는 123456입니다."
+    },
+    data: {
+      name: "홍길동",        // 문자열로 변환됨
+      code: "123456",        // 문자열로 변환됨
+      notificationId: "...",
+      category: "..."
+    }
   }
 }
 ```
@@ -363,3 +372,11 @@ const sendDto: SendNotificationDto = {
 2. **Resend 템플릿**: 템플릿 사용 시 `html`/`text` 필드를 보내지 않음
 3. **변수 타입**: Resend는 문자열/숫자만 허용 (50자 제한)
 4. **자동 추출**: `variablesSchema`가 없으면 `payload` 전체를 변수로 사용 (경고 로그)
+5. **Twilio SMS**: 템플릿 시스템이 없으므로 항상 완전히 치환된 메시지 전송
+6. **FCM PUSH**: `data` payload의 모든 값은 문자열로 변환됩니다 (FCM API 요구사항)
+
+## API 문서 참조
+
+- **FCM v1 API**: [Firebase Cloud Messaging v1 API](https://firebase.google.com/docs/cloud-messaging/send/v1-api?hl=ko#authorize-http-v1-send-requests)
+- **FCM 토픽 관리**: [FCM Topic Management](https://firebase.google.com/docs/cloud-messaging/manage-topics?hl=ko)
+- **Twilio Message API**: [Twilio Message Resource](https://www.twilio.com/docs/messaging/api/message-resource)
