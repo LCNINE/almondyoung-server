@@ -94,6 +94,7 @@ export class PaymentProfileService {
             provider: profile.provider,
             status: profile.status,
             name: profile.name,
+            isDefault: profile.isDefault,
             details,
             createdAt: profile.createdAt,
           };
