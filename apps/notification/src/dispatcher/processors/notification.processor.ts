@@ -92,16 +92,38 @@ export class NotificationProcessor {
             const renderedContent = notification.renderedContent as any;
             const metadata = notification.metadata as any;
 
+            // 채널별 템플릿 변수 정보 추출
+            const providerMetadata: Record<string, any> = {
+                notificationId: notification.notificationId,
+                category: notification.category,
+                priority: notification.priority,
+                ...metadata,
+            };
+
+            // 카카오톡의 경우 templateCode와 templateParameters 전달
+            if (notification.channel === 'KAKAO' && metadata.templateCode) {
+                providerMetadata.templateCode = metadata.templateCode;
+                providerMetadata.templateParameters = metadata.templateParameters || {};
+            }
+
+            // Resend 이메일의 경우 template 정보 전달
+            if (notification.channel === 'EMAIL' && metadata.templateId) {
+                providerMetadata.templateId = metadata.templateId;
+                providerMetadata.templateVariables = metadata.templateVariables || {};
+            }
+
+            // FCM의 경우 data payload 변수 전달
+            if (notification.channel === 'PUSH' && metadata.fcmDataVariables) {
+                providerMetadata.fcmDataVariables = metadata.fcmDataVariables;
+            }
+
+            // Twilio SMS의 경우 일반 텍스트 치환 (추가 처리 불필요)
+
             const result = await provider.send({
                 to: contact,
                 content: renderedContent.body,
                 subject: renderedContent.subject,
-                metadata: {
-                    notificationId: notification.notificationId,
-                    category: notification.category,
-                    priority: notification.priority,
-                    ...metadata,
-                },
+                metadata: providerMetadata,
             });
 
             const latency = Date.now() - startTime;

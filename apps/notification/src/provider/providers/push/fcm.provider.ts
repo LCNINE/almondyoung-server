@@ -265,6 +265,11 @@ export class FCMProvider implements NotificationProvider {
     private buildDataPayload(metadata: any): { [key: string]: string } {
         const data: { [key: string]: string } = {};
 
+        // 템플릿 변수 데이터 우선 사용 (fcmDataVariables)
+        if (metadata.fcmDataVariables) {
+            Object.assign(data, metadata.fcmDataVariables);
+        }
+
         // 모든 메타데이터를 문자열로 변환하여 data payload에 포함
         if (metadata.notificationId) {
             data.notificationId = metadata.notificationId;

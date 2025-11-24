@@ -20,12 +20,12 @@ async function bootstrap() {
     };
 
     // 웹훅 경로에는 raw body 파서 적용
-    app.use('/api/v1/webhooks/resend', bodyParser.json({
+    app.use('/webhooks/resend', bodyParser.json({
         verify: rawBodyBuffer
     }));
 
     // Kakao 웹훅 경로에도 raw body 파서 적용
-    app.use('/api/v1/webhooks/kakao', bodyParser.json({
+    app.use('/webhooks/kakao', bodyParser.json({
         verify: rawBodyBuffer
     }));
 
