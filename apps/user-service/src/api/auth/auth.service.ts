@@ -76,10 +76,6 @@ export class AuthService {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  private getSocialRedirectUrl(provider: ProviderType): string {
-    return new URL(`/${provider}/callback`, this.frontendUrl).toString();
-  }
-
   async signUp(
     signUpDto: LocalSignUpDto,
     @Res() reply: FastifyReply,
@@ -458,6 +454,7 @@ export class AuthService {
     },
     provider: ProviderType,
     reply: FastifyReply,
+    redirectTo?: string,
     tx?: DbTransaction,
   ): Promise<void | { redirectUrl: string }> {
     const processSignIn = async (transaction: DbTransaction) => {
@@ -492,6 +489,18 @@ export class AuthService {
       return existingUser;
     };
 
+    let redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
+    let url = new URL(redirectUrl);
+
+    const redirectUrlWhitelist = this.configService
+      .getOrThrow('REDIRECT_URL_WHITELIST')
+      .split(',')
+      .map((url) => url.trim());
+
+    if (!redirectUrlWhitelist.includes(redirectUrl)) {
+      redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
+    }
+
     if (tx) {
       const result = await processSignIn(tx);
 
@@ -499,7 +508,10 @@ export class AuthService {
       await this.setAccessToken(result.user, reply, tx);
       await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
 
-      return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+      url.searchParams.set('redirect_to', redirectTo ?? '/');
+      url.searchParams.set('userId', result.user.id);
+
+      return reply.status(302).redirect(url.toString());
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
@@ -508,7 +520,10 @@ export class AuthService {
         await this.setAccessToken(result.user, reply, transaction);
         await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
 
-        return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+        url.searchParams.set('redirect_to', redirectTo ?? '/');
+        url.searchParams.set('userId', result.user.id);
+
+        return reply.status(302).redirect(url.toString());
       });
     }
   }
