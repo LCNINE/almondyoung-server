@@ -265,3 +265,23 @@ export class BnplHistoryResponseDto extends createZodDto(
 export class BnplSummaryResponseDto extends createZodDto(
   BnplSummaryResponseSchema,
 ) { }
+
+// 결제 프로필 관리 응답 스키마
+const SetDefaultProfileResponseSchema = BaseResponseSchema.extend({
+  profileId: z.string(),
+  isDefault: z.boolean(),
+  message: z.string(),
+});
+
+const DeleteProfileResponseSchema = BaseResponseSchema.extend({
+  profileId: z.string(),
+  deletedAt: z.string().datetime(),
+  message: z.string(),
+});
+
+export class SetDefaultProfileResponseDto extends createZodDto(
+  SetDefaultProfileResponseSchema,
+) { }
+export class DeleteProfileResponseDto extends createZodDto(
+  DeleteProfileResponseSchema,
+) { }

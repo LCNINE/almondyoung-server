@@ -67,6 +67,9 @@ import {
   HmsCardProfileResponseDto,
   RefundPaymentResponseDto,
   ErrorResponseDto,
+  // Profile Management DTOs
+  SetDefaultProfileResponseDto,
+  DeleteProfileResponseDto,
   // BNPL DTOs
   BnplHistoryQueryDto,
   BnplHistoryResponseDto,
@@ -564,15 +567,7 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: '기본 결제 수단 변경 성공',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        profileId: { type: 'string' },
-        isDefault: { type: 'boolean', example: true },
-        message: { type: 'string', example: '기본 결제 수단이 변경되었습니다.' },
-      },
-    },
+    type: SetDefaultProfileResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -637,15 +632,7 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: '결제 프로필 삭제 성공',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean', example: true },
-        profileId: { type: 'string' },
-        deletedAt: { type: 'string', format: 'date-time' },
-        message: { type: 'string', example: '결제 수단이 삭제되었습니다.' },
-      },
-    },
+    type: DeleteProfileResponseDto,
   })
   @ApiResponse({
     status: 400,
