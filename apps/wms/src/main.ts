@@ -1,11 +1,16 @@
 // apps/wms/src/main.ts
 import 'reflect-metadata'; // 배포 에러로 넣었음 지훈
 import { NestFactory } from '@nestjs/core';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { WmsModule } from './wms.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { EventsModule } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts';
+import fastifyCookie from '@fastify/cookie';
 import * as os from 'os';
 
 function createKafkaConfig() {
@@ -41,12 +46,41 @@ function createKafkaConfig() {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(WmsModule);
+  const app = await NestFactory.create<NestFastifyApplication>(
+    WmsModule,
+    new FastifyAdapter(),
+  );
+
+  // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
+  await app.register(fastifyCookie);
+
+  // Passport와 Fastify 호환성을 위한 훅 (중요!)
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onRequest', (request, reply, done) => {
+      (reply as any).setHeader = function (key: string, value: string) {
+        return this.raw.setHeader(key, value);
+      };
+      (reply as any).end = function () {
+        this.raw.end();
+      };
+      (request as any).res = reply;
+      done();
+    });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableCors({
     origin: true,
     credentials: true,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Cookie',
+      'Set-Cookie',
+    ],
+    exposedHeaders: ['Set-Cookie'],
   });
   app.enableShutdownHooks();
 
