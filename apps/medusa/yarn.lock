@@ -5956,10 +5956,10 @@ ajv@^8.0.0, ajv@^8.5.0, ajv@~8.13.0:
     require-from-string "^2.0.2"
     uri-js "^4.4.1"
 
-almond-digital-asset-plugin@^0.0.25:
-  version "0.0.25"
-  resolved "https://registry.npmjs.org/almond-digital-asset-plugin/-/almond-digital-asset-plugin-0.0.25.tgz"
-  integrity sha512-8XDtS1zw1V1cpgr1+dOKDz1vMbxNE2UDsKwg6FSQq/5tUBNMoQFykWcwSOk1Hd5ICi9eyPZbY1Hrby5JR9WNgg==
+almond-digital-asset-plugin@^0.0.26:
+  version "0.0.26"
+  resolved "https://registry.npmjs.org/almond-digital-asset-plugin/-/almond-digital-asset-plugin-0.0.26.tgz"
+  integrity sha512-49a8N6LsVtGNmF1gm4KDELEQ/DD4tMEz/2OciqYazHRYpOJRhUffcqIsN1zQju/bziBKmEE+iJlfKB6BmIW2Ww==
   dependencies:
     "@medusajs/js-sdk" "2.11.3"
     "@medusajs/types" "2.11.3"
