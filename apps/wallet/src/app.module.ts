@@ -5,7 +5,8 @@ import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 // import { validateWalletEnv } from './config/env.validation';
-import { AuthCoreModule } from '../../../libs/auth-core/src';
+import { AuthorizationModule, authorizationSchema, JwtAuthGuard } from '@app/authorization';
+import { APP_GUARD } from '@nestjs/core';
 import { PaymentController } from './controllers/payment.controller';
 import { PointController } from './controllers/point.controller';
 import { PointAdminController } from './controllers/point-admin.controller';
@@ -20,6 +21,8 @@ import { IntentRepository } from './services/intents/intent.repository';
 import { PaymentProfileService } from './services/profiles/payment-profile.service';
 
 import { walletSchema } from './shared/database/schema';
+
+const combinedSchema = { ...walletSchema, ...authorizationSchema };
 import { PaymentService } from './services/payment.service';
 import { PaymentReader } from './services/payment/payment.reader';
 import { PaymentManager } from './services/payment/payment.manager';
@@ -79,13 +82,16 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
       ignoreEnvFile: false,
       expandVariables: true,
     }),
-    AuthCoreModule.forRootAsync(),
+    AuthorizationModule.forRoot({
+      microserviceName: 'wallet',
+      scopes: [], // 필요시 실제 scopes 추가
+    }),
     ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || '',
       },
-      schema: { ...walletSchema },
+      schema: combinedSchema,
     }),
     EventsModule.forRoot({
       streams: [PAYMENT_STREAM],
@@ -108,6 +114,7 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     TaxInvoiceAdminController,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
     PaymentService,
     IntentService,
     PaymentProfileService,

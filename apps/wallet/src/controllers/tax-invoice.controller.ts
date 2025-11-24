@@ -14,8 +14,7 @@ import {
   Logger,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 import { TaxInvoiceService } from '../services/tax/tax-invoice.service';
 import { TaxInvoicePreferenceService } from '../services/tax/tax-invoice-preference.service';
 import {
