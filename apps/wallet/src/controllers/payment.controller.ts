@@ -18,8 +18,7 @@ import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplService } from '../services/bnpl/bnpl.service';
-import { JwtAuthGuard } from '../../../../libs/auth-core/src/guards/jwt-auth.guard';
-import { User } from '../../../../libs/auth-core/src/decorators/user.decorator';
+import { JwtAuthGuard, User } from '@app/authorization';
 
 import {
   PaymentError,
