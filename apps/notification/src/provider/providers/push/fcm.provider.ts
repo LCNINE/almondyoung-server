@@ -18,18 +18,8 @@ interface FCMConfig {
     clientId: string;
 }
 
-interface FCMMessage {
-    token: string;
-    notification?: {
-        title?: string;
-        body?: string;
-        imageUrl?: string;
-    };
-    data?: { [key: string]: string };
-    android?: admin.messaging.AndroidConfig;
-    apns?: admin.messaging.ApnsConfig;
-    webpush?: admin.messaging.WebpushConfig;
-}
+// FCMMessage 인터페이스는 더 이상 사용하지 않음
+// admin.messaging.Message 타입을 직접 사용
 
 export class FCMProvider implements NotificationProvider {
     private readonly logger: StructuredLogger;
@@ -127,8 +117,8 @@ export class FCMProvider implements NotificationProvider {
         try {
             const metadata = message.metadata || {};
 
-            // FCM 메시지 구성
-            const fcmMessage: FCMMessage = {
+            // FCM 메시지 구성 (admin.messaging.Message 타입 사용)
+            const fcmMessage: admin.messaging.Message = {
                 token: message.to,
                 notification: {
                     title: message.subject || metadata.title,
@@ -152,7 +142,7 @@ export class FCMProvider implements NotificationProvider {
             }
 
             // 메시지 전송
-            const messageId = await this.messaging.send(fcmMessage as any);
+            const messageId = await this.messaging.send(fcmMessage);
 
             this.logger.log('FCM message sent successfully', {
                 messageId,
