@@ -41,6 +41,10 @@ interface ResendEmailRequest {
         value: string;
     }>;
     scheduled_at?: string;
+    template?: {
+        id: string;
+        variables: Record<string, string | number>;
+    };
 }
 
 interface ResendBatchEmailRequest {
@@ -100,7 +104,7 @@ export class ResendProvider implements NotificationProvider {
             maxRetries: config.maxRetries ?? 3,
             retryDelay: config.retryDelay ?? 1000,
         };
-        
+
         if (!this.config.apiKey) {
             throw new Error('RESEND_API_KEY is required');
         }
@@ -250,13 +254,18 @@ export class ResendProvider implements NotificationProvider {
                 metadata.fromName || this.config.fromName
             );
 
+            // Resend 템플릿 사용 여부 확인
+            const templateId = metadata.templateId;
+            const templateVariables = metadata.templateVariables as Record<string, string | number> | undefined;
+
             // 이메일 요청 구성
             const emailRequest: ResendEmailRequest = {
                 from,
                 to: message.to,
                 subject: message.subject || 'Notification',
-                html: message.content,
-                text: metadata.text,
+                // 템플릿을 사용하는 경우 html/text를 보내지 않음
+                html: templateId ? undefined : message.content,
+                text: templateId ? undefined : metadata.text,
                 cc: metadata.cc,
                 bcc: metadata.bcc,
                 reply_to: metadata.replyTo || metadata.fromEmail || this.config.fromEmail,
@@ -265,6 +274,14 @@ export class ResendProvider implements NotificationProvider {
                 tags: this.buildTags(metadata),
                 scheduled_at: metadata.scheduledAt,
             };
+
+            // Resend 템플릿 사용 시 template 객체 추가
+            if (templateId && templateVariables) {
+                (emailRequest as any).template = {
+                    id: templateId,
+                    variables: templateVariables,
+                };
+            }
 
             // 빈 필드 제거
             Object.keys(emailRequest).forEach(key => {
