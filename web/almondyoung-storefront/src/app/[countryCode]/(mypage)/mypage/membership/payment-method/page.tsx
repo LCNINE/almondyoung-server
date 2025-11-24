@@ -223,7 +223,7 @@ export default function PaymentMethodScreen() {
                       </p>
                     </div>
                     <button
-                      className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs leading-4 font-normal text-black shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs leading-4 font-normal text-black shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                       onClick={() => handleSetDefault(profile.id)}
                       disabled={isChanging === profile.id || !!isChanging}
                     >

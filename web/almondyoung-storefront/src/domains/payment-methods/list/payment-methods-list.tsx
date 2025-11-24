@@ -5,6 +5,7 @@ import { ChevronRight } from "lucide-react"
 import { PageTitle } from "@components/common/page-title"
 import { useRouter } from "next/navigation"
 import { PaymentMethodAddDrawer } from "../add/payment-method-add-drawer"
+import { MembershipCardAddDrawer } from "../add/membership-card-add-drawer"
 import { BnplHistoryDrawer } from "../bnpl/bnpl-history-drawer"
 
 // 🎯 Card 컴포넌트 개선 (재사용성을 위해 유지)
@@ -244,7 +245,7 @@ const NoLatePaymentSummary = ({ onAddClick }: { onAddClick: () => void }) => {
             // w-full을 md:w-48로 제한하여 반응형 크기 설정
             className="inline-flex w-full items-center justify-center gap-2.5 rounded-[5px] bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 md:w-48"
           >
-            + 결제수단 등록
+            + 나중결제수단 등록
           </button>
         </div>
       </article>
@@ -282,6 +283,7 @@ const NoLatePaymentSummary = ({ onAddClick }: { onAddClick: () => void }) => {
 export default function PaymentManagement() {
   const router = useRouter()
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false)
+  const [isMembershipCardDrawerOpen, setIsMembershipCardDrawerOpen] = useState(false)
   const [isBnplDrawerOpen, setIsBnplDrawerOpen] = useState(false)
   const [bnplSummary, setBnplSummary] = useState<BnplSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -323,6 +325,30 @@ export default function PaymentManagement() {
         <NoLatePaymentSummary onAddClick={() => setIsAddDrawerOpen(true)} />
       )}
 
+      {/* 멤버십 카드 등록 섹션 */}
+      <section
+        aria-labelledby="membership-card-section"
+        className="mt-10 space-y-4 rounded-lg bg-[#f8f8f8] p-4 md:p-6"
+      >
+        <h2 id="membership-card-section" className="text-base font-bold md:text-lg">
+          멤버십 카드 결제수단
+        </h2>
+        <article className="rounded-[10px] bg-white p-5 shadow-sm">
+          <div className="flex flex-col items-stretch gap-4 md:flex-row md:items-center md:justify-between md:gap-0">
+            <p className="text-center text-base font-normal text-black md:text-left">
+              멤버십 회비 결제를 위한 HMS 카드를 등록하세요
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsMembershipCardDrawerOpen(true)}
+              className="inline-flex w-full items-center justify-center gap-2.5 rounded-[5px] bg-amber-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 md:w-48"
+            >
+              + 멤버십 카드 등록
+            </button>
+          </div>
+        </article>
+      </section>
+
       {/* --- */}
 
       {/* 메뉴 네비게이션 - nav 시맨틱 태그 사용 */}
@@ -356,6 +382,10 @@ export default function PaymentManagement() {
       <PaymentMethodAddDrawer
         open={isAddDrawerOpen}
         onOpenChange={setIsAddDrawerOpen}
+      />
+      <MembershipCardAddDrawer
+        open={isMembershipCardDrawerOpen}
+        onOpenChange={setIsMembershipCardDrawerOpen}
       />
       <BnplHistoryDrawer
         open={isBnplDrawerOpen}

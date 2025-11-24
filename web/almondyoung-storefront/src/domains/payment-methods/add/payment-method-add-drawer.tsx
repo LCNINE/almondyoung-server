@@ -7,14 +7,13 @@ import { useMediaQuery } from "hooks/use-media-query"
 import { useEffect, useState } from "react"
 import AddPaymentMethodSelector from "./add-payment-method-selector"
 import AddBankForm from "./add-bank-form"
-import AddCardForm from "./add-card-form"
 
 interface PaymentMethodAddDrawerProps {
     open: boolean
     onOpenChange: (open: boolean) => void
 }
 
-type Step = "selector" | "bank" | "card"
+type Step = "selector" | "bank"
 
 export function PaymentMethodAddDrawer({
     open,
@@ -72,11 +71,14 @@ export function PaymentMethodAddDrawer({
         switch (step) {
             case "bank":
                 return <AddBankForm onBack={handleBack} onComplete={handleComplete} />
-            case "card":
-                return <AddCardForm onBack={handleBack} onComplete={handleComplete} />
             case "selector":
             default:
-                return <AddPaymentMethodSelector onSelect={(type) => setStep(type)} />
+                return <AddPaymentMethodSelector onSelect={(type) => {
+                    // 카드는 멤버십 카드 등록으로 분리되었으므로 bank만 처리
+                    if (type === "bank") {
+                        setStep("bank")
+                    }
+                }} />
         }
     }
 

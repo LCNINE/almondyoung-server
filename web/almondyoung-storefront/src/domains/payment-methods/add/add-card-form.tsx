@@ -79,7 +79,7 @@ export default function AddCardForm({ onComplete, onBack }: AddCardFormProps) {
             <ChevronLeft className="h-6 w-6" />
           </button>
         )}
-        <h1 className="text-2xl font-bold">HMS 카드 등록</h1>
+        <h1 className="text-2xl font-bold">멤버십 카드 등록</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
