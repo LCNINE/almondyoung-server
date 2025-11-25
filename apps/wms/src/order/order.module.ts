@@ -33,6 +33,7 @@ import { MatchingsService } from './matchings/services/matchings.service';
 import { OutboxService } from './shared/services/outbox.service';
 import { OutboxDispatcherService } from './shared/services/outbox-dispatcher.service';
 import { SharedModule } from '../shared/shared.module';
+import { OrderEventsConsumer } from './consumers/order-events.consumer';
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
@@ -82,7 +83,23 @@ function createKafkaConfig() {
       serviceName: 'wms-order',
     }),
   ],
-  controllers: [SalesOrdersController, FulfillmentsController, FulfillmentOrderController, ProductSkuMappingController, OutboundBatchController, InvoiceController, PickingController, DirectShipController, InspectionController, LocationOptimizationController, ConsolidationController, MatchingsController],
+  controllers: [
+    // REST Controllers
+    SalesOrdersController,
+    FulfillmentsController,
+    FulfillmentOrderController,
+    ProductSkuMappingController,
+    OutboundBatchController,
+    InvoiceController,
+    PickingController,
+    DirectShipController,
+    InspectionController,
+    LocationOptimizationController,
+    ConsolidationController,
+    MatchingsController,
+    // Event Consumers
+    OrderEventsConsumer,
+  ],
   providers: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, DirectShipService, InspectionService, ConsolidationService, GoodsflowDeliveryProvider, BarcodeService, FulfillmentReservationsFacade, PoliciesService, AvailabilityService, MatchingsService, OutboxService, OutboxDispatcherService],
   exports: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, MatchingsService, OutboxService, OutboxDispatcherService],
 })
