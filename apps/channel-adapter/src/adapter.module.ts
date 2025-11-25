@@ -27,13 +27,11 @@ import { NaverOrderClient } from './services/clients/naver/naver-order.client';
 import { NaverClaimClient } from './services/clients/naver/naver-claim.client';
 import { NaverProductClient } from './services/clients/naver/naver-product.client';
 import { NaverAuthService } from './services/clients/naver/naver-auth.client';
-import { WmsApiService } from './services/apis/wms.api.service';
 import { ConfigModule } from '@nestjs/config';
 import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
 import { ChannelSyncManager } from './services/channel-sync.manager';
 import { ChannelCommandManager } from './services/channel-command.manager';
-import { WmsIntegrationManager } from './services/wms-integration.manager';
 import { ChannelAdapterRepository } from './services/channel-adapter.repository';
 import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
@@ -69,10 +67,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }
@@ -95,16 +93,16 @@ function createKafkaConfig() {
     // 운영 환경에서만 실제 EventsModule 활성화
     ...(process.env.NODE_ENV === 'production'
       ? [
-          EventsModule.forRoot({
-            streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
-            serviceName: 'channel-adapter',
-            kafka: createKafkaConfig(),
-            validation: {
-              validateOnPublish: true,
-              throwOnValidationError: true,
-            },
-          }),
-        ]
+        EventsModule.forRoot({
+          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
+          serviceName: 'channel-adapter',
+          kafka: createKafkaConfig(),
+          validation: {
+            validateOnPublish: true,
+            throwOnValidationError: true,
+          },
+        }),
+      ]
       : []),
   ],
   controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
@@ -123,14 +121,11 @@ function createKafkaConfig() {
     NaverClaimClient,
     NaverProductClient,
     NaverAuthService,
-    WmsApiService,
-    // NOTE: DlqMonitoringService 제거됨 (메모리 기반 MVP 코드였음)
 
     // 🆕 리팩토링된 레이어 클래스들
     ChannelDataReader,
     ChannelSyncManager,
     ChannelCommandManager,
-    WmsIntegrationManager,
     ChannelAdapterRepository,
     PendingOrderRepository,
 
@@ -146,16 +141,16 @@ function createKafkaConfig() {
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
-          {
-            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_orders.events.v1',
-            useClass: NullEventPublisher,
-          },
-        ]
+        {
+          provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
+          useClass: NullEventPublisher,
+        },
+        {
+          provide: 'STREAM_PUBLISHER_orders.events.v1',
+          useClass: NullEventPublisher,
+        },
+      ]
       : []),
   ],
 })
-export class AdapterModule {}
+export class AdapterModule { }
