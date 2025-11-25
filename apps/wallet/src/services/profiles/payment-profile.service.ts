@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { v4 as uuidv4 } from 'uuid'; // UUID 생성을 위해 라이브러리 사용 (또는 crypto)
 import { eq, isNull } from 'drizzle-orm';
@@ -38,6 +39,7 @@ export class PaymentProfileService {
     private readonly profilesRepo: PaymentProfilesRepository,
     private readonly cmsCardRepo: CmsCardProfilesRepository,
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
+    private readonly configService: ConfigService,
   ) {}
 
   // 결제 프로필 목록 조회 (상세 정보 포함)
@@ -179,10 +181,19 @@ export class PaymentProfileService {
 
       // 외부 API 호출을 위한 Input 객체 조립
       const memberId = `m_${crypto.randomUUID().substring(0, 18)}`; // ID 생성 전략
+      
+      // HMS_CUST_ID 환경 변수 확인
+      const custId = this.configService.get<string>('HMS_CUST_ID');
+      if (!custId) {
+        this.logger.error('❌ HMS_CUST_ID 환경 변수가 설정되지 않았습니다.');
+        throw new PaymentError(
+          'HMS_CUST_ID 환경 변수가 필요합니다. 환경 변수를 확인하세요.',
+        );
+      }
+
       const registerInput: HmsBnplRegisterInput = {
         userId,
-        // custId는 설정(Config)에서 가져오는 것이 좋습니다.
-        custId: process.env.CUST_ID || 'YOUR_CUST_ID',
+        custId,
         memberId,
         memberName: dto.name ?? dto.payerName,
         payerName: dto.payerName,
