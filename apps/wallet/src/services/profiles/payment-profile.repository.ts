@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import * as schema from '../../shared/database/schema';
 import { walletSchema } from '../../shared/database/schema';
@@ -11,6 +11,8 @@ import { ProviderType } from '../../providers/payment-provider.interface';
  */
 @Injectable()
 export class PaymentProfilesRepository {
+  private readonly logger = new Logger(PaymentProfilesRepository.name);
+
   constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   private get executor() {
@@ -27,11 +29,47 @@ export class PaymentProfilesRepository {
     },
     tx: WalletExecutor = this.executor,
   ) {
-    const [result] = await tx
-      .insert(schema.paymentProfiles)
-      .values({ ...input, status: 'PENDING', provider: input.provider })
-      .returning({ id: schema.paymentProfiles.id });
-    return result.id;
+    // name이 유효한 값이면 사용, 아니면 필드 제외 (drizzle이 null을 제대로 처리하지 못할 수 있음)
+    const trimmedName = input.name?.trim();
+    const values: any = {
+      id: input.id,
+      userId: input.userId,
+      kind: input.kind,
+      provider: input.provider,
+      status: 'PENDING' as const,
+    };
+
+    // name이 유효한 값일 때만 포함
+    if (trimmedName) {
+      values.name = trimmedName;
+    }
+
+    this.logger.debug(
+      `PaymentProfile 생성 시도: ${JSON.stringify(values, null, 2)}`,
+    );
+
+    try {
+      const [result] = await tx
+        .insert(schema.paymentProfiles)
+        .values(values)
+        .returning({ id: schema.paymentProfiles.id });
+      return result.id;
+    } catch (error: any) {
+      this.logger.error(`PaymentProfile 생성 실패: ${error.message}`);
+      this.logger.error(`에러 스택: ${error.stack}`);
+      this.logger.error(`입력 값: ${JSON.stringify(values, null, 2)}`);
+      // drizzle/postgres 에러의 경우 더 자세한 정보 확인
+      if (error.cause) {
+        this.logger.error(`에러 원인: ${JSON.stringify(error.cause, null, 2)}`);
+      }
+      if (error.code) {
+        this.logger.error(`PostgreSQL 에러 코드: ${error.code}`);
+      }
+      if (error.detail) {
+        this.logger.error(`PostgreSQL 에러 상세: ${error.detail}`);
+      }
+      throw error;
+    }
   }
 
   async updateStatus(

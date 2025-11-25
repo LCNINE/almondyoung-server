@@ -21,7 +21,7 @@ import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplService } from '../services/bnpl/bnpl.service';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, Public } from '@app/authorization';
 
 import {
   PaymentError,
@@ -755,11 +755,107 @@ export class PaymentController {
 
   @Post('/hms-bnpl/onboard')
   @HttpCode(201)
-  @ApiOperation({ summary: 'HMS BNPL 프로필 및 동의서 등록' })
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'HMS BNPL 프로필 및 동의서 등록',
+    description: `HMS BNPL(Buy Now Pay Later) 프로필과 동의서를 함께 등록합니다.
+    
+**처리 과정:**
+1. HMS 회원 등록 (FMS API 호출)
+2. 동의서 파일 업로드 (FMS API 호출)
+3. 내부 DB에 프로필 저장
+
+**보상 트랜잭션:**
+- 동의서 등록 실패 시 자동으로 회원 삭제하여 데이터 정합성 보장
+
+**요청 형식:**
+- Content-Type: multipart/form-data
+- 파일 필드명: \`file\` (동의서 이미지 파일)
+
+**응답:**
+- 성공 시: profileId, memberId 반환
+- 실패 시: 에러 메시지 반환`,
+  })
   @ApiConsumes('multipart/form-data')
-  // Swagger를 위한 Body 스키마 명시 (실제 DTO는 파싱해서 사용)
-  async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: [
+        'file',
+        'payerName',
+        'phone',
+        'paymentCompany',
+        'paymentNumber',
+        'payerNumber',
+      ],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: '동의서 이미지 파일 (jpg, png, pdf 등)',
+        },
+        payerName: {
+          type: 'string',
+          description: '납부자명',
+        },
+        phone: {
+          type: 'string',
+          description: '전화번호 (예: 01012345678)',
+        },
+        paymentCompany: {
+          type: 'string',
+          description: '은행 코드 (3자리, 예: 088 신한은행)',
+        },
+        paymentNumber: {
+          type: 'string',
+          description: '계좌번호',
+        },
+        payerNumber: {
+          type: 'string',
+          description: '생년월일 (6자리) 또는 사업자번호 (10자리)',
+        },
+        name: {
+          type: 'string',
+          description: '프로필 별칭 (선택사항)',
+          nullable: true,
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'HMS BNPL 프로필 및 동의서 등록 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        profileId: { type: 'string', description: '프로필 ID (UUID v7)' },
+        memberId: { type: 'string', description: 'HMS 회원 ID' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 데이터 또는 등록 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: '인증 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
+  })
+  async onboardHmsBnplProfile(
+    @Req() req: FastifyRequest,
+    @User('userId') userId: string,
+  ) {
     try {
+      this.logger.log(`📥 HMS BNPL 온보딩 요청 - userId: ${userId}`);
+
       // 1. Multipart 요청 파싱
       // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
@@ -776,25 +872,32 @@ export class PaymentController {
         fields[key] = (data.fields[key] as any).value;
       }
 
+      // userId는 JWT에서 추출하므로 스키마에서 제외
       const validation = OnboardHmsBnplProfileSchema.safeParse(fields);
       if (!validation.success) {
         throw new BadRequestException(validation.error.flatten().fieldErrors);
       }
       const dto = validation.data;
 
-      // 3. 서비스 호출
+      // 3. 서비스 호출 (JWT에서 추출한 userId 사용)
       const result =
-        await this.profileService.createHmsBnplProfileWithAgreement(
-          dto.userId,
-          {
-            ...dto,
-            agreementFile: {
-              file: buffer,
-              filename: data.filename,
-            },
+        await this.profileService.createHmsBnplProfileWithAgreement(userId, {
+          ...dto,
+          agreementFile: {
+            file: buffer,
+            filename: data.filename || 'agreement.pdf',
           },
-        );
-      return { success: true, ...result };
+        });
+
+      this.logger.log(
+        `✅ HMS BNPL 온보딩 성공 - profileId: ${result.profileId}, memberId: ${result.memberId}`,
+      );
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        memberId: result.memberId,
+      };
     } catch (error) {
       this.handleError(error, 'HMS BNPL 프로필 온보딩');
     }
