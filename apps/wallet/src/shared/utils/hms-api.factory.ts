@@ -1,5 +1,5 @@
 // 파일명: shared/utils/hms-api.factory.ts (최종 수정본)
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper';
+import { HmsAPI } from 'hms-api-wrapper';
 import { Logger } from '@nestjs/common';
 
 /**
@@ -20,47 +20,46 @@ export class HmsApiFactory {
   /**
    * BNPL용 HMS API - 동의자료 등록 (add-test)
    *
-   * 배치CMS는 테스트 서버 승인이 수기 처리라 Mock 서버 지원
+   * 실제 테스트 서버만 사용 (Mock 제거)
    */
-  static createForBnpl(): HmsAPI | MockHmsAPI {
+  static createForBnpl(): HmsAPI {
     const swKey = process.env.SW_KEY;
     const custKey = process.env.CUST_KEY;
     const isProduction = process.env.NODE_ENV === 'production';
     const proxyUrl = process.env.HYOSUNG_PROXY_URL;
 
-    // 키가 있으면 Real API, 없으면 Mock
-    if (swKey && custKey) {
-      let baseURL: string;
-
-      if (isProduction) {
-        // 운영: 직접 호출
-        baseURL = 'https://add.hyosungcms.co.kr/v1';
-        this.logger.warn(`🔥 BNPL용 HMS API 생성 (운영) - ${baseURL}`);
-      } else if (proxyUrl) {
-        // 개발/테스트 + 프록시: 프록시 경유 (/add/* 경로)
-        baseURL = `${proxyUrl}/add/v1`;
-        this.logger.log(`🔧 BNPL용 HMS API 생성 (프록시) - ${baseURL}`);
-      } else {
-        // 개발/테스트: 직접 호출
-        baseURL = 'https://add-test.hyosungcms.co.kr/v1';
-        this.logger.log(`🔧 BNPL용 HMS API 생성 (직접) - ${baseURL}`);
-      }
-
-      return new HmsAPI({
-        swKey,
-        custKey,
-        isTest: !isProduction,
-        baseURL,
-        timeout: 60000,
-      });
+    // 키가 필수 (실제 테스트 서버 사용)
+    if (!swKey || !custKey) {
+      this.logger.error(
+        '❌ HMS API 키가 설정되지 않았습니다 (SW_KEY, CUST_KEY)',
+      );
+      throw new Error(
+        'HMS API 키가 필요합니다. 환경변수를 확인하세요: SW_KEY, CUST_KEY',
+      );
     }
 
-    // 키 없음 → Mock
-    this.logger.warn('🧪 BNPL용 HMS Mock API 사용 (키 없음)');
-    return new MockHmsAPI({
-      swKey: 'mock-sw-key',
-      custKey: 'mock-cust-key',
-      isTest: true,
+    let baseURL: string;
+
+    if (isProduction) {
+      // 운영: 직접 호출
+      baseURL = 'https://add.hyosungcms.co.kr/v1';
+      this.logger.warn(`🔥 BNPL용 HMS API 생성 (운영) - ${baseURL}`);
+    } else if (proxyUrl) {
+      // 개발/테스트 + 프록시: 프록시 경유 (/add/* 경로)
+      baseURL = `${proxyUrl}/add/v1`;
+      this.logger.log(`🔧 BNPL용 HMS API 생성 (프록시) - ${baseURL}`);
+    } else {
+      // 개발/테스트: 직접 호출
+      baseURL = 'https://add-test.hyosungcms.co.kr/v1';
+      this.logger.log(`🔧 BNPL용 HMS API 생성 (직접) - ${baseURL}`);
+    }
+
+    return new HmsAPI({
+      swKey,
+      custKey,
+      isTest: !isProduction,
+      baseURL,
+      timeout: 60000,
     });
   }
 
