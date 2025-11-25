@@ -54,7 +54,11 @@ export class AuthController {
   @Post('signin')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async signIn(@Body() signInDto: SignInDto, @Res({ passthrough: true }) res: FastifyReply) {
+  async signIn(
+    @Body() signInDto: SignInDto,
+    @Res({ passthrough: true }) res: FastifyReply,
+    @Query('redirect_to') redirectTo?: string,
+  ) {
     return await this.authService.signIn(signInDto, res);
   }
 
@@ -131,12 +135,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원가입 콜백(쿠키 설정) 성공' })
   @Post('callback/signup')
   @Public()
-  async callbackSignup(
-    @Body() { userId }: { userId: string },
-    @Query('redirect_to') redirectTo: string,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ) {
-    return await this.authService.callbackSignup(userId, res, redirectTo);
+  async callbackSignup(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
+    return await this.authService.callbackSignup(userId, res);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
@@ -182,10 +182,7 @@ export class AuthController {
   @Get('kakao/callback')
   @UseGuards(AuthGuard('kakao'))
   @Public()
-  async kakaoCallback(
-    @Req() req: any,
-    @Res() res: FastifyReply,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  async kakaoCallback(@Req() req: any, @Res() res: FastifyReply): Promise<void | { redirectUrl: string }> {
     const kakaoUser = req.user as {
       name: string;
       email: string;
@@ -203,5 +200,14 @@ export class AuthController {
       }
       throw error;
     }
+  }
+
+  @ApiOperation({ summary: '소셜로그인 쿠키 설정' })
+  @ApiResponse({ status: 200, description: '소셜로그인 쿠키 설정 성공' })
+  @Post('social/set-cookie')
+  @UseGuards(AuthGuard('kakao'))
+  @Public()
+  async setSocialCookie(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
+    return await this.authService.setSocialCookie(userId, res);
   }
 }
