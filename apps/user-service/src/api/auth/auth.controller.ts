@@ -18,12 +18,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
@@ -59,22 +54,15 @@ export class AuthController {
   @Post('signin')
   @Public()
   @HttpCode(HttpStatus.OK)
-  async signIn(
-    @Body() signInDto: SignInDto,
-    @Res({ passthrough: true }) res: FastifyReply,
-    @Query('redirect_to') redirectTo?: string,
-  ) {
-    return await this.authService.signIn(signInDto, res, redirectTo);
+  async signIn(@Body() signInDto: SignInDto, @Res({ passthrough: true }) res: FastifyReply) {
+    return await this.authService.signIn(signInDto, res);
   }
 
   @ApiOperation({ summary: '로그아웃' })
   @ApiResponse({ status: 200, description: '로그아웃 성공' })
   @Post('signout')
   @Public()
-  async signOut(
-    @Req() request: FastifyRequest,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ) {
+  async signOut(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     return this.authService.signOut(request, reply);
   }
 
@@ -84,10 +72,7 @@ export class AuthController {
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  async restoreToken(
-    @Res({ passthrough: true }) res: FastifyReply,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async restoreToken(@Res({ passthrough: true }) res: FastifyReply, @CurrentUser() user: JwtPayload) {
     return await this.authService.restoreToken(user.id, res);
   }
 
@@ -96,10 +81,7 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes(['user:modify', 'master', 'admin:access'])
-  async changePassword(
-    @Body(ValidationPipe) { password }: ChangePasswordDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async changePassword(@Body(ValidationPipe) { password }: ChangePasswordDto, @CurrentUser() user: JwtPayload) {
     return this.authService.changePassword(password, user.id);
   }
 
@@ -182,10 +164,7 @@ export class AuthController {
   @Post('check-password')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes(['user:modify', 'master', 'admin:access'])
-  async checkPassword(
-    @Body(ValidationPipe) { password }: { password: string },
-    @CurrentUser() user: JwtPayload,
-  ) {
+  async checkPassword(@Body(ValidationPipe) { password }: { password: string }, @CurrentUser() user: JwtPayload) {
     return this.authService.checkPassword(password, user.id);
   }
 
@@ -206,7 +185,7 @@ export class AuthController {
   async kakaoCallback(
     @Req() req: any,
     @Res() res: FastifyReply,
-  ): Promise<void | { redirectUrl: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const kakaoUser = req.user as {
       name: string;
       email: string;
@@ -214,11 +193,7 @@ export class AuthController {
     };
 
     try {
-      return await this.authService.signInWithSocial(
-        kakaoUser,
-        ProviderType.KAKAO,
-        res,
-      );
+      return await this.authService.signInWithSocial(kakaoUser, ProviderType.KAKAO, res);
     } catch (error) {
       if (error.message.includes('already exists')) {
         throw new ConflictException('This email already exists');
