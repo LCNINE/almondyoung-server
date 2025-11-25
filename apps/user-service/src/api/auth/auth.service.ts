@@ -131,6 +131,11 @@ export class AuthService {
           },
         });
 
+        console.log(
+          '회원가입 이메일 인증 링크:',
+          this.configService.get('USER_SERVICE_URL') +
+            `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,
+        );
         /* 
         ex)
          this.configService.get('USER_SERVICE_URL') +
