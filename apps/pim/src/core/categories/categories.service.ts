@@ -109,7 +109,7 @@ export class ProductCategoriesService {
   ): Promise<void> {
     const client = this.getClient(tx);
 
-    const executeDelete = async (txn: any) => {
+    const executeDelete = async (txn: DbTransaction) => {
       const [category] = await txn
         .select()
         .from(pimSchema.productCategories)
@@ -306,7 +306,7 @@ export class ProductCategoriesService {
   ): Promise<CategoryResponseDto> {
     const client = this.getClient(tx);
 
-    const executeMove = async (txn: any) => {
+    const executeMove = async (txn: DbTransaction) => {
       const [category] = await txn
         .select()
         .from(pimSchema.productCategories)
@@ -316,7 +316,7 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      let newParentCategory: any = null;
+      let newParentCategory: ProductCategory | null = null;
       if (newParentId) {
         const parentResult = await txn
           .select()
@@ -371,7 +371,7 @@ export class ProductCategoriesService {
   // 자손들의 경로와 레벨을 재계산하는 헬퍼 메서드
   private async _updateDescendantPaths(
     categoryId: string,
-    txn: any,
+    txn: DbTransaction,
   ): Promise<void> {
     const [currentCategory] = await txn
       .select()
@@ -676,7 +676,7 @@ export class ProductCategoriesService {
 
     const client = this.getClient(tx);
 
-    const executeMove = async (txn: any) => {
+    const executeMove = async (txn: DbTransaction) => {
       // 1. 대상 카테고리 존재 확인
       const [category] = await txn
         .select()
@@ -759,7 +759,7 @@ export class ProductCategoriesService {
 
     const client = this.getClient(tx);
 
-    const executeAdd = async (txn: any) => {
+    const executeAdd = async (txn: DbTransaction) => {
       // 1. 대상 카테고리 존재 확인
       const [category] = await txn
         .select()
@@ -938,7 +938,7 @@ export class ProductCategoriesService {
 
     const client = this.getClient(tx);
 
-    const executeReorder = async (txn: any) => {
+    const executeReorder = async (txn: DbTransaction) => {
       // 1. 부모 카테고리 존재 확인 (parentId가 있는 경우)
       if (parentId) {
         const [parentCategory] = await txn
@@ -1108,7 +1108,7 @@ export class ProductCategoriesService {
   async rebuildCategoryPaths(tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    const executeRebuild = async (txn: any) => {
+    const executeRebuild = async (txn: DbTransaction) => {
       // 1. 모든 카테고리를 레벨 순으로 정렬하여 가져오기
       const allCategories = await txn
         .select()

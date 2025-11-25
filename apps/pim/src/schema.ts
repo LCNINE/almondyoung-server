@@ -528,9 +528,11 @@ export const salesChannels = pgTable(
     site: varchar('site', { length: 50 }).notNull(),
     categoryId: uuid('category_id').references(() => channelCategories.id, { onDelete: 'set null' }),
     name: varchar('name', { length: 100 }).notNull(),
-    isActive: boolean('is_active').default(true),
-    apiConfig: jsonb('api_config'),
-    supportedFeatures: jsonb('supported_features'),
+    description: text('description'),
+    config: jsonb('config'),
+    isActive: boolean('is_active').default(true).notNull(),
+    apiEndpoint: varchar('api_endpoint', { length: 500 }),
+    credentials: jsonb('credentials'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -558,7 +560,7 @@ export const channelProducts = pgTable(
 
     // 오버라이드 가능한 필드들 (판매 여부, 상품명만)
     name: varchar('name', { length: 255 }), // 상품명 오버라이드
-    isActive: boolean('is_active').default(true), // 판매 여부
+    isActive: boolean('is_active').default(true).notNull(), // 판매 여부
 
     // 채널별 특수 설정
     channelSpecificData: jsonb('channel_specific_data'),
