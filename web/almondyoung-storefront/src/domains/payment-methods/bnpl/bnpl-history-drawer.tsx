@@ -6,81 +6,23 @@ import { cn } from "@lib/utils"
 import { Drawer } from "vaul"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@components/common/ui/dialog"
 import { useMediaQuery } from "hooks/use-media-query"
-
-// --- Types & Mock Data ---
-
-type PaymentStatus = "WAITING" | "COMPLETED" | "CANCELLED"
-
-interface PaymentHistoryItem {
-    id: number
-    date: string
-    title: string
-    category: string
-    amount: number
-    status: PaymentStatus
-    paymentDate: string
-}
-
-const historyData: PaymentHistoryItem[] = [
-    {
-        id: 1,
-        date: "2024.05.20",
-        title: "무신사 스토어",
-        category: "패션/의류",
-        amount: 45000,
-        status: "WAITING",
-        paymentDate: "06.15",
-    },
-    {
-        id: 2,
-        date: "2024.05.18",
-        title: "스타벅스 강남R점",
-        category: "카페",
-        amount: 7200,
-        status: "COMPLETED",
-        paymentDate: "05.18",
-    },
-    {
-        id: 3,
-        date: "2024.05.12",
-        title: "올리브영",
-        category: "뷰티",
-        amount: 12500,
-        status: "CANCELLED",
-        paymentDate: "-",
-    },
-    {
-        id: 4,
-        date: "2024.05.01",
-        title: "쿠팡 로켓배송",
-        category: "생활",
-        amount: 63300,
-        status: "COMPLETED",
-        paymentDate: "05.01",
-    },
-    {
-        id: 5,
-        date: "2024.04.28",
-        title: "배달의민족",
-        category: "식비",
-        amount: 24000,
-        status: "COMPLETED",
-        paymentDate: "04.28",
-    },
-]
-
-const limitInfo = {
-    totalLimit: 300000,
-    usedAmount: 156000,
-    billingDate: "매월 15일",
-}
+import { getBnplHistory, getBnplSummary, type BnplHistoryResponse, type BnplSummary } from "@lib/api/wallet"
 
 // --- Components ---
 
 // 1. 한도 요약 카드 (LimitSummary)
-const LimitSummary = () => {
-    const remainingLimit = limitInfo.totalLimit - limitInfo.usedAmount
-    const usagePercent = (limitInfo.usedAmount / limitInfo.totalLimit) * 100
+const LimitSummary = ({ summary }: { summary: BnplSummary }) => {
+    const totalLimit = summary.creditLimit || 0
+    const usedAmount = summary.usedAmount || 0
+    const remainingLimit = totalLimit - usedAmount
+    const usagePercent = totalLimit > 0 ? (usedAmount / totalLimit) * 100 : 0
+
+    // Format billing date
+    const billingDate = summary.nextBillingDate
+        ? new Date(summary.nextBillingDate)
+        : null
+    const billingMonth = billingDate ? billingDate.getMonth() + 1 : 0
+    const billingDay = billingDate ? billingDate.getDate() : 0
 
     return (
         <section className="bg-white px-5 py-6 md:p-0">
@@ -91,10 +33,12 @@ const LimitSummary = () => {
                         사용 가능한 한도
                         <Info className="h-4 w-4 text-gray-400" />
                     </div>
-                    <div className="hidden text-sm md:block">
-                        <span className="font-medium text-gray-500">다음 자동 결제일 </span>
-                        <span className="font-bold text-black">6월 15일</span>
-                    </div>
+                    {billingDate && (
+                        <div className="hidden text-sm md:block">
+                            <span className="font-medium text-gray-500">다음 자동 결제일 </span>
+                            <span className="font-bold text-black">{billingMonth}월 {billingDay}일</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* 메인: 금액 + 프로그레스 바 */}
@@ -118,26 +62,28 @@ const LimitSummary = () => {
                             />
                         </div>
                         <div className="flex items-center justify-between text-xs text-gray-500 md:text-sm">
-                            <span>총 한도 {limitInfo.totalLimit.toLocaleString()}원</span>
+                            <span>총 한도 {totalLimit.toLocaleString()}원</span>
                             <span className="font-bold text-[#f29219]">
-                                {limitInfo.usedAmount.toLocaleString()}원 사용 중
+                                {usedAmount.toLocaleString()}원 사용 중
                             </span>
                         </div>
                     </div>
                 </div>
 
                 <div className="mt-4 block h-px w-full bg-gray-200 md:hidden" />
-                <div className="mt-4 flex items-center justify-between text-sm md:hidden">
-                    <span className="font-medium text-gray-500">다음 자동 결제일</span>
-                    <span className="font-bold text-black">6월 15일</span>
-                </div>
+                {billingDate && (
+                    <div className="mt-4 flex items-center justify-between text-sm md:hidden">
+                        <span className="font-medium text-gray-500">다음 자동 결제일</span>
+                        <span className="font-bold text-black">{billingMonth}월 {billingDay}일</span>
+                    </div>
+                )}
             </div>
         </section>
     )
 }
 
 // 2. 상태 뱃지
-const StatusBadge = ({ status }: { status: PaymentStatus }) => {
+const StatusBadge = ({ status }: { status: string }) => {
     switch (status) {
         case "WAITING":
             return (
@@ -163,16 +109,23 @@ const StatusBadge = ({ status }: { status: PaymentStatus }) => {
 }
 
 // 3. 내역 리스트 섹션
-const HistorySection = () => {
+const HistorySection = ({ history }: { history: BnplHistoryResponse }) => {
     const [activeTab, setActiveTab] = useState("전체")
     const tabs = ["전체", "결제대기", "결제완료"]
 
-    const filteredData = historyData.filter((item) => {
+    const filteredData = history.events.filter((event) => {
         if (activeTab === "전체") return true
-        if (activeTab === "결제대기") return item.status === "WAITING"
-        if (activeTab === "결제완료") return item.status === "COMPLETED"
+        if (activeTab === "결제대기") return event.status === "PENDING"
+        if (activeTab === "결제완료") return event.status === "COMPLETED"
         return true
     })
+
+    // Helper to get status badge type
+    const getStatusBadge = (status: string) => {
+        if (status === "PENDING") return "WAITING"
+        if (status === "COMPLETED") return "COMPLETED"
+        return "CANCELLED"
+    }
 
     return (
         <section className="min-h-[500px] border-t border-gray-100 bg-white md:rounded-2xl md:border md:border-t md:border-gray-200">
@@ -201,48 +154,41 @@ const HistorySection = () => {
 
             <ul className="flex flex-col pb-20 md:pb-0">
                 {filteredData.length > 0 ? (
-                    filteredData.map((item) => (
-                        <li
-                            key={item.id}
-                            className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5 transition-colors last:border-0 hover:bg-gray-50"
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs text-gray-400 md:text-sm">
-                                    {item.date}
-                                </span>
-                                <StatusBadge status={item.status} />
-                            </div>
+                    filteredData.map((event) => {
+                        const eventDate = new Date(event.createdAt)
+                        const formattedDate = `${eventDate.getFullYear()}.${String(eventDate.getMonth() + 1).padStart(2, '0')}.${String(eventDate.getDate()).padStart(2, '0')}`
 
-                            <div className="flex items-start justify-between">
-                                <div className="flex flex-col gap-1">
-                                    <span className="text-[15px] font-bold text-gray-900 md:text-lg">
-                                        {item.title}
+                        return (
+                            <li
+                                key={event.id}
+                                className="flex flex-col gap-3 border-b border-gray-50 px-5 py-5 transition-colors last:border-0 hover:bg-gray-50"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs text-gray-400 md:text-sm">
+                                        {formattedDate}
                                     </span>
-                                    <span className="text-xs text-gray-500 md:text-sm">
-                                        {item.category}
-                                    </span>
+                                    <StatusBadge status={getStatusBadge(event.status)} />
                                 </div>
 
-                                <div className="flex flex-col items-end gap-1">
-                                    <span
-                                        className={cn(
-                                            "text-[15px] font-bold md:text-lg",
-                                            item.status === "CANCELLED"
-                                                ? "text-gray-400 line-through"
-                                                : "text-black"
-                                        )}
-                                    >
-                                        {item.amount.toLocaleString()}원
-                                    </span>
-                                    {item.status === "WAITING" && (
-                                        <span className="text-xs text-[#f29219] md:text-sm">
-                                            {item.paymentDate} 자동결제 예정
+                                <div className="flex items-start justify-between">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[15px] font-bold text-gray-900 md:text-lg">
+                                            {event.title || "알 수 없는 상점"}
                                         </span>
-                                    )}
+                                        <span className="text-xs text-gray-500 md:text-sm">
+                                            {event.eventCategory}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex flex-col items-end gap-1">
+                                        <span className="text-[15px] font-bold text-black md:text-lg">
+                                            {event.amount.toLocaleString()}원
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                        </li>
-                    ))
+                            </li>
+                        )
+                    })
                 ) : (
                     <li className="flex h-40 items-center justify-center text-sm text-gray-400">
                         내역이 없습니다.
@@ -263,6 +209,38 @@ export function BnplHistoryDrawer({
     onOpenChange,
 }: BnplHistoryDrawerProps) {
     const isDesktop = useMediaQuery("(min-width: 768px)")
+    const [historyData, setHistoryData] = useState<BnplHistoryResponse | null>(null)
+    const [summaryData, setSummaryData] = useState<BnplSummary | null>(null)
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+
+    // Fetch data when drawer opens
+    useEffect(() => {
+        if (!open) return
+
+        const fetchData = async () => {
+            setIsLoading(true)
+            setError(null)
+            try {
+                // Fetch both history (all records) and summary in parallel
+                // For MVP: fetch all history without year/month filter
+                const [history, summary] = await Promise.all([
+                    getBnplHistory(), // No params = fetch all history
+                    getBnplSummary()
+                ])
+
+                setHistoryData(history)
+                setSummaryData(summary)
+            } catch (err) {
+                console.error("Failed to fetch BNPL data:", err)
+                setError("데이터를 불러오는데 실패했습니다.")
+            } finally {
+                setIsLoading(false)
+            }
+        }
+
+        fetchData()
+    }, [open])
 
     // Browser back button handling
     useEffect(() => {
@@ -296,10 +274,20 @@ export function BnplHistoryDrawer({
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto bg-white">
-                <div className="flex flex-col gap-6 font-['Pretendard']">
-                    <LimitSummary />
-                    <HistorySection />
-                </div>
+                {isLoading ? (
+                    <div className="flex h-96 items-center justify-center">
+                        <div className="text-gray-500">로딩 중...</div>
+                    </div>
+                ) : error ? (
+                    <div className="flex h-96 items-center justify-center">
+                        <div className="text-red-500">{error}</div>
+                    </div>
+                ) : historyData && summaryData ? (
+                    <div className="flex flex-col gap-6 font-['Pretendard']">
+                        <LimitSummary summary={summaryData} />
+                        <HistorySection history={historyData} />
+                    </div>
+                ) : null}
             </div>
         </>
     )
