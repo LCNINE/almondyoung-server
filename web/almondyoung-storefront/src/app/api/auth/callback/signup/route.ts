@@ -1,9 +1,7 @@
-import { callbackSignup } from "@lib/api/users/callback-signup"
-import { fetchUserByUserId } from "@lib/api/users/get-user"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { medusaSignup } from "@lib/api/medusa/signup"
 import { appConfig } from "@lib/app-config"
 import { setTokenCookies } from "@lib/data/cookies"
-import { medusaSignup, retrieveCustomer } from "@lib/api/medusa/customer"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
@@ -18,7 +16,32 @@ export async function GET(request: NextRequest) {
     }
 
     // 토큰 받아오기
-    const { accessToken, refreshToken } = await callbackSignup(userId)
+    const response = await fetch(
+      `${process.env.BACKEND_URL}/users/auth/callback/signup`,
+      {
+        method: "POST",
+        body: JSON.stringify({ userId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const result = await response.json()
+      return NextResponse.json(
+        {
+          success: false,
+          error: result.error,
+          message: result.message || "Callback signup failed",
+        },
+        { status: response.status }
+      )
+    }
+
+    const result = await response.json()
+
+    const { accessToken, refreshToken } = result.data
 
     setTokenCookies(accessToken, refreshToken)
 
@@ -29,19 +52,43 @@ export async function GET(request: NextRequest) {
     }
 
     // 신규 회원 가입 처리
-    const currentUser = await fetchUserByUserId(userId)
-    if (currentUser) {
-      try {
-        await medusaSignup({
-          email: currentUser.email,
-          first_name: currentUser.username,
-          last_name: currentUser.username,
-          almond_user_id: currentUser.id,
-          almond_login_id: currentUser.loginId,
-        })
-      } catch (error) {
-        console.error("medusaSignup error:", error)
-        throw error
+    const currentUser = await fetch(
+      `${process.env.BACKEND_URL}/users/users/${userId}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: request.cookies.toString(),
+        },
+      }
+    )
+
+    if (!currentUser.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Current user not found",
+        },
+        { status: currentUser.status }
+      )
+    }
+
+    const currentUserData = await currentUser.json()
+
+    if (currentUserData.success) {
+      const result = await medusaSignup({
+        email: currentUserData.data.email,
+        first_name: currentUserData.data.username,
+        last_name: currentUserData.data.username,
+        almond_user_id: currentUserData.data.id,
+        almond_login_id: currentUserData.data.loginId,
+      })
+
+      if (!result.success) {
+        console.error("medusaSignup failed:", result.error, result.message)
+        return NextResponse.redirect(
+          new URL("/login?error=signup_failed", request.url)
+        )
       }
     }
 

@@ -1,5 +1,5 @@
 import { ApiError } from "@lib/api/api-error"
-import { createUser } from "@lib/api/users"
+import { createUser } from "@lib/api/users/auth"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { UseFormReturn } from "react-hook-form"
@@ -18,7 +18,7 @@ export const useSignup = (form: UseFormReturn<SignupSchema>) => {
       const response = await createUser(submitData, redirectTo)
 
       if (response) {
-        toast(response.message, {
+        toast(response.data.message, {
           action: {
             label: "확인",
             onClick: () => {

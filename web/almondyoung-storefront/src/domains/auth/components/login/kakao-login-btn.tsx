@@ -6,9 +6,9 @@ import Image from "next/image"
 
 export function KakaoLoginBtn() {
   const handleKakaoLogin = () => {
-    const baseUrl = USER_SERVICE_BASE_URL
+    const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL
 
-    window.location.href = `${baseUrl}/auth/kakao/signin`
+    window.location.href = `${baseUrl}/users/auth/kakao/signin`
   }
 
   return (

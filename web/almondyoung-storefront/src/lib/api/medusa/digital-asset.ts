@@ -1,6 +1,5 @@
 import { getAuthHeaders } from "@lib/data/cookies"
 import { DigitalAssetsResponse } from "domains/mypage/types/mypage-types"
-import { MEDUSA_BASE_URL } from "../api.config"
 
 export const getDigitalAssets = async (
   skip: number = 0,
@@ -9,15 +8,14 @@ export const getDigitalAssets = async (
   const headers = await getAuthHeaders()
 
   return await fetch(
-    `${MEDUSA_BASE_URL}/store/library?skip=${skip}&take=${take}`,
+    `${process.env.APP_URL}/api/medusa/digital-assets?skip=${skip}&take=${take}`,
     {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         ...headers,
-        "x-publishable-api-key":
-          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
       },
+      credentials: "include",
     }
   )
     .then(async (res) => {
@@ -36,13 +34,14 @@ export const updateDigitalAssetExerciseApi = async (
 ): Promise<void> => {
   const headers = await getAuthHeaders()
 
-  return await fetch(`${MEDUSA_BASE_URL}/store/library/${assetId}/exercise`, {
+  return await fetch(`${process.env.APP_URL}/api/medusa/digital-assets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...headers,
-      "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
     },
+    body: JSON.stringify({ assetId }),
+    credentials: "include",
   })
     .then(async (res) => {
       const data = await res.json()
@@ -63,18 +62,20 @@ export const downloadDigitalAssetApi = async (
   const headers = await getAuthHeaders()
 
   const res = await fetch(
-    `${MEDUSA_BASE_URL}/store/library/${assetId}/download`,
+    `${process.env.APP_URL}/api/medusa/digital-assets/download/${assetId}`,
     {
       method: "GET",
       headers: {
+        "Content-Type": "application/json",
         ...headers,
-        "x-publishable-api-key":
-          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
       },
+      credentials: "include",
     }
   )
 
   if (!res.ok) {
+    const errorData = await res.json()
+    // console.log("errorData:", errorData)
     throw new Error("파일 다운로드 실패")
   }
 

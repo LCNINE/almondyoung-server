@@ -1,10 +1,7 @@
 import ClientToast from "@components/common/client-toast"
-import { ApiAuthError, ApiNetworkError } from "@lib/api/api-error"
-import { fetchCurrentUser } from "@lib/api/users/me"
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
-import AuthRestore from "../auth-restore"
-import { headers } from "next/headers"
+import { ApiNetworkError } from "@lib/api/api-error"
+import { fetchMe } from "@lib/api/users/me"
+import { cookies, headers } from "next/headers"
 
 export default async function ProtectedRoute({
   children,
@@ -17,26 +14,20 @@ export default async function ProtectedRoute({
 
   const headersList = await headers()
   const pathname = headersList.get("x-pathname")
+
   try {
-    await fetchCurrentUser()
-    return <>{children}</>
-  } catch (e) {
-    if (e instanceof ApiAuthError) {
-      // refreshToken이 있으면 복구 시도
-      if (refreshToken) {
-        return <AuthRestore hasRefreshToken={true} />
-      }
+    const isMainPage = pathname && /^\/[a-z]{2}\/?$/.test(pathname)
 
-      if (!refreshToken && pathname !== "/" && pathname !== "/kr") {
-        return redirect(
-          `/login/?redirect_to=${encodeURIComponent(pathname || "")}`
-        )
-      }
-
-      // refreshToken이 없으면 비로그인 상태로 페이지 표시
-      return <>{children}</>
+    // 메인페이지이면서 리프레시토큰이 없으면 에러 무시
+    if (isMainPage && !refreshToken) {
+      await fetchMe().catch(() => null)
+    } else {
+      await fetchMe()
     }
 
+    return <>{children}</>
+  } catch (e) {
+    // todo: 네트워크 에러 리펙토링 필요
     if (e instanceof ApiNetworkError) {
       return (
         <>
@@ -49,6 +40,7 @@ export default async function ProtectedRoute({
         </>
       )
     }
-    throw e // 다른 에러는 error.tsx로 전달
+
+    throw e
   }
 }

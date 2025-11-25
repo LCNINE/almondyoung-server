@@ -1,22 +1,15 @@
 "use server"
 
-import { serverApi } from "@lib/api/server-api"
 import { sdk } from "@lib/app-config"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
-import { redirect } from "next/navigation"
-import { MEDUSA_BASE_URL, USER_SERVICE_BASE_URL } from "../api.config"
+
 import {
   getAuthHeaders,
   getCacheOptions,
   getCacheTag,
   getCartId,
-  removeAccessToken,
-  removeCartId,
-  removeMedusaAuthToken,
-  removeRefreshToken,
-  setMedusaAuthToken,
 } from "../../data/cookies"
 
 type MedusaSignupRequest = {
@@ -34,47 +27,6 @@ type MedusaSignupResponse = {
   customer: {
     id: string
   }
-}
-
-export const medusaSignup = async (
-  data: MedusaSignupRequest
-): Promise<MedusaSignupResponse> => {
-  const res = await fetch(`${MEDUSA_BASE_URL}/auth/customer/my-auth/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      email: data.email,
-      first_name: data.first_name,
-      last_name: data.last_name,
-      almond_user_id: data.almond_user_id,
-      almond_login_id: data.almond_login_id,
-    }),
-  })
-
-  const result = await res.json()
-
-  return result
-}
-
-// 메두사 jwt 토큰 발급
-export const customerAuthCallback = async (almondToken: string) => {
-  const res = await fetch(`${MEDUSA_BASE_URL}/api/auth/medusa/callback`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${almondToken}`,
-    },
-  })
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}))
-    throw new Error(errorData.message || `HTTP error! status: ${res.status}`)
-  }
-
-  const result = await res.json()
-
-  return result
 }
 
 export const retrieveCustomer =
@@ -120,68 +72,6 @@ export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
   revalidateTag(cacheTag)
 
   return updateRes
-}
-
-export async function medusaLogin(): Promise<{
-  success: boolean
-  error?: string
-}> {
-  try {
-    const headers = {
-      ...(await getAuthHeaders("accessToken")),
-    }
-
-    const res = await fetch(`${MEDUSA_BASE_URL}/auth/customer/my-auth`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-    })
-
-    const result = await res.json()
-
-    if (!res.ok) {
-      return { success: false, error: result.error }
-    }
-
-    await setMedusaAuthToken(result.token as string)
-    const customerCacheTag = await getCacheTag("customers")
-    revalidateTag(customerCacheTag)
-  } catch (error: any) {
-    console.log("error:", error)
-    return error.toString()
-  }
-
-  try {
-    await transferCart()
-
-    return { success: true }
-  } catch (error: any) {
-    return error.toString()
-  }
-}
-
-export async function signout() {
-  await serverApi(USER_SERVICE_BASE_URL + "/auth/signout", {
-    method: "POST",
-    body: JSON.stringify({}),
-  })
-
-  await sdk.auth.logout()
-
-  await removeMedusaAuthToken()
-  await removeAccessToken()
-  await removeRefreshToken()
-
-  const customerCacheTag = await getCacheTag("customers")
-  revalidateTag(customerCacheTag)
-
-  await removeCartId()
-
-  const cartCacheTag = await getCacheTag("carts")
-  revalidateTag(cartCacheTag)
-  redirect("/")
 }
 
 export async function transferCart() {

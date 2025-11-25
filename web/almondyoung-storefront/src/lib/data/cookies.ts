@@ -1,6 +1,11 @@
-import "server-only"
 import { cookies as nextCookies } from "next/headers"
-import { NextResponse } from "next/server"
+import "server-only"
+
+export const getCookies = async () => {
+  const cookies = await nextCookies()
+
+  return cookies.toString()
+}
 
 export const getAuthHeaders = async (
   cookieName: string = "_medusa_jwt"

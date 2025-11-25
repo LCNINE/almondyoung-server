@@ -1,12 +1,8 @@
 import { Metadata } from "next"
 
-import { listCartOptions, retrieveCart } from "@lib/data/cart"
+import { retrieveCart } from "@lib/api/medusa/cart"
 import { retrieveCustomer } from "@lib/api/medusa/customer"
-import { fetchCurrentUser } from "@lib/api/users/me"
 import { getBaseURL } from "@lib/utils/env"
-import { StoreCartShippingOption } from "@medusajs/types"
-import { ResponsiveHeader } from "@components/layout/components/header"
-import { Breadcrumb } from "@components/layout/components/breadcrumb"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),

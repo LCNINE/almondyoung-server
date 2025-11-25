@@ -27,6 +27,7 @@ export async function updateDigitalAssetExerciseAction(assetId: string) {
   }
 }
 
+// todo: 다운로드 안되는거 해결해야함
 export async function downloadDigitalAssetAction(assetId: string) {
   try {
     const { blob, filename } = await downloadDigitalAssetApi(assetId)

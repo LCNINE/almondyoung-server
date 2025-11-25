@@ -1,8 +1,5 @@
 "use client"
 
-import { clientApi } from "@lib/api/client-api"
-import { USER_SERVICE_BASE_URL } from "../api.config"
-
 export interface WishlistItem {
   id: string
   userId: string
@@ -25,13 +22,18 @@ export const addToWishlist = async (
   productId: string
 ): Promise<WishlistResponse> => {
   try {
-    return await clientApi<WishlistResponse>(
-      USER_SERVICE_BASE_URL + "/wishlist",
-      {
-        method: "POST",
-        body: JSON.stringify({ productId }),
-      }
-    )
+    // todo: 라우트핸들러 만들어야함
+    const response = await fetch(`${process.env.APP_URL}/api/users/wishlist`, {
+      method: "POST",
+      body: JSON.stringify({ productId }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    const result = await response.json()
+
+    return result
   } catch (error) {
     console.error("위시리스트 추가 실패:", error)
     throw error
@@ -41,9 +43,17 @@ export const addToWishlist = async (
 /**
  * 사용자의 위시리스트를 조회합니다
  */
-export const getWishlist = async (): Promise<WishlistItem[]> => {
+export const getWishlist = async () => {
   try {
-    return await clientApi<WishlistItem[]>(USER_SERVICE_BASE_URL + "/wishlist")
+    // todo: 라우트핸들러 만들어야함
+    const response = await fetch(`${process.env.APP_URL}/api/users/wishlist`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    const result = await response.json()
   } catch (error) {
     console.error("위시리스트 조회 실패:", error)
     throw error
@@ -57,12 +67,20 @@ export const removeFromWishlist = async (
   wishlistId: string
 ): Promise<WishlistResponse> => {
   try {
-    return await clientApi<WishlistResponse>(
-      USER_SERVICE_BASE_URL + "/wishlist" + `/${wishlistId}`,
+    // todo: 라우트핸들러 만들어야함
+    const response = await fetch(
+      `${process.env.APP_URL}/api/users/wishlist/${wishlistId}`,
       {
         method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
       }
     )
+
+    const result = await response.json()
+
+    return result
   } catch (error) {
     console.error("위시리스트 제거 실패:", error)
     throw error
@@ -76,6 +94,7 @@ export const isProductInWishlist = async (
   productId: string
 ): Promise<boolean> => {
   try {
+    // todo: 라우트핸들러 만들어야함
     const wishlist = await getWishlist()
     return wishlist.some((item) => item.productId === productId)
   } catch (error) {

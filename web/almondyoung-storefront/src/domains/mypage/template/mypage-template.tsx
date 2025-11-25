@@ -1,11 +1,11 @@
 import MypageLayout from "@components/layout/mypage-layout"
-import { MyPageMobileContent } from "../components/mobile"
-import { MyPageDesktopContent } from "../components/desktop"
-import { fetchCurrentUser } from "@lib/api/users"
+import { fetchMe } from "@lib/api/users/me"
 import { UserDetail } from "domains/auth/types"
+import { MyPageDesktopContent } from "../components/desktop"
+import { MyPageMobileContent } from "../components/mobile"
 
 export async function MyPageTemplate() {
-  const currentUser = await fetchCurrentUser()
+  const currentUser = await fetchMe()
 
   return (
     <>

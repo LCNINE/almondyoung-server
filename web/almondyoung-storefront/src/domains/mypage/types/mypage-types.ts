@@ -47,8 +47,11 @@ export interface DigitalAssetLicense {
 }
 
 export interface DigitalAssetsResponse {
-  licenses: DigitalAssetLicense[]
-  count: number
-  skip: number
-  take: number
+  success: boolean
+  data: {
+    licenses: DigitalAssetLicense[]
+    count: number
+    skip: number
+    take: number
+  }
 }

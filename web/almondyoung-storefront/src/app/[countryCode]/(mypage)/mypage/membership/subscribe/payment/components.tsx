@@ -1,14 +1,25 @@
 "use client"
 
-import React from "react"
-import { Calendar, Gift, TriangleAlert } from "lucide-react"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-import { zodResolver } from "@hookform/resolvers/zod"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@components/common/ui/alert"
+import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"
-import { clientApi } from "@lib/api/client-api"
-import { ApiError } from "@lib/api/api-error"
-import { useUser } from "contexts/user-context"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@components/common/ui/card"
+import { Checkbox } from "@components/common/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+} from "@components/common/ui/dialog"
 import {
   Form,
   FormControl,
@@ -18,45 +29,31 @@ import {
   FormMessage,
 } from "@components/common/ui/form"
 import { Input } from "@components/common/ui/input"
-import FormattedInput from "./formatted-input"
-import { RadioGroup, RadioGroupItem } from "@components/common/ui/radio-group"
 import { Label } from "@components/common/ui/label"
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@components/common/ui/tabs"
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@components/common/ui/alert"
-import { toast } from "sonner"
-import { Checkbox } from "@components/common/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@components/common/ui/radio-group"
 import {
   Table,
   TableBody,
   TableCell,
   TableRow,
 } from "@components/common/ui/table"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@components/common/ui/tabs"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { ApiError } from "@lib/api/api-error"
 import { cn } from "@lib/utils"
+import { useUser } from "contexts/user-context"
+import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
 import { useRouter } from "next/navigation"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-} from "@components/common/ui/dialog"
-import { useState } from "react"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@components/common/ui/card"
-import { Badge } from "@components/common/ui/badge"
-import { CreditCard } from "lucide-react"
+import React, { useState } from "react"
+import { useForm } from "react-hook-form"
+import { toast } from "sonner"
+import { z } from "zod"
+import FormattedInput from "./formatted-input"
 
 // 순수 UI용 타입 정의
 type SubscriptionType = "inactive" | "monthly" | "yearly" | null
@@ -230,20 +227,23 @@ export function MembershipForm({
         const validMonth = data.validUntil.slice(0, 2) // "2812" → "28"
         const validYear = data.validUntil.slice(2, 4) // "2812" → "12"
 
-        await clientApi("/api/wallet/payments/profiles/hms-card", {
-          method: "POST",
-          body: JSON.stringify({
-            memberName: data.payerName,
-            phone: data.phone,
-            payerNumber: data.payerNumber,
-            paymentNumber: data.paymentNumber,
-            payerName: data.payerName,
-            validYear: validYear,
-            validMonth: validMonth,
-            validUntil: data.validUntil,
-            password: data.password,
-          }),
-        })
+        await fetch(
+          `${process.env.APP_URL}/api/wallet/payments/profiles/hms-card`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              memberName: data.payerName,
+              phone: data.phone,
+              payerNumber: data.payerNumber,
+              paymentNumber: data.paymentNumber,
+              payerName: data.payerName,
+              validYear: validYear,
+              validMonth: validMonth,
+              validUntil: data.validUntil,
+              password: data.password,
+            }),
+          }
+        )
 
         // 카드 등록 후 페이지 데이터 새로고침
         router.refresh()

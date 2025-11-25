@@ -7,27 +7,23 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { DownloadCard } from "../components/download/download-card"
 import { DownloadFilters } from "../components/download/download-filters"
-import {
-  DigitalAssetLicense,
-  DigitalAssetsResponse,
-  FilterStatus,
-} from "../types/mypage-types"
+import { DigitalAssetLicense, FilterStatus } from "../types/mypage-types"
 
-interface DownloadTemplateProps {
+interface DownloadPageTemplateProps {
   user: UserDetail
-  digitalAssets: DigitalAssetsResponse
+  digitalAssets: DigitalAssetLicense[]
   currentPage: number
   itemsPerPage: number
   is_exercised: string | null
 }
 
-export default function DownloadTemplate({
+export default function DownloadPageTemplate({
   user,
   digitalAssets,
   currentPage,
   itemsPerPage,
   is_exercised,
-}: DownloadTemplateProps) {
+}: DownloadPageTemplateProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [filter, setFilter] = useState<FilterStatus>("all")
@@ -42,7 +38,7 @@ export default function DownloadTemplate({
     )
   }, [is_exercised])
 
-  const filteredDigitalAssets = digitalAssets.licenses?.filter(
+  const filteredDigitalAssets = digitalAssets?.filter(
     (asset: DigitalAssetLicense) => {
       if (filter === "new") return !asset.is_exercised
       if (filter === "used") return asset.is_exercised
@@ -50,7 +46,7 @@ export default function DownloadTemplate({
     }
   )
 
-  const totalPages = Math.ceil(digitalAssets.count / itemsPerPage)
+  const totalPages = Math.ceil(digitalAssets.length / itemsPerPage)
 
   const handlePageChange = (page: number) => {
     router.push(
@@ -75,7 +71,7 @@ export default function DownloadTemplate({
             <div className="text-muted-foreground text-sm">
               총{" "}
               <span className="text-foreground font-semibold">
-                {digitalAssets.count}
+                {digitalAssets.length}
               </span>
               개의 상품
             </div>

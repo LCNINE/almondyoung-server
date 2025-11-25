@@ -1,4 +1,3 @@
-import { PIM_BASE_URL } from "@lib/api/api.config"
 import type { PimCategory } from "@lib/types/dto/pim"
 
 // 메모리 캐시 타입
@@ -35,7 +34,8 @@ export async function getAllCategoriesCached(): Promise<PimCategory[]> {
 async function fetchCategoriesWithISR(): Promise<PimCategory[]> {
   try {
     // ⚡ 3초 타임아웃 설정 (RootLayout 블로킹 방지)
-    const res = await fetch(`${PIM_BASE_URL}/categories`, {
+    // todo: 라우트핸들러로 변경
+    const res = await fetch(`${process.env.BACKEND_URL}/pim/categories`, {
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",

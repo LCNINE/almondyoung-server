@@ -1,12 +1,11 @@
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
-import { fetchCurrentUser } from "@lib/api/users"
+import { fetchMe } from "@lib/api/users/me"
 import { UserDetail } from "domains/auth/types"
-import DownloadTemplate from "domains/mypage/template/download-template"
+import DownloadPageTemplate from "domains/mypage/template/download-page-template"
+import { AlertCircle } from "lucide-react"
 import { Metadata } from "next"
-import { AlertCircle, RefreshCcw } from "lucide-react"
-import LocalizedClientLink from "@components/common/localized-client-link"
 
 export const metadata: Metadata = {
   title: "다운로드",
@@ -18,7 +17,7 @@ export default async function DownloadPage({
 }: {
   searchParams: Promise<{ page?: string; is_exercised?: string }>
 }) {
-  const currentUser = await fetchCurrentUser()
+  const currentUser = await fetchMe()
   const params = await searchParams
   const page = Number(params.page) || 1
   const take = 12
@@ -38,9 +37,9 @@ export default async function DownloadPage({
         }}
       >
         <MypageLayout>
-          <DownloadTemplate
+          <DownloadPageTemplate
             user={currentUser as UserDetail}
-            digitalAssets={digitalAssets}
+            digitalAssets={digitalAssets.data.licenses}
             currentPage={page}
             itemsPerPage={take}
             is_exercised={is_exercised}

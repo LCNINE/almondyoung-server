@@ -5,7 +5,6 @@ import { useState } from "react"
 import { IconTextButton } from "../../../components/icon-button"
 import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
-import { MEMBERSHIP_SERVICE_BASE_URL } from "@lib/api/api.config"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
 
@@ -20,8 +19,9 @@ async function cancelMembershipSubscription(
   reasonCode: string,
   reasonText?: string
 ) {
+  // todo: 라우트핸들러 만들어야함
   const response = await fetch(
-    `${MEMBERSHIP_SERVICE_BASE_URL}/subscriptions/cancel`,
+    `${process.env.APP_URL}/api/membership/subscriptions/cancel`,
     {
       method: "POST",
       headers: {

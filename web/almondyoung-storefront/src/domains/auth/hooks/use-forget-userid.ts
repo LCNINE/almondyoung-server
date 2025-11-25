@@ -12,12 +12,13 @@ export const useForgetUserId = () => {
     setIsLoading(true)
 
     try {
-      await findIdByEmail(email)
+      const result = await findIdByEmail(email)
+      console.log("result:", result)
       setIsSent(true)
 
       return { success: true }
     } catch (error: any) {
-      console.error(error)
+      console.error("result:", error)
       toast.error(error?.error?.message || "오류가 발생했습니다.")
       setIsSent(false)
       return { success: false, error }

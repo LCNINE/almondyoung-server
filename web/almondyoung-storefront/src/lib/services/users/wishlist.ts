@@ -2,8 +2,8 @@ import {
   addToWishlist,
   getWishlist,
   removeFromWishlist,
+  WishlistItem,
 } from "@lib/api/users/wishlist"
-import { WishlistItem } from "@lib/api/users/wishlist"
 import { emitWishlistChange } from "./wishlist-events"
 
 // 서비스 옵션 타입

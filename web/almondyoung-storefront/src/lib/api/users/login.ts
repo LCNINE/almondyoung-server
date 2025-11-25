@@ -3,11 +3,10 @@
 import { ApiError } from "@lib/api/api-error"
 import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
-import { medusaLogin, transferCart } from "@lib/api/medusa/customer"
+import { transferCart } from "@lib/api/medusa/customer"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
-import { serverApi } from "../server-api"
-import { USER_SERVICE_BASE_URL } from "../api.config"
+import { medusaSignin } from "../medusa/signin"
 
 type LoginState =
   | { success: true }
@@ -24,14 +23,29 @@ export async function login(
 
   try {
     //  사용자 서비스 로그인
-    const result = await serverApi(USER_SERVICE_BASE_URL + "/auth/signin", {
+    const result = await fetch(`${process.env.BACKEND_URL}/users/auth/signin`, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ loginId, password }),
     })
+    const resultData = await result.json()
+
+    if (!result.ok) {
+      throw new ApiError(
+        resultData.message || "로그인에 실패했습니다",
+        result.status,
+        resultData
+      )
+    }
 
     // 응답에서 토큰을 받아서 쿠키로 설정
     // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)
-    await setTokenCookies(result.accessToken, result.refreshToken)
+    await setTokenCookies(
+      resultData.data.accessToken,
+      resultData.data.refreshToken
+    )
   } catch (error: any) {
     console.error("User service login error:", error)
 
@@ -86,7 +100,7 @@ export async function login(
     }
   }
 
-  await medusaLogin()
+  await medusaSignin()
 
   const customerCacheTag = await getCacheTag("customers")
   revalidateTag(customerCacheTag)

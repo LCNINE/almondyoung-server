@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { WALLET_SERVICE_BASE_URL } from "@lib/api/api.config"
 
 interface AuthorizeResponse {
   success: boolean
@@ -54,8 +53,9 @@ export default function CallbackPage() {
         setMessage("결제 승인을 요청 중입니다...")
 
         // 결제 승인 API 호출
+        // todo: 라우트핸들러 만들어야함
         const response = await fetch(
-          `${WALLET_SERVICE_BASE_URL}/payments/intents/${orderId}/authorize`,
+          `${process.env.APP_URL}/api/wallet/payments/intents/${orderId}/authorize`,
           {
             method: "POST",
             headers: {

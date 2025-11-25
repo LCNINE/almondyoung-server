@@ -1,5 +1,5 @@
+import { addToCart } from "@lib/api/medusa/cart"
 import { useState } from "react"
-import { addToCart } from "@lib/data/cart"
 import { toast } from "sonner"
 
 interface AddToCartParams {
@@ -14,13 +14,16 @@ interface AddToCartParams {
 export function useAddToCart() {
   const [isLoading, setIsLoading] = useState(false)
 
-  const addToCartAction = async ({ variantId, quantity = 1 }: AddToCartParams) => {
+  const addToCartAction = async ({
+    variantId,
+    quantity = 1,
+  }: AddToCartParams) => {
     try {
       setIsLoading(true)
-      
+
       const result = await addToCart({
         variantId: variantId,
-        countryCode: 'kr',
+        countryCode: "kr",
         quantity,
       })
 
@@ -34,7 +37,10 @@ export function useAddToCart() {
     } catch (error) {
       console.error("Add to cart error:", error)
       toast.error("장바구니 추가 중 오류가 발생했습니다.")
-      return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      }
     } finally {
       setIsLoading(false)
     }

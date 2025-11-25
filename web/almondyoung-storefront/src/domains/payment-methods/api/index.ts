@@ -1,5 +1,3 @@
-import { clientApi } from "@lib/api/client-api"
-
 /**
  * 결제 프로필 타입
  */
@@ -43,13 +41,20 @@ export type CreateHmsCardProfileRequest = {
  * 사용자의 모든 결제 프로필 조회
  */
 export async function refundGetPaymentProfiles(): Promise<PaymentProfile[]> {
-  const response = await clientApi<PaymentProfile[]>(
-    "/api/wallet/payments/profiles",
+  // todo: 라우트핸들러 만들어야함
+  const response = await fetch(
+    `${process.env.APP_URL}/api/wallet/payments/profiles`,
     {
       method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
     }
   )
-  return response
+
+  const result = await response.json()
+
+  return result
 }
 
 /**
@@ -58,14 +63,21 @@ export async function refundGetPaymentProfiles(): Promise<PaymentProfile[]> {
 export async function refundCreateHmsCardProfile(
   data: CreateHmsCardProfileRequest
 ): Promise<{ profileId: string }> {
-  const response = await clientApi<{ profileId: string }>(
-    "/api/wallet/payments/profiles/hms-card",
+  // todo: 라우트핸들러 만들어야함
+  const response = await fetch(
+    `${process.env.APP_URL}/api/wallet/payments/profiles/hms-card`,
     {
       method: "POST",
       body: JSON.stringify(data),
+      headers: {
+        "Content-Type": "application/json",
+      },
     }
   )
-  return response
+
+  const result = await response.json()
+
+  return result
 }
 
 /**

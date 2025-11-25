@@ -1,7 +1,5 @@
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
-import { serverApi } from "@lib/api/server-api"
-import { MEMBERSHIP_SERVICE_BASE_URL } from "@lib/api/api.config"
 import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
 
 /**
@@ -13,20 +11,17 @@ export default async function MembershipPage() {
   let isMember = false
   let membershipData = null
 
-  console.log("🔍 [MembershipPage] 서버 컴포넌트 실행 시작")
-  console.log(
-    "🔍 [MembershipPage] MEMBERSHIP_SERVICE_BASE_URL:",
-    MEMBERSHIP_SERVICE_BASE_URL
-  )
-
   try {
-    const url = `${MEMBERSHIP_SERVICE_BASE_URL}/subscriptions/current`
-    console.log("🔍 [MembershipPage] API 호출 시작:", url)
-
-    // 현재 구독 상태 조회
-    const response = await serverApi(url, {
-      cache: "no-store",
-    })
+    // todo: 라우트핸들러 만들어야함
+    const response = await fetch(
+      `${process.env.APP_URL}/api/membership/subscriptions/current`,
+      {
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    )
 
     console.log("✅ [MembershipPage] API 응답 성공:", response)
 

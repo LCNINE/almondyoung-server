@@ -1,7 +1,7 @@
 "use client"
 
 import { Spinner } from "@components/common/spinner"
-import { medusaLogin } from "@lib/api/medusa/customer"
+import { medusaSignin } from "@lib/api/medusa/signin"
 import { useRouter } from "next/navigation"
 import { useEffect, useTransition } from "react"
 import { toast } from "sonner"
@@ -19,7 +19,7 @@ export function AuthCallback({
   useEffect(() => {
     startTransition(async () => {
       try {
-        await medusaLogin()
+        await medusaSignin()
         router.push(redirectTo)
       } catch (err) {
         console.error(err)

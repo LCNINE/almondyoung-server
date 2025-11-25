@@ -1,4 +1,3 @@
-import { clientApi } from "@lib/api/client-api"
 // import { ShopSurveySchema } from "@modules/shop-survey/schemas/suvery-schema"
 
 // 임시 타입 정의
@@ -7,17 +6,25 @@ type ShopSurveySchema = {
 }
 
 export const modifyShopSurveyApi = async (data: ShopSurveySchema) => {
-  const response = await clientApi("/shop/info", {
+  // todo: 라우트핸들러 만들어야함
+  const response = await fetch(`${process.env.APP_URL}/api/shop/info`, {
     method: "POST",
     body: JSON.stringify(data),
+    headers: {
+      "Content-Type": "application/json",
+    },
   })
 
   return response
 }
 
 export const getShopSurveyApi = async () => {
-  const response = await clientApi("/shop/info", {
+  // todo: 라우트핸들러 만들어야함
+  const response = await fetch(`${process.env.APP_URL}/api/shop/info`, {
     method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
   })
 
   return response
