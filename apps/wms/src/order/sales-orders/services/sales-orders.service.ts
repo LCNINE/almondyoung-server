@@ -9,6 +9,9 @@ import { OutboxService } from '../../shared/services/outbox.service';
 import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
+import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
+import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
+import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 
 @Injectable()
 export class SalesOrdersService {
@@ -28,7 +31,7 @@ export class SalesOrdersService {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-  async create(dto: any, tx?: DbTx) {
+  async create(dto: CreateSalesOrderDto, tx?: DbTx) {
     const timer = this.metrics?.startOrderTimer('create');
     const startTime = Date.now();
 
@@ -37,12 +40,12 @@ export class SalesOrdersService {
         .insert(wmsTables.salesOrders)
         .values({
           channelOrderId: dto.channelOrderId,
-          salesChannel: dto.salesChannel,
-          status: 'pending',
+          salesChannel: dto.salesChannel as 'naver' | 'medusa' | 'coupang' | '3pl',
+          status: 'pending' as const,
           customerName: dto.customer?.name ?? null,
           customerEmail: dto.customer?.email ?? null,
           customerPhone: dto.customer?.phone ?? null,
-          shippingAddress: dto.shippingAddress,
+          shippingAddress: dto.shippingAddress as any,
           shippingAddressHash: dto.shippingAddressHash ?? null,
           totalAmount: dto.totalAmount ?? null,
           shippingFee: dto.shippingFee ?? 0,
@@ -64,7 +67,7 @@ export class SalesOrdersService {
 
       const lines = Array.isArray(dto.lines) ? dto.lines : [];
       if (lines.length > 0) {
-        const values = [] as Array<any>;
+        const values: any[] = [];
         for (const l of lines) {
           const policy = await this.policies.getVariantPolicy(l.variantId, trx);
           const acceptanceByPolicy = !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
@@ -121,7 +124,7 @@ export class SalesOrdersService {
     });
   }
 
-  async update(id: string, dto: any, tx?: DbTx) {
+  async update(id: string, dto: UpdateSalesOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
         await trx
           .update(wmsTables.salesOrders)
@@ -248,7 +251,7 @@ export class SalesOrdersService {
     }, tx);
   }
 
-  async merge(dto: any, tx?: DbTx) {
+  async merge(dto: MergeSalesOrdersDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       const sourceIds: string[] = dto?.sourceOrderIds ?? [];
       if (!Array.isArray(sourceIds) || sourceIds.length < 2) {
@@ -268,12 +271,12 @@ export class SalesOrdersService {
         .insert(wmsTables.salesOrders)
         .values({
           channelOrderId: dto.channelOrderId ?? base.channelOrderId,
-          salesChannel: dto.salesChannel ?? base.salesChannel,
-          status: 'pending',
+          salesChannel: (dto.salesChannel ?? base.salesChannel) as 'naver' | 'medusa' | 'coupang' | '3pl',
+          status: 'pending' as const,
           customerName: dto.customer?.name ?? base.customerName,
           customerEmail: dto.customer?.email ?? base.customerEmail,
           customerPhone: dto.customer?.phone ?? base.customerPhone,
-          shippingAddress: dto.shippingAddress ?? base.shippingAddress,
+          shippingAddress: (dto.shippingAddress ?? base.shippingAddress) as any,
           shippingAddressHash: dto.shippingAddressHash ?? base.shippingAddressHash,
           totalAmount: dto.totalAmount ?? base.totalAmount,
           shippingFee: dto.shippingFee ?? base.shippingFee,
@@ -286,7 +289,7 @@ export class SalesOrdersService {
         .returning();
 
       // 라인 병합: 단순히 모두 복사(추후 동일 variant 병합 가능)
-      const lines: Array<any> = [];
+      const lines: any[] = [];
       for (const so of sources) {
         const soLines = await trx.query.salesOrderLines.findMany({
           where: (l, { eq }) => eq(l.salesOrderId, so.id),
@@ -344,7 +347,12 @@ export class SalesOrdersService {
       // 3) 병합된 SO 기준 FO 재구성(옵션: warehouseId 전달 시 생성)
       if (this.fulfillments) {
         try {
-          await this.fulfillments.create({ salesOrderId: merged.id, warehouseId: dto.warehouseId ?? null, shippingAddress: merged.shippingAddress }, trx);
+          await this.fulfillments.create({ 
+            salesOrderId: merged.id, 
+            warehouseId: dto.warehouseId ?? undefined, 
+            shippingAddress: merged.shippingAddress as any,
+            lines: []
+          }, trx);
         } catch {
           // 생성 실패는 무시(후속 요청에서 생성 가능)
         }

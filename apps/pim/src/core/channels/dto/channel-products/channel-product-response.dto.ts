@@ -53,12 +53,6 @@ export class ChannelProductWithChannelDto {
   @ApiProperty({ description: '채널별 제품명', nullable: true })
   name: string | null;
 
-  @ApiProperty({ description: '채널별 제품 설명', nullable: true })
-  description: string | null;
-
-  @ApiProperty({ description: '채널별 제품 이미지 URL 배열', type: [String] })
-  images: string[];
-
   @ApiProperty({ description: '채널에서의 활성 상태' })
   isActive: boolean;
 
