@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 // PaymentError를 사용하여 도메인 에러를 명확히 표현합니다.
 import { PaymentError, ProfileRegistrar } from './payment-provider.interface';
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper'; // 실제 라이브러리 경로
-import { HsFmsError } from 'hms-api-wrapper/dist/utils/HttpClient.service';
+import { HmsAPI } from 'hms-api-wrapper';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 /**
@@ -34,7 +33,7 @@ export class HmsBnplRegistrar
     >
 {
   private readonly logger = new Logger(HmsBnplRegistrar.name);
-  private readonly hmsApi: HmsAPI | MockHmsAPI;
+  private readonly hmsApi: HmsAPI;
 
   constructor() {
     // 실제 환경에 맞는 API 클라이언트를 생성합니다.
@@ -98,9 +97,18 @@ export class HmsBnplRegistrar
       };
     } catch (error) {
       // HsFmsError를 catch하여 상세한 에러 정보를 로깅하고 전파
-      if (error instanceof HsFmsError) {
-        const hmsMessage = error.error?.message || error.message;
-        const hmsDeveloperMessage = error.error?.developerMessage;
+      // 런타임 타입 가드: HsFmsError는 error 속성을 가지고 있음
+      if (
+        error instanceof Error &&
+        'error' in error &&
+        typeof (error as any).error === 'object' &&
+        (error as any).error !== null &&
+        'message' in (error as any).error &&
+        error.name === 'HsFmsError'
+      ) {
+        const hmsError = error as any;
+        const hmsMessage = hmsError.error?.message || error.message;
+        const hmsDeveloperMessage = hmsError.error?.developerMessage;
 
         this.logger.error(
           `❌ HMS BNPL 등록 중 HMS API 에러 발생: ${hmsMessage}`,
