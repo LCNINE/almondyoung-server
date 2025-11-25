@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -12,12 +12,9 @@ import { FulfillmentReservationsFacade } from '../../shared/services/fulfillment
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
-import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
-import { z } from 'zod';
-
-const ReserveSchema = z.object({ fulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
-const UnreserveSchema = z.object({ fulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
-const TransferSchema = z.object({ fromFulfillmentOrderLineId: z.string(), toFulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
+import { ReserveDto } from '../dto/reserve.dto';
+import { UnreserveDto } from '../dto/unreserve.dto';
+import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 
 @ApiTags('Fulfillments')
 @Controller('fulfillments')
@@ -25,7 +22,7 @@ export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,
     private readonly reservations: FulfillmentReservationsFacade,
-  ) {}
+  ) { }
 
   @Post()
   @ApiOperation({ summary: '주문처리 생성', description: '새로운 주문처리(Fulfillment)를 생성합니다.' })
@@ -113,70 +110,36 @@ export class FulfillmentsController {
   @Post(':id/reserve')
   @ApiOperation({ summary: '재고 예약', description: '주문처리 라인에 대한 재고를 예약합니다.' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({
-    description: '재고 예약 데이터',
-    schema: {
-      type: 'object',
-      properties: {
-        fulfillmentOrderLineId: { type: 'string', description: '주문처리 라인 ID' },
-        quantity: { type: 'number', description: '예약할 수량' }
-      },
-      required: ['fulfillmentOrderLineId', 'quantity']
-    }
-  })
+  @ApiBody({ type: ReserveDto, description: '재고 예약 데이터' })
   @ApiResponse({ status: 200, description: '재고 예약 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '주문처리 또는 라인을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  @UsePipes(new ZodValidationPipe(ReserveSchema))
-  reserve(@Param('id') id: string, @Body() dto: any) {
+  reserve(@Param('id') id: string, @Body() dto: ReserveDto) {
     return this.reservations.reserve(dto);
   }
 
   @Post(':id/unreserve')
   @ApiOperation({ summary: '재고 예약 해제', description: '주문처리 라인에 대한 재고 예약을 해제합니다.' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({
-    description: '재고 예약 해제 데이터',
-    schema: {
-      type: 'object',
-      properties: {
-        fulfillmentOrderLineId: { type: 'string', description: '주문처리 라인 ID' },
-        quantity: { type: 'number', description: '해제할 수량' }
-      },
-      required: ['fulfillmentOrderLineId', 'quantity']
-    }
-  })
+  @ApiBody({ type: UnreserveDto, description: '재고 예약 해제 데이터' })
   @ApiResponse({ status: 200, description: '재고 예약 해제 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '주문처리 또는 라인을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  @UsePipes(new ZodValidationPipe(UnreserveSchema))
-  unreserve(@Param('id') id: string, @Body() dto: any) {
+  unreserve(@Param('id') id: string, @Body() dto: UnreserveDto) {
     return this.reservations.unreserve(dto);
   }
 
   @Post(':id/transfer-reservation')
   @ApiOperation({ summary: '예약 이전', description: '한 주문처리 라인에서 다른 라인으로 재고 예약을 이전합니다.' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({
-    description: '예약 이전 데이터',
-    schema: {
-      type: 'object',
-      properties: {
-        fromFulfillmentOrderLineId: { type: 'string', description: '이전할 원본 라인 ID' },
-        toFulfillmentOrderLineId: { type: 'string', description: '이전할 대상 라인 ID' },
-        quantity: { type: 'number', description: '이전할 수량' }
-      },
-      required: ['fromFulfillmentOrderLineId', 'toFulfillmentOrderLineId', 'quantity']
-    }
-  })
+  @ApiBody({ type: TransferReservationDto, description: '예약 이전 데이터' })
   @ApiResponse({ status: 200, description: '예약 이전 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 404, description: '주문처리 또는 라인을 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  @UsePipes(new ZodValidationPipe(TransferSchema))
-  transfer(@Param('id') id: string, @Body() dto: any) {
+  transfer(@Param('id') id: string, @Body() dto: TransferReservationDto) {
     return this.reservations.transferReservation(dto);
   }
 }
