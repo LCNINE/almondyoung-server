@@ -16,6 +16,8 @@ import {
   Put,
   Delete,
 } from '@nestjs/common';
+// HsFmsError는 hms-api-wrapper에서 직접 import
+import { HsFmsError } from 'hms-api-wrapper/dist/utils/HttpClient.service';
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
@@ -1018,6 +1020,31 @@ export class PaymentController {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
     const isDevelopment = process.env.NODE_ENV !== 'production';
+
+    // HsFmsError는 HMS API 에러로 특별 처리 (가장 먼저 체크)
+    if (error instanceof HsFmsError) {
+      const hmsMessage = error.error?.message || errorMessage;
+      const hmsDeveloperMessage = error.error?.developerMessage;
+
+      // 로그에 상세 정보 포함
+      this.logger.error(
+        `❌ ${context} 실패 (HMS API): ${hmsMessage}`,
+        hmsDeveloperMessage
+          ? `Developer Message: ${hmsDeveloperMessage}`
+          : undefined,
+      );
+      if (errorStack) {
+        this.logger.debug(`Stack trace: ${errorStack}`);
+      }
+
+      // 개발 환경에서는 developerMessage도 포함
+      const clientMessage =
+        isDevelopment && hmsDeveloperMessage
+          ? `${hmsMessage} (${hmsDeveloperMessage})`
+          : hmsMessage;
+
+      throw new BadRequestException(clientMessage);
+    }
 
     this.logger.error(`❌ ${context} 실패: ${errorMessage}`, errorStack);
 
