@@ -5,12 +5,13 @@ export const ORDER_EVENTS = {
   CANCELLED: 'ORDER_CANCELLED',
 } as const;
 
+// event-contracts 형식에 맞춘 이벤트 타입 (Kafka 발행용)
 export const FULFILLMENT_EVENTS = {
-  CREATED: 'FULFILLMENT_CREATED',
-  READY: 'FULFILLMENT_READY',
-  LABELLED: 'FULFILLMENT_LABELLED',
-  SHIPPED: 'FULFILLMENT_SHIPPED',
-  CANCELLED: 'FULFILLMENT_CANCELLED',
+  CREATED: 'FulfillmentCreated',
+  READY: 'FulfillmentReady',
+  LABELLED: 'FulfillmentLabeled',
+  SHIPPED: 'FulfillmentShipped',
+  CANCELLED: 'FulfillmentCancelled',
 } as const;
 
 export type OrderEvent = typeof ORDER_EVENTS[keyof typeof ORDER_EVENTS];

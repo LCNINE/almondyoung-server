@@ -37,10 +37,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }

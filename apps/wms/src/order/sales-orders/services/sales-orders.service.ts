@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, type InferInsertModel } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -14,6 +14,8 @@ import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
+
+type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 
 @Injectable()
 export class SalesOrdersService {
@@ -70,7 +72,7 @@ export class SalesOrdersService {
 
       const lines = Array.isArray(dto.lines) ? dto.lines : [];
       if (lines.length > 0) {
-        const values: any[] = [];
+        const values: SalesOrderLineInsert[] = [];
         for (const l of lines) {
           const policy = await this.policies.getVariantPolicy(l.variantId, trx);
           const acceptanceByPolicy = !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
@@ -331,13 +333,13 @@ export class SalesOrdersService {
         .returning();
 
       // 라인 병합: 단순히 모두 복사(추후 동일 variant 병합 가능)
-      const lines: any[] = [];
+      const mergedLines: SalesOrderLineInsert[] = [];
       for (const so of sources) {
         const soLines = await trx.query.salesOrderLines.findMany({
           where: (l, { eq }) => eq(l.salesOrderId, so.id),
         });
         for (const l of soLines) {
-          lines.push({
+          mergedLines.push({
             salesOrderId: merged.id,
             variantId: l.variantId,
             productMatchingId: l.productMatchingId,
@@ -352,8 +354,8 @@ export class SalesOrdersService {
           });
         }
       }
-      if (lines.length > 0) {
-        await trx.insert(wmsTables.salesOrderLines).values(lines);
+      if (mergedLines.length > 0) {
+        await trx.insert(wmsTables.salesOrderLines).values(mergedLines);
       }
 
       // 1) 원본 SO의 FO/예약 해제 및 FO 취소
