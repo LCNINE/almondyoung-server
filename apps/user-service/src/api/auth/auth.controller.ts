@@ -204,10 +204,10 @@ export class AuthController {
 
   @ApiOperation({ summary: '소셜로그인 쿠키 설정' })
   @ApiResponse({ status: 200, description: '소셜로그인 쿠키 설정 성공' })
-  @Post('social/set-cookie')
-  @UseGuards(AuthGuard('kakao'))
+  @Get('social/set-cookie')
   @Public()
   async setSocialCookie(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
+    console.log('social/set-cookie 경로 접근 ', userId);
     return await this.authService.setSocialCookie(userId, res);
   }
 }
