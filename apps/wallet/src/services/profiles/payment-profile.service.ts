@@ -22,6 +22,7 @@ import { CreateHmsCardProfileSchema } from '../../controllers/payment.controller
 import z from 'zod';
 
 import { HmsBnplRegisterInput } from '../../providers/hms-bnpl.registrar';
+import { BnplService } from '../bnpl/bnpl.service';
 
 // ✨ 해결 2: 헬퍼 함수 정의 추가
 function maskPhone(phone: string): string {
@@ -40,6 +41,7 @@ export class PaymentProfileService {
     private readonly cmsCardRepo: CmsCardProfilesRepository,
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
     private readonly configService: ConfigService,
+    private readonly bnplService: BnplService,
   ) {}
 
   // 결제 프로필 목록 조회 (상세 정보 포함)
@@ -181,7 +183,7 @@ export class PaymentProfileService {
 
       // 외부 API 호출을 위한 Input 객체 조립
       const memberId = `m_${crypto.randomUUID().substring(0, 18)}`; // ID 생성 전략
-      
+
       // HMS_CUST_ID 환경 변수 확인
       const custId = this.configService.get<string>('HMS_CUST_ID');
       if (!custId) {
@@ -242,6 +244,57 @@ export class PaymentProfileService {
       // 예: await tx.update(...).set({ agreementKey: ext.meta.agreementKey });
 
       await this.profilesRepo.updateStatus(profileId, 'ACTIVE', tx);
+
+      // 🎯 BNPL 계정 생성 (프로필 등록 시 자동 생성)
+      // 기존 계정이 있는지 확인 (트랜잭션 컨텍스트 사용)
+      try {
+        const existingAccount = await this.bnplService.findAccountByUserId(
+          userId,
+          tx,
+        );
+        if (!existingAccount) {
+          // 기본 신용한도는 환경변수에서 가져오거나 기본값 사용
+          const creditLimitEnv = this.configService.get<string>(
+            'BNPL_DEFAULT_CREDIT_LIMIT',
+          );
+          const defaultCreditLimit = creditLimitEnv
+            ? parseInt(creditLimitEnv, 10)
+            : 1000000; // 기본 100만원
+
+          this.logger.log(
+            `🔄 BNPL 계정 자동 생성 시작 - userId: ${userId}, creditLimit: ${defaultCreditLimit}`,
+          );
+
+          const createdAccount = await this.bnplService.createAccount(
+            userId,
+            defaultCreditLimit,
+            tx,
+          );
+
+          this.logger.log(
+            `✅ BNPL 계정 자동 생성 완료 - userId: ${userId}, accountId: ${createdAccount.id}`,
+          );
+        } else {
+          this.logger.log(
+            `ℹ️ BNPL 계정이 이미 존재함 - userId: ${userId}, accountId: ${existingAccount.id}`,
+          );
+        }
+      } catch (accountError) {
+        // 계정 생성 실패는 프로필 등록을 막지 않지만, 로그는 남김
+        const errorMessage =
+          accountError instanceof Error
+            ? accountError.message
+            : String(accountError);
+        this.logger.error(
+          `❌ BNPL 계정 생성 실패 - userId: ${userId}, error: ${errorMessage}`,
+        );
+        // 계정 생성 실패는 프로필 등록을 롤백하지 않음 (프로필은 성공했으므로)
+        // 하지만 경고 로그는 남김
+        this.logger.warn(
+          `⚠️ 프로필은 등록되었지만 BNPL 계정 생성에 실패했습니다. 수동으로 계정을 생성해야 합니다.`,
+        );
+      }
+
       return { profileId, memberId: ext.externalId! };
     });
   }
