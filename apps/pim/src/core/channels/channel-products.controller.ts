@@ -72,9 +72,9 @@ export class ChannelProductsController {
         );
       }
 
-      return (await this.channelProductsService.createChannelProduct(
+      return await this.channelProductsService.createChannelProduct(
         createDto,
-      )) as any as ChannelProductDto;
+      );
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -109,9 +109,9 @@ export class ChannelProductsController {
     @Param('masterId') masterId: string,
   ): Promise<ChannelProductWithChannelDto[]> {
     try {
-      return (await this.channelProductsService.getChannelProductsByMaster(
+      return await this.channelProductsService.getChannelProductsByMaster(
         masterId,
-      )) as any as ChannelProductWithChannelDto[];
+      );
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -181,7 +181,7 @@ export class ChannelProductsController {
       return (await this.channelProductsService.getChannelProductsByChannel(
         channelId,
         filters,
-      )) as any as ChannelProductListResponseDto;
+      )) as ChannelProductListResponseDto;
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -219,15 +219,7 @@ export class ChannelProductsController {
         );
       }
 
-      return {
-        ...channelProduct,
-        createdAt: channelProduct.createdAt
-          ? channelProduct.createdAt.toISOString()
-          : null,
-        updatedAt: channelProduct.updatedAt
-          ? channelProduct.updatedAt.toISOString()
-          : null,
-      } as any as ChannelProductDto;
+      return channelProduct;
     } catch (error) {
       if (
         error.message === 'Channel product not found' ||
@@ -273,15 +265,7 @@ export class ChannelProductsController {
     try {
       const channelProduct =
         await this.channelProductsService.updateChannelProduct(id, updateDto);
-      return {
-        ...channelProduct,
-        createdAt: channelProduct.createdAt
-          ? channelProduct.createdAt.toISOString()
-          : null,
-        updatedAt: channelProduct.updatedAt
-          ? channelProduct.updatedAt.toISOString()
-          : null,
-      } as any as ChannelProductDto;
+      return channelProduct
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(
