@@ -12,8 +12,11 @@ import { BnplRepository } from './bnpl.repository';
 export class BnplAccountReader {
   constructor(private readonly repo: BnplRepository) {}
 
-  async findByUserId(userId: string): Promise<BnplAccount | null> {
-    return await this.repo.findAccountByUserId(userId);
+  async findByUserId(
+    userId: string,
+    tx?: WalletExecutor,
+  ): Promise<BnplAccount | null> {
+    return await this.repo.findAccountByUserId(userId, tx);
   }
 
   async findById(
