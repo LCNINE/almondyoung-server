@@ -11,7 +11,6 @@ export * from './user.stream';
 export * from './cart.stream';
 
 // Order Stream
-export * from './order.stream';
 export * from './orders.stream';
 
 // Fulfillment Stream
