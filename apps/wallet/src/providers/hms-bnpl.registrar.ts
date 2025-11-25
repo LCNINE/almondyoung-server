@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 // PaymentError를 사용하여 도메인 에러를 명확히 표현합니다.
 import { PaymentError, ProfileRegistrar } from './payment-provider.interface';
-import { HmsAPI } from 'hms-api-wrapper';
-import { HmsApiFactory } from '../shared/utils/hms-api.factory';
+import { HmsBatchCmsService } from '../services/hms-batch-cms.service';
 
 /**
  * HmsBnplRegistrar.register 메서드의 명확한 입력 타입 정의
@@ -33,12 +32,8 @@ export class HmsBnplRegistrar
     >
 {
   private readonly logger = new Logger(HmsBnplRegistrar.name);
-  private readonly hmsApi: HmsAPI;
 
-  constructor() {
-    // 실제 환경에 맞는 API 클라이언트를 생성합니다.
-    this.hmsApi = HmsApiFactory.createForBnpl();
-  }
+  constructor(private readonly hmsBatchCmsService: HmsBatchCmsService) {}
 
   /**
    * HMS BNPL 프로필과 동의서를 함께 등록합니다.
@@ -49,7 +44,7 @@ export class HmsBnplRegistrar
 
     try {
       // --- 1단계: HMS 회원 등록 ---
-      const memberResp = await this.hmsApi.members.create({
+      const memberResult = await this.hmsBatchCmsService.createMember({
         memberId: input.memberId,
         memberName: input.memberName,
         payerName: input.payerName,
@@ -60,69 +55,106 @@ export class HmsBnplRegistrar
         phone: input.phone,
       });
 
-      if (memberResp.member.result.flag !== 'Y') {
-        const reason = memberResp.member.result.message;
+      if (!memberResult.success) {
+        const reason = memberResult.message || '회원 등록 실패';
         this.logger.warn(`⚠️ HMS BNPL 회원 등록 실패: ${reason}`);
-        // 이제 meta에 reason을 담아도 타입 에러가 발생하지 않습니다.
         return { status: 'FAILED', meta: { reason } };
       }
+
       this.logger.log(`✅ HMS BNPL 회원 등록 성공: ${input.memberId}`);
 
       // --- 2단계: 동의서 파일 업로드 ---
-      const agreementResp = await this.hmsApi.agreements.register(
-        input.custId,
-        input.memberId,
-        input.agreementFile,
-      );
-
-      // 실제 API 응답의 성공/실패 조건으로 변경해야 합니다.
-      if (!agreementResp.agreementFile.agreementKey) {
-        const reason = '동의서 응답에 agreementKey가 없습니다.';
-        this.logger.error(`❌ HMS BNPL 동의서 업로드 실패: ${reason}`);
-        // 중요: 이 경우 보상 트랜잭션(회원 삭제)을 호출하는 로직을 추가 고려해야 합니다.
-        // await this.hmsApi.members.delete(input.memberId);
-        return { status: 'FAILED', meta: { reason } };
-      }
-      this.logger.log(
-        `✅ HMS BNPL 동의서 업로드 성공: ${agreementResp.agreementFile.agreementKey}`,
-      );
-
-      // --- 최종 성공 ---
-      return {
-        externalId: memberResp.member.memberId,
-        status: 'SUCCESS', // 또는 API 응답에 따른 실제 상태
-        meta: {
-          agreementKey: agreementResp.agreementFile.agreementKey,
-        },
-      };
-    } catch (error) {
-      // HsFmsError를 catch하여 상세한 에러 정보를 로깅하고 전파
-      // 런타임 타입 가드: HsFmsError는 error 속성을 가지고 있음
-      if (
-        error instanceof Error &&
-        'error' in error &&
-        typeof (error as any).error === 'object' &&
-        (error as any).error !== null &&
-        'message' in (error as any).error &&
-        error.name === 'HsFmsError'
-      ) {
-        const hmsError = error as any;
-        const hmsMessage = hmsError.error?.message || error.message;
-        const hmsDeveloperMessage = hmsError.error?.developerMessage;
-
-        this.logger.error(
-          `❌ HMS BNPL 등록 중 HMS API 에러 발생: ${hmsMessage}`,
-          hmsDeveloperMessage
-            ? `Developer Message: ${hmsDeveloperMessage}`
-            : undefined,
+      try {
+        const agreementResult = await this.hmsBatchCmsService.registerAgreement(
+          input.custId,
+          memberResult.memberId!, // 회원 등록에서 받은 memberId 사용
+          input.agreementFile.file,
+          input.agreementFile.filename,
         );
 
-        // HsFmsError를 그대로 다시 throw하여 컨트롤러에서 처리하도록 함
-        throw error;
-      }
+        if (!agreementResult.success) {
+          const reason = agreementResult.message || '동의서 등록 실패';
+          this.logger.error(`❌ HMS BNPL 동의서 업로드 실패: ${reason}`);
 
-      // 기타 에러는 그대로 throw
-      this.logger.error(`❌ HMS BNPL 등록 중 예상치 못한 에러 발생: ${error}`);
+          // 🚨 보상 트랜잭션: 등록된 회원 삭제
+          this.logger.log(
+            `🔄 보상 트랜잭션 시작: 회원 삭제 요청 - ${memberResult.memberId}`,
+          );
+          try {
+            await this.hmsBatchCmsService.deleteMember(memberResult.memberId!);
+            this.logger.log(
+              `✅ 보상 트랜잭션 완료: 회원 삭제 성공 - ${memberResult.memberId}`,
+            );
+          } catch (rollbackError) {
+            // 롤백 실패는 로그만 남기고 원래 에러를 던짐
+            const rollbackMessage =
+              rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError);
+            this.logger.error(
+              `❌ 보상 트랜잭션 실패: 회원 삭제 중 오류 - ${rollbackMessage}`,
+            );
+            // 원래 에러에 롤백 실패 정보 추가
+            throw new Error(
+              `동의서 등록 실패 및 회원 삭제 실패: ${reason} (롤백 실패: ${rollbackMessage})`,
+            );
+          }
+
+          return { status: 'FAILED', meta: { reason } };
+        }
+
+        this.logger.log(
+          `✅ HMS BNPL 동의서 업로드 성공: ${agreementResult.agreementKey}`,
+        );
+
+        // --- 최종 성공 ---
+        return {
+          externalId: memberResult.memberId!,
+          status: 'SUCCESS',
+          meta: {
+            agreementKey: agreementResult.agreementKey,
+          },
+        };
+      } catch (agreementError) {
+        // 동의서 등록 중 예외 발생 시 보상 트랜잭션 수행
+        const agreementErrorMessage =
+          agreementError instanceof Error
+            ? agreementError.message
+            : String(agreementError);
+        this.logger.error(
+          `❌ HMS BNPL 동의서 업로드 중 예외 발생: ${agreementErrorMessage}`,
+        );
+
+        // 🚨 보상 트랜잭션: 등록된 회원 삭제
+        this.logger.log(
+          `🔄 보상 트랜잭션 시작: 회원 삭제 요청 - ${memberResult.memberId}`,
+        );
+        try {
+          await this.hmsBatchCmsService.deleteMember(memberResult.memberId!);
+          this.logger.log(
+            `✅ 보상 트랜잭션 완료: 회원 삭제 성공 - ${memberResult.memberId}`,
+          );
+        } catch (rollbackError) {
+          // 롤백 실패는 로그만 남기고 원래 에러를 던짐
+          const rollbackMessage =
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError);
+          this.logger.error(
+            `❌ 보상 트랜잭션 실패: 회원 삭제 중 오류 - ${rollbackMessage}`,
+          );
+        }
+
+        // 원래 에러를 다시 던짐
+        throw agreementError;
+      }
+    } catch (error) {
+      // 에러는 HmsBatchCmsService에서 이미 로깅됨
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `❌ HMS BNPL 등록 중 예상치 못한 에러 발생: ${errorMessage}`,
+      );
       throw error;
     }
   }

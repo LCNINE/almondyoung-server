@@ -152,8 +152,8 @@ const HmsCardProfileResponseSchema = z.object({
 });
 
 // HMS BNPL 프로필 관련 스키마
+// userId는 JWT에서 추출하므로 스키마에서 제외
 export const OnboardHmsBnplProfileSchema = z.object({
-  userId: z.string().trim().min(1, { message: '사용자 ID는 필수입니다.' }),
   payerName: z.string().trim().min(1, { message: '납부자명은 필수입니다.' }),
   phone: z
     .string()
