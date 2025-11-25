@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { PaymentMethodAddDrawer } from "../add/payment-method-add-drawer"
 import { MembershipCardAddDrawer } from "../add/membership-card-add-drawer"
 import { BnplHistoryDrawer } from "../bnpl/bnpl-history-drawer"
+import { getBnplSummary, type BnplSummary } from "@lib/api/wallet"
 
 // 🎯 Card 컴포넌트 개선 (재사용성을 위해 유지)
 function Card({
@@ -29,18 +30,6 @@ const ACCOUNT_MENU_ITEMS = [
   { label: "현금영수증 설정", href: "#" },
   { label: "나중결제 약관 및 정책", href: "#" },
 ]
-
-// ⭐️ 나중결제 요약 데이터 인터페이스
-interface BnplSummary {
-  hasAccount: boolean
-  creditLimit: number | null
-  availableLimit: number | null
-  usedAmount: number | null
-  nextBillingDate: string | null
-  dDay: number | null
-  targetYear: number | null
-  targetMonth: number | null
-}
 
 // 🎯 일반 카드 항목 컴포넌트 (재사용)
 function ArticleCard({
@@ -275,13 +264,8 @@ export default function PaymentManagement() {
   useEffect(() => {
     const fetchSummary = async () => {
       try {
-        const res = await fetch("/api/wallet/payments/bnpl/summary", {
-          credentials: "include", // 쿠키 기반 인증
-        })
-        if (res.ok) {
-          const data = await res.json()
-          setBnplSummary(data)
-        }
+        const data = await getBnplSummary()
+        setBnplSummary(data)
       } catch (error) {
         console.error("Failed to fetch BNPL summary:", error)
       } finally {
