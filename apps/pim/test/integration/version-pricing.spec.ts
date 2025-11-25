@@ -86,7 +86,7 @@ describe('Version Pricing Independence - Integration Tests', () => {
       );
 
       // 2. v2 생성 및 15,000원 설정
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await pricingService.replaceMasterRules(
         v2.masterId,
@@ -190,7 +190,7 @@ describe('Version Pricing Independence - Integration Tests', () => {
       );
 
       // 3. v2 생성, 가격 변경
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await pricingService.replaceMasterRules(
         v2.masterId,
@@ -292,7 +292,7 @@ describe('Version Pricing Independence - Integration Tests', () => {
       expect(v1PricingRuleMappings.length).toBe(3); // base + membership + tiered
 
       // 3. v2 생성 (copyMappings=true)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 4. v2 가격 규칙 매핑 조회 (복사되었는지 확인)
       const v2PricingRuleMappings = await db
@@ -346,7 +346,7 @@ describe('Version Pricing Independence - Integration Tests', () => {
       );
 
       // 2. v2 생성 (copyMappings=false)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', false);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', false);
 
       // 3. v2 가격 규칙 매핑 조회 (없어야 함)
       const v2PricingRuleMappings = await db

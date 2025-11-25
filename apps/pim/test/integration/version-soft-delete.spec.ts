@@ -69,7 +69,7 @@ describe('Version Soft Delete - Integration Tests', () => {
       expect(activeBefore.id).toBe(v1.id);
 
       // 3. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 4. Master의 deletedAt 확인
       const [master] = await db
@@ -78,7 +78,7 @@ describe('Version Soft Delete - Integration Tests', () => {
         .where(eq(productMasters.id, v1.masterId));
 
       expect(master.deletedAt).not.toBeNull();
-      expect(master.deletedBy).toBe('user-admin');
+      expect(master.deletedBy).toBe('019a0000-0000-0000-0000-000000ad1111');
 
       // 5. Version 레코드 자체는 여전히 존재
       const [version] = await db
@@ -112,7 +112,7 @@ describe('Version Soft Delete - Integration Tests', () => {
       expect(listBefore.data.length).toBe(2);
 
       // 4. v1 master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 5. 목록 조회 (1개만)
       const listAfter = await mastersService.getMasters({});
@@ -138,7 +138,7 @@ describe('Version Soft Delete - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. deletedAt 확인
       let [master] = await db
@@ -149,7 +149,7 @@ describe('Version Soft Delete - Integration Tests', () => {
       expect(master.deletedAt).not.toBeNull();
 
       // 4. Master restore
-      await mastersService.restoreMaster(v1.masterId, 'user-admin');
+      await mastersService.restoreMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 5. deletedAt null 확인
       [master] = await db
@@ -179,13 +179,13 @@ describe('Version Soft Delete - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. Master restore
-      await mastersService.restoreMaster(v1.masterId, 'user-admin');
+      await mastersService.restoreMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 4. 새 버전 생성 가능
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       expect(v2.version).toBe(2);
       expect(v2.parentVersionId).toBe(v1.id);
@@ -214,13 +214,13 @@ describe('Version Soft Delete - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 draft 생성
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await mastersService.updateVersion(v2.id, {
         name: 'Product v2 - WIP',
       });
 
       // 3. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 4. v2 draft는 여전히 조회 가능
       const v2Data = await versionsService.getVersionById(v2.id);
@@ -236,7 +236,7 @@ describe('Version Soft Delete - Integration Tests', () => {
       expect(v2Updated.description).toBe('Still can edit');
 
       // 6. Master restore 후 v2 publish 가능
-      await mastersService.restoreMaster(v1.masterId, 'user-admin');
+      await mastersService.restoreMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       await versionsService.publishVersion(v2.id, 'active');
 
@@ -252,17 +252,17 @@ describe('Version Soft Delete - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2, v3 draft 생성 (parallel branches)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-alice', true);
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-bob', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000a11ce0', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-00000000b0b0', true);
 
       await mastersService.updateVersion(v2.id, { name: 'Branch A' });
       await mastersService.updateVersion(v3.id, { name: 'Branch B' });
 
       // 3. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 4. Master restore
-      await mastersService.restoreMaster(v1.masterId, 'user-admin');
+      await mastersService.restoreMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 5. 두 draft 모두 여전히 존재하고 수정 가능
       const v2Data = await versionsService.getVersionById(v2.id);
@@ -289,10 +289,10 @@ describe('Version Soft Delete - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 draft 생성
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 4. v2 publish 시도 (정책에 따라 허용/차단 가능)
       // 현재 구현에서는 publish 자체는 가능하지만, 조회 시 제외됨

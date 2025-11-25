@@ -342,16 +342,21 @@ export class ProductMastersService {
     const [activeVersion] = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.versionStatus, 'active'),
-          isNull(productMasterVersions.deletedAt)
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt)
         )
       )
       .limit(1);
 
-    return activeVersion || null;
+    return activeVersion ? activeVersion.product_master_versions : null;
   }
 
   async getMasterWithImages(
@@ -370,10 +375,15 @@ export class ProductMastersService {
     const versionResult = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.versionStatus, 'active'),
+          isNull(productMasters.deletedAt)
         ),
       )
       .limit(1);
@@ -382,7 +392,7 @@ export class ProductMastersService {
       return null;
     }
 
-    const version = versionResult[0];
+    const version = versionResult[0].product_master_versions;
 
     // 2. 상품에 연결된 이미지 + 업로드 정보 join
     const images = await client
@@ -427,10 +437,15 @@ export class ProductMastersService {
       const [activeVersion] = await client
         .select({ version: productMasterVersions.version })
         .from(productMasterVersions)
+        .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
             eq(productMasterVersions.versionStatus, 'active'),
+            isNull(productMasters.deletedAt)
           ),
         )
         .limit(1);
@@ -444,10 +459,15 @@ export class ProductMastersService {
     const [versionData] = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.version, actualVersion)
+          eq(productMasterVersions.version, actualVersion),
+          isNull(productMasters.deletedAt)
         )
       )
       .limit(1);
@@ -455,6 +475,8 @@ export class ProductMastersService {
     if (!versionData) {
       return null;
     }
+
+    const version_data = versionData.product_master_versions;
 
     // 매핑 테이블을 통해 optionGroups 조회 + Display 테이블 JOIN
     const optionGroupResults = await client
@@ -576,7 +598,7 @@ export class ProductMastersService {
     }));
 
     return {
-      ...versionData,
+      ...version_data,
       optionGroups: optionGroupsWithValues,
       variants: variants.map((v) => ({ ...v, optionValues: [] })),
       channelProducts,
@@ -626,6 +648,7 @@ export class ProductMastersService {
     // Add soft delete filter (unless explicitly including deleted)
     if (!filters?.includeDeleted) {
       whereConditions.push(isNull(productMasterVersions.deletedAt));
+      whereConditions.push(isNull(productMasters.deletedAt));
     }
 
     if (filters?.status) {
@@ -669,6 +692,10 @@ export class ProductMastersService {
         .select({ count: count() })
         .from(productMasterVersions)
         .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
+        .innerJoin(
           productMasterCategories,
           and(
             eq(productMasterVersions.masterId, productMasterCategories.masterId),
@@ -710,6 +737,10 @@ export class ProductMastersService {
         })
         .from(productMasterVersions)
         .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
+        .innerJoin(
           productMasterCategories,
           and(
             eq(productMasterVersions.masterId, productMasterCategories.masterId),
@@ -746,7 +777,13 @@ export class ProductMastersService {
     // 카테고리 필터가 없는 경우: 기존 로직
     const whereClause =
       whereConditions.length > 0 ? and(...whereConditions) : undefined;
-    const countQuery = client.select({ count: count() }).from(productMasterVersions);
+    const countQuery = client
+      .select({ count: count() })
+      .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      );
 
     if (whereClause) {
       countQuery.where(whereClause);
@@ -778,6 +815,10 @@ export class ProductMastersService {
         )`.as('variant_count'),
       })
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .orderBy(desc(productMasterVersions.createdAt));
 
     // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
@@ -1205,8 +1246,13 @@ export class ProductMastersService {
 
     const result = await client
       .select({ count: count() })
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, masterId));
+      .from(productMasters)
+      .where(
+        and(
+          eq(productMasters.id, masterId),
+          isNull(productMasters.deletedAt)
+        )
+      );
 
     return result[0].count > 0;
   }
