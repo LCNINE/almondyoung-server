@@ -26,6 +26,8 @@ import {
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
 import { OrderEventPublisher } from '../order-event.publisher';
+import { ChannelProductMappingService } from '../channel-product-mapping.service';
+import { PendingOrderService } from '../pending-order.service';
 
 /**
  * 쿠팡 채널 어댑터
@@ -43,6 +45,8 @@ export class CoupangAdapter implements ChannelAdapter {
     private readonly coupangExchangeClient: CoupangExchangeClient,
     private readonly wmsApiService: WmsApiService,
     private readonly orderEventPublisher: OrderEventPublisher,
+    private readonly channelProductMappingService: ChannelProductMappingService,
+    private readonly pendingOrderService: PendingOrderService,
   ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
@@ -1841,11 +1845,15 @@ export class CoupangAdapter implements ChannelAdapter {
    * 주문 이벤트 발행
    *
    * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
-   * - ACCEPT 상태: OrderCreated 이벤트 발행
+   * - ACCEPT 상태: OrderCreated 이벤트 발행 (매핑 확인 후)
    * - CANCELLED 상태: OrderCancelled 이벤트 발행
+   *
+   * 채널 상품 매핑이 없는 주문은 계류(pending) 처리됩니다.
    */
   private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
     const publishPromises: Promise<void>[] = [];
+    let publishedCount = 0;
+    let pendingCount = 0;
 
     for (const event of events) {
       try {
@@ -1854,10 +1862,38 @@ export class CoupangAdapter implements ChannelAdapter {
           case 'PENDING':
           case 'PAID':
           case 'PROCESSING':
-            // 새로운 주문 - OrderCreated 발행
-            publishPromises.push(
-              this.orderEventPublisher.publishOrderCreated('coupang', event),
+            // 새로운 주문 - 매핑 확인 후 OrderCreated 발행 또는 계류
+            const channelProductId = event.externalProductOrderId ?? event.externalOrderId;
+            const mapping = await this.channelProductMappingService.findMapping(
+              'coupang',
+              channelProductId,
             );
+
+            if (mapping) {
+              // 매핑 있음 → 이벤트 발행 (variantIdMapper 콜백 전달)
+              publishPromises.push(
+                this.orderEventPublisher.publishOrderCreated(
+                  'coupang',
+                  event,
+                  this.channelProductMappingService.createVariantIdMapper('coupang'),
+                ),
+              );
+              publishedCount++;
+            } else {
+              // 매핑 없음 → 계류
+              await this.pendingOrderService.holdOrder({
+                salesChannel: 'coupang',
+                channelOrderId: event.externalOrderId,
+                channelProductId,
+                channelProductName: event.productName,
+                orderData: event,
+                reason: 'unmapped_product',
+              });
+              pendingCount++;
+              this.logger.warn(
+                `⏸️ [쿠팡] 주문 계류 (미매핑 상품): ${event.externalOrderId}, 상품: ${channelProductId}`,
+              );
+            }
             break;
 
           case 'CANCELLED':
@@ -1869,6 +1905,7 @@ export class CoupangAdapter implements ChannelAdapter {
                 event.reason ?? 'CUSTOMER_REQUEST',
               ),
             );
+            publishedCount++;
             break;
 
           default:
@@ -1888,10 +1925,11 @@ export class CoupangAdapter implements ChannelAdapter {
     // 병렬로 이벤트 발행
     if (publishPromises.length > 0) {
       await Promise.allSettled(publishPromises);
-      this.logger.log(
-        `📤 [쿠팡] ${publishPromises.length}건의 주문 이벤트 발행 완료`,
-      );
     }
+
+    this.logger.log(
+      `📤 [쿠팡] 주문 처리 완료: 발행 ${publishedCount}건, 계류 ${pendingCount}건`,
+    );
   }
 
   // ===== WMS 연동 메서드 구현 (CTO SoT 원칙) =====
