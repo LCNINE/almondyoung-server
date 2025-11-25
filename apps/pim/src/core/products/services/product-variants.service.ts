@@ -9,6 +9,7 @@ import {
 } from '../../../types';
 import {
   type PimSchema,
+  productMasters,
   productVariants,
   productMasterVersions,
   productMasterVariants,
@@ -18,7 +19,7 @@ import {
   productOptionValueDisplays,
   variantOptionValues
 } from '../../../schema';
-import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL } from 'drizzle-orm';
+import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
 
 @Injectable()
 export class ProductVariantsService {
@@ -568,10 +569,15 @@ export class ProductVariantsService {
       const [activeMaster] = await client
         .select({ version: productMasterVersions.version })
         .from(productMasterVersions)
+        .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
             eq(productMasterVersions.versionStatus, 'active'),
+            isNull(productMasters.deletedAt)
           ),
         )
         .limit(1);

@@ -29,7 +29,7 @@ export class ProductEventConsumer {
     try {
       if (!payload.inventoryManagement) {
         const result = await this.productMatchingService.handleAutomaticMatchingRequest({
-          productId: payload.productId,
+          masterId: payload.masterId,
           name: payload.productName,
           variants: [
             {
@@ -46,7 +46,7 @@ export class ProductEventConsumer {
         );
       } else {
         const result = await this.productMatchingService.handleManualMatchingRequest({
-          productId: payload.productId,
+          masterId: payload.masterId,
           name: payload.productName,
           variants: [
             {
@@ -86,7 +86,7 @@ export class ProductEventConsumer {
     @EventEnvelope() envelope: any,
   ) {
     this.logger.log(
-      `[Event] Received ProductInventoryManagementChanged: ${payload.productId} (correlationId: ${envelope.correlationId})`,
+      `[Event] Received ProductInventoryManagementChanged: ${payload.masterId} (correlationId: ${envelope.correlationId})`,
     );
 
     try {
@@ -99,7 +99,7 @@ export class ProductEventConsumer {
 
       if (payload.inventoryManagement) {
         const result = await this.productMatchingService.handleManualMatchingRequest({
-          productId: payload.productId,
+          masterId: payload.masterId,
           name: payload.productName,
           variants,
         });
@@ -109,7 +109,7 @@ export class ProductEventConsumer {
         );
       } else {
         const result = await this.productMatchingService.handleAutomaticMatchingRequest({
-          productId: payload.productId,
+          masterId: payload.masterId,
           name: payload.productName,
           variants,
         });
@@ -120,7 +120,7 @@ export class ProductEventConsumer {
       }
     } catch (error) {
       this.logger.error(
-        `[Event] Failed to handle ProductInventoryManagementChanged: ${payload.productId}`,
+        `[Event] Failed to handle ProductInventoryManagementChanged: ${payload.masterId}`,
         error.stack,
       );
       throw error;
