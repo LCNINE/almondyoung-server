@@ -83,8 +83,17 @@ export class ProductMastersController {
     try {
       const master = await this.productMastersService.createMaster(createMasterDto);
       return ProductMapper.toDto(master);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Create master error:', error);
+
+      // DB 쿼리 에러를 명확한 에러로 변환 (pricing rules와 동일한 패턴)
+      if (error.message?.includes('Failed query') || error.message?.includes('Database connection error')) {
+        throw new HttpException(
+          'Failed to create master: Database connection error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
       throw new HttpException(
         `Failed to create master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -222,8 +231,8 @@ export class ProductMastersController {
       **출력:** Active 버전의 상세 정보
     `,
   })
-  @ApiParam({ 
-    name: 'id', 
+  @ApiParam({
+    name: 'id',
     description: 'Master ID - active 버전을 자동으로 조회합니다',
   })
   @ApiResponse({
@@ -326,8 +335,8 @@ export class ProductMastersController {
       삭제된 Master는 복원이 가능합니다.
     `,
   })
-  @ApiParam({ 
-    name: 'masterId', 
+  @ApiParam({
+    name: 'masterId',
     description: 'Master ID (product_masters.id)',
   })
   @ApiResponse({ status: 200, description: 'Master 소프트 삭제 성공' })
@@ -344,7 +353,7 @@ export class ProductMastersController {
         masterId,
         userIdToUse,
       );
-      
+
       return {
         success: true,
         message: 'Master deleted successfully',
@@ -374,8 +383,8 @@ export class ProductMastersController {
     summary: '제품 마스터 복원',
     description: '소프트 삭제된 Master를 복원합니다.',
   })
-  @ApiParam({ 
-    name: 'masterId', 
+  @ApiParam({
+    name: 'masterId',
     description: 'Master ID (product_masters.id)',
   })
   @ApiResponse({ status: 200, description: 'Master 복원 성공' })
@@ -392,7 +401,7 @@ export class ProductMastersController {
         masterId,
         userIdToUse,
       );
-      
+
       return {
         success: true,
         message: 'Master restored successfully',
@@ -425,8 +434,8 @@ export class ProductMastersController {
       현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
     `,
   })
-  @ApiParam({ 
-    name: 'id', 
+  @ApiParam({
+    name: 'id',
     description: 'Version ID (현재 구현에서는 Master ID가 아님)',
   })
   @ApiResponse({ status: 200, description: '제품 마스터 영구 삭제 성공' })

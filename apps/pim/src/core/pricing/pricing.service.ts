@@ -130,7 +130,7 @@ export class PricingService {
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
-      await this.ensureMasterExists(masterId, trx);
+      // master 존재 확인은 version 조회 시 자동으로 확인됨
 
       const validatedRules = await this.validatorService.validateRuleSet(
         masterId,
@@ -138,9 +138,10 @@ export class PricingService {
         trx,
       );
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
+      // version 결정 (지정되지 않으면 active 버전 사용, 없으면 draft 버전 사용)
       let actualVersion = version;
       if (actualVersion === undefined) {
+        // 먼저 active 버전 찾기
         const [activeMaster] = await trx
           .select({ version: productMasterVersions.version })
           .from(productMasterVersions)
@@ -152,10 +153,26 @@ export class PricingService {
           )
           .limit(1);
 
-        if (!activeMaster) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
+        if (activeMaster) {
+          actualVersion = activeMaster.version;
+        } else {
+          // active 버전이 없으면 draft 버전 찾기 (새 상품 생성 시)
+          const [draftMaster] = await trx
+            .select({ version: productMasterVersions.version })
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.masterId, masterId),
+                eq(productMasterVersions.versionStatus, 'draft'),
+              ),
+            )
+            .limit(1);
+
+          if (!draftMaster) {
+            throw new NotFoundException(`No active or draft version found for master ${masterId}`);
+          }
+          actualVersion = draftMaster.version;
         }
-        actualVersion = activeMaster.version;
       }
 
       // draft 상태 검증
@@ -283,9 +300,10 @@ export class PricingService {
     return this.inTx(async (trx) => {
       await this.ensureMasterExists(masterId, trx);
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
+      // version 결정 (지정되지 않으면 active 버전 사용, 없으면 draft 버전 사용)
       let actualVersion = version;
       if (actualVersion === undefined) {
+        // 먼저 active 버전 찾기
         const [activeMaster] = await trx
           .select({ version: productMasterVersions.version })
           .from(productMasterVersions)
@@ -297,10 +315,26 @@ export class PricingService {
           )
           .limit(1);
 
-        if (!activeMaster) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
+        if (activeMaster) {
+          actualVersion = activeMaster.version;
+        } else {
+          // active 버전이 없으면 draft 버전 찾기 (새 상품 생성 시)
+          const [draftMaster] = await trx
+            .select({ version: productMasterVersions.version })
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.masterId, masterId),
+                eq(productMasterVersions.versionStatus, 'draft'),
+              ),
+            )
+            .limit(1);
+
+          if (!draftMaster) {
+            throw new NotFoundException(`No active or draft version found for master ${masterId}`);
+          }
+          actualVersion = draftMaster.version;
         }
-        actualVersion = activeMaster.version;
       }
 
       // 매핑된 pricingRule ID 조회
@@ -376,14 +410,49 @@ export class PricingService {
     masterId: string,
     tx: DbTransaction,
   ): Promise<void> {
-    const masters = await tx
-      .select({ id: productMasterVersions.id })
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.masterId, masterId))
-      .limit(1);
+    try {
+      // 디버깅: 쿼리 실행 전 로그
+      this.logger.debug(`Checking master existence: ${masterId}`);
+      
+      const masters = await tx
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.masterId, masterId))
+        .limit(1);
 
-    if (masters.length === 0) {
-      throw new NotFoundException(`Product master ${masterId} not found`);
+      this.logger.debug(`Query result: ${masters.length} records found`);
+
+      if (masters.length === 0) {
+        // 실제로 존재하는지 다시 한 번 확인 (버전 상태 무관)
+        const allVersions = await tx
+          .select({ 
+            id: productMasterVersions.id,
+            versionStatus: productMasterVersions.versionStatus 
+          })
+          .from(productMasterVersions)
+          .where(eq(productMasterVersions.masterId, masterId));
+        
+        this.logger.warn(`Master ${masterId} not found. Total versions: ${allVersions.length}`);
+        
+        if (allVersions.length === 0) {
+          throw new Error(`Product master ${masterId} not found`);
+        } else {
+          // 버전은 있지만 쿼리가 실패한 경우
+          this.logger.warn(`Master ${masterId} has ${allVersions.length} versions but initial query failed`);
+          throw new Error(`Product master ${masterId} not found`);
+        }
+      }
+    } catch (error: any) {
+      this.logger.error(`Error checking master existence: ${error.message}`, error.stack);
+      
+      // DB 쿼리 에러를 명확한 에러로 변환 (다른 서비스와 동일한 패턴)
+      if (error.message?.includes('Failed query')) {
+        throw new Error(`Product master ${masterId} not found`);
+      }
+      if (error instanceof Error && error.message.includes('not found')) {
+        throw error;
+      }
+      throw new Error(`Failed to check master existence: ${error.message}`);
     }
   }
 
