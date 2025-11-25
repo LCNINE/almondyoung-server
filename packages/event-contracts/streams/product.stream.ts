@@ -10,7 +10,9 @@ import { z } from 'zod';
 // ===== Payload 타입 정의 =====
 
 export interface ProductVariantCreatedPayload {
-  productId: string;
+  masterId: string;
+  versionId: string;
+  version: number;
   productName: string;
   variantId: string;
   variantName: string | null;
@@ -32,7 +34,9 @@ export interface ProductVariantCreatedPayload {
 }
 
 export interface ProductVariantUpdatedPayload {
-  productId: string;
+  masterId: string;
+  versionId: string;
+  version: number;
   variantId: string;
   variantName?: string | null;
   status?: 'active' | 'draft' | 'archived';
@@ -40,13 +44,17 @@ export interface ProductVariantUpdatedPayload {
 }
 
 export interface ProductVariantDeletedPayload {
-  productId: string;
+  masterId: string;
+  versionId: string;
+  version: number;
   variantId: string;
   deletedAt: string;
 }
 
 export interface ProductInventoryManagementChangedPayload {
-  productId: string;
+  masterId: string;
+  versionId: string;
+  version: number;
   productName: string;
   inventoryManagement: boolean;
   affectedVariants: Array<{
@@ -79,7 +87,9 @@ const OptionCombinationItemSchema = z.object({
 });
 
 const ProductVariantCreatedSchema = z.object({
-  productId: z.string().min(1),
+  masterId: z.string().min(1),
+  versionId: z.string().min(1),
+  version: z.number().int().positive(),
   productName: z.string().min(1),
   variantId: z.string().min(1),
   variantName: z.string().nullable(),
@@ -93,7 +103,9 @@ const ProductVariantCreatedSchema = z.object({
 });
 
 const ProductVariantUpdatedSchema = z.object({
-  productId: z.string().min(1),
+  masterId: z.string().min(1),
+  versionId: z.string().min(1),
+  version: z.number().int().positive(),
   variantId: z.string().min(1),
   variantName: z.string().nullable().optional(),
   status: z.enum(['active', 'draft', 'archived']).optional(),
@@ -101,13 +113,17 @@ const ProductVariantUpdatedSchema = z.object({
 });
 
 const ProductVariantDeletedSchema = z.object({
-  productId: z.string().min(1),
+  masterId: z.string().min(1),
+  versionId: z.string().min(1),
+  version: z.number().int().positive(),
   variantId: z.string().min(1),
   deletedAt: z.string().datetime(),
 });
 
 const ProductInventoryManagementChangedSchema = z.object({
-  productId: z.string().min(1),
+  masterId: z.string().min(1),
+  versionId: z.string().min(1),
+  version: z.number().int().positive(),
   productName: z.string().min(1),
   inventoryManagement: z.boolean(),
   affectedVariants: z.array(
@@ -138,7 +154,7 @@ const ProductMasterDeletedSchema = z.object({
 
 export const PRODUCT_STREAM = stream({
   topic: 'products.events.v1',
-  partitions: 12, // productId 기준 파티셔닝
+  partitions: 12, // masterId 기준 파티셔닝
   aggregateType: 'Product',
   events: {
     ProductVariantCreated: event<'ProductVariantCreated', ProductVariantCreatedPayload>(
