@@ -9,9 +9,11 @@ import { OutboxService } from '../../shared/services/outbox.service';
 import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MetricsService } from '../../../shared/services/metrics.service';
+import { ProductSkuMappingService } from '../../shared/services/product-sku-mapping.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
+import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 
 @Injectable()
 export class SalesOrdersService {
@@ -23,9 +25,10 @@ export class SalesOrdersService {
     private readonly outbox: OutboxService,
     private readonly fulfillments: FulfillmentsService,
     private readonly reservationLifecycle: ReservationLifecycleService,
+    private readonly productSkuMapping: ProductSkuMappingService,
     private readonly audit?: AuditService,
     private readonly metrics?: MetricsService,
-  ) {}
+  ) { }
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -126,32 +129,71 @@ export class SalesOrdersService {
 
   async update(id: string, dto: UpdateSalesOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
-        await trx
-          .update(wmsTables.salesOrders)
-          .set({
-            customerName: dto.customer?.name ?? null,
-            customerEmail: dto.customer?.email ?? null,
-            customerPhone: dto.customer?.phone ?? null,
-            shippingAddress: dto.shippingAddress,
-            totalAmount: dto.totalAmount ?? null,
-            shippingFee: dto.shippingFee ?? 0,
-            processedAt: dto.processedAt ? new Date(dto.processedAt) : null,
-          })
-          .where(eq(wmsTables.salesOrders.id, id));
-        const updated = await this.getOne(id, trx);
-        await this.outbox?.enqueue({ eventType: ORDER_EVENTS.MODIFIED, aggregateType: 'order', aggregateId: id, partitionKey: id, payload: { orderId: id } }, trx);
-        return updated;
+      await trx
+        .update(wmsTables.salesOrders)
+        .set({
+          customerName: dto.customer?.name ?? null,
+          customerEmail: dto.customer?.email ?? null,
+          customerPhone: dto.customer?.phone ?? null,
+          shippingAddress: dto.shippingAddress,
+          totalAmount: dto.totalAmount ?? null,
+          shippingFee: dto.shippingFee ?? 0,
+          processedAt: dto.processedAt ? new Date(dto.processedAt) : null,
+        })
+        .where(eq(wmsTables.salesOrders.id, id));
+      const updated = await this.getOne(id, trx);
+      await this.outbox?.enqueue({ eventType: ORDER_EVENTS.MODIFIED, aggregateType: 'order', aggregateId: id, partitionKey: id, payload: { orderId: id } }, trx);
+      return updated;
     }, tx);
   }
 
-  async confirm(id: string, tx?: DbTx) {
+  async confirm(id: string, warehouseId?: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      // 1. SO 라인 조회
+      const lines = await trx.query.salesOrderLines.findMany({
+        where: eq(wmsTables.salesOrderLines.salesOrderId, id),
+      });
+
+      // 2. 각 라인에 대해 매핑 스냅샷 생성 (warehouseId가 제공된 경우)
+      if (warehouseId && lines.length > 0) {
+        for (const line of lines) {
+          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(
+            line.variantId,
+            warehouseId,
+            trx,
+          );
+
+          if (snapshotId) {
+            await trx
+              .update(wmsTables.salesOrderLines)
+              .set({ mappingSnapshotId: snapshotId })
+              .where(eq(wmsTables.salesOrderLines.id, line.id));
+          } else {
+            // 매핑이 없는 경우 로그만 남기고 진행 (정책에 따라 에러 처리 가능)
+            this.logger.warn(
+              `No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`,
+            );
+          }
+        }
+      }
+
+      // 3. SO 상태 업데이트
       await trx
         .update(wmsTables.salesOrders)
         .set({ status: 'confirmed', confirmedAt: new Date() })
         .where(eq(wmsTables.salesOrders.id, id));
+
       const updated = await this.getOne(id, trx);
-      await this.outbox?.enqueue({ eventType: ORDER_EVENTS.CONFIRMED, aggregateType: 'order', aggregateId: id, partitionKey: id, payload: { orderId: id } }, trx);
+
+      // 4. 이벤트 발행
+      await this.outbox?.enqueue({
+        eventType: ORDER_EVENTS.CONFIRMED,
+        aggregateType: 'order',
+        aggregateId: id,
+        partitionKey: id,
+        payload: { orderId: id, warehouseId },
+      }, trx);
+
       return updated;
     }, tx);
   }
@@ -347,9 +389,9 @@ export class SalesOrdersService {
       // 3) 병합된 SO 기준 FO 재구성(옵션: warehouseId 전달 시 생성)
       if (this.fulfillments) {
         try {
-          await this.fulfillments.create({ 
-            salesOrderId: merged.id, 
-            warehouseId: dto.warehouseId ?? undefined, 
+          await this.fulfillments.create({
+            salesOrderId: merged.id,
+            warehouseId: dto.warehouseId ?? undefined,
             shippingAddress: merged.shippingAddress as any,
             lines: []
           }, trx);
@@ -394,6 +436,107 @@ export class SalesOrdersService {
       orderBy: (o, { desc }) => [desc(o.createdAt as any)] as any,
     } as any);
     return rows;
+  }
+
+  /**
+   * 이벤트 기반 SO 생성
+   * OrderCreatedPayload를 CreateSalesOrderDto 형식으로 변환하여 생성
+   */
+  async createFromEvent(payload: OrderCreatedPayload, tx?: DbTx) {
+    const dto: CreateSalesOrderDto = {
+      channelOrderId: payload.externalOrderId ?? payload.orderId,
+      salesChannel: payload.salesChannel,
+      customer: {
+        name: payload.shippingAddress.recipientName,
+        phone: payload.shippingAddress.phone,
+      },
+      shippingAddress: this.convertShippingAddress(payload.shippingAddress),
+      totalAmount: payload.totalAmount,
+      shippingFee: payload.shippingAmount ?? 0,
+      orderDate: payload.createdAt,
+      lines: this.convertOrderItems(payload.items),
+    };
+
+    return this.create(dto, tx);
+  }
+
+  /**
+   * 이벤트 기반 SO 수정
+   * OrderModifiedPayload.changes를 적용
+   */
+  async updateFromEvent(
+    id: string,
+    changes: OrderModifiedPayload['changes'],
+    tx?: DbTx,
+  ) {
+    return this.inTx(async (trx) => {
+      const updateData: Partial<UpdateSalesOrderDto> = {};
+
+      if (changes.shippingAddress) {
+        updateData.shippingAddress = this.convertShippingAddress(changes.shippingAddress);
+      }
+
+      if (changes.totalAmount !== undefined) {
+        updateData.totalAmount = changes.totalAmount;
+      }
+
+      // 변경 사항이 있을 때만 업데이트
+      if (Object.keys(updateData).length > 0) {
+        await trx
+          .update(wmsTables.salesOrders)
+          .set({
+            ...(updateData.shippingAddress && { shippingAddress: updateData.shippingAddress }),
+            ...(updateData.totalAmount !== undefined && { totalAmount: updateData.totalAmount }),
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.salesOrders.id, id));
+      }
+
+      // items 변경은 라인 단위로 처리 (복잡한 로직은 향후 구현)
+      if (changes.items && changes.items.length > 0) {
+        this.logger.warn(
+          `[updateFromEvent] Item changes detected but not yet implemented for order ${id}`,
+        );
+      }
+
+      const updated = await this.getOne(id, trx);
+      await this.outbox?.enqueue({
+        eventType: ORDER_EVENTS.MODIFIED,
+        aggregateType: 'order',
+        aggregateId: id,
+        partitionKey: id,
+        payload: { orderId: id, changes },
+      }, trx);
+
+      return updated;
+    }, tx);
+  }
+
+  /**
+   * 이벤트 ShippingAddress를 DTO AddressDto로 변환
+   */
+  private convertShippingAddress(address: ShippingAddress) {
+    return {
+      recipientName: address.recipientName,
+      phone: address.phone,
+      postalCode: address.postalCode,
+      roadAddress: address.roadAddress,
+      detailAddress: address.detailAddress,
+      deliveryNote: address.deliveryNote,
+    };
+  }
+
+  /**
+   * 이벤트 OrderItem[]을 CreateSalesOrderLineDto[]로 변환
+   */
+  private convertOrderItems(items: OrderItem[]) {
+    return items.map(item => ({
+      variantId: item.variantId ?? item.skuId, // variantId가 없으면 skuId 사용
+      productName: item.productId ?? '',
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
+    }));
   }
 }
 
