@@ -5,13 +5,15 @@ import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 // import { validateWalletEnv } from './config/env.validation';
-import { AuthorizationModule, authorizationSchema, JwtAuthGuard } from '@app/authorization';
+import {
+  AuthorizationModule,
+  authorizationSchema,
+  JwtAuthGuard,
+} from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { PaymentController } from './controllers/payment.controller';
 import { PointController } from './controllers/point.controller';
 import { PointAdminController } from './controllers/point-admin.controller';
-
-
 
 import { IntentService } from './services/intents/intent.service';
 import { IntentReader } from './services/intents/intent.reader';
@@ -45,6 +47,7 @@ import {
 import { ProviderRegistry } from './providers/provider-registry';
 import { HmsCardRegistrar } from './providers/hms-card.registrar';
 import { HmsBnplRegistrar } from './providers/hms-bnpl.registrar';
+import { HmsBatchCmsService } from './services/hms-batch-cms.service';
 import { HmsCardChargeProvider } from './providers/hms-card.charge';
 import { HmsBnplChargeProvider } from './providers/hms-bnpl.charge';
 import { HmsBnplCashReceiptProvider } from './providers/hms-bnpl.cash-receipt';
@@ -110,7 +113,6 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     PointAdminController,
     TaxInvoiceController,
 
-
     TaxInvoiceAdminController,
   ],
   providers: [
@@ -168,6 +170,8 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
 
     // --- Provider 아키텍처 ---
     ProviderRegistry,
+    // HMS Batch CMS 서비스 (직접 HTTP 요청)
+    HmsBatchCmsService,
     // 개별 Provider 구현체들
     HmsCardRegistrar,
     HmsBnplRegistrar,
@@ -204,4 +208,4 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule { }
+export class AppModule {}
