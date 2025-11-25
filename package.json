@@ -93,7 +93,7 @@
     "db:push:user-service": "drizzle-kit push --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:seed:user-service": "ts-node -r tsconfig-paths/register apps/user-service/database/seed-cli.ts",
     "db:push:notification": "drizzle-kit push --config apps/notification/database/drizzle/drizzle.config.ts",
-    "db:push:channel-adapter": "drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
+    "db:push:channel-adapter": "./scripts/with-ipv4.sh drizzle-kit push --config apps/channel-adapter/drizzle.config.ts",
     "db:generate:file-service": "drizzle-kit generate --config apps/file-service/src/database/drizzle/drizzle.config.ts",
     "db:push:file-service": "./scripts/with-ipv4.sh drizzle-kit push --config apps/file-service/src/database/drizzle/drizzle.config.ts",
     "db:push:file-service:test": "./scripts/with-ipv4.sh drizzle-kit push --config apps/file-service/src/database/drizzle/drizzle.test-config.ts",
