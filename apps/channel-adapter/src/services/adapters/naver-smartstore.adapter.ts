@@ -24,6 +24,8 @@ import {
   CreateSalesOrderDto,
 } from '../apis/wms.api.service';
 import { OrderEventPublisher } from '../order-event.publisher';
+import { ChannelProductMappingService } from '../channel-product-mapping.service';
+import { PendingOrderService } from '../pending-order.service';
 
 // 신규 Zod 스키마 Import
 import {
@@ -207,6 +209,8 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     private readonly naverProductClient: NaverProductClient,
     private readonly wmsApi: WmsApiService,
     private readonly orderEventPublisher: OrderEventPublisher,
+    private readonly channelProductMappingService: ChannelProductMappingService,
+    private readonly pendingOrderService: PendingOrderService,
   ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
@@ -1364,8 +1368,16 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
    * - PAID/PENDING 상태: OrderCreated 이벤트 발행
    * - CANCELLED 상태: OrderCancelled 이벤트 발행
    */
+  /**
+   * 주문 이벤트 발행
+   *
+   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
+   * 채널 상품 매핑이 없는 주문은 계류(pending) 처리됩니다.
+   */
   private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
     const publishPromises: Promise<void>[] = [];
+    let publishedCount = 0;
+    let pendingCount = 0;
 
     for (const event of events) {
       try {
@@ -1373,10 +1385,38 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
         switch (event.status) {
           case 'PENDING_PAYMENT':
           case 'PAID':
-            // 새로운 주문 - OrderCreated 발행
-            publishPromises.push(
-              this.orderEventPublisher.publishOrderCreated('naver_smartstore', event),
+            // 새로운 주문 - 매핑 확인 후 OrderCreated 발행 또는 계류
+            const channelProductId = event.externalProductOrderId ?? event.externalOrderId;
+            const mapping = await this.channelProductMappingService.findMapping(
+              'naver',
+              channelProductId,
             );
+
+            if (mapping) {
+              // 매핑 있음 → 이벤트 발행 (variantIdMapper 콜백 전달)
+              publishPromises.push(
+                this.orderEventPublisher.publishOrderCreated(
+                  'naver_smartstore',
+                  event,
+                  this.channelProductMappingService.createVariantIdMapper('naver'),
+                ),
+              );
+              publishedCount++;
+            } else {
+              // 매핑 없음 → 계류
+              await this.pendingOrderService.holdOrder({
+                salesChannel: 'naver',
+                channelOrderId: event.externalOrderId,
+                channelProductId,
+                channelProductName: event.productName,
+                orderData: event,
+                reason: 'unmapped_product',
+              });
+              pendingCount++;
+              this.logger.warn(
+                `⏸️ [네이버] 주문 계류 (미매핑 상품): ${event.externalOrderId}, 상품: ${channelProductId}`,
+              );
+            }
             break;
 
           case 'CANCELLED':
@@ -1388,6 +1428,7 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
                 event.reason ?? 'CUSTOMER_REQUEST',
               ),
             );
+            publishedCount++;
             break;
 
           default:
@@ -1407,9 +1448,10 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     // 병렬로 이벤트 발행
     if (publishPromises.length > 0) {
       await Promise.allSettled(publishPromises);
-      this.logger.log(
-        `📤 [네이버] ${publishPromises.length}건의 주문 이벤트 발행 완료`,
-      );
     }
+
+    this.logger.log(
+      `📤 [네이버] 주문 처리 완료: 발행 ${publishedCount}건, 계류 ${pendingCount}건`,
+    );
   }
 }
