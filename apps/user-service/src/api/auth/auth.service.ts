@@ -67,8 +67,8 @@ export class AuthService {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  private getSocialRedirectUrl(provider: ProviderType): string {
-    return new URL(`/${provider}/callback`, this.frontendUrl).toString();
+  private getSocialRedirectUrl(provider: ProviderType, userId: string): string {
+    return new URL(`/${provider}/callback?userId=${userId}`, this.frontendUrl).toString();
   }
 
   async signUp(
@@ -132,7 +132,7 @@ export class AuthService {
         });
 
         console.log(
-          '회원가입 이메일 인증 링크:',
+          '회원가입 이메일 인증 링크: ',
           this.configService.get('USER_SERVICE_URL') +
             `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,
         );
@@ -403,7 +403,7 @@ export class AuthService {
     provider: ProviderType,
     reply: FastifyReply,
     tx?: DbTransaction,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
+  ): Promise<void | { redirectUrl: string }> {
     const processSignIn = async (transaction: DbTransaction) => {
       const existingUser = await this._signInWithSocialWithTransaction(socialUser, provider, reply, transaction);
 
@@ -429,24 +429,28 @@ export class AuthService {
     if (tx) {
       const result = await processSignIn(tx);
 
-      const { refreshToken } = await this.setRefreshToken(result.user.id, reply, false, tx);
-      const { accessToken } = await this.setAccessToken(result.user, reply, tx);
-      await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
-
-      // return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
-      return { accessToken, refreshToken };
+      return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
 
-        const { refreshToken } = await this.setRefreshToken(result.user.id, reply, false, tx);
-        const { accessToken } = await this.setAccessToken(result.user, reply, tx);
-        await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
-
-        // return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
-        return { accessToken, refreshToken };
+        return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
       });
     }
+  }
+
+  async setSocialCookie(userId: string, reply: FastifyReply, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
+    const user = await this.usersService.findUserById(userId, client);
+
+    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+
+    const { refreshToken } = await this.setRefreshToken(user.id, reply, false, tx);
+    const { accessToken } = await this.setAccessToken(user, reply, tx);
+    await this.lastActivityAtUpdate(user as User, tx); // 마지막 활동일 업데이트
+
+    return { accessToken, refreshToken };
   }
 
   // 소셜 로그인
