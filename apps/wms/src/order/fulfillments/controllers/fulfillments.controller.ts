@@ -9,18 +9,12 @@ import {
 } from '@nestjs/swagger';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../../shared/services/fulfillment-reservations.facade';
+import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
+import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
+import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 
-const CreateFulfillmentSchema = z.object({
-  salesOrderId: z.string().optional(),
-  warehouseId: z.string().optional(),
-  ownerId: z.string().optional(),
-  shippingAddress: z.any().optional(),
-  lines: z.array(z.object({ skuId: z.string(), quantity: z.number().int().positive() })).min(1),
-});
-
-const AssignShipmentSchema = z.object({ trackingNo: z.string(), eta: z.string().datetime().optional() });
 const ReserveSchema = z.object({ fulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
 const UnreserveSchema = z.object({ fulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
 const TransferSchema = z.object({ fromFulfillmentOrderLineId: z.string(), toFulfillmentOrderLineId: z.string(), quantity: z.number().int().positive() });
@@ -35,72 +29,32 @@ export class FulfillmentsController {
 
   @Post()
   @ApiOperation({ summary: '주문처리 생성', description: '새로운 주문처리(Fulfillment)를 생성합니다.' })
-  @ApiBody({
-    description: '주문처리 생성 데이터',
-    schema: {
-      type: 'object',
-      properties: {
-        salesOrderId: { type: 'string', description: '판매 주문 ID (선택사항)' },
-        warehouseId: { type: 'string', description: '창고 ID (선택사항)' },
-        ownerId: { type: 'string', description: '소유자 ID (선택사항)' },
-        shippingAddress: { description: '배송 주소 (선택사항)' },
-        lines: {
-          type: 'array',
-          description: '주문 라인 목록',
-          items: {
-            type: 'object',
-            properties: {
-              skuId: { type: 'string', description: 'SKU ID' },
-              quantity: { type: 'number', description: '수량' }
-            },
-            required: ['skuId', 'quantity']
-          },
-          minItems: 1
-        }
-      },
-      required: ['lines']
-    }
-  })
   @ApiResponse({ status: 201, description: '주문처리 생성 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  @UsePipes(new ZodValidationPipe(CreateFulfillmentSchema))
-  create(@Body() dto: any) {
+  create(@Body() dto: CreateFulfillmentOrderDto) {
     return this.service.create(dto);
   }
 
   @Post(':id/split')
   @ApiOperation({ summary: '주문처리 분할', description: '기존 주문처리를 여러 개로 분할합니다.' })
   @ApiParam({ name: 'id', description: '분할할 주문처리 ID' })
-  @ApiBody({ description: '분할 설정 데이터' })
   @ApiResponse({ status: 200, description: '주문처리 분할 성공' })
   @ApiResponse({ status: 404, description: '주문처리를 찾을 수 없음' })
   @ApiResponse({ status: 400, description: '분할할 수 없는 상태' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  split(@Param('id') id: string, @Body() dto: any) {
+  split(@Param('id') id: string, @Body() dto: SplitFulfillmentOrderDto) {
     return this.service.split(id, dto);
   }
 
   @Post(':id/assign-shipment')
   @ApiOperation({ summary: '배송 할당', description: '주문처리에 배송 정보를 할당합니다.' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({
-    description: '배송 할당 데이터',
-    schema: {
-      type: 'object',
-      properties: {
-        trackingNo: { type: 'string', description: '운송장 번호' },
-        eta: { type: 'string', format: 'date-time', description: '예상 도착시간 (선택사항)' }
-      },
-      required: ['trackingNo']
-    }
-  })
   @ApiResponse({ status: 200, description: '배송 할당 성공' })
   @ApiResponse({ status: 404, description: '주문처리를 찾을 수 없음' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  @UsePipes(new ZodValidationPipe(AssignShipmentSchema))
-  assignShipment(@Param('id') id: string, @Body() dto: any) {
+  assignShipment(@Param('id') id: string, @Body() dto: AssignShipmentDto) {
     return this.service.assignShipment(id, dto);
   }
 
