@@ -9,6 +9,9 @@ import { OutboxService } from '../../shared/services/outbox.service';
 import { AuditService } from '../../../shared/services/audit.service';
 import { MatchingsService } from '../../matchings/services/matchings.service';
 import { ReservationLifecycleService } from '../../../shared/services/reservation-lifecycle.service';
+import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
+import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
+import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 
 
 @Injectable()
@@ -49,8 +52,7 @@ export class FulfillmentsService {
     return mode === 'drop_ship';
   }
 
-  async create(dto: any, tx?: DbTx) {
-    // dto: { salesOrderId, warehouseId, shippingAddress, lines:[{ skuId, quantity }] }
+  async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       try {
         // 입력 검증
@@ -118,7 +120,7 @@ export class FulfillmentsService {
           }
 
           await trx.insert(wmsTables.fulfillmentOrderLines).values(
-            lines.map((l: any) => ({
+            lines.map((l) => ({
               fulfillmentOrderId: fo.id,
               skuId: l.skuId,
               quantity: l.quantity,
@@ -137,7 +139,7 @@ export class FulfillmentsService {
         if (mode === '3pl' && !dto.ownerId) {
           throw new (await import('@nestjs/common')).BadRequestException('OWNER_REQUIRED_FOR_3PL');
         }
-        const soLines = await trx.query.salesOrderLines.findMany({ where: (l, { eq }) => eq(l.salesOrderId, dto.salesOrderId) });
+        const soLines = await trx.query.salesOrderLines.findMany({ where: (l, { eq }) => eq(l.salesOrderId, dto.salesOrderId!) });
         const toInsert: Array<{ fulfillmentOrderId: string; skuId: string; quantity: number; reservedQty: number; pickedQty: number; shippedQty: number; status: string; }> = [];
         for (const sl of soLines) {
           const m = await this.matchings.getByVariant(sl.variantId, trx);
@@ -220,8 +222,7 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  async split(id: string, dto: any, tx?: DbTx) {
-    // dto: { lines:[{ fulfillmentOrderLineId, quantity }] }
+  async split(id: string, dto: SplitFulfillmentOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       // 1) 원본 FO 조회
       const origin = await trx.query.fulfillmentOrders.findFirst({ where: (t, { eq }) => eq(t.id, id) });
@@ -301,8 +302,7 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  async assignShipment(id: string, dto: any, tx?: DbTx) {
-    // dto: { trackingNo, eta }
+  async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       await trx.insert(wmsTables.shipments).values({
         trackingNo: dto.trackingNo,
