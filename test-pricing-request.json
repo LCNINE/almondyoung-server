@@ -1,0 +1,20 @@
+{
+  "basePriceRules": [
+    {
+      "order": 1,
+      "scopeType": "all_variants",
+      "operationType": "override",
+      "operationValue": 15000
+    }
+  ],
+  "membershipPriceRules": [
+    {
+      "order": 1,
+      "scopeType": "all_variants",
+      "operationType": "override",
+      "operationValue": 12000
+    }
+  ],
+  "tieredPriceRules": []
+}
+
