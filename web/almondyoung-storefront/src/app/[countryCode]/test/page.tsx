@@ -1,178 +1,193 @@
-"use client"
+import React from "react"
+import {
+  ChevronLeft,
+  ChevronDown,
+  Check,
+  ChevronRight,
+  RotateCcw,
+} from "lucide-react"
 
-import { useRef, useState } from "react"
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
-
-interface IntentResponse {
-  id: string
-  customerId: string
-  amount: number
-  type: string
-  status: string
-  createdAt: string
-  updatedAt: string
+interface PaymentAgreementProps {
+  onBack?: () => void
 }
 
-export default function TestPage() {
-  const [intent, setIntent] = useState<IntentResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const paymentRef = useRef<any>(null)
+// 공통 Input 스타일 컴포넌트 (Shadcn UI 느낌 + 디자인 커스텀)
+const CustomInput = ({
+  value,
+  readOnly = false,
+  className = "",
+}: {
+  value: string
+  readOnly?: boolean
+  className?: string
+}) => (
+  <div className="relative w-full">
+    <input
+      type="text"
+      value={value}
+      readOnly={readOnly}
+      className={`w-full bg-[#f4f4f4] px-4 py-3 text-xs text-[#d9d9d9] placeholder:text-[#d9d9d9] focus:outline-none ${className}`}
+    />
+    {/* 디자인상의 하단 밑줄 구현 */}
+    <div className="absolute bottom-0 left-0 h-[1px] w-full bg-[#8e8e93]" />
+  </div>
+)
 
-  // Intent 생성
-  const createIntent = async () => {
-    try {
-      setLoading(true)
-      setError(null)
+// 정보 행 컴포넌트
+const InfoRow = ({ label, value }: { label: string; value: string }) => (
+  <div className="flex items-start justify-between py-1">
+    <span className="w-[100px] shrink-0 text-xs text-black">{label}</span>
+    <span className="flex-1 text-left text-xs font-normal break-all text-[#1e1e1e]">
+      {value}
+    </span>
+  </div>
+)
 
-      const response = await fetch(`/api/wallet/payments/intents`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          customerId: `test_customer_${Date.now()}`,
-          amount: 100,
-          type: "ORDER",
-        }),
-      })
+// 체크박스 아이템 컴포넌트
+const CheckboxItem = ({ label }: { label: string }) => (
+  <div className="flex items-center gap-2.5">
+    <div className="flex h-4 w-4 items-center justify-center rounded-[2px] bg-[#F29219]">
+      <Check className="h-3 w-3 stroke-[3] text-white" />
+    </div>
+    <span className="text-xs text-[#1c1c1e]">{label}</span>
+  </div>
+)
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || "Intent 생성 실패")
-      }
+// 약관 동의 리스트 아이템
+const AgreementItem = ({ label }: { label: string }) => (
+  <button className="flex w-full items-center justify-between py-2">
+    <div className="flex items-center gap-2.5">
+      <div className="h-4 w-4 rounded-sm border border-[#1c1c1e]" />
+      <span className="text-[13px] text-[#1c1c1e]">{label}</span>
+    </div>
+    <ChevronDown className="h-5 w-5 text-[#1E1E1E]" />
+  </button>
+)
 
-      const data: IntentResponse = await response.json()
-      setIntent(data)
-
-      // Intent 생성 후 토스 결제 SDK 초기화
-      await initializeTossPayment(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "알 수 없는 오류")
-      console.error("Intent 생성 실패:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 토스 결제 SDK 초기화
-  const initializeTossPayment = async (intentData: IntentResponse) => {
-    try {
-      const clientKey = "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
-      const tossPayments = await loadTossPayments(clientKey)
-
-      // 표준 결제창 사용
-      const payment = tossPayments.payment({
-        customerKey: intentData.customerId,
-      })
-
-      paymentRef.current = payment
-      console.log("✅ 토스 결제 SDK 초기화 완료")
-    } catch (err) {
-      setError(
-        "토스 SDK 초기화 실패: " +
-          (err instanceof Error ? err.message : "알 수 없는 오류")
-      )
-      console.error("토스 SDK 초기화 실패:", err)
-    }
-  }
-
-  // 결제 요청
-  const handlePayment = async () => {
-    if (!intent || !paymentRef.current) {
-      setError("Intent가 초기화되지 않았습니다.")
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-
-      const baseUrl = window.location.origin
-      const countryCode = window.location.pathname.split("/")[1]
-
-      // 표준 결제창으로 카드 결제 요청
-      await paymentRef.current.requestPayment({
-        method: "CARD", // 카드 결제
-        amount: {
-          currency: "KRW",
-          value: intent.amount,
-        },
-        orderId: intent.id, // intentId를 orderId로 사용
-        orderName: "테스트 상품",
-        successUrl: `${baseUrl}/${countryCode}/test/callback`,
-        failUrl: `${baseUrl}/${countryCode}/test/callback`,
-        customerEmail: "customer123@gmail.com",
-        customerName: "김토스",
-        customerMobilePhone: "01012341234",
-        card: {
-          useEscrow: false,
-          flowMode: "DEFAULT",
-          useCardPoint: false,
-          useAppCardOnly: false,
-        },
-      })
-
-      console.log("✅ 결제창 요청 성공")
-    } catch (err: any) {
-      if (err?.code === "USER_CANCEL") {
-        setError("결제가 취소되었습니다.")
-        return
-      }
-
-      setError("결제 요청 실패: " + (err?.message || "알 수 없는 오류"))
-      console.error("결제 요청 실패:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+export default function RegularPaymentAgreement({
+  onBack,
+}: PaymentAgreementProps) {
   return (
-    <div className="container mx-auto max-w-4xl p-8">
-      <h1 className="mb-6 text-3xl font-bold">토스 결제 테스트</h1>
+    <div className="min-h-screen w-full bg-white text-[#1e1e1e]">
+      {/* Container: 모바일 뷰 유지를 위한 최대 너비 설정 및 중앙 정렬 */}
+      <div className="mx-auto flex max-w-md flex-col px-4 pt-2 pb-8">
+        {/* Header */}
+        <header className="mb-6 flex items-center gap-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="-ml-2 rounded-full p-1 transition-colors hover:bg-gray-100"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+          <h1 className="text-2xl font-bold">정기결제 동의서</h1>
+        </header>
 
-      {/* Intent 생성 버튼 */}
-      <div className="mb-6">
+        {/* Content Area */}
+        <main className="flex flex-col gap-6">
+          {/* Section 1: 기본 정보 (Grid Layout 대신 Flex 사용으로 간격 제어) */}
+          <section className="flex flex-col gap-3">
+            <InfoRow label="결제 신청인" value="이연정" />
+            <InfoRow label="회사명" value="블랙속눈썹" />
+            <InfoRow label="결제자 휴대폰 번호" value="010-2020-2020" />
+            <InfoRow label="계좌번호" value="우리은행 1239-*******-****23" />
+            <InfoRow label="예금주(소유주)명" value="이연정" />
+
+            <div className="mt-1 flex flex-col gap-2">
+              <span className="text-xs text-black">결제자 생년월일</span>
+              <CustomInput value="YYMMDD" readOnly />
+            </div>
+          </section>
+
+          {/* Section 2: 결제일 설정 */}
+          <section className="flex flex-col gap-2">
+            <span className="text-xs text-black">결제일</span>
+            <button className="flex w-full items-center justify-between border border-[#d9d9d9] bg-white px-4 py-3">
+              <span className="text-xs text-[#1e1e1e]">매월 10일</span>
+              <ChevronDown className="h-4 w-4 text-[#1E1E1E]" />
+            </button>
+          </section>
+
+          {/* 
+          <section className="flex flex-col gap-4">
+            <span className="text-[11px] text-black">현금영수증 신청</span>
+
+            <div className="flex flex-col gap-2">
+              <CheckboxItem label="은행자동 이체 시 자동 발행" />
+              <CheckboxItem label="사업자번호 동일" />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-xs text-black">현금영수증 수신 email</span>
+              <CustomInput value="example@gmail.com" readOnly />
+            </div>
+          </section> */}
+
+          {/* Section 4: 약관 동의 */}
+          <section className="mt-4 flex flex-col gap-1">
+            <AgreementItem label="[필수] 개인정보 수집 및 이용 동의" />
+            <AgreementItem label="[필수] 개인정보 제3자 제공 동의" />
+          </section>
+
+          {/* Footer Area */}
+          <section className="mt-6 flex flex-col gap-6">
+            <p className="text-center text-[13px] text-[#1c1c1e]">
+              위와 같이 정기결제 신청에 동의합니다.
+            </p>
+
+            <SignaturePad onConfirm={() => {}} onClear={() => {}} />
+            <button className="w-full rounded-[5px] bg-[#f29219] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#d98215] active:bg-[#bf7312]">
+              정기결제 신청하기
+            </button>
+          </section>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+interface SignaturePadProps {
+  onConfirm?: () => void
+  onClear?: () => void
+}
+
+function SignaturePad({ onConfirm, onClear }: SignaturePadProps) {
+  return (
+    // Card Container: 반응형 너비(max-w) 및 그림자 적용
+    <div
+      className="flex w-full max-w-[303px] flex-col gap-4 rounded-[10px] bg-white p-5 md:p-6"
+      style={{ boxShadow: "0px 4px 4px 0 rgba(0,0,0,0.25)" }}
+    >
+      {/* Signature Canvas Area */}
+      <div className="relative h-[156px] w-full rounded-[5px] bg-[#fff7e5]">
+        {/* Placeholder Text: 실제 Canvas 구현 시 서명 시작하면 hidden 처리 필요 */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <p className="text-[13px] text-[#c0c0c0]">여기에 서명하세요</p>
+        </div>
+
+        {/* Actual Canvas area would go here */}
+        {/* <canvas className="w-full h-full block" /> */}
+
+        {/* Reset Button: 서명 초기화 아이콘 */}
         <button
-          onClick={createIntent}
-          disabled={loading || !!intent}
-          className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-400"
+          type="button"
+          onClick={onClear}
+          aria-label="서명 초기화"
+          className="absolute right-3 bottom-3 rounded-full p-1 transition-colors hover:bg-black/5"
         >
-          {loading ? "처리 중..." : intent ? "Intent 생성 완료" : "Intent 생성"}
+          <RotateCcw className="h-5 w-5 text-[#A86500]" strokeWidth={2} />
         </button>
       </div>
 
-      {/* Intent 정보 표시 */}
-      {intent && (
-        <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
-          <h2 className="mb-2 text-xl font-semibold">Intent 정보</h2>
-          <p>
-            <strong>Intent ID:</strong> {intent.id}
-          </p>
-          <p>
-            <strong>금액:</strong> {intent.amount.toLocaleString()}원
-          </p>
-          <p>
-            <strong>상태:</strong> {intent.status}
-          </p>
-
-          {/* 결제 버튼 */}
-          <button
-            onClick={handlePayment}
-            disabled={loading}
-            className="mt-4 w-full rounded bg-blue-600 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-          >
-            {loading ? "처리 중..." : "결제하기"}
-          </button>
-        </div>
-      )}
-
-      {/* 에러 메시지 */}
-      {error && (
-        <div className="mb-6 rounded border border-red-400 bg-red-100 p-4 text-red-700">
-          <strong>오류:</strong> {error}
-        </div>
-      )}
+      {/* Confirm Button */}
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="flex w-full items-center justify-center rounded-[5px] bg-[#f29219] py-2.5 text-xs font-medium text-white transition-colors hover:bg-[#d98215] active:bg-[#bf7312]"
+      >
+        확인
+      </button>
     </div>
   )
 }

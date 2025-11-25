@@ -1,4 +1,14 @@
-import type { Metadata } from "next"
+"use client"
+
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { ApiError } from "@lib/api/api-error"
+import {
+  refundGetPaymentProfiles,
+  setDefaultPaymentProfile,
+  type PaymentProfile,
+} from "domains/payment-methods/api"
 
 // (아이콘은 실제 프로젝트에서는 @heroicons/react 등을 사용해야 합니다)
 // 임시 아이콘 컴포넌트
@@ -17,12 +27,96 @@ const IconChevronLeft = () => (
   </svg>
 )
 
-//  멤버십 회비 결제 수단 관리 페이지
-export const metadata: Metadata = {
-  title: "멤버십 회비 결제 수단 관리",
-}
-
+// 멤버십 회비 결제 수단 관리 페이지
 export default function PaymentMethodScreen() {
+  const router = useRouter()
+  const [profiles, setProfiles] = useState<PaymentProfile[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isChanging, setIsChanging] = useState<string | null>(null) // 변경 중인 profileId
+
+  // 프로필 목록 조회
+  useEffect(() => {
+    async function fetchProfiles() {
+      try {
+        setIsLoading(true)
+        const data = await refundGetPaymentProfiles()
+        // HMS_CARD만 필터링 (멤버십은 HMS_CARD만 사용)
+        const hmsCardProfiles = data.filter(
+          (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
+        )
+        setProfiles(hmsCardProfiles)
+      } catch (error) {
+        console.error("프로필 조회 실패:", error)
+        toast.error("결제 수단 목록을 불러오는데 실패했습니다.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchProfiles()
+  }, [])
+
+  // 기본 결제 수단 변경
+  const handleSetDefault = async (profileId: string) => {
+    if (isChanging) return // 이미 변경 중이면 무시
+
+    try {
+      setIsChanging(profileId)
+      await setDefaultPaymentProfile(profileId)
+      toast.success("기본 결제 수단이 변경되었습니다.")
+
+      // 프로필 목록 새로고침
+      const data = await refundGetPaymentProfiles()
+      const hmsCardProfiles = data.filter(
+        (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
+      )
+      setProfiles(hmsCardProfiles)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 400 && error.message.includes("HMS_CARD")) {
+          toast.error("멤버십 결제는 HMS 카드만 사용할 수 있습니다.")
+        } else {
+          toast.error(error.message || "기본 결제 수단 변경에 실패했습니다.")
+        }
+      } else {
+        toast.error("기본 결제 수단 변경에 실패했습니다.")
+      }
+      console.error("기본 결제 수단 변경 실패:", error)
+    } finally {
+      setIsChanging(null)
+    }
+  }
+
+  // 프로필 포맷팅 헬퍼
+  const formatCardDisplay = (profile: PaymentProfile) => {
+    if (profile.details?.paymentCompanyName) {
+      return profile.details.paymentCompanyName
+    }
+    return "카드"
+  }
+
+  const formatCardNumber = (profile: PaymentProfile) => {
+    if (profile.details?.cardLast4) {
+      return `****-****-****-${profile.details.cardLast4}`
+    }
+    if (profile.details?.paymentNumber) {
+      return profile.details.paymentNumber
+    }
+    return "****-****-****-****"
+  }
+
+  // 기본 결제 수단과 다른 프로필 분리
+  const defaultProfile = profiles.find((p) => p.isDefault)
+  const otherProfiles = profiles.filter((p) => !p.isDefault)
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <p className="text-gray-600">로딩 중...</p>
+      </div>
+    )
+  }
+
   return (
     // PARENT:
     // 화면 전체를 감싸고, 자식(Container)을 수직 배치합니다.
@@ -42,7 +136,11 @@ export default function PaymentMethodScreen() {
         */}
         <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
-            <button aria-label="뒤로 가기" className="-m-2 p-2 text-black">
+            <button
+              aria-label="뒤로 가기"
+              className="-m-2 p-2 text-black"
+              onClick={() => router.back()}
+            >
               <IconChevronLeft />
             </button>
           </div>
@@ -62,22 +160,38 @@ export default function PaymentMethodScreen() {
           {/* 콘텐츠 Inner */}
           <div className="flex flex-col gap-8">
             {/* 현재 결제 수단 */}
-            <section aria-labelledby="primary-method-title">
-              <h2
-                id="primary-method-title"
-                className="text-xs leading-4 font-bold text-black"
-              >
-                멤버십 회비 결제수단
-              </h2>
-              <div className="mt-2 flex flex-col gap-1">
-                <p className="text-xs leading-4 text-gray-800">
-                  하나 BC카드 하나 바로카드
-                </p>
-                <p className="font-['Inter'] text-base font-semibold text-black">
-                  454525******212*
-                </p>
-              </div>
-            </section>
+            {defaultProfile ? (
+              <section aria-labelledby="primary-method-title">
+                <h2
+                  id="primary-method-title"
+                  className="text-xs leading-4 font-bold text-black"
+                >
+                  멤버십 회비 결제수단
+                </h2>
+                <div className="mt-2 flex flex-col gap-1">
+                  <p className="text-xs leading-4 text-gray-800">
+                    {formatCardDisplay(defaultProfile)}
+                  </p>
+                  <p className="font-['Inter'] text-base font-semibold text-black">
+                    {formatCardNumber(defaultProfile)}
+                  </p>
+                </div>
+              </section>
+            ) : (
+              <section aria-labelledby="primary-method-title">
+                <h2
+                  id="primary-method-title"
+                  className="text-xs leading-4 font-bold text-black"
+                >
+                  멤버십 회비 결제수단
+                </h2>
+                <div className="mt-2 flex flex-col gap-1">
+                  <p className="text-xs leading-4 text-gray-600">
+                    등록된 결제 수단이 없습니다.
+                  </p>
+                </div>
+              </section>
+            )}
 
             {/* 안내 문구 */}
             <section aria-label="결제 안내">
@@ -90,28 +204,48 @@ export default function PaymentMethodScreen() {
             </section>
 
             {/* 다른 결제 수단 목록 */}
-            {/* - flex-col sm:flex-row: 모바일에서는 수직, 데스크탑(sm)에서는 수평 배치
-              - sm:items-center sm:justify-between: 수평 배치 시 정렬
-            */}
-            <section
-              aria-label="다른 결제 수단"
-              className="flex flex-col gap-4"
-            >
-              <div className="flex flex-col gap-3 rounded-md bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-xs leading-4 font-medium text-gray-700">
-                    우리은행 계좌
-                  </p>
-                  <p className="text-xs leading-4 text-black">
-                    1239-*******-****23
+            {otherProfiles.length > 0 && (
+              <section
+                aria-label="다른 결제 수단"
+                className="flex flex-col gap-4"
+              >
+                {otherProfiles.map((profile) => (
+                  <div
+                    key={profile.id}
+                    className="flex flex-col gap-3 rounded-md bg-gray-100 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-xs leading-4 font-medium text-gray-700">
+                        {formatCardDisplay(profile)}
+                      </p>
+                      <p className="text-xs leading-4 text-black">
+                        {formatCardNumber(profile)}
+                      </p>
+                    </div>
+                    <button
+                      className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs leading-4 font-normal text-black shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => handleSetDefault(profile.id)}
+                      disabled={isChanging === profile.id || !!isChanging}
+                    >
+                      {isChanging === profile.id
+                        ? "변경 중..."
+                        : "멤버십 회비 결제수단으로 변경"}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {/* 결제 수단이 없을 때 */}
+            {profiles.length === 0 && (
+              <section aria-label="결제 수단 없음">
+                <div className="rounded-md bg-gray-100 p-4 text-center">
+                  <p className="text-xs leading-4 text-gray-600">
+                    등록된 HMS 카드가 없습니다.
                   </p>
                 </div>
-                <button className="shrink-0 rounded-sm border border-gray-400 bg-white px-2.5 py-1.5 text-xs leading-4 font-normal text-black shadow-sm transition-colors hover:bg-gray-50">
-                  멤버십 회비 결제수단으로 변경
-                </button>
-              </div>
-              {/* (다른 결제 수단이 있다면 여기에 추가) */}
-            </section>
+              </section>
+            )}
           </div>
         </div>
 
@@ -122,7 +256,10 @@ export default function PaymentMethodScreen() {
         <footer className="w-full shrink-0">
           {/* CTA 버튼 영역 */}
           <div className="border-t border-gray-200 bg-white p-4">
-            <button className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600">
+            <button
+              className="w-full rounded-md bg-amber-500 px-4 py-3 text-center text-sm leading-5 font-semibold text-white transition-colors hover:bg-amber-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+              onClick={() => router.push("/kr/mypage/payment-methods")}
+            >
               새로운 결제수단 등록하기
             </button>
           </div>

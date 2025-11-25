@@ -50,7 +50,7 @@ const CardIcon = () => (
 )
 
 interface AddPaymentMethodSelectorProps {
-  onSelect?: (type: "bank" | "card") => void
+  onSelect?: (type: "bank") => void
 }
 
 export default function AddPaymentMethodSelector({
@@ -58,7 +58,7 @@ export default function AddPaymentMethodSelector({
 }: AddPaymentMethodSelectorProps) {
   const router = useRouter()
 
-  const handleSelect = (type: "bank" | "card") => {
+  const handleSelect = (type: "bank") => {
     if (onSelect) {
       onSelect(type)
     } else {
@@ -71,11 +71,6 @@ export default function AddPaymentMethodSelector({
       icon: <BankAccountIcon />,
       label: "은행계좌",
       action: () => handleSelect("bank"),
-    },
-    {
-      icon: <CardIcon />,
-      label: "카드",
-      action: () => handleSelect("card"),
     },
   ]
 
@@ -98,7 +93,7 @@ export default function AddPaymentMethodSelector({
           </button>
         )}
         <div className={`grow text-center ${!onSelect ? "" : "pl-6"}`}>
-          <h1 className="text-lg font-bold">결제 수단 등록</h1>
+          <h1 className="text-lg font-bold">나중결제수단 등록</h1>
         </div>
         {!onSelect && <div className="w-6"></div>} {/* 오른쪽 여백 맞추기용 */}
       </header>
