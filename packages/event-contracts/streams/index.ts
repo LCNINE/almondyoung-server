@@ -12,6 +12,10 @@ export * from './cart.stream';
 
 // Order Stream
 export * from './order.stream';
+export * from './orders.stream';
+
+// Fulfillment Stream
+export * from './fulfillments.stream';
 
 // Payment Stream
 export * from './payment.stream';

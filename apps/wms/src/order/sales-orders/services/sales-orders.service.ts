@@ -370,6 +370,22 @@ export class SalesOrdersService {
     });
   }
 
+  /**
+   * 채널 + 채널주문ID로 SO 조회
+   * 멱등성 체크용
+   */
+  async findByChannelOrderId(
+    salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl',
+    channelOrderId: string,
+    tx?: DbTx,
+  ) {
+    const db = tx ?? this.db.db;
+    return db.query.salesOrders.findFirst({
+      where: (o, { eq, and }) =>
+        and(eq(o.salesChannel, salesChannel), eq(o.channelOrderId, channelOrderId)),
+    });
+  }
+
   async list(params: { limit: number; offset: number }, tx?: DbTx) {
     const db = tx ?? this.db.db;
     const rows = await db.query.salesOrders.findMany({

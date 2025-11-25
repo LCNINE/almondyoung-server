@@ -934,6 +934,8 @@ export const salesOrderLines = pgTable('sales_order_lines', {
   variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
   productMatchingId: uuid('product_matching_id')
     .references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
+  mappingSnapshotId: uuid('mapping_snapshot_id')
+    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' }), // SO 확정 시점 스냅샷
 
   productName: varchar('product_name', { length: 255 }).notNull(),
   quantity: integer('quantity').notNull(),
@@ -948,7 +950,9 @@ export const salesOrderLines = pgTable('sales_order_lines', {
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => ({
+  idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
+}));
 
 // 주문 이벤트 로그 테이블 추가
 export const orderEvents = pgTable('order_events', {
@@ -1603,6 +1607,7 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
   mappingSnapshotId: uuid('mapping_snapshot_id')
     .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
     .notNull(),
+  variantId: uuid('variant_id').notNull(), // PIM Variant ID - 정책 평가용
 
   // 실제 출고 정보
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
@@ -1619,6 +1624,7 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
   idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
   idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
   idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
+  idxVariant: index('idx_fulfillment_order_items_variant').on(t.variantId),
 }));
 
 /*───────────────────────────
