@@ -49,12 +49,11 @@ module.exports = {
   // Clear mocks between tests
   clearMocks: true,
 
-  // Verbose output for better debugging
-  verbose: true,
+  // Verbose output for better debugging (set to false for cleaner output)
+  verbose: false,
   
   // Suppress console.log during tests (show only errors)
-  silent: false, // false to see test output
-  // You can also use --silent flag when running tests
+  silent: true, // true to hide console.log, false to see all logs
 
   // Transform @faker-js/faker ESM module
   transformIgnorePatterns: [

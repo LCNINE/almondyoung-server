@@ -76,7 +76,7 @@ describe('Version Options Management - Integration Tests', () => {
       expect(v1Variants).toHaveLength(1); // default variant
 
       // 2. v2 생성 및 옵션 추가
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {
@@ -133,7 +133,7 @@ describe('Version Options Management - Integration Tests', () => {
 
       // 1. v2 생성 (색상 2개, 사이즈 2개 = 4 variants)
       const v1 = await mastersService.createMaster({ name: 'Product' });
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {
@@ -190,7 +190,7 @@ describe('Version Options Management - Integration Tests', () => {
       expect(colorDisplay).toBeDefined();
 
       // 3. v3 생성 및 색상에 "노랑" 추가
-      const v3 = await versionsService.createDraftVersion(v2.id, 'user-123', true);
+      const v3 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v3.id, {
         optionDiff: {
@@ -224,7 +224,7 @@ describe('Version Options Management - Integration Tests', () => {
 
       // 1. v3 생성 (색상 3개, 사이즈 2개 = 6 variants)
       const v1 = await mastersService.createMaster({ name: 'Product' });
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {
@@ -288,7 +288,7 @@ describe('Version Options Management - Integration Tests', () => {
       expect(sizeGroup).toBeDefined();
 
       // 3. v3 생성 및 사이즈 옵션 그룹 제거
-      const v3 = await versionsService.createDraftVersion(v2.id, 'user-123', true);
+      const v3 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v3.id, {
         optionDiff: {
@@ -368,7 +368,7 @@ describe('Version Options Management - Integration Tests', () => {
       });
 
       // 3. v2 생성 및 표시명만 변경
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {
@@ -465,7 +465,7 @@ describe('Version Options Management - Integration Tests', () => {
       expect(yellowValue).toBeDefined();
 
       // 3. v2 생성 및 "노랑" 제거
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {

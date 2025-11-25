@@ -97,7 +97,7 @@ describe('Version Mappings (Categories & Tags) - Integration Tests', () => {
       expect(v1CategoryIds).toEqual([categoryA.id, categoryB.id].sort());
 
       // 4. v2 생성 및 카테고리 B, C로 변경
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         categoryIds: [categoryB.id, categoryC.id],
@@ -183,7 +183,7 @@ describe('Version Mappings (Categories & Tags) - Integration Tests', () => {
       expect(v1TagIds).toEqual([newProductTag.id, discountTag.id].sort());
 
       // 4. v2 생성 및 태그 [베스트셀러]로 변경
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         tagValueIds: [bestsellerTag.id],
@@ -259,7 +259,7 @@ describe('Version Mappings (Categories & Tags) - Integration Tests', () => {
       expect(v1PrimaryCategory[0].categoryId).toBe(categoryA.id);
 
       // 4. v2 생성 및 카테고리 B를 primary로 변경
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         categoryIds: [categoryA.id, categoryB.id],

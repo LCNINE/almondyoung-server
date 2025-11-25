@@ -94,7 +94,7 @@ describe('Version Events - Integration Tests', () => {
       mockStreamPublisher.publishEvent.mockClear();
 
       // 2. v2 생성 및 publish
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v2.id, 'active');
 
       // 3. 이벤트 확인 (previousActiveVersionId가 v1)
@@ -224,7 +224,7 @@ describe('Version Events - Integration Tests', () => {
       mockStreamPublisher.publishEvent.mockClear();
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. ProductMasterDeleted 이벤트 발행 확인
       const calls = mockStreamPublisher.publishEvent.mock.calls;
@@ -247,7 +247,7 @@ describe('Version Events - Integration Tests', () => {
       mockStreamPublisher.publishEvent.mockClear();
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. ProductMasterDeleted 이벤트 발행되지 않음 (active 버전이 없으므로)
       const calls = mockStreamPublisher.publishEvent.mock.calls;
@@ -265,16 +265,16 @@ describe('Version Events - Integration Tests', () => {
       });
       await versionsService.publishVersion(v1.id, 'active');
 
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v2.id, 'active');
 
-      const v3 = await versionsService.createDraftVersion(v2.id, 'user-123', true);
+      const v3 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v3.id, 'active');
 
       mockStreamPublisher.publishEvent.mockClear();
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. ProductMasterDeleted 이벤트 1회만 발행
       const calls = mockStreamPublisher.publishEvent.mock.calls;
@@ -317,7 +317,7 @@ describe('Version Events - Integration Tests', () => {
       expect(activeChangedCount1).toBe(1);
 
       // 3. v2 생성 및 publish (ProductMasterActiveVersionChanged)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v2.id, 'active');
 
       const activeChangedCount2 = allEvents.filter(
@@ -326,7 +326,7 @@ describe('Version Events - Integration Tests', () => {
       expect(activeChangedCount2).toBe(2);
 
       // 4. Master soft delete (ProductMasterDeleted)
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       const masterDeletedCount = allEvents.filter(
         (e) => e.eventType === 'ProductMasterDeleted',

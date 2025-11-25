@@ -64,10 +64,10 @@ describe('Version Branching - Integration Tests', () => {
       });
 
       // 2. v2 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. v3 생성 (from v2)
-      const v3 = await versionsService.createDraftVersion(v2.id, 'user-123', true);
+      const v3 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 4. 버전 트리 구조 확인
       const tree = await versionsService.getVersionTree(v1.masterId);
@@ -97,11 +97,11 @@ describe('Version Branching - Integration Tests', () => {
       });
 
       // 2. v2 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await mastersService.updateVersion(v2.id, { name: 'Branch A' });
 
       // 3. v3 생성 (also from v1) - 병렬 분기
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-456', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000456', true);
       await mastersService.updateVersion(v3.id, { name: 'Branch B' });
 
       // 4. v2와 v3 모두 draft 상태로 동시 존재
@@ -167,7 +167,7 @@ describe('Version Branching - Integration Tests', () => {
       );
 
       // 2. v2 생성 (매핑 복사)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // v2용 추가 가격 규칙 생성
       await pricingService.replaceMasterRules(
@@ -278,7 +278,7 @@ describe('Version Branching - Integration Tests', () => {
       });
 
       // 2. v2 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. v2 수정
       await mastersService.updateVersion(v2.id, {
@@ -316,7 +316,7 @@ describe('Version Branching - Integration Tests', () => {
       });
 
       // 2. v2 생성 (from v1, 수정 없음)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. 버전 간 비교 (변경 없음)
       const diffs = await versionsService.compareVersions(v1.id, v2.id);

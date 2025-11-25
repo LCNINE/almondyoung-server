@@ -78,7 +78,7 @@ describe('Version Edge Cases - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 생성 및 publish (v1은 inactive로)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v2.id, 'active');
 
       // 3. inactive 버전 (v1) 수정 시도 (에러 발생해야 함)
@@ -132,7 +132,7 @@ describe('Version Edge Cases - Integration Tests', () => {
       expect(activeVersions[0].id).toBe(v1.id);
 
       // 3. v2 생성 및 publish
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await versionsService.publishVersion(v2.id, 'active');
 
       // 4. 여전히 active 버전 1개 (v2)
@@ -164,15 +164,15 @@ describe('Version Edge Cases - Integration Tests', () => {
       expect(v1.parentVersionId).toBeNull(); // 최초 버전
 
       // 2. v2 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       expect(v2.parentVersionId).toBe(v1.id);
 
       // 3. v3 생성 (from v2)
-      const v3 = await versionsService.createDraftVersion(v2.id, 'user-123', true);
+      const v3 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000000123', true);
       expect(v3.parentVersionId).toBe(v2.id);
 
       // 4. v4 생성 (from v3)
-      const v4 = await versionsService.createDraftVersion(v3.id, 'user-123', true);
+      const v4 = await versionsService.createDraftVersion(v3.id, '019a0000-0000-0000-0000-000000000123', true);
       expect(v4.parentVersionId).toBe(v3.id);
 
       // 5. 계보 확인: v1 → v2 → v3 → v4
@@ -187,17 +187,17 @@ describe('Version Edge Cases - Integration Tests', () => {
       });
 
       // 2. v2 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-alice', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000a11ce0', true);
 
       // 3. v3도 v1에서 분기
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-bob', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-00000000b0b0', true);
 
       // 4. 두 분기 모두 v1을 부모로 가짐
       expect(v2.parentVersionId).toBe(v1.id);
       expect(v3.parentVersionId).toBe(v1.id);
 
       // 5. v4는 v2에서 생성
-      const v4 = await versionsService.createDraftVersion(v2.id, 'user-alice', true);
+      const v4 = await versionsService.createDraftVersion(v2.id, '019a0000-0000-0000-0000-000000a11ce0', true);
       expect(v4.parentVersionId).toBe(v2.id);
     });
   });
@@ -209,17 +209,17 @@ describe('Version Edge Cases - Integration Tests', () => {
         name: 'Product v1',
       });
 
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-alice', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000a11ce0', true);
 
       // 2. owner 확인
-      expect(v2.draftOwnerId).toBe('user-alice');
+      expect(v2.draftOwnerId).toBe('019a0000-0000-0000-0000-000000a11ce0');
 
       // 3. user-alice는 수정 가능
-      const canAliceModify = await versionsService.canUserModifyVersion(v2.id, 'user-alice');
+      const canAliceModify = await versionsService.canUserModifyVersion(v2.id, '019a0000-0000-0000-0000-000000a11ce0');
       expect(canAliceModify).toBe(true);
 
       // 4. user-bob은 수정 불가
-      const canBobModify = await versionsService.canUserModifyVersion(v2.id, 'user-bob');
+      const canBobModify = await versionsService.canUserModifyVersion(v2.id, '019a0000-0000-0000-0000-00000000b0b0');
       expect(canBobModify).toBe(false);
     });
 
@@ -243,8 +243,8 @@ describe('Version Edge Cases - Integration Tests', () => {
         name: 'Product v1',
       });
 
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-alice', true);
-      expect(v2.draftOwnerId).toBe('user-alice');
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000a11ce0', true);
+      expect(v2.draftOwnerId).toBe('019a0000-0000-0000-0000-000000a11ce0');
 
       // 2. publish
       await versionsService.publishVersion(v2.id, 'active');
@@ -278,7 +278,7 @@ describe('Version Edge Cases - Integration Tests', () => {
       const sharedVariantId = v1Variants[0].variantId;
 
       // 2. v2 생성 (variant 복사됨)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. v2도 같은 variant 참조
       const v2Variants = await db
@@ -317,7 +317,7 @@ describe('Version Edge Cases - Integration Tests', () => {
       });
 
       // 2. v2 생성 및 옵션 추가 (새 variant 생성)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       await mastersService.updateVersion(v2.id, {
         optionDiff: {

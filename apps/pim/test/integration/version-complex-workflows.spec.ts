@@ -110,7 +110,7 @@ describe('Version Complex Workflows - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 draft 생성
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
 
       // 3. v2 수정 중
       await mastersService.updateVersion(v2.id, {
@@ -118,7 +118,7 @@ describe('Version Complex Workflows - Integration Tests', () => {
       });
 
       // 4. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 5. Master deletedAt 확인
       const [master] = await db
@@ -153,14 +153,14 @@ describe('Version Complex Workflows - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 draft 생성 (from v1)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-alice', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000a11ce0', true);
       await mastersService.updateVersion(v2.id, {
         name: 'Product v2',
         description: 'Alice branch',
       });
 
       // 3. v3 draft 생성 (also from v1)
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-bob', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-00000000b0b0', true);
       await mastersService.updateVersion(v3.id, {
         name: 'Product v3',
         description: 'Bob branch',
@@ -172,8 +172,8 @@ describe('Version Complex Workflows - Integration Tests', () => {
 
       expect(v2Data.versionStatus).toBe('draft');
       expect(v3Data.versionStatus).toBe('draft');
-      expect(v2Data.draftOwnerId).toBe('user-alice');
-      expect(v3Data.draftOwnerId).toBe('user-bob');
+      expect(v2Data.draftOwnerId).toBe('019a0000-0000-0000-0000-000000a11ce0');
+      expect(v3Data.draftOwnerId).toBe('019a0000-0000-0000-0000-00000000b0b0');
 
       // 5. 각각 독립적으로 수정
       await mastersService.updateVersion(v2.id, {
@@ -213,7 +213,7 @@ describe('Version Complex Workflows - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 생성 및 publish (문제가 있는 버전)
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await mastersService.updateVersion(v2.id, {
         name: 'Product v2 - Broken',
         description: 'This version has issues',
@@ -226,7 +226,7 @@ describe('Version Complex Workflows - Integration Tests', () => {
       expect(activeVersion.name).toBe('Product v2 - Broken');
 
       // 4. 문제 발견! v1에서 v3 생성 (롤백)
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-admin', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000ad1111', true);
 
       // 5. v3는 v1의 데이터를 기반으로 함
       expect(v3.name).toBe('Product v1 - Stable');

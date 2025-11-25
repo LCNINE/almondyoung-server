@@ -110,7 +110,7 @@ describe('Version Basic Workflow - Integration Tests', () => {
       // 2. v2 draft 생성 (from v1)
       const v2 = await versionsService.createDraftVersion(
         v1.id,
-        'user-123',
+        '019a0000-0000-0000-0000-000000000123',
         true,
       );
 
@@ -153,14 +153,14 @@ describe('Version Basic Workflow - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. v2 생성 및 publish
-      const v2 = await versionsService.createDraftVersion(v1.id, 'user-123', true);
+      const v2 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000123', true);
       await mastersService.updateVersion(v2.id, {
         name: 'Product v2',
       });
       await versionsService.publishVersion(v2.id, 'active');
 
       // 3. v3 생성 (from v1, not v2) - 분기
-      const v3 = await versionsService.createDraftVersion(v1.id, 'user-456', true);
+      const v3 = await versionsService.createDraftVersion(v1.id, '019a0000-0000-0000-0000-000000000456', true);
 
       expect(v3.version).toBe(3);
       expect(v3.parentVersionId).toBe(v1.id); // v2가 아닌 v1에서 분기
@@ -197,7 +197,7 @@ describe('Version Basic Workflow - Integration Tests', () => {
       await versionsService.publishVersion(v1.id, 'active');
 
       // 2. Master soft delete
-      await mastersService.softDeleteMaster(v1.masterId, 'user-admin');
+      await mastersService.softDeleteMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 3. Master 삭제 확인 (deletedAt 필드)
       const [deletedMaster] = await db
@@ -206,7 +206,7 @@ describe('Version Basic Workflow - Integration Tests', () => {
         .where(eq(productMasters.id, v1.masterId));
 
       expect(deletedMaster.deletedAt).not.toBeNull();
-      expect(deletedMaster.deletedBy).toBe('user-admin');
+      expect(deletedMaster.deletedBy).toBe('019a0000-0000-0000-0000-000000ad1111');
 
       // 4. Active 버전 조회 시 제외되는지 확인
       const activeBefore = await db
@@ -221,7 +221,7 @@ describe('Version Basic Workflow - Integration Tests', () => {
       expect(activeBefore).toHaveLength(1); // 버전 자체는 여전히 존재
 
       // 5. Master 복구
-      await mastersService.restoreMaster(v1.masterId, 'user-admin');
+      await mastersService.restoreMaster(v1.masterId, '019a0000-0000-0000-0000-000000ad1111');
 
       // 6. Master 복구 확인 (deletedAt = null)
       const [restoredMaster] = await db

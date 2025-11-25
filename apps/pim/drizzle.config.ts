@@ -4,7 +4,7 @@ import { config } from 'dotenv';
 config({ path: './apps/pim/.env', override: true });
 
 export default {
-  schema: './apps/pim/src/schema.ts',
+  schema: './src/schema.ts',
   out: './drizzle/migrations',
   dialect: 'postgresql',
   dbCredentials: {
