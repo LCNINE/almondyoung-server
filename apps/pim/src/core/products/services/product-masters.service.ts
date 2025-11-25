@@ -123,69 +123,79 @@ export class ProductMastersService {
     const masterId = uuidv7();
     const versionId = uuidv7();
 
-    // 1. 마스터 메타데이터 생성
-    const [master] = await tx
-      .insert(productMasters)
-      .values({
-        id: masterId,
-        createdBy: (data as any).createdBy ?? null,
-      })
-      .returning();
+    try {
+      // 1. 마스터 메타데이터 생성
+      const [master] = await tx
+        .insert(productMasters)
+        .values({
+          id: masterId,
+          createdBy: (data as any).createdBy ?? null,
+        })
+        .returning();
 
-    // 2. 첫 번째 버전 생성
-    const versionData = {
-      id: versionId,
-      masterId: masterId,
-      version: 1,
-      versionStatus: 'draft',
-      parentVersionId: null,
-      draftOwnerId: null,
+      // 2. 첫 번째 버전 생성
+      const versionData = {
+        id: versionId,
+        masterId: masterId,
+        version: 1,
+        versionStatus: 'draft',
+        parentVersionId: null,
+        draftOwnerId: null,
 
-      // 제공된 필드만 사용, 나머지는 기본값
-      name: data.name || '새 상품',
-      description: data.description ?? null,
-      brand: data.brand ?? null,
-      thumbnail: (data as any).thumbnailFileId ?? null,
-      descriptionHtml: data.description ?? null,
-      tags: data.tags ?? [],
-      images: data.images ?? null,
-      attributes: data.attributes ?? {},
-      seoTitle: data.seoTitle ?? null,
-      seoDescription: data.seoDescription ?? null,
-      seoKeywords: data.seoKeywords ?? [],
-      isWholesaleOnly: data.isWholesaleOnly ?? false,
-      isMembershipOnly: data.isMembershipOnly ?? false,
-      status: 'draft',
-    };
+        // 제공된 필드만 사용, 나머지는 기본값
+        name: data.name || '새 상품',
+        description: data.description ?? null,
+        brand: data.brand ?? null,
+        thumbnail: (data as any).thumbnailFileId ?? null,
+        descriptionHtml: data.description ?? null,
+        tags: data.tags ?? [],
+        images: data.images ?? null,
+        attributes: data.attributes ?? {},
+        seoTitle: data.seoTitle ?? null,
+        seoDescription: data.seoDescription ?? null,
+        seoKeywords: data.seoKeywords ?? [],
+        isWholesaleOnly: data.isWholesaleOnly ?? false,
+        isMembershipOnly: data.isMembershipOnly ?? false,
+        status: 'draft',
+      };
 
-    const [version] = await tx
-      .insert(productMasterVersions)
-      .values(versionData as any)
-      .returning();
+      const [version] = await tx
+        .insert(productMasterVersions)
+        .values(versionData as any)
+        .returning();
 
-    // 3. 항상 기본 variant 1개 생성 (옵션 없음)
-    const [variant] = await tx
-      .insert(productVariants)
-      .values({
-        variantName: null,
-        isDefault: true,
-        status: 'active',
-      })
-      .returning();
+      // 3. 항상 기본 variant 1개 생성 (옵션 없음)
+      const [variant] = await tx
+        .insert(productVariants)
+        .values({
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+        })
+        .returning();
 
-    // 4. 매핑 테이블에 연결
-    await tx.insert(productMasterVariants).values({
-      id: uuidv7(),
-      masterId: masterId,
-      variantId: variant.id,
-      version: 1,
-      createdAt: new Date(),
-    });
+      // 4. 매핑 테이블에 연결
+      await tx.insert(productMasterVariants).values({
+        id: uuidv7(),
+        masterId: masterId,
+        variantId: variant.id,
+        version: 1,
+        createdAt: new Date(),
+      });
 
-    // 5. WMS 이벤트 발행
-    await this.publishVariantCreatedEvent(version, variant, null);
+      // 5. WMS 이벤트 발행
+      await this.publishVariantCreatedEvent(version, variant, null);
 
-    return version;
+      return version;
+    } catch (error: any) {
+      this.logger.error(`Error creating master: ${error.message}`, error.stack);
+
+      // DB 쿼리 에러를 명확한 에러로 변환 (pricing rules와 동일한 패턴)
+      if (error.message?.includes('Failed query')) {
+        throw new Error('Failed to create master: Database connection error');
+      }
+      throw error;
+    }
   }
 
   private async _linkCategories(
