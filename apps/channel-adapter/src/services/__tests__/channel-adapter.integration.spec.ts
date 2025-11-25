@@ -3,7 +3,6 @@ import { ChannelAdapterService } from '../channel-adapter.service';
 import { ChannelDataReader } from '../channel-data.reader';
 import { ChannelSyncManager } from '../channel-sync.manager';
 import { ChannelCommandManager } from '../channel-command.manager';
-import { WmsIntegrationManager } from '../wms-integration.manager';
 import { ChannelAdapterRepository } from '../channel-adapter.repository';
 import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
 import { DbModule, DbService } from '@app/db';
@@ -27,7 +26,6 @@ describe('ChannelAdapterService (Integration)', () => {
   let service: ChannelAdapterService;
   let syncManager: ChannelSyncManager;
   let commandManager: ChannelCommandManager;
-  let wmsManager: WmsIntegrationManager;
   let repository: ChannelAdapterRepository;
   let dbService: DbService<typeof channelAdapterSchema>;
   let module: TestingModule;
@@ -40,10 +38,6 @@ describe('ChannelAdapterService (Integration)', () => {
     executeCommand: jest.fn(),
     executeQuery: jest.fn(),
     findOrders: jest.fn(),
-    createOrderInWms: jest.fn(),
-    updateOrderInWms: jest.fn(),
-    cancelOrderInWms: jest.fn(),
-    processExchangeInWms: jest.fn(),
   };
 
   let testChannelId: string;
@@ -65,7 +59,6 @@ describe('ChannelAdapterService (Integration)', () => {
         ChannelDataReader,
         ChannelSyncManager,
         ChannelCommandManager,
-        WmsIntegrationManager,
         ChannelAdapterRepository,
         {
           provide: ChannelAdapterFactory,
@@ -86,7 +79,6 @@ describe('ChannelAdapterService (Integration)', () => {
     service = module.get<ChannelAdapterService>(ChannelAdapterService);
     syncManager = module.get<ChannelSyncManager>(ChannelSyncManager);
     commandManager = module.get<ChannelCommandManager>(ChannelCommandManager);
-    wmsManager = module.get<WmsIntegrationManager>(WmsIntegrationManager);
     repository = module.get<ChannelAdapterRepository>(ChannelAdapterRepository);
     dbService = module.get<DbService<typeof channelAdapterSchema>>(DbService);
 
@@ -229,47 +221,6 @@ describe('ChannelAdapterService (Integration)', () => {
     });
   });
 
-  describe('WmsIntegrationManager 검증 로직', () => {
-    it('1. 유효한 주문 이벤트는 WMS에 전달되어야 한다', async () => {
-      const wmsOrderId = uuidv7();
-      mockAdapter.createOrderInWms.mockResolvedValue({ id: wmsOrderId });
-
-      const orderEvent: InternalOrderEvent = {
-        externalOrderId: 'ORDER-005',
-        status: 'PAID',
-        buyer: { name: 'WMS Test User' },
-      } as any;
-
-      const result = await service.forwardToWms('naver_smartstore', orderEvent);
-
-      expect(result.id).toBe(wmsOrderId);
-      expect(mockAdapter.createOrderInWms).toHaveBeenCalledWith(orderEvent);
-    });
-
-    it('2. externalOrderId가 없으면 에러를 던져야 한다', async () => {
-      const invalidEvent = {
-        status: 'PAID',
-        buyer: { name: 'Invalid User' },
-      } as any;
-
-      await expect(
-        wmsManager.createOrder('naver_smartstore', invalidEvent),
-      ).rejects.toThrow('Order ID required');
-    });
-
-    it('3. buyer.name이 없으면 에러를 던져야 한다', async () => {
-      const invalidEvent = {
-        externalOrderId: 'ORDER-006',
-        status: 'PAID',
-        buyer: {},
-      } as any;
-
-      await expect(
-        wmsManager.createOrder('naver_smartstore', invalidEvent),
-      ).rejects.toThrow('Buyer name required');
-    });
-  });
-
   describe('병렬 처리 동작', () => {
     it('1. executeOnAllChannels는 모든 채널에 병렬로 명령을 실행해야 한다', async () => {
       mockAdapter.executeCommand.mockResolvedValue({ success: true });
@@ -314,22 +265,6 @@ describe('ChannelAdapterService (Integration)', () => {
       await expect(service.poll('naver_smartstore', 'orders')).rejects.toThrow(
         'Failed to poll orders from naver_smartstore',
       );
-    });
-
-    it('2. WMS 연동 실패 시 명확한 에러 메시지를 제공해야 한다', async () => {
-      mockAdapter.createOrderInWms.mockRejectedValue(
-        new Error('WMS API Error'),
-      );
-
-      const orderEvent: InternalOrderEvent = {
-        externalOrderId: 'ORDER-009',
-        status: 'PAID',
-        buyer: { name: 'Error Test User' },
-      } as any;
-
-      await expect(
-        wmsManager.createOrder('naver_smartstore', orderEvent),
-      ).rejects.toThrow('WMS order creation failed');
     });
   });
 
