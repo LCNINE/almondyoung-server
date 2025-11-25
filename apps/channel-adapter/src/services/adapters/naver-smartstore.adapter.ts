@@ -24,7 +24,6 @@ import {
   CreateSalesOrderDto,
 } from '../apis/wms.api.service';
 import { OrderEventPublisher } from '../order-event.publisher';
-import { ChannelProductMappingService } from '../channel-product-mapping.service';
 import { PendingOrderService } from '../pending-order.service';
 
 // 신규 Zod 스키마 Import
@@ -209,7 +208,6 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     private readonly naverProductClient: NaverProductClient,
     private readonly wmsApi: WmsApiService,
     private readonly orderEventPublisher: OrderEventPublisher,
-    private readonly channelProductMappingService: ChannelProductMappingService,
     private readonly pendingOrderService: PendingOrderService,
   ) {}
 
@@ -1365,74 +1363,48 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
    * 주문 이벤트 발행
    *
    * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
-   * - PAID/PENDING 상태: OrderCreated 이벤트 발행
+   * - PAID/PENDING 상태: OrderCreated 이벤트 발행 (매핑 자동 조회, 미매핑 시 계류)
    * - CANCELLED 상태: OrderCancelled 이벤트 발행
    */
-  /**
-   * 주문 이벤트 발행
-   *
-   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
-   * 채널 상품 매핑이 없는 주문은 계류(pending) 처리됩니다.
-   */
   private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
-    const publishPromises: Promise<void>[] = [];
     let publishedCount = 0;
     let pendingCount = 0;
 
     for (const event of events) {
       try {
-        // 상태에 따라 적절한 이벤트 발행
         switch (event.status) {
           case 'PENDING_PAYMENT':
           case 'PAID':
-            // 새로운 주문 - 매핑 확인 후 OrderCreated 발행 또는 계류
-            const channelProductId = event.externalProductOrderId ?? event.externalOrderId;
-            const mapping = await this.channelProductMappingService.findMapping(
-              'naver',
-              channelProductId,
+            // 새로운 주문 - 매핑 조회 후 OrderCreated 발행 또는 계류
+            const result = await this.orderEventPublisher.publishOrderConfirmed(
+              'naver_smartstore',
+              event,
             );
 
-            if (mapping) {
-              // 매핑 있음 → 이벤트 발행 (variantIdMapper 콜백 전달)
-              publishPromises.push(
-                this.orderEventPublisher.publishOrderCreated(
-                  'naver_smartstore',
-                  event,
-                  this.channelProductMappingService.createVariantIdMapper('naver'),
-                ),
-              );
+            if (result.published) {
               publishedCount++;
-            } else {
-              // 매핑 없음 → 계류
-              await this.pendingOrderService.holdOrder({
-                salesChannel: 'naver',
-                channelOrderId: event.externalOrderId,
-                channelProductId,
-                channelProductName: event.productName,
-                orderData: event,
-                reason: 'unmapped_product',
-              });
-              pendingCount++;
-              this.logger.warn(
-                `⏸️ [네이버] 주문 계류 (미매핑 상품): ${event.externalOrderId}, 상품: ${channelProductId}`,
+            } else if (result.unmappedItems && result.unmappedItems.length > 0) {
+              // 미매핑 항목 → 계류 처리
+              await this.pendingOrderService.savePendingOrder(
+                'naver_smartstore',
+                event,
+                result.unmappedItems,
               );
+              pendingCount++;
             }
             break;
 
           case 'CANCELLED':
             // 취소된 주문 - OrderCancelled 발행
-            publishPromises.push(
-              this.orderEventPublisher.publishOrderCancelled(
-                'naver_smartstore',
-                event,
-                event.reason ?? 'CUSTOMER_REQUEST',
-              ),
+            await this.orderEventPublisher.publishOrderCancelled(
+              'naver_smartstore',
+              event,
+              event.reason ?? 'CUSTOMER_REQUEST',
             );
             publishedCount++;
             break;
 
           default:
-            // 이미 처리 중이거나 완료된 주문은 발행하지 않음
             this.logger.debug(
               `📋 [네이버] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`,
             );
@@ -1440,18 +1412,15 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
       } catch (error) {
         this.logger.error(
           `❌ [네이버] 주문 이벤트 발행 실패: ${event.externalOrderId}`,
-          error.message,
+          error instanceof Error ? error.message : String(error),
         );
       }
     }
 
-    // 병렬로 이벤트 발행
-    if (publishPromises.length > 0) {
-      await Promise.allSettled(publishPromises);
+    if (publishedCount > 0 || pendingCount > 0) {
+      this.logger.log(
+        `📤 [네이버] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`,
+      );
     }
-
-    this.logger.log(
-      `📤 [네이버] 주문 처리 완료: 발행 ${publishedCount}건, 계류 ${pendingCount}건`,
-    );
   }
 }

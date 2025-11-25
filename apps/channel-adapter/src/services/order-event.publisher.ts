@@ -5,7 +5,7 @@
  * WMS OrderEventsConsumer가 이 이벤트를 구독하여 Sales Order를 생성합니다.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectStreamPublisher, StreamPublisher, ExtractPayloadType } from '@app/events';
 import {
   ORDER_STREAM,
@@ -16,10 +16,17 @@ import {
   OrderItem,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
-import { InternalOrderEvent } from '../types';
+import { InternalOrderEvent, UnmappedItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { ChannelListingClient, LookupVariantResult } from './clients/channel-listing.client';
 
 type OrderEvents = typeof ORDER_STREAM.events;
+
+export interface PublishResult {
+  published: boolean;
+  pendingReason?: string;
+  unmappedItems?: UnmappedItem[];
+}
 
 @Injectable()
 export class OrderEventPublisher {
@@ -28,6 +35,7 @@ export class OrderEventPublisher {
   constructor(
     @InjectStreamPublisher('orders.events.v1')
     private readonly ordersPublisher: StreamPublisher<OrderEvents>,
+    private readonly channelListingClient: ChannelListingClient,
   ) {
     this.logger.log('📤 OrderEventPublisher 초기화 완료');
   }
@@ -49,9 +57,123 @@ export class OrderEventPublisher {
   }
 
   /**
-   * 주문 생성 이벤트 발행
+   * 주문 확정 이벤트 발행 (매핑 자동 조회)
+   *
+   * 채널 상품 ID → PIM Variant ID 매핑을 조회하고:
+   * - 모든 항목이 매핑됨: OrderCreated 이벤트 발행
+   * - 일부 미매핑: 미매핑 항목 정보 반환 (호출자가 계류 처리)
+   */
+  async publishOrderConfirmed(
+    channel: 'naver_smartstore' | 'coupang',
+    orderEvent: InternalOrderEvent,
+  ): Promise<PublishResult> {
+    const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
+
+    // 채널 상품 ID 추출
+    const channelProductId =
+      orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+
+    // 매핑 조회
+    const listing = await this.channelListingClient.lookupByChannelCode(
+      channelCode,
+      channelProductId,
+    );
+
+    if (!listing) {
+      // 매핑 없음 → 계류 필요
+      const unmappedItems: UnmappedItem[] = [
+        {
+          channelItemId: channelProductId,
+          channelItemName: orderEvent.productName ?? 'Unknown Product',
+          channelOptionName: orderEvent.optionName,
+        },
+      ];
+
+      this.logger.warn(
+        `⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${channelProductId}`,
+      );
+
+      return {
+        published: false,
+        pendingReason: 'unmapped_items',
+        unmappedItems,
+      };
+    }
+
+    // 매핑 있음 → 이벤트 발행
+    await this.publishOrderCreatedWithMapping(channel, orderEvent, listing);
+
+    return { published: true };
+  }
+
+  /**
+   * 매핑 정보를 사용하여 주문 생성 이벤트 발행
+   */
+  private async publishOrderCreatedWithMapping(
+    channel: 'naver_smartstore' | 'coupang',
+    orderEvent: InternalOrderEvent,
+    listing: LookupVariantResult,
+  ): Promise<void> {
+    const salesChannel = this.mapChannelToSalesChannel(channel);
+    const orderId = uuidv4();
+
+    const channelProductId =
+      orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+
+    const items: OrderItem[] = [
+      {
+        orderItemId: channelProductId,
+        skuId: listing.variantId,
+        productId: orderEvent.productId,
+        variantId: listing.variantId,
+        quantity: orderEvent.quantity ?? 1,
+        unitPrice: orderEvent.priceAmount ?? 0,
+        totalPrice: orderEvent.priceAmount ?? 0,
+      },
+    ];
+
+    const shippingAddress: ShippingAddress = {
+      recipientName: orderEvent.buyer?.name ?? 'Unknown',
+      phone: orderEvent.buyer?.contact ?? '',
+      postalCode: orderEvent.buyer?.address?.postalCode ?? '',
+      roadAddress: orderEvent.buyer?.address?.roadAddress ?? '',
+      detailAddress: orderEvent.buyer?.address?.detailAddress ?? '',
+      deliveryNote: undefined,
+    };
+
+    const payload: OrderCreatedPayload = {
+      orderId,
+      externalOrderId: orderEvent.externalOrderId,
+      salesChannel,
+      customerId: orderEvent.buyer?.name ?? 'guest',
+      items,
+      totalAmount: orderEvent.priceAmount ?? 0,
+      subtotalAmount: orderEvent.priceAmount ?? 0,
+      shippingAmount: 0,
+      discountAmount: orderEvent.discountAmount ?? 0,
+      currency: 'KRW',
+      shippingAddress,
+      status: 'confirmed',
+      createdAt: orderEvent.createdAt ?? new Date().toISOString(),
+    };
+
+    await this.ordersPublisher.publishEvent({
+      eventType: 'OrderCreated',
+      aggregateId: orderEvent.externalOrderId,
+      payload,
+    });
+
+    this.logger.log(
+      `📤 [OrderCreated] Published: ${orderEvent.externalOrderId} from ${channel}`,
+      { orderId, salesChannel, variantId: listing.variantId },
+    );
+  }
+
+  /**
+   * 주문 생성 이벤트 발행 (레거시 - variantIdMapper 콜백 사용)
    *
    * 채널에서 새 주문이 확정되면 WMS에 알리기 위해 이벤트를 발행합니다.
+   * @deprecated publishOrderConfirmed를 대신 사용하세요
    */
   async publishOrderCreated(
     channel: 'naver_smartstore' | 'coupang',

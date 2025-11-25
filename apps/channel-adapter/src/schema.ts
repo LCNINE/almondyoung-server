@@ -141,83 +141,6 @@ export const wmsOrderMappings = pgTable(
   ],
 );
 
-// 🔹 채널 상품 → PIM Variant 매핑 테이블
-// 외부 채널의 상품 ID를 PIM의 variantId에 매핑 (N:1 관계)
-export const channelProductMappings = pgTable(
-  'channel_product_mappings',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-
-    // 채널 정보
-    salesChannel: varchar('sales_channel', { length: 50 }).notNull(), // 'coupang', 'naver'
-    channelProductId: varchar('channel_product_id', { length: 255 }).notNull(), // 쿠팡 vendorItemId, 네이버 productOrderId 등
-    channelProductName: varchar('channel_product_name', { length: 500 }), // 채널에서 보여주는 상품명 (참고용)
-
-    // PIM 매핑 정보
-    pimVariantId: uuid('pim_variant_id').notNull(), // PIM의 variant ID
-    pimVariantCode: varchar('pim_variant_code', { length: 100 }), // 조회 편의용 캐시
-
-    // 메타데이터
-    mappedBy: varchar('mapped_by', { length: 100 }), // 매핑한 관리자
-    mappedAt: timestamp('mapped_at').defaultNow(),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    // 채널 + 채널상품ID 조합으로 유니크 (pimVariantId는 유니크 아님 - N:1 허용)
-    uniqueIndex('uq_channel_product_mapping').on(
-      table.salesChannel,
-      table.channelProductId,
-    ),
-    // PIM variant로 역조회 (어떤 채널 상품들이 이 variant에 매핑되어 있나?)
-    index('idx_channel_mapping_variant').on(table.pimVariantId),
-    index('idx_channel_mapping_channel').on(table.salesChannel),
-  ],
-);
-
-// 🔹 계류 주문 테이블
-// 채널 상품 매핑이 없어서 처리할 수 없는 주문을 임시 보관
-export const pendingOrders = pgTable(
-  'pending_orders',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-
-    // 채널 정보
-    salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
-    channelOrderId: varchar('channel_order_id', { length: 255 }).notNull(),
-    channelProductId: varchar('channel_product_id', { length: 255 }).notNull(), // 매핑 안 된 상품 ID
-    channelProductName: varchar('channel_product_name', { length: 500 }), // 상품명 (관리자 참고용)
-
-    // 원본 주문 데이터 (재처리용)
-    orderData: jsonb('order_data').notNull(), // InternalOrderEvent 전체 저장
-
-    // 상태
-    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, processed, cancelled
-    reason: varchar('reason', { length: 50 }).default('unmapped_product'), // pending 사유
-
-    // 처리 정보
-    processedAt: timestamp('processed_at'),
-    processedBy: varchar('processed_by', { length: 100 }),
-
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
-  },
-  (table) => [
-    // 같은 채널의 같은 주문은 하나만 계류 가능
-    uniqueIndex('uq_pending_channel_order').on(
-      table.salesChannel,
-      table.channelOrderId,
-    ),
-    index('idx_pending_status').on(table.status),
-    index('idx_pending_product').on(table.channelProductId),
-    index('idx_pending_created').on(table.createdAt),
-  ],
-);
-
 // 🔹 채널별 동기화 상태 영속화 테이블
 export const syncStatuses = pgTable(
   'sync_statuses',
@@ -250,6 +173,52 @@ export const syncStatuses = pgTable(
   ],
 );
 
+// 🔹 미매핑 주문 계류 테이블 (채널 상품 → PIM Variant 매핑 대기)
+export const pendingOrders = pgTable(
+  'pending_orders',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // 채널 정보
+    channel: varchar('channel', { length: 50 }).notNull(), // 'coupang', 'naver'
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+
+    // 상태
+    status: varchar('status', { length: 50 }).notNull().default('pending_mapping'),
+    // 'pending_mapping' | 'processing' | 'completed' | 'failed'
+
+    // 미매핑 항목 정보 (관리자 UI 표시용)
+    unmappedItems: jsonb('unmapped_items').$type<{
+      channelItemId: string;
+      channelItemName: string;
+      channelOptionName?: string;
+    }[]>().notNull(),
+
+    // 원본 주문 데이터 (재처리용)
+    rawOrderEvent: jsonb('raw_order_event').notNull(),
+
+    // 처리 정보
+    retryCount: integer('retry_count').default(0),
+    lastRetryAt: timestamp('last_retry_at'),
+    processedAt: timestamp('processed_at'),
+    errorMessage: text('error_message'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_pending_orders_status').on(table.status),
+    index('idx_pending_orders_channel').on(table.channel),
+    uniqueIndex('uq_pending_orders_external').on(
+      table.channel,
+      table.externalOrderId,
+    ),
+    index('idx_pending_orders_created').on(table.createdAt),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -260,9 +229,8 @@ export const channelAdapterSchema = {
   syncHistories,
   processedEvents,
   wmsOrderMappings,
-  channelProductMappings,
-  pendingOrders,
   syncStatuses,
+  pendingOrders,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
