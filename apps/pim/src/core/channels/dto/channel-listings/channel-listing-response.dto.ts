@@ -14,7 +14,7 @@ export class LookupChannelListingResponseDto {
   isActive: boolean;
 }
 
-export class ChannelInfoDto {
+export class ChannelSiteInfoDto {
   @ApiProperty({ description: '채널 ID' })
   id: string;
 
@@ -82,8 +82,8 @@ export class ChannelListingWithChannelDto {
   @ApiProperty({ description: '생성일시', nullable: true })
   createdAt: Date | null;
 
-  @ApiProperty({ description: '채널 정보', type: ChannelInfoDto })
-  channel: ChannelInfoDto;
+  @ApiProperty({ description: '채널 정보', type: ChannelSiteInfoDto })
+  channel: ChannelSiteInfoDto;
 }
 
 export class ChannelListingListResponseDto {
