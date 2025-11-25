@@ -10,7 +10,6 @@ import { ChannelAdapterFactory } from './services/adapters/channel-adapter.facto
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
-import { ChannelMappingController } from './controllers/channel-mapping.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
@@ -36,7 +35,8 @@ import { ChannelSyncManager } from './services/channel-sync.manager';
 import { ChannelCommandManager } from './services/channel-command.manager';
 import { WmsIntegrationManager } from './services/wms-integration.manager';
 import { ChannelAdapterRepository } from './services/channel-adapter.repository';
-import { ChannelProductMappingService } from './services/channel-product-mapping.service';
+import { PendingOrderRepository } from './services/pending-order.repository';
+import { ChannelListingClient } from './services/clients/channel-listing.client';
 import { PendingOrderService } from './services/pending-order.service';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
@@ -107,7 +107,7 @@ function createKafkaConfig() {
         ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController, ChannelMappingController, FulfillmentEventsConsumer],
+  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
@@ -132,13 +132,16 @@ function createKafkaConfig() {
     ChannelCommandManager,
     WmsIntegrationManager,
     ChannelAdapterRepository,
+    PendingOrderRepository,
+
+    // PIM 매핑 조회 클라이언트
+    ChannelListingClient,
+
+    // 계류 주문 서비스
+    PendingOrderService,
 
     // 주문 이벤트 발행 서비스
     OrderEventPublisher,
-
-    // 채널 상품 매핑 및 계류 주문 관리
-    ChannelProductMappingService,
-    PendingOrderService,
 
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
