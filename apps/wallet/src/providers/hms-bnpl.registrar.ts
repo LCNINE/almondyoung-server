@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 // PaymentError를 사용하여 도메인 에러를 명확히 표현합니다.
 import { PaymentError, ProfileRegistrar } from './payment-provider.interface';
-import { HmsAPI, MockHmsAPI } from 'hms-api-wrapper'; // 실제 라이브러리 경로
+import { HmsAPI } from 'hms-api-wrapper';
 import { HmsApiFactory } from '../shared/utils/hms-api.factory';
 
 /**
@@ -27,12 +27,13 @@ export interface HmsBnplRegisterInput {
 @Injectable()
 export class HmsBnplRegistrar
   implements
-  ProfileRegistrar<
-    HmsBnplRegisterInput,
-    Record<string, never> // Meta Type (BNPL은 특별한 메타 데이터 없음)
-  > {
+    ProfileRegistrar<
+      HmsBnplRegisterInput,
+      Record<string, never> // Meta Type (BNPL은 특별한 메타 데이터 없음)
+    >
+{
   private readonly logger = new Logger(HmsBnplRegistrar.name);
-  private readonly hmsApi: HmsAPI | MockHmsAPI;
+  private readonly hmsApi: HmsAPI;
 
   constructor() {
     // 실제 환경에 맞는 API 클라이언트를 생성합니다.
@@ -46,52 +47,83 @@ export class HmsBnplRegistrar
   async register(input: HmsBnplRegisterInput, ctx: { tx: any }) {
     this.logger.log(`➡️ HMS BNPL 프로필/동의서 등록 시작: ${input.memberId}`);
 
-    // --- 1단계: HMS 회원 등록 ---
-    const memberResp = await this.hmsApi.members.create({
-      memberId: input.memberId,
-      memberName: input.memberName,
-      payerName: input.payerName,
-      paymentKind: 'CMS',
-      paymentCompany: input.paymentCompany,
-      paymentNumber: input.paymentNumber,
-      payerNumber: input.payerNumber,
-      phone: input.phone,
-    });
+    try {
+      // --- 1단계: HMS 회원 등록 ---
+      const memberResp = await this.hmsApi.members.create({
+        memberId: input.memberId,
+        memberName: input.memberName,
+        payerName: input.payerName,
+        paymentKind: 'CMS',
+        paymentCompany: input.paymentCompany,
+        paymentNumber: input.paymentNumber,
+        payerNumber: input.payerNumber,
+        phone: input.phone,
+      });
 
-    if (memberResp.member.result.flag !== 'Y') {
-      const reason = memberResp.member.result.message;
-      this.logger.warn(`⚠️ HMS BNPL 회원 등록 실패: ${reason}`);
-      // 이제 meta에 reason을 담아도 타입 에러가 발생하지 않습니다.
-      return { status: 'FAILED', meta: { reason } };
+      if (memberResp.member.result.flag !== 'Y') {
+        const reason = memberResp.member.result.message;
+        this.logger.warn(`⚠️ HMS BNPL 회원 등록 실패: ${reason}`);
+        // 이제 meta에 reason을 담아도 타입 에러가 발생하지 않습니다.
+        return { status: 'FAILED', meta: { reason } };
+      }
+      this.logger.log(`✅ HMS BNPL 회원 등록 성공: ${input.memberId}`);
+
+      // --- 2단계: 동의서 파일 업로드 ---
+      const agreementResp = await this.hmsApi.agreements.register(
+        input.custId,
+        input.memberId,
+        input.agreementFile,
+      );
+
+      // 실제 API 응답의 성공/실패 조건으로 변경해야 합니다.
+      if (!agreementResp.agreementFile.agreementKey) {
+        const reason = '동의서 응답에 agreementKey가 없습니다.';
+        this.logger.error(`❌ HMS BNPL 동의서 업로드 실패: ${reason}`);
+        // 중요: 이 경우 보상 트랜잭션(회원 삭제)을 호출하는 로직을 추가 고려해야 합니다.
+        // await this.hmsApi.members.delete(input.memberId);
+        return { status: 'FAILED', meta: { reason } };
+      }
+      this.logger.log(
+        `✅ HMS BNPL 동의서 업로드 성공: ${agreementResp.agreementFile.agreementKey}`,
+      );
+
+      // --- 최종 성공 ---
+      return {
+        externalId: memberResp.member.memberId,
+        status: 'SUCCESS', // 또는 API 응답에 따른 실제 상태
+        meta: {
+          agreementKey: agreementResp.agreementFile.agreementKey,
+        },
+      };
+    } catch (error) {
+      // HsFmsError를 catch하여 상세한 에러 정보를 로깅하고 전파
+      // 런타임 타입 가드: HsFmsError는 error 속성을 가지고 있음
+      if (
+        error instanceof Error &&
+        'error' in error &&
+        typeof (error as any).error === 'object' &&
+        (error as any).error !== null &&
+        'message' in (error as any).error &&
+        error.name === 'HsFmsError'
+      ) {
+        const hmsError = error as any;
+        const hmsMessage = hmsError.error?.message || error.message;
+        const hmsDeveloperMessage = hmsError.error?.developerMessage;
+
+        this.logger.error(
+          `❌ HMS BNPL 등록 중 HMS API 에러 발생: ${hmsMessage}`,
+          hmsDeveloperMessage
+            ? `Developer Message: ${hmsDeveloperMessage}`
+            : undefined,
+        );
+
+        // HsFmsError를 그대로 다시 throw하여 컨트롤러에서 처리하도록 함
+        throw error;
+      }
+
+      // 기타 에러는 그대로 throw
+      this.logger.error(`❌ HMS BNPL 등록 중 예상치 못한 에러 발생: ${error}`);
+      throw error;
     }
-    this.logger.log(`✅ HMS BNPL 회원 등록 성공: ${input.memberId}`);
-
-    // --- 2단계: 동의서 파일 업로드 ---
-    const agreementResp = await this.hmsApi.agreements.register(
-      input.custId,
-      input.memberId,
-      input.agreementFile,
-    );
-
-    // 실제 API 응답의 성공/실패 조건으로 변경해야 합니다.
-    if (!agreementResp.agreementFile.agreementKey) {
-      const reason = '동의서 응답에 agreementKey가 없습니다.';
-      this.logger.error(`❌ HMS BNPL 동의서 업로드 실패: ${reason}`);
-      // 중요: 이 경우 보상 트랜잭션(회원 삭제)을 호출하는 로직을 추가 고려해야 합니다.
-      // await this.hmsApi.members.delete(input.memberId);
-      return { status: 'FAILED', meta: { reason } };
-    }
-    this.logger.log(
-      `✅ HMS BNPL 동의서 업로드 성공: ${agreementResp.agreementFile.agreementKey}`,
-    );
-
-    // --- 최종 성공 ---
-    return {
-      externalId: memberResp.member.memberId,
-      status: 'SUCCESS', // 또는 API 응답에 따른 실제 상태
-      meta: {
-        agreementKey: agreementResp.agreementFile.agreementKey,
-      },
-    };
   }
 }
