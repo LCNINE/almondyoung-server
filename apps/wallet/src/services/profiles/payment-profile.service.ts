@@ -182,7 +182,7 @@ export class PaymentProfileService {
       const registerInput: HmsBnplRegisterInput = {
         userId,
         // custId는 설정(Config)에서 가져오는 것이 좋습니다.
-        custId: 'YOUR_CUST_ID',
+        custId: process.env.CUST_ID || 'YOUR_CUST_ID',
         memberId,
         memberName: dto.name ?? dto.payerName,
         payerName: dto.payerName,
@@ -209,7 +209,7 @@ export class PaymentProfileService {
           userId,
           kind: 'BANK_ACCOUNT',
           provider: ProviderType.HMS_BNPL,
-          name: dto.name ?? null,
+          name: dto.name?.trim() || null, // 빈 문자열도 null로 변환
         },
         tx,
       );
