@@ -18,9 +18,11 @@ export class HmsApiFactory {
   private static readonly logger = new Logger(HmsApiFactory.name);
 
   /**
-   * BNPL용 HMS API - 동의자료 등록 (add-test)
+   * BNPL용 HMS API
    *
    * 실제 테스트 서버만 사용 (Mock 제거)
+   * - 기본 API (members 등): api-test 또는 api 사용
+   * - 동의서 API (agreements): add-test 또는 add 사용 (HmsAPI 내부에서 자동 처리)
    */
   static createForBnpl(): HmsAPI {
     const swKey = process.env.SW_KEY;
@@ -38,19 +40,20 @@ export class HmsApiFactory {
       );
     }
 
+    // BNPL도 기본적으로 api-test/api를 사용 (동의서만 add-test/add 사용)
     let baseURL: string;
 
     if (isProduction) {
       // 운영: 직접 호출
-      baseURL = 'https://add.hyosungcms.co.kr/v1';
+      baseURL = 'https://api.hyosungcms.co.kr/v1';
       this.logger.warn(`🔥 BNPL용 HMS API 생성 (운영) - ${baseURL}`);
     } else if (proxyUrl) {
-      // 개발/테스트 + 프록시: 프록시 경유 (/add/* 경로)
-      baseURL = `${proxyUrl}/add/v1`;
+      // 개발/테스트 + 프록시: 프록시 경유
+      baseURL = `${proxyUrl}/v1`;
       this.logger.log(`🔧 BNPL용 HMS API 생성 (프록시) - ${baseURL}`);
     } else {
       // 개발/테스트: 직접 호출
-      baseURL = 'https://add-test.hyosungcms.co.kr/v1';
+      baseURL = 'https://api-test.hyosungcms.co.kr/v1';
       this.logger.log(`🔧 BNPL용 HMS API 생성 (직접) - ${baseURL}`);
     }
 
