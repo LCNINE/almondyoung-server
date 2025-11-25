@@ -48,9 +48,11 @@ export class SalesChannelsService {
       site: data.site,
       categoryId: data.categoryId || null,
       name: data.name,
+      description: data.description || null,
+      config: data.config || null,
       isActive: data.isActive !== false,
-      apiConfig: data.apiConfig || null,
-      supportedFeatures: data.supportedFeatures || null,
+      apiEndpoint: data.apiEndpoint || null,
+      credentials: data.credentials || null,
     };
 
     const result = await client
@@ -79,9 +81,11 @@ export class SalesChannelsService {
         site: salesChannels.site,
         categoryId: salesChannels.categoryId,
         name: salesChannels.name,
+        description: salesChannels.description,
+        config: salesChannels.config,
         isActive: salesChannels.isActive,
-        apiConfig: salesChannels.apiConfig,
-        supportedFeatures: salesChannels.supportedFeatures,
+        apiEndpoint: salesChannels.apiEndpoint,
+        credentials: salesChannels.credentials,
         createdAt: salesChannels.createdAt,
         updatedAt: salesChannels.updatedAt,
         category: {
@@ -154,9 +158,11 @@ export class SalesChannelsService {
         site: salesChannels.site,
         categoryId: salesChannels.categoryId,
         name: salesChannels.name,
+        description: salesChannels.description,
+        config: salesChannels.config,
         isActive: salesChannels.isActive,
-        apiConfig: salesChannels.apiConfig,
-        supportedFeatures: salesChannels.supportedFeatures,
+        apiEndpoint: salesChannels.apiEndpoint,
+        credentials: salesChannels.credentials,
         createdAt: salesChannels.createdAt,
         updatedAt: salesChannels.updatedAt,
         category: {
@@ -321,9 +327,11 @@ export class SalesChannelsService {
         site: salesChannels.site,
         categoryId: salesChannels.categoryId,
         name: salesChannels.name,
+        description: salesChannels.description,
+        config: salesChannels.config,
         isActive: salesChannels.isActive,
-        apiConfig: salesChannels.apiConfig,
-        supportedFeatures: salesChannels.supportedFeatures,
+        apiEndpoint: salesChannels.apiEndpoint,
+        credentials: salesChannels.credentials,
         createdAt: salesChannels.createdAt,
         updatedAt: salesChannels.updatedAt,
         category: {
@@ -365,20 +373,20 @@ export class SalesChannelsService {
 
     switch (type) {
       case 'medusa':
-        if (config?.apiConfig && !config.apiConfig.baseUrl) {
-          errors.push('Medusa channel requires baseUrl in apiConfig');
+        if (config && !config.baseUrl) {
+          errors.push('Medusa channel requires baseUrl in config');
         }
         break;
 
       case 'coupang':
-        if (config?.apiConfig && (!config.apiConfig.accessKey || !config.apiConfig.secretKey)) {
-          errors.push('Coupang channel requires accessKey and secretKey in apiConfig');
+        if (config && (!config.accessKey || !config.secretKey)) {
+          errors.push('Coupang channel requires accessKey and secretKey in config');
         }
         break;
 
       case 'smartstore':
-        if (config?.apiConfig && (!config.apiConfig.clientId || !config.apiConfig.clientSecret)) {
-          errors.push('SmartStore channel requires clientId and clientSecret in apiConfig');
+        if (config && (!config.clientId || !config.clientSecret)) {
+          errors.push('SmartStore channel requires clientId and clientSecret in config');
         }
         break;
 
