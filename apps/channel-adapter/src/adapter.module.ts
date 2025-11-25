@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { EventsModule, StreamPublisher } from '@app/events';
 import { NaverSmartstoreAdapter } from './services/adapters/naver-smartstore.adapter';
 import { CoupangAdapter } from './services/adapters/coupang.adapter';
+import { OrderEventPublisher } from './services/order-event.publisher';
 
 import { ChannelAdapterFactory } from './services/adapters/channel-adapter.factory';
 import { SyncStatusService } from './services/sync-status.service';
@@ -12,7 +13,8 @@ import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
-import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
+import { CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import * as schema from './schema';
 import { channelAdapterSchema } from './schema';
 import {
@@ -91,7 +93,7 @@ function createKafkaConfig() {
     ...(process.env.NODE_ENV === 'production'
       ? [
           EventsModule.forRoot({
-            streams: [CHANNEL_ADAPTER_STREAM],
+            streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
             serviceName: 'channel-adapter',
             kafka: createKafkaConfig(),
             validation: {
@@ -102,7 +104,7 @@ function createKafkaConfig() {
         ]
       : []),
   ],
-  controllers: [ChannelAdapterController, SyncStatusController],
+  controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
   providers: [
     ChannelAdapterService,
     SyncStatusService,
@@ -128,11 +130,18 @@ function createKafkaConfig() {
     WmsIntegrationManager,
     ChannelAdapterRepository,
 
+    // 주문 이벤트 발행 서비스
+    OrderEventPublisher,
+
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
           {
             provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
+            useClass: NullEventPublisher,
+          },
+          {
+            provide: 'STREAM_PUBLISHER_orders.events.v1',
             useClass: NullEventPublisher,
           },
         ]
