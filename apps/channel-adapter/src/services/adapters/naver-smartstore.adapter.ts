@@ -23,6 +23,7 @@ import {
   SalesOrder,
   CreateSalesOrderDto,
 } from '../apis/wms.api.service';
+import { OrderEventPublisher } from '../order-event.publisher';
 
 // 신규 Zod 스키마 Import
 import {
@@ -205,6 +206,7 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     private readonly naverClaimClient: NaverClaimClient,
     private readonly naverProductClient: NaverProductClient,
     private readonly wmsApi: WmsApiService,
+    private readonly orderEventPublisher: OrderEventPublisher,
   ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
@@ -268,6 +270,10 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
       );
 
       this.logger.log(`🎯 내부 이벤트 변환 완료: ${internalEvents.length}건`);
+
+      // 7. 주문 이벤트 발행 (WMS로 전달)
+      await this.publishOrderEvents(internalEvents);
+
       return internalEvents;
     } catch (error) {
       this.logger.error(
@@ -1349,5 +1355,61 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
       EXCHANGED: 'exchanged',
     };
     return statusMapping[naverStatus] || 'unknown';
+  }
+
+  /**
+   * 주문 이벤트 발행
+   *
+   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
+   * - PAID/PENDING 상태: OrderCreated 이벤트 발행
+   * - CANCELLED 상태: OrderCancelled 이벤트 발행
+   */
+  private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
+    const publishPromises: Promise<void>[] = [];
+
+    for (const event of events) {
+      try {
+        // 상태에 따라 적절한 이벤트 발행
+        switch (event.status) {
+          case 'PENDING_PAYMENT':
+          case 'PAID':
+            // 새로운 주문 - OrderCreated 발행
+            publishPromises.push(
+              this.orderEventPublisher.publishOrderCreated('naver_smartstore', event),
+            );
+            break;
+
+          case 'CANCELLED':
+            // 취소된 주문 - OrderCancelled 발행
+            publishPromises.push(
+              this.orderEventPublisher.publishOrderCancelled(
+                'naver_smartstore',
+                event,
+                event.reason ?? 'CUSTOMER_REQUEST',
+              ),
+            );
+            break;
+
+          default:
+            // 이미 처리 중이거나 완료된 주문은 발행하지 않음
+            this.logger.debug(
+              `📋 [네이버] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`,
+            );
+        }
+      } catch (error) {
+        this.logger.error(
+          `❌ [네이버] 주문 이벤트 발행 실패: ${event.externalOrderId}`,
+          error.message,
+        );
+      }
+    }
+
+    // 병렬로 이벤트 발행
+    if (publishPromises.length > 0) {
+      await Promise.allSettled(publishPromises);
+      this.logger.log(
+        `📤 [네이버] ${publishPromises.length}건의 주문 이벤트 발행 완료`,
+      );
+    }
   }
 }
