@@ -16,8 +16,7 @@ import {
   Put,
   Delete,
 } from '@nestjs/common';
-// HsFmsError는 hms-api-wrapper에서 직접 import
-import { HsFmsError } from 'hms-api-wrapper/dist/utils/HttpClient.service';
+// HsFmsError는 런타임에서 타입 가드로 체크
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
@@ -1022,9 +1021,18 @@ export class PaymentController {
     const isDevelopment = process.env.NODE_ENV !== 'production';
 
     // HsFmsError는 HMS API 에러로 특별 처리 (가장 먼저 체크)
-    if (error instanceof HsFmsError) {
-      const hmsMessage = error.error?.message || errorMessage;
-      const hmsDeveloperMessage = error.error?.developerMessage;
+    // 런타임 타입 가드: HsFmsError는 error 속성을 가지고 있음
+    if (
+      error instanceof Error &&
+      'error' in error &&
+      typeof (error as any).error === 'object' &&
+      (error as any).error !== null &&
+      'message' in (error as any).error &&
+      error.name === 'HsFmsError'
+    ) {
+      const hmsError = error as any;
+      const hmsMessage = hmsError.error?.message || errorMessage;
+      const hmsDeveloperMessage = hmsError.error?.developerMessage;
 
       // 로그에 상세 정보 포함
       this.logger.error(
