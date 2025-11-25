@@ -369,7 +369,6 @@ export class AuthService {
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
-    redirectTo?: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
@@ -392,12 +391,6 @@ export class AuthService {
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
 
-    if (redirectTo) {
-      const redirectUrl = this.frontendUrl + `/${redirectTo ?? '/'}`;
-
-      return reply.status(302).redirect(redirectUrl.toString());
-    }
-
     return { accessToken, refreshToken };
   }
 
@@ -410,7 +403,7 @@ export class AuthService {
     provider: ProviderType,
     reply: FastifyReply,
     tx?: DbTransaction,
-  ): Promise<void | { redirectUrl: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const processSignIn = async (transaction: DbTransaction) => {
       const existingUser = await this._signInWithSocialWithTransaction(socialUser, provider, reply, transaction);
 
@@ -440,7 +433,8 @@ export class AuthService {
       const { accessToken } = await this.setAccessToken(result.user, reply, tx);
       await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
 
-      return reply.status(302).redirect(this.getSocialRedirectUrl(provider)); //
+      // return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+      return { accessToken, refreshToken };
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
@@ -449,7 +443,8 @@ export class AuthService {
         const { accessToken } = await this.setAccessToken(result.user, reply, tx);
         await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
 
-        return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+        // return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+        return { accessToken, refreshToken };
       });
     }
   }
