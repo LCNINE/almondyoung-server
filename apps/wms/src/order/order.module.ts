@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import * as os from 'os';
+import { ScheduleModule } from '@nestjs/schedule';
 import { SalesOrdersController } from './sales-orders/controllers/sales-orders.controller';
 import { SalesOrdersService } from './sales-orders/services/sales-orders.service';
 import { FulfillmentsController } from './fulfillments/controllers/fulfillments.controller';
@@ -28,11 +29,13 @@ import { AvailabilityService } from './shared/services/availability.service';
 import { DbModule } from '@app/db';
 import { wmsTables, wmsSchema } from '../../database/schemas/wms-schema';
 import { EventsModule } from '@app/events';
+import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { MatchingsController } from './matchings/controllers/matchings.controller';
 import { MatchingsService } from './matchings/services/matchings.service';
 import { OutboxService } from './shared/services/outbox.service';
 import { OutboxDispatcherService } from './shared/services/outbox-dispatcher.service';
 import { SharedModule } from '../shared/shared.module';
+import { OrderEventsConsumer } from './consumers/order-events.consumer';
 
 // Kafka 설정 생성 함수
 function createKafkaConfig() {
@@ -72,20 +75,37 @@ function createKafkaConfig() {
 @Module({
   imports: [
     SharedModule, // Import SharedModule for MetricsService, AuditService etc.
+    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: wmsTables,
     }),
     EventsModule.forRoot({
       kafka: createKafkaConfig(),
-      streams: [],
+      streams: [FULFILLMENT_STREAM],
       serviceName: 'wms-order',
     }),
   ],
-  controllers: [SalesOrdersController, FulfillmentsController, FulfillmentOrderController, ProductSkuMappingController, OutboundBatchController, InvoiceController, PickingController, DirectShipController, InspectionController, LocationOptimizationController, ConsolidationController, MatchingsController],
+  controllers: [
+    // REST Controllers
+    SalesOrdersController,
+    FulfillmentsController,
+    FulfillmentOrderController,
+    ProductSkuMappingController,
+    OutboundBatchController,
+    InvoiceController,
+    PickingController,
+    DirectShipController,
+    InspectionController,
+    LocationOptimizationController,
+    ConsolidationController,
+    MatchingsController,
+    // Event Consumers
+    OrderEventsConsumer,
+  ],
   providers: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, DirectShipService, InspectionService, ConsolidationService, GoodsflowDeliveryProvider, BarcodeService, FulfillmentReservationsFacade, PoliciesService, AvailabilityService, MatchingsService, OutboxService, OutboxDispatcherService],
   exports: [SalesOrdersService, FulfillmentsService, FulfillmentOrderTransactionService, ProductSkuMappingService, OutboundBatchService, InvoiceService, PickingProcessService, MatchingsService, OutboxService, OutboxDispatcherService],
 })
-export class OrderModule {}
+export class OrderModule { }
 
 

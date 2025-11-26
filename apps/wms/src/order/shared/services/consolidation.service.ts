@@ -6,7 +6,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { FulfillmentOrderTransactionService } from './fulfillment-order-transaction.service';
 
 export interface ConsolidationCandidate {
-  salesOrderId: string;
+  salesOrderId: string | null;
   customerId: string;
   customerName: string;
   shippingAddress: {
@@ -23,7 +23,7 @@ export interface ConsolidationCandidate {
   totalWeight?: number;
   totalValue?: number;
   items: Array<{
-    salesOrderLineId: string;
+    salesOrderLineId: string | null;
     productId: string;
     variantId: string;
     qty: number;
@@ -195,8 +195,8 @@ export class ConsolidationService {
     for (const fo of fulfillmentOrders) {
       if (fo.items.length === 0) continue;
 
-      // Group items by sales order
-      const salesOrderGroups = new Map<string, typeof fo.items>();
+      // Group items by sales order (null salesOrderId grouped as 'STANDALONE')
+      const salesOrderGroups = new Map<string | null, typeof fo.items>();
 
       for (const item of fo.items) {
         const soId = item.salesOrderId;
@@ -209,12 +209,14 @@ export class ConsolidationService {
       for (const [salesOrderId, items] of salesOrderGroups) {
         // TODO: Get actual customer and shipping info from sales order
         // For now, generate mock data
+        const soIdSuffix = salesOrderId?.slice(-6) ?? 'STANDALONE';
+        const soIdShort = salesOrderId?.slice(-3) ?? 'N/A';
         const candidate: ConsolidationCandidate = {
           salesOrderId,
-          customerId: `CUST-${salesOrderId.slice(-6)}`,
-          customerName: `Customer ${salesOrderId.slice(-3)}`,
+          customerId: `CUST-${soIdSuffix}`,
+          customerName: `Customer ${soIdShort}`,
           shippingAddress: {
-            recipientName: `Customer ${salesOrderId.slice(-3)}`,
+            recipientName: `Customer ${soIdShort}`,
             address: `${Math.floor(Math.random() * 999) + 1} Test Street`,
             city: ['서울', '부산', '인천', '대구', '광주'][Math.floor(Math.random() * 5)],
             postalCode: `${Math.floor(Math.random() * 90000) + 10000}`,
@@ -255,7 +257,7 @@ export class ConsolidationService {
     rules: ConsolidationRule[] = this.defaultRules
   ): Promise<ConsolidationGroup[]> {
     const groups: ConsolidationGroup[] = [];
-    const processed = new Set<string>();
+    const processed = new Set<string | null>();
 
     // Sort rules by priority
     const sortedRules = rules.filter(r => r.enabled).sort((a, b) => a.priority - b.priority);

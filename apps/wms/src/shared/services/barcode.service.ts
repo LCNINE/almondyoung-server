@@ -20,8 +20,8 @@ export interface SkuScanResult {
 export interface FOIScanResult {
   foiId: string;
   fulfillmentOrderId: string;
-  salesOrderId: string;
-  salesOrderLineId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
   skuId: string;
   skuName: string;
   requiredQty: number;

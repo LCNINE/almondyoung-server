@@ -798,9 +798,21 @@ export class PurchaseOrderService {
             LIMIT 100
         `;
 
-        const results = await this.inTx(async (trx) => trx.execute(query), tx);
+        interface ReorderSuggestionRow {
+            sku_id: string;
+            sku_name: string;
+            current_stock: number;
+            safety_stock: number;
+            shortfall: number;
+            suggested_order: number;
+            on_order_qty: number;
+            in_transfer_qty: number;
+        }
 
-        return (results as any[]).map(row => ({
+        const results = await this.inTx(async (trx) => trx.execute(query), tx);
+        const rows = results as unknown as ReorderSuggestionRow[];
+
+        return rows.map(row => ({
             skuId: row.sku_id,
             skuName: row.sku_name,
             currentStock: row.current_stock,

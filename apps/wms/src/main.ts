@@ -9,7 +9,7 @@ import { WmsModule } from './wms.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { EventsModule } from '@app/events';
-import { PRODUCT_STREAM } from '@packages/event-contracts';
+import { PRODUCT_STREAM, ORDER_STREAM } from '@packages/event-contracts';
 import fastifyCookie from '@fastify/cookie';
 import * as os from 'os';
 
@@ -37,10 +37,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }
@@ -114,8 +114,8 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const consumerOptions = EventsModule.forConsumer({
-    streams: [PRODUCT_STREAM],
-    groupId: 'wms-product-consumer',
+    streams: [PRODUCT_STREAM, ORDER_STREAM],
+    groupId: 'wms-consumer',
     kafka: createKafkaConfig(),
   });
 
