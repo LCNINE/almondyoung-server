@@ -1,35 +1,15 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiParam,
   ApiQuery,
-  ApiBody,
 } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
-import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
-import { z } from 'zod';
-
-const CreateSalesOrderSchema = z.object({
-  channelOrderId: z.string(),
-  salesChannel: z.string(),
-  customer: z.object({ name: z.string().optional(), email: z.string().optional(), phone: z.string().optional() }).optional(),
-  shippingAddress: z.any(),
-  shippingAddressHash: z.string().optional(),
-  totalAmount: z.number().int().optional(),
-  shippingFee: z.number().int().optional(),
-  mergeGroupId: z.string().optional(),
-  orderDate: z.string().datetime().optional(),
-  lines: z.array(z.object({
-    variantId: z.string(),
-    productMatchingId: z.string().optional(),
-    productName: z.string().optional(),
-    quantity: z.number().int().positive(),
-    unitPrice: z.number().int().optional(),
-    totalPrice: z.number().int().optional(),
-  })).min(1),
-});
+import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
+import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
+import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -37,13 +17,22 @@ export class SalesOrdersController {
   constructor(private readonly service: SalesOrdersService) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(CreateSalesOrderSchema))
-  create(@Body() dto: any) {
+  @ApiOperation({ summary: '판매 주문 생성', description: '새로운 판매 주문을 생성합니다.' })
+  @ApiResponse({ status: 201, description: '판매 주문 생성 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  create(@Body() dto: CreateSalesOrderDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: any) {
+  @ApiOperation({ summary: '판매 주문 수정', description: '기존 판매 주문 정보를 수정합니다.' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiResponse({ status: 200, description: '판매 주문 수정 성공' })
+  @ApiResponse({ status: 404, description: '판매 주문을 찾을 수 없음' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  update(@Param('id') id: string, @Body() dto: UpdateSalesOrderDto) {
     return this.service.update(id, dto);
   }
 
@@ -58,7 +47,12 @@ export class SalesOrdersController {
   }
 
   @Post('merge')
-  merge(@Body() dto: any) {
+  @ApiOperation({ summary: '판매 주문 병합', description: '여러 판매 주문을 하나로 병합합니다.' })
+  @ApiResponse({ status: 201, description: '판매 주문 병합 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 404, description: '주문을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  merge(@Body() dto: MergeSalesOrdersDto) {
     return this.service.merge(dto);
   }
 

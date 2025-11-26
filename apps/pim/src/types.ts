@@ -18,6 +18,7 @@ import {
   channelCategories,
   salesChannels,
   channelProducts,
+  channelVariantListings,
   pricingRules,
   uploads,
   productImages,
@@ -200,6 +201,13 @@ export type ChannelProduct = InferSelectModel<typeof channelProducts>;
 export type NewChannelProduct = InferInsertModel<typeof channelProducts>;
 export type UpdateChannelProduct = Partial<
   Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+// ===== CHANNEL VARIANT LISTINGS 타입 (채널 상품 ↔ Variant 매핑) =====
+export type ChannelVariantListing = InferSelectModel<typeof channelVariantListings>;
+export type NewChannelVariantListing = InferInsertModel<typeof channelVariantListings>;
+export type UpdateChannelVariantListing = Partial<
+  Omit<NewChannelVariantListing, 'id' | 'createdAt' | 'updatedAt'>
 >;
 
 // ===== PRICING RULES 타입 =====

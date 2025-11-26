@@ -10,6 +10,7 @@ import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
 import fastifyCookie from '@fastify/cookie';
 import { ZodValidationPipe } from 'nestjs-zod';
+import fastifyMultipart from '@fastify/multipart';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -23,11 +24,9 @@ async function bootstrap() {
   // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
   await app.register(fastifyCookie);
   app.useGlobalPipes(new ZodValidationPipe());
-  await app.register(require('@fastify/multipart'), {
-    attachFieldsToBody: true,
+  await app.register(fastifyMultipart, {
     limits: {
-      fileSize: 1024 * 1024 * 10,
-      files: 1,
+      fileSize: 10 * 1024 * 1024,
     },
   });
 

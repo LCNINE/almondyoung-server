@@ -346,7 +346,7 @@ export class InventoryService implements OnModuleInit {
         .leftJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id))
         .leftJoin(wmsTables.skuGroups, eq(wmsTables.skus.groupId, wmsTables.skuGroups.id)); // group join 추가
 
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
 
       if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
       if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
@@ -772,14 +772,14 @@ export class InventoryService implements OnModuleInit {
   }
 
   async getQuickStockSummary(skuId?: string, warehouseId?: string, tx?: DbTx) {
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (skuId) conditions.push(eq(wmsSchema.stockSummary.skuId, skuId));
     if (warehouseId) conditions.push(eq(wmsSchema.stockSummary.warehouseId, warehouseId));
 
     const summaries = await this.inTx(async (trx) => trx
       .select()
       .from(wmsSchema.stockSummary)
-      .where(conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       , tx);
 
     return summaries;

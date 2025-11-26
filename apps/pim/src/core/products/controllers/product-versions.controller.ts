@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -10,21 +11,26 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ProductVersionsService } from '../services/product-versions.service';
+import { ProductMastersService } from '../services/product-masters.service';
 import {
   CreateDraftVersionDto,
   PublishVersionDto,
   VersionTreeResponseDto,
   VersionDiffItemDto,
 } from '../dto/versions';
+import { UpdateProductMasterDto } from '../dto';
 
 @ApiTags('Product Versions')
 @Controller('masters/:masterId/versions')
 export class ProductVersionsController {
   private readonly logger = new Logger(ProductVersionsController.name);
 
-  constructor(private readonly productVersionsService: ProductVersionsService) {}
+  constructor(
+    private readonly productVersionsService: ProductVersionsService,
+    private readonly productMastersService: ProductMastersService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -87,6 +93,52 @@ export class ProductVersionsController {
     }
   }
 
+  @Get(':versionId')
+  @ApiOperation({
+    summary: '특정 버전 조회',
+    description: 'Version ID로 특정 버전을 조회합니다. 모든 상태(draft, active, inactive)의 버전을 조회할 수 있습니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID' })
+  @ApiResponse({
+    status: 200,
+    description: '버전 조회 성공',
+  })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  async getVersionById(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+  ) {
+    try {
+      const version = await this.productVersionsService.getVersionById(versionId);
+      
+      if (version.masterId !== masterId) {
+        throw new HttpException(
+          'Version does not belong to the specified master',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      
+      return {
+        ...version,
+        createdAt: version.createdAt?.toISOString() || null,
+        updatedAt: version.updatedAt?.toISOString() || null,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get version: ${error.message}`, error.stack);
+      if (error.message.includes('not found')) {
+        throw new HttpException('Version not found', HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('does not belong')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to get version: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Post()
   @ApiOperation({
     summary: '새 Draft 버전 생성',
@@ -123,6 +175,79 @@ export class ProductVersionsController {
       throw new HttpException(
         `Failed to create draft version: ${error.message}`,
         HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  @Put(':versionId')
+  @ApiOperation({
+    summary: 'Draft 버전 수정',
+    description: 'Draft 상태의 버전을 수정합니다. Active 또는 Inactive 상태의 버전은 수정할 수 없습니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (수정할 draft 버전)' })
+  @ApiBody({
+    type: UpdateProductMasterDto,
+    description: '수정할 버전 정보',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Draft 버전 수정 성공',
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 403, description: 'Draft 상태의 버전만 수정 가능' })
+  @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async updateVersion(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Body() updateData: UpdateProductMasterDto,
+  ) {
+    try {
+      // TODO: JWT에서 실제 userId 추출
+      const userId = 'system';
+
+      // 권한 확인 (draft 상태인지, 소유자인지)
+      const canModify = await this.productVersionsService.canUserModifyVersion(
+        versionId,
+        userId,
+      );
+
+      if (!canModify) {
+        throw new HttpException(
+          'Only draft versions can be modified. Create a new draft version to make changes.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const updatedVersion = await this.productMastersService.updateVersion(
+        versionId,
+        updateData,
+      );
+
+      return {
+        ...updatedVersion,
+        createdAt: updatedVersion.createdAt?.toISOString() || null,
+        updatedAt: updatedVersion.updatedAt?.toISOString() || null,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to update version: ${error.message}`, error.stack);
+
+      if (error.status === HttpStatus.FORBIDDEN) {
+        throw error;
+      }
+      if (error.message.includes('not found')) {
+        throw new HttpException('Version not found', HttpStatus.NOT_FOUND);
+      }
+      if (error.message.includes('Only draft')) {
+        throw new HttpException(error.message, HttpStatus.FORBIDDEN);
+      }
+      if (error.message.includes('required')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        `Failed to update version: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

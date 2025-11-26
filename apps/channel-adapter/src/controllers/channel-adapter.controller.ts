@@ -32,13 +32,7 @@ import {
   CommandResponseDto,
   ExchangeRequestsQueryDto,
   ExchangeRequestsResponseDto,
-  WmsOrderRequestDto,
-  WmsOrderCancelRequestDto,
-  WmsExchangeRequestDto,
-  WmsOrderResponseDto,
   SyncToChannelPayloadSchema,
-  WmsOrderRequestSchema,
-  WmsOrderCancelRequestSchema,
 } from '../zods/controller/adapter.zod';
 
 @ApiTags('Channel Adapter')
@@ -243,82 +237,6 @@ export class ChannelAdapterController {
           pageSize: pageSize ? parseInt(pageSize) : 10,
         },
       },
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // WMS 연동 API
-  // ═══════════════════════════════════════════════════════════════
-
-  @Post('wms/orders')
-  @ApiOperation({ summary: '채널 주문을 WMS에 전달' })
-  @ApiResponse({
-    status: 201,
-    description: 'WMS 주문 생성 성공',
-    type: WmsOrderResponseDto,
-  })
-  async createOrderInWms(
-    @Body(new ZodValidationPipe(WmsOrderRequestDto)) body: WmsOrderRequestDto,
-  ): Promise<WmsOrderResponseDto> {
-    const { channel, orderEvent } = body;
-    const wmsOrder = await this.channelAdapterService.forwardToWms(
-      channel,
-      orderEvent,
-    );
-
-    return {
-      success: true,
-      wmsOrder,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Post('wms/orders/cancel')
-  @ApiOperation({ summary: '채널 주문 취소를 WMS에 전달' })
-  @ApiResponse({
-    status: 200,
-    description: 'WMS 주문 취소 성공',
-    type: WmsOrderResponseDto,
-  })
-  async cancelOrderInWms(
-    @Body(new ZodValidationPipe(WmsOrderCancelRequestDto))
-    body: WmsOrderCancelRequestDto,
-  ): Promise<WmsOrderResponseDto> {
-    const { channel, orderEvent, reason } = body;
-    const wmsOrder = await this.channelAdapterService.cancelInWms(
-      channel,
-      orderEvent,
-      reason,
-    );
-
-    return {
-      success: true,
-      wmsOrder,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Post('wms/orders/exchange')
-  @ApiOperation({ summary: '채널 교환 요청을 WMS에 전달' })
-  @ApiResponse({
-    status: 200,
-    description: 'WMS 교환 처리 성공',
-    type: WmsOrderResponseDto,
-  })
-  async processExchangeInWms(
-    @Body(new ZodValidationPipe(WmsExchangeRequestDto))
-    body: WmsExchangeRequestDto,
-  ): Promise<WmsOrderResponseDto> {
-    const { channel, exchangeEvent } = body;
-    const wmsOrder = await this.channelAdapterService.processExchangeInWms(
-      channel,
-      exchangeEvent,
-    );
-
-    return {
-      success: true,
-      wmsOrder,
       timestamp: new Date().toISOString(),
     };
   }

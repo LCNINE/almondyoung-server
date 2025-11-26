@@ -86,7 +86,7 @@ export class InvoiceService {
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      const salesOrderLineIds = foiRows.map(row => row.salesOrderLineId);
+      const salesOrderLineIds = foiRows.map(row => row.salesOrderLineId).filter((id): id is string => id !== null);
       const salesOrderLines = salesOrderLineIds.length === 0 ? [] : await trx
         .select({ id: wmsTables.salesOrderLines.id, unitPrice: wmsTables.salesOrderLines.unitPrice })
         .from(wmsTables.salesOrderLines)
@@ -127,7 +127,7 @@ export class InvoiceService {
           items: foiRows.map(row => ({
             productName: row.productName,
             quantity: row.quantity,
-            price: priceMap.get(row.salesOrderLineId) || 0
+            price: (row.salesOrderLineId && priceMap.get(row.salesOrderLineId)) || 0
           }))
         };
 

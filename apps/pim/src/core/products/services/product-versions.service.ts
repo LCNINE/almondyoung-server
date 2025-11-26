@@ -11,6 +11,7 @@ import {
 } from '../../../types';
 import {
   type PimSchema,
+  productMasters,
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
@@ -23,7 +24,7 @@ import {
   productTagValues,
   tagValues,
 } from '../../../schema';
-import { eq, and, sql, max as drizzleMax } from 'drizzle-orm';
+import { eq, and, sql, max as drizzleMax, isNull } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 @Injectable()
@@ -94,22 +95,27 @@ export class ProductVersionsService {
 
   async getActiveVersion(masterId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.inTx(async (tx) => {
-      const [activeVersion] = await tx
+      const result = await tx
         .select()
         .from(productMasterVersions)
+        .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
             eq(productMasterVersions.versionStatus, 'active'),
+            isNull(productMasters.deletedAt)
           ),
         )
         .limit(1);
 
-      if (!activeVersion) {
+      if (result.length === 0) {
         throw new NotFoundException(`No active version found for master ${masterId}`);
       }
 
-      return activeVersion;
+      return result[0].product_master_versions;
     }, tx);
   }
 

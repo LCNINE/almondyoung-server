@@ -21,8 +21,8 @@ export interface InspectionSession {
 
 export interface InspectionItem {
   foiId: string;
-  salesOrderId: string;
-  salesOrderLineId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
   skuId: string;
   skuName: string;
   requiredQty: number;

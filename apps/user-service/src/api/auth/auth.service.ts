@@ -36,11 +36,7 @@ import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
-import {
-  getCookieOptions,
-  getDomain,
-  logCookieDebugInfo,
-} from './utils/cookies';
+import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies';
 
 @Injectable()
 export class AuthService {
@@ -64,20 +60,15 @@ export class AuthService {
   private get frontendUrl(): string {
     const isProd = this.configService.get('NODE_ENV') === 'production';
 
-    return isProd
-      ? this.configService.getOrThrow('FRONTEND_URL')
-      : 'http://localhost:8000';
+    return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
   }
 
-  private async inTx<T>(
-    fn: (tx: DbTransaction) => Promise<T>,
-    tx?: DbTransaction,
-  ) {
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  private getSocialRedirectUrl(provider: ProviderType): string {
-    return new URL(`/${provider}/callback`, this.frontendUrl).toString();
+  private getSocialRedirectUrl(provider: ProviderType, userId: string): string {
+    return new URL(`/${provider}/callback?userId=${userId}`, this.frontendUrl).toString();
   }
 
   async signUp(
@@ -103,16 +94,12 @@ export class AuthService {
 
     try {
       // 이메일로 기존 사용자 조회
-      const existingUser = await this.usersService.findUserByEmail(
-        signUpDto.email,
-      );
+      const existingUser = await this.usersService.findUserByEmail(signUpDto.email);
 
       if (existingUser) {
         // 이미 인증된 이메일인 경우
         if (existingUser.isEmailVerified) {
-          throw new ConflictException(
-            '이미 가입된 이메일입니다. 로그인을 시도해주세요.',
-          );
+          throw new ConflictException('이미 가입된 이메일입니다. 로그인을 시도해주세요.');
         }
 
         // 새로운 인증 토큰 생성
@@ -139,12 +126,16 @@ export class AuthService {
             email: existingUser.email,
             name: existingUser.username,
             verificationToken: verificationToken,
-            callbackUrl:
-              this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+            callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
             redirectTo: redirect_to ?? '/',
           },
         });
 
+        console.log(
+          '회원가입 이메일 인증 링크: ',
+          this.configService.get('USER_SERVICE_URL') +
+            `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,
+        );
         /* 
         ex)
          this.configService.get('USER_SERVICE_URL') +
@@ -152,21 +143,16 @@ export class AuthService {
         */
 
         return {
-          message:
-            '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
+          message: '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
         };
       }
 
-      const existsUserId = await this.usersService.findUserByLoginId(
-        signUpDto.loginId,
-      );
+      const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
       if (existsUserId) {
         throw new ConflictException('이미 존재하는 아이디입니다.');
       }
 
-      const existingUserByNickname = await this.usersService.findUserByNickname(
-        signUpDto.nickname,
-      );
+      const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname);
 
       if (existingUserByNickname) {
         throw new ConflictException('이미 존재하는 닉네임입니다.');
@@ -204,9 +190,7 @@ export class AuthService {
         const verificationToken = await this.jwtService.signAsync(
           { sub: user.id as string },
           {
-            secret: this.configService.getOrThrow<string>(
-              'JWT_VERIFICATION_TOKEN_SECRET',
-            ),
+            secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
             expiresIn: this.parseExpiresIn(expiresIn),
           },
         );
@@ -227,8 +211,7 @@ export class AuthService {
             email: user.email,
             name: user.username,
             verificationToken: verificationToken,
-            callbackUrl:
-              this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+            callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
             redirectTo: redirect_to ?? '/',
           },
         });
@@ -242,9 +225,7 @@ export class AuthService {
         throw error;
       }
       console.error('회원가입 중 오류:', error);
-      throw new InternalServerErrorException(
-        '회원가입 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('회원가입 중 오류가 발생했습니다.');
     }
   }
 
@@ -262,20 +243,14 @@ export class AuthService {
           user: userServiceSchema.users,
         })
         .from(userServiceSchema.tokens)
-        .innerJoin(
-          userServiceSchema.users,
-          eq(userServiceSchema.tokens.userId, userServiceSchema.users.id),
-        )
+        .innerJoin(userServiceSchema.users, eq(userServiceSchema.tokens.userId, userServiceSchema.users.id))
         .where(
           and(
             eq(userServiceSchema.tokens.value, token),
             gt(userServiceSchema.tokens.expiresAt, new Date()),
             eq(userServiceSchema.users.isEmailVerified, false),
             eq(userServiceSchema.tokens.isRevoked, false),
-            eq(
-              userServiceSchema.tokens.type,
-              userServiceEnums.tokenTypeEnum.enumValues[2],
-            ),
+            eq(userServiceSchema.tokens.type, userServiceEnums.tokenTypeEnum.enumValues[2]),
           ),
         )
         .limit(1)
@@ -316,25 +291,15 @@ export class AuthService {
 
       return reply.status(302).redirect(url.toString());
     } catch (error) {
-      if (
-        error instanceof UnauthorizedException ||
-        error instanceof InternalServerErrorException
-      ) {
+      if (error instanceof UnauthorizedException || error instanceof InternalServerErrorException) {
         throw error;
       }
       console.error('이메일 인증 중 오류:', error);
-      throw new InternalServerErrorException(
-        '이메일 인증 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('이메일 인증 중 오류가 발생했습니다.');
     }
   }
 
-  async callbackSignup(
-    userId: string,
-    reply: FastifyReply,
-    redirectTo?: string,
-    tx?: DbTransaction,
-  ) {
+  async callbackSignup(userId: string, reply: FastifyReply, redirectTo?: string, tx?: DbTransaction) {
     return this.inTx(async (trx) => {
       const user = await this.usersService.findUserById(userId, trx);
       if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
@@ -343,12 +308,7 @@ export class AuthService {
       await this.usersService.assignDefaultRoleToUser(user.id, trx);
 
       const { accessToken } = await this.setAccessToken(user, reply, trx);
-      const { refreshToken } = await this.setRefreshToken(
-        user.id,
-        reply,
-        false,
-        trx,
-      );
+      const { refreshToken } = await this.setRefreshToken(user.id, reply, false, trx);
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(user as User, trx);
 
@@ -377,9 +337,7 @@ export class AuthService {
     const verificationToken = await this.jwtService.signAsync(
       { sub: user.id },
       {
-        secret: this.configService.getOrThrow<string>(
-          'JWT_VERIFICATION_TOKEN_SECRET',
-        ),
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
         expiresIn,
       },
     );
@@ -400,8 +358,7 @@ export class AuthService {
         email: user.email,
         name: user.username,
         verificationToken: verificationToken,
-        callbackUrl:
-          this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+        callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
         redirectTo: redirectTo ?? '/',
       },
     });
@@ -412,16 +369,13 @@ export class AuthService {
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
-    redirectTo?: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
     if (user.deletedAt) {
-      throw new ForbiddenException(
-        '휴면 처리된 사용자입니다. 관리자에게 문의해주세요.',
-      );
+      throw new ForbiddenException('휴면 처리된 사용자입니다. 관리자에게 문의해주세요.');
     }
 
     if (!user.isEmailVerified) {
@@ -431,21 +385,11 @@ export class AuthService {
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
-    const { refreshToken } = await this.setRefreshToken(
-      user.id,
-      reply,
-      signInDto.rememberMe,
-    );
+    const { refreshToken } = await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
     const { accessToken } = await this.setAccessToken(user, reply);
 
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
-
-    if (redirectTo) {
-      const redirectUrl = this.frontendUrl + `/${redirectTo ?? '/'}`;
-
-      return reply.status(302).redirect(redirectUrl.toString());
-    }
 
     return { accessToken, refreshToken };
   }
@@ -461,20 +405,10 @@ export class AuthService {
     tx?: DbTransaction,
   ): Promise<void | { redirectUrl: string }> {
     const processSignIn = async (transaction: DbTransaction) => {
-      const existingUser = await this._signInWithSocialWithTransaction(
-        socialUser,
-        provider,
-        reply,
-        transaction,
-      );
+      const existingUser = await this._signInWithSocialWithTransaction(socialUser, provider, reply, transaction);
 
       if (!existingUser) {
-        const newUser = await this._signUpWithSocialWithTransaction(
-          socialUser,
-          provider,
-          reply,
-          transaction,
-        );
+        const newUser = await this._signUpWithSocialWithTransaction(socialUser, provider, reply, transaction);
 
         await this.eventPublisher.publishEvent({
           eventType: 'UserCreated',
@@ -495,22 +429,28 @@ export class AuthService {
     if (tx) {
       const result = await processSignIn(tx);
 
-      await this.setRefreshToken(result.user.id, reply, false, tx);
-      await this.setAccessToken(result.user, reply, tx);
-      await this.lastActivityAtUpdate(result.user, tx); // 마지막 활동일 업데이트
-
-      return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+      return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
 
-        await this.setRefreshToken(result.user.id, reply, false, transaction);
-        await this.setAccessToken(result.user, reply, transaction);
-        await this.lastActivityAtUpdate(result.user, transaction); // 마지막 활동일 업데이트
-
-        return reply.status(302).redirect(this.getSocialRedirectUrl(provider));
+        return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
       });
     }
+  }
+
+  async setSocialCookie(userId: string, reply: FastifyReply, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
+    const user = await this.usersService.findUserById(userId, client);
+
+    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+
+    const { refreshToken } = await this.setRefreshToken(user.id, reply, false, tx);
+    const { accessToken } = await this.setAccessToken(user, reply, tx);
+    await this.lastActivityAtUpdate(user as User, tx); // 마지막 활동일 업데이트
+
+    return { accessToken, refreshToken };
   }
 
   // 소셜 로그인
@@ -531,17 +471,11 @@ export class AuthService {
         user: userServiceSchema.users,
       })
       .from(userServiceSchema.userIdentities)
-      .innerJoin(
-        userServiceSchema.users,
-        eq(userServiceSchema.userIdentities.userId, userServiceSchema.users.id),
-      )
+      .innerJoin(userServiceSchema.users, eq(userServiceSchema.userIdentities.userId, userServiceSchema.users.id))
       .where(
         and(
           eq(userServiceSchema.userIdentities.provider, provider),
-          eq(
-            userServiceSchema.userIdentities.providerId,
-            socialUser.providerId,
-          ),
+          eq(userServiceSchema.userIdentities.providerId, socialUser.providerId),
         ),
       )
       .limit(1)
@@ -566,10 +500,7 @@ export class AuthService {
     tx: DbTransaction,
   ): Promise<{ user: User }> {
     // 이메일 중복 확인
-    const existingUser = await this.usersService.findUserByEmail(
-      socialUser.email,
-      tx,
-    );
+    const existingUser = await this.usersService.findUserByEmail(socialUser.email, tx);
 
     if (existingUser) {
       throw new Error('This email already exists');
@@ -662,10 +593,7 @@ export class AuthService {
     }, tx);
   }
 
-  private async getUserScopes(
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<string[]> {
+  private async getUserScopes(userId: string, tx?: DbTransaction): Promise<string[]> {
     const client = this.getClient(tx);
 
     const userScopes = await client
@@ -676,21 +604,12 @@ export class AuthService {
       .from(userServiceSchema.scopes)
       .innerJoin(
         userServiceSchema.roleScopes,
-        eq(
-          userServiceSchema.scopes.scopeId,
-          userServiceSchema.roleScopes.scopeId,
-        ),
+        eq(userServiceSchema.scopes.scopeId, userServiceSchema.roleScopes.scopeId),
       )
-      .innerJoin(
-        userServiceSchema.roles,
-        eq(userServiceSchema.roleScopes.roleId, userServiceSchema.roles.roleId),
-      )
+      .innerJoin(userServiceSchema.roles, eq(userServiceSchema.roleScopes.roleId, userServiceSchema.roles.roleId))
       .innerJoin(
         userServiceSchema.userRoleAssignments,
-        eq(
-          userServiceSchema.roles.roleId,
-          userServiceSchema.userRoleAssignments.roleId,
-        ),
+        eq(userServiceSchema.roles.roleId, userServiceSchema.userRoleAssignments.roleId),
       )
       .where(
         and(
@@ -702,25 +621,17 @@ export class AuthService {
         ),
       );
 
-    const uniqueScopes = [
-      ...new Set(userScopes.map((scope) => scope.scopeName)),
-    ];
+    const uniqueScopes = [...new Set(userScopes.map((scope) => scope.scopeName))];
 
     return uniqueScopes;
   }
 
-  private async setAccessToken(
-    user: IUser,
-    reply: FastifyReply,
-    tx?: DbTransaction,
-  ): Promise<{ accessToken: string }> {
+  private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
     const client = this.getClient(tx);
     const scopes = await this.getUserScopes(user.id, tx);
 
     if (scopes.length === 0) {
-      throw new UnauthorizedException(
-        '사용자에게 할당된 권한이 없습니다. 관리자에게 문의해주세요.',
-      );
+      throw new UnauthorizedException('사용자에게 할당된 권한이 없습니다. 관리자에게 문의해주세요.');
     }
 
     const payload = {
@@ -782,14 +693,7 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + this.parseExpiresIn(expiresIn));
 
     // 리프레시 토큰 저장 (기존 토큰 자동 삭제)
-    await this.tokensService.saveRefreshToken(
-      userId,
-      refreshToken,
-      scopes,
-      expiresAt,
-      rememberMe,
-      tx,
-    );
+    await this.tokensService.saveRefreshToken(userId, refreshToken, scopes, expiresAt, rememberMe, tx);
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
     const corsOrigin = this.frontendUrl;
@@ -837,8 +741,7 @@ export class AuthService {
   async forgotPassword(email: string, loginId: string) {
     const user = await this.usersService.findUserByEmail(email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
-    if (user.loginId !== loginId)
-      throw new NotFoundException('존재하지 않는 아이디입니다');
+    if (user.loginId !== loginId) throw new NotFoundException('존재하지 않는 아이디입니다');
 
     const verificationToken = await this.jwtService.signAsync(
       { email },
@@ -886,8 +789,7 @@ export class AuthService {
   async changePassword(password: string, userId: string, tx?: DbTransaction) {
     const existingUser = await this.usersService.findUserById(userId);
 
-    if (!existingUser)
-      throw new NotFoundException('존재하지 않는 사용자입니다');
+    if (!existingUser) throw new NotFoundException('존재하지 않는 사용자입니다');
 
     try {
       const saltOrRounds = 10;
@@ -899,17 +801,11 @@ export class AuthService {
 
       return;
     } catch (error) {
-      throw new InternalServerErrorException(
-        '비밀번호 변경 중 오류가 발생했습니다.',
-      );
+      throw new InternalServerErrorException('비밀번호 변경 중 오류가 발생했습니다.');
     }
   }
 
-  async checkPassword(
-    password: string,
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<void> {
+  async checkPassword(password: string, userId: string, tx?: DbTransaction): Promise<void> {
     const client = await this.getClient(tx);
 
     const user = await client
@@ -922,8 +818,7 @@ export class AuthService {
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
     const isAuth = await bcrypt.compare(password, user.password);
-    if (!isAuth)
-      throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
+    if (!isAuth) throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
     return;
   }
