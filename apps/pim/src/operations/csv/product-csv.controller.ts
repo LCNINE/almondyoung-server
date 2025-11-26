@@ -22,11 +22,11 @@ import { Response } from 'express';
 import { ProductCsvService } from './product-csv.service';
 
 @ApiTags('Product CSV')
-@Controller('api/pim/products')
+@Controller('products/csv')
 export class ProductCsvController {
-  constructor(private readonly csvService: ProductCsvService) {}
+  constructor(private readonly csvService: ProductCsvService) { }
 
-  @Get('csv/template')
+  @Get('template')
   @ApiOperation({
     summary: 'CSV 템플릿 다운로드',
     description: '제품 일괄 등록을 위한 CSV 템플릿 파일을 다운로드합니다.',

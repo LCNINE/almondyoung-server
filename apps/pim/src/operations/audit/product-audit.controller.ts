@@ -9,11 +9,11 @@ import {
 import { ProductAuditService } from './product-audit.service';
 
 @ApiTags('Product Audit')
-@Controller('api/pim/audit')
+@Controller('products/audit')
 export class ProductAuditController {
-  constructor(private readonly auditService: ProductAuditService) {}
+  constructor(private readonly auditService: ProductAuditService) { }
 
-  @Get('products/:id')
+  @Get(':id')
   @ApiOperation({
     summary: '제품 감사 이력 조회',
     description: '특정 제품의 모든 변경 이력을 조회합니다.',
