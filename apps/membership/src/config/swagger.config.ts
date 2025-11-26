@@ -46,6 +46,7 @@ export function setupSwagger(app: INestApplication): void {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document, {
+    yamlDocumentUrl: '/api/docs.yaml',
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: 'alpha',

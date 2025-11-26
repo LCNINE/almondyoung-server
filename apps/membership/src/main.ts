@@ -86,6 +86,7 @@ async function bootstrap(): Promise<void> {
 
     // Swagger UI
     SwaggerModule.setup('/api/docs', app, document, {
+      yamlDocumentUrl: '/api/docs.yaml',
       swaggerOptions: {
         persistAuthorization: true,
         tagsSorter: 'alpha',

@@ -101,6 +101,7 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document, {
+    yamlDocumentUrl: '/docs.yaml',
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: 'alpha',
