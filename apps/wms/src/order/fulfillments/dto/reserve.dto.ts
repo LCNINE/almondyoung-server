@@ -2,9 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsInt, Min } from 'class-validator';
 
 export class ReserveDto {
-  @ApiProperty({ description: '주문처리 라인 ID' })
+  @ApiProperty({ description: '주문처리 아이템 ID' })
   @IsString()
-  fulfillmentOrderLineId: string;
+  fulfillmentOrderItemId: string;
 
   @ApiProperty({ description: '예약할 수량', minimum: 1 })
   @IsInt()

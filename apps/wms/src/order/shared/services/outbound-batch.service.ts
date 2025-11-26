@@ -30,8 +30,8 @@ export interface OutboundBatchDetail {
     totalQty: number;
     items: Array<{
       id: string;
-      salesOrderId: string;
-      salesOrderLineId: string;
+      salesOrderId: string | null;
+      salesOrderLineId: string | null;
       skuId: string;
       qty: number;
       pickedQty: number;
@@ -47,8 +47,8 @@ export interface PickingListItem {
   fulfillmentOrderItems: Array<{
     foiId: string;
     fulfillmentOrderId: string;
-    salesOrderId: string;
-    salesOrderLineId: string;
+    salesOrderId: string | null;
+    salesOrderLineId: string | null;
     qty: number;
     pickedQty: number;
   }>;
