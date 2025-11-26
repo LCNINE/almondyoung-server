@@ -21,7 +21,7 @@ export class BnplService {
     private readonly accountCreator: BnplAccountCreator,
     private readonly creditManager: BnplCreditManager,
     private readonly repo: BnplRepository,
-  ) { }
+  ) {}
 
   /**
    * BNPL 계정 생성
@@ -31,7 +31,7 @@ export class BnplService {
     creditLimit: number,
     tx?: WalletExecutor,
   ): Promise<BnplAccount> {
-    const existing = await this.accountReader.findByUserId(userId);
+    const existing = await this.accountReader.findByUserId(userId, tx);
     if (existing) throw new Error('Account already exists');
 
     return await this.accountCreator.create(userId, creditLimit, tx);
@@ -140,30 +140,43 @@ export class BnplService {
   /**
    * 계정 조회
    */
-  async findAccountByUserId(userId: string): Promise<BnplAccount | null> {
-    return await this.accountReader.findByUserId(userId);
+  async findAccountByUserId(
+    userId: string,
+    tx?: WalletExecutor,
+  ): Promise<BnplAccount | null> {
+    return await this.accountReader.findByUserId(userId, tx);
   }
 
   /**
    * BNPL 내역 조회
+   * @param userId 사용자 ID
+   * @param year 연도 (optional, 없으면 전체 내역)
+   * @param month 월 (optional, 없으면 전체 내역)
    */
-  async getBnplHistory(userId: string, year: number, month: number) {
+  async getBnplHistory(userId: string, year?: number, month?: number) {
     const account = await this.accountReader.findByUserId(userId);
     if (!account) {
       throw new Error('BNPL account not found');
     }
 
-    const events = await this.repo.findEventsByAccountIdAndPeriod(
-      account.id,
-      year,
-      month,
-    );
+    let events: BnplEvent[];
+    if (year !== undefined && month !== undefined) {
+      // 특정 월 조회
+      events = await this.repo.findEventsByAccountIdAndPeriod(
+        account.id,
+        year,
+        month,
+      );
+    } else {
+      // 전체 내역 조회
+      events = await this.repo.findEventsByAccountId(account.id);
+    }
 
     const totalAmount = events.reduce((sum, event) => sum + event.amount, 0);
 
     return {
-      year,
-      month,
+      year: year ?? null,
+      month: month ?? null,
       totalAmount,
       events: events.map((event) => ({
         id: event.id,
@@ -188,7 +201,7 @@ export class BnplService {
         hasAccount: false,
         creditLimit: null,
         availableLimit: null,
-        usedAmount: null,
+        usedAmount: 0, // null 대신 0 반환
         nextBillingDate: null,
         dDay: null,
         targetYear: null,
@@ -226,7 +239,7 @@ export class BnplService {
       hasAccount: true,
       creditLimit: account.creditLimit,
       availableLimit: account.availableLimit,
-      usedAmount,
+      usedAmount: usedAmount ?? 0, // null이면 0 반환
       nextBillingDate: account.nextBillingDate,
       dDay,
       targetYear,
