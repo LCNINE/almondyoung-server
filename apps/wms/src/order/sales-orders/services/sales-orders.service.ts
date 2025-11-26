@@ -13,6 +13,7 @@ import { ProductSkuMappingService } from '../../shared/services/product-sku-mapp
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
+import { AddressDto } from '../../shared/dto/address.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
@@ -517,7 +518,7 @@ export class SalesOrdersService {
   /**
    * 이벤트 ShippingAddress를 DTO AddressDto로 변환
    */
-  private convertShippingAddress(address: ShippingAddress) {
+  private convertShippingAddress(address: ShippingAddress): AddressDto {
     return {
       recipientName: address.recipientName,
       phone: address.phone,

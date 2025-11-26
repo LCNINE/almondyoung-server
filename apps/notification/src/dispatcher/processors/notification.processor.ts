@@ -2,7 +2,7 @@
 import { Processor, Process, OnQueueFailed } from '@nestjs/bull';
 import { InjectQueue } from '@nestjs/bull';
 import { Job, Queue } from 'bull';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
@@ -19,18 +19,26 @@ import { NOTIFICATION_CONSTANTS } from '../../shared/constants';
 import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
 import { StructuredLogger } from '../../shared/utils/logger.utils';
 
+// Redis가 있을 때만 Processor로 등록
+// 데코레이터는 컴파일 타임에 평가되므로, 조건부로 적용할 수 없습니다.
+// 대신 DispatcherModule에서 조건부로 provider를 등록합니다.
 @Processor('notification')
 export class NotificationProcessor {
     private readonly logger: StructuredLogger;
 
     constructor(
         @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
-        @InjectQueue('notification') private readonly notificationQueue: Queue,
+        @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
         private readonly providerManager: ProviderManagerService,
         private readonly notificationLogger: NotificationLoggerService,
         private readonly alertService: AlertService,
     ) {
         this.logger = new StructuredLogger(new Logger(NotificationProcessor.name));
+
+        // Redis가 없으면 프로세서를 비활성화
+        if (!process.env.REDIS_HOST && this.notificationQueue) {
+            this.logger.warn('Redis not configured, but NotificationProcessor is registered. This should not happen.');
+        }
     }
 
     private get db() {
@@ -54,11 +62,13 @@ export class NotificationProcessor {
             // 우선순위별 처리 로직
             if (notification.priority === NotificationPriority.LOW && await this.isSystemBusy()) {
                 // 시스템이 바쁘면 LOW 우선순위는 지연
-                await job.queue.add(
-                    'send-notification',
-                    { notificationId },
-                    { delay: 60000 } // 1분 후
-                );
+                if (job.queue) {
+                    await job.queue.add(
+                        'send-notification',
+                        { notificationId },
+                        { delay: 60000 } // 1분 후
+                    );
+                }
                 return;
             }
 
@@ -234,14 +244,16 @@ export class NotificationProcessor {
 
                 const priority = this.getRetryPriority(notificationForRetry.priority as NotificationPriority);
 
-                await job.queue.add(
-                    'send-notification',
-                    { notificationId },
-                    {
-                        delay: retryDelay,
-                        priority,
-                    }
-                );
+                if (job.queue) {
+                    await job.queue.add(
+                        'send-notification',
+                        { notificationId },
+                        {
+                            delay: retryDelay,
+                            priority,
+                        }
+                    );
+                }
             } else if (notificationForRetry) {
                 await this.alertService.createAlert({
                     type: 'notification_max_retries',
@@ -291,7 +303,7 @@ export class NotificationProcessor {
 
             // 상태 업데이트가 성공한 경우에만 큐에 추가
             // (다른 프로세스가 이미 처리 중이면 updated가 null)
-            if (updated) {
+            if (updated && job.queue) {
                 const priority = this.getPriorityValue(notification.priority as NotificationPriority);
 
                 await job.queue.add(
@@ -320,6 +332,10 @@ export class NotificationProcessor {
 
     private async getActiveJobsCount(): Promise<number> {
         // Bull queue에서 활성 작업 수 조회
+        if (!this.notificationQueue) {
+            return 0; // Redis가 없으면 큐가 없으므로 0 반환
+        }
+
         try {
             const [active, waiting, delayed] = await Promise.all([
                 this.notificationQueue.getActiveCount(),

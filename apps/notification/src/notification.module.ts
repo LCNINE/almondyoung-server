@@ -19,13 +19,16 @@ import { BulkModule } from './bulk/bulk.module';
       isGlobal: true,
       validate: validateNotificationEnv,
     }),
-    BullModule.forRoot({
-      redis: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        password: process.env.REDIS_PASSWORD,
-      },
-    }),
+    // Redis가 있으면 Bull 큐 사용, 없으면 직접 발송
+    ...(process.env.REDIS_HOST ? [
+      BullModule.forRoot({
+        redis: {
+          host: process.env.REDIS_HOST,
+          port: parseInt(process.env.REDIS_PORT || '6379'),
+          password: process.env.REDIS_PASSWORD,
+        },
+      }),
+    ] : []),
     DbModule.forRoot<NotificationSchema>({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
@@ -39,4 +42,4 @@ import { BulkModule } from './bulk/bulk.module';
     BulkModule,
   ],
 })
-export class NotificationModule {}
+export class NotificationModule { }
