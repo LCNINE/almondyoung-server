@@ -1,35 +1,38 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
+/**
+ * 배송 주소 DTO (한국식 주소 형식)
+ * event-contracts의 ShippingAddress와 동일한 형식
+ */
 export class AddressDto {
-  @ApiProperty({ description: 'Address line 1' })
+  @ApiProperty({ description: '수령인 이름' })
   @IsString()
   @IsNotEmpty()
-  line1: string;
+  recipientName: string;
 
-  @ApiProperty({ description: 'Address line 2', required: false })
-  @IsString()
-  @IsOptional()
-  line2?: string;
-
-  @ApiProperty({ description: 'City' })
+  @ApiProperty({ description: '수령인 연락처' })
   @IsString()
   @IsNotEmpty()
-  city: string;
+  phone: string;
 
-  @ApiProperty({ description: 'State/Province', required: false })
-  @IsString()
-  @IsOptional()
-  state?: string;
-
-  @ApiProperty({ description: 'Postal code' })
+  @ApiProperty({ description: '우편번호' })
   @IsString()
   @IsNotEmpty()
   postalCode: string;
 
-  @ApiProperty({ description: 'Country' })
+  @ApiProperty({ description: '도로명 주소' })
   @IsString()
   @IsNotEmpty()
-  country: string;
-}
+  roadAddress: string;
 
+  @ApiProperty({ description: '상세 주소' })
+  @IsString()
+  @IsNotEmpty()
+  detailAddress: string;
+
+  @ApiProperty({ description: '배송 메모', required: false })
+  @IsString()
+  @IsOptional()
+  deliveryNote?: string;
+}

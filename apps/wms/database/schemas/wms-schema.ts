@@ -91,6 +91,7 @@ export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'c
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
 export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_transit', 'delivered', 'failed']);
+export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', ['requested', 'received', 'qc_passed', 'qc_failed', 'disposed']);
 export const matchingStatusEnum = pgEnum('matching_status', ['pending', 'matched', 'ignored']);
 export const matchingPriorityEnum = pgEnum('matching_priority', ['normal', 'high']);
@@ -1138,9 +1139,11 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 export const shipments = pgTable('shipments', {
   id: uuid('id').primaryKey().defaultRandom(),
   trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
+  carrier: carrierEnum('carrier').default('CJ'),
   status: shipmentStatusEnum('status').notNull().default('created'),
   eta: timestamp('eta', { withTimezone: true }),
   splitStatus: boolean('split_status').notNull().default(false),
+  invoiceUrl: varchar('invoice_url', { length: 512 }),
   fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
   lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

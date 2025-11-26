@@ -5,9 +5,25 @@ import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import {
   FULFILLMENT_STREAM,
   FulfillmentEvents,
+  FulfillmentCreatedPayload,
+  FulfillmentReadyPayload,
+  FulfillmentLabeledPayload,
+  FulfillmentShippedPayload,
+  FulfillmentDeliveredPayload,
+  FulfillmentCancelledPayload,
+  FulfillmentReturnedPayload,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
 import { eq, and, lte, sql } from 'drizzle-orm';
+
+type FulfillmentPayload =
+  | FulfillmentCreatedPayload
+  | FulfillmentReadyPayload
+  | FulfillmentLabeledPayload
+  | FulfillmentShippedPayload
+  | FulfillmentDeliveredPayload
+  | FulfillmentCancelledPayload
+  | FulfillmentReturnedPayload;
 
 /**
  * OutboxDispatcherService
@@ -24,9 +40,9 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    @InjectStreamPublisher(FULFILLMENT_STREAM.topic)
+    @InjectStreamPublisher(FULFILLMENT_STREAM.topic.topic)
     private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
-  ) {}
+  ) { }
 
   onModuleInit() {
     this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅');
@@ -138,7 +154,7 @@ export class OutboxDispatcherService implements OnModuleInit {
       await this.fulfillmentPublisher.publishEvent({
         eventType: event.event_type as keyof FulfillmentEvents,
         aggregateId: event.aggregate_id,
-        payload: event.payload,
+        payload: event.payload as unknown as FulfillmentPayload,
         metadata: { partitionKey: event.partition_key },
       });
 
@@ -212,9 +228,9 @@ export class OutboxDispatcherService implements OnModuleInit {
       .where(
         eventIds
           ? and(
-              eq(wmsTables.outboxEvents.status, 'failed'),
-              sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`,
-            )
+            eq(wmsTables.outboxEvents.status, 'failed'),
+            sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`,
+          )
           : eq(wmsTables.outboxEvents.status, 'failed'),
       )
       .returning({ id: wmsTables.outboxEvents.id });
