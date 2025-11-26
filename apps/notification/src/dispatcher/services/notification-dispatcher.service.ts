@@ -43,7 +43,7 @@ export class NotificationDispatcherService {
     @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>,
     @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
-    @Optional() private readonly providerManager: ProviderManagerService | null,
+    private readonly providerManager: ProviderManagerService,
   ) { }
 
   /**
