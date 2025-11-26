@@ -112,7 +112,6 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     TaxInvoiceAdminController,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
     PaymentService,
     IntentService,
     PaymentProfileService,
