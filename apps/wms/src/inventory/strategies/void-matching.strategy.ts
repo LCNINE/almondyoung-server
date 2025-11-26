@@ -1,22 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from './matching-strategy.interface';
+import { DbTx } from '../../../database/schemas/wms-schema';
 
 @Injectable()
 export class VoidMatchingStrategy extends MatchingStrategy {
     async lookup(context: MatchingContext): Promise<SkuQuantityMapping[]> {
-        // 항상 빈 배열 반환
         return [];
     }
 
-    async create(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: any): Promise<void> {
+    async create(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: DbTx): Promise<void> {
         return;
     }
 
-    async update(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: any): Promise<void> {
+    async update(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: DbTx): Promise<void> {
         return;
     }
 
-    async delete(context: MatchingContext, tx?: any): Promise<void> {
+    async delete(context: MatchingContext, tx?: DbTx): Promise<void> {
         return;
     }
 

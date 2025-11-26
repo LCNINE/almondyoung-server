@@ -13,12 +13,15 @@ import {
   Logger,
   UseGuards,
   Query,
+  Put,
+  Delete,
 } from '@nestjs/common';
+// HsFmsError는 런타임에서 타입 가드로 체크
 import { PaymentService } from '../services/payment.service';
 import { IntentService } from '../services/intents/intent.service';
 import { PaymentProfileService } from '../services/profiles/payment-profile.service';
 import { BnplService } from '../services/bnpl/bnpl.service';
-import { JwtAuthGuard, User } from '@app/authorization';
+import { JwtAuthGuard, User, Public } from '@app/authorization';
 
 import {
   PaymentError,
@@ -67,6 +70,9 @@ import {
   HmsCardProfileResponseDto,
   RefundPaymentResponseDto,
   ErrorResponseDto,
+  // Profile Management DTOs
+  SetDefaultProfileResponseDto,
+  DeleteProfileResponseDto,
   // BNPL DTOs
   BnplHistoryQueryDto,
   BnplHistoryResponseDto,
@@ -98,7 +104,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
-  ) { }
+  ) {}
 
   @Post('intents')
   @ApiOperation({
@@ -540,6 +546,134 @@ export class PaymentController {
     }
   }
 
+  @Put('profiles/:profileId/set-default')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '기본 결제 수단 변경',
+    description: `특정 결제 프로필을 사용자의 기본 결제 수단으로 설정합니다.
+    
+**중요 제약사항:**
+- 멤버십 결제는 HMS_CARD만 사용 가능
+- HMS_CARD가 아닌 프로필은 기본값으로 설정 불가
+
+**비즈니스 로직:**
+- 프로필 존재/소유자/상태/삭제 여부 검증
+- HMS_CARD 검증 (멤버십 결제 제약)
+- 기존 기본값 해제 후 새 기본값 설정
+- 트랜잭션으로 원자성 보장`,
+  })
+  @ApiParam({
+    name: 'profileId',
+    description: '변경할 결제 프로필 ID',
+    example: '01HZ1234567890ABCDEFGHIJK',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '기본 결제 수단 변경 성공',
+    type: SetDefaultProfileResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 (프로필 없음, 삭제됨, 비활성, HMS_CARD 아님)',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: '다른 사용자의 프로필에 접근 시도',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '프로필을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async setDefaultProfile(
+    @Param('profileId') profileId: string,
+    @User('userId') userId: string,
+  ) {
+    try {
+      this.logger.log(
+        `기본 결제 수단 변경 요청 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      const result = await this.profileService.setDefaultProfile(
+        userId,
+        profileId,
+      );
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        isDefault: result.isDefault,
+        message: '기본 결제 수단이 변경되었습니다.',
+      };
+    } catch (error) {
+      this.handleError(error, '기본 결제 수단 변경');
+    }
+  }
+
+  @Delete('profiles/:profileId')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: '결제 프로필 삭제',
+    description: `결제 프로필을 삭제합니다. (Soft Delete)
+    
+**Soft Delete 정책:**
+- 실제 데이터는 삭제되지 않고 deletedAt 필드만 설정
+- 삭제된 프로필은 결제에 사용할 수 없음
+- 기본값인 경우 자동으로 해제 (자동 승계 없음)
+
+**주의사항:**
+- 이미 삭제된 프로필은 재삭제 불가
+- 멤버십 구독 상태 확인은 프론트엔드에서 처리 권장`,
+  })
+  @ApiParam({
+    name: 'profileId',
+    description: '삭제할 결제 프로필 ID',
+    example: '01HZ1234567890ABCDEFGHIJK',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '결제 프로필 삭제 성공',
+    type: DeleteProfileResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 (이미 삭제됨)',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: '다른 사용자의 프로필에 접근 시도',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: '프로필을 찾을 수 없음',
+    type: ErrorResponseDto,
+  })
+  async deleteProfile(
+    @Param('profileId') profileId: string,
+    @User('userId') userId: string,
+  ) {
+    try {
+      this.logger.log(
+        `결제 프로필 삭제 요청 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      const result = await this.profileService.deleteProfile(userId, profileId);
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        deletedAt: result.deletedAt,
+        message: '결제 수단이 삭제되었습니다.',
+      };
+    } catch (error) {
+      this.handleError(error, '결제 프로필 삭제');
+    }
+  }
+
   @Post('profiles/hms-card')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
@@ -621,11 +755,107 @@ export class PaymentController {
 
   @Post('/hms-bnpl/onboard')
   @HttpCode(201)
-  @ApiOperation({ summary: 'HMS BNPL 프로필 및 동의서 등록' })
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'HMS BNPL 프로필 및 동의서 등록',
+    description: `HMS BNPL(Buy Now Pay Later) 프로필과 동의서를 함께 등록합니다.
+    
+**처리 과정:**
+1. HMS 회원 등록 (FMS API 호출)
+2. 동의서 파일 업로드 (FMS API 호출)
+3. 내부 DB에 프로필 저장
+
+**보상 트랜잭션:**
+- 동의서 등록 실패 시 자동으로 회원 삭제하여 데이터 정합성 보장
+
+**요청 형식:**
+- Content-Type: multipart/form-data
+- 파일 필드명: \`file\` (동의서 이미지 파일)
+
+**응답:**
+- 성공 시: profileId, memberId 반환
+- 실패 시: 에러 메시지 반환`,
+  })
   @ApiConsumes('multipart/form-data')
-  // Swagger를 위한 Body 스키마 명시 (실제 DTO는 파싱해서 사용)
-  async onboardHmsBnplProfile(@Req() req: FastifyRequest) {
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: [
+        'file',
+        'payerName',
+        'phone',
+        'paymentCompany',
+        'paymentNumber',
+        'payerNumber',
+      ],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: '동의서 이미지 파일 (jpg, png, pdf 등)',
+        },
+        payerName: {
+          type: 'string',
+          description: '납부자명',
+        },
+        phone: {
+          type: 'string',
+          description: '전화번호 (예: 01012345678)',
+        },
+        paymentCompany: {
+          type: 'string',
+          description: '은행 코드 (3자리, 예: 088 신한은행)',
+        },
+        paymentNumber: {
+          type: 'string',
+          description: '계좌번호',
+        },
+        payerNumber: {
+          type: 'string',
+          description: '생년월일 (6자리) 또는 사업자번호 (10자리)',
+        },
+        name: {
+          type: 'string',
+          description: '프로필 별칭 (선택사항)',
+          nullable: true,
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'HMS BNPL 프로필 및 동의서 등록 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', example: true },
+        profileId: { type: 'string', description: '프로필 ID (UUID v7)' },
+        memberId: { type: 'string', description: 'HMS 회원 ID' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 데이터 또는 등록 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: '인증 실패',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: '서버 내부 오류',
+    type: ErrorResponseDto,
+  })
+  async onboardHmsBnplProfile(
+    @Req() req: FastifyRequest,
+    @User('userId') userId: string,
+  ) {
     try {
+      this.logger.log(`📥 HMS BNPL 온보딩 요청 - userId: ${userId}`);
+
       // 1. Multipart 요청 파싱
       // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
@@ -642,25 +872,32 @@ export class PaymentController {
         fields[key] = (data.fields[key] as any).value;
       }
 
+      // userId는 JWT에서 추출하므로 스키마에서 제외
       const validation = OnboardHmsBnplProfileSchema.safeParse(fields);
       if (!validation.success) {
         throw new BadRequestException(validation.error.flatten().fieldErrors);
       }
       const dto = validation.data;
 
-      // 3. 서비스 호출
+      // 3. 서비스 호출 (JWT에서 추출한 userId 사용)
       const result =
-        await this.profileService.createHmsBnplProfileWithAgreement(
-          dto.userId,
-          {
-            ...dto,
-            agreementFile: {
-              file: buffer,
-              filename: data.filename,
-            },
+        await this.profileService.createHmsBnplProfileWithAgreement(userId, {
+          ...dto,
+          agreementFile: {
+            file: buffer,
+            filename: data.filename || 'agreement.pdf',
           },
-        );
-      return { success: true, ...result };
+        });
+
+      this.logger.log(
+        `✅ HMS BNPL 온보딩 성공 - profileId: ${result.profileId}, memberId: ${result.memberId}`,
+      );
+
+      return {
+        success: true,
+        profileId: result.profileId,
+        memberId: result.memberId,
+      };
     } catch (error) {
       this.handleError(error, 'HMS BNPL 프로필 온보딩');
     }
@@ -828,7 +1065,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {
@@ -885,6 +1122,40 @@ export class PaymentController {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
     const isDevelopment = process.env.NODE_ENV !== 'production';
+
+    // HsFmsError는 HMS API 에러로 특별 처리 (가장 먼저 체크)
+    // 런타임 타입 가드: HsFmsError는 error 속성을 가지고 있음
+    if (
+      error instanceof Error &&
+      'error' in error &&
+      typeof (error as any).error === 'object' &&
+      (error as any).error !== null &&
+      'message' in (error as any).error &&
+      error.name === 'HsFmsError'
+    ) {
+      const hmsError = error as any;
+      const hmsMessage = hmsError.error?.message || errorMessage;
+      const hmsDeveloperMessage = hmsError.error?.developerMessage;
+
+      // 로그에 상세 정보 포함
+      this.logger.error(
+        `❌ ${context} 실패 (HMS API): ${hmsMessage}`,
+        hmsDeveloperMessage
+          ? `Developer Message: ${hmsDeveloperMessage}`
+          : undefined,
+      );
+      if (errorStack) {
+        this.logger.debug(`Stack trace: ${errorStack}`);
+      }
+
+      // 개발 환경에서는 developerMessage도 포함
+      const clientMessage =
+        isDevelopment && hmsDeveloperMessage
+          ? `${hmsMessage} (${hmsDeveloperMessage})`
+          : hmsMessage;
+
+      throw new BadRequestException(clientMessage);
+    }
 
     this.logger.error(`❌ ${context} 실패: ${errorMessage}`, errorStack);
 

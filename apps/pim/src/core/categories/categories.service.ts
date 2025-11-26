@@ -109,7 +109,7 @@ export class ProductCategoriesService {
   ): Promise<void> {
     const client = this.getClient(tx);
 
-    const executeDelete = async (txn: any) => {
+    const executeDelete = async (txn: DbTransaction) => {
       const [category] = await txn
         .select()
         .from(pimSchema.productCategories)
@@ -306,7 +306,7 @@ export class ProductCategoriesService {
   ): Promise<CategoryResponseDto> {
     const client = this.getClient(tx);
 
-    const executeMove = async (txn: any) => {
+    const executeMove = async (txn: DbTransaction) => {
       const [category] = await txn
         .select()
         .from(pimSchema.productCategories)
@@ -316,7 +316,7 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      let newParentCategory: any = null;
+      let newParentCategory: ProductCategory | null = null;
       if (newParentId) {
         const parentResult = await txn
           .select()
@@ -371,7 +371,7 @@ export class ProductCategoriesService {
   // 자손들의 경로와 레벨을 재계산하는 헬퍼 메서드
   private async _updateDescendantPaths(
     categoryId: string,
-    txn: any,
+    txn: DbTransaction,
   ): Promise<void> {
     const [currentCategory] = await txn
       .select()
@@ -666,17 +666,17 @@ export class ProductCategoriesService {
   }
 
   async moveProductsToCategory(
-    productIds: string[],
+    versionIds: string[],
     categoryId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    if (!productIds || productIds.length === 0) {
-      throw new Error('Product IDs are required');
+    if (!versionIds || versionIds.length === 0) {
+      throw new Error('Version IDs are required');
     }
 
     const client = this.getClient(tx);
 
-    const executeMove = async (txn: any) => {
+    const executeMove = async (txn: DbTransaction) => {
       // 1. 대상 카테고리 존재 확인
       const [category] = await txn
         .select()
@@ -687,36 +687,52 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      // 2. 상품들이 존재하는지 확인 (active 버전만)
-      const existingProducts = await txn
-        .select({ id: pimSchema.productMasterVersions.id })
+      // 2. Version ID를 Master ID + Version 번호로 변환
+      const productVersions = await txn
+        .select({
+          versionId: pimSchema.productMasterVersions.id,
+          masterId: pimSchema.productMasterVersions.masterId,
+          version: pimSchema.productMasterVersions.version,
+        })
         .from(pimSchema.productMasterVersions)
         .where(
           and(
-            inArray(pimSchema.productMasterVersions.id, productIds),
+            inArray(pimSchema.productMasterVersions.id, versionIds),
             eq(pimSchema.productMasterVersions.versionStatus, 'active')
           )
         );
 
-      const existingProductIds = existingProducts.map((p) => p.id);
-      const missingProductIds = productIds.filter(
-        (id) => !existingProductIds.includes(id),
-      );
-
-      if (missingProductIds.length > 0) {
-        throw new Error(`Products not found: ${missingProductIds.join(', ')}`);
+      if (productVersions.length === 0) {
+        throw new Error('No active versions found');
       }
 
-      // 3. 기존 카테고리 관계 삭제
-      await txn
-        .delete(pimSchema.productMasterCategories)
-        .where(inArray(pimSchema.productMasterCategories.masterId, productIds));
+      const foundVersionIds = productVersions.map((p) => p.versionId);
+      const missingVersionIds = versionIds.filter(
+        (id) => !foundVersionIds.includes(id),
+      );
 
-      // 4. 새 카테고리 관계 생성
-      const newRelations = productIds.map((productId) => ({
-        masterId: productId,
+      if (missingVersionIds.length > 0) {
+        throw new Error(`Active versions not found: ${missingVersionIds.join(', ')}`);
+      }
+
+      // 3. 기존 카테고리 관계 삭제 (Master ID + Version 사용)
+      for (const pv of productVersions) {
+        await txn
+          .delete(pimSchema.productMasterCategories)
+          .where(
+            and(
+              eq(pimSchema.productMasterCategories.masterId, pv.masterId),
+              eq(pimSchema.productMasterCategories.version, pv.version)
+            )
+          );
+      }
+
+      // 4. 새 카테고리 관계 생성 (올바른 Master ID + Version 사용)
+      const newRelations = productVersions.map((pv) => ({
+        masterId: pv.masterId,
+        version: pv.version,
         categoryId: categoryId,
-        isPrimary: true, // 기본값으로 주 카테고리로 설정
+        isPrimary: true,
         createdAt: new Date(),
       }));
 
@@ -733,17 +749,17 @@ export class ProductCategoriesService {
 
   // 고지훈 추가 - 기존 카테고리를 유지하면서 추가로 카테고리에 상품 연결 (다대다 지원)
   async addProductsToCategory(
-    productIds: string[],
+    versionIds: string[],
     categoryId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    if (!productIds || productIds.length === 0) {
-      throw new Error('Product IDs are required');
+    if (!versionIds || versionIds.length === 0) {
+      throw new Error('Version IDs are required');
     }
 
     const client = this.getClient(tx);
 
-    const executeAdd = async (txn: any) => {
+    const executeAdd = async (txn: DbTransaction) => {
       // 1. 대상 카테고리 존재 확인
       const [category] = await txn
         .select()
@@ -754,49 +770,68 @@ export class ProductCategoriesService {
         throw new Error(`Category not found: ${categoryId}`);
       }
 
-      // 2. 상품들이 존재하는지 확인 (active 버전만)
-      const existingProducts = await txn
-        .select({ id: pimSchema.productMasterVersions.id })
+      // 2. Version ID를 Master ID + Version 번호로 변환
+      const productVersions = await txn
+        .select({
+          versionId: pimSchema.productMasterVersions.id,
+          masterId: pimSchema.productMasterVersions.masterId,
+          version: pimSchema.productMasterVersions.version,
+        })
         .from(pimSchema.productMasterVersions)
         .where(
           and(
-            inArray(pimSchema.productMasterVersions.id, productIds),
+            inArray(pimSchema.productMasterVersions.id, versionIds),
             eq(pimSchema.productMasterVersions.versionStatus, 'active')
           )
         );
 
-      const existingProductIds = existingProducts.map((p) => p.id);
-      const missingProductIds = productIds.filter(
-        (id) => !existingProductIds.includes(id),
-      );
-
-      if (missingProductIds.length > 0) {
-        throw new Error(`Products not found: ${missingProductIds.join(', ')}`);
+      if (productVersions.length === 0) {
+        throw new Error('No active versions found');
       }
 
-      // 3. 이미 연결된 상품-카테고리 관계 조회
+      const foundVersionIds = productVersions.map((p) => p.versionId);
+      const missingVersionIds = versionIds.filter(
+        (id) => !foundVersionIds.includes(id),
+      );
+
+      if (missingVersionIds.length > 0) {
+        throw new Error(`Active versions not found: ${missingVersionIds.join(', ')}`);
+      }
+
+      // 3. 이미 연결된 상품-카테고리 관계 조회 (Master ID + Version + Category 사용)
       const existingRelations = await txn
         .select()
         .from(pimSchema.productMasterCategories)
         .where(
           and(
-            inArray(pimSchema.productMasterCategories.masterId, productIds),
-            eq(pimSchema.productMasterCategories.categoryId, categoryId),
-          ),
+            inArray(
+              pimSchema.productMasterCategories.masterId,
+              productVersions.map((pv) => pv.masterId)
+            ),
+            inArray(
+              pimSchema.productMasterCategories.version,
+              productVersions.map((pv) => pv.version)
+            ),
+            eq(pimSchema.productMasterCategories.categoryId, categoryId)
+          )
         );
 
-      const existingMasterIds = existingRelations.map((r) => r.masterId);
-
-      // 4. 아직 연결되지 않은 상품들만 새로 연결
-      const newProductIds = productIds.filter(
-        (id) => !existingMasterIds.includes(id),
+      // 4. 이미 연결된 상품 필터링
+      const existingKeys = new Set(
+        existingRelations.map((r) => `${r.masterId}:${r.version}`)
       );
 
-      if (newProductIds.length > 0) {
-        const newRelations = newProductIds.map((productId) => ({
-          masterId: productId,
+      const newProductVersions = productVersions.filter(
+        (pv) => !existingKeys.has(`${pv.masterId}:${pv.version}`)
+      );
+
+      // 5. 아직 연결되지 않은 상품들만 새로 연결 (올바른 Master ID + Version 사용)
+      if (newProductVersions.length > 0) {
+        const newRelations = newProductVersions.map((pv) => ({
+          masterId: pv.masterId,
+          version: pv.version,
           categoryId: categoryId,
-          isPrimary: false, // 추가 카테고리는 보조로 설정
+          isPrimary: false,
           createdAt: new Date(),
         }));
 
@@ -903,7 +938,7 @@ export class ProductCategoriesService {
 
     const client = this.getClient(tx);
 
-    const executeReorder = async (txn: any) => {
+    const executeReorder = async (txn: DbTransaction) => {
       // 1. 부모 카테고리 존재 확인 (parentId가 있는 경우)
       if (parentId) {
         const [parentCategory] = await txn
@@ -1073,7 +1108,7 @@ export class ProductCategoriesService {
   async rebuildCategoryPaths(tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    const executeRebuild = async (txn: any) => {
+    const executeRebuild = async (txn: DbTransaction) => {
       // 1. 모든 카테고리를 레벨 순으로 정렬하여 가져오기
       const allCategories = await txn
         .select()

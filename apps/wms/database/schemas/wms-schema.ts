@@ -91,6 +91,7 @@ export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'c
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
 export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_transit', 'delivered', 'failed']);
+export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', ['requested', 'received', 'qc_passed', 'qc_failed', 'disposed']);
 export const matchingStatusEnum = pgEnum('matching_status', ['pending', 'matched', 'ignored']);
 export const matchingPriorityEnum = pgEnum('matching_priority', ['normal', 'high']);
@@ -934,6 +935,8 @@ export const salesOrderLines = pgTable('sales_order_lines', {
   variantId: uuid('variant_id').notNull(), // PIM의 Variant ID
   productMatchingId: uuid('product_matching_id')
     .references(() => productMatchings.id, { onDelete: 'set null' }), // 매칭 정보
+  mappingSnapshotId: uuid('mapping_snapshot_id')
+    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' }), // SO 확정 시점 스냅샷
 
   productName: varchar('product_name', { length: 255 }).notNull(),
   quantity: integer('quantity').notNull(),
@@ -948,7 +951,9 @@ export const salesOrderLines = pgTable('sales_order_lines', {
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => ({
+  idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
+}));
 
 // 주문 이벤트 로그 테이블 추가
 export const orderEvents = pgTable('order_events', {
@@ -1134,9 +1139,11 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 export const shipments = pgTable('shipments', {
   id: uuid('id').primaryKey().defaultRandom(),
   trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
+  carrier: carrierEnum('carrier').default('CJ'),
   status: shipmentStatusEnum('status').notNull().default('created'),
   eta: timestamp('eta', { withTimezone: true }),
   splitStatus: boolean('split_status').notNull().default(false),
+  invoiceUrl: varchar('invoice_url', { length: 512 }),
   fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
   lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1597,12 +1604,12 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
     .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
     .notNull(),
 
-  // 추적 정보
-  salesOrderId: varchar('sales_order_id', { length: 255 }).notNull(), // 원본 SO ID
-  salesOrderLineId: varchar('sales_order_line_id', { length: 255 }).notNull(), // 원본 SOL ID
+  // 추적 정보 (nullable: 명시적 라인 전달 시 SO 정보가 없을 수 있음)
+  salesOrderId: varchar('sales_order_id', { length: 255 }), // 원본 SO ID
+  salesOrderLineId: varchar('sales_order_line_id', { length: 255 }), // 원본 SOL ID
   mappingSnapshotId: uuid('mapping_snapshot_id')
-    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
-    .notNull(),
+    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' }),
+  variantId: uuid('variant_id'), // PIM Variant ID - 정책 평가용
 
   // 실제 출고 정보
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
@@ -1612,6 +1619,7 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
   reservedQty: integer('reserved_qty').notNull().default(0),
   pickedQty: integer('picked_qty').notNull().default(0),
   shippedQty: integer('shipped_qty').notNull().default(0),
+  status: varchar('status', { length: 32 }).notNull().default('pending'),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1619,6 +1627,7 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
   idxFulfillmentOrder: index('idx_fulfillment_order_items_fo').on(t.fulfillmentOrderId),
   idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
   idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
+  idxVariant: index('idx_fulfillment_order_items_variant').on(t.variantId),
 }));
 
 /*───────────────────────────

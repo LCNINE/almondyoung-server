@@ -528,9 +528,11 @@ export const salesChannels = pgTable(
     site: varchar('site', { length: 50 }).notNull(),
     categoryId: uuid('category_id').references(() => channelCategories.id, { onDelete: 'set null' }),
     name: varchar('name', { length: 100 }).notNull(),
-    isActive: boolean('is_active').default(true),
-    apiConfig: jsonb('api_config'),
-    supportedFeatures: jsonb('supported_features'),
+    description: text('description'),
+    config: jsonb('config'),
+    isActive: boolean('is_active').default(true).notNull(),
+    apiEndpoint: varchar('api_endpoint', { length: 500 }),
+    credentials: jsonb('credentials'),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -558,7 +560,7 @@ export const channelProducts = pgTable(
 
     // 오버라이드 가능한 필드들 (판매 여부, 상품명만)
     name: varchar('name', { length: 255 }), // 상품명 오버라이드
-    isActive: boolean('is_active').default(true), // 판매 여부
+    isActive: boolean('is_active').default(true).notNull(), // 판매 여부
 
     // 채널별 특수 설정
     channelSpecificData: jsonb('channel_specific_data'),
@@ -801,6 +803,53 @@ export const productTagValues = pgTable(
   ],
 );
 
+// ===== 19. CHANNEL VARIANT LISTINGS (채널 상품 ↔ Variant 매핑) =====
+export const channelVariantListings = pgTable(
+  'channel_variant_listings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // 어떤 variant가
+    variantId: uuid('variant_id')
+      .notNull()
+      .references(() => productVariants.id, { onDelete: 'cascade' }),
+
+    // 어떤 채널에
+    salesChannelId: uuid('sales_channel_id')
+      .notNull()
+      .references(() => salesChannels.id, { onDelete: 'cascade' }),
+
+    // 어떤 ID로 등록되어 있는가
+    channelItemId: varchar('channel_item_id', { length: 255 }).notNull(),
+
+    // 채널에서의 부가 정보 (디스플레이용)
+    channelItemName: varchar('channel_item_name', { length: 500 }),
+    channelOptionName: varchar('channel_option_name', { length: 255 }),
+    channelPrice: bigint('channel_price', { mode: 'number' }),
+    channelProductUrl: varchar('channel_product_url', { length: 1000 }),
+
+    // 상태
+    isActive: boolean('is_active').default(true).notNull(),
+
+    // 메타
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    // 핵심 인덱스: 채널 + 채널아이템ID로 variant 조회 (매우 빈번)
+    uniqueIndex('uq_channel_variant_listing').on(
+      table.salesChannelId,
+      table.channelItemId,
+    ),
+    // variant 기준 조회 (관리 UI용)
+    index('idx_channel_listings_variant').on(table.variantId),
+    // 채널 기준 조회 (동기화용)
+    index('idx_channel_listings_channel').on(table.salesChannelId),
+  ],
+);
+
 // ===== BANNER GROUPS =====
 export const bannerGroups = pgTable(
   'banner_groups',
@@ -893,6 +942,7 @@ export const pimSchema = {
   channelCategories,
   salesChannels,
   channelProducts,
+  channelVariantListings,
   pricingRules,
   uploads,
   productImages,
@@ -976,6 +1026,7 @@ export const salesChannelsRelations = relations(
       references: [channelCategories.id],
     }),
     channelProducts: many(channelProducts),
+    channelListings: many(channelVariantListings),
   }),
 );
 
@@ -1034,6 +1085,25 @@ export const bannersRelations = relations(banners, ({ one }) => ({
     references: [bannerGroups.id],
   }),
 }));
+
+export const productVariantsRelations = relations(productVariants, ({ many }) => ({
+  optionValues: many(variantOptionValues),
+  channelListings: many(channelVariantListings),
+}));
+
+export const channelVariantListingsRelations = relations(
+  channelVariantListings,
+  ({ one }) => ({
+    variant: one(productVariants, {
+      fields: [channelVariantListings.variantId],
+      references: [productVariants.id],
+    }),
+    channel: one(salesChannels, {
+      fields: [channelVariantListings.salesChannelId],
+      references: [salesChannels.id],
+    }),
+  }),
+);
 
 // 스키마 타입 추출
 export type PimSchema = typeof pimSchema;

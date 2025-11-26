@@ -25,7 +25,9 @@ import {
   desc,
   sql,
   inArray,
+  SQL,
 } from 'drizzle-orm';
+import { ChannelProductWithChannelDto } from './dto';
 
 @Injectable()
 export class ChannelProductsService {
@@ -124,11 +126,7 @@ export class ChannelProductsService {
   async getChannelProductsByMaster(
     masterId: string,
     tx?: DbTransaction,
-  ): Promise<
-    (ChannelProduct & {
-      channel: SalesChannel;
-    })[]
-  > {
+  ): Promise<ChannelProductWithChannelDto[]> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
@@ -147,18 +145,12 @@ export class ChannelProductsService {
         channelSpecificData: channelProducts.channelSpecificData,
         createdAt: channelProducts.createdAt,
         updatedAt: channelProducts.updatedAt,
-        // SalesChannel 필드들 (channel 객체로 그룹화)
+        // SalesChannel 필드들 (channel 객체로 그룹화) - DTO에 맞게 간소화
         channel: {
           id: salesChannels.id,
-          type: salesChannels.type,
           name: salesChannels.name,
-          site: salesChannels.site,                    // 추가
-          categoryId: salesChannels.categoryId,        // 추가
+          type: salesChannels.type,
           isActive: salesChannels.isActive,
-          apiConfig: salesChannels.apiConfig,
-          supportedFeatures: salesChannels.supportedFeatures,
-          createdAt: salesChannels.createdAt,
-          updatedAt: salesChannels.updatedAt,
         },
       })
       .from(channelProducts)
@@ -166,7 +158,7 @@ export class ChannelProductsService {
       .where(eq(channelProducts.masterId, masterId))
       .orderBy(asc(salesChannels.name));
 
-    return result;
+    return result as ChannelProductWithChannelDto[];
   }
 
   async getChannelProductsByChannel(
@@ -196,7 +188,7 @@ export class ChannelProductsService {
     const offset = (page - 1) * limit;
 
     // 필터 조건 배열 생성
-    const whereConditions: any[] = [eq(channelProducts.channelId, channelId)];
+    const whereConditions: SQL[] = [eq(channelProducts.channelId, channelId)];
 
     // 활성 상태 필터
     if (filters?.isActive !== undefined) {
@@ -209,7 +201,7 @@ export class ChannelProductsService {
         or(
           ilike(channelProducts.name, `%${filters.search}%`),
           ilike(productMasterVersions.name, `%${filters.search}%`),
-        ),
+        ) as SQL,
       );
     }
 
@@ -640,7 +632,6 @@ export class ChannelProductsService {
         id: salesChannels.id,
         type: salesChannels.type,
         isActive: salesChannels.isActive,
-        supportedFeatures: salesChannels.supportedFeatures,
       })
       .from(salesChannels)
       .where(eq(salesChannels.id, channelId));
@@ -681,27 +672,27 @@ export class ChannelProductsService {
           violations.push(`Unknown channel type: ${channelInfo.type}`);
       }
 
-      if (channelInfo.supportedFeatures) {
-        const features = channelInfo.supportedFeatures as any;
+      // if (channelInfo.supportedFeatures) {
+      //   const features = channelInfo.supportedFeatures as any;
 
-        if (
-          productData.images &&
-          Array.isArray(productData.images) &&
-          productData.images.length > 1
-        ) {
-          if (features.multipleImages === false) {
-            violations.push(
-              `Channel ${channelInfo.type} does not support multiple images`,
-            );
-          }
-        }
+      //   if (
+      //     productData.images &&
+      //     Array.isArray(productData.images) &&
+      //     productData.images.length > 1
+      //   ) {
+      //     if (features.multipleImages === false) {
+      //       violations.push(
+      //         `Channel ${channelInfo.type} does not support multiple images`,
+      //       );
+      //     }
+      //   }
 
-        if (productData.hasOptions && features.optionProducts === false) {
-          violations.push(
-            `Channel ${channelInfo.type} does not support option products`,
-          );
-        }
-      }
+      //   if (productData.hasOptions && features.optionProducts === false) {
+      //     violations.push(
+      //       `Channel ${channelInfo.type} does not support option products`,
+      //     );
+      //   }
+      // }
     }
 
     return {

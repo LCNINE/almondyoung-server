@@ -6,7 +6,7 @@ import { and, eq, inArray, desc, isNotNull } from 'drizzle-orm';
 
 export interface DirectShipOrder {
   fulfillmentOrderId: string;
-  salesOrderId: string;
+  salesOrderId: string | null;
   companyName: string;
   supplierCode?: string;
   status: 'pending' | 'forwarded' | 'completed' | 'canceled';
@@ -18,7 +18,7 @@ export interface DirectShipOrder {
   completedAt?: Date;
   items: Array<{
     foiId: string;
-    salesOrderLineId: string;
+    salesOrderLineId: string | null;
     skuId: string;
     skuName: string;
     qty: number;
@@ -29,8 +29,8 @@ export interface DirectShipOrder {
 export interface DirectShipExportData {
   companyName: string;
   orders: Array<{
-    salesOrderId: string;
-    salesOrderLineId: string;
+    salesOrderId: string | null;
+    salesOrderLineId: string | null;
     productName: string;
     quantity: number;
     supplierSku?: string;
@@ -54,7 +54,7 @@ export interface DirectShipDashboard {
   }>;
   recentActivity: Array<{
     fulfillmentOrderId: string;
-    salesOrderId: string;
+    salesOrderId: string | null;
     companyName: string;
     action: 'created' | 'forwarded' | 'completed';
     timestamp: Date;

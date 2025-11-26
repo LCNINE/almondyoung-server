@@ -71,9 +71,11 @@ export class ProductMastersService {
     try {
       await this.productPublisher.publishEvent({
         eventType: 'ProductVariantCreated',
-        aggregateId: version.id,
+        aggregateId: version.masterId,
         payload: {
-          productId: version.id,
+          masterId: version.masterId,
+          versionId: version.id,
+          version: version.version,
           productName: version.name,
           variantId: variant.id,
           variantName: variant.variantName,
@@ -340,16 +342,21 @@ export class ProductMastersService {
     const [activeVersion] = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.versionStatus, 'active'),
-          isNull(productMasterVersions.deletedAt)
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt)
         )
       )
       .limit(1);
 
-    return activeVersion || null;
+    return activeVersion ? activeVersion.product_master_versions : null;
   }
 
   async getMasterWithImages(
@@ -368,10 +375,15 @@ export class ProductMastersService {
     const versionResult = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.versionStatus, 'active'),
+          isNull(productMasters.deletedAt)
         ),
       )
       .limit(1);
@@ -380,7 +392,7 @@ export class ProductMastersService {
       return null;
     }
 
-    const version = versionResult[0];
+    const version = versionResult[0].product_master_versions;
 
     // 2. 상품에 연결된 이미지 + 업로드 정보 join
     const images = await client
@@ -425,10 +437,15 @@ export class ProductMastersService {
       const [activeVersion] = await client
         .select({ version: productMasterVersions.version })
         .from(productMasterVersions)
+        .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
             eq(productMasterVersions.versionStatus, 'active'),
+            isNull(productMasters.deletedAt)
           ),
         )
         .limit(1);
@@ -442,10 +459,15 @@ export class ProductMastersService {
     const [versionData] = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.version, actualVersion)
+          eq(productMasterVersions.version, actualVersion),
+          isNull(productMasters.deletedAt)
         )
       )
       .limit(1);
@@ -453,6 +475,8 @@ export class ProductMastersService {
     if (!versionData) {
       return null;
     }
+
+    const version_data = versionData.product_master_versions;
 
     // 매핑 테이블을 통해 optionGroups 조회 + Display 테이블 JOIN
     const optionGroupResults = await client
@@ -574,7 +598,7 @@ export class ProductMastersService {
     }));
 
     return {
-      ...versionData,
+      ...version_data,
       optionGroups: optionGroupsWithValues,
       variants: variants.map((v) => ({ ...v, optionValues: [] })),
       channelProducts,
@@ -624,6 +648,7 @@ export class ProductMastersService {
     // Add soft delete filter (unless explicitly including deleted)
     if (!filters?.includeDeleted) {
       whereConditions.push(isNull(productMasterVersions.deletedAt));
+      whereConditions.push(isNull(productMasters.deletedAt));
     }
 
     if (filters?.status) {
@@ -667,6 +692,10 @@ export class ProductMastersService {
         .select({ count: count() })
         .from(productMasterVersions)
         .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
+        .innerJoin(
           productMasterCategories,
           and(
             eq(productMasterVersions.masterId, productMasterCategories.masterId),
@@ -708,6 +737,10 @@ export class ProductMastersService {
         })
         .from(productMasterVersions)
         .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
+        )
+        .innerJoin(
           productMasterCategories,
           and(
             eq(productMasterVersions.masterId, productMasterCategories.masterId),
@@ -744,7 +777,13 @@ export class ProductMastersService {
     // 카테고리 필터가 없는 경우: 기존 로직
     const whereClause =
       whereConditions.length > 0 ? and(...whereConditions) : undefined;
-    const countQuery = client.select({ count: count() }).from(productMasterVersions);
+    const countQuery = client
+      .select({ count: count() })
+      .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      );
 
     if (whereClause) {
       countQuery.where(whereClause);
@@ -776,6 +815,10 @@ export class ProductMastersService {
         )`.as('variant_count'),
       })
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .orderBy(desc(productMasterVersions.createdAt));
 
     // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
@@ -806,20 +849,27 @@ export class ProductMastersService {
     };
   }
 
-  async updateMaster(
-    masterId: string,
+  /**
+   * Draft 버전 수정
+   * @param versionId - Version ID (product_master_versions.id)
+   * @param data - 수정할 데이터
+   * @param tx - 트랜잭션 객체 (선택)
+   * @returns 수정된 버전
+   */
+  async updateVersion(
+    versionId: string,
     data: UpdateProductMasterVersion,
     tx?: DbTransaction,
   ): Promise<ProductMasterVersion> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
+    if (!versionId) {
+      throw new Error('Version ID is required');
     }
 
     const executeUpdate = async (txClient: DbTransaction) => {
-      // 0. 기존 마스터 조회 (masterId는 versionId임)
-      const existingMaster = await this.getVersionById(masterId, txClient);
+      // 0. 기존 버전 조회
+      const existingMaster = await this.getVersionById(versionId, txClient);
       if (!existingMaster) {
-        throw new Error(`Version not found: ${masterId}`);
+        throw new Error(`Version not found: ${versionId}`);
       }
 
       // draft 상태 검증
@@ -853,11 +903,11 @@ export class ProductMastersService {
           ...updateData,
           updatedAt: new Date()
         })
-        .where(eq(productMasterVersions.id, masterId))
+        .where(eq(productMasterVersions.id, versionId))
         .returning();
 
       if (!updated) {
-        throw new Error(`Failed to update master: ${masterId}`);
+        throw new Error(`Failed to update version: ${versionId}`);
       }
 
       // 4. 카테고리 업데이트
@@ -887,7 +937,7 @@ export class ProductMastersService {
       // 5. 옵션 diff 처리
       if (optionDiff) {
         const structureChanged = await this._applyOptionDiff(
-          masterId,
+          versionId,
           existingMaster,
           optionDiff,
           txClient,
@@ -901,7 +951,7 @@ export class ProductMastersService {
               : 'option_value_changed';
 
           this.logger.log(
-            `Option structure changed for master ${masterId}. Regenerating variants (${changeType})...`,
+            `Option structure changed for version ${versionId}. Regenerating variants (${changeType})...`,
           );
 
           await this._regenerateVariantsForVersion(
@@ -1196,8 +1246,13 @@ export class ProductMastersService {
 
     const result = await client
       .select({ count: count() })
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, masterId));
+      .from(productMasters)
+      .where(
+        and(
+          eq(productMasters.id, masterId),
+          isNull(productMasters.deletedAt)
+        )
+      );
 
     return result[0].count > 0;
   }
@@ -1377,6 +1432,99 @@ export class ProductMastersService {
     }, tx);
 
     return restored;
+  }
+
+  /**
+   * Master 자체를 soft delete (product_masters.deletedAt 설정)
+   * Master가 삭제되면 모든 Version은 자동으로 조회되지 않음 (join 시 필터링)
+   * Active 버전이 있었다면 ProductMasterDeleted 이벤트 발행
+   */
+  async softDeleteMaster(
+    masterId: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // 1. Master 존재 및 삭제 여부 확인
+    const [master] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
+    if (master.deletedAt) {
+      throw new Error('Master is already deleted');
+    }
+
+    // 2. Active 버전 확인 (이벤트 발행용)
+    const [activeVersion] = await client
+      .select()
+      .from(productMasterVersions)
+      .where(
+        and(
+          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVersions.versionStatus, 'active'),
+        ),
+      )
+      .limit(1);
+
+    // 3. Master soft delete
+    const [deletedMaster] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: new Date(),
+        deletedBy: userId,
+      })
+      .where(eq(productMasters.id, masterId))
+      .returning();
+
+    // 4. Active 버전이 있었다면 이벤트 발행
+    if (activeVersion) {
+      await this._emitMasterDeletedEvent(masterId);
+    }
+
+    return deletedMaster;
+  }
+
+  /**
+   * Master 복원 (product_masters.deletedAt = null)
+   */
+  async restoreMaster(
+    masterId: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMaster> {
+    const client = this.getClient(tx);
+
+    // 1. Master 존재 확인 (includeDeleted)
+    const [master] = await client
+      .select()
+      .from(productMasters)
+      .where(eq(productMasters.id, masterId));
+
+    if (!master) {
+      throw new Error(`Master not found: ${masterId}`);
+    }
+
+    if (!master.deletedAt) {
+      throw new Error('Master is not deleted');
+    }
+
+    // 2. Master 복원
+    const [restoredMaster] = await client
+      .update(productMasters)
+      .set({
+        deletedAt: null,
+        deletedBy: null,
+      })
+      .where(eq(productMasters.id, masterId))
+      .returning();
+
+    return restoredMaster;
   }
 
   /**

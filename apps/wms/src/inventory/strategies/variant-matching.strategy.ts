@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from './matching-strategy.interface';
 import { eq } from 'drizzle-orm';
-import { wmsTables, wmsSchema } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
 
 @Injectable()
 export class VariantMatchingStrategy extends MatchingStrategy {
@@ -19,7 +19,7 @@ export class VariantMatchingStrategy extends MatchingStrategy {
         }));
     }
 
-    async create(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: any): Promise<void> {
+    async create(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: DbTx): Promise<void> {
         const db = tx || this.db;
 
         for (const mapping of mappings) {
@@ -31,7 +31,7 @@ export class VariantMatchingStrategy extends MatchingStrategy {
         }
     }
 
-    async update(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: any): Promise<void> {
+    async update(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: DbTx): Promise<void> {
         const db = tx || this.db;
 
         await this.delete(context, tx);
@@ -39,7 +39,7 @@ export class VariantMatchingStrategy extends MatchingStrategy {
         await this.create(context, mappings, tx);
     }
 
-    async delete(context: MatchingContext, tx?: any): Promise<void> {
+    async delete(context: MatchingContext, tx?: DbTx): Promise<void> {
         const db = tx || this.db;
 
         await db.delete(wmsTables.productVariantSkuLinks)

@@ -3,6 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
 import {
   type PimSchema,
+  productMasters,
   productMasterVersions,
   productMasterCategories,
 } from '../../../schema';
@@ -40,6 +41,7 @@ export class ProductSearchService {
     // Soft delete filter
     if (!query.includeDeleted) {
       conditions.push(isNull(productMasterVersions.deletedAt));
+      conditions.push(isNull(productMasters.deletedAt));
     }
 
     // Keyword search (name, description, product code)
@@ -111,6 +113,10 @@ export class ProductSearchService {
       .select()
       .from(productMasterVersions)
       .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
+      .innerJoin(
         productMasterCategories,
         and(
           eq(productMasterCategories.masterId, productMasterVersions.masterId),
@@ -126,6 +132,10 @@ export class ProductSearchService {
     const [{ count }] = await client
       .select({ count: sql<number>`count(distinct ${productMasterVersions.id})` })
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .innerJoin(
         productMasterCategories,
         and(
@@ -151,6 +161,10 @@ export class ProductSearchService {
     const results = await client
       .select()
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(this.getSortOrder(query))
       .limit(limit)
@@ -160,6 +174,10 @@ export class ProductSearchService {
     const [{ count }] = await client
       .select({ count: sql<number>`count(*)` })
       .from(productMasterVersions)
+      .innerJoin(
+        productMasters,
+        eq(productMasterVersions.masterId, productMasters.id)
+      )
       .where(conditions.length > 0 ? and(...conditions) : undefined);
 
     return this.buildPaginationResponse(results, query, Number(count));

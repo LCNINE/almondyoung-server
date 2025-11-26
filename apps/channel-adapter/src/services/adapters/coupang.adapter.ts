@@ -14,17 +14,14 @@ import {
   CoupangExchangeClient,
 } from '../clients/coupang';
 import {
-  WmsApiService,
-  SalesOrder,
-  CreateSalesOrderDto,
-} from '../apis/wms.api.service';
-import {
   CoupangOrderSheet,
   CoupangDeliveryHistoryResponse,
   CoupangExchangeRequest,
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
+import { OrderEventPublisher } from '../order-event.publisher';
+import { PendingOrderService } from '../pending-order.service';
 
 /**
  * 쿠팡 채널 어댑터
@@ -40,7 +37,8 @@ export class CoupangAdapter implements ChannelAdapter {
     private readonly coupangOrderClient: CoupangOrderClient,
     private readonly coupangReturnClient: CoupangReturnClient,
     private readonly coupangExchangeClient: CoupangExchangeClient,
-    private readonly wmsApiService: WmsApiService,
+    private readonly orderEventPublisher: OrderEventPublisher,
+    private readonly pendingOrderService: PendingOrderService,
   ) {}
 
   async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
@@ -116,8 +114,8 @@ export class CoupangAdapter implements ChannelAdapter {
         console.log(JSON.stringify(allOrderSheets[0], null, 2));
       }
 
-      // 7. TODO: Redis 중복검사 추가 예정
-      // 8. TODO: Kafka/이벤트브로커 발행 추가 예정
+      // 7. 주문 이벤트 발행 (WMS로 전달)
+      await this.publishOrderEvents(events);
 
       return events;
     } catch (error) {
@@ -1835,280 +1833,70 @@ export class CoupangAdapter implements ChannelAdapter {
     };
   }
 
-  // ===== WMS 연동 메서드 구현 (CTO SoT 원칙) =====
-
   /**
-   * 쿠팡 주문을 WMS에 전달 (어댑터가 SoT → 동기 요청)
+   * 주문 이벤트 발행
    *
-   * @param orderEvent 쿠팡에서 수신한 주문 이벤트
-   * @returns WMS에서 생성된 판매주문 정보
+   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
+   * - ACCEPT 상태: OrderCreated 이벤트 발행 (매핑 자동 조회, 미매핑 시 계류)
+   * - CANCELLED 상태: OrderCancelled 이벤트 발행
    */
-  async createOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
-    const startTime = Date.now();
+  private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
+    let publishedCount = 0;
+    let pendingCount = 0;
 
-    this.logger.log(
-      `🏭 [쿠팡→WMS] 주문 생성 요청: ${orderEvent.externalOrderId}`,
-      {
-        channelType: orderEvent.channelType,
-        externalProductOrderId: orderEvent.externalProductOrderId,
-        buyerName: orderEvent.buyer?.name,
-      },
-    );
+    for (const event of events) {
+      try {
+        switch (event.status) {
+          case 'PENDING':
+          case 'PAID':
+          case 'PROCESSING':
+            // 새로운 주문 - 매핑 조회 후 OrderCreated 발행 또는 계류
+            const result = await this.orderEventPublisher.publishOrderConfirmed(
+              'coupang',
+              event,
+            );
 
-    try {
-      // 1. 쿠팡 주문 데이터를 WMS 형식으로 변환
-      const wmsOrderData = this.transformToWmsOrderFormat(orderEvent);
+            if (result.published) {
+              publishedCount++;
+            } else if (result.unmappedItems && result.unmappedItems.length > 0) {
+              // 미매핑 항목 → 계류 처리
+              await this.pendingOrderService.savePendingOrder(
+                'coupang',
+                event,
+                result.unmappedItems,
+              );
+              pendingCount++;
+            }
+            break;
 
-      // 2. WMS API 호출 (재시도 + DLQ 처리는 WmsApiService에서 담당)
-      const wmsOrder = await this.wmsApiService.createSalesOrder(wmsOrderData);
+          case 'CANCELLED':
+            // 취소된 주문 - OrderCancelled 발행
+            await this.orderEventPublisher.publishOrderCancelled(
+              'coupang',
+              event,
+              event.reason ?? 'CUSTOMER_REQUEST',
+            );
+            publishedCount++;
+            break;
 
-      const duration = Date.now() - startTime;
+          default:
+            this.logger.debug(
+              `📋 [쿠팡] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`,
+            );
+        }
+      } catch (error) {
+        this.logger.error(
+          `❌ [쿠팡] 주문 이벤트 발행 실패: ${event.externalOrderId}`,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+
+    if (publishedCount > 0 || pendingCount > 0) {
       this.logger.log(
-        `✅ [쿠팡→WMS] 주문 생성 성공: ${wmsOrder.id} (${duration}ms)`,
-        {
-          channelOrderId: orderEvent.externalOrderId,
-          wmsOrderId: wmsOrder.id,
-          wmsStatus: wmsOrder.status,
-        },
+        `📤 [쿠팡] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`,
       );
-
-      return wmsOrder;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error(
-        `❌ [쿠팡→WMS] 주문 생성 실패: ${orderEvent.externalOrderId} (${duration}ms)`,
-        {
-          error: error.message,
-          buyerName: orderEvent.buyer?.name,
-        },
-      );
-      throw error;
     }
   }
 
-  /**
-   * 쿠팡 주문 상태 업데이트를 WMS에 반영
-   *
-   * @param orderEvent 주문 상태 변경 이벤트
-   * @returns 업데이트된 WMS 주문 정보
-   */
-  async updateOrderInWms(orderEvent: InternalOrderEvent): Promise<SalesOrder> {
-    this.logger.log(
-      `🔄 [쿠팡→WMS] 주문 상태 업데이트: ${orderEvent.externalOrderId}`,
-      {
-        status: orderEvent.status,
-        channelType: orderEvent.channelType,
-      },
-    );
-
-    try {
-      // 1. 상태 변경 데이터 준비
-      const updateData = {
-        processedAt: orderEvent.updatedAt || new Date().toISOString(),
-        // 필요한 경우 추가 필드들...
-      };
-
-      // 2. WMS 주문 업데이트 ((채널, 주문ID) 쌍 사용)
-      const wmsOrder = await this.wmsApiService.updateSalesOrder(
-        {
-          salesChannel: 'coupang',
-          channelOrderId: orderEvent.externalOrderId,
-        },
-        updateData,
-      );
-
-      this.logger.log(
-        `✅ [쿠팡→WMS] 주문 상태 업데이트 성공: ${orderEvent.externalOrderId}`,
-      );
-      return wmsOrder;
-    } catch (error) {
-      this.logger.error(
-        `❌ [쿠팡→WMS] 주문 상태 업데이트 실패: ${orderEvent.externalOrderId}`,
-        error.message,
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * 쿠팡 주문 취소를 WMS에 반영
-   *
-   * @param orderEvent 주문 취소 이벤트
-   * @param reason 취소 사유
-   * @returns 취소된 WMS 주문 정보
-   */
-  async cancelOrderInWms(
-    orderEvent: InternalOrderEvent,
-    reason?: string,
-  ): Promise<SalesOrder> {
-    this.logger.log(
-      `❌ [쿠팡→WMS] 주문 취소 요청: ${orderEvent.externalOrderId}`,
-      {
-        reason: reason || orderEvent.reason || '사유 미제공',
-        channelType: orderEvent.channelType,
-      },
-    );
-
-    try {
-      // WMS 주문 취소 ((채널, 주문ID) 쌍 사용)
-      const wmsOrder = await this.wmsApiService.cancelSalesOrder(
-        {
-          salesChannel: 'coupang',
-          channelOrderId: orderEvent.externalOrderId,
-        },
-        reason || orderEvent.reason || '쿠팡 주문 취소 요청',
-      );
-
-      this.logger.log(
-        `✅ [쿠팡→WMS] 주문 취소 성공: ${orderEvent.externalOrderId}`,
-        {
-          wmsOrderId: wmsOrder.id,
-          wmsStatus: wmsOrder.status,
-        },
-      );
-
-      return wmsOrder;
-    } catch (error) {
-      this.logger.error(
-        `❌ [쿠팡→WMS] 주문 취소 실패: ${orderEvent.externalOrderId}`,
-        error.message,
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * 쿠팡 교환 요청을 WMS에 반영
-   *
-   * CTO 가이드라인: "교환은 주문 내에서 일어나는 동작입니다"
-   * 따라서 기존 주문을 수정하는 방식으로 처리합니다.
-   *
-   * @param exchangeEvent 교환 요청 이벤트
-   * @returns 교환 처리된 WMS 주문 정보
-   */
-  async processExchangeInWms(
-    exchangeEvent: InternalOrderEvent,
-  ): Promise<SalesOrder> {
-    this.logger.log(
-      `🔄 [쿠팡→WMS] 교환 요청 처리: ${exchangeEvent.externalOrderId}`,
-      {
-        exchangeType: exchangeEvent.claimInfo?.claimType,
-        reason: exchangeEvent.reason,
-      },
-    );
-
-    try {
-      // 1. 교환 요청 데이터를 주문 수정 형식으로 변환
-      const exchangeUpdateData =
-        this.transformExchangeToUpdateData(exchangeEvent);
-
-      // 2. WMS에서 주문 수정으로 교환 처리
-      const wmsOrder = await this.wmsApiService.updateSalesOrder(
-        {
-          salesChannel: 'coupang',
-          channelOrderId: exchangeEvent.externalOrderId,
-        },
-        exchangeUpdateData,
-      );
-
-      this.logger.log(
-        `✅ [쿠팡→WMS] 교환 요청 처리 성공: ${exchangeEvent.externalOrderId}`,
-        {
-          wmsOrderId: wmsOrder.id,
-          exchangeType: exchangeEvent.claimInfo?.claimType,
-        },
-      );
-
-      return wmsOrder;
-    } catch (error) {
-      this.logger.error(
-        `❌ [쿠팡→WMS] 교환 요청 처리 실패: ${exchangeEvent.externalOrderId}`,
-        error.message,
-      );
-      throw error;
-    }
-  }
-
-  // ===== 데이터 변환 헬퍼 메서드들 =====
-
-  /**
-   * 쿠팡 주문 이벤트를 WMS 주문 생성 형식으로 변환
-   *
-   * @param orderEvent 쿠팡 주문 이벤트
-   * @returns WMS 주문 생성 DTO
-   */
-  private transformToWmsOrderFormat(
-    orderEvent: InternalOrderEvent,
-  ): CreateSalesOrderDto {
-    return {
-      channelOrderId: orderEvent.externalOrderId,
-      salesChannel: 'coupang',
-      customer: orderEvent.buyer
-        ? {
-            name: orderEvent.buyer.name,
-            email: undefined, // 쿠팡에서는 이메일 제공 안함
-            phone: orderEvent.buyer.contact,
-          }
-        : undefined,
-      shippingAddress: this.transformAddress(orderEvent.buyer?.address),
-      totalAmount: orderEvent.priceAmount,
-      shippingFee: 0, // 쿠팡은 보통 무료배송
-      orderDate:
-        orderEvent.paymentDate ||
-        orderEvent.createdAt ||
-        new Date().toISOString(),
-      lines: this.transformOrderLines(orderEvent),
-    };
-  }
-
-  /**
-   * 쿠팡 주소 형식을 WMS 주소 형식으로 변환
-   */
-  private transformAddress(address: any): any {
-    if (!address) return {};
-
-    return {
-      postalCode: address.postalCode,
-      roadAddress: address.roadAddress,
-      detailAddress: address.detailAddress,
-      // WMS에서 요구하는 추가 필드들...
-    };
-  }
-
-  /**
-   * 쿠팡 주문 아이템을 WMS 주문 라인으로 변환
-   */
-  private transformOrderLines(orderEvent: InternalOrderEvent): Array<{
-    variantId: string;
-    productName?: string;
-    quantity: number;
-    unitPrice?: number;
-    totalPrice?: number;
-  }> {
-    // 단일 아이템 주문인 경우
-    return [
-      {
-        variantId:
-          orderEvent.externalProductOrderId || orderEvent.externalOrderId,
-        productName: orderEvent.productName || '쿠팡 상품',
-        quantity: orderEvent.quantity || 1,
-        unitPrice: orderEvent.priceAmount,
-        totalPrice: orderEvent.priceAmount,
-      },
-    ];
-  }
-
-  /**
-   * 교환 요청을 주문 수정 데이터로 변환
-   */
-  private transformExchangeToUpdateData(
-    exchangeEvent: InternalOrderEvent,
-  ): any {
-    return {
-      // 교환 관련 정보를 주문 수정 형식으로 변환
-      // CTO 가이드라인에 따라 주문 내에서 교환 처리
-      processedAt: new Date().toISOString(),
-      // 교환 상품 정보, 수량 변경 등...
-    };
-  }
 }

@@ -173,6 +173,52 @@ export const syncStatuses = pgTable(
   ],
 );
 
+// 🔹 미매핑 주문 계류 테이블 (채널 상품 → PIM Variant 매핑 대기)
+export const pendingOrders = pgTable(
+  'pending_orders',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // 채널 정보
+    channel: varchar('channel', { length: 50 }).notNull(), // 'coupang', 'naver'
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+
+    // 상태
+    status: varchar('status', { length: 50 }).notNull().default('pending_mapping'),
+    // 'pending_mapping' | 'processing' | 'completed' | 'failed'
+
+    // 미매핑 항목 정보 (관리자 UI 표시용)
+    unmappedItems: jsonb('unmapped_items').$type<{
+      channelItemId: string;
+      channelItemName: string;
+      channelOptionName?: string;
+    }[]>().notNull(),
+
+    // 원본 주문 데이터 (재처리용)
+    rawOrderEvent: jsonb('raw_order_event').notNull(),
+
+    // 처리 정보
+    retryCount: integer('retry_count').default(0),
+    lastRetryAt: timestamp('last_retry_at'),
+    processedAt: timestamp('processed_at'),
+    errorMessage: text('error_message'),
+
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_pending_orders_status').on(table.status),
+    index('idx_pending_orders_channel').on(table.channel),
+    uniqueIndex('uq_pending_orders_external').on(
+      table.channel,
+      table.externalOrderId,
+    ),
+    index('idx_pending_orders_created').on(table.createdAt),
+  ],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -184,6 +230,7 @@ export const channelAdapterSchema = {
   processedEvents,
   wmsOrderMappings,
   syncStatuses,
+  pendingOrders,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
