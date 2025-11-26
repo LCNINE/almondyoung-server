@@ -26,11 +26,7 @@ export class BnplService {
   /**
    * BNPL 계정 생성
    */
-  async createAccount(
-    userId: string,
-    creditLimit: number,
-    tx?: WalletExecutor,
-  ): Promise<BnplAccount> {
+  async createAccount(userId: string, creditLimit: number, tx?: WalletExecutor): Promise<BnplAccount> {
     const existing = await this.accountReader.findByUserId(userId, tx);
     if (existing) throw new Error('Account already exists');
 
@@ -48,13 +44,7 @@ export class BnplService {
     tx?: WalletExecutor,
   ): Promise<void> {
     const account = await this.accountReader.findByUserId(userId);
-    await this.creditManager.useCreditForPurchase(
-      account,
-      amount,
-      orderId,
-      intentId,
-      tx,
-    );
+    await this.creditManager.useCreditForPurchase(account, amount, orderId, intentId, tx);
   }
 
   /**
@@ -68,23 +58,13 @@ export class BnplService {
     tx?: WalletExecutor,
   ): Promise<void> {
     const account = await this.accountReader.findByUserId(userId);
-    await this.creditManager.restoreCreditForPayment(
-      account,
-      amount,
-      batchId,
-      aggregationPeriod,
-      tx,
-    );
+    await this.creditManager.restoreCreditForPayment(account, amount, batchId, aggregationPeriod, tx);
   }
 
   /**
    * 실패 시 한도 복원
    */
-  async restoreCreditForFailure(
-    accountId: string,
-    amount: number,
-    tx?: WalletExecutor,
-  ): Promise<void> {
+  async restoreCreditForFailure(accountId: string, amount: number, tx?: WalletExecutor): Promise<void> {
     const account = await this.accountReader.findById(accountId, tx);
     await this.creditManager.restoreCreditForFailure(account, amount, tx);
   }
@@ -98,12 +78,7 @@ export class BnplService {
     batchDueDate: string,
     tx?: WalletExecutor,
   ): Promise<void> {
-    await this.creditManager.markEventsAsAggregated(
-      accountId,
-      batchTransactionId,
-      batchDueDate,
-      tx,
-    );
+    await this.creditManager.markEventsAsAggregated(accountId, batchTransactionId, batchDueDate, tx);
   }
 
   /**
@@ -116,10 +91,7 @@ export class BnplService {
   /**
    * 다음 결제일 업데이트
    */
-  async updateNextBillingDate(
-    accountId: string,
-    tx?: WalletExecutor,
-  ): Promise<void> {
+  async updateNextBillingDate(accountId: string, tx?: WalletExecutor): Promise<void> {
     await this.creditManager.updateNextBillingDate(accountId, tx);
   }
 
@@ -140,33 +112,36 @@ export class BnplService {
   /**
    * 계정 조회
    */
-  async findAccountByUserId(
-    userId: string,
-    tx?: WalletExecutor,
-  ): Promise<BnplAccount | null> {
+  async findAccountByUserId(userId: string, tx?: WalletExecutor): Promise<BnplAccount | null> {
     return await this.accountReader.findByUserId(userId, tx);
   }
 
   /**
    * BNPL 내역 조회
+   * @param userId 사용자 ID
+   * @param year 연도 (optional, 없으면 전체 내역)
+   * @param month 월 (optional, 없으면 전체 내역)
    */
-  async getBnplHistory(userId: string, year: number, month: number) {
+  async getBnplHistory(userId: string, year?: number, month?: number) {
     const account = await this.accountReader.findByUserId(userId);
     if (!account) {
       throw new Error('BNPL account not found');
     }
 
-    const events = await this.repo.findEventsByAccountIdAndPeriod(
-      account.id,
-      year,
-      month,
-    );
+    let events;
+    if (year !== undefined && month !== undefined) {
+      // 특정 월 조회
+      events = await this.repo.findEventsByAccountIdAndPeriod(account.id, year, month);
+    } else {
+      // 전체 내역 조회
+      events = await this.repo.findEventsByAccountId(account.id);
+    }
 
     const totalAmount = events.reduce((sum, event) => sum + event.amount, 0);
 
     return {
-      year,
-      month,
+      year: year ?? null,
+      month: month ?? null,
       totalAmount,
       events: events.map((event) => ({
         id: event.id,
@@ -215,11 +190,7 @@ export class BnplService {
 
       // 청구 대상 월 = 결제일의 전달
       // 예: 6월 10일 결제 -> 5월 사용분
-      const targetDate = new Date(
-        billingDate.getFullYear(),
-        billingDate.getMonth() - 1,
-        1,
-      );
+      const targetDate = new Date(billingDate.getFullYear(), billingDate.getMonth() - 1, 1);
       targetYear = targetDate.getFullYear();
       targetMonth = targetDate.getMonth() + 1;
     }

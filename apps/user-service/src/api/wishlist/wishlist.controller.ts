@@ -26,22 +26,38 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth('access-token')
 @Controller('wishlist')
 export class WishlistController {
-  constructor(private readonly wishlistService: WishlistService) {}
+  constructor(private readonly wishlistService: WishlistService) { }
 
   @ApiOperation({
-    summary: '상품 찜하기',
+    summary: '상품 찜하기 토글',
     description:
-      '사용자가 특정 상품을 위시리스트에 추가합니다. 이미 추가된 상품은 중복으로 추가되지 않습니다.',
+      '사용자가 특정 상품을 위시리스트에 추가/제거합니다. 이미 찜한 상품이면 제거하고, 찜하지 않은 상품이면 추가합니다.',
   })
   @ApiResponse({
     status: 200,
-    description: '찜하기 성공',
+    description: '찜하기 토글 성공',
     schema: {
-      example: {
-        id: 'wish_01H9ZRXKJ123456789',
-        userId: 'user_01H9ZRXKJ123456789',
-        productId: 'prod_01H9ZRXKJ123456789',
-        createdAt: '2024-01-01T00:00:00.000Z',
+      examples: {
+        added: {
+          summary: '찜 목록에 추가됨',
+          value: {
+            action: 'added',
+            message: '찜 목록에 추가되었습니다.',
+            data: {
+              id: 'wish_01H9ZRXKJ123456789',
+              userId: 'user_01H9ZRXKJ123456789',
+              productId: 'prod_01H9ZRXKJ123456789',
+              createdAt: '2024-01-01T00:00:00.000Z',
+            },
+          },
+        },
+        removed: {
+          summary: '찜 목록에서 제거됨',
+          value: {
+            action: 'removed',
+            message: '찜 목록에서 제거되었습니다.',
+          },
+        },
       },
     },
   })
@@ -50,11 +66,11 @@ export class WishlistController {
   @Post()
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async addToWishlist(
+  async toggleWishlist(
     @CurrentUser() user: User,
     @Body() addToWishlistDto: AddToWishlistDto,
   ) {
-    return this.wishlistService.addToWishlist(user.id, addToWishlistDto);
+    return this.wishlistService.toggleWishlist(user.id, addToWishlistDto);
   }
 
   @ApiOperation({
@@ -84,33 +100,4 @@ export class WishlistController {
     return this.wishlistService.getWishlistByUserId(user.id);
   }
 
-  @ApiOperation({
-    summary: '찜 제거',
-    description: '특정 상품을 위시리스트에서 제거합니다.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '찜 제거 성공',
-    schema: {
-      example: {
-        success: true,
-        message: '위시리스트에서 상품이 성공적으로 제거되었습니다.',
-      },
-    },
-  })
-  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  @ApiResponse({ status: 404, description: '찾을 수 없는 위시리스트 항목' })
-  @ApiParam({ name: 'wishlistId', description: '제거할 해당 찜 ID' })
-  @Delete(':wishlistId')
-  @UseGuards(AuthGuard('jwt'))
-  @HttpCode(HttpStatus.OK)
-  async removeFromWishlist(
-    @CurrentUser() user: User,
-    @Param('wishlistId') wishlistId: string,
-  ) {
-    return this.wishlistService.removeWishlistByUserIdAndWishlistId(
-      user.id,
-      wishlistId,
-    );
-  }
 }

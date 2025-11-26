@@ -1,38 +1,54 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { and, eq, desc } from 'drizzle-orm';
-import * as schema from 'apps/user-service/database/drizzle/schema';
-import { AddToWishlistDto } from './dto/wishlist.dto';
 import { DbService, InjectDb } from '@app/db';
 import {
-  userServiceSchema,
-  type UserServiceSchema,
+  Injectable
+} from '@nestjs/common';
+import * as schema from 'apps/user-service/database/drizzle/schema';
+import {
+  type UserServiceSchema
 } from 'apps/user-service/database/drizzle/schema';
+import { and, desc, eq } from 'drizzle-orm';
+import { AddToWishlistDto } from './dto/wishlist.dto';
 
 @Injectable()
 export class WishlistService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
-  async addToWishlist(userId: string, { productId }: AddToWishlistDto) {
+  async toggleWishlist(userId: string, { productId }: AddToWishlistDto) {
+    const existing = await this.dbService.db
+      .select()
+      .from(schema.wishlist)
+      .where(
+        and(
+          eq(schema.wishlist.userId, userId),
+          eq(schema.wishlist.productId, productId),
+        ),
+      )
+      .limit(1);
+
+    // 이미 찜목록에 있으면 제거
+    if (existing.length > 0) {
+      await this.dbService.db
+        .delete(schema.wishlist)
+        .where(
+          and(
+            eq(schema.wishlist.userId, userId),
+            eq(schema.wishlist.productId, productId),
+          ),
+        );
+    }
+
+    // 찜목록에 없으면 추가
     const result = await this.dbService.db
       .insert(schema.wishlist)
       .values({
         userId,
         productId,
       })
-      .onConflictDoNothing()
       .returning();
 
-    if (result.length === 0) {
-      throw new ConflictException('이미 찜 목록에 존재하는 상품입니다.');
-    }
-
-    return { message: '상품이 찜 목록에 추가되었습니다.' };
+    return
   }
 
   async getWishlistByUserId(userId: string): Promise<schema.Wishlist[]> {
@@ -43,36 +59,5 @@ export class WishlistService {
       .orderBy(desc(schema.wishlist.createdAt));
 
     return wishlist;
-  }
-
-  async removeWishlistByUserIdAndWishlistId(
-    userId: string,
-    wishlistId: string,
-  ): Promise<{ message: string }> {
-    const existingWishlist = await this.dbService.db
-      .select()
-      .from(schema.wishlist)
-      .where(
-        and(
-          eq(schema.wishlist.id, wishlistId),
-          eq(schema.wishlist.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (!existingWishlist.length) {
-      throw new NotFoundException('해당 찜 항목을 찾을 수 없습니다.');
-    }
-
-    await this.dbService.db
-      .delete(schema.wishlist)
-      .where(
-        and(
-          eq(schema.wishlist.id, wishlistId),
-          eq(schema.wishlist.userId, userId),
-        ),
-      );
-
-    return { message: '찜 목록에서 제거되었습니다.' };
   }
 }
