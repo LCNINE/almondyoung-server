@@ -23,6 +23,19 @@ import { useUser } from "contexts/user-context"
 // 기본 카테고리 (서버가 없을 때 사용)
 const DEFAULT_CATEGORIES: PimCategory[] = [
   {
+    id: "best",
+    name: "BEST",
+    slug: "best",
+    children: [],
+    parent: null,
+    path: "/best",
+    level: 0,
+    sortOrder: 0,
+    description: null,
+    isActive: true,
+    parentId: null,
+  },
+  {
     id: "hair",
     name: "헤어",
     slug: "hair",
@@ -285,7 +298,7 @@ export function DesktopHeader() {
         {/* 상단 헤더 */}
         <div className="flex items-center justify-between py-5">
           {/* 로고 */}
-          <Link href={`/${countryCode}`} className="flex-shrink-0">
+          <Link href={`/${countryCode}`} className="shrink-0">
             <div className="relative h-10 w-[200px] lg:h-[45px] lg:w-[287px]">
               <Image
                 src="/images/almond_white_logo.svg"
@@ -366,7 +379,7 @@ export function DesktopHeader() {
           </div>
         </div>
 
-        <div className="relative z-[205] flex items-center gap-8">
+        <div className="relative z-205 flex items-center gap-8">
           <button
             onMouseEnter={() => setOpen(true)}
             onMouseLeave={() => setOpen(false)}
@@ -380,7 +393,7 @@ export function DesktopHeader() {
 
           {open && (
             <div
-              className="absolute top-full right-0 left-[-50px] z-[300] shadow-2xl"
+              className="absolute top-full right-0 left-[-50px] z-300 shadow-2xl"
               onMouseEnter={() => setOpen(true)} // 시트 위로 마우스가 가도 안 닫힘
               onMouseLeave={() => setOpen(false)} // 시트에서 마우스가 나가면 닫힘
             >
@@ -402,7 +415,7 @@ export function DesktopHeader() {
           <nav className="flex items-center gap-5 lg:gap-7">
             <Link
               href={`/${countryCode}`}
-              className={`flex-shrink-0 font-semibold md:text-xl ${
+              className={`shrink-0 font-semibold md:text-xl ${
                 pathname === `/${countryCode}`
                   ? "text-white underline underline-offset-15"
                   : "text-white/50 hover:text-white"
@@ -419,7 +432,7 @@ export function DesktopHeader() {
                 <Link
                   key={cat.id}
                   href={`/${countryCode}/category/${slugOrId}`}
-                  className={`flex-shrink-0 font-semibold md:text-xl ${
+                  className={`shrink-0 font-semibold md:text-xl ${
                     active
                       ? "text-white underline underline-offset-15"
                       : isSpecialtyCategory(cat.name)
