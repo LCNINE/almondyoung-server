@@ -121,5 +121,5 @@ export async function login(
   // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
-  // redirect(targetPath)
+  redirect(targetPath)
 }

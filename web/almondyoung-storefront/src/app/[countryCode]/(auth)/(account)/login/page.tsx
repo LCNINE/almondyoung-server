@@ -12,7 +12,7 @@ export default async function LoginPage({
   const currentUser = await fetchMe().catch(() => null)
 
   if (currentUser) {
-    // redirect(`/${countryCode}/`)
+    redirect(`/${countryCode}/`)
   }
 
   return (
