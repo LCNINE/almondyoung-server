@@ -33,13 +33,10 @@ export default function Error({
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
 
         try {
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/restore-token`,
-            {
-              method: "POST",
-              credentials: "include",
-            }
-          )
+          const response = await fetch("/api/auth/restore-token", {
+            method: "POST",
+            credentials: "include",
+          })
 
           if (response.ok) {
             // 토큰 복구 성공하면 새로고침
