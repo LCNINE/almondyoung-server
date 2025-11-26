@@ -9,6 +9,41 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
+import { EventsModule } from '@app/events';
+import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import * as os from 'os';
+
+function createKafkaConfig() {
+  const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+  if (!prefix) {
+    throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+  }
+
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) {
+    throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+  }
+
+  return {
+    clientId: `${prefix}_${os.hostname()}`,
+    brokers: brokers.split(','),
+    retry: {
+      retries: 5,
+      initialRetryTime: 300,
+      multiplier: 2,
+      maxRetryTime: 30000,
+    },
+    ssl: process.env.KAFKA_API_KEY ? true : false,
+    sasl:
+      process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
+        ? {
+            mechanism: 'plain' as const,
+            username: process.env.KAFKA_API_KEY,
+            password: process.env.KAFKA_API_SECRET,
+          }
+        : undefined,
+  };
+}
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -88,8 +123,21 @@ async function bootstrap() {
   });
   console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
+  // 운영 환경에서만 Kafka Consumer 연결
+  if (process.env.NODE_ENV === 'production') {
+    const consumerOptions = EventsModule.forConsumer({
+      streams: [FULFILLMENT_STREAM],
+      groupId: 'channel-adapter-consumer',
+      kafka: createKafkaConfig(),
+    });
+
+    app.connectMicroservice(consumerOptions);
+    await app.startAllMicroservices();
+    console.log('🚚 Kafka Consumer 연결 완료 (FULFILLMENT_STREAM 구독)');
+  }
+
   const port = process.env.PORT ?? 3003;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`Channel Adapter running on port ${port}`);
 }
 bootstrap();

@@ -11,7 +11,6 @@ import { ChannelCommand, ChannelQuery } from '../types';
 import { ChannelDataReader } from './channel-data.reader';
 import { ChannelSyncManager } from './channel-sync.manager';
 import { ChannelCommandManager } from './channel-command.manager';
-import { WmsIntegrationManager } from './wms-integration.manager';
 import { ChannelsConfig } from '../config/channels.config';
 
 /**
@@ -44,7 +43,6 @@ export class ChannelAdapterService {
     private readonly channelReader: ChannelDataReader,
     private readonly syncManager: ChannelSyncManager,
     private readonly commandManager: ChannelCommandManager,
-    private readonly wmsManager: WmsIntegrationManager,
   ) {
     this.logger.log('📋 채널 어댑터 서비스 초기화 완료 (리팩토링 버전)');
   }
@@ -294,51 +292,6 @@ export class ChannelAdapterService {
    */
   async executeQuery(channel: ChannelType, query: ChannelQuery): Promise<any> {
     return await this.channelReader.executeQuery(channel, query);
-  }
-
-  // ========================================
-  // 🏭 WMS 연동
-  // ========================================
-
-  /**
-   * WMS 주문 생성 (위임)
-   *
-   * @param channel - 대상 채널
-   * @param orderEvent - 주문 이벤트
-   * @returns WMS 주문 정보
-   */
-  async forwardToWms(channel: ChannelType, orderEvent: InternalOrderEvent) {
-    return await this.wmsManager.createOrder(channel, orderEvent);
-  }
-
-  /**
-   * WMS 주문 취소 (위임)
-   *
-   * @param channel - 대상 채널
-   * @param orderEvent - 주문 이벤트
-   * @param reason - 취소 사유
-   * @returns WMS 주문 정보
-   */
-  async cancelInWms(
-    channel: ChannelType,
-    orderEvent: InternalOrderEvent,
-    reason?: string,
-  ) {
-    return await this.wmsManager.cancelOrder(channel, orderEvent, reason);
-  }
-
-  /**
-   * WMS 교환 처리 (위임)
-   *
-   * @param channel - 대상 채널
-   * @param exchangeEvent - 교환 이벤트
-   * @returns WMS 주문 정보
-   */
-  async processExchangeInWms(
-    channel: ChannelType,
-    exchangeEvent: InternalOrderEvent,
-  ) {
-    return await this.wmsManager.processExchange(channel, exchangeEvent);
   }
 
   /**

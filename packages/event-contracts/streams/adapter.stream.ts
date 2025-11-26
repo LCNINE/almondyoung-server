@@ -64,6 +64,11 @@ export interface InternalOrderEvent {
   reason?: string;
   claimInfo?: ClaimInfo;
   productName?: string;
+
+  // 설계 문서 반영 - 추가 필드
+  optionName?: string; // 상품 옵션명
+  productId?: string; // 채널 상품 ID
+  internalOrderId?: string; // WMS/내부 시스템 주문 ID (생성 후 부여)
 }
 
 // ===== Payload 타입 정의 =====
