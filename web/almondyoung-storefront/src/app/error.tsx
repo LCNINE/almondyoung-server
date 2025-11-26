@@ -10,6 +10,7 @@ export default function Error({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  console.error("error::::::::", error)
   const router = useRouter()
   const pathname = usePathname()
   const hasTriedRef = useRef(false)
