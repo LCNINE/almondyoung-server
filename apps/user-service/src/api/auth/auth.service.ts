@@ -76,6 +76,7 @@ export class AuthService {
     return this.configService.getOrThrow('FRONTEND_URL');
   }
 
+  //
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
