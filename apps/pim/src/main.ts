@@ -90,7 +90,9 @@ async function bootstrap() {
     .addServer('https://pim.almondyoung.com', '프로덕션 서버')
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  SwaggerModule.setup('docs', app, document, {
+    yamlDocumentUrl: '/docs.yaml',
+  });
 
   // Railway는 PORT 환경변수를 제공하므로 우선 사용
   const port = process.env.PORT ?? 3020;

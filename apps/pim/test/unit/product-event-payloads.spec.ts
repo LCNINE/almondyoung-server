@@ -129,7 +129,7 @@ describe('Product Event Payloads - Phase 3 Refactoring', () => {
 
       const v2 = await versionsService.createDraftVersion(
         v1.id,
-        'test-user-id',
+        '018f20e30000-7000-8000-000000000000',
         true,
       );
 

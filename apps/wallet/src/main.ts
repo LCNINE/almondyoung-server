@@ -75,6 +75,7 @@ async function bootstrap() {
 
   // Swagger UI (서버에서 확인)
   SwaggerModule.setup('/docs', app, document, {
+    yamlDocumentUrl: '/docs.yaml',
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: 'alpha',
