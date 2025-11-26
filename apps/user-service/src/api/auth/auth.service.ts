@@ -63,6 +63,7 @@ export class AuthService {
     return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
   }
 
+  //
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
