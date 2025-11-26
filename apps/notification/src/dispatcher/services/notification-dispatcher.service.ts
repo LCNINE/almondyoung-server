@@ -1,5 +1,5 @@
 // apps/notification/src/dispatcher/services/notification-dispatcher.service.ts
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional, Inject } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
@@ -19,6 +19,8 @@ import {
   NotificationStatus,
 } from '../../shared/enums';
 import { TemplateVariableMapperService } from '../../shared/services/template-variable-mapper.service';
+import { ProviderManagerService } from '../../provider/services/provider-manager.service';
+import { getContactForChannel, UserProfile } from '../../shared/utils/contact.utils';
 
 export interface Notification {
   notificationId: string;
@@ -39,8 +41,9 @@ export class NotificationDispatcherService {
 
   constructor(
     @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>,
-    @InjectQueue('notification') private readonly notificationQueue: Queue,
+    @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
+    @Optional() @Inject(ProviderManagerService) private readonly providerManager: ProviderManagerService | null,
   ) { }
 
   /**
@@ -167,28 +170,171 @@ export class NotificationDispatcherService {
 
       notificationIds.push(inserted.notificationId);
 
-      const delay = Math.max(0, sendAt.getTime() - Date.now());
-
-      await this.notificationQueue.add(
-        'send-notification',
-        { notificationId: inserted.notificationId },
-        {
-          delay,
-          priority: this.getPriorityValue(priority),
-          removeOnComplete: true,
-          removeOnFail: false,
-        },
-      );
-
-      this.logger.log('[Dispatcher] Enqueued notification job', {
-        notificationId: inserted.notificationId,
-        channel,
-        sendAt,
-        delay,
-      });
+      // Redis/Bull 큐가 있으면 큐에 추가, 없으면 직접 발송
+      if (this.notificationQueue) {
+        const delay = Math.max(0, sendAt.getTime() - Date.now());
+        try {
+          await this.notificationQueue.add(
+            'send-notification',
+            { notificationId: inserted.notificationId },
+            {
+              delay,
+              priority: this.getPriorityValue(priority),
+              removeOnComplete: true,
+              removeOnFail: false,
+            },
+          );
+          this.logger.log('[Dispatcher] Enqueued notification job', {
+            notificationId: inserted.notificationId,
+            channel,
+            sendAt,
+            delay,
+          });
+        } catch (error) {
+          this.logger.warn('[Dispatcher] Failed to enqueue notification, sending directly', {
+            notificationId: inserted.notificationId,
+            error: error.message,
+          });
+          // 큐 추가 실패 시 직접 발송
+          await this.sendNotificationDirectly(inserted.notificationId, channel, renderedContent, channelMetadata, payload);
+        }
+      } else {
+        // Redis가 없으면 직접 발송
+        this.logger.log('[Dispatcher] Redis not available, sending notification directly', {
+          notificationId: inserted.notificationId,
+          channel,
+        });
+        await this.sendNotificationDirectly(inserted.notificationId, channel, renderedContent, channelMetadata, payload);
+      }
     }
 
     return { notificationIds };
+  }
+
+  /**
+   * Redis 없이 직접 알림 발송
+   */
+  private async sendNotificationDirectly(
+    notificationId: string,
+    channel: Channel,
+    renderedContent: { subject?: string; body: string; metadata?: Record<string, any> },
+    metadata: Record<string, any>,
+    payload: Record<string, any>,
+  ): Promise<void> {
+    if (!this.providerManager) {
+      this.logger.error('[Dispatcher] ProviderManager not available for direct sending');
+      await this.db.db
+        .update(notifications)
+        .set({
+          status: NotificationStatus.FAILED,
+          errorDetails: {
+            message: 'ProviderManager not available',
+            timestamp: new Date(),
+          },
+        })
+        .where(eq(notifications.notificationId, notificationId));
+      return;
+    }
+
+    try {
+      // 상태를 PROCESSING으로 업데이트
+      await this.db.db
+        .update(notifications)
+        .set({
+          status: NotificationStatus.PROCESSING,
+          attempts: 1,
+        })
+        .where(eq(notifications.notificationId, notificationId));
+
+      // payload에서 사용자 정보 추출
+      const userProfile: UserProfile = payload?.userProfile || {
+        userId: payload?.userId || '',
+        email: payload?.email,
+        phoneNumber: payload?.phoneNumber,
+        pushToken: payload?.pushToken,
+        name: payload?.name,
+      };
+
+      const contact = getContactForChannel(userProfile, channel);
+      if (!contact) {
+        throw new Error(`No contact info for channel ${channel}`);
+      }
+
+      const provider = await this.providerManager.getAvailableProviderForChannel(channel);
+      if (!provider) {
+        throw new Error(`No provider available for channel ${channel}`);
+      }
+
+      // 프로바이더 메타데이터 구성
+      const providerMetadata: Record<string, any> = {
+        notificationId,
+        category: payload?.category,
+        priority: payload?.priority,
+        ...metadata,
+      };
+
+      // 채널별 템플릿 변수 정보 추가
+      if (channel === 'KAKAO' && metadata.templateCode) {
+        providerMetadata.templateCode = metadata.templateCode;
+        providerMetadata.templateParameters = metadata.templateParameters || {};
+      }
+
+      if (channel === 'EMAIL' && metadata.templateId) {
+        providerMetadata.templateId = metadata.templateId;
+        providerMetadata.templateVariables = metadata.templateVariables || {};
+      }
+
+      if (channel === 'PUSH' && metadata.fcmDataVariables) {
+        providerMetadata.fcmDataVariables = metadata.fcmDataVariables;
+      }
+
+      // 실제 발송
+      const result = await provider.send({
+        to: contact,
+        content: renderedContent.body,
+        subject: renderedContent.subject,
+        metadata: providerMetadata,
+      });
+
+      // 성공 시 상태 업데이트
+      await this.db.db
+        .update(notifications)
+        .set({
+          status: NotificationStatus.SENT,
+          sentAt: new Date(),
+          metadata: {
+            ...metadata,
+            providerResponse: result.providerResponse,
+            messageId: result.messageId,
+          },
+        })
+        .where(eq(notifications.notificationId, notificationId));
+
+      this.logger.log('[Dispatcher] Notification sent directly', {
+        notificationId,
+        channel,
+        messageId: result.messageId,
+      });
+    } catch (error: any) {
+      this.logger.error('[Dispatcher] Failed to send notification directly', {
+        notificationId,
+        channel,
+        error: error.message,
+      });
+
+      // 실패 시 상태 업데이트
+      await this.db.db
+        .update(notifications)
+        .set({
+          status: NotificationStatus.FAILED,
+          errorDetails: {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date(),
+          },
+        })
+        .where(eq(notifications.notificationId, notificationId));
+    }
   }
 
   /**
