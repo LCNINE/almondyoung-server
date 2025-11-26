@@ -4,11 +4,22 @@ import { NextRequest, NextResponse } from "next/server"
 export const GET = routeHandler(async (request: NextRequest) => {
   const cookies = request.cookies.toString()
 
+  console.log("[API /api/users/detail] Request received", {
+    hasCookies: !!cookies,
+    cookieLength: cookies.length,
+    backendUrl: process.env.BACKEND_URL
+  })
+
   const res = await fetch(`${process.env.BACKEND_URL!}/users/users/detail`, {
     cache: "no-store",
     headers: {
       Cookie: cookies,
     },
+  })
+
+  console.log("[API /api/users/detail] Backend response", {
+    status: res.status,
+    ok: res.ok
   })
 
   if (!res.ok) {

@@ -39,12 +39,19 @@ export async function login(
       )
     }
 
+    console.log("[LOGIN] User service login success", {
+      hasAccessToken: !!resultData.data?.accessToken,
+      hasRefreshToken: !!resultData.data?.refreshToken,
+    })
+
     // 응답에서 토큰을 받아서 쿠키로 설정
     // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)
     await setTokenCookies(
       resultData.data.accessToken,
       resultData.data.refreshToken
     )
+
+    console.log("[LOGIN] Cookies set successfully")
   } catch (error: any) {
     console.error("User service login error:", error)
 

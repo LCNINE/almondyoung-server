@@ -74,20 +74,10 @@ export const setTokenCookies = async (
 ) => {
   const cookies = await nextCookies()
 
-  cookies.set("accessToken", accessToken, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  })
+  cookies.set("accessToken", accessToken)
 
   if (refreshToken) {
-    cookies.set("refreshToken", refreshToken, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-    })
+    cookies.set("refreshToken", refreshToken)
   }
 }
 
