@@ -36,25 +36,25 @@ export default function Footer({ className }: { className?: string }) {
               </div>
               <nav className="flex gap-4 text-sm">
                 <Link
-                  href="/company"
+                  href="/#"
                   className="hover:text-stone-700 hover:underline"
                 >
                   회사소개
                 </Link>
                 <Link
-                  href="/terms"
+                  href="/#"
                   className="hover:text-stone-700 hover:underline"
                 >
                   이용약관
                 </Link>
                 <Link
-                  href="/privacy"
+                  href="/#"
                   className="font-bold text-stone-600 hover:text-stone-800 hover:underline"
                 >
                   개인정보처리방침
                 </Link>
                 <Link
-                  href="/guide"
+                  href="/#"
                   className="hover:text-stone-700 hover:underline"
                 >
                   이용안내

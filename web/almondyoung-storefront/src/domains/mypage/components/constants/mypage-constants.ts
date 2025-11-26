@@ -16,7 +16,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "적립금", icon: "💰", path: "/mypage/point" },
   { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   { label: "다운로드", icon: "📥", path: "/mypage/download" },
-  { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
+  // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
   { label: "로그아웃", icon: "🚪", path: "/mypage/logout" },
 ]
 
@@ -93,12 +93,12 @@ export const SIDEBAR_MENU_ITEMS = [
     hasSubMenu: false,
     path: "/mypage/download",
   },
-  {
-    id: "subscription",
-    label: "구독 관리",
-    hasSubMenu: false,
-    path: "/mypage/subscribe/manage",
-  },
+  // {
+  //   id: "subscription",
+  //   label: "구독 관리",
+  //   hasSubMenu: false,
+  //   path: "/mypage/subscribe/manage",
+  // },
 ]
 
 export const BREAKPOINTS = {
