@@ -208,6 +208,13 @@ export class BnplRepository {
     return Number(result[0]?.total || 0);
   }
 
+  async findEventsByAccountId(accountId: string): Promise<BnplEvent[]> {
+    return this.db.db.query.bnplEvents.findMany({
+      where: eq(schema.bnplEvents.accountId, accountId),
+      orderBy: [desc(schema.bnplEvents.createdAt)],
+    });
+  }
+
   async findEventsByAccountIdAndPeriod(
     accountId: string,
     year: number,
