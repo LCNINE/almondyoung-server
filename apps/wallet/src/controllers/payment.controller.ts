@@ -303,6 +303,7 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
+  @Public()
   async authorizePayment(
     @Param('intentId') intentId: string,
     @Body(new ZodValidationPipe(AuthorizePaymentSchema))
