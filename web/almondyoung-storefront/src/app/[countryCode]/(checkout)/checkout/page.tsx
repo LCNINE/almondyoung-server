@@ -1,9 +1,11 @@
 "use client"
-import { useState } from "react"
+import { useState, useRef } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import Image from "next/image"
 import { ChevronDown } from "lucide-react"
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
+import { useUser } from "contexts/user-context"
 
 const ALMOND_LOGO_URL = "/images/almond_white_logo.svg"
 const TOSS_LOGO_URL = "/images/toss-payment-logo.jpg"
@@ -16,7 +18,7 @@ const MembershipTagIcon = () => (
     viewBox="0 0 13 13"
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
-    className="flex-shrink-0"
+    className="shrink-0"
   >
     <path
       d="M10.8366 9.0755C10.7135 9.05059 10.5862 9.06104 10.4684 9.10573C10.3506 9.15042 10.2467 9.22765 10.168 9.32911C10.0893 9.43058 10.0386 9.55244 10.0215 9.6816C10.0044 9.81075 10.0216 9.9423 10.071 10.0621C10.3635 10.7461 9.54681 11.3642 8.96742 10.8996C8.86871 10.819 8.75146 10.7666 8.62729 10.7477C8.50311 10.7287 8.37633 10.7438 8.2595 10.7915C8.14268 10.8392 8.03987 10.9178 7.96126 11.0195C7.88266 11.1212 7.831 11.2425 7.8114 11.3713C7.72311 12.1084 6.70779 12.2317 6.43189 11.5434C6.38233 11.4225 6.30329 11.3171 6.20257 11.2377C6.10186 11.1582 5.98295 11.1074 5.85759 11.0904C5.73223 11.0733 5.60474 11.0905 5.48773 11.1402C5.37071 11.19 5.26821 11.2707 5.19034 11.3742C4.74476 11.9693 3.7998 11.5721 3.91292 10.8379C3.92848 10.7094 3.91109 10.579 3.86251 10.4598C3.81393 10.3406 3.73589 10.2368 3.63631 10.1591C3.53673 10.0813 3.41913 10.0323 3.29546 10.0171C3.17179 10.0018 3.04643 10.0208 2.93209 10.0721C2.24924 10.3589 1.62984 9.54729 2.09611 8.96795H2.10439C2.1806 8.86688 2.2293 8.7464 2.2454 8.61908C2.2615 8.49176 2.24441 8.36228 2.19592 8.24417C2.14743 8.12606 2.06931 8.02366 1.96973 7.94766C1.87015 7.87167 1.75277 7.82486 1.62984 7.81215C1.47429 7.79927 1.3277 7.7313 1.21457 7.61959C1.10143 7.50787 1.02861 7.35918 1.00826 7.19836C0.987914 7.03754 1.02128 6.87433 1.10277 6.73601C1.18427 6.59768 1.30896 6.49262 1.45602 6.43837C1.57348 6.39615 1.67747 6.32108 1.75655 6.22141C1.83563 6.12175 1.88675 6.00135 1.90429 5.87345C1.92183 5.74554 1.9051 5.61509 1.85595 5.49643C1.8068 5.37777 1.72713 5.27549 1.6257 5.20083C1.03113 4.75486 1.42843 3.81128 2.16371 3.92457C2.28701 3.95011 2.41468 3.94014 2.53293 3.89572C2.65117 3.8513 2.75549 3.77413 2.8346 3.67255C2.91371 3.57098 2.96461 3.44885 2.98179 3.31938C2.99898 3.18992 2.98179 3.05803 2.93209 2.93798C2.64101 2.25539 3.4563 1.6359 4.03569 2.10052C4.13431 2.18108 4.25145 2.23347 4.37553 2.2525C4.49961 2.27154 4.62632 2.25655 4.74311 2.20903C4.85991 2.16151 4.96274 2.0831 5.04142 1.98157C5.12011 1.88004 5.17191 1.75891 5.19172 1.63017C5.28139 0.891657 6.29532 0.769767 6.57122 1.45665C6.62079 1.57756 6.69983 1.68295 6.80054 1.7624C6.90126 1.84185 7.02016 1.89263 7.14553 1.90972C7.27089 1.9268 7.39837 1.90961 7.51538 1.85983C7.6324 1.81005 7.7349 1.72941 7.81278 1.62587C8.24456 1.03219 9.18814 1.43084 9.07502 2.16362C9.05919 2.29268 9.07664 2.42379 9.12557 2.54354C9.17451 2.66329 9.25317 2.76737 9.35352 2.84513C9.45387 2.92289 9.57229 2.97153 9.69667 2.98609C9.82104 3.00064 9.9469 2.98057 10.0614 2.92794C10.7442 2.64114 11.3636 3.45278 10.8987 4.03212C10.8197 4.13209 10.7685 4.25264 10.7508 4.3807C10.733 4.50875 10.7493 4.63942 10.7979 4.75852C10.8466 4.87763 10.9256 4.98061 11.0266 5.05631C11.1275 5.13201 11.2465 5.17753 11.3705 5.18792C11.5266 5.20034 11.6738 5.26823 11.7874 5.38019C11.901 5.49215 11.974 5.64134 11.9943 5.80269C12.0145 5.96405 11.9807 6.12772 11.8985 6.26621C11.8163 6.40469 11.6908 6.50954 11.543 6.56313C11.4255 6.6051 11.3214 6.67999 11.2423 6.77952C11.1631 6.87906 11.1119 6.99939 11.0944 7.12723C11.0768 7.25508 11.0936 7.38548 11.1428 7.50406C11.192 7.62264 11.2718 7.22478 11.3733 7.79924C11.9678 8.24521 11.5705 9.18879 10.8366 9.0755Z"
@@ -71,7 +73,7 @@ const CustomRadio = ({
 const PCHeader = () => (
   <div className="hidden w-full border-b border-gray-200 bg-white md:block">
     <div className="relative container mx-auto flex max-w-[1360px] items-center justify-between px-[40px] py-5">
-      <Link href="/" className="flex-shrink-0">
+      <Link href="/" className="shrink-0">
         <img
           src="/images/almond-logo-black.png"
           alt="아몬드영"
@@ -81,7 +83,7 @@ const PCHeader = () => (
       <h1 className="absolute left-1/2 -translate-x-1/2 transform text-2xl font-bold">
         주문/결제
       </h1>
-      <div className="w-[200px] flex-shrink-0"></div>
+      <div className="w-[200px] shrink-0"></div>
     </div>
 
     <div className="container mx-auto max-w-[1360px] px-4 py-3 md:px-[40px]">
@@ -383,7 +385,7 @@ const PaymentMethodSection = ({
           </div>
 
           <div
-            className={`relative mt-2 h-44 w-72 overflow-hidden rounded-xl bg-gradient-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#F29219]/30" : "opacity-70 grayscale"} transition-all duration-300`}
+            className={`relative mt-2 h-44 w-72 overflow-hidden rounded-xl bg-linear-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#F29219]/30" : "opacity-70 grayscale"} transition-all duration-300`}
           >
             <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-white/5 blur-2xl" />
             <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-[#F29219]/20 blur-2xl" />
@@ -403,7 +405,7 @@ const PaymentMethodSection = ({
                     Almond Pay
                   </span>
                 </div>
-                <div className="h-8 w-10 rounded-md bg-gradient-to-br from-yellow-200 to-yellow-500 opacity-80" />
+                <div className="h-8 w-10 rounded-md bg-linear-to-br from-yellow-200 to-yellow-500 opacity-80" />
               </div>
 
               <div className="flex flex-col gap-2">
@@ -659,7 +661,13 @@ const MobileOrderSummary = () => (
 )
 
 // PC 하단 고정 CTA
-const PCFixedCTA = ({ onPayment }: { onPayment: () => void }) => (
+const PCFixedCTA = ({
+  onPayment,
+  loading,
+}: {
+  onPayment: () => void
+  loading: boolean
+}) => (
   <div className="fixed right-0 bottom-0 left-0 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] md:block">
     <div className="container mx-auto max-w-[1360px] px-[40px] py-4">
       <div className="flex items-center justify-between">
@@ -668,9 +676,10 @@ const PCFixedCTA = ({ onPayment }: { onPayment: () => void }) => (
         </p>
         <button
           onClick={onPayment}
-          className="min-w-[403px] rounded-[5px] bg-[#F29219] px-4 py-[14px] text-[19px] font-bold text-white"
+          disabled={loading}
+          className="min-w-[403px] rounded-[5px] bg-[#F29219] px-4 py-[14px] text-[19px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          20,500원 결제하기
+          {loading ? "처리 중..." : "20,500원 결제하기"}
         </button>
       </div>
     </div>
@@ -678,16 +687,23 @@ const PCFixedCTA = ({ onPayment }: { onPayment: () => void }) => (
 )
 
 // 모바일 CTA
-const MobileCTA = ({ onPayment }: { onPayment: () => void }) => (
+const MobileCTA = ({
+  onPayment,
+  loading,
+}: {
+  onPayment: () => void
+  loading: boolean
+}) => (
   <footer className="mt-6 px-4 pb-6 md:hidden">
     <p className="mb-2 text-center text-[11px] text-gray-600">
       주문 내용을 확인하였으며, 정보 제공에 동의합니다.
     </p>
     <button
       onClick={onPayment}
-      className="w-full rounded bg-[#ff9f00] py-3 text-[15px] font-semibold text-white"
+      disabled={loading}
+      className="w-full rounded bg-[#ff9f00] py-3 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
     >
-      결제하기
+      {loading ? "처리 중..." : "결제하기"}
     </button>
   </footer>
 )
@@ -695,19 +711,198 @@ const MobileCTA = ({ onPayment }: { onPayment: () => void }) => (
 // 메인 컴포넌트
 export default function CheckoutPage() {
   const router = useRouter()
+  const params = useParams()
+  const countryCode = params.countryCode as string
+  const { user } = useUser()
   const [selectedMethod, setSelectedMethod] = useState("payLater")
   const [cashReceiptOption, setCashReceiptOption] = useState("noapply")
   const [taxInvoiceOption, setTaxInvoiceOption] = useState("noapply")
   const [isPaymentDetailsOpen, setIsPaymentDetailsOpen] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const tossPaymentRef = useRef<any>(null)
 
-  const handlePayment = () => {
-    console.log("결제 처리:", {
-      paymentMethod: selectedMethod,
-      cashReceipt: cashReceiptOption,
-      taxInvoice: taxInvoiceOption,
-      amount: 20500,
-    })
-    window.location.href = "/success"
+  // Intent 생성 및 토스 결제 초기화
+  const initializeTossPayment = async () => {
+    try {
+      if (!user?.id) {
+        throw new Error("로그인이 필요합니다.")
+      }
+
+      // Intent 생성 (라우트 핸들러 사용)
+      const intentResponse = await fetch("/api/wallet/payments/intents", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          customerId: user.id,
+          originalAmount: 100, // TODO: 실제 금액으로 교체
+          discountAmount: 0,
+          type: "ORDER",
+        }),
+        cache: "no-store",
+      })
+
+      if (!intentResponse.ok) {
+        const errorData = await intentResponse.json().catch(() => ({}))
+        throw new Error(errorData.message || "Intent 생성 실패")
+      }
+
+      const intent = await intentResponse.json()
+
+      // 3. 토스 결제 SDK 초기화
+      const clientKey =
+        process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ||
+        "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
+      const tossPayments = await loadTossPayments(clientKey)
+      const payment = tossPayments.payment({
+        customerKey: intent.customerId,
+      })
+
+      tossPaymentRef.current = { payment, intentId: intent.id }
+      return intent
+    } catch (err) {
+      console.error("토스 결제 초기화 실패:", err)
+      throw err
+    }
+  }
+
+  const handlePayment = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      if (selectedMethod === "toss") {
+        // 토스 결제: 결제창 열기
+        if (!tossPaymentRef.current) {
+          await initializeTossPayment()
+        }
+
+        const { payment, intentId } = tossPaymentRef.current
+        const baseUrl = window.location.origin
+
+        await payment.requestPayment({
+          method: "CARD",
+          amount: {
+            currency: "KRW",
+            value: 100, // TODO: 실제 금액으로 교체
+          },
+          orderId: intentId,
+          orderName: "주문 상품", // TODO: 실제 주문명으로 교체
+          successUrl: `${baseUrl}/${countryCode}/checkout/callback`,
+          failUrl: `${baseUrl}/${countryCode}/checkout/callback`,
+          customerEmail: "customer@example.com", // TODO: 실제 이메일로 교체
+          customerName: "고객명", // TODO: 실제 이름으로 교체
+          customerMobilePhone: "01012341234", // TODO: 실제 전화번호로 교체
+        })
+      } else if (selectedMethod === "payLater") {
+        // 나중 결제: 라우트 핸들러로 직접 요청
+        if (!user?.id) {
+          throw new Error("로그인이 필요합니다.")
+        }
+
+        // Intent 생성 (라우트 핸들러 사용)
+        const intentResponse = await fetch("/api/wallet/payments/intents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            credentials: "include",
+          },
+
+          body: JSON.stringify({
+            customerId: user.id,
+            originalAmount: 100, // TODO: 실제 금액으로 교체
+            discountAmount: 0,
+            type: "ORDER",
+          }),
+          cache: "no-store",
+        })
+
+        if (!intentResponse.ok) {
+          const errorData = await intentResponse.json().catch(() => ({}))
+          throw new Error(errorData.message || "Intent 생성 실패")
+        }
+
+        const intent = await intentResponse.json()
+
+        // 3. BNPL 프로필 조회 (나중 결제는 프로필이 필요)
+        const profilesResponse = await fetch("/api/wallet/payments/profiles", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+
+        let profileId: string | undefined
+        if (profilesResponse.ok) {
+          const profiles = await profilesResponse.json()
+          // HMS_BNPL 프로필 찾기
+          const bnplProfile = profiles.find(
+            (p: any) => p.provider === "HMS_BNPL" && p.status === "ACTIVE"
+          )
+          profileId = bnplProfile?.id
+        }
+
+        if (!profileId) {
+          throw new Error(
+            "BNPL 프로필이 등록되어 있지 않습니다. 프로필을 먼저 등록해주세요."
+          )
+        }
+
+        // 4. 결제 승인 (라우트 핸들러 사용)
+        // 나중 결제는 HMS_BNPL로 처리
+        const authorizeResponse = await fetch(
+          `/api/wallet/payments/intents/${intent.id}/authorize`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({
+              provider: "HMS_BNPL", // 나중 결제는 BNPL로 처리
+              profileId: profileId, // BNPL 프로필 ID 필수
+            }),
+            cache: "no-store",
+          }
+        )
+
+        if (!authorizeResponse.ok) {
+          const errorData = await authorizeResponse.json().catch(() => ({}))
+          throw new Error(errorData.message || "결제 승인 실패")
+        }
+
+        const responseData = await authorizeResponse.json()
+
+        // 응답이 { data: { ... } } 형태로 감싸져 있을 수 있으므로 처리
+        const result = responseData.data || responseData
+
+        // 디버깅: 응답 확인
+        console.log("🔍 Authorize 응답:", {
+          status: authorizeResponse.status,
+          responseData,
+          result,
+          hasSuccess: result?.success,
+          hasIntentId: result?.intentId,
+        })
+
+        if (result.success && result.intentId) {
+          router.push(`/${countryCode}/checkout/success/${result.intentId}`)
+        } else {
+          throw new Error(
+            result.message ||
+              `결제 승인 실패: success=${result?.success}, intentId=${result?.intentId}`
+          )
+        }
+      }
+    } catch (err) {
+      console.error("결제 처리 실패:", err)
+      setError(err instanceof Error ? err.message : "알 수 없는 오류")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -737,7 +932,7 @@ export default function CheckoutPage() {
           </div>
 
           {/* 오른쪽 섹션 */}
-          <div className="md:flex-shrink-0">
+          <div className="md:shrink-0">
             <MobileOrderSummary />
             <PaymentDetailSidebar
               isOpen={isPaymentDetailsOpen}
@@ -747,8 +942,26 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <PCFixedCTA onPayment={handlePayment} />
-      <MobileCTA onPayment={handlePayment} />
+      {/* 에러 메시지 표시 */}
+      {error && (
+        <div className="fixed top-20 left-1/2 z-50 mx-4 w-full max-w-md -translate-x-1/2">
+          <div className="rounded-lg border border-red-400 bg-red-100 p-4 text-red-700 shadow-lg">
+            <div className="flex items-center justify-between">
+              <strong>오류:</strong>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-700 hover:text-red-900"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-sm">{error}</p>
+          </div>
+        </div>
+      )}
+
+      <PCFixedCTA onPayment={handlePayment} loading={loading} />
+      <MobileCTA onPayment={handlePayment} loading={loading} />
     </main>
   )
 }
