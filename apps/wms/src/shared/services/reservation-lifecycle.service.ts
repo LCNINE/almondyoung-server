@@ -132,34 +132,17 @@ export class ReservationLifecycleService {
    * 부분 출고 처리 - 출고된 수량만큼 예약 해제
    */
   private async handlePartialShipment(fulfillmentOrderId: string, tx: DbTx): Promise<void> {
-    // 1. FO 아이템별 출고 현황 조회 (Core Query)
-    const fulfillmentOrderItems = await tx
+    // FO 아이템별 출고 현황 조회
+    const items = await tx
       .select()
       .from(wmsTables.fulfillmentOrderItems)
       .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-    // 해당 아이템들의 라인들을 한번에 조회해 메모리에서 그룹핑
-    const foiIds = fulfillmentOrderItems.map(i => i.id);
-    const fulfillmentOrderLines = foiIds.length > 0
-      ? await tx
-          .select()
-          .from(wmsTables.fulfillmentOrderLines)
-          .where(inArray(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, [fulfillmentOrderId]))
-      : [];
+    for (const item of items) {
+      const shippedQty = item.shippedQty || 0;
 
-    const linesByFoItemId = new Map<string, { shippedQty: number }[]>();
-    for (const l of fulfillmentOrderLines) {
-      const arr = linesByFoItemId.get(l.id) || [];
-      arr.push({ shippedQty: (l as any).shippedQty || 0 });
-      linesByFoItemId.set(l.id, arr);
-    }
-
-    for (const item of fulfillmentOrderItems) {
-      const relatedLines = linesByFoItemId.get(item.id) || [];
-      const totalShipped = relatedLines.reduce((sum, line) => sum + (line.shippedQty || 0), 0);
-
-      if (totalShipped > 0) {
-        // 2. 해당 아이템의 예약 조회
+      if (shippedQty > 0) {
+        // 해당 아이템의 예약 조회
         const reservations = await tx
           .select()
           .from(wmsTables.stockReservations)
@@ -168,8 +151,8 @@ export class ReservationLifecycleService {
             eq(wmsTables.stockReservations.status, 'confirmed')
           ));
 
-        // 3. 출고된 수량만큼 예약 해제 (FIFO 방식)
-        let remainingToRelease = totalShipped;
+        // 출고된 수량만큼 예약 해제 (FIFO 방식)
+        let remainingToRelease = shippedQty;
 
         for (const reservation of reservations) {
           if (remainingToRelease <= 0) break;
@@ -193,11 +176,11 @@ export class ReservationLifecycleService {
           remainingToRelease -= releaseQuantity;
         }
 
-        // 4. FO 아이템 예약 수량 업데이트
-        const remainingReserved = Math.max(0, item.reservedQty - totalShipped);
+        // FO 아이템 예약 수량 업데이트
+        const remainingReserved = Math.max(0, item.reservedQty - shippedQty);
         await tx
           .update(wmsTables.fulfillmentOrderItems)
-          .set({ reservedQty: remainingReserved })
+          .set({ reservedQty: remainingReserved, updatedAt: new Date() })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
     }
@@ -240,7 +223,7 @@ export class ReservationLifecycleService {
     originalFoId: string,
     newFoId: string,
     splitItems: Array<{
-      fulfillmentOrderLineId: string;
+      fulfillmentOrderItemId: string;
       skuId: string;
       splitQuantity: number;
       originalQuantity: number;
@@ -252,7 +235,7 @@ export class ReservationLifecycleService {
         // 1. 원본 FO의 예약 조회
         const originalReservations = await trx.query.stockReservations.findMany({
           where: and(
-            eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.fulfillmentOrderLineId),
+            eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.fulfillmentOrderItemId),
             eq(wmsTables.stockReservations.status, 'confirmed')
           )
         });
@@ -279,7 +262,7 @@ export class ReservationLifecycleService {
               skuId: item.skuId,
               warehouseId: reservation.warehouseId,
               quantity: splitReservationQty,
-              fulfillmentOrderItemId: item.fulfillmentOrderLineId, // 새 FOI ID 필요
+              fulfillmentOrderItemId: item.fulfillmentOrderItemId,
               reason: `Split from FO ${originalFoId}`
             }, trx);
 
@@ -346,43 +329,43 @@ export class ReservationLifecycleService {
   }
 
   /**
-   * FO 라인 이동시 예약 이동 (cross-FO transfer)
+   * FO 아이템 이동시 예약 이동 (cross-FO transfer)
    */
-  async handleFulfillmentOrderLineTransfer(
+  async handleFulfillmentOrderItemTransfer(
     fromFoId: string,
     toFoId: string,
-    fulfillmentOrderLineId: string,
+    fulfillmentOrderItemId: string,
     transferQuantity: number,
     tx?: DbTx
   ): Promise<void> {
     return this.inTx(async (trx) => {
-      // 1. 해당 라인의 예약 조회
-      const lineReservations = await trx.query.stockReservations.findMany({
+      // 해당 아이템의 예약 조회
+      const itemReservations = await trx.query.stockReservations.findMany({
         where: and(
-          eq(wmsTables.stockReservations.fulfillmentOrderItemId, fulfillmentOrderLineId),
+          eq(wmsTables.stockReservations.fulfillmentOrderItemId, fulfillmentOrderItemId),
           eq(wmsTables.stockReservations.status, 'confirmed')
         )
       });
 
       let remainingToTransfer = transferQuantity;
 
-      for (const reservation of lineReservations) {
+      for (const reservation of itemReservations) {
         if (remainingToTransfer <= 0) break;
 
         const transferReservationQty = Math.min(reservation.quantity, remainingToTransfer);
 
-        // 2. 새 FO에 예약 생성
+        // 새 FO에 예약 생성
         await this.unifiedReservation.reserveStock({
           targetType: 'FULFILLMENT_ORDER',
           targetId: toFoId,
           skuId: reservation.skuId,
           warehouseId: reservation.warehouseId,
           quantity: transferReservationQty,
-          fulfillmentOrderItemId: fulfillmentOrderLineId,
+          fulfillmentOrderItemId: fulfillmentOrderItemId,
           reason: `Transferred from FO ${fromFoId} to ${toFoId}`
         }, trx);
 
-        // 3. 원본 예약 처리
+        // 원본 예약 처리
         if (transferReservationQty === reservation.quantity) {
           await this.unifiedReservation.releaseReservation(reservation.id, trx);
         } else {
@@ -399,7 +382,7 @@ export class ReservationLifecycleService {
       }
 
       this.logger.log(
-        `Transferred ${transferQuantity} units from FO ${fromFoId} to ${toFoId} (Line: ${fulfillmentOrderLineId})`
+        `Transferred ${transferQuantity} units from FO ${fromFoId} to ${toFoId} (Item: ${fulfillmentOrderItemId})`
       );
     }, tx);
   }

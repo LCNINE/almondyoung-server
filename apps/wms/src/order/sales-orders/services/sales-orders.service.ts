@@ -361,19 +361,19 @@ export class SalesOrdersService {
       // 1) 원본 SO의 FO/예약 해제 및 FO 취소
       const sourceFOs = await trx.query.fulfillmentOrders.findMany({ where: (f, { inArray: ina }) => ina(wmsTables.fulfillmentOrders.salesOrderId, sourceIds) as any });
       for (const fo of sourceFOs) {
-        const fols = await trx.query.fulfillmentOrderLines.findMany({ where: (l, { eq }) => eq(l.fulfillmentOrderId, fo.id) });
-        const folIds = fols.map(fl => fl.id);
-        if (folIds.length > 0) {
+        const fois = await trx.query.fulfillmentOrderItems.findMany({ where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id) });
+        const foiIds = fois.map(item => item.id);
+        if (foiIds.length > 0) {
           // 예약 원장 release
           await trx
             .update(wmsTables.stockReservations)
             .set({ status: 'released' })
-            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, folIds) as any);
-          // FOL reservedQty 초기화
+            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, foiIds) as any);
+          // FOI reservedQty 초기화
           await trx
-            .update(wmsTables.fulfillmentOrderLines)
-            .set({ reservedQty: 0 })
-            .where(inArray(wmsTables.fulfillmentOrderLines.id, folIds) as any);
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({ reservedQty: 0, updatedAt: new Date() })
+            .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds) as any);
         }
         // FO 취소
         await trx
