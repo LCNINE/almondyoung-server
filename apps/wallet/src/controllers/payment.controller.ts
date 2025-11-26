@@ -23,10 +23,7 @@ import { PaymentProfileService } from '../services/profiles/payment-profile.serv
 import { BnplService } from '../services/bnpl/bnpl.service';
 import { JwtAuthGuard, User, Public } from '@app/authorization';
 
-import {
-  PaymentError,
-  ProviderType,
-} from '../providers/payment-provider.interface';
+import { PaymentError, ProviderType } from '../providers/payment-provider.interface';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { runInTransaction } from '../shared/database';
 import { IdempotencyService } from '../services/idempotency.service';
@@ -36,15 +33,7 @@ import { walletSchema } from '../shared/database/schema';
 
 import { FastifyRequest } from 'fastify';
 
-import {
-  ApiTags,
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiHeader,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBody, ApiConsumes, ApiOperation, ApiResponse, ApiParam, ApiHeader } from '@nestjs/swagger';
 import { RefundService } from '../services/refund.service';
 
 // Zod 스키마 및 DTO 임포트
@@ -107,6 +96,7 @@ export class PaymentController {
   ) {}
 
   @Post('intents')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '결제 의도(Intent) 생성',
     description: `새로운 결제 의도를 생성합니다. 
@@ -170,10 +160,7 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
-  async createPaymentIntent(
-    @Body(new ZodValidationPipe(CreateIntentSchema)) dto: CreateIntentDto,
-    @Headers('Idempotency-Key') idemKey?: string,
-  ) {
+  async createPaymentIntent(@Body() dto: CreateIntentDto, @Headers('Idempotency-Key') idemKey?: string) {
     try {
       return await runInTransaction(this.db, async (tx) => {
         const { hit, response } = await this.idempotencyService.checkOrCreate(
@@ -181,7 +168,7 @@ export class PaymentController {
           idemKey,
           dto.customerId,
           dto,
-          'v2/payments/intents',
+          '/payments/intents',
         );
         if (hit) return response;
 
@@ -315,6 +302,7 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
+  @Public()
   async authorizePayment(
     @Param('intentId') intentId: string,
     @Body(new ZodValidationPipe(AuthorizePaymentSchema))
@@ -342,17 +330,13 @@ export class PaymentController {
       }
 
       // 서비스 호출
-      const result = await this.paymentService.authorizePaymentByIntent(
-        intentId,
-        providerType,
-        {
-          authParams: dto.authParams,
-          profileId: dto.profileId,
-          usePoints: dto.usePoints,
-          source: 'api',
-          actor: 'frontend_user',
-        },
-      );
+      const result = await this.paymentService.authorizePaymentByIntent(intentId, providerType, {
+        authParams: dto.authParams,
+        profileId: dto.profileId,
+        usePoints: dto.usePoints,
+        source: 'api',
+        actor: 'frontend_user',
+      });
 
       // 서비스 실패 결과를 에러로 변환
       if (!result.success) {
@@ -367,10 +351,7 @@ export class PaymentController {
         status: 'AUTHORIZED',
         provider: dto.provider,
         amount: intent.finalAmount,
-        paymentKey:
-          dto.provider === 'TOSS' && dto.authParams
-            ? dto.authParams.paymentKey
-            : null,
+        paymentKey: dto.provider === 'TOSS' && dto.authParams ? dto.authParams.paymentKey : null,
         pointEventId: result.pointEventId,
         breakdown: result.breakdown,
         message: '결제 승인이 성공적으로 완료되었습니다.',
@@ -462,19 +443,12 @@ export class PaymentController {
     @Headers('Idempotency-Key') idemKey?: string,
   ) {
     try {
-      this.logger.log(
-        `결제 캡처 요청: Intent ${intentId}, Attempt ${dto.attemptId}`,
-      );
+      this.logger.log(`결제 캡처 요청: Intent ${intentId}, Attempt ${dto.attemptId}`);
 
-      const result = await this.paymentService.capturePaymentByIntent(
-        intentId,
-        dto.attemptId,
-        dto.amount,
-        {
-          source: 'capture_api',
-          actor: 'system',
-        },
-      );
+      const result = await this.paymentService.capturePaymentByIntent(intentId, dto.attemptId, dto.amount, {
+        source: 'capture_api',
+        actor: 'system',
+      });
 
       // 서비스 실패 결과를 에러로 변환
       if (!result.success) {
@@ -587,19 +561,11 @@ export class PaymentController {
     description: '프로필을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  async setDefaultProfile(
-    @Param('profileId') profileId: string,
-    @User('userId') userId: string,
-  ) {
+  async setDefaultProfile(@Param('profileId') profileId: string, @User('userId') userId: string) {
     try {
-      this.logger.log(
-        `기본 결제 수단 변경 요청 - userId: ${userId}, profileId: ${profileId}`,
-      );
+      this.logger.log(`기본 결제 수단 변경 요청 - userId: ${userId}, profileId: ${profileId}`);
 
-      const result = await this.profileService.setDefaultProfile(
-        userId,
-        profileId,
-      );
+      const result = await this.profileService.setDefaultProfile(userId, profileId);
 
       return {
         success: true,
@@ -652,14 +618,9 @@ export class PaymentController {
     description: '프로필을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  async deleteProfile(
-    @Param('profileId') profileId: string,
-    @User('userId') userId: string,
-  ) {
+  async deleteProfile(@Param('profileId') profileId: string, @User('userId') userId: string) {
     try {
-      this.logger.log(
-        `결제 프로필 삭제 요청 - userId: ${userId}, profileId: ${profileId}`,
-      );
+      this.logger.log(`결제 프로필 삭제 요청 - userId: ${userId}, profileId: ${profileId}`);
 
       const result = await this.profileService.deleteProfile(userId, profileId);
 
@@ -780,14 +741,7 @@ export class PaymentController {
   @ApiBody({
     schema: {
       type: 'object',
-      required: [
-        'file',
-        'payerName',
-        'phone',
-        'paymentCompany',
-        'paymentNumber',
-        'payerNumber',
-      ],
+      required: ['file', 'payerName', 'phone', 'paymentCompany', 'paymentNumber', 'payerNumber'],
       properties: {
         file: {
           type: 'string',
@@ -849,10 +803,7 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
-  async onboardHmsBnplProfile(
-    @Req() req: FastifyRequest,
-    @User('userId') userId: string,
-  ) {
+  async onboardHmsBnplProfile(@Req() req: FastifyRequest, @User('userId') userId: string) {
     try {
       this.logger.log(`📥 HMS BNPL 온보딩 요청 - userId: ${userId}`);
 
@@ -860,9 +811,7 @@ export class PaymentController {
       // @ts-ignore - fastify-multipart 타입 이슈
       const data = await req.file(); // fastify-multipart API 사용
       if (!data) {
-        throw new BadRequestException(
-          '동의서 파일을 포함한 multipart 요청이 필요합니다.',
-        );
+        throw new BadRequestException('동의서 파일을 포함한 multipart 요청이 필요합니다.');
       }
       const buffer = await data.toBuffer();
 
@@ -880,18 +829,15 @@ export class PaymentController {
       const dto = validation.data;
 
       // 3. 서비스 호출 (JWT에서 추출한 userId 사용)
-      const result =
-        await this.profileService.createHmsBnplProfileWithAgreement(userId, {
-          ...dto,
-          agreementFile: {
-            file: buffer,
-            filename: data.filename || 'agreement.pdf',
-          },
-        });
+      const result = await this.profileService.createHmsBnplProfileWithAgreement(userId, {
+        ...dto,
+        agreementFile: {
+          file: buffer,
+          filename: data.filename || 'agreement.pdf',
+        },
+      });
 
-      this.logger.log(
-        `✅ HMS BNPL 온보딩 성공 - profileId: ${result.profileId}, memberId: ${result.memberId}`,
-      );
+      this.logger.log(`✅ HMS BNPL 온보딩 성공 - profileId: ${result.profileId}, memberId: ${result.memberId}`);
 
       return {
         success: true,
@@ -920,11 +866,7 @@ export class PaymentController {
     query: BnplHistoryQueryDto,
   ) {
     try {
-      return await this.bnplService.getBnplHistory(
-        userId,
-        query.year,
-        query.month,
-      );
+      return await this.bnplService.getBnplHistory(userId, query.year, query.month);
     } catch (error) {
       this.handleError(error, 'BNPL 내역 조회');
     }
@@ -963,10 +905,7 @@ export class PaymentController {
     try {
       this.logger.log(`BNPL 계정 생성 요청: ${JSON.stringify(dto)}`);
 
-      const account = await this.bnplService.createAccount(
-        dto.userId,
-        dto.creditLimit,
-      );
+      const account = await this.bnplService.createAccount(dto.userId, dto.creditLimit);
 
       return {
         success: true,
@@ -1084,11 +1023,7 @@ export class PaymentController {
         }
 
         // 환불 처리
-        const result = await this.refundService.refundPayment(
-          intentId,
-          dto.amount,
-          dto.reason || 'CUSTOMER_REQUEST',
-        );
+        const result = await this.refundService.refundPayment(intentId, dto.amount, dto.reason || 'CUSTOMER_REQUEST');
 
         // 멱등성 키 완료 처리
         await this.idempotencyService.complete(tx, idemKey, result);
@@ -1140,9 +1075,7 @@ export class PaymentController {
       // 로그에 상세 정보 포함
       this.logger.error(
         `❌ ${context} 실패 (HMS API): ${hmsMessage}`,
-        hmsDeveloperMessage
-          ? `Developer Message: ${hmsDeveloperMessage}`
-          : undefined,
+        hmsDeveloperMessage ? `Developer Message: ${hmsDeveloperMessage}` : undefined,
       );
       if (errorStack) {
         this.logger.debug(`Stack trace: ${errorStack}`);
@@ -1150,9 +1083,7 @@ export class PaymentController {
 
       // 개발 환경에서는 developerMessage도 포함
       const clientMessage =
-        isDevelopment && hmsDeveloperMessage
-          ? `${hmsMessage} (${hmsDeveloperMessage})`
-          : hmsMessage;
+        isDevelopment && hmsDeveloperMessage ? `${hmsMessage} (${hmsDeveloperMessage})` : hmsMessage;
 
       throw new BadRequestException(clientMessage);
     }
