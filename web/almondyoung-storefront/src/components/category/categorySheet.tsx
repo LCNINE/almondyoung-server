@@ -5,7 +5,8 @@ import React, { useRef, useCallback, useState, useEffect } from "react"
 import { X, ChevronRight } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCategories } from "@lib/providers/category-provider"
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
+
 import ErrorState from "@components/common/components/error-state"
 import LoadingState from "@components/common/components/loading-state"
 
@@ -111,7 +112,7 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
   if (error) {
     return (
       <div
-        className="absolute inset-x-0 z-[1000]"
+        className="absolute inset-x-0 z-1000"
         style={{ top: 0 }}
         onMouseEnter={onHoverIn}
         onMouseLeave={() => {
@@ -141,7 +142,7 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
   if (isLoading) {
     return (
       <div
-        className="absolute inset-x-0 z-[1000]"
+        className="absolute inset-x-0 z-1000"
         style={{ top: 0 }}
         onMouseEnter={onHoverIn}
         onMouseLeave={() => {
@@ -167,7 +168,7 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
   if (isDropdown) {
     return (
       <div
-        className="absolute inset-x-0 z-[1000]"
+        className="absolute inset-x-0 z-1000"
         style={{ top: 0 }}
         onMouseEnter={onHoverIn}
         onMouseLeave={() => {
@@ -186,10 +187,10 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                   key={c.id}
                   onClick={() => handleCategoryNavigation(c)}
                   onMouseEnter={() => setActiveCategory(c.id)}
-                  className={`font-base flex w-full items-center px-4 py-3 text-left text-sm transition-colors ${activeCategory === c.id ? "bg-muted text-foreground font-bold" : "bg-background text-gray-40 hover:bg-muted"} ${c.children && c.children.length > 0 ? "justify-between" : "justify-start"}`}
+                  className={`font-base flex w-full items-center px-4 py-3 text-left text-sm transition-colors ${activeCategory === c.id ? "bg-muted text-foreground font-bold" : "bg-background text-gray-40 hover:bg-muted"} ${"children" in c && c.children && c.children.length > 0 ? "justify-between" : "justify-start"}`}
                 >
                   <span className="truncate">{c.name}</span>
-                  {c.children && c.children.length > 0 && (
+                  {"children" in c && c.children && c.children.length > 0 && (
                     <ChevronRight
                       size={14}
                       className={`ml-2 ${activeCategory === c.id ? "text-foreground" : "text-gray-40"}`}
@@ -220,7 +221,9 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                   (x) => x.id === activeCategory
                 )
                 return (
-                  activeCategoryData?.children &&
+                  activeCategoryData &&
+                  "children" in activeCategoryData &&
+                  activeCategoryData.children &&
                   activeCategoryData.children.length > 0
                 )
               })() && (
@@ -237,29 +240,35 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 pb-6">
-                    {(
-                      categories.find((x) => x.id === activeCategory)
-                        ?.children ?? []
-                    ).map((sub) => (
-                      <div
-                        key={sub.id}
-                        className="flex cursor-pointer flex-col items-center gap-2 p-2 hover:-translate-y-1 hover:font-bold"
-                        onClick={() => handleSubCategoryClick(sub.id)}
-                      >
-                        <div className="overflow-hidden">
-                          {sub.imageUrl && (
-                            <img
-                              src={sub.imageUrl}
-                              alt={sub.name}
-                              className="h-full w-full object-cover"
-                            />
-                          )}
+                    {(() => {
+                      const activeCat = categories.find(
+                        (x) => x.id === activeCategory
+                      )
+                      const children =
+                        activeCat && "children" in activeCat
+                          ? activeCat.children
+                          : undefined
+                      return (children ?? []).map((sub: PimCategory) => (
+                        <div
+                          key={sub.id}
+                          className="flex cursor-pointer flex-col items-center gap-2 p-2 hover:-translate-y-1 hover:font-bold"
+                          onClick={() => handleSubCategoryClick(sub.id)}
+                        >
+                          <div className="overflow-hidden">
+                            {sub.imageUrl && (
+                              <img
+                                src={sub.imageUrl}
+                                alt={sub.name}
+                                className="h-full w-full object-cover"
+                              />
+                            )}
+                          </div>
+                          <span className="text-center text-sm leading-tight">
+                            {sub.name}
+                          </span>
                         </div>
-                        <span className="text-center text-sm leading-tight">
-                          {sub.name}
-                        </span>
-                      </div>
-                    ))}
+                      ))
+                    })()}
                   </div>
                 </div>
               )}
@@ -324,26 +333,29 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                 </div>
 
                 <div className="grid grid-cols-3 gap-x-3 gap-y-4 border-b border-gray-200 pb-6">
-                  {(c.children ?? []).map((sub) => (
-                    <button
-                      key={sub.id}
-                      className="flex flex-col items-center gap-1"
-                      onClick={() => handleSubCategoryClick(sub.id)}
-                    >
-                      <div className="bg-muted h-[55px] w-[55px] overflow-hidden rounded-full">
-                        {sub.imageUrl && (
-                          <img
-                            src={sub.imageUrl}
-                            alt={sub.name}
-                            className="h-full w-full object-cover"
-                          />
-                        )}
-                      </div>
-                      <span className="w-full text-center text-xs leading-[15px]">
-                        {sub.name}
-                      </span>
-                    </button>
-                  ))}
+                  {(() => {
+                    const children = "children" in c ? c.children : undefined
+                    return (children ?? []).map((sub: PimCategory) => (
+                      <button
+                        key={sub.id}
+                        className="flex flex-col items-center gap-1"
+                        onClick={() => handleSubCategoryClick(sub.id)}
+                      >
+                        <div className="bg-muted h-[55px] w-[55px] overflow-hidden rounded-full">
+                          {sub.imageUrl && (
+                            <img
+                              src={sub.imageUrl}
+                              alt={sub.name}
+                              className="h-full w-full object-cover"
+                            />
+                          )}
+                        </div>
+                        <span className="w-full text-center text-xs leading-[15px]">
+                          {sub.name}
+                        </span>
+                      </button>
+                    ))
+                  })()}
                 </div>
               </div>
             ))}

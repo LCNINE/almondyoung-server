@@ -1,5 +1,5 @@
 import { CreditCard } from "lucide-react"
-import { PaymentProfile } from "../api"
+import type { PaymentProfile } from "@lib/api/wallet"
 
 interface PaymentCardUIProps {
   profile: PaymentProfile

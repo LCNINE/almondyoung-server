@@ -1,6 +1,8 @@
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import MembershipPageClient from "../../../../../domains/membership/home/membership-page-client"
+import { getCurrentSubscriptionServer } from "@lib/api/membership"
+import { cookies } from "next/headers"
 
 /**
  * 멤버십 관리 페이지 (Server Component)
@@ -12,23 +14,20 @@ export default async function MembershipPage() {
   let membershipData = null
 
   try {
-    // todo: 라우트핸들러 만들어야함
-    const response = await fetch(
-      `${process.env.APP_URL}/api/membership/subscriptions/current`,
-      {
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    )
+    // 서버 사이드에서는 쿠키를 수동으로 전달
+    const cookieStore = await cookies()
+    const cookieString = cookieStore
+      .getAll()
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join("; ")
 
-    console.log("✅ [MembershipPage] API 응답 성공:", response)
+    const data = await getCurrentSubscriptionServer(cookieString)
+    console.log("✅ [MembershipPage] API 응답 성공:", data)
 
     // 구독 데이터가 있으면 멤버십 회원
-    if (response) {
+    if (data) {
       isMember = true
-      membershipData = response
+      membershipData = data
     }
   } catch (error) {
     // 404 에러는 구독이 없는 것이므로 정상 처리

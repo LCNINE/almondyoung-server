@@ -2,7 +2,7 @@
 
 import { CategorySheet } from "@components/category/categorySheet"
 import { useCategories } from "@lib/providers/category-provider" // ★ 전역 Provider 훅
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 import { UserBasicInfo } from "@lib/types/ui/user"
 import { Bell, ChevronDown, Menu, Search } from "lucide-react"
 import Link from "next/link"
@@ -10,113 +10,7 @@ import { useParams, usePathname, useRouter } from "next/navigation"
 import React, { useMemo, useState } from "react"
 import CartSheet from "../../../cart/cart-sheet"
 
-// 기본 카테고리 (서버가 없을 때 사용)
-const DEFAULT_CATEGORIES: PimCategory[] = [
-  {
-    id: "hair",
-    name: "헤어",
-    slug: "hair",
-    children: [],
-    parent: null,
-    path: "/hair",
-    level: 1,
-    sortOrder: 1,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "semi",
-    name: "반영구",
-    slug: "semi",
-    children: [],
-    parent: null,
-    path: "/semi",
-    level: 1,
-    sortOrder: 2,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "nail",
-    name: "네일",
-    slug: "nail",
-    children: [],
-    parent: null,
-    path: "/nail",
-    level: 1,
-    sortOrder: 3,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "lash",
-    name: "속눈썹",
-    slug: "lash",
-    children: [],
-    parent: null,
-    path: "/lash",
-    level: 1,
-    sortOrder: 4,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "skin",
-    name: "피부미용",
-    slug: "skin",
-    children: [],
-    parent: null,
-    path: "/skin",
-    level: 1,
-    sortOrder: 5,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "waxing",
-    name: "왁싱",
-    slug: "waxing",
-    children: [],
-    parent: null,
-    path: "/waxing",
-    level: 1,
-    sortOrder: 6,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "tattoo",
-    name: "타투",
-    slug: "tattoo",
-    children: [],
-    parent: null,
-    path: "/tattoo",
-    level: 1,
-    sortOrder: 7,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "makeup",
-    name: "메이크업",
-    slug: "makeup",
-    children: [],
-    parent: null,
-    path: "/makeup",
-    level: 1,
-    sortOrder: 8,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-]
+// 기본 카테고리 제거 - 서버 데이터만 사용
 
 // 사용자 전문 분야 하이라이트용
 const getSpecialtyCategories = (
@@ -168,7 +62,7 @@ export const MobileHeader: React.FC<{
     () =>
       Array.isArray(categories) && categories.length > 0
         ? categories.slice(0, 8)
-        : DEFAULT_CATEGORIES,
+        : [],
     [categories]
   )
 
@@ -211,10 +105,10 @@ export const MobileHeader: React.FC<{
     pathname?.startsWith(`/${countryCode}/category/${slugOrId}`)
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-[var(--color-header-border)] bg-[var(--color-header-background)] text-[var(--color-header-foreground)] md:hidden">
+    <header className="sticky top-0 z-50 w-full border-b border-(--color-header-border) bg-(--color-header-background) text-(--color-header-foreground) md:hidden">
       <div className="flex h-14 items-center gap-2 px-[8px]">
         {/* 좌측 메뉴 / 뒤로가기 */}
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           {showBack ? (
             <button
               className="p-1"
@@ -252,8 +146,8 @@ export const MobileHeader: React.FC<{
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
             onBlur={() => setIsSearchFocused(false)}
-            className={`w-full rounded-md bg-[var(--color-background)] px-4 py-2 pr-10 text-base text-[var(--color-foreground)] transition-all outline-none placeholder:text-[var(--color-muted-foreground)] ${
-              isSearchFocused ? "ring-2 ring-[var(--color-primary)]" : ""
+            className={`w-full rounded-md bg-(--color-background) px-4 py-2 pr-10 text-base text-(--color-foreground) transition-all outline-none placeholder:text-(--color-muted-foreground) ${
+              isSearchFocused ? "ring-2 ring-(--color-primary)" : ""
             }`}
           />
           {showSearch && (
@@ -267,7 +161,7 @@ export const MobileHeader: React.FC<{
         </div>
 
         {/* 우측 아이콘 */}
-        <div className="flex flex-shrink-0 items-center gap-2 px-2">
+        <div className="flex shrink-0 items-center gap-2 px-2">
           {/* 알림 */}
           <button
             className="relative flex flex-col items-center gap-2 text-white"
@@ -291,7 +185,7 @@ export const MobileHeader: React.FC<{
         <div className="flex items-center gap-4 text-sm text-white/50">
           <Link
             href={`/${countryCode}`}
-            className={`flex-shrink-0 py-1 text-base font-semibold hover:text-white ${pathname === `/${countryCode}` ? "text-white underline underline-offset-17" : "text-white/50 hover:text-white"}`}
+            className={`shrink-0 py-1 text-base font-semibold hover:text-white ${pathname === `/${countryCode}` ? "text-white underline underline-offset-17" : "text-white/50 hover:text-white"}`}
           >
             홈
           </Link>
@@ -304,7 +198,7 @@ export const MobileHeader: React.FC<{
               <Link
                 key={cat.id}
                 href={`/${countryCode}/category/${slugOrId}`}
-                className={`flex-shrink-0 text-base font-semibold ${
+                className={`shrink-0 text-base font-semibold ${
                   active
                     ? "text-white underline underline-offset-17"
                     : isSpecialtyCategory(cat.name)

@@ -1,7 +1,7 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { refundCreateHmsCardProfile } from "../api"
+import { createHmsCardProfile } from "@lib/api/wallet"
 import { toast } from "sonner"
 import { ApiError } from "@lib/api/api-error"
 import { ChevronLeft } from "lucide-react"
@@ -39,7 +39,7 @@ export default function AddCardForm({ onComplete, onBack }: AddCardFormProps) {
       const validYear = formData.validUntil.slice(2, 4)
 
       // HMS 카드 등록 API 호출
-      await refundCreateHmsCardProfile({
+      await createHmsCardProfile({
         memberName: formData.payerName,
         phone: formData.phone,
         payerNumber: formData.payerNumber,

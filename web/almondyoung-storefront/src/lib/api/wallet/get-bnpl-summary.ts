@@ -13,9 +13,22 @@ export interface BnplSummary {
 
 /**
  * Get BNPL summary (client-side only)
- * Calls via /api proxy which Next.js rewrites to backend
+ * 라우트 핸들러를 통해 백엔드 API를 호출합니다.
  */
 export async function getBnplSummary(): Promise<BnplSummary> {
-  const url = `${process.env.BACKEND_URL}/payments/bnpl/summary`
-  return await fetch(url).then((res) => res.json())
+  const res = await fetch("/api/wallet/payments/bnpl/summary", {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    cache: "no-store",
+  })
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: "Unknown error" }))
+    throw new Error(error.message || `Failed to fetch BNPL summary: ${res.statusText}`)
+  }
+
+  return res.json()
 }

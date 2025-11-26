@@ -2,7 +2,7 @@
 "use client"
 
 import React, { createContext, useContext, useState } from "react"
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 import { getAllCategoriesCached } from "@lib/services/pim/category/getCategory"
 
 type Ctx = {

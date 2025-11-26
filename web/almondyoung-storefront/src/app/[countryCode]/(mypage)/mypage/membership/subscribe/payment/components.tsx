@@ -227,23 +227,18 @@ export function MembershipForm({
         const validMonth = data.validUntil.slice(0, 2) // "2812" → "28"
         const validYear = data.validUntil.slice(2, 4) // "2812" → "12"
 
-        await fetch(
-          `${process.env.APP_URL}/api/wallet/payments/profiles/hms-card`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              memberName: data.payerName,
-              phone: data.phone,
-              payerNumber: data.payerNumber,
-              paymentNumber: data.paymentNumber,
-              payerName: data.payerName,
-              validYear: validYear,
-              validMonth: validMonth,
-              validUntil: data.validUntil,
-              password: data.password,
-            }),
-          }
-        )
+        const { createHmsCardProfile } = await import("@lib/api/wallet")
+        await createHmsCardProfile({
+          memberName: data.payerName,
+          phone: data.phone,
+          payerNumber: data.payerNumber,
+          paymentNumber: data.paymentNumber,
+          payerName: data.payerName,
+          validYear: validYear,
+          validMonth: validMonth,
+          validUntil: data.validUntil,
+          password: data.password,
+        })
 
         // 카드 등록 후 페이지 데이터 새로고침
         router.refresh()

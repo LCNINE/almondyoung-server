@@ -2,7 +2,7 @@
 
 import { CategorySheet } from "@components/category/categorySheet"
 import { useCategories } from "@lib/providers/category-provider"
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 import { UserBasicInfo } from "@lib/types/ui/user"
 import { Bell, Menu, Search } from "lucide-react"
 import Link from "next/link"
@@ -11,113 +11,7 @@ import React, { useMemo, useState } from "react"
 import CartSheet from "../../../cart/cart-sheet"
 import { useUser } from "contexts/user-context"
 
-// 기본 카테고리 (서버가 없을 때 사용)
-const DEFAULT_CATEGORIES: PimCategory[] = [
-  {
-    id: "hair",
-    name: "헤어",
-    slug: "hair",
-    children: [],
-    parent: null,
-    path: "/hair",
-    level: 1,
-    sortOrder: 1,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "semi",
-    name: "반영구",
-    slug: "semi",
-    children: [],
-    parent: null,
-    path: "/semi",
-    level: 1,
-    sortOrder: 2,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "nail",
-    name: "네일",
-    slug: "nail",
-    children: [],
-    parent: null,
-    path: "/nail",
-    level: 1,
-    sortOrder: 3,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "lash",
-    name: "속눈썹",
-    slug: "lash",
-    children: [],
-    parent: null,
-    path: "/lash",
-    level: 1,
-    sortOrder: 4,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "skin",
-    name: "피부미용",
-    slug: "skin",
-    children: [],
-    parent: null,
-    path: "/skin",
-    level: 1,
-    sortOrder: 5,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "waxing",
-    name: "왁싱",
-    slug: "waxing",
-    children: [],
-    parent: null,
-    path: "/waxing",
-    level: 1,
-    sortOrder: 6,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "tattoo",
-    name: "타투",
-    slug: "tattoo",
-    children: [],
-    parent: null,
-    path: "/tattoo",
-    level: 1,
-    sortOrder: 7,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "makeup",
-    name: "메이크업",
-    slug: "makeup",
-    children: [],
-    parent: null,
-    path: "/makeup",
-    level: 1,
-    sortOrder: 8,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-]
+// 기본 카테고리 제거 - 서버 데이터만 사용
 
 // 사용자 전문 분야 하이라이트용
 const getSpecialtyCategories = (specialties: string[]): string[] => {
@@ -164,7 +58,7 @@ export const MobileGlobalHeader: React.FC = () => {
     () =>
       Array.isArray(categories) && categories.length > 0
         ? categories.slice(0, 8)
-        : DEFAULT_CATEGORIES,
+        : [],
     [categories]
   )
 

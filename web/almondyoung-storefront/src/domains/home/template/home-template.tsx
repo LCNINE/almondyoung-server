@@ -6,13 +6,13 @@ import { HomeLoggedIn } from "../home-loggedin"
 import { HomeLogout } from "../home-logout"
 
 export default function HomeTemplate({ countryCode }: { countryCode: string }) {
-  const { user } = useUser()
+  // const { user } = useUser()
 
   return (
     <>
       <HeroBannerSlider slides={[]} />
 
-      {user ? <HomeLoggedIn user={user} /> : <HomeLogout categories={[]} />}
+      <HomeLogout categories={[]} />
     </>
   )
 }

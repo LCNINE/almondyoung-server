@@ -2,7 +2,7 @@
 
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 import { ProductCard } from "@lib/types/ui/product"
-import { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 
 export interface HomeProductsData {
   popularProducts: ProductCard[]
