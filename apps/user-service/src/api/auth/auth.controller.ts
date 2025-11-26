@@ -35,7 +35,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   @ApiOperation({ summary: '회원가입' })
   @ApiResponse({ status: 201, description: '회원가입 성공' })
@@ -56,11 +56,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async signIn(
     @Body() signInDto: SignInDto,
-    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirectTo?: string,
   ) {
-    return await this.authService.signIn(signInDto, res, req.headers.origin!);
+    return await this.authService.signIn(signInDto, res);
   }
 
   @ApiOperation({ summary: '로그아웃' })
@@ -77,12 +76,8 @@ export class AuthController {
   @Post('restore-token')
   @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(HttpStatus.OK)
-  async restoreToken(
-    @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) res: FastifyReply,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return await this.authService.restoreToken(user.id, res, req.headers.origin!);
+  async restoreToken(@Res({ passthrough: true }) res: FastifyReply, @CurrentUser() user: JwtPayload) {
+    return await this.authService.restoreToken(user.id, res);
   }
 
   @ApiOperation({ summary: '비밀번호 변경' })
@@ -140,12 +135,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '회원가입 콜백(쿠키 설정) 성공' })
   @Post('callback/signup')
   @Public()
-  async callbackSignup(
-    @Body() { userId }: { userId: string },
-    @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ) {
-    return await this.authService.callbackSignup(userId, res, req.headers.origin!);
+  async callbackSignup(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
+    return await this.authService.callbackSignup(userId, res);
   }
 
   @ApiOperation({ summary: '인증 이메일 재전송' })
@@ -199,7 +190,7 @@ export class AuthController {
     };
 
     try {
-      return await this.authService.signInWithSocial(kakaoUser, ProviderType.KAKAO, res, req.headers.origin);
+      return await this.authService.signInWithSocial(kakaoUser, ProviderType.KAKAO, res);
     } catch (error) {
       if (error.message.includes('already exists')) {
         throw new ConflictException('This email already exists');
@@ -215,12 +206,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: '소셜로그인 쿠키 설정 성공' })
   @Post('social/set-cookie')
   @Public()
-  async setSocialCookie(
-    @Body() { userId }: { userId: string },
-    @Req() req: FastifyRequest,
-    @Res({ passthrough: true }) res: FastifyReply,
-  ) {
+  async setSocialCookie(@Body() { userId }: { userId: string }, @Res({ passthrough: true }) res: FastifyReply) {
     console.log('social/set-cookie 경로 접근 ', userId);
-    return await this.authService.setSocialCookie(userId, res, req.headers.origin!);
+    return await this.authService.setSocialCookie(userId, res);
   }
 }
