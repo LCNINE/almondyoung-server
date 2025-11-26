@@ -1601,13 +1601,12 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
     .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
     .notNull(),
 
-  // 추적 정보
-  salesOrderId: varchar('sales_order_id', { length: 255 }).notNull(), // 원본 SO ID
-  salesOrderLineId: varchar('sales_order_line_id', { length: 255 }).notNull(), // 원본 SOL ID
+  // 추적 정보 (nullable: 명시적 라인 전달 시 SO 정보가 없을 수 있음)
+  salesOrderId: varchar('sales_order_id', { length: 255 }), // 원본 SO ID
+  salesOrderLineId: varchar('sales_order_line_id', { length: 255 }), // 원본 SOL ID
   mappingSnapshotId: uuid('mapping_snapshot_id')
-    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' })
-    .notNull(),
-  variantId: uuid('variant_id').notNull(), // PIM Variant ID - 정책 평가용
+    .references(() => productSkuMappingSnapshots.id, { onDelete: 'restrict' }),
+  variantId: uuid('variant_id'), // PIM Variant ID - 정책 평가용
 
   // 실제 출고 정보
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
@@ -1617,6 +1616,7 @@ export const fulfillmentOrderItems = pgTable('fulfillment_order_items', {
   reservedQty: integer('reserved_qty').notNull().default(0),
   pickedQty: integer('picked_qty').notNull().default(0),
   shippedQty: integer('shipped_qty').notNull().default(0),
+  status: varchar('status', { length: 32 }).notNull().default('pending'),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

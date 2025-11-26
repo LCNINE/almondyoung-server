@@ -11,8 +11,8 @@ export interface CreateFulfillmentOrderDto {
   fulfillmentMode: 'in_house' | '3pl' | 'drop_ship';
   priority: 'normal' | 'high' | 'urgent';
   items: Array<{
-    salesOrderId: string;
-    salesOrderLineId: string;
+    salesOrderId: string | null;
+    salesOrderLineId: string | null;
     productId: string;
     variantId: string;
     qty: number;
@@ -23,9 +23,9 @@ export interface FulfillmentOrderResult {
   fulfillmentOrderId: string;
   items: Array<{
     id: string;
-    salesOrderId: string;
-    salesOrderLineId: string;
-    variantId: string;
+    salesOrderId: string | null;
+    salesOrderLineId: string | null;
+    variantId: string | null;
     skuId: string;
     qty: number;
     reservedQty: number;

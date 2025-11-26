@@ -2,13 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsInt, Min } from 'class-validator';
 
 export class TransferReservationDto {
-  @ApiProperty({ description: '이전할 원본 라인 ID' })
+  @ApiProperty({ description: '이전할 원본 아이템 ID' })
   @IsString()
-  fromFulfillmentOrderLineId: string;
+  fromFulfillmentOrderItemId: string;
 
-  @ApiProperty({ description: '이전할 대상 라인 ID' })
+  @ApiProperty({ description: '이전할 대상 아이템 ID' })
   @IsString()
-  toFulfillmentOrderLineId: string;
+  toFulfillmentOrderItemId: string;
 
   @ApiProperty({ description: '이전할 수량', minimum: 1 })
   @IsInt()

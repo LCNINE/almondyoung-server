@@ -115,10 +115,45 @@ export class FulfillmentsService {
           payload: { fulfillmentOrderId: fo.id }
         }, trx);
 
-        const lines = Array.isArray(dto.lines) ? dto.lines : [];
-        if (lines.length > 0) {
-          // 명시적 라인 전달: 레거시 fulfillmentOrderLines에 저장
-          for (const line of lines) {
+        // dto.items (신규) 또는 dto.lines (deprecated) 처리
+        const items = Array.isArray(dto.items) ? dto.items : [];
+        const legacyLines = Array.isArray(dto.lines) ? dto.lines : [];
+
+        if (items.length > 0) {
+          // 명시적 아이템 전달: fulfillmentOrderItems에 저장
+          for (const item of items) {
+            if (!item.skuId || !item.quantity || item.quantity <= 0) {
+              throw new BadRequestException(`Invalid item data: skuId and positive quantity are required`);
+            }
+
+            const sku = await trx.query.skus.findFirst({
+              where: eq(wmsTables.skus.id, item.skuId)
+            });
+            if (!sku) {
+              throw new BadRequestException(`SKU ${item.skuId} not found`);
+            }
+          }
+
+          await trx.insert(wmsTables.fulfillmentOrderItems).values(
+            items.map((item) => ({
+              fulfillmentOrderId: fo.id,
+              salesOrderId: dto.salesOrderId ?? null,
+              salesOrderLineId: item.salesOrderLineId ?? null,
+              mappingSnapshotId: item.mappingSnapshotId ?? null,
+              variantId: item.variantId ?? null,
+              skuId: item.skuId,
+              qty: item.quantity,
+              reservedQty: 0,
+              pickedQty: 0,
+              shippedQty: 0,
+              status: 'pending',
+            })),
+          );
+        } else if (legacyLines.length > 0) {
+          // 레거시 경로: dto.lines 사용 (deprecated)
+          this.logger.warn(`[create] Using deprecated 'lines' field for FO creation. Please use 'items' instead.`);
+
+          for (const line of legacyLines) {
             if (!line.skuId || !line.quantity || line.quantity <= 0) {
               throw new BadRequestException(`Invalid line data: skuId and positive quantity are required`);
             }
@@ -131,11 +166,15 @@ export class FulfillmentsService {
             }
           }
 
-          await trx.insert(wmsTables.fulfillmentOrderLines).values(
-            lines.map((l) => ({
+          await trx.insert(wmsTables.fulfillmentOrderItems).values(
+            legacyLines.map((l) => ({
               fulfillmentOrderId: fo.id,
+              salesOrderId: dto.salesOrderId ?? null,
+              salesOrderLineId: null,
+              mappingSnapshotId: null,
+              variantId: null,
               skuId: l.skuId,
-              quantity: l.quantity,
+              qty: l.quantity,
               reservedQty: 0,
               pickedQty: 0,
               shippedQty: 0,
@@ -156,25 +195,15 @@ export class FulfillmentsService {
             where: eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId)
           });
 
-          // fulfillmentOrderItems 데이터 (스냅샷 기반)
+          // fulfillmentOrderItems 데이터
           const itemsToInsert: Array<{
             fulfillmentOrderId: string;
             salesOrderId: string;
             salesOrderLineId: string;
-            mappingSnapshotId: string;
+            mappingSnapshotId: string | null;
             variantId: string;
             skuId: string;
             qty: number;
-            reservedQty: number;
-            pickedQty: number;
-            shippedQty: number;
-          }> = [];
-
-          // fulfillmentOrderLines 데이터 (레거시 호환성)
-          const linesToInsert: Array<{
-            fulfillmentOrderId: string;
-            skuId: string;
-            quantity: number;
             reservedQty: number;
             pickedQty: number;
             shippedQty: number;
@@ -200,16 +229,6 @@ export class FulfillmentsService {
                     reservedQty: 0,
                     pickedQty: 0,
                     shippedQty: 0,
-                  });
-
-                  // 레거시 호환성을 위해 fulfillmentOrderLines에도 저장
-                  linesToInsert.push({
-                    fulfillmentOrderId: fo.id,
-                    skuId: mapping.skuId,
-                    quantity: qty,
-                    reservedQty: 0,
-                    pickedQty: 0,
-                    shippedQty: 0,
                     status: 'pending',
                   });
                 }
@@ -224,10 +243,14 @@ export class FulfillmentsService {
                 const links = (matching as { links: Array<{ skuId: string; quantity: number }> }).links;
                 for (const link of links) {
                   const qty = sl.quantity * Math.max(1, link.quantity || 1);
-                  linesToInsert.push({
+                  itemsToInsert.push({
                     fulfillmentOrderId: fo.id,
+                    salesOrderId: dto.salesOrderId,
+                    salesOrderLineId: sl.id,
+                    mappingSnapshotId: null,
+                    variantId: sl.variantId,
                     skuId: link.skuId,
-                    quantity: qty,
+                    qty,
                     reservedQty: 0,
                     pickedQty: 0,
                     shippedQty: 0,
@@ -238,24 +261,19 @@ export class FulfillmentsService {
             }
           }
 
-          // fulfillmentOrderItems 삽입 (스냅샷 기반)
+          // fulfillmentOrderItems 삽입
           if (itemsToInsert.length > 0) {
             await trx.insert(wmsTables.fulfillmentOrderItems).values(itemsToInsert);
-            this.logger.log(`Created ${itemsToInsert.length} fulfillment order items (snapshot-based)`);
-          }
-
-          // fulfillmentOrderLines 삽입 (레거시 호환성)
-          if (linesToInsert.length > 0) {
-            await trx.insert(wmsTables.fulfillmentOrderLines).values(linesToInsert);
+            this.logger.log(`Created ${itemsToInsert.length} fulfillment order items`);
           }
         }
 
         // 3PL: ownerId가 있으면 SKU.holderId 일치 검증
         if (fo.ownerId) {
-          const fols = await trx.query.fulfillmentOrderLines.findMany({
-            where: eq(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, fo.id)
+          const fois = await trx.query.fulfillmentOrderItems.findMany({
+            where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id)
           });
-          const skuIds = fols.map(l => l.skuId);
+          const skuIds = fois.map(item => item.skuId);
           if (skuIds.length > 0) {
             const skuRows = await trx.query.skus.findMany({
               where: (s, { inArray: ina }) => ina(s.id, skuIds) as ReturnType<typeof ina>
@@ -295,7 +313,7 @@ export class FulfillmentsService {
 
   /**
    * FO의 출고 가능 여부 평가
-   * fulfillmentOrderItems가 있으면 variantId 기반으로, 없으면 레거시 방식으로 평가
+   * fulfillmentOrderItems의 variantId 기반으로 정책 평가 (variantId가 없으면 기본 정책 사용)
    */
   private async evaluateFulfillability(trx: DbTx, foId: string, warehouseId: string | null): Promise<boolean> {
     const fo = await trx.query.fulfillmentOrders.findFirst({
@@ -309,51 +327,28 @@ export class FulfillmentsService {
 
     if (!warehouseId) return false;
 
-    // fulfillmentOrderItems 확인 (스냅샷 기반)
     const items = await trx.query.fulfillmentOrderItems.findMany({
       where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId)
     });
 
-    if (items.length > 0) {
-      // 스냅샷 기반: variantId로 정책 평가
-      for (const item of items) {
-        const onHand = await this.availability.getAvailableQuantity(item.skuId, warehouseId, trx);
-        const policy = await this.policies.getVariantPolicy(item.variantId, trx);
-        const canFulfill = this.policies.evaluateFulfillability(
-          {
-            inventoryManagement: policy?.inventoryManagement ?? true,
-            preStockSellable: policy?.preStockSellable ?? false,
-            alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
-          },
-          onHand,
-          item.qty,
-        );
-        if (!canFulfill) return false;
-      }
-      return true;
-    }
+    if (items.length === 0) return true;
 
-    // 레거시: fulfillmentOrderLines 기반 평가 (variantId 없음)
-    // TODO: 레거시 데이터 마이그레이션 후 이 경로 제거
-    const fols = await trx.query.fulfillmentOrderLines.findMany({
-      where: eq(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, foId)
-    });
+    for (const item of items) {
+      const onHand = await this.availability.getAvailableQuantity(item.skuId, warehouseId, trx);
 
-    if (fols.length > 0) {
-      this.logger.warn(`[evaluateFulfillability] Legacy path used for FO ${foId} - variantId unavailable, using default policy`);
-    }
+      // variantId가 있으면 정책 조회, 없으면 기본 정책 사용
+      const policy = item.variantId
+        ? await this.policies.getVariantPolicy(item.variantId, trx)
+        : null;
 
-    for (const l of fols) {
-      const onHand = await this.availability.getAvailableQuantity(l.skuId, warehouseId, trx);
-      // 레거시: variantId가 없으므로 기본 정책(재고관리=true) 적용
       const canFulfill = this.policies.evaluateFulfillability(
         {
-          inventoryManagement: true,
-          preStockSellable: false,
-          alwaysSellableZeroStock: false,
+          inventoryManagement: policy?.inventoryManagement ?? true,
+          preStockSellable: policy?.preStockSellable ?? false,
+          alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
         },
         onHand,
-        l.quantity,
+        item.qty,
       );
       if (!canFulfill) return false;
     }
@@ -380,61 +375,133 @@ export class FulfillmentsService {
         })
         .returning();
 
-      // 3) 라인 분할 및 예약 처리
-      const moves: Array<{ fulfillmentOrderLineId: string; quantity: number }> = dto?.lines ?? [];
-      const splitItems: Array<{
-        fulfillmentOrderLineId: string;
-        skuId: string;
-        splitQuantity: number;
-        originalQuantity: number;
-      }> = [];
+      // 3) 아이템 분할 및 예약 처리
+      const itemMoves = dto?.items ?? [];
+      const legacyMoves = dto?.lines ?? [];
 
-      for (const mv of moves) {
-        const line = await trx.query.fulfillmentOrderLines.findFirst({
-          where: (l, { eq }) => eq(l.id, mv.fulfillmentOrderLineId),
-        });
-        if (!line) continue;
-        const moveQty = Math.min(mv.quantity, line.quantity - line.shippedQty);
-        if (moveQty <= 0) continue;
+      // 신규 경로: dto.items 사용
+      if (itemMoves.length > 0) {
+        const splitItems: Array<{
+          fulfillmentOrderItemId: string;
+          skuId: string;
+          splitQuantity: number;
+          originalQuantity: number;
+        }> = [];
 
-        // 원본 라인 수량 감소
-        await trx
-          .update(wmsTables.fulfillmentOrderLines)
-          .set({
-            quantity: line.quantity - moveQty,
-            reservedQty: Math.max(0, line.reservedQty - moveQty) // 예약 수량도 조정
-          })
-          .where(eq(wmsTables.fulfillmentOrderLines.id, line.id));
+        for (const mv of itemMoves) {
+          const item = await trx.query.fulfillmentOrderItems.findFirst({
+            where: eq(wmsTables.fulfillmentOrderItems.id, mv.fulfillmentOrderItemId),
+          });
+          if (!item) continue;
+          const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
+          if (moveQty <= 0) continue;
 
-        // 새 라인 생성
-        const [newLine] = await trx.insert(wmsTables.fulfillmentOrderLines).values({
-          fulfillmentOrderId: newFo.id,
-          skuId: line.skuId,
-          quantity: moveQty,
-          reservedQty: 0, // 예약은 lifecycle service에서 처리
-          pickedQty: 0,
-          shippedQty: 0,
-          status: 'pending',
-        }).returning();
+          // 원본 아이템 수량 감소
+          await trx
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({
+              qty: item.qty - moveQty,
+              reservedQty: Math.max(0, item.reservedQty - moveQty),
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
 
-        // 예약 처리를 위한 정보 수집
-        splitItems.push({
-          fulfillmentOrderLineId: newLine.id,
-          skuId: line.skuId,
-          splitQuantity: moveQty,
-          originalQuantity: line.quantity
-        });
+          // 새 아이템 생성
+          const [newItem] = await trx.insert(wmsTables.fulfillmentOrderItems).values({
+            fulfillmentOrderId: newFo.id,
+            salesOrderId: item.salesOrderId,
+            salesOrderLineId: item.salesOrderLineId,
+            mappingSnapshotId: item.mappingSnapshotId,
+            variantId: item.variantId,
+            skuId: item.skuId,
+            qty: moveQty,
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          }).returning();
+
+          splitItems.push({
+            fulfillmentOrderItemId: newItem.id,
+            skuId: item.skuId,
+            splitQuantity: moveQty,
+            originalQuantity: item.qty
+          });
+        }
+
+        // 예약 재분배 처리
+        if (splitItems.length > 0) {
+          await this.reservationLifecycle.handleFulfillmentOrderSplit(
+            id,
+            newFo.id,
+            splitItems,
+            trx
+          );
+        }
       }
+      // 레거시 경로: dto.lines 사용 (deprecated)
+      else if (legacyMoves.length > 0) {
+        this.logger.warn(`[split] Using deprecated 'lines' field. Please use 'items' instead.`);
 
-      // 4) 예약 재분배 처리
-      if (splitItems.length > 0) {
-        // 예약 재분배는 예약 생명주기 서비스에 위임 (DI 사용)
-        await this.reservationLifecycle.handleFulfillmentOrderSplit(
-          id,
-          newFo.id,
-          splitItems,
-          trx
-        );
+        // 레거시: fulfillmentOrderLineId로 fulfillmentOrderItems 조회
+        const splitItems: Array<{
+          fulfillmentOrderItemId: string;
+          skuId: string;
+          splitQuantity: number;
+          originalQuantity: number;
+        }> = [];
+
+        for (const mv of legacyMoves) {
+          // fulfillmentOrderLineId는 이제 fulfillmentOrderItemId로 간주
+          const item = await trx.query.fulfillmentOrderItems.findFirst({
+            where: eq(wmsTables.fulfillmentOrderItems.id, mv.fulfillmentOrderLineId),
+          });
+          if (!item) continue;
+          const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
+          if (moveQty <= 0) continue;
+
+          // 원본 아이템 수량 감소
+          await trx
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({
+              qty: item.qty - moveQty,
+              reservedQty: Math.max(0, item.reservedQty - moveQty),
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+
+          // 새 아이템 생성
+          const [newItem] = await trx.insert(wmsTables.fulfillmentOrderItems).values({
+            fulfillmentOrderId: newFo.id,
+            salesOrderId: item.salesOrderId,
+            salesOrderLineId: item.salesOrderLineId,
+            mappingSnapshotId: item.mappingSnapshotId,
+            variantId: item.variantId,
+            skuId: item.skuId,
+            qty: moveQty,
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          }).returning();
+
+          splitItems.push({
+            fulfillmentOrderItemId: newItem.id,
+            skuId: item.skuId,
+            splitQuantity: moveQty,
+            originalQuantity: item.qty
+          });
+        }
+
+        // 예약 재분배 처리
+        if (splitItems.length > 0) {
+          await this.reservationLifecycle.handleFulfillmentOrderSplit(
+            id,
+            newFo.id,
+            splitItems,
+            trx
+          );
+        }
       }
 
       return newFo;
@@ -476,15 +543,15 @@ export class FulfillmentsService {
         where: eq(wmsTables.shipments.fulfillmentOrderId, id),
       });
 
-      // 라인 업데이트
-      const lines = await trx.query.fulfillmentOrderLines.findMany({
-        where: (l, { eq: eqOp }) => eqOp(l.fulfillmentOrderId, id),
+      // 아이템 업데이트
+      const items = await trx.query.fulfillmentOrderItems.findMany({
+        where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id),
       });
-      for (const l of lines) {
+      for (const item of items) {
         await trx
-          .update(wmsTables.fulfillmentOrderLines)
-          .set({ shippedQty: l.quantity, status: 'shipped' })
-          .where(eq(wmsTables.fulfillmentOrderLines.id, l.id));
+          .update(wmsTables.fulfillmentOrderItems)
+          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: new Date() })
+          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
 
       // FO 상태 업데이트
@@ -504,10 +571,10 @@ export class FulfillmentsService {
         },
         shippedAt: new Date().toISOString(),
         estimatedDeliveryDate: shipment?.eta?.toISOString(),
-        shippedItems: lines.map((l) => ({
-          fulfillmentItemId: l.id,
-          skuId: l.skuId,
-          shippedQty: l.quantity,
+        shippedItems: items.map((item) => ({
+          fulfillmentItemId: item.id,
+          skuId: item.skuId,
+          shippedQty: item.qty,
         })),
       };
 
@@ -591,51 +658,28 @@ export class FulfillmentsService {
       const fo = await this.getOne(fulfillmentOrderId, trx);
       if (!fo?.warehouseId) return { ready: false };
 
-      // fulfillmentOrderItems 확인 (스냅샷 기반)
       const items = await trx.query.fulfillmentOrderItems.findMany({
         where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId)
       });
 
-      if (items.length > 0) {
-        // 스냅샷 기반: variantId로 정책 평가
-        for (const item of items) {
-          const onHand = await this.availability.getAvailableQuantity(item.skuId, fo.warehouseId, trx);
-          const policy = await this.policies.getVariantPolicy(item.variantId, trx);
-          const canFulfill = this.policies.evaluateFulfillability(
-            {
-              inventoryManagement: policy?.inventoryManagement ?? true,
-              preStockSellable: policy?.preStockSellable ?? false,
-              alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
-            },
-            onHand,
-            item.qty,
-          );
-          if (!canFulfill) return { ready: false };
-        }
-        return { ready: true };
-      }
+      if (items.length === 0) return { ready: true };
 
-      // 레거시: fulfillmentOrderLines 기반 평가 (variantId 없음)
-      // TODO: 레거시 데이터 마이그레이션 후 이 경로 제거
-      const lines = await trx.query.fulfillmentOrderLines.findMany({
-        where: eq(wmsTables.fulfillmentOrderLines.fulfillmentOrderId, fulfillmentOrderId)
-      });
+      for (const item of items) {
+        const onHand = await this.availability.getAvailableQuantity(item.skuId, fo.warehouseId, trx);
 
-      if (lines.length > 0) {
-        this.logger.warn(`[checkAvailability] Legacy path used for FO ${fulfillmentOrderId} - variantId unavailable, using default policy`);
-      }
+        // variantId가 있으면 정책 조회, 없으면 기본 정책 사용
+        const policy = item.variantId
+          ? await this.policies.getVariantPolicy(item.variantId, trx)
+          : null;
 
-      for (const l of lines) {
-        const onHand = await this.availability.getAvailableQuantity(l.skuId, fo.warehouseId, trx);
-        // 레거시: variantId가 없으므로 기본 정책(재고관리=true) 적용
         const canFulfill = this.policies.evaluateFulfillability(
           {
-            inventoryManagement: true,
-            preStockSellable: false,
-            alwaysSellableZeroStock: false,
+            inventoryManagement: policy?.inventoryManagement ?? true,
+            preStockSellable: policy?.preStockSellable ?? false,
+            alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
           },
           onHand,
-          l.quantity,
+          item.qty,
         );
         if (!canFulfill) return { ready: false };
       }

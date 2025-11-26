@@ -22,7 +22,7 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 export class PendingOrderRepository {
   private readonly logger = new Logger(PendingOrderRepository.name);
 
-  constructor(private readonly db: DbService<typeof channelAdapterSchema>) {}
+  constructor(private readonly db: DbService<typeof channelAdapterSchema>) { }
 
   /**
    * 계류 주문 저장
@@ -207,16 +207,17 @@ export class PendingOrderRepository {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
 
-    const result = await this.db.db
+    const deletedRows = await this.db.db
       .delete(pendingOrders)
       .where(
         and(
           eq(pendingOrders.status, 'completed'),
           sql`${pendingOrders.processedAt} < ${cutoffDate.toISOString()}`,
         ),
-      );
+      )
+      .returning({ id: pendingOrders.id });
 
-    const deletedCount = Number(result.rowCount ?? 0);
+    const deletedCount = deletedRows.length;
     if (deletedCount > 0) {
       this.logger.log(`🧹 완료된 계류 주문 ${deletedCount}건 정리`);
     }
