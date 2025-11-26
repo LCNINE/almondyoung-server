@@ -31,7 +31,6 @@ type MedusaSignupResponse = {
 
 export const retrieveCustomer =
   async (): Promise<HttpTypes.StoreCustomer | null> => {
-    // Mock 환경에서는 로그인 상태 확인 후 mock 사용자 데이터 반환
     const authHeaders = await getAuthHeaders()
 
     if (!authHeaders) return null

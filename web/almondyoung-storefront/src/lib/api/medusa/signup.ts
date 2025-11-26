@@ -23,7 +23,7 @@ export async function medusaSignup(
     params
 
   try {
-    const res = await fetch(`/api/medusa/signup`, {
+    const res = await fetch(`${process.env.APP_URL}/api/medusa/signup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

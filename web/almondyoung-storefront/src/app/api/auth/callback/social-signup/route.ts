@@ -1,4 +1,4 @@
-import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
 import { appConfig } from "@lib/app-config"
 import { setTokenCookies } from "@lib/data/cookies"
@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const userId = searchParams.get("userId")
     const social = searchParams.get("social")
+    const countryCode = searchParams.get("countryCode") ?? "kr"
     const redirectTo =
       searchParams.get("redirect_to") ?? appConfig.auth.redirect_to
 
@@ -41,12 +42,13 @@ export async function GET(request: NextRequest) {
     setTokenCookies(accessToken, refreshToken)
 
     // 이미 메두사 회원인지 체크
-    const customer = await retrieveCustomer()
-    if (customer) {
+    const medusaSigninResponse = await medusaSignin()
+
+    if (medusaSigninResponse.success) {
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
 
-    // 신규 메두사 회원 가입 처리
+    // 이미 메두사 회원이 아니라면 신규 메두사 회원 가입 처리
     const currentUser = await fetch(
       `${process.env.BACKEND_URL}/users/users/${userId}`,
       {
@@ -84,17 +86,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 콜백 페이지로 리다이렉트
-    return NextResponse.redirect(
-      new URL(
-        `/callback/signup/process?redirect_to=${encodeURIComponent(redirectTo)}`,
-        request.url
-      )
-    )
+    // 메두사 회원 로그인 처리
+    await medusaSignin()
+
+    return NextResponse.redirect(new URL(redirectTo, request.url))
   } catch (error) {
     console.error("Signup callback error:", error)
+    const searchParams = request.nextUrl.searchParams
+    const countryCode = searchParams.get("countryCode") ?? "kr"
     return NextResponse.redirect(
-      new URL("/login?error=callback_failed", request.url)
+      new URL(`/${countryCode}/login?error=callback_failed`, request.url)
     )
   }
 }

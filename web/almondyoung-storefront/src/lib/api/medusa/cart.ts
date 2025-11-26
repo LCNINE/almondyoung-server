@@ -12,9 +12,9 @@ import {
   getCartId,
   removeCartId,
   setCartId,
-} from "./cookies"
+} from "@lib/data/cookies"
 import { getRegion } from "./regions"
-import { mockCart } from "../../app/data/__mocks__/user-cart-mock"
+import { mockCart } from "app/data/__mocks__/user-cart-mock"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -267,7 +267,7 @@ export async function deleteLineItem(lineId: string) {
   }
 
   await sdk.store.cart
-    .deleteLineItem(cartId, lineId, headers)
+    .deleteLineItem(cartId, lineId, {}, headers)
     .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
