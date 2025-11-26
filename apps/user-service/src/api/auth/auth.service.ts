@@ -94,77 +94,108 @@ export class AuthService {
     let expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
 
     try {
-      // 이메일로 기존 사용자 조회
-      const existingUser = await this.usersService.findUserByEmail(signUpDto.email);
+      return await this.dbService.db.transaction(async (tx) => {
+        const client = this.getClient(tx);
 
-      if (existingUser) {
-        // 이미 인증된 이메일인 경우
-        if (existingUser.isEmailVerified) {
-          throw new ConflictException('이미 가입된 이메일입니다. 로그인을 시도해주세요.');
+        // 이메일로 기존 사용자 조회
+        const existingUser = await this.usersService.findUserByEmail(signUpDto.email, client);
+
+        if (existingUser) {
+          // 이미 인증된 이메일인 경우
+          if (existingUser.isEmailVerified) {
+            throw new ConflictException('이미 가입된 이메일입니다. 로그인을 시도해주세요.');
+          }
+
+
+          const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId, client);
+          if (existsUserId && existsUserId.id !== existingUser.id) {
+            throw new ConflictException('이미 존재하는 아이디입니다.');
+          }
+
+          const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname, client);
+          if (existingUserByNickname && existingUserByNickname.id !== existingUser.id) {
+            throw new ConflictException('이미 존재하는 닉네임입니다.');
+          }
+
+
+          const saltOrRounds = 10;
+          const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
+
+
+          await client.update(userServiceSchema.users).set({
+            email: signUpDto.email,
+            username: signUpDto.username,
+            nickname: signUpDto.nickname,
+            loginId: signUpDto.loginId,
+            password: hash,
+            isEmailVerified: false,
+            updatedAt: new Date(),
+          }).where(eq(userServiceSchema.users.id, existingUser.id));
+
+          await client
+            .update(userServiceSchema.userConsents)
+            .set({
+              isOver14,
+              termsOfService,
+              electronicTransaction,
+              privacyPolicy,
+              thirdPartySharing,
+              marketingConsent,
+              updatedAt: new Date(),
+            })
+            .where(eq(userServiceSchema.userConsents.userId, existingUser.id));
+
+          const verificationToken = await this.jwtService.signAsync(
+            { sub: existingUser.id },
+            {
+              secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+              expiresIn: this.parseExpiresIn(expiresIn),
+            },
+          );
+
+          // 새 토큰 저장
+          await this.tokensService.saveVerificationToken(
+            existingUser.id,
+            verificationToken,
+            new Date(Date.now() + this.parseExpiresIn(expiresIn)),
+            client,
+          );
+
+          await this.eventPublisher.publishEvent({
+            eventType: 'UserVerification',
+            aggregateId: existingUser.id,
+            payload: {
+              userId: existingUser.id,
+              email: existingUser.email,
+              name: signUpDto.username,
+              verificationToken: verificationToken,
+              callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
+              redirectTo: redirect_to ?? '/',
+            },
+          });
+
+
+          return {
+            message: '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
+          };
         }
 
-        // 새로운 인증 토큰 생성
-        const verificationToken = await this.jwtService.signAsync(
-          { sub: existingUser.id },
-          {
-            secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
-            expiresIn: this.parseExpiresIn(expiresIn),
-          },
-        );
+        const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
+        if (existsUserId) {
+          throw new ConflictException('이미 존재하는 아이디입니다.');
+        }
 
-        // 새 토큰 저장 (기존 토큰 자동 삭제)
-        await this.tokensService.saveVerificationToken(
-          existingUser.id,
-          verificationToken,
-          new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-        );
+        const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname);
 
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserVerification',
-          aggregateId: existingUser.id,
-          payload: {
-            userId: existingUser.id,
-            email: existingUser.email,
-            name: existingUser.username,
-            verificationToken: verificationToken,
-            callbackUrl: this.configService.get('USER_SERVICE_URL') + `/auth/verify-email`,
-            redirectTo: redirect_to ?? '/',
-          },
-        });
+        if (existingUserByNickname) {
+          throw new ConflictException('이미 존재하는 닉네임입니다.');
+        }
 
-        console.log(
-          '회원가입 이메일 인증 링크: ',
-          this.configService.get('USER_SERVICE_URL') +
-          `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,
-        );
-        /* 
-        ex)
-         this.configService.get('USER_SERVICE_URL') +
-              `/auth/verify-email?token=${verificationToken}&redirect_to=${encodeURIComponent(redirect_to ?? '')}`,        
-        */
+        const saltOrRounds = 10;
+        const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
 
-        return {
-          message: '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
-        };
-      }
-
-      const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId);
-      if (existsUserId) {
-        throw new ConflictException('이미 존재하는 아이디입니다.');
-      }
-
-      const existingUserByNickname = await this.usersService.findUserByNickname(signUpDto.nickname);
-
-      if (existingUserByNickname) {
-        throw new ConflictException('이미 존재하는 닉네임입니다.');
-      }
-
-      const saltOrRounds = 10;
-      const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
-
-      return await this.dbService.db.transaction(async (tx) => {
         // 새 사용자 생성
-        const [user] = await tx
+        const [user] = await client
           .insert(userServiceSchema.users)
           .values({
             email,
@@ -177,7 +208,7 @@ export class AuthService {
           .returning();
 
         // 유저 동의 항목 생성
-        await tx.insert(userServiceSchema.userConsents).values({
+        await client.insert(userServiceSchema.userConsents).values({
           userId: user.id,
           isOver14,
           termsOfService,
@@ -201,7 +232,7 @@ export class AuthService {
           user.id,
           verificationToken,
           new Date(Date.now() + this.parseExpiresIn(expiresIn)),
-          tx,
+          client,
         );
 
         await this.eventPublisher.publishEvent({
