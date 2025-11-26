@@ -12,9 +12,8 @@ import {
   getCartId,
   removeCartId,
   setCartId,
-} from "./cookies"
+} from "@lib/data/cookies"
 import { getRegion } from "./regions"
-import { mockCart } from "../../app/data/__mocks__/user-cart-mock"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -22,49 +21,7 @@ import { mockCart } from "../../app/data/__mocks__/user-cart-mock"
  * @returns The cart object if found, or null if not found.
  */
 export async function retrieveCart(cartId?: string, fields?: string) {
-  // Mock 환경에서는 user-cart-mock.ts의 데이터를 Medusa 형식으로 변환하여 반환
-  const medusaCart = {
-    id: mockCart.id,
-    items: mockCart.items.map((item) => ({
-      id: item.id,
-      title: item.product.name,
-      thumbnail: item.product.images?.primary || item.product.thumbnail,
-      variant: {
-        id: `${item.productId}-${Object.values(item.selectedOptions).join("-")}`,
-        title: Object.values(item.selectedOptions).join(", ") || "기본",
-        product: {
-          id: item.product.id,
-          title: item.product.name,
-          thumbnail: item.product.images?.primary || item.product.thumbnail,
-        },
-      },
-      quantity: item.quantity,
-      unit_price: item.product.membershipPrice || item.product.basePrice || 0,
-      total:
-        (item.product.membershipPrice || item.product.basePrice || 0) *
-        item.quantity,
-      metadata: {
-        notes: item.notes || "",
-        selectedOptions: item.selectedOptions,
-      },
-    })),
-    region: {
-      id: "region-kr",
-      name: "대한민국",
-      currency_code: "krw",
-    },
-    total: mockCart.finalPrice,
-    subtotal: mockCart.totalPrice,
-    tax_total: 0,
-    shipping_total: 0,
-    discount_total: mockCart.totalDiscount,
-    gift_card_total: 0,
-    created_at: mockCart.lastUpdated,
-    updated_at: mockCart.lastUpdated,
-    metadata: {},
-  }
-
-  return medusaCart
+  return null
 
   /* 기존 코드 (주석처리)
   const id = cartId || (await getCartId())
@@ -267,7 +224,7 @@ export async function deleteLineItem(lineId: string) {
   }
 
   await sdk.store.cart
-    .deleteLineItem(cartId, lineId, headers)
+    .deleteLineItem(cartId, lineId, {}, headers)
     .then(async () => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)

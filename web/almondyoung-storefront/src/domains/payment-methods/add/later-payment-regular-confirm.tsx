@@ -10,7 +10,6 @@ import {
 } from "lucide-react"
 import { BankFormData } from "./add-bank-form"
 import { PhoneFormData } from "domains/verify/phone/index"
-import { WALLET_SERVICE_BASE_URL } from "@lib/api/api.config"
 
 interface PaymentAgreementProps {
   onBack?: () => void
@@ -37,7 +36,7 @@ const CustomInput = ({
       className={`w-full bg-[#f4f4f4] px-4 py-3 text-xs text-[#d9d9d9] placeholder:text-[#d9d9d9] focus:outline-none ${className}`}
     />
     {/* 디자인상의 하단 밑줄 구현 */}
-    <div className="absolute bottom-0 left-0 h-[1px] w-full bg-[#8e8e93]" />
+    <div className="absolute bottom-0 left-0 h-px w-full bg-[#8e8e93]" />
   </div>
 )
 
@@ -55,7 +54,7 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
 const CheckboxItem = ({ label }: { label: string }) => (
   <div className="flex items-center gap-2.5">
     <div className="flex h-4 w-4 items-center justify-center rounded-[2px] bg-[#F29219]">
-      <Check className="h-3 w-3 stroke-[3] text-white" />
+      <Check className="h-3 w-3 stroke-3 text-white" />
     </div>
     <span className="text-xs text-[#1c1c1e]">{label}</span>
   </div>
@@ -177,7 +176,7 @@ export default function LaterPaymentRegularConfirm({
 
       // API 호출
       // 백엔드 엔드포인트: POST /payments/hms-bnpl/onboard
-      const apiUrl = `${WALLET_SERVICE_BASE_URL}/payments/hms-bnpl/onboard`
+      const apiUrl = `/api/wallet/payments/hms-bnpl/onboard`
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -294,7 +293,7 @@ export default function LaterPaymentRegularConfirm({
                   className="w-full bg-[#f4f4f4] px-4 py-3 text-xs text-[#1e1e1e] placeholder:text-[#d9d9d9] focus:outline-none"
                 />
                 {/* 디자인상의 하단 밑줄 구현 */}
-                <div className="absolute bottom-0 left-0 h-[1px] w-full bg-[#8e8e93]" />
+                <div className="absolute bottom-0 left-0 w-full bg-[#8e8e93]" />
               </div>
             </div>
           </section>

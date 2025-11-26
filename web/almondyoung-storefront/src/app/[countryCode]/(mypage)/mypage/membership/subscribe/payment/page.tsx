@@ -1,6 +1,6 @@
 import { MembershipForm } from "./components"
 import type { PlanWithTier } from "@lib/types/membership"
-import { serverApi } from "@lib/api/server-api"
+
 import { ApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@components/layout/mypage-layout"
@@ -27,17 +27,17 @@ const mockBenefits = [
 
 async function getPlans(): Promise<PlanWithTier[]> {
   // serverApi는 기본적으로 body.data를 추출해서 반환
-  const plans = await serverApi<PlanWithTier[]>(
-    `${process.env.BACKEND_URL}/membership/plans`
+  const plans = await fetch(`${process.env.BACKEND_URL}/membership/plans`).then(
+    (res) => res.json()
   )
   return plans
 }
 
 async function getPaymentProfiles() {
   try {
-    const profiles = await serverApi<any[]>(
+    const profiles = await fetch(
       `${process.env.BACKEND_URL}/wallet/payments/profiles`
-    )
+    ).then((res) => res.json())
     console.log("✅ Payment profiles loaded:", profiles)
     return profiles
   } catch (error) {
@@ -66,7 +66,7 @@ export default async function MembershipFormPage() {
 
   // HMS 카드 프로필 찾기
   const hmsCardProfile = paymentProfiles.find(
-    (p) => p.kind === "CARD" && p.provider === "HMS_CARD"
+    (p: any) => p.kind === "CARD" && p.provider === "HMS_CARD"
   )
 
   return (
