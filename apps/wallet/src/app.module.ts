@@ -5,11 +5,7 @@ import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 // import { validateWalletEnv } from './config/env.validation';
-import {
-  AuthorizationModule,
-  authorizationSchema,
-  JwtAuthGuard,
-} from '@app/authorization';
+import { AuthorizationModule, authorizationSchema, JwtAuthGuard } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { PaymentController } from './controllers/payment.controller';
 import { PointController } from './controllers/point.controller';
@@ -116,7 +112,6 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     TaxInvoiceAdminController,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
     PaymentService,
     IntentService,
     PaymentProfileService,
