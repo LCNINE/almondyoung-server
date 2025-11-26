@@ -483,12 +483,23 @@ export class NotificationDispatcherService {
     }
     // 2) 템플릿이 있으면 템플릿 사용
     else if (template?.contents) {
-      // contents 구조: { EMAIL: { ko: {...}, en: {...} }, KAKAO: {...}, ... }
-      const channelContents = template.contents[channel] as any | undefined;
-      const langBlock =
-        channelContents?.[language] ??
-        channelContents?.['ko'] ??
-        channelContents?.['en'];
+      // contents 구조: { ko: { EMAIL: {...}, KAKAO: {...} }, en: { EMAIL: {...} } }
+      // 또는 { EMAIL: { ko: {...}, en: {...} }, KAKAO: {...} } (레거시 구조 지원)
+      let langBlock: any | undefined;
+
+      // 먼저 새로운 구조 시도: contents.ko.EMAIL
+      const langContents = template.contents[language] || template.contents['ko'] || template.contents['en'];
+      if (langContents && langContents[channel]) {
+        langBlock = langContents[channel];
+      }
+      // 레거시 구조 시도: contents.EMAIL.ko
+      else {
+        const channelContents = template.contents[channel] as any | undefined;
+        langBlock =
+          channelContents?.[language] ??
+          channelContents?.['ko'] ??
+          channelContents?.['en'];
+      }
 
       if (langBlock) {
         subject = langBlock.subject;
