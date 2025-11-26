@@ -2,10 +2,13 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { EventsModule } from '@app/events';
+import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { NotificationModule } from './notification.module';
 import { AllExceptionsFilter } from './shared/filters/exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 import * as bodyParser from 'body-parser';
+import * as os from 'os';
 
 async function bootstrap() {
     const app = await NestFactory.create(NotificationModule, {
@@ -85,6 +88,50 @@ async function bootstrap() {
             persistAuthorization: true,
         },
     });
+
+    // Kafka Consumer 연결
+    function createKafkaConfig() {
+        const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;
+        if (!prefix) {
+            throw new Error('KAFKA_CLIENT_ID_PREFIX 환경변수가 필요합니다.');
+        }
+
+        const brokers = process.env.KAFKA_BROKERS;
+        if (!brokers) {
+            throw new Error('KAFKA_BROKERS 환경변수가 필요합니다.');
+        }
+
+        return {
+            clientId: `${prefix}_${os.hostname()}`,
+            brokers: brokers.split(','),
+            retry: {
+                retries: 5,
+                initialRetryTime: 300,
+                multiplier: 2,
+                maxRetryTime: 30000,
+            },
+            ssl: process.env.KAFKA_API_KEY ? true : false,
+            sasl:
+                process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
+                    ? {
+                        mechanism: 'plain' as const,
+                        username: process.env.KAFKA_API_KEY,
+                        password: process.env.KAFKA_API_SECRET,
+                    }
+                    : undefined,
+        };
+    }
+
+    const consumerOptions = EventsModule.forConsumer({
+        streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
+        groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
+        kafka: createKafkaConfig(),
+    });
+
+    app.connectMicroservice(consumerOptions);
+    await app.startAllMicroservices();
+
+    console.log('🚀 Kafka Consumer 연결 완료 (USER_STREAM, ORDER_STREAM, PAYMENT_STREAM 구독)');
 
     const port = process.env.PORT ?? 5001;
     await app.listen(port);
