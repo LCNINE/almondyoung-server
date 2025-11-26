@@ -24,7 +24,7 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
     SharedModule,
     EventsModule.forConsumerModule({
       streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
-      groupId: 'notification-consumer',
+      groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
       enableAutoDLQ: true,
       validation: {
         validateOnConsume: false, // HTTP 요청과 충돌 방지를 위해 비활성화
