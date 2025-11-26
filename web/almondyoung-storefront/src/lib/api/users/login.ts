@@ -6,9 +6,10 @@ import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { transferCart } from "@lib/api/medusa/customer"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { medusaSignin } from "../medusa/signin"
+import { redirect } from "next/navigation"
 
 type LoginState =
-  | { success: true; redirectTo: string }
+  | { success: true }
   | { success: false; error: string; code?: string }
 
 export async function login(
@@ -38,11 +39,6 @@ export async function login(
         resultData
       )
     }
-
-    console.log("[LOGIN] User service login success", {
-      hasAccessToken: !!resultData.data?.accessToken,
-      hasRefreshToken: !!resultData.data?.refreshToken,
-    })
 
     // 응답에서 토큰을 받아서 쿠키로 설정
     // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)
@@ -125,10 +121,5 @@ export async function login(
   // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
-
-  // redirect 대신 성공 상태와 리다이렉트 경로 반환
-  return {
-    success: true,
-    redirectTo: targetPath,
-  }
+  redirect(targetPath)
 }

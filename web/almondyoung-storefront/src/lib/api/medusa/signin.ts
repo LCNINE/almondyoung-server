@@ -34,6 +34,8 @@ export async function medusaSignin() {
 
     const result = await res.json()
 
+    console.log("[MEDUSA_SIGNIN] result:", result)
+
     setMedusaAuthToken(result.token)
 
     const customerCacheTag = await getCacheTag("customers")
