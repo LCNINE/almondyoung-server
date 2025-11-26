@@ -14,12 +14,16 @@ export const fetchMe = cache(async (): Promise<UserDetail> => {
     },
   })
 
+  console.log("response::::::::", response)
+
   // 라우트 핸들러에서 401 에러를 반환하면 error.tsx로 전파
   if (!response.ok) {
     const errorData = await response.json()
+    console.log("errorData::::::::", errorData)
     throw new Error(errorData.error || `Failed to fetch me: ${response.status}`)
   }
 
   const data = await response.json()
+  console.log("data::::::::", data)
   return data.data
 })
