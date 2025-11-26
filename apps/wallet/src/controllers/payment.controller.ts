@@ -96,6 +96,7 @@ export class PaymentController {
   ) {}
 
   @Post('intents')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '결제 의도(Intent) 생성',
     description: `새로운 결제 의도를 생성합니다. 
@@ -236,6 +237,7 @@ export class PaymentController {
   }
 
   @Post('intents/:intentId/authorize')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: '결제 승인 (Authorize)',
     description: `결제 수단을 승인하여 결제 가능한 상태로 만듭니다.
@@ -301,7 +303,6 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
-  @UseGuards(JwtAuthGuard)
   async authorizePayment(
     @Param('intentId') intentId: string,
     @Body(new ZodValidationPipe(AuthorizePaymentSchema))
