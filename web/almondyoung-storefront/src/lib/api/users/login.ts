@@ -5,11 +5,10 @@ import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { transferCart } from "@lib/api/medusa/customer"
 import { revalidatePath, revalidateTag } from "next/cache"
-import { redirect } from "next/navigation"
 import { medusaSignin } from "../medusa/signin"
 
 type LoginState =
-  | { success: true }
+  | { success: true; redirectTo: string }
   | { success: false; error: string; code?: string }
 
 export async function login(
@@ -119,5 +118,10 @@ export async function login(
   // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
-  redirect(targetPath)
+
+  // redirect 대신 성공 상태와 리다이렉트 경로 반환
+  return {
+    success: true,
+    redirectTo: targetPath,
+  }
 }

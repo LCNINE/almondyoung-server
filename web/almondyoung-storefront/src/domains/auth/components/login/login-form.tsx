@@ -31,38 +31,44 @@ export function LoginForm() {
   const [state, formAction, isPending] = useActionState(login, null)
 
   useEffect(() => {
-    // 로그인 성공 시 redirect가 throw되므로 state는 에러일 때만 업데이트됨
-    if (state && !state.success) {
-      if (state?.code === "INVALID_CREDENTIALS") {
-        form.setError("loginId", {})
-        form.setError("password", {
-          message: "아이디 또는 비밀번호를 확인해주세요",
-        })
+    if (!state) return
 
-        return
-      } else if (state?.code === "UNAUTHORIZED") {
-        form.setError("loginId", {})
-        form.setError("password", {
-          message: "아이디 또는 비밀번호가 일치하지 않습니다",
-        })
-
-        return
-      } else if (state?.code === "TOO_MANY_ATTEMPTS") {
-        toast.error("너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요")
-
-        return
-      } else if (state?.code === "NETWORK_ERROR") {
-        toast.error("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요")
-
-        return
-      } else if (state?.code === "TOKEN_PROCESS_ERROR") {
-        toast.error("인증 토큰 처리 중 오류가 발생했습니다")
-
-        return
-      }
-
-      toast.error(`${state?.error}`)
+    // 로그인 성공 시 리다이렉트
+    if (state.success) {
+      window.location.href = state.redirectTo
+      return
     }
+
+    // 로그인 실패 처리
+    if (state?.code === "INVALID_CREDENTIALS") {
+      form.setError("loginId", {})
+      form.setError("password", {
+        message: "아이디 또는 비밀번호를 확인해주세요",
+      })
+
+      return
+    } else if (state?.code === "UNAUTHORIZED") {
+      form.setError("loginId", {})
+      form.setError("password", {
+        message: "아이디 또는 비밀번호가 일치하지 않습니다",
+      })
+
+      return
+    } else if (state?.code === "TOO_MANY_ATTEMPTS") {
+      toast.error("너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요")
+
+      return
+    } else if (state?.code === "NETWORK_ERROR") {
+      toast.error("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요")
+
+      return
+    } else if (state?.code === "TOKEN_PROCESS_ERROR") {
+      toast.error("인증 토큰 처리 중 오류가 발생했습니다")
+
+      return
+    }
+
+    toast.error(`${state?.error}`)
   }, [state])
 
   const form = useForm<SigninSchema>({

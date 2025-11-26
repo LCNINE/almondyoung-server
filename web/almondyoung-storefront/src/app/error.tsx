@@ -11,6 +11,11 @@ export default function Error({
   reset: () => void
 }) {
   console.error("error::::::::", error)
+  console.error("error.message:", error.message)
+  console.error("error.digest:", error.digest)
+  console.error("error.name:", error.name)
+  console.error("error.stack:", error.stack)
+
   const router = useRouter()
   const pathname = usePathname()
   const hasTriedRef = useRef(false)
@@ -71,6 +76,13 @@ export default function Error({
           const currentUrl = encodeURIComponent(pathname)
           window.location.href = `/kr/login?redirect_to=${currentUrl}`
         }
+      } else {
+        // TOKEN_EXPIRED가 아닌 다른 에러인 경우
+        console.error("Unexpected error in Error boundary:", {
+          message: error.message,
+          digest: error.digest,
+          name: error.name,
+        })
       }
     }
 
