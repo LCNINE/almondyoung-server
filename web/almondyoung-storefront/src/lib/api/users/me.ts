@@ -2,8 +2,9 @@
 
 import { getCookies } from "@lib/data/cookies"
 import { UserDetail } from "domains/auth/types"
+import { cache } from "react"
 
-export const fetchMe = async (): Promise<UserDetail> => {
+export const fetchMe = cache(async (): Promise<UserDetail> => {
   const cookieString = await getCookies()
 
   const response = await fetch(`${process.env.APP_URL}/api/users/detail`, {
@@ -21,4 +22,4 @@ export const fetchMe = async (): Promise<UserDetail> => {
 
   const data = await response.json()
   return data.data
-}
+})
