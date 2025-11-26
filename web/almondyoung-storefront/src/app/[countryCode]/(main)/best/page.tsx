@@ -8,6 +8,7 @@ import RankedKeywordList, {
   type Keyword,
 } from "domains/best/components/ranked-keyword-list"
 import RankedHeader from "domains/best/components/ranked-header"
+import { WithHeaderLayout } from "@components/layout"
 
 export default function BestPage() {
   const keywords: Keyword[] = [
@@ -159,8 +160,8 @@ export default function BestPage() {
       optionMeta: {
         isSingle: true,
       },
-          rating: 4.5,
-          reviewCount: 128,
+      rating: 4.5,
+      reviewCount: 128,
       defaultSku: 11,
       stock: {
         available: 3,
@@ -178,8 +179,8 @@ export default function BestPage() {
       optionMeta: {
         isSingle: true,
       },
-          rating: 4.5,
-          reviewCount: 128,
+      rating: 4.5,
+      reviewCount: 128,
       defaultSku: 12,
       stock: {
         available: 5,
@@ -197,8 +198,8 @@ export default function BestPage() {
       optionMeta: {
         isSingle: true,
       },
-          rating: 4.5,
-          reviewCount: 128,
+      rating: 4.5,
+      reviewCount: 128,
       defaultSku: 13,
       stock: {
         available: 12,
@@ -216,8 +217,8 @@ export default function BestPage() {
       optionMeta: {
         isSingle: true,
       },
-          rating: 4.5,
-          reviewCount: 128,
+      rating: 4.5,
+      reviewCount: 128,
       defaultSku: 14,
       stock: {
         available: 7,
@@ -235,8 +236,8 @@ export default function BestPage() {
       optionMeta: {
         isSingle: true,
       },
-          rating: 4.5,
-          reviewCount: 128,
+      rating: 4.5,
+      reviewCount: 128,
       defaultSku: 15,
       stock: {
         available: 4,
@@ -245,38 +246,50 @@ export default function BestPage() {
   ]
 
   return (
-    <div className="min-h-screen">
-      {/* Main Content */}
-      <main className="container mx-auto max-w-[1100px] px-4 py-6 md:px-[40px]">
-        {/* 많이본 best */}
-        <section className="rounded-lg border-t border-gray-200 bg-white py-8">
-          <RankedHeader title="BEST ITEMS" />
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {liveItems.map((item) => (
-              <RankProductCard key={item.id} product={item} rank={item.rank} />
-            ))}
-          </div>
-        </section>
+    <WithHeaderLayout
+      config={{
+        showDesktopHeader: true,
+        showMobileHeader: true,
+        mobileSubBackHeaderTitle: "BEST",
+      }}
+    >
+      <div className="min-h-screen">
+        {/* Main Content */}
+        <main className="container mx-auto max-w-[1100px] px-4 py-6 md:px-[40px]">
+          {/* 많이본 best */}
+          <section className="rounded-lg border-t border-gray-200 bg-white py-8">
+            <RankedHeader title="BEST ITEMS" />
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {liveItems.map((item) => (
+                <RankProductCard
+                  key={item.id}
+                  product={item}
+                  rank={item.rank}
+                />
+              ))}
+            </div>
+          </section>
 
-        <section className="my-8 rounded-lg bg-white">
-          <RankedHeader title="BEST BRAND" />
-          <RankedKeywordList keywords={keywords} />
-        </section>
+          <section className="my-8 rounded-lg bg-white">
+            <RankedHeader title="BEST BRAND" />
+            <RankedKeywordList keywords={keywords} />
+          </section>
 
-        {/* Best Keyword Section */}
-        <section className="my-8 rounded-lg bg-white">
-          <RankedHeader title="BEST KEYWORD" />
-          <RankedKeywordList keywords={keywords} />
-        </section>
-      </main>
+          {/* Best Keyword Section */}
+          <section className="my-8 rounded-lg bg-white">
+            <RankedHeader title="BEST KEYWORD" />
+            <RankedKeywordList keywords={keywords} />
+          </section>
+        </main>
 
-      {/* Scroll to Top Button */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        className="fixed right-8 bottom-8 rounded-full border bg-white p-3 shadow-lg hover:bg-gray-50"
-      >
-        <ChevronUp className="h-5 w-5" />
-      </button>
-    </div>
+        {/* Scroll to Top Button */}
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed right-8 bottom-8 rounded-full border bg-white p-3 shadow-lg hover:bg-gray-50"
+        >
+          <ChevronUp className="h-5 w-5" />
+        </button>
+      </div>
+    </WithHeaderLayout>
   )
 }
