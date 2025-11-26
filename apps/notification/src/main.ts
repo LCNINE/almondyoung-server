@@ -90,6 +90,12 @@ async function bootstrap() {
         },
     });
 
+    // YAML 문서 charset 헤더 설정 (Express)
+    app.use('/api/docs.yaml', (req, res, next) => {
+        res.setHeader('Content-Type', 'application/x-yaml; charset=utf-8');
+        next();
+    });
+
     // Kafka Consumer 연결
     function createKafkaConfig() {
         const prefix = process.env.KAFKA_CLIENT_ID_PREFIX;

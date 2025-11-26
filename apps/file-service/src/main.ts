@@ -109,6 +109,14 @@ async function bootstrap() {
     },
   });
 
+  // YAML 문서 charset 헤더 설정
+  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
+    if (request.url === '/docs.yaml') {
+      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+    }
+    done();
+  });
+
   // Railway는 PORT 환경변수를 제공하므로 우선 사용
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
