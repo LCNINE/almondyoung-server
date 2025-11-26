@@ -1,7 +1,6 @@
 "use client"
 
 import { CustomButton } from "@components/common/custom-buttons"
-import { USER_SERVICE_BASE_URL } from "@lib/api/api.config"
 import Image from "next/image"
 
 export function KakaoLoginBtn() {
