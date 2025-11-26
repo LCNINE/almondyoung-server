@@ -1,5 +1,5 @@
 // apps/notification/src/dispatcher/services/notification-dispatcher.service.ts
-import { Injectable, Logger, NotFoundException, BadRequestException, Optional, Inject } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { DbService, InjectTypedDb } from '@app/db';
@@ -43,7 +43,7 @@ export class NotificationDispatcherService {
     @InjectTypedDb<typeof notificationTables>() private readonly db: DbService<typeof notificationTables>,
     @Optional() @InjectQueue('notification') private readonly notificationQueue: Queue | null,
     private readonly variableMapper: TemplateVariableMapperService,
-    @Optional() @Inject(ProviderManagerService) private readonly providerManager: ProviderManagerService | null,
+    @Optional() private readonly providerManager: ProviderManagerService | null,
   ) { }
 
   /**
@@ -247,12 +247,17 @@ export class NotificationDispatcherService {
         .where(eq(notifications.notificationId, notificationId));
 
       // payload에서 사용자 정보 추출
-      const userProfile: UserProfile = payload?.userProfile || {
-        userId: payload?.userId || '',
-        email: payload?.email,
-        phoneNumber: payload?.phoneNumber,
-        pushToken: payload?.pushToken,
-        name: payload?.name,
+      // 이벤트 payload에서 직접 정보를 가져오거나, notification 레코드에서 가져옴
+      const notification = await this.db.db.query.notifications.findFirst({
+        where: eq(notifications.notificationId, notificationId),
+      });
+
+      const userProfile: UserProfile = {
+        userId: notification?.userId || payload?.userId || '',
+        email: payload?.email || notification?.payload?.email,
+        phoneNumber: payload?.phoneNumber || notification?.payload?.phoneNumber,
+        pushToken: payload?.pushToken || notification?.payload?.pushToken,
+        name: payload?.name || notification?.payload?.name,
       };
 
       const contact = getContactForChannel(userProfile, channel);
