@@ -131,6 +131,14 @@ async function bootstrap() {
     yamlDocumentUrl: '/docs.yaml',
   });
 
+  // YAML 문서 charset 헤더 설정
+  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
+    if (request.url === '/docs.yaml') {
+      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+    }
+    done();
+  });
+
   await app.startAllMicroservices();
 
   // Railway는 PORT 환경변수를 제공하므로 우선 사용

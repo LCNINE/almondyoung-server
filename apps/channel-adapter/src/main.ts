@@ -95,6 +95,14 @@ async function bootstrap() {
     },
   });
 
+  // YAML 문서 charset 헤더 설정
+  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
+    if (request.url === '/docs.yaml') {
+      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+    }
+    done();
+  });
+
   // 파일 업로드 등 Fastify 설정
   await app.register(require('@fastify/multipart'), {
     attachFieldsToBody: false,

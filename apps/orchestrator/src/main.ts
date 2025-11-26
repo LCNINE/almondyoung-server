@@ -26,6 +26,12 @@ async function bootstrap() {
     yamlDocumentUrl: '/api.yaml',
   });
 
+  // YAML 문서 charset 헤더 설정 (Express)
+  app.use('/api.yaml', (req, res, next) => {
+    res.setHeader('Content-Type', 'application/x-yaml; charset=utf-8');
+    next();
+  });
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 
