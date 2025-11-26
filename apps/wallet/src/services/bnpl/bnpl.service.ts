@@ -149,24 +149,34 @@ export class BnplService {
 
   /**
    * BNPL 내역 조회
+   * @param userId 사용자 ID
+   * @param year 연도 (optional, 없으면 전체 내역)
+   * @param month 월 (optional, 없으면 전체 내역)
    */
-  async getBnplHistory(userId: string, year: number, month: number) {
+  async getBnplHistory(userId: string, year?: number, month?: number) {
     const account = await this.accountReader.findByUserId(userId);
     if (!account) {
       throw new Error('BNPL account not found');
     }
 
-    const events = await this.repo.findEventsByAccountIdAndPeriod(
-      account.id,
-      year,
-      month,
-    );
+    let events: BnplEvent[];
+    if (year !== undefined && month !== undefined) {
+      // 특정 월 조회
+      events = await this.repo.findEventsByAccountIdAndPeriod(
+        account.id,
+        year,
+        month,
+      );
+    } else {
+      // 전체 내역 조회
+      events = await this.repo.findEventsByAccountId(account.id);
+    }
 
     const totalAmount = events.reduce((sum, event) => sum + event.amount, 0);
 
     return {
-      year,
-      month,
+      year: year ?? null,
+      month: month ?? null,
       totalAmount,
       events: events.map((event) => ({
         id: event.id,
