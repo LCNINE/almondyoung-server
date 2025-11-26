@@ -18,12 +18,10 @@ const ErrorResponseSchema = z.object({
 
 // Intent 관련 스키마
 export const CreateIntentSchema = z.object({
-  customerId: z.string().min(1, '고객 ID는 필수입니다.'),
-  originalAmount: z.number().int().positive('금액은 양수여야 합니다.'),
-  discountAmount: z.number().int().positive('할인 금액은 양수여야 합니다.'),
-  type: z.enum(['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE'], {
-    error: '유효하지 않은 결제 타입입니다.',
-  }),
+  customerId: z.string({ message: '고객 ID는 필수입니다.' }).min(1),
+  originalAmount: z.number({ message: '금액은 양수여야 합니다.' }).int().positive(),
+  discountAmount: z.number({ message: '할인 금액은 0 이상이어야 합니다.' }).int().min(0),
+  type: z.enum(['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE'], { message: '유효하지 않은 결제 타입입니다.' }),
 });
 
 const IntentResponseSchema = z.object({
@@ -43,10 +41,10 @@ const IntentResponseSchema = z.object({
 // 결제 승인 관련 스키마
 export const AuthorizePaymentSchema = z
   .object({
-    authParams: z.record(z.string(), z.string()).optional(),
-    profileId: z.string().optional(),
-    provider: z.enum(['TOSS', 'HMS_CARD', 'HMS_BNPL']),
-    usePoints: z.number().int().nonnegative().optional(),
+    authParams: z.record(z.string(), z.string(), { message: '유효하지 않은 인증 파라미터입니다.' }).optional(),
+    profileId: z.string({ message: '프로필 ID는 필수입니다.' }).optional(),
+    provider: z.enum(['TOSS', 'HMS_CARD', 'HMS_BNPL'], { message: '유효하지 않은 결제 타입입니다.' }),
+    usePoints: z.number({ message: '포인트는 양수여야 합니다.' }).int().nonnegative().optional(),
   })
   .refine(
     (data) => {
