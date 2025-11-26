@@ -1,4 +1,4 @@
-import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
 import { appConfig } from "@lib/app-config"
 import { setTokenCookies } from "@lib/data/cookies"
@@ -45,9 +45,10 @@ export async function GET(request: NextRequest) {
 
     setTokenCookies(accessToken, refreshToken)
 
-    // 이미 회원인지 체크
-    const customer = await retrieveCustomer()
-    if (customer) {
+    // 이미 메두사 회원인지 체크
+    const medusaSigninResponse = await medusaSignin()
+
+    if (medusaSigninResponse.success) {
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
 
@@ -92,13 +93,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 메두사 회원 로그인 처리
+    await medusaSignin()
+
     // 콜백 페이지로 리다이렉트
-    return NextResponse.redirect(
-      new URL(
-        `/callback/signup/process?redirect_to=${encodeURIComponent(redirectTo)}`,
-        request.url
-      )
-    )
+    return NextResponse.redirect(new URL(redirectTo, request.url))
   } catch (error) {
     console.error("Signup callback error:", error)
     return NextResponse.redirect(

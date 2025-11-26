@@ -75,7 +75,7 @@ export const downloadDigitalAssetApi = async (
 
   if (!res.ok) {
     const errorData = await res.json()
-    // console.log("errorData:", errorData)
+
     throw new Error("파일 다운로드 실패")
   }
 
