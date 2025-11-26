@@ -32,7 +32,7 @@ export class UsersService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectStreamPublisher('users.events.v1')
     private readonly eventPublisher: StreamPublisher<UserEvents>,
-  ) {}
+  ) { }
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
   }
@@ -179,9 +179,10 @@ export class UsersService {
   }
 
   // 닉네임으로 사용자 찾기
-  async findUserByNickname(nickname: string): Promise<schema.User | null> {
+  async findUserByNickname(nickname: string, tx?: DbTransaction): Promise<schema.User | null> {
+    const client = this.getClient(tx);
     try {
-      const [users] = await this.dbService.db
+      const [users] = await client
         .select()
         .from(schema.users)
         .where(eq(schema.users.nickname, nickname))
@@ -196,9 +197,10 @@ export class UsersService {
   }
 
   // 로그인 ID로 사용자 찾기
-  async findUserByLoginId(id: string): Promise<schema.User | null> {
+  async findUserByLoginId(id: string, tx?: DbTransaction): Promise<schema.User | null> {
+    const client = this.getClient(tx);
     try {
-      const [users] = await this.dbService.db
+      const [users] = await client
         .select()
         .from(schema.users)
         .where(eq(schema.users.loginId, id))
@@ -319,9 +321,9 @@ export class UsersService {
         shop: extendedInfo.shop,
         profile: extendedInfo.profile
           ? {
-              ...extendedInfo.profile,
-              address: extendedInfo.profile.address as AddressDto | null,
-            }
+            ...extendedInfo.profile,
+            address: extendedInfo.profile.address as AddressDto | null,
+          }
           : null,
       };
     } catch (error) {
