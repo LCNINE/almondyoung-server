@@ -1,52 +1,241 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import {
+  FULFILLMENT_STREAM,
+  FulfillmentEvents,
+  FulfillmentCreatedPayload,
+  FulfillmentReadyPayload,
+  FulfillmentLabeledPayload,
+  FulfillmentShippedPayload,
+  FulfillmentDeliveredPayload,
+  FulfillmentCancelledPayload,
+  FulfillmentReturnedPayload,
+} from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
-import { eq, and, lte, asc } from 'drizzle-orm';
+import { eq, and, lte, sql } from 'drizzle-orm';
 
+type FulfillmentPayload =
+  | FulfillmentCreatedPayload
+  | FulfillmentReadyPayload
+  | FulfillmentLabeledPayload
+  | FulfillmentShippedPayload
+  | FulfillmentDeliveredPayload
+  | FulfillmentCancelledPayload
+  | FulfillmentReturnedPayload;
 
+/**
+ * OutboxDispatcherService
+ *
+ * 책임: Outbox 테이블의 이벤트를 Kafka로 발행
+ * - Cron으로 주기적 폴링 (10초마다)
+ * - FOR UPDATE SKIP LOCKED로 동시성 제어
+ * - 발행 실패 시 재시도 (최대 5회)
+ */
 @Injectable()
-export class OutboxDispatcherService {
+export class OutboxDispatcherService implements OnModuleInit {
   private readonly logger = new Logger(OutboxDispatcherService.name);
+  private isProcessing = false;
+
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-  ) {}
+    @InjectStreamPublisher(FULFILLMENT_STREAM.topic.topic)
+    private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
+  ) { }
 
-  async dispatchBatch(limit = 100) {
-    // TODO: 이벤트 시스템 구축 시 활성화
-    // 현재는 outbox에 저장만 하고 발행하지 않음
-    this.logger.debug('OutboxDispatcher is currently disabled. Events are stored but not published.');
+  onModuleInit() {
+    this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅');
+  }
 
-    const now = new Date();
-    const rows = await this.db.db.select()
-      .from(wmsTables.outboxEvents)
-      .where(and(
-        eq(wmsTables.outboxEvents.status, 'pending'),
-        lte(wmsTables.outboxEvents.nextAttemptAt, now)
-      ))
-      .orderBy(asc(wmsTables.outboxEvents.nextAttemptAt))
-      .limit(limit);
-
-    if (rows.length > 0) {
-      this.logger.log(`Found ${rows.length} pending outbox events (not publishing yet)`);
+  /**
+   * Cron: 10초마다 실행
+   *
+   * PENDING 상태의 이벤트를 조회하여 Kafka로 발행
+   */
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async dispatch() {
+    if (this.isProcessing) {
+      this.logger.debug('이전 dispatch 작업 진행 중, 건너뜀');
+      return;
     }
 
-    // 나중에 이벤트 시스템 구축 시 아래 주석 해제
-    // for (const ev of rows) {
-    //   try {
-    //     await this.publisher.publishEvent({
-    //       eventType: ev.eventType as any,
-    //       aggregateId: ev.aggregateId,
-    //       payload: ev.payload as any,
-    //       metadata: { partitionKey: ev.partitionKey }
-    //     });
-    //     await this.db.db.update(wmsTables.outboxEvents).set({ status: 'published', publishedAt: new Date(), attempts: ev.attempts + 1 }).where(eq(wmsTables.outboxEvents.id, ev.id));
-    //   } catch (err) {
-    //     this.logger.warn(`Failed to publish ${ev.id}: ${String(err)}`);
-    //     const next = new Date(Date.now() + Math.min(60000, Math.pow(2, Math.min(6, ev.attempts)) * 1000));
-    //     await this.db.db.update(wmsTables.outboxEvents).set({ status: 'pending', attempts: ev.attempts + 1, nextAttemptAt: next }).where(eq(wmsTables.outboxEvents.id, ev.id));
-    //   }
-    // }
+    this.isProcessing = true;
+
+    try {
+      const batchSize = 100;
+      let processedCount = 0;
+
+      // FOR UPDATE SKIP LOCKED로 동시성 제어
+      const events = await this.db.db.transaction(async (tx) => {
+        const pendingEvents = await tx.execute<{
+          id: string;
+          event_type: string;
+          aggregate_type: string;
+          aggregate_id: string;
+          partition_key: string;
+          payload: Record<string, unknown>;
+          attempts: number;
+        }>(sql`
+          SELECT 
+            id, 
+            event_type, 
+            aggregate_type, 
+            aggregate_id, 
+            partition_key, 
+            payload,
+            attempts
+          FROM ${wmsTables.outboxEvents}
+          WHERE status = 'pending'
+            AND next_attempt_at <= NOW()
+          ORDER BY created_at ASC
+          LIMIT ${batchSize}
+          FOR UPDATE SKIP LOCKED
+        `);
+
+        if (pendingEvents.length === 0) {
+          return [];
+        }
+
+        // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
+        const eventIds = pendingEvents.map((e) => e.id);
+        await tx
+          .update(wmsTables.outboxEvents)
+          .set({
+            attempts: sql`${wmsTables.outboxEvents.attempts} + 1`,
+          })
+          .where(sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`);
+
+        return pendingEvents;
+      });
+
+      if (events.length === 0) {
+        return;
+      }
+
+      this.logger.log(`📤 Outbox 이벤트 발행 시작: ${events.length}개`);
+
+      for (const event of events) {
+        try {
+          await this.publishEvent(event);
+          processedCount++;
+        } catch (error) {
+          this.logger.error(
+            `이벤트 발행 실패: ${event.id} (${event.event_type})`,
+            error,
+          );
+        }
+      }
+
+      this.logger.log(
+        `✅ Outbox 이벤트 발행 완료: ${processedCount}/${events.length}개`,
+      );
+    } catch (error) {
+      this.logger.error('Outbox dispatch 실행 중 오류:', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * 개별 이벤트 처리
+   */
+  private async publishEvent(event: {
+    id: string;
+    event_type: string;
+    aggregate_type: string;
+    aggregate_id: string;
+    partition_key: string;
+    payload: Record<string, unknown>;
+    attempts: number;
+  }) {
+    try {
+      // Fulfillment 이벤트 발행
+      await this.fulfillmentPublisher.publishEvent({
+        eventType: event.event_type as keyof FulfillmentEvents,
+        aggregateId: event.aggregate_id,
+        payload: event.payload as unknown as FulfillmentPayload,
+        metadata: { partitionKey: event.partition_key },
+      });
+
+      // 성공 → published 상태로 변경
+      await this.db.db
+        .update(wmsTables.outboxEvents)
+        .set({
+          status: 'published',
+          publishedAt: new Date(),
+        })
+        .where(eq(wmsTables.outboxEvents.id, event.id));
+
+      this.logger.debug(`✅ Event ${event.id}: ${event.event_type}`);
+    } catch (error) {
+      const newAttempts = event.attempts + 1;
+      const isFinalFailure = newAttempts >= 5;
+
+      await this.db.db
+        .update(wmsTables.outboxEvents)
+        .set({
+          status: isFinalFailure ? 'failed' : 'pending',
+          attempts: newAttempts,
+          nextAttemptAt: isFinalFailure
+            ? undefined
+            : this.calculateNextAttempt(newAttempts),
+        })
+        .where(eq(wmsTables.outboxEvents.id, event.id));
+
+      this.logger.error(
+        `❌ Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
+        error instanceof Error ? error.message : String(error),
+      );
+
+      if (isFinalFailure) {
+        this.logger.error(
+          `🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * 재시도 간격 계산 (Exponential Backoff)
+   *
+   * 1차: 10초 후
+   * 2차: 30초 후
+   * 3차: 1분 후
+   * 4차: 5분 후
+   */
+  private calculateNextAttempt(attempts: number): Date {
+    const delays = [10, 30, 60, 300]; // 초 단위
+    const delay = delays[Math.min(attempts - 1, delays.length - 1)];
+    return new Date(Date.now() + delay * 1000);
+  }
+
+  /**
+   * 수동 재시도 (관리자용)
+   *
+   * FAILED 상태의 이벤트를 다시 PENDING으로 변경
+   */
+  async retryFailedEvents(eventIds?: string[]): Promise<number> {
+    const result = await this.db.db
+      .update(wmsTables.outboxEvents)
+      .set({
+        status: 'pending',
+        attempts: 0,
+        nextAttemptAt: new Date(),
+      })
+      .where(
+        eventIds
+          ? and(
+            eq(wmsTables.outboxEvents.status, 'failed'),
+            sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`,
+          )
+          : eq(wmsTables.outboxEvents.status, 'failed'),
+      )
+      .returning({ id: wmsTables.outboxEvents.id });
+
+    this.logger.log(`수동 재시도: ${result.length}개 이벤트 재활성화`);
+    return result.length;
   }
 }
-
-

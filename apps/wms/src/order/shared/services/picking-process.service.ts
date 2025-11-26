@@ -15,8 +15,8 @@ export interface PickingOperation {
   foiDetails: Array<{
     foiId: string;
     fulfillmentOrderId: string;
-    salesOrderId: string;
-    salesOrderLineId: string;
+    salesOrderId: string | null;
+    salesOrderLineId: string | null;
     requiredQty: number;
     pickedQty: number;
     remainingQty: number;

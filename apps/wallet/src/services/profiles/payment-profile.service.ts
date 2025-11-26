@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { v4 as uuidv4 } from 'uuid'; // UUID 생성을 위해 라이브러리 사용 (또는 crypto)
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { ProviderRegistry } from '../../providers/provider-registry';
 import {
   PaymentError,
@@ -21,6 +22,7 @@ import { CreateHmsCardProfileSchema } from '../../controllers/payment.controller
 import z from 'zod';
 
 import { HmsBnplRegisterInput } from '../../providers/hms-bnpl.registrar';
+import { BnplService } from '../bnpl/bnpl.service';
 
 // ✨ 해결 2: 헬퍼 함수 정의 추가
 function maskPhone(phone: string): string {
@@ -38,6 +40,8 @@ export class PaymentProfileService {
     private readonly profilesRepo: PaymentProfilesRepository,
     private readonly cmsCardRepo: CmsCardProfilesRepository,
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
+    private readonly configService: ConfigService,
+    private readonly bnplService: BnplService,
   ) {}
 
   // 결제 프로필 목록 조회 (상세 정보 포함)
@@ -94,6 +98,7 @@ export class PaymentProfileService {
             provider: profile.provider,
             status: profile.status,
             name: profile.name,
+            isDefault: profile.isDefault,
             details,
             createdAt: profile.createdAt,
           };
@@ -178,10 +183,19 @@ export class PaymentProfileService {
 
       // 외부 API 호출을 위한 Input 객체 조립
       const memberId = `m_${crypto.randomUUID().substring(0, 18)}`; // ID 생성 전략
+
+      // HMS_CUST_ID 환경 변수 확인
+      const custId = this.configService.get<string>('HMS_CUST_ID');
+      if (!custId) {
+        this.logger.error('❌ HMS_CUST_ID 환경 변수가 설정되지 않았습니다.');
+        throw new PaymentError(
+          'HMS_CUST_ID 환경 변수가 필요합니다. 환경 변수를 확인하세요.',
+        );
+      }
+
       const registerInput: HmsBnplRegisterInput = {
         userId,
-        // custId는 설정(Config)에서 가져오는 것이 좋습니다.
-        custId: 'YOUR_CUST_ID',
+        custId,
         memberId,
         memberName: dto.name ?? dto.payerName,
         payerName: dto.payerName,
@@ -208,7 +222,7 @@ export class PaymentProfileService {
           userId,
           kind: 'BANK_ACCOUNT',
           provider: ProviderType.HMS_BNPL,
-          name: dto.name ?? null,
+          name: dto.name?.trim() || null, // 빈 문자열도 null로 변환
         },
         tx,
       );
@@ -230,6 +244,57 @@ export class PaymentProfileService {
       // 예: await tx.update(...).set({ agreementKey: ext.meta.agreementKey });
 
       await this.profilesRepo.updateStatus(profileId, 'ACTIVE', tx);
+
+      // 🎯 BNPL 계정 생성 (프로필 등록 시 자동 생성)
+      // 기존 계정이 있는지 확인 (트랜잭션 컨텍스트 사용)
+      try {
+        const existingAccount = await this.bnplService.findAccountByUserId(
+          userId,
+          tx,
+        );
+        if (!existingAccount) {
+          // 기본 신용한도는 환경변수에서 가져오거나 기본값 사용
+          const creditLimitEnv = this.configService.get<string>(
+            'BNPL_DEFAULT_CREDIT_LIMIT',
+          );
+          const defaultCreditLimit = creditLimitEnv
+            ? parseInt(creditLimitEnv, 10)
+            : 1000000; // 기본 100만원
+
+          this.logger.log(
+            `🔄 BNPL 계정 자동 생성 시작 - userId: ${userId}, creditLimit: ${defaultCreditLimit}`,
+          );
+
+          const createdAccount = await this.bnplService.createAccount(
+            userId,
+            defaultCreditLimit,
+            tx,
+          );
+
+          this.logger.log(
+            `✅ BNPL 계정 자동 생성 완료 - userId: ${userId}, accountId: ${createdAccount.id}`,
+          );
+        } else {
+          this.logger.log(
+            `ℹ️ BNPL 계정이 이미 존재함 - userId: ${userId}, accountId: ${existingAccount.id}`,
+          );
+        }
+      } catch (accountError) {
+        // 계정 생성 실패는 프로필 등록을 막지 않지만, 로그는 남김
+        const errorMessage =
+          accountError instanceof Error
+            ? accountError.message
+            : String(accountError);
+        this.logger.error(
+          `❌ BNPL 계정 생성 실패 - userId: ${userId}, error: ${errorMessage}`,
+        );
+        // 계정 생성 실패는 프로필 등록을 롤백하지 않음 (프로필은 성공했으므로)
+        // 하지만 경고 로그는 남김
+        this.logger.warn(
+          `⚠️ 프로필은 등록되었지만 BNPL 계정 생성에 실패했습니다. 수동으로 계정을 생성해야 합니다.`,
+        );
+      }
+
       return { profileId, memberId: ext.externalId! };
     });
   }
@@ -302,5 +367,100 @@ export class PaymentProfileService {
       'UNKNOWN_PROVIDER_FOR_PAYLOAD_RESOLUTION',
       `Provider ${providerType} not supported`,
     );
+  }
+
+  /**
+   * 기본 결제 수단 변경
+   * @param userId 사용자 ID
+   * @param profileId 변경할 프로필 ID
+   * @returns 변경된 프로필 정보
+   */
+  async setDefaultProfile(
+    userId: string,
+    profileId: string,
+  ): Promise<{ profileId: string; isDefault: boolean }> {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 프로필 조회 및 소유자 확인
+      const profile = await this.profilesRepo.findById(profileId, tx);
+      if (!profile) {
+        throw new Error('Profile not found');
+      }
+
+      if (profile.userId !== userId) {
+        throw new Error('Profile does not belong to user');
+      }
+
+      // 2. 프로필 상태 확인 (ACTIVE만 허용)
+      if (profile.status !== 'ACTIVE') {
+        throw new Error('Profile status is not ACTIVE');
+      }
+
+      // 3. 삭제 여부 확인 (deletedAt IS NULL만 허용)
+      if (profile.deletedAt !== null) {
+        throw new Error('Profile already deleted');
+      }
+
+      // 4. 🚨 [Critical] HMS_CARD 검증
+      // 멤버십 결제는 HMS_CARD만 사용하므로, 다른 프로바이더는 기본값으로 설정 불가
+      if (profile.provider !== 'HMS_CARD') {
+        throw new Error('Only HMS_CARD can be set as default');
+      }
+
+      // 5. 기본값 변경
+      await this.profilesRepo.setDefault(userId, profileId, tx);
+
+      this.logger.log(
+        `✅ 기본 결제 수단 변경 성공 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      return {
+        profileId,
+        isDefault: true,
+      };
+    });
+  }
+
+  /**
+   * 결제 프로필 삭제 (Soft Delete)
+   * @param userId 사용자 ID
+   * @param profileId 삭제할 프로필 ID
+   * @returns 삭제된 프로필 정보
+   */
+  async deleteProfile(
+    userId: string,
+    profileId: string,
+  ): Promise<{ profileId: string; deletedAt: Date }> {
+    return this.db.db.transaction(async (tx) => {
+      // 1. 프로필 조회 및 소유자 확인
+      const profile = await this.profilesRepo.findById(profileId, tx);
+      if (!profile) {
+        throw new Error('Profile not found');
+      }
+
+      if (profile.userId !== userId) {
+        throw new Error('Profile does not belong to user');
+      }
+
+      // 2. 이미 삭제된 프로필인지 확인
+      if (profile.deletedAt !== null) {
+        throw new Error('Profile already deleted');
+      }
+
+      // 3. 기본값인 경우 isDefault를 false로 해제 (자동 승계 없음)
+      // softDelete 메서드 내부에서 처리됨
+
+      // 4. Soft Delete 수행
+      const deletedAt = new Date();
+      await this.profilesRepo.softDelete(profileId, tx);
+
+      this.logger.log(
+        `✅ 결제 프로필 삭제 성공 - userId: ${userId}, profileId: ${profileId}`,
+      );
+
+      return {
+        profileId,
+        deletedAt,
+      };
+    });
   }
 }

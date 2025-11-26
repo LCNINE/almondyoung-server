@@ -18,23 +18,22 @@ export class FulfillmentReservationsFacade {
   }
 
   /**
-   * FOL 기준 예약 생성 (통합 예약으로 위임)
-   * dto: { fulfillmentOrderLineId: string; quantity: number }
+   * FOI 기준 예약 생성 (통합 예약으로 위임)
    */
-  async reserve(dto: { fulfillmentOrderLineId: string; quantity: number }, tx?: DbTx) {
+  async reserve(dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      const fol = await trx.query.fulfillmentOrderLines.findFirst({
-        where: eq(wmsTables.fulfillmentOrderLines.id, dto.fulfillmentOrderLineId),
+      const foi = await trx.query.fulfillmentOrderItems.findFirst({
+        where: eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId),
       });
-      if (!fol) {
-        throw new BadRequestException(`FOL ${dto.fulfillmentOrderLineId} not found`);
+      if (!foi) {
+        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
       }
 
       const fo = await trx.query.fulfillmentOrders.findFirst({
-        where: eq(wmsTables.fulfillmentOrders.id, fol.fulfillmentOrderId),
+        where: eq(wmsTables.fulfillmentOrders.id, foi.fulfillmentOrderId),
       });
       if (!fo) {
-        throw new BadRequestException(`FO ${fol.fulfillmentOrderId} not found`);
+        throw new BadRequestException(`FO ${foi.fulfillmentOrderId} not found`);
       }
       if (!fo.warehouseId) {
         throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
@@ -43,18 +42,17 @@ export class FulfillmentReservationsFacade {
       const reservation = await this.unified.reserveStock({
         targetType: 'FULFILLMENT_ORDER',
         targetId: fo.id,
-        skuId: fol.skuId,
+        skuId: foi.skuId,
         warehouseId: fo.warehouseId,
         quantity: dto.quantity,
-        // FOL과 FOI 스키마 차이를 고려해 연결은 생략(null). 필요시 추후 매핑 보강
-        reason: 'Fulfillment order line reservation',
+        reason: 'Fulfillment order item reservation',
       }, trx);
 
-      // 호환성: FOL 예약 수량 업데이트
+      // FOI 예약 수량 업데이트
       await trx
-        .update(wmsTables.fulfillmentOrderLines)
-        .set({ reservedQty: (fol.reservedQty || 0) + dto.quantity, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderLines.id, fol.id));
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ reservedQty: (foi.reservedQty || 0) + dto.quantity, updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
 
       // FO 집계 예약 수량 업데이트
       await trx
@@ -62,28 +60,27 @@ export class FulfillmentReservationsFacade {
         .set({ totalReservedQty: (fo.totalReservedQty || 0) + dto.quantity, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
 
-      this.logger.log(`Reserved ${dto.quantity} of SKU ${fol.skuId} for FO ${fo.id} (FOL ${fol.id})`);
+      this.logger.log(`Reserved ${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
       return reservation;
     }, tx);
   }
 
   /**
-   * FOL 기준 예약 해제 (통합 예약에서 해당 FO+SKU 예약을 찾아 해제)
-   * dto: { fulfillmentOrderLineId: string; quantity: number }
+   * FOI 기준 예약 해제 (통합 예약에서 해당 FO+SKU 예약을 찾아 해제)
    */
-  async unreserve(dto: { fulfillmentOrderLineId: string; quantity: number }, tx?: DbTx) {
+  async unreserve(dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      const fol = await trx.query.fulfillmentOrderLines.findFirst({
-        where: eq(wmsTables.fulfillmentOrderLines.id, dto.fulfillmentOrderLineId),
+      const foi = await trx.query.fulfillmentOrderItems.findFirst({
+        where: eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId),
       });
-      if (!fol) {
-        throw new BadRequestException(`FOL ${dto.fulfillmentOrderLineId} not found`);
+      if (!foi) {
+        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
       }
       const fo = await trx.query.fulfillmentOrders.findFirst({
-        where: eq(wmsTables.fulfillmentOrders.id, fol.fulfillmentOrderId),
+        where: eq(wmsTables.fulfillmentOrders.id, foi.fulfillmentOrderId),
       });
       if (!fo) {
-        throw new BadRequestException(`FO ${fol.fulfillmentOrderId} not found`);
+        throw new BadRequestException(`FO ${foi.fulfillmentOrderId} not found`);
       }
 
       // 해당 FO의 예약 중 동일 SKU만 필터
@@ -91,7 +88,7 @@ export class FulfillmentReservationsFacade {
       let remaining = dto.quantity;
       for (const r of reservations) {
         if (remaining <= 0) break;
-        if (r.skuId !== fol.skuId) continue;
+        if (r.skuId !== foi.skuId) continue;
         // 통째로 해제 또는 부분 조정
         if (r.quantity <= remaining) {
           await this.unified.releaseReservation(r.id, trx);
@@ -108,35 +105,34 @@ export class FulfillmentReservationsFacade {
 
       const released = dto.quantity - Math.max(0, remaining);
 
-      // 호환성: FOL/FO 예약 수량 감소
+      // FOI/FO 예약 수량 감소
       await trx
-        .update(wmsTables.fulfillmentOrderLines)
-        .set({ reservedQty: Math.max(0, (fol.reservedQty || 0) - released), updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderLines.id, fol.id));
+        .update(wmsTables.fulfillmentOrderItems)
+        .set({ reservedQty: Math.max(0, (foi.reservedQty || 0) - released), updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
 
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({ totalReservedQty: Math.max(0, (fo.totalReservedQty || 0) - released), updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
 
-      this.logger.log(`Unreserved ${released}/${dto.quantity} of SKU ${fol.skuId} for FO ${fo.id} (FOL ${fol.id})`);
+      this.logger.log(`Unreserved ${released}/${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
     }, tx);
   }
 
   /**
-   * 예약 이전: FOL 간 quantity 이동
-   * dto: { fromFulfillmentOrderLineId: string; toFulfillmentOrderLineId: string; quantity: number }
+   * 예약 이전: FOI 간 quantity 이동
    */
-  async transferReservation(dto: { fromFulfillmentOrderLineId: string; toFulfillmentOrderLineId: string; quantity: number }, tx?: DbTx) {
+  async transferReservation(dto: { fromFulfillmentOrderItemId: string; toFulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      const from = await trx.query.fulfillmentOrderLines.findFirst({
-        where: eq(wmsTables.fulfillmentOrderLines.id, dto.fromFulfillmentOrderLineId),
+      const from = await trx.query.fulfillmentOrderItems.findFirst({
+        where: eq(wmsTables.fulfillmentOrderItems.id, dto.fromFulfillmentOrderItemId),
       });
-      const to = await trx.query.fulfillmentOrderLines.findFirst({
-        where: eq(wmsTables.fulfillmentOrderLines.id, dto.toFulfillmentOrderLineId),
+      const to = await trx.query.fulfillmentOrderItems.findFirst({
+        where: eq(wmsTables.fulfillmentOrderItems.id, dto.toFulfillmentOrderItemId),
       });
       if (!from || !to) {
-        throw new BadRequestException('Invalid FOL id(s)');
+        throw new BadRequestException('Invalid FOI id(s)');
       }
       const fromFo = await trx.query.fulfillmentOrders.findFirst({ where: eq(wmsTables.fulfillmentOrders.id, from.fulfillmentOrderId) });
       const toFo = await trx.query.fulfillmentOrders.findFirst({ where: eq(wmsTables.fulfillmentOrders.id, to.fulfillmentOrderId) });
@@ -144,7 +140,7 @@ export class FulfillmentReservationsFacade {
         throw new BadRequestException('Invalid FO(s) or target FO has no warehouse');
       }
       if (from.skuId !== to.skuId) {
-        throw new BadRequestException('SKU mismatch between from/to FOL');
+        throw new BadRequestException('SKU mismatch between from/to FOI');
       }
 
       // 1) 타겟에 예약 생성 (가용성 체크 포함)
@@ -154,24 +150,24 @@ export class FulfillmentReservationsFacade {
         skuId: to.skuId,
         warehouseId: toFo.warehouseId,
         quantity: dto.quantity,
-        reason: `Transfer from FOL ${from.id} to ${to.id}`,
+        reason: `Transfer from FOI ${from.id} to ${to.id}`,
       }, trx);
 
       // 2) 소스에서 동일 SKU 예약 해제 (수량만큼)
-      await this.unreserve({ fulfillmentOrderLineId: from.id, quantity: dto.quantity }, trx);
+      await this.unreserve({ fulfillmentOrderItemId: from.id, quantity: dto.quantity }, trx);
 
-      // 3) 호환성: FOL/FO 예약 수량 갱신
+      // 3) FOI/FO 예약 수량 갱신
       await trx
-        .update(wmsTables.fulfillmentOrderLines)
+        .update(wmsTables.fulfillmentOrderItems)
         .set({ reservedQty: (to.reservedQty || 0) + dto.quantity, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderLines.id, to.id));
+        .where(eq(wmsTables.fulfillmentOrderItems.id, to.id));
 
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({ totalReservedQty: (toFo.totalReservedQty || 0) + dto.quantity, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, toFo.id));
 
-      this.logger.log(`Transferred ${dto.quantity} from FOL ${from.id} to FOL ${to.id}`);
+      this.logger.log(`Transferred ${dto.quantity} from FOI ${from.id} to FOI ${to.id}`);
     }, tx);
   }
 }

@@ -6,6 +6,7 @@ import {
   processedEvents,
   syncStatuses,
   wmsOrderMappings,
+  pendingOrders,
 } from './schema';
 
 // ===== DATABASE SERVICE 타입 =====
@@ -15,6 +16,7 @@ export const channelAdapterSchema = {
   processedEvents,
   syncStatuses,
   wmsOrderMappings,
+  pendingOrders,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
@@ -51,6 +53,21 @@ export type NewWmsOrderMapping = InferInsertModel<typeof wmsOrderMappings>;
 export type UpdateWmsOrderMapping = Partial<
   Omit<NewWmsOrderMapping, 'id' | 'createdAt'>
 >;
+
+// ===== PENDING ORDERS 타입 (미매핑 주문 계류) =====
+export type PendingOrder = InferSelectModel<typeof pendingOrders>;
+export type NewPendingOrder = InferInsertModel<typeof pendingOrders>;
+export type UpdatePendingOrder = Partial<
+  Omit<NewPendingOrder, 'id' | 'createdAt'>
+>;
+
+export type PendingOrderStatus = 'pending_mapping' | 'processing' | 'completed' | 'failed';
+
+export interface UnmappedItem {
+  channelItemId: string;
+  channelItemName: string;
+  channelOptionName?: string;
+}
 
 export type DataType =
   | 'orders'

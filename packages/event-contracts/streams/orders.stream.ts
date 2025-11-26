@@ -105,11 +105,11 @@ export interface OrderModifiedPayload {
 export interface OrderCancelledPayload {
   orderId: string;
   reason:
-    | 'CUSTOMER_REQUEST'
-    | 'OUT_OF_STOCK'
-    | 'PAYMENT_FAILED'
-    | 'ADMIN_CANCEL'
-    | 'TIMEOUT';
+  | 'CUSTOMER_REQUEST'
+  | 'OUT_OF_STOCK'
+  | 'PAYMENT_FAILED'
+  | 'ADMIN_CANCEL'
+  | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
   cancelledAt: string;
@@ -331,3 +331,29 @@ export const ORDER_STREAM = stream({
 // ===== 타입 추론 =====
 
 export type OrderEvents = typeof ORDER_STREAM.events;
+
+// =============================================================================
+// [LEGACY] Medusa 호환성 코드 - 추후 Medusa 마이그레이션 완료 시 삭제 예정
+// =============================================================================
+// TODO: Medusa에서 ORDER_STREAM을 직접 사용하도록 마이그레이션 후 삭제
+// @see apps/medusa/src/subscribers/order.ts
+// =============================================================================
+
+/**
+ * @deprecated ORDER_STREAM을 직접 사용하세요.
+ * Medusa 마이그레이션 완료 후 삭제 예정입니다.
+ */
+export const ORDER_EVENTS = {
+  ORDER_CREATED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderCreated' as const,
+  },
+  ORDER_CANCELLED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderCancelled' as const,
+  },
+  ORDER_RETURN_REQUESTED: {
+    topic: ORDER_STREAM.topic.topic,
+    messageType: 'OrderReturnRequested' as const,
+  },
+} as const;

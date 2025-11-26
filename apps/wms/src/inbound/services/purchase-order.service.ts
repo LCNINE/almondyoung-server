@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { eq, and, inArray, sql, asc, desc } from 'drizzle-orm';
+import { eq, and, inArray, sql, asc, desc, SQL } from 'drizzle-orm';
 import {
     CreatePurchaseOrderDto,
     UpdatePurchaseOrderStatusDto,
@@ -493,7 +493,7 @@ export class PurchaseOrderService {
         limit = 50,
         offset = 0
         , tx?: DbTx): Promise<PurchaseOrderResponse[]> {
-        const conditions: any[] = [];
+        const conditions: SQL[] = [];
 
         if (status) {
             conditions.push(eq(wmsTables.purchaseOrders.status, status));
@@ -506,7 +506,7 @@ export class PurchaseOrderService {
         const purchaseOrders = await this.inTx(async (trx) => trx
             .select()
             .from(wmsTables.purchaseOrders)
-            .where(conditions.length > 0 ? and(...conditions as [any, ...any[]]) : undefined)
+            .where(conditions.length > 0 ? and(...conditions) : undefined)
             .orderBy(desc(wmsTables.purchaseOrders.createdAt))
             .limit(limit)
             .offset(offset)
@@ -659,7 +659,7 @@ export class PurchaseOrderService {
      * 장바구니 조회
      */
     async getCartItems(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<CartItemResponse[]> {
-        const conditions: any[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
+        const conditions: SQL[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
         if (type) {
             conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
         }
@@ -680,7 +680,7 @@ export class PurchaseOrderService {
             .from(wmsTables.purchaseOrderCart)
             .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
             .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
-            .where(and(...conditions as [any, ...any[]]))
+            .where(and(...conditions))
             .orderBy(desc(wmsTables.purchaseOrderCart.createdAt))
             , tx);
 
@@ -757,14 +757,14 @@ export class PurchaseOrderService {
      * 장바구니 비우기
      */
     async clearCart(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<void> {
-        const conditions: any[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
+        const conditions: SQL[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
         if (type) {
             conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
         }
 
         await this.inTx(async (trx) => trx
             .delete(wmsTables.purchaseOrderCart)
-            .where(and(...conditions as [any, ...any[]]))
+            .where(and(...conditions))
             , tx);
 
         this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''} for user ${userId}`);
@@ -798,9 +798,21 @@ export class PurchaseOrderService {
             LIMIT 100
         `;
 
-        const results = await this.inTx(async (trx) => trx.execute(query), tx);
+        interface ReorderSuggestionRow {
+            sku_id: string;
+            sku_name: string;
+            current_stock: number;
+            safety_stock: number;
+            shortfall: number;
+            suggested_order: number;
+            on_order_qty: number;
+            in_transfer_qty: number;
+        }
 
-        return (results as any[]).map(row => ({
+        const results = await this.inTx(async (trx) => trx.execute(query), tx);
+        const rows = results as unknown as ReorderSuggestionRow[];
+
+        return rows.map(row => ({
             skuId: row.sku_id,
             skuName: row.sku_name,
             currentStock: row.current_stock,

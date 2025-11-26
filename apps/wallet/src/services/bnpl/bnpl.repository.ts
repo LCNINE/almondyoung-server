@@ -17,14 +17,18 @@ import { WalletExecutor } from '../../shared/database';
 export class BnplRepository {
   private readonly logger = new Logger(BnplRepository.name);
 
-  constructor(private readonly db: DbService<typeof walletSchema>) { }
+  constructor(private readonly db: DbService<typeof walletSchema>) {}
 
   // ============================================
   // Account 관련
   // ============================================
 
-  async findAccountByUserId(userId: string): Promise<BnplAccount | null> {
-    const account = await this.db.db.query.bnplAccounts.findFirst({
+  async findAccountByUserId(
+    userId: string,
+    tx?: WalletExecutor,
+  ): Promise<BnplAccount | null> {
+    const executor = tx || this.db.db;
+    const account = await executor.query.bnplAccounts.findFirst({
       where: eq(schema.bnplAccounts.userId, userId),
     });
     return account ?? null;
