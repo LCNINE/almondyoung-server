@@ -10,12 +10,6 @@ export default function Error({
   error: Error & { digest?: string }
   reset: () => void
 }) {
-  console.error("error::::::::", error)
-  console.error("error.message:", error.message)
-  console.error("error.digest:", error.digest)
-  console.error("error.name:", error.name)
-  console.error("error.stack:", error.stack)
-
   const router = useRouter()
   const pathname = usePathname()
   const hasTriedRef = useRef(false)
