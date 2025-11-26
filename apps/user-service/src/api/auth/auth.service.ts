@@ -57,18 +57,31 @@ export class AuthService {
     return tx ?? this.dbService.db;
   }
 
-  private get frontendUrl(): string {
-    const isProd = this.configService.get('NODE_ENV') === 'production';
+  private getFrontendUrlByOrigin(origin: string): string {
+    // localhost 개발 환경
+    if (origin?.includes('localhost:3000')) {
+      return 'http://localhost:3000';
+    }
 
-    return isProd ? this.configService.getOrThrow('FRONTEND_URL') : 'http://localhost:8000';
+    // Vercel Preview 배포
+    if (origin?.includes('vercel.app')) {
+      return origin;
+    }
+
+    // 프로덕션
+    if (origin === this.configService.get('FRONTEND_URL')) {
+      return this.configService.getOrThrow('FRONTEND_URL');
+    }
+
+    return this.configService.getOrThrow('FRONTEND_URL');
   }
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  private getSocialRedirectUrl(provider: ProviderType, userId: string): string {
-    return new URL(`/${provider}/callback?userId=${userId}`, this.frontendUrl).toString();
+  private getSocialRedirectUrl(provider: ProviderType, userId: string, origin: string): string {
+    return new URL(`/${provider}/callback?userId=${userId}`, this.getFrontendUrlByOrigin(origin)).toString();
   }
 
   async signUp(
@@ -299,7 +312,7 @@ export class AuthService {
     }
   }
 
-  async callbackSignup(userId: string, reply: FastifyReply, redirectTo?: string, tx?: DbTransaction) {
+  async callbackSignup(userId: string, reply: FastifyReply, origin: string, redirectTo?: string, tx?: DbTransaction) {
     return this.inTx(async (trx) => {
       const user = await this.usersService.findUserById(userId, trx);
       if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
@@ -307,8 +320,8 @@ export class AuthService {
       // 기본 역할 설정을 'user'로 하고 기본권한 부여
       await this.usersService.assignDefaultRoleToUser(user.id, trx);
 
-      const { accessToken } = await this.setAccessToken(user, reply, trx);
-      const { refreshToken } = await this.setRefreshToken(user.id, reply, false, trx);
+      const { accessToken } = await this.setAccessToken(user, reply, origin, trx);
+      const { refreshToken } = await this.setRefreshToken(user.id, reply, false, origin, trx);
       // 마지막 활동일 업데이트
       await this.lastActivityAtUpdate(user as User, trx);
 
@@ -369,6 +382,7 @@ export class AuthService {
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
+    origin: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
@@ -385,8 +399,8 @@ export class AuthService {
     const isAuth = await bcrypt.compare(signInDto.password, user.password);
     if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
 
-    const { refreshToken } = await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
-    const { accessToken } = await this.setAccessToken(user, reply);
+    const { refreshToken } = await this.setRefreshToken(user.id, reply, signInDto.rememberMe, origin);
+    const { accessToken } = await this.setAccessToken(user, reply, origin);
 
     // 마지막 활동일 업데이트
     await this.lastActivityAtUpdate(user);
@@ -402,6 +416,7 @@ export class AuthService {
     },
     provider: ProviderType,
     reply: FastifyReply,
+    origin: string,
     tx?: DbTransaction,
   ): Promise<void | { redirectUrl: string }> {
     const processSignIn = async (transaction: DbTransaction) => {
@@ -429,25 +444,25 @@ export class AuthService {
     if (tx) {
       const result = await processSignIn(tx);
 
-      return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
+      return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id, origin));
     } else {
       return await this.dbService.db.transaction(async (transaction) => {
         const result = await processSignIn(transaction);
 
-        return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id));
+        return reply.status(302).redirect(this.getSocialRedirectUrl(provider, result.user.id, origin));
       });
     }
   }
 
-  async setSocialCookie(userId: string, reply: FastifyReply, tx?: DbTransaction) {
+  async setSocialCookie(userId: string, reply: FastifyReply, origin: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const user = await this.usersService.findUserById(userId, client);
 
     if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
-    const { refreshToken } = await this.setRefreshToken(user.id, reply, false, tx);
-    const { accessToken } = await this.setAccessToken(user, reply, tx);
+    const { refreshToken } = await this.setRefreshToken(user.id, reply, false, origin, tx);
+    const { accessToken } = await this.setAccessToken(user, reply, origin, tx);
     await this.lastActivityAtUpdate(user as User, tx); // 마지막 활동일 업데이트
 
     return { accessToken, refreshToken };
@@ -558,24 +573,26 @@ export class AuthService {
         }
         this.logger.log(`logout 진행중...`);
 
+        const frontendUrl = this.getFrontendUrlByOrigin(req.headers.origin!);
+
         // 쿠키 삭제
         reply.clearCookie('accessToken', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: `.${getDomain(frontendUrl)}`,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('refreshToken', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: `.${getDomain(frontendUrl)}`,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
         });
         reply.clearCookie('_medusa_jwt', {
           path: '/',
-          domain: `.${getDomain(this.frontendUrl)}`,
+          domain: `.${getDomain(frontendUrl)}`,
           httpOnly: true,
           secure: true,
           sameSite: 'lax',
@@ -626,7 +643,12 @@ export class AuthService {
     return uniqueScopes;
   }
 
-  private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
+  private async setAccessToken(
+    user: IUser,
+    reply: FastifyReply,
+    origin: string,
+    tx?: DbTransaction,
+  ): Promise<{ accessToken: string }> {
     const client = this.getClient(tx);
     const scopes = await this.getUserScopes(user.id, tx);
 
@@ -648,7 +670,7 @@ export class AuthService {
     });
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
-    const corsOrigin = this.frontendUrl;
+    const corsOrigin = this.getFrontendUrlByOrigin(origin);
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
@@ -673,6 +695,7 @@ export class AuthService {
     userId: string,
     reply: FastifyReply,
     rememberMe: boolean = false,
+    origin: string,
     tx?: DbTransaction,
   ): Promise<{ refreshToken: string }> {
     const client = this.getClient(tx);
@@ -696,7 +719,7 @@ export class AuthService {
     await this.tokensService.saveRefreshToken(userId, refreshToken, scopes, expiresAt, rememberMe, tx);
     const isRailway = !!process.env.RAILWAY_ENVIRONMENT;
     const isProd = process.env.NODE_ENV === 'production';
-    const corsOrigin = this.frontendUrl;
+    const corsOrigin = this.getFrontendUrlByOrigin(origin);
 
     // 쿠키 옵션 생성
     const cookieOptions = getCookieOptions({
@@ -715,12 +738,12 @@ export class AuthService {
     return { refreshToken };
   }
 
-  async restoreToken(userId: string, reply: FastifyReply, tx?: DbTransaction) {
+  async restoreToken(userId: string, reply: FastifyReply, origin: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const user = await this.usersService.findUserById(userId, client);
 
-    return await this.setAccessToken(user, reply, client);
+    return await this.setAccessToken(user, reply, origin, client);
   }
 
   async forgetUserId(email: string) {
