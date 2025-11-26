@@ -63,7 +63,7 @@ export default function UserReport() {
           {recommendedProducts.map((product) => (
             <div
               key={product.id}
-              className="relative h-[100px] w-[100px] flex-shrink-0"
+              className="relative h-[100px] w-[100px] shrink-0"
             >
               <Image
                 src={product.src}
@@ -132,7 +132,7 @@ export default function UserReport() {
             {lowStockItems.map((item) => (
               <div
                 key={item.id}
-                className="flex w-[100px] flex-shrink-0 flex-col gap-[7px]"
+                className="flex w-[100px] shrink-0 flex-col gap-[7px]"
               >
                 <Image
                   src={item.src}
@@ -206,7 +206,7 @@ export default function UserReport() {
                 alt="리뷰할 제품"
                 width={80}
                 height={80}
-                className="h-20 w-20 flex-shrink-0 rounded-[5px] object-cover"
+                className="h-20 w-20 shrink-0 rounded-[5px] object-cover"
                 unoptimized={true} // [수정] SVG 오류 해결 (80x80)
               />
               <div className="flex flex-col items-start gap-2.5">

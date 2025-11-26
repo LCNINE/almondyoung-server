@@ -5,7 +5,7 @@ import { ChevronLeft } from 'lucide-react'
 import { usePathname, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useCategories } from '@lib/providers/category-provider' // 새 Provider 훅
-import type { PimCategory } from '@lib/types/dto/pim'
+import type { PimCategory } from '@lib/api/pim'
 
 interface BreadcrumbItem {
   label: string
@@ -36,7 +36,10 @@ function buildAncestors(
       stack.pop()
       return
     }
-    for (const child of node.children ?? []) dfs(child)
+    const children = "children" in node ? node.children : undefined
+    if (children) {
+      for (const child of children) dfs(child)
+    }
     stack.pop()
   }
 
@@ -106,8 +109,9 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
           if (cat.slug === slug || cat.id === slug) {
             return cat
           }
-          if (cat.children?.length) {
-            const found = findCategory(cat.children)
+          const children = "children" in cat ? cat.children : undefined
+          if (children && children.length > 0) {
+            const found = findCategory(children)
             if (found) return found
           }
         }

@@ -146,25 +146,21 @@ export default function PointPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const { getPointHistory, getPointBalance } = await import("@lib/api/wallet")
+        
         // 1. 내역 조회
-        const historyRes = await fetch('/api/wallet/payments/points/history?limit=100')
-        if (historyRes.ok) {
-          const data: PointHistoryResponse = await historyRes.json()
-          setHistory(data.items)
+        const historyData: PointHistoryResponse = await getPointHistory(100)
+        setHistory(historyData.items)
 
-          // 간단한 클라이언트 사이드 집계 (실제로는 API에서 주는게 좋음)
-          const earned = data.items.reduce((acc, item) => item.amount > 0 ? acc + item.amount : acc, 0)
-          const used = data.items.reduce((acc, item) => item.amount < 0 ? acc + Math.abs(item.amount) : acc, 0)
-          setTotalEarned(earned)
-          setTotalUsed(used)
-        }
+        // 간단한 클라이언트 사이드 집계 (실제로는 API에서 주는게 좋음)
+        const earned = historyData.items.reduce((acc, item) => item.amount > 0 ? acc + item.amount : acc, 0)
+        const used = historyData.items.reduce((acc, item) => item.amount < 0 ? acc + Math.abs(item.amount) : acc, 0)
+        setTotalEarned(earned)
+        setTotalUsed(used)
 
         // 2. 잔액 조회
-        const balanceRes = await fetch('/api/wallet/payments/points/balance')
-        if (balanceRes.ok) {
-          const data: PointBalanceResponse = await balanceRes.json()
-          setBalance(data.balance)
-        }
+        const balanceData: PointBalanceResponse = await getPointBalance()
+        setBalance(balanceData.balance)
       } catch (error) {
         console.error("Failed to fetch point data", error)
       }

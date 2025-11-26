@@ -175,35 +175,8 @@ export default function LaterPaymentRegularConfirm({
       }
 
       // API 호출
-      // 백엔드 엔드포인트: POST /payments/hms-bnpl/onboard
-      const apiUrl = `/api/wallet/payments/hms-bnpl/onboard`
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        body: formData,
-        credentials: "include", // 쿠키 기반 인증 (JWT 토큰)
-        // Content-Type은 FormData를 사용하면 자동으로 설정되므로 명시하지 않음
-      })
-
-      if (!response.ok) {
-        let errorMessage = "등록에 실패했습니다."
-
-        try {
-          const errorData = await response.json()
-          // 백엔드 에러 응답 형식에 맞게 파싱
-          errorMessage =
-            errorData.message ||
-            errorData.error?.message ||
-            `요청 실패 (${response.status})`
-        } catch {
-          // JSON 파싱 실패 시 기본 메시지 사용
-          errorMessage = `요청 실패 (${response.status}: ${response.statusText})`
-        }
-
-        throw new Error(errorMessage)
-      }
-
-      const result = await response.json()
+      const { onboardHmsBnpl } = await import("@lib/api/wallet")
+      const result = await onboardHmsBnpl(formData)
       console.log("BNPL 등록 성공:", result)
 
       // 성공 응답 확인

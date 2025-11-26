@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ApiError } from "@lib/api/api-error"
 import {
-  refundGetPaymentProfiles,
+  getPaymentProfiles,
   setDefaultPaymentProfile,
   type PaymentProfile,
-} from "domains/payment-methods/api"
+} from "@lib/api/wallet"
 
 // (아이콘은 실제 프로젝트에서는 @heroicons/react 등을 사용해야 합니다)
 // 임시 아이콘 컴포넌트
@@ -39,7 +39,7 @@ export default function PaymentMethodScreen() {
     async function fetchProfiles() {
       try {
         setIsLoading(true)
-        const data = await refundGetPaymentProfiles()
+        const data = await getPaymentProfiles()
         // HMS_CARD만 필터링 (멤버십은 HMS_CARD만 사용)
         const hmsCardProfiles = data.filter(
           (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
@@ -66,7 +66,7 @@ export default function PaymentMethodScreen() {
       toast.success("기본 결제 수단이 변경되었습니다.")
 
       // 프로필 목록 새로고침
-      const data = await refundGetPaymentProfiles()
+        const data = await getPaymentProfiles()
       const hmsCardProfiles = data.filter(
         (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
       )

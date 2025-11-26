@@ -14,132 +14,11 @@ import { useCategories } from "@lib/providers/category-provider"
 //mock data
 import { mockCartItems } from "app/data/__mocks__/user-cart-mock"
 //types
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 import { UserBasicInfo } from "@lib/types/ui/user"
 //search input
 import { SearchInput } from "./search-input"
 import { useUser } from "contexts/user-context"
-
-// 기본 카테고리 (서버가 없을 때 사용)
-const DEFAULT_CATEGORIES: PimCategory[] = [
-  {
-    id: "best",
-    name: "BEST",
-    slug: "best",
-    children: [],
-    parent: null,
-    path: "/best",
-    level: 0,
-    sortOrder: 0,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "hair",
-    name: "헤어",
-    slug: "hair",
-    children: [],
-    parent: null,
-    path: "/hair",
-    level: 0,
-    sortOrder: 1,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "semi",
-    name: "반영구",
-    slug: "semi",
-    children: [],
-    parent: null,
-    path: "/semi",
-    level: 0,
-    sortOrder: 2,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "nail",
-    name: "네일",
-    slug: "nail",
-    children: [],
-    parent: null,
-    path: "/nail",
-    level: 0,
-    sortOrder: 3,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "lash",
-    name: "속눈썹",
-    slug: "lash",
-    children: [],
-    parent: null,
-    path: "/lash",
-    level: 0,
-    sortOrder: 4,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "skin",
-    name: "피부미용",
-    slug: "skin",
-    children: [],
-    parent: null,
-    path: "/skin",
-    level: 0,
-    sortOrder: 5,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "waxing",
-    name: "왁싱",
-    slug: "waxing",
-    children: [],
-    parent: null,
-    path: "/waxing",
-    level: 0,
-    sortOrder: 6,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "tattoo",
-    name: "타투",
-    slug: "tattoo",
-    children: [],
-    parent: null,
-    path: "/tattoo",
-    level: 0,
-    sortOrder: 7,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-  {
-    id: "makeup",
-    name: "메이크업",
-    slug: "makeup",
-    children: [],
-    parent: null,
-    path: "/makeup",
-    level: 0,
-    sortOrder: 8,
-    description: null,
-    isActive: true,
-    parentId: null,
-  },
-]
 
 /** 트리에서 조상 경로를 찾는 유틸 */
 function buildAncestors(
@@ -157,7 +36,11 @@ function buildAncestors(
       stack.pop()
       return
     }
-    for (const child of node.children ?? []) dfs(child)
+    // CategoryTreeNode만 children을 가질 수 있음
+    const children = "children" in node ? node.children : undefined
+    if (children) {
+      for (const child of children) dfs(child)
+    }
     stack.pop()
   }
 
@@ -208,11 +91,11 @@ export function DesktopHeader() {
   const [showNotification] = useState(true)
 
   // 상단 네비게이션에 보여줄 상위 카테고리(최대 7개 정도)
-  // 카테고리가 없으면 기본 카테고리 사용
+  // 서버 데이터만 사용
   const topLevel: PimCategory[] =
     Array.isArray(categories) && categories.length > 0
       ? categories.slice(0, 8)
-      : DEFAULT_CATEGORIES
+      : []
 
   // 전문 분야 하이라이트
   const isSpecialtyCategory = (name: string) => {
@@ -267,8 +150,10 @@ export function DesktopHeader() {
       const findCategory = (cats: PimCategory[]): PimCategory | null => {
         for (const cat of cats) {
           if (cat.id === subId) return cat
-          if (cat.children?.length) {
-            const found = findCategory(cat.children)
+          // CategoryTreeNode만 children을 가질 수 있음
+          const children = "children" in cat ? cat.children : undefined
+          if (children && children.length > 0) {
+            const found = findCategory(children)
             if (found) return found
           }
         }

@@ -1,4 +1,5 @@
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory, CategoryTreeResponse } from "@lib/api/pim"
+import { getCategoryTree } from "@lib/api/pim"
 
 // 메모리 캐시 타입
 type MemCache = { data: PimCategory[]; at: number }
@@ -30,34 +31,12 @@ export async function getAllCategoriesCached(): Promise<PimCategory[]> {
   return data
 }
 
-// Next.js ISR 캐시를 적용한 API 호출
+// 라우트 핸들러를 통한 API 호출
 async function fetchCategoriesWithISR(): Promise<PimCategory[]> {
   try {
-    // ⚡ 3초 타임아웃 설정 (RootLayout 블로킹 방지)
-    // todo: 라우트핸들러로 변경
-    const res = await fetch(`${process.env.BACKEND_URL}/pim/categories`, {
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "ngrok-skip-browser-warning": "true",
-      },
-      signal: AbortSignal.timeout(3000), // Next.js 15 권장
-      next: {
-        revalidate: 60 * 60 * 6, // 6시간
-        tags: ["categories"],
-      },
-      cache: "no-store", // 브라우저 새로고침시 실제 API 호출
-    })
-
-    if (!res.ok) {
-      console.warn(
-        `[fetchCategoriesWithISR] API 요청 실패: ${res.status} ${res.statusText}`
-      )
-      return [] // 🛡️ Graceful degradation: 빈 배열 반환
-    }
-
-    const json = await res.json()
-    const categories = json?.categories ?? []
+    // 라우트 핸들러를 통해 백엔드 API 호출
+    const response = await getCategoryTree()
+    const categories = response?.categories ?? []
     console.log(
       `✅ [fetchCategoriesWithISR] ${categories.length}개 카테고리 로드 완료`
     )

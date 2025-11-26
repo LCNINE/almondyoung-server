@@ -4,6 +4,8 @@ import type { PlanWithTier } from "@lib/types/membership"
 import { ApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@components/layout/mypage-layout"
+import { getPlansServer } from "@lib/api/membership"
+import { cookies } from "next/headers"
 
 const mockBenefits = [
   {
@@ -26,18 +28,26 @@ const mockBenefits = [
 ]
 
 async function getPlans(): Promise<PlanWithTier[]> {
-  // serverApi는 기본적으로 body.data를 추출해서 반환
-  const plans = await fetch(`${process.env.BACKEND_URL}/membership/plans`).then(
-    (res) => res.json()
-  )
-  return plans
+  // 서버 사이드에서는 쿠키를 수동으로 전달
+  const cookieStore = await cookies()
+  const cookieString = cookieStore
+    .getAll()
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join("; ")
+
+  return getPlansServer(cookieString)
 }
 
 async function getPaymentProfiles() {
   try {
-    const profiles = await fetch(
-      `${process.env.BACKEND_URL}/wallet/payments/profiles`
-    ).then((res) => res.json())
+    const { getPaymentProfilesServer } = await import("@lib/api/wallet")
+    const cookieStore = await cookies()
+    const cookieString = cookieStore
+      .getAll()
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join("; ")
+
+    const profiles = await getPaymentProfilesServer(cookieString)
     console.log("✅ Payment profiles loaded:", profiles)
     return profiles
   } catch (error) {
@@ -45,7 +55,6 @@ async function getPaymentProfiles() {
     console.error("❌ Payment profiles API error:", {
       message: error instanceof Error ? error.message : "Unknown error",
       status: error instanceof ApiError ? error.status : undefined,
-      url: `${process.env.BACKEND_URL}/wallet/payments/profiles`,
     })
     // 프로필이 없거나 에러 발생 시 빈 배열 반환
     return []

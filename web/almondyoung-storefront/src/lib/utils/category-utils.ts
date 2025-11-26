@@ -1,5 +1,5 @@
 // src/lib/utils/category-utils.ts
-import type { PimCategory } from "@lib/types/dto/pim"
+import type { PimCategory } from "@lib/api/pim"
 
 /**
  * 카테고리 트리에서 ID로 카테고리 찾기 (재귀 검색)
@@ -12,8 +12,9 @@ export function findCategoryById(
     if (category.id === id) {
       return category
     }
-    if (category.children?.length) {
-      const found = findCategoryById(category.children, id)
+    const children = "children" in category ? category.children : undefined
+    if (children && children.length > 0) {
+      const found = findCategoryById(children, id)
       if (found) return found
     }
   }
@@ -31,8 +32,9 @@ export function findCategoryBySlug(
     if (category.slug === slug) {
       return category
     }
-    if (category.children?.length) {
-      const found = findCategoryBySlug(category.children, slug)
+    const children = "children" in category ? category.children : undefined
+    if (children && children.length > 0) {
+      const found = findCategoryBySlug(children, slug)
       if (found) return found
     }
   }
@@ -54,8 +56,9 @@ export function findCategoryByAny(
     ) {
       return category
     }
-    if (category.children?.length) {
-      const found = findCategoryByAny(category.children, identifier)
+    const children = "children" in category ? category.children : undefined
+    if (children && children.length > 0) {
+      const found = findCategoryByAny(children, identifier)
       if (found) return found
     }
   }
@@ -70,13 +73,14 @@ export function findParentCategory(
   categoryId: string
 ): PimCategory | null {
   for (const category of categories) {
+    const children = "children" in category ? category.children : undefined
     // 직접 자식인지 확인
-    if (category.children?.some((child) => child.id === categoryId)) {
+    if (children && children.some((child) => child.id === categoryId)) {
       return category
     }
     // 자손인지 재귀 확인
-    if (category.children?.length) {
-      const found = findParentCategory(category.children, categoryId)
+    if (children && children.length > 0) {
+      const found = findParentCategory(children, categoryId)
       if (found) return found
     }
   }
@@ -101,8 +105,11 @@ export function buildCategoryPath(
       stack.pop()
       return
     }
-    for (const child of node.children ?? []) {
-      dfs(child)
+    const children = "children" in node ? node.children : undefined
+    if (children) {
+      for (const child of children) {
+        dfs(child)
+      }
     }
     stack.pop()
   }
@@ -124,8 +131,9 @@ export function flattenCategories(categories: PimCategory[]): PimCategory[] {
   const flatten = (cats: PimCategory[]) => {
     for (const cat of cats) {
       result.push(cat)
-      if (cat.children?.length) {
-        flatten(cat.children)
+      const children = "children" in cat ? cat.children : undefined
+      if (children && children.length > 0) {
+        flatten(children)
       }
     }
   }

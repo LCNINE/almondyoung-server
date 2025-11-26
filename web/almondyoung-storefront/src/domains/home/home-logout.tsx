@@ -9,7 +9,6 @@ import {
 } from "@components/products/product-card"
 import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { MembershipBanner } from "domains/home/components/banner/membership-banner"
-import { PimCategory } from "@lib/types/dto/pim"
 import { ProductCard } from "@lib/types/ui/product"
 // import { CategoryProductsSection } from "app/[countryCode]/(main)/components/sections/category-products-section"
 
@@ -34,11 +33,11 @@ import CategoryBadgeList from "@components/category-badge-tabs"
 //  웰컴딜 API 상품 목록 데이터에서 웰컴딜으로 params넣으면되고
 //  타임세일 API 상품 목록 데이터에서 타임세일으로 params넣으면되고
 //  디저틸 템플릿 API 상품 목록 데이터에서 디저틸 템플릿으로 params넣으면되고
-//  인기 급상승 제품  디자인에는 없지만 기존에는 구현되어있었음. 어느게 사실? 
+//  인기 급상승 제품  디자인에는 없지만 기존에는 구현되어있었음. 어느게 사실?
 
 // 비로그인 사용자용 홈페이지 섹션들
 export const HomeLogout: React.FC<{
-  categories: PimCategory[]
+  categories: any
 }> = ({ categories }) => {
   // 타임세일 카테고리 상태 관리
   const [selectedTimeSaleCategory, setSelectedTimeSaleCategory] =
@@ -70,7 +69,7 @@ export const HomeLogout: React.FC<{
     }
 
     // 각 카테고리에 해당하는 상품 매핑
-    categories.slice(0, 7).forEach((category, index) => {
+    categories.slice(0, 7).forEach((category: any, index: any) => {
       const productsList = [
         allProducts.hair,
         allProducts.nail,
@@ -171,7 +170,7 @@ export const HomeLogout: React.FC<{
         </div>
       </div>
 
-      <ProductListSection className="bg-gradient-to-b from-purple-50 to-white">
+      <ProductListSection className="bg-linear-to-b from-purple-50 to-white">
         <SectionHeader
           title="인기 급상승 제품"
           description="이번 주 가장 인기 있는 제품들을 만나보세요"

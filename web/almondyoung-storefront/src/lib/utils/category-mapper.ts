@@ -1,4 +1,4 @@
-import { PimCategory } from '../types/dto/pim'
+import type { PimCategory } from '@lib/api/pim'
 
 export interface CategoryData {
   id: string
@@ -13,12 +13,13 @@ export interface CategoryData {
  * PIM 카테고리를 내부 CategoryData 형식으로 변환
  */
 export function convertPimToCategory(pimCategory: PimCategory): CategoryData {
+  const children = "children" in pimCategory ? pimCategory.children : undefined
   return {
     id: pimCategory.id,
     name: pimCategory.name,
     description: pimCategory.description || undefined,
-    imageUrl: pimCategory.imageUrl || undefined,
-    children: pimCategory.children?.map(convertPimToCategory),
+    imageUrl: "imageUrl" in pimCategory ? pimCategory.imageUrl || undefined : undefined,
+    children: children?.map(convertPimToCategory),
     parent: undefined // 부모는 별도로 설정해야 함
   }
 }

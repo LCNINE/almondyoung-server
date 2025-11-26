@@ -7,43 +7,7 @@ import { MembershipCancelModal } from "../../../components/modal"
 import MembershipPlanCard from "../membership-benefit-card"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
-
-/**
- * 멤버십 해지 API 호출 함수
- *
- * @param reasonCode - 취소 이유 코드 (예: "TRIAL_PERIOD", "PRICE_TOO_HIGH" 등)
- * @param reasonText - 취소 이유 상세 설명 (선택사항)
- * @returns 취소 결과
- */
-async function cancelMembershipSubscription(
-  reasonCode: string,
-  reasonText?: string
-) {
-  // todo: 라우트핸들러 만들어야함
-  const response = await fetch(
-    `${process.env.APP_URL}/api/membership/subscriptions/cancel`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify({
-        reasonCode,
-        reasonText,
-      }),
-    }
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({
-      message: "멤버십 해지에 실패했습니다.",
-    }))
-    throw new Error(error.message || "멤버십 해지에 실패했습니다.")
-  }
-
-  return response.json()
-}
+import { cancelSubscription } from "@lib/api/membership"
 
 /**
  * 멤버십 가입자 전용 섹션
@@ -80,7 +44,7 @@ export default function SubscriberSection() {
         size="full"
         onClick={async () => {
           try {
-            await cancelMembershipSubscription("PRICE_TOO_HIGH")
+            await cancelSubscription("PRICE_TOO_HIGH")
             setOpen(false)
             router.push("/kr/mypage/membership")
           } catch (error) {
