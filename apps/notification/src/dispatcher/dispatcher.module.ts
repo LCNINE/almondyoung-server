@@ -28,9 +28,12 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
         validateOnConsume: false, // HTTP 요청과 충돌 방지를 위해 비활성화
       },
     }),
-    BullModule.registerQueue({
-      name: 'notification',
-    }),
+    // Redis가 있으면 Bull 큐 등록
+    ...(process.env.REDIS_HOST ? [
+      BullModule.registerQueue({
+        name: 'notification',
+      }),
+    ] : []),
   ],
   controllers: [
     NotificationController,
