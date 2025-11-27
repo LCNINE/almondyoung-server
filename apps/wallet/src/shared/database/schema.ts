@@ -19,7 +19,8 @@ import {
   jsonb,
   serial,
   date,
-  check, // Supabase에서 사용하는 serial 추가
+  check,
+  bigserial, // Supabase에서 사용하는 serial 추가
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { authorizationSchema } from '@app/authorization';
@@ -38,7 +39,7 @@ export type PricingSnapshot = {
 };
 export type PaymentIntentType = (typeof paymentIntentTypeEnum.enumValues)[number];
 export type PaymentProvider = (typeof paymentProviderEnum.enumValues)[number];
-export type PaymentSessionStatus = (typeof paymentSessionStatusEnum.enumValues)[number];
+export type PaymentIntentStatus = (typeof paymentIntentStatusEnum.enumValues)[number];
 export type PaymentProfileStatus = (typeof paymentProfileStatusEnum.enumValues)[number];
 export type PaymentPurpose = (typeof paymentPurposeEnum.enumValues)[number];
 export type BnplAccountStatus = (typeof bnplAccountStatusEnum.enumValues)[number];
@@ -55,12 +56,13 @@ export const paymentIntentTypeEnum = pgEnum('payment_intent_type', ['ORDER', 'BN
 export const paymentProviderEnum = pgEnum('payment_provider', ['TOSS', 'KAKAOPAY', 'HMS_CARD', 'HMS_BNPL', 'POINTS']);
 
 // PaymentSessionStatus
-export const paymentSessionStatusEnum = pgEnum('payment_session_status', [
+export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'PENDING',
   'AUTHORIZED',
   'CAPTURED',
   'FAILED',
   'CANCELLED',
+  'PARTIALLY_PAID',
   'PARTIALLY_REFUNDED',
   'REFUNDED',
   'UNKNOWN',
@@ -1060,7 +1062,7 @@ export const paymentIntents = pgTable(
     originalAmount: bigint('original_amount', { mode: 'number' }).notNull(),
     finalAmount: bigint('final_amount', { mode: 'number' }).notNull(), // 실제 결제액 (totalAmount - discountsTotal)
 
-    status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
+    status: paymentIntentStatusEnum('status').notNull().default('PENDING'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     refundedAmount: bigint('refunded_amount', { mode: 'number' }).notNull().default(0),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),
@@ -1068,6 +1070,7 @@ export const paymentIntents = pgTable(
     metadata: jsonb('metadata'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    remainingAmount: bigint('remaining_amount', { mode: 'number' }).default(0), // 남은 결제액 복합결제 때문에 도입
   },
   (table) => [
     index('idx_payment_intents_customer_id').on(table.customerId),
@@ -1189,6 +1192,55 @@ export const outboxEvents = pgTable(
   }),
 );
 
+export const userPaymentPasswords = pgTable(
+  'user_payment_passwords',
+  {
+    userId: varchar('user_id', { length: 64 }).primaryKey(), // FK to users table
+
+    // 비밀번호 해시 (폐기 시 NULL 처리 가능하도록 nullable 고려하거나, LOCKED 상태로 관리)
+    passwordHash: varchar('password_hash', { length: 60 }).notNull(),
+
+    // 실패 횟수 (0~5)
+    failureCount: integer('failure_count').notNull().default(0),
+
+    // 상태 관리 (CTO 요구사항: 폐기 로직 대응)
+    status: varchar('status', { length: 20 }).$type<'ACTIVE' | 'LOCKED'>().notNull().default('ACTIVE'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // 필요 시 인덱스 추가
+  ],
+);
+
+export const pinAccessLogs = pgTable('pin_access_logs', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+
+  isSuccess: boolean('is_success').notNull(),
+  failureCountSnapshot: integer('failure_count_snapshot'), // 당시 누적 실패 횟수
+
+  ipAddress: varchar('ip_address', { length: 45 }),
+  userAgent: text('user_agent'),
+  attemptAt: timestamp('attempt_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const pinHistory = pgTable('pin_history', {
+  id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
+  userId: varchar('user_id', { length: 64 }).notNull(),
+
+  actionType: varchar('action_type', { length: 20 })
+    .$type<'REGISTER' | 'CHANGE' | 'RESET' | 'LOCKED_DISPOSAL'>()
+    .notNull(),
+
+  // 보안상 해시값만 저장 (선택 사항)
+  previousHash: varchar('previous_hash', { length: 60 }),
+
+  changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow().notNull(),
+  changedByIp: varchar('changed_by_ip', { length: 45 }),
+});
+
 // ═══════════════════════════════════════════════
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ═══════════════════════════════════════════════
@@ -1230,6 +1282,9 @@ export const walletSchema = {
   outboxEvents,
 
   idempotencyKeys,
+  userPaymentPasswords,
+  pinAccessLogs,
+  pinHistory,
 } as const;
 
 export type WalletSchema = typeof walletSchema;
