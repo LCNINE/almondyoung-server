@@ -16,7 +16,6 @@ import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
 import {
   CreateDraftVersionDto,
-  PublishVersionDto,
   VersionTreeResponseDto,
   VersionDiffItemDto,
 } from '../dto/versions';
@@ -255,10 +254,10 @@ export class ProductVersionsController {
   @Patch(':versionId/publish')
   @ApiOperation({
     summary: '버전 Publish',
-    description: 'Draft 버전을 active 또는 inactive 상태로 변경합니다.',
+    description: 'Draft 버전을 Active 상태로 변경합니다. 기존 Active 버전이 있으면 자동으로 Inactive로 전환됩니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
-  @ApiParam({ name: 'versionId', description: 'Version ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (Draft 상태여야 함)' })
   @ApiResponse({
     status: 200,
     description: '버전 publish 성공',
@@ -268,10 +267,9 @@ export class ProductVersionsController {
   async publishVersion(
     @Param('masterId') masterId: string,
     @Param('versionId') versionId: string,
-    @Body() dto: PublishVersionDto,
   ) {
     try {
-      await this.productVersionsService.publishVersion(versionId, dto.targetStatus);
+      await this.productVersionsService.publishVersion(versionId);
       return { message: 'Version published successfully' };
     } catch (error) {
       this.logger.error(`Failed to publish version: ${error.message}`, error.stack);
