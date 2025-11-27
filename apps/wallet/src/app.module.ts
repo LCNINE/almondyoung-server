@@ -72,7 +72,8 @@ import { OmsClientMock } from './services/tax/oms-client.mock';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.controller';
 import { OutboxService } from './services/outbox/outbox.service';
-import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
+import { OutboxDispatcher } from 'apps/outbox-demo/src/test/services/outbox-dispatcher.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -131,7 +132,6 @@ import { OutboxDispatcher } from './services/outbox/outbox-dispatcher.service';
     // --- Outbox Pattern ---
     OutboxService,
     OutboxDispatcher,
-
     // --- Intent Implementation Layer ---
     IntentReader,
     IntentCreator,
