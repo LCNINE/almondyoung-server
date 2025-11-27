@@ -261,35 +261,22 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() body: { versionIds: string[] },
   ): Promise<{ message: string; movedCount: number }> {
-    try {
-      if (!body.versionIds || body.versionIds.length === 0) {
-        throw new HttpException(
-          'versionIds are required',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      await this.productCategoriesService.moveProductsToCategory(
-        body.versionIds,
-        categoryId,
-      );
-
-      return {
-        message: 'Products moved successfully',
-        movedCount: body.versionIds.length,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
+    if (!body.versionIds || body.versionIds.length === 0) {
       throw new HttpException(
-        `Failed to move products: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        'versionIds are required',
+        HttpStatus.BAD_REQUEST,
       );
     }
+
+    await this.productCategoriesService.moveProductsToCategory(
+      body.versionIds,
+      categoryId,
+    );
+
+    return {
+      message: 'Products moved successfully',
+      movedCount: body.versionIds.length,
+    };
   }
 
   // 고지훈 추가 - 기존 카테고리 유지하면서 추가
@@ -330,35 +317,22 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() body: { versionIds: string[] },
   ): Promise<{ message: string; addedCount: number }> {
-    try {
-      if (!body.versionIds || body.versionIds.length === 0) {
-        throw new HttpException(
-          'versionIds are required',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      await this.productCategoriesService.addProductsToCategory(
-        body.versionIds,
-        categoryId,
-      );
-
-      return {
-        message: 'Products added successfully',
-        addedCount: body.versionIds.length,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
+    if (!body.versionIds || body.versionIds.length === 0) {
       throw new HttpException(
-        `Failed to add products: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        'versionIds are required',
+        HttpStatus.BAD_REQUEST,
       );
     }
+
+    await this.productCategoriesService.addProductsToCategory(
+      body.versionIds,
+      categoryId,
+    );
+
+    return {
+      message: 'Products added successfully',
+      addedCount: body.versionIds.length,
+    };
   }
 
   // ===== Phase 2: Category Configuration Endpoints =====
@@ -380,20 +354,10 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateDisplaySettingsDto,
   ): Promise<CategoryResponseDto> {
-    try {
-      return await this.productCategoriesService.updateDisplaySettings(
-        categoryId,
-        dto,
-      );
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to update display settings: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.productCategoriesService.updateDisplaySettings(
+      categoryId,
+      dto,
+    );
   }
 
   @Patch(':id/seo')
@@ -413,20 +377,10 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateSeoConfigDto,
   ): Promise<CategoryResponseDto> {
-    try {
-      return await this.productCategoriesService.updateSeoConfig(
-        categoryId,
-        dto,
-      );
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to update SEO config: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.productCategoriesService.updateSeoConfig(
+      categoryId,
+      dto,
+    );
   }
 
   @Patch(':id/template')
@@ -446,20 +400,10 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body() dto: UpdateTemplateConfigDto,
   ): Promise<CategoryResponseDto> {
-    try {
-      return await this.productCategoriesService.updateTemplateConfig(
-        categoryId,
-        dto,
-      );
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to update template config: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.productCategoriesService.updateTemplateConfig(
+      categoryId,
+      dto,
+    );
   }
 
   @Patch(':id/visibility')
@@ -491,20 +435,10 @@ export class ProductCategoriesController {
     @Param('id') categoryId: string,
     @Body('visible') visible: boolean,
   ): Promise<CategoryResponseDto> {
-    try {
-      return await this.productCategoriesService.updateVisibility(
-        categoryId,
-        visible,
-      );
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to update visibility: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.productCategoriesService.updateVisibility(
+      categoryId,
+      visible,
+    );
   }
 
   // ===== TAG GROUP MANAGEMENT =====
@@ -539,23 +473,10 @@ export class ProductCategoriesController {
     @Param('categoryId') categoryId: string,
     @Body() dto: ReplaceTagGroupLinksDto,
   ): Promise<void> {
-    try {
-      await this.productCategoriesService.replaceTagGroupLinks(
-        categoryId,
-        dto.links,
-      );
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('Tag groups not found')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        `Failed to replace tag group links: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    await this.productCategoriesService.replaceTagGroupLinks(
+      categoryId,
+      dto.links,
+    );
   }
 
   @Get(':categoryId/tag-groups')
@@ -580,16 +501,6 @@ export class ProductCategoriesController {
   async getCategoryTagGroups(
     @Param('categoryId') categoryId: string,
   ): Promise<CategoryTagGroupsResponseDto> {
-    try {
-      return await this.productCategoriesService.getCategoryTagGroups(categoryId);
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to get category tag groups: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return this.productCategoriesService.getCategoryTagGroups(categoryId);
   }
 }

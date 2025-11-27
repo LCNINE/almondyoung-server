@@ -180,9 +180,12 @@ export class ProductVersionsService {
     }, tx);
   }
 
+  /**
+   * Draft 버전을 Active로 Publish
+   * 기존 Active 버전이 있으면 자동으로 Inactive로 전환됨
+   */
   async publishVersion(
     versionId: string,
-    targetStatus: 'active' | 'inactive',
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (tx) => {
@@ -194,50 +197,75 @@ export class ProductVersionsService {
 
       let previousActiveVersion: ProductMasterVersion | null = null;
 
-      if (targetStatus === 'active') {
-        // 기존 active 버전 조회
-        try {
-          previousActiveVersion = await this.getActiveVersion(version.masterId, tx);
-        } catch (e) {
-          this.logger.debug(`No previous active version for ${version.masterId}`);
-        }
-
-        // 기존 active를 inactive로
-        await tx
-          .update(productMasterVersions)
-          .set({ versionStatus: 'inactive' })
-          .where(
-            and(
-              eq(productMasterVersions.masterId, version.masterId),
-              eq(productMasterVersions.versionStatus, 'active'),
-            ),
-          );
+      // 기존 active 버전 조회
+      try {
+        previousActiveVersion = await this.getActiveVersion(version.masterId, tx);
+      } catch (e) {
+        this.logger.debug(`No previous active version for ${version.masterId}`);
       }
 
-      // draft를 publish
+      // 기존 active를 inactive로
       await tx
         .update(productMasterVersions)
-        .set({ versionStatus: targetStatus, draftOwnerId: null, updatedAt: new Date() })
+        .set({ versionStatus: 'inactive' })
+        .where(
+          and(
+            eq(productMasterVersions.masterId, version.masterId),
+            eq(productMasterVersions.versionStatus, 'active'),
+          ),
+        );
+
+      // draft를 active로 publish
+      await tx
+        .update(productMasterVersions)
+        .set({ versionStatus: 'active', draftOwnerId: null, updatedAt: new Date() })
         .where(eq(productMasterVersions.id, versionId));
 
-      // 이벤트 발행: 추가/삭제된 variant만
-      if (targetStatus === 'active') {
-        await this._publishVariantChangeEvents(
-          version,
-          previousActiveVersion,
-          tx,
-        );
-      }
+      // 이벤트 발행: 추가/삭제된 variant
+      await this._publishVariantChangeEvents(
+        version,
+        previousActiveVersion,
+        tx,
+      );
 
       await this._emitActiveVersionChangedEvent(
         version,
         previousActiveVersion,
-        targetStatus,
+        'active',
         tx,
       );
 
       this.logger.log(
-        `Published version ${version.version} of master ${version.masterId} as ${targetStatus}`,
+        `Published version ${version.version} of master ${version.masterId} as active`,
+      );
+    }, tx);
+  }
+
+  /**
+   * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
+   */
+  async unpublishMaster(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.inTx(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      // active를 inactive로 전환
+      await tx
+        .update(productMasterVersions)
+        .set({ versionStatus: 'inactive', updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, activeVersion.id));
+
+      await this._emitActiveVersionChangedEvent(
+        activeVersion,
+        activeVersion,
+        'inactive',
+        tx,
+      );
+
+      this.logger.log(
+        `Unpublished master ${masterId} (version ${activeVersion.version} → inactive)`,
       );
     }, tx);
   }

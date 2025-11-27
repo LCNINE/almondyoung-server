@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
+  NotFoundError,
+  BadRequestError,
+  ConflictError,
+} from '@app/shared';
+import {
   CreateCategoryDto,
   UpdateCategoryDto,
   CategoryPathInfoDto,
@@ -116,7 +121,7 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.id, categoryId));
 
       if (!category) {
-        throw new Error(`Category not found: ${categoryId}`);
+        throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
       const childCategories = await txn
@@ -125,7 +130,7 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.parentId, categoryId));
 
       if (childCategories.length > 0) {
-        throw new Error(
+        throw new BadRequestError(
           `Cannot delete category with child categories. Move or delete children first.`,
         );
       }
@@ -143,7 +148,7 @@ export class ProductCategoriesService {
             .where(eq(pimSchema.productCategories.id, moveProductsTo));
 
           if (!targetCategory) {
-            throw new Error(`Target category not found: ${moveProductsTo}`);
+            throw new NotFoundError(`Target category not found: ${moveProductsTo}`);
           }
 
           await txn
@@ -187,7 +192,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const children = await client
@@ -313,7 +318,7 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.id, categoryId));
 
       if (!category) {
-        throw new Error(`Category not found: ${categoryId}`);
+        throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
       let newParentCategory: ProductCategory | null = null;
@@ -324,14 +329,14 @@ export class ProductCategoriesService {
           .where(eq(pimSchema.productCategories.id, newParentId));
 
         if (parentResult.length === 0) {
-          throw new Error(`Parent category not found: ${newParentId}`);
+          throw new NotFoundError(`Parent category not found: ${newParentId}`);
         }
 
         newParentCategory = parentResult[0];
 
         // 순환 참조 확인 - 새 부모가 현재 카테고리의 자식인지 검사
         if (await this.checkCircularReference(categoryId, newParentId, txn)) {
-          throw new Error(
+          throw new BadRequestError(
             'Circular reference detected: Cannot move category to its own descendant',
           );
         }
@@ -416,7 +421,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const path: ProductCategory[] = [];
@@ -467,7 +472,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const maxChildLevel = result[0]?.maxLevel || category.level;
@@ -486,7 +491,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const pathIds = category.path
@@ -519,7 +524,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     // path 기반으로 모든 자손 조회 (현재 카테고리 제외)
@@ -556,7 +561,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     let categoryIds = [categoryId];
@@ -627,7 +632,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     let categoryIds = [categoryId];
@@ -671,7 +676,7 @@ export class ProductCategoriesService {
     tx?: DbTransaction,
   ): Promise<void> {
     if (!versionIds || versionIds.length === 0) {
-      throw new Error('Version IDs are required');
+      throw new BadRequestError('Version IDs are required');
     }
 
     const client = this.getClient(tx);
@@ -684,7 +689,7 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.id, categoryId));
 
       if (!category) {
-        throw new Error(`Category not found: ${categoryId}`);
+        throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
       // 2. Version ID를 Master ID + Version 번호로 변환
@@ -703,7 +708,7 @@ export class ProductCategoriesService {
         );
 
       if (productVersions.length === 0) {
-        throw new Error('No active versions found');
+        throw new NotFoundError('No active versions found');
       }
 
       const foundVersionIds = productVersions.map((p) => p.versionId);
@@ -712,7 +717,7 @@ export class ProductCategoriesService {
       );
 
       if (missingVersionIds.length > 0) {
-        throw new Error(`Active versions not found: ${missingVersionIds.join(', ')}`);
+        throw new NotFoundError(`Active versions not found: ${missingVersionIds.join(', ')}`);
       }
 
       // 3. 기존 카테고리 관계 삭제 (Master ID + Version 사용)
@@ -754,7 +759,7 @@ export class ProductCategoriesService {
     tx?: DbTransaction,
   ): Promise<void> {
     if (!versionIds || versionIds.length === 0) {
-      throw new Error('Version IDs are required');
+      throw new BadRequestError('Version IDs are required');
     }
 
     const client = this.getClient(tx);
@@ -767,7 +772,7 @@ export class ProductCategoriesService {
         .where(eq(pimSchema.productCategories.id, categoryId));
 
       if (!category) {
-        throw new Error(`Category not found: ${categoryId}`);
+        throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
       // 2. Version ID를 Master ID + Version 번호로 변환
@@ -786,7 +791,7 @@ export class ProductCategoriesService {
         );
 
       if (productVersions.length === 0) {
-        throw new Error('No active versions found');
+        throw new NotFoundError('No active versions found');
       }
 
       const foundVersionIds = productVersions.map((p) => p.versionId);
@@ -795,7 +800,7 @@ export class ProductCategoriesService {
       );
 
       if (missingVersionIds.length > 0) {
-        throw new Error(`Active versions not found: ${missingVersionIds.join(', ')}`);
+        throw new NotFoundError(`Active versions not found: ${missingVersionIds.join(', ')}`);
       }
 
       // 3. 이미 연결된 상품-카테고리 관계 조회 (Master ID + Version + Category 사용)
@@ -858,7 +863,7 @@ export class ProductCategoriesService {
     const client = this.getClient(tx);
 
     if (!query || query.trim() === '') {
-      throw new Error('Search query is required');
+      throw new BadRequestError('Search query is required');
     }
 
     const searchTerm = `%${query.trim()}%`;
@@ -910,7 +915,7 @@ export class ProductCategoriesService {
     const client = this.getClient(tx);
 
     if (level < 0) {
-      throw new Error('Level must be non-negative');
+      throw new BadRequestError('Level must be non-negative');
     }
 
     const categories = await client
@@ -933,7 +938,7 @@ export class ProductCategoriesService {
     tx?: DbTransaction,
   ): Promise<void> {
     if (!categoryIds || categoryIds.length === 0) {
-      throw new Error('Category IDs are required');
+      throw new BadRequestError('Category IDs are required');
     }
 
     const client = this.getClient(tx);
@@ -947,7 +952,7 @@ export class ProductCategoriesService {
           .where(eq(pimSchema.productCategories.id, parentId));
 
         if (!parentCategory) {
-          throw new Error(`Parent category not found: ${parentId}`);
+          throw new NotFoundError(`Parent category not found: ${parentId}`);
         }
       }
 
@@ -965,7 +970,7 @@ export class ProductCategoriesService {
         );
 
       if (existingCategories.length !== categoryIds.length) {
-        throw new Error(
+        throw new BadRequestError(
           'Some categories do not belong to the specified parent',
         );
       }
@@ -998,7 +1003,7 @@ export class ProductCategoriesService {
     const client = this.getClient(tx);
 
     if (sortOrder < 0) {
-      throw new Error('Sort order must be non-negative');
+      throw new BadRequestError('Sort order must be non-negative');
     }
 
     // 카테고리 존재 확인
@@ -1008,7 +1013,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     // sortOrder 업데이트
@@ -1171,7 +1176,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const displaySettings: CategoryDisplaySettings = {
@@ -1208,7 +1213,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const seoConfig: CategorySeoConfig = {
@@ -1245,7 +1250,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const templateConfig: CategoryTemplateConfig = {
@@ -1282,7 +1287,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId));
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     const [updated] = await client
@@ -1366,7 +1371,7 @@ export class ProductCategoriesService {
     );
 
     if (missingGroupIds.length > 0) {
-      throw new Error(`Tag groups not found: ${missingGroupIds.join(', ')}`);
+      throw new NotFoundError(`Tag groups not found: ${missingGroupIds.join(', ')}`);
     }
 
     // 조상 카테고리로부터 상속받은 태그 그룹 조회
@@ -1398,7 +1403,7 @@ export class ProductCategoriesService {
           (itg) => itg.tagGroupId === link.tagGroupId,
         );
         if (inherited) {
-          throw new Error(
+          throw new ConflictError(
             `Tag group ${link.tagGroupId} is already inherited from ancestor category ${inherited.categoryName}`,
           );
         }
@@ -1435,7 +1440,7 @@ export class ProductCategoriesService {
         .limit(1);
 
       if (!category) {
-        throw new Error(`Category not found: ${categoryId}`);
+        throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
       await client
@@ -1464,7 +1469,7 @@ export class ProductCategoriesService {
       .limit(1);
 
     if (!category) {
-      throw new Error(`Category not found: ${categoryId}`);
+      throw new NotFoundError(`Category not found: ${categoryId}`);
     }
 
     // 조상 카테고리 조회
@@ -1513,7 +1518,7 @@ export class ProductCategoriesService {
 
       // 동일 태그 그룹 중복 검증 (정합성 체크)
       if (groupedData[groupId]) {
-        throw new Error(
+        throw new ConflictError(
           `Data integrity error: Tag group ${groupId} is linked multiple times for category ${categoryId}`,
         );
       }

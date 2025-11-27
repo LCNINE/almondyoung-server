@@ -452,11 +452,6 @@ export interface CreateDraftVersionDto {
   copyMappings?: boolean;
 }
 
-// 버전 publish 요청 DTO
-export interface PublishVersionDto {
-  targetStatus: 'active' | 'inactive';
-}
-
 // Re-export new DTOs
 export { ProductDto, ProductListItemDto, ProductListResponseDto } from './core/products/dto/products/product-response.dto';
 export { ProductMasterMetadataDto } from './core/products/dto/products/product-master-metadata.dto';
