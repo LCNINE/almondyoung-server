@@ -13,17 +13,25 @@ interface AuthConfig {
 /**
  * JWT Access Token Strategy
  * Validates JWT tokens using shared secret (HS256)
+ * Supports both Authorization Bearer header and cookie-based authentication
  */
 @Injectable()
 export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
-    @Inject(AUTH_CONFIG) private config: AuthConfig,
+    @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     private authService: AuthenticationService,
   ) {
+    // config가 제대로 주입되었는지 확인
+    if (!config?.secret) {
+      throw new Error('AUTH_CONFIG.secret is not defined. Check AUTH_SECRET environment variable.');
+    }
+
     const options: StrategyOptions = {
       jwtFromRequest: ExtractJwt.fromExtractors([
+        // Authorization 헤더에서 Bearer 토큰 추출
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        // 쿠키에서 토큰 추출 (fallback)
         (request: any) => {
-          // User Service와 동일하게 쿠키만 사용
           const token = request?.cookies?.accessToken;
           return token;
         },
