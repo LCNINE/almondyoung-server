@@ -46,12 +46,20 @@ export class InventoryService implements OnModuleInit {
   // SKU 관리 도메인
   // ****************************************************************
 
+  private removeUndefinedFields<T extends Record<string, any>>(obj: T): Partial<T> {
+    return Object.fromEntries(
+      Object.entries(obj).filter(([_, value]) => value !== undefined && value !== null)
+    ) as Partial<T>;
+  }
+
   async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.inTx(async (trx) => {
-      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = createSkuDto;
+      const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, currentStock, ...skuData } = createSkuDto;
+
+      const cleanSkuData = this.removeUndefinedFields(skuData);
 
       const [newSku] = await trx.insert(wmsTables.skus).values({
-        ...skuData,
+        ...cleanSkuData,
         ...(skuGroupId && { groupId: skuGroupId }),
         code: this._generateSkuCode(),
       }).returning();
