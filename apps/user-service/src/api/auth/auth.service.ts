@@ -321,6 +321,17 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
+
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserEmailVerified',
+        aggregateId: verificationToken.user.id,
+        payload: {
+          userId: verificationToken.user.id,
+          email: verificationToken.user.email,
+          name: verificationToken.user.username,
+        },
+      });
+
       return reply.status(302).redirect(url.toString());
     } catch (error) {
       if (error instanceof UnauthorizedException || error instanceof InternalServerErrorException) {
@@ -855,7 +866,7 @@ export class AuthService {
     return;
   }
 
-  async removeAccount(userId: string, tx?: DbTransaction): Promise<void> {
+  async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       await tx
         .update(userServiceSchema.users)
