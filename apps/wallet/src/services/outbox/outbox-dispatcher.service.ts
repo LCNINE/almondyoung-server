@@ -6,12 +6,12 @@ import {
   PAYMENT_STREAM,
   PaymentEvents,
 } from '@packages/event-contracts/streams';
+import { eq, and, sql } from 'drizzle-orm';
 import { walletSchema } from '../../shared/database/schema';
 import * as schema from '../../shared/database/schema';
-import { eq, and, lte, sql } from 'drizzle-orm';
 
 /**
- * OutboxDispatcher
+ * OutboxDispatcherService
  *
  * 책임: Outbox 테이블의 이벤트를 Kafka로 발행
  * - Cron으로 주기적 폴링 (10초마다)
@@ -19,18 +19,18 @@ import { eq, and, lte, sql } from 'drizzle-orm';
  * - 발행 실패 시 재시도 (최대 5회)
  */
 @Injectable()
-export class OutboxDispatcher implements OnModuleInit {
-  private readonly logger = new Logger(OutboxDispatcher.name);
+export class OutboxDispatcherService implements OnModuleInit {
+  private readonly logger = new Logger(OutboxDispatcherService.name);
   private isProcessing = false;
 
   constructor(
     private readonly db: DbService<typeof walletSchema>,
-    @InjectStreamPublisher(PAYMENT_STREAM.topic.topic)
+    @InjectStreamPublisher(PAYMENT_STREAM.topic)
     private readonly paymentPublisher: StreamPublisher<PaymentEvents>,
-  ) {}
+  ) { }
 
   onModuleInit() {
-    this.logger.log('OutboxDispatcher 초기화 완료 ✅');
+    this.logger.log('📤 OutboxDispatcher 초기화 완료 ✅');
   }
 
   /**
@@ -40,7 +40,6 @@ export class OutboxDispatcher implements OnModuleInit {
    */
   @Cron(CronExpression.EVERY_10_SECONDS)
   async dispatch() {
-    // 중복 실행 방지
     if (this.isProcessing) {
       this.logger.debug('이전 dispatch 작업 진행 중, 건너뜀');
       return;
@@ -52,7 +51,7 @@ export class OutboxDispatcher implements OnModuleInit {
       const batchSize = 100;
       let processedCount = 0;
 
-      // 1. PENDING 이벤트 조회 (FOR UPDATE SKIP LOCKED)
+      // FOR UPDATE SKIP LOCKED로 동시성 제어
       const events = await this.db.db.transaction(async (tx) => {
         const pendingEvents = await tx.execute<{
           id: string;
@@ -60,8 +59,7 @@ export class OutboxDispatcher implements OnModuleInit {
           aggregate_type: string;
           aggregate_id: string;
           partition_key: string;
-          payload: any;
-          metadata: any;
+          payload: Record<string, unknown>;
           attempts: number;
         }>(sql`
           SELECT 
@@ -70,8 +68,7 @@ export class OutboxDispatcher implements OnModuleInit {
             aggregate_type, 
             aggregate_id, 
             partition_key, 
-            payload, 
-            metadata, 
+            payload,
             attempts
           FROM ${schema.outboxEvents}
           WHERE status = 'PENDING'
@@ -85,14 +82,12 @@ export class OutboxDispatcher implements OnModuleInit {
           return [];
         }
 
-        // 2. 상태를 PROCESSING으로 변경 (트랜잭션 내)
+        // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
         const eventIds = pendingEvents.map((e) => e.id);
         await tx
           .update(schema.outboxEvents)
           .set({
-            status: 'PENDING', // 아직 PROCESSING 상태 없으므로 PENDING 유지
             attempts: sql`${schema.outboxEvents.attempts} + 1`,
-            updatedAt: new Date(),
           })
           .where(sql`${schema.outboxEvents.id} = ANY(${eventIds})`);
 
@@ -105,7 +100,6 @@ export class OutboxDispatcher implements OnModuleInit {
 
       this.logger.log(`📤 Outbox 이벤트 발행 시작: ${events.length}개`);
 
-      // 3. 각 이벤트를 Kafka로 발행 (트랜잭션 밖)
       for (const event of events) {
         try {
           await this.publishEvent(event);
@@ -137,17 +131,16 @@ export class OutboxDispatcher implements OnModuleInit {
     aggregate_type: string;
     aggregate_id: string;
     partition_key: string;
-    payload: any;
-    metadata: any;
+    payload: Record<string, unknown>;
     attempts: number;
   }) {
     try {
-      // Kafka로 발행
+      // Payment 이벤트 발행
       await this.paymentPublisher.publishEvent({
-        eventType: event.event_type as any,
+        eventType: event.event_type as keyof PaymentEvents,
         aggregateId: event.aggregate_id,
-        payload: event.payload,
-        metadata: event.metadata,
+        payload: event.payload as any,
+        metadata: { partitionKey: event.partition_key },
       });
 
       // 성공 → PUBLISHED 상태로 변경
@@ -156,13 +149,11 @@ export class OutboxDispatcher implements OnModuleInit {
         .set({
           status: 'PUBLISHED',
           publishedAt: new Date(),
-          updatedAt: new Date(),
         })
         .where(eq(schema.outboxEvents.id, event.id));
 
       this.logger.debug(`✅ Event ${event.id}: ${event.event_type}`);
     } catch (error) {
-      // 실패 처리
       const newAttempts = event.attempts + 1;
       const isFinalFailure = newAttempts >= 5;
 
@@ -171,11 +162,9 @@ export class OutboxDispatcher implements OnModuleInit {
         .set({
           status: isFinalFailure ? 'FAILED' : 'PENDING',
           attempts: newAttempts,
-          errorMessage: error instanceof Error ? error.message : String(error),
           nextAttemptAt: isFinalFailure
             ? undefined
             : this.calculateNextAttempt(newAttempts),
-          updatedAt: new Date(),
         })
         .where(eq(schema.outboxEvents.id, event.id));
 
@@ -184,14 +173,11 @@ export class OutboxDispatcher implements OnModuleInit {
         error instanceof Error ? error.message : String(error),
       );
 
-      // 최종 실패 시 알림 (TODO: 슬랙, 이메일 등)
       if (isFinalFailure) {
         this.logger.error(
           `🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`,
         );
       }
-
-      throw error;
     }
   }
 
@@ -221,18 +207,16 @@ export class OutboxDispatcher implements OnModuleInit {
         status: 'PENDING',
         attempts: 0,
         nextAttemptAt: new Date(),
-        errorMessage: null,
-        updatedAt: new Date(),
       })
       .where(
         eventIds
           ? and(
-              eq(schema.outboxEvents.status, 'FAILED'),
-              sql`${schema.outboxEvents.id} = ANY(${eventIds})`,
-            )
+            eq(schema.outboxEvents.status, 'FAILED'),
+            sql`${schema.outboxEvents.id} = ANY(${eventIds})`,
+          )
           : eq(schema.outboxEvents.status, 'FAILED'),
       )
-      .returning({ id: schema.outboxEvents.id }); // [Changed]: 업데이트된 row의 id 반환
+      .returning({ id: schema.outboxEvents.id });
 
     this.logger.log(`수동 재시도: ${result.length}개 이벤트 재활성화`);
     return result.length;
