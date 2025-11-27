@@ -1,6 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import {
-  Injectable
+  Injectable,
+  Logger
 } from '@nestjs/common';
 import * as schema from 'apps/user-service/database/drizzle/schema';
 import {
@@ -11,6 +12,8 @@ import { AddToWishlistDto } from './dto/wishlist.dto';
 
 @Injectable()
 export class WishlistService {
+  private readonly logger = new Logger(WishlistService.name);
+
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
   ) { }
@@ -27,6 +30,8 @@ export class WishlistService {
       )
       .limit(1);
 
+    console.log('existing::::', existing);
+
     // 이미 찜목록에 있으면 제거
     if (existing.length > 0) {
       await this.dbService.db
@@ -38,8 +43,12 @@ export class WishlistService {
           ),
         );
 
+      console.log('deleted::');
+
       return
     }
+
+    console.log('====insert====');
 
     // 찜목록에 없으면 추가
     const result = await this.dbService.db
@@ -50,6 +59,7 @@ export class WishlistService {
       })
       .returning();
 
+    console.log('result::', result);
     return
   }
 
