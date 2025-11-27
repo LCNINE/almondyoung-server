@@ -6,9 +6,8 @@ import {
   PAYMENT_STREAM,
   PaymentEvents,
 } from '@packages/event-contracts/streams';
-import { eq, and, sql } from 'drizzle-orm';
 import { walletSchema } from '../../shared/database/schema';
-import * as schema from '../../shared/database/schema';
+import { eq, and, lte, sql } from 'drizzle-orm';
 
 /**
  * OutboxDispatcherService
@@ -25,7 +24,7 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   constructor(
     private readonly db: DbService<typeof walletSchema>,
-    @InjectStreamPublisher(PAYMENT_STREAM.topic)
+    @InjectStreamPublisher(PAYMENT_STREAM.topic.topic)
     private readonly paymentPublisher: StreamPublisher<PaymentEvents>,
   ) { }
 
@@ -70,7 +69,7 @@ export class OutboxDispatcherService implements OnModuleInit {
             partition_key, 
             payload,
             attempts
-          FROM ${schema.outboxEvents}
+          FROM ${walletSchema.outboxEvents}
           WHERE status = 'PENDING'
             AND next_attempt_at <= NOW()
           ORDER BY created_at ASC
@@ -85,11 +84,11 @@ export class OutboxDispatcherService implements OnModuleInit {
         // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
         const eventIds = pendingEvents.map((e) => e.id);
         await tx
-          .update(schema.outboxEvents)
+          .update(walletSchema.outboxEvents)
           .set({
-            attempts: sql`${schema.outboxEvents.attempts} + 1`,
+            attempts: sql`${walletSchema.outboxEvents.attempts} + 1`,
           })
-          .where(sql`${schema.outboxEvents.id} = ANY(${eventIds})`);
+          .where(sql`${walletSchema.outboxEvents.id} = ANY(${eventIds})`);
 
         return pendingEvents;
       });
@@ -145,12 +144,12 @@ export class OutboxDispatcherService implements OnModuleInit {
 
       // 성공 → PUBLISHED 상태로 변경
       await this.db.db
-        .update(schema.outboxEvents)
+        .update(walletSchema.outboxEvents)
         .set({
           status: 'PUBLISHED',
           publishedAt: new Date(),
         })
-        .where(eq(schema.outboxEvents.id, event.id));
+        .where(eq(walletSchema.outboxEvents.id, event.id));
 
       this.logger.debug(`✅ Event ${event.id}: ${event.event_type}`);
     } catch (error) {
@@ -158,7 +157,7 @@ export class OutboxDispatcherService implements OnModuleInit {
       const isFinalFailure = newAttempts >= 5;
 
       await this.db.db
-        .update(schema.outboxEvents)
+        .update(walletSchema.outboxEvents)
         .set({
           status: isFinalFailure ? 'FAILED' : 'PENDING',
           attempts: newAttempts,
@@ -166,7 +165,7 @@ export class OutboxDispatcherService implements OnModuleInit {
             ? undefined
             : this.calculateNextAttempt(newAttempts),
         })
-        .where(eq(schema.outboxEvents.id, event.id));
+        .where(eq(walletSchema.outboxEvents.id, event.id));
 
       this.logger.error(
         `❌ Event ${event.id} 실패 (${newAttempts}/5): ${event.event_type}`,
@@ -178,6 +177,8 @@ export class OutboxDispatcherService implements OnModuleInit {
           `🚨 최종 실패: ${event.id} (${event.event_type}) - 수동 처리 필요`,
         );
       }
+
+      throw error;
     }
   }
 
@@ -202,7 +203,7 @@ export class OutboxDispatcherService implements OnModuleInit {
    */
   async retryFailedEvents(eventIds?: string[]): Promise<number> {
     const result = await this.db.db
-      .update(schema.outboxEvents)
+      .update(walletSchema.outboxEvents)
       .set({
         status: 'PENDING',
         attempts: 0,
@@ -211,12 +212,12 @@ export class OutboxDispatcherService implements OnModuleInit {
       .where(
         eventIds
           ? and(
-            eq(schema.outboxEvents.status, 'FAILED'),
-            sql`${schema.outboxEvents.id} = ANY(${eventIds})`,
+            eq(walletSchema.outboxEvents.status, 'FAILED'),
+            sql`${walletSchema.outboxEvents.id} = ANY(${eventIds})`,
           )
-          : eq(schema.outboxEvents.status, 'FAILED'),
+          : eq(walletSchema.outboxEvents.status, 'FAILED'),
       )
-      .returning({ id: schema.outboxEvents.id });
+      .returning({ id: walletSchema.outboxEvents.id });
 
     this.logger.log(`수동 재시도: ${result.length}개 이벤트 재활성화`);
     return result.length;
