@@ -410,12 +410,29 @@ export class SalesOrdersService {
 
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    return db.query.salesOrders.findFirst({
-      where: (o, { eq }) => eq(o.id, id),
-      with: {
-        lines: true,
-      },
-    });
+
+    // 1. 주문 조회
+    const [order] = await db
+      .select()
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, id))
+      .limit(1);
+
+    if (!order) {
+      return null;
+    }
+
+    // 2. 주문 라인 조회
+    const lines = await db
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
+
+    // 3. 주문에 라인 정보 추가
+    return {
+      ...order,
+      lines,
+    };
   }
 
   /**
@@ -436,15 +453,42 @@ export class SalesOrdersService {
 
   async list(params: { limit: number; offset: number }, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    const rows = await db.query.salesOrders.findMany({
-      limit: params.limit,
-      offset: params.offset,
-      orderBy: desc(wmsTables.salesOrders.createdAt),
-      with: {
-        lines: true,
-      },
-    });
-    return rows;
+
+    // 1. 주문 목록 조회
+    const orders = await db
+      .select()
+      .from(wmsTables.salesOrders)
+      .limit(params.limit)
+      .offset(params.offset)
+      .orderBy(desc(wmsTables.salesOrders.createdAt));
+
+    if (orders.length === 0) {
+      return [];
+    }
+
+    // 2. 주문 ID 목록 추출
+    const orderIds = orders.map((o) => o.id);
+
+    // 3. 주문 라인 조회
+    const lines = await db
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
+
+    // 4. 주문 라인을 주문별로 그룹화
+    const linesByOrderId = new Map<string, typeof lines>();
+    for (const line of lines) {
+      if (!linesByOrderId.has(line.salesOrderId)) {
+        linesByOrderId.set(line.salesOrderId, []);
+      }
+      linesByOrderId.get(line.salesOrderId)!.push(line);
+    }
+
+    // 5. 주문에 라인 정보 추가
+    return orders.map((order) => ({
+      ...order,
+      lines: linesByOrderId.get(order.id) || [],
+    }));
   }
 
   /**
