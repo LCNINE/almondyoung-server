@@ -56,50 +56,15 @@ export class InventoryService implements OnModuleInit {
     return this.inTx(async (trx) => {
       const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, currentStock, ...skuData } = createSkuDto;
 
-      // 필수 필드와 기본값 설정
-      const values: any = {
-        name: skuData.name,
+      // undefined 값을 가진 필드를 제거
+      const cleanSkuData = this.removeUndefinedFields(skuData);
+
+      const [newSku] = await trx.insert(wmsTables.skus).values({
+        name: skuData.name, // 필수 필드 명시적으로 보장
+        ...cleanSkuData,
+        ...(skuGroupId && { groupId: skuGroupId }),
         code: this._generateSkuCode(),
-        stockType: skuData.stockType || 'physical',
-        safetyStock: skuData.safetyStock ?? 0,
-      };
-
-      // 선택적 필드들을 조건부로 추가 (drizzle이 undefined/null을 제대로 처리하지 못할 수 있음)
-      if (skuGroupId) values.groupId = skuGroupId;
-      if (skuData.optionKey) values.optionKey = skuData.optionKey;
-      if (skuData.deliveryProfileId) values.deliveryProfileId = skuData.deliveryProfileId;
-      if (skuData.sale1m !== undefined) values.sale1m = skuData.sale1m;
-      if (skuData.sale3m !== undefined) values.sale3m = skuData.sale3m;
-      if (skuData.businessProductName) values.businessProductName = skuData.businessProductName;
-      if (skuData.importDeclarationNumber) values.importDeclarationNumber = skuData.importDeclarationNumber;
-      if (skuData.logisticsPartnerId) values.logisticsPartnerId = skuData.logisticsPartnerId;
-      if (skuData.discount) values.discount = skuData.discount;
-      if (skuData.manufacturerStar) values.manufacturerStar = skuData.manufacturerStar;
-      if (skuData.productWeight !== undefined) values.productWeight = skuData.productWeight;
-      if (skuData.dimensionWidth !== undefined) values.dimensionWidth = skuData.dimensionWidth;
-      if (skuData.dimensionHeight !== undefined) values.dimensionHeight = skuData.dimensionHeight;
-      if (skuData.dimensionDepth !== undefined) values.dimensionDepth = skuData.dimensionDepth;
-      if (skuData.productMaterial) values.productMaterial = skuData.productMaterial;
-      if (skuData.koreanName) values.koreanName = skuData.koreanName;
-      if (skuData.maxDiscountQuantity !== undefined) values.maxDiscountQuantity = skuData.maxDiscountQuantity;
-      if (skuData.packagingImporterName) values.packagingImporterName = skuData.packagingImporterName;
-      if (skuData.productDescription) values.productDescription = skuData.productDescription;
-      if (skuData.moq !== undefined) values.moq = skuData.moq;
-      if (skuData.memo2) values.memo2 = skuData.memo2;
-      if (skuData.memo3) values.memo3 = skuData.memo3;
-      if (skuData.mainImageUrl) values.mainImageUrl = skuData.mainImageUrl;
-      if (skuData.expiryDateManagement !== undefined) values.expiryDateManagement = skuData.expiryDateManagement;
-      if (skuData.expiryStartDate) values.expiryStartDate = skuData.expiryStartDate;
-      if (skuData.expiryEndDate) values.expiryEndDate = skuData.expiryEndDate;
-      if (skuData.manufacturingDateManagement !== undefined) values.manufacturingDateManagement = skuData.manufacturingDateManagement;
-      if (skuData.isGeneralInventory !== undefined) values.isGeneralInventory = skuData.isGeneralInventory;
-      if (skuData.validityStartDate) values.validityStartDate = skuData.validityStartDate;
-      if (skuData.validityEndDate) values.validityEndDate = skuData.validityEndDate;
-      if (skuData.primaryLocationId) values.primaryLocationId = skuData.primaryLocationId;
-      if (skuData.secondaryLocationId) values.secondaryLocationId = skuData.secondaryLocationId;
-      if (skuData.variantGroupCode) values.variantGroupCode = skuData.variantGroupCode;
-
-      const [newSku] = await trx.insert(wmsTables.skus).values(values).returning();
+      } as any).returning();
 
       if (supplierIds && supplierIds.length > 0) {
         await trx.insert(wmsTables.skuSuppliers).values(
