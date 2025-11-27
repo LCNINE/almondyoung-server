@@ -56,27 +56,21 @@ export type DiscountLine = schema.DiscountLine;
 
 export type PaymentIntent = InferSelectModel<typeof schema.paymentIntents>;
 export type NewPaymentIntent = InferInsertModel<typeof schema.paymentIntents>;
-export type UpdatePaymentIntent = Partial<
-  Omit<NewPaymentIntent, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePaymentIntent = Partial<Omit<NewPaymentIntent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===============================
 // Payment Attempt 타입들
 // ===============================
 export type PaymentAttempt = InferSelectModel<typeof schema.paymentAttempts>;
 export type NewPaymentAttempt = InferInsertModel<typeof schema.paymentAttempts>;
-export type UpdatePaymentAttempt = Partial<
-  Omit<NewPaymentAttempt, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePaymentAttempt = Partial<Omit<NewPaymentAttempt, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===============================
 // Payment Refund 타입들
 // ===============================
 export type PaymentRefund = InferSelectModel<typeof schema.paymentRefunds>;
 export type NewPaymentRefund = InferInsertModel<typeof schema.paymentRefunds>;
-export type UpdatePaymentRefund = Partial<
-  Omit<NewPaymentRefund, 'id' | 'createdAt'>
->;
+export type UpdatePaymentRefund = Partial<Omit<NewPaymentRefund, 'id' | 'createdAt'>>;
 
 // ===============================
 // Checkout Session 타입들
@@ -87,40 +81,28 @@ export type UpdatePaymentRefund = Partial<
 // ===============================
 export type PaymentProfile = InferSelectModel<typeof schema.paymentProfiles>;
 export type NewPaymentProfile = InferInsertModel<typeof schema.paymentProfiles>;
-export type UpdatePaymentProfile = Partial<
-  Omit<NewPaymentProfile, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdatePaymentProfile = Partial<Omit<NewPaymentProfile, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // CMS Card Profile
 export type CmsCardProfile = InferSelectModel<typeof schema.cmsCardProfiles>;
 export type NewCmsCardProfile = InferInsertModel<typeof schema.cmsCardProfiles>;
-export type UpdateCmsCardProfile = Partial<
-  Omit<NewCmsCardProfile, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateCmsCardProfile = Partial<Omit<NewCmsCardProfile, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // CMS Batch Profile
 export type CmsBatchProfile = InferSelectModel<typeof schema.cmsBatchProfiles>;
-export type NewCmsBatchProfile = InferInsertModel<
-  typeof schema.cmsBatchProfiles
->;
-export type UpdateCmsBatchProfile = Partial<
-  Omit<NewCmsBatchProfile, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type NewCmsBatchProfile = InferInsertModel<typeof schema.cmsBatchProfiles>;
+export type UpdateCmsBatchProfile = Partial<Omit<NewCmsBatchProfile, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===============================
 // BNPL 타입들
 // ===============================
 export type BnplAccount = InferSelectModel<typeof schema.bnplAccounts>;
 export type NewBnplAccount = InferInsertModel<typeof schema.bnplAccounts>;
-export type UpdateBnplAccount = Partial<
-  Omit<NewBnplAccount, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateBnplAccount = Partial<Omit<NewBnplAccount, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type BnplEvent = InferSelectModel<typeof schema.bnplEvents>;
 export type NewBnplEvent = InferInsertModel<typeof schema.bnplEvents>;
-export type UpdateBnplEvent = Partial<
-  Omit<NewBnplEvent, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateBnplEvent = Partial<Omit<NewBnplEvent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===============================
 // Point System 타입들
@@ -128,25 +110,15 @@ export type UpdateBnplEvent = Partial<
 export type PointEvent = InferSelectModel<typeof schema.pointEvents>;
 export type NewPointEvent = InferInsertModel<typeof schema.pointEvents>;
 
-export type PointEventDetail = InferSelectModel<
-  typeof schema.pointEventDetails
->;
-export type NewPointEventDetail = InferInsertModel<
-  typeof schema.pointEventDetails
->;
+export type PointEventDetail = InferSelectModel<typeof schema.pointEventDetails>;
+export type NewPointEventDetail = InferInsertModel<typeof schema.pointEventDetails>;
 
 // ===============================
 // Refund Account 타입들
 // ===============================
-export type UserRefundAccount = InferSelectModel<
-  typeof schema.userRefundAccounts
->;
-export type NewUserRefundAccount = InferInsertModel<
-  typeof schema.userRefundAccounts
->;
-export type UpdateUserRefundAccount = Partial<
-  Omit<NewUserRefundAccount, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UserRefundAccount = InferSelectModel<typeof schema.userRefundAccounts>;
+export type NewUserRefundAccount = InferInsertModel<typeof schema.userRefundAccounts>;
+export type UpdateUserRefundAccount = Partial<Omit<NewUserRefundAccount, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===============================
 // Idempotency Key 타입들
@@ -192,28 +164,16 @@ export type RefundWithAccount = PaymentRefund & {
 // ===============================
 export type TaxInvoice = InferSelectModel<typeof schema.taxInvoices>;
 export type NewTaxInvoice = InferInsertModel<typeof schema.taxInvoices>;
-export type UpdateTaxInvoice = Partial<
-  Omit<NewTaxInvoice, 'id' | 'createdAt' | 'updatedAt'>
->;
+export type UpdateTaxInvoice = Partial<Omit<NewTaxInvoice, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type TaxInvoiceEvent = InferSelectModel<typeof schema.taxInvoiceEvents>;
-export type NewTaxInvoiceEvent = InferInsertModel<
-  typeof schema.taxInvoiceEvents
->;
+export type NewTaxInvoiceEvent = InferInsertModel<typeof schema.taxInvoiceEvents>;
 
-export type TaxInvoiceSnapshot = InferSelectModel<
-  typeof schema.taxInvoiceSnapshots
->;
-export type NewTaxInvoiceSnapshot = InferInsertModel<
-  typeof schema.taxInvoiceSnapshots
->;
+export type TaxInvoiceSnapshot = InferSelectModel<typeof schema.taxInvoiceSnapshots>;
+export type NewTaxInvoiceSnapshot = InferInsertModel<typeof schema.taxInvoiceSnapshots>;
 
-export type UserTaxInvoicePreference = InferSelectModel<
-  typeof schema.userTaxInvoicePreferences
->;
-export type NewUserTaxInvoicePreference = InferInsertModel<
-  typeof schema.userTaxInvoicePreferences
->;
+export type UserTaxInvoicePreference = InferSelectModel<typeof schema.userTaxInvoicePreferences>;
+export type NewUserTaxInvoicePreference = InferInsertModel<typeof schema.userTaxInvoicePreferences>;
 export type UpdateUserTaxInvoicePreference = Partial<
   Omit<NewUserTaxInvoicePreference, 'userId' | 'createdAt' | 'updatedAt'>
 >;
@@ -372,10 +332,7 @@ export type TaxInvoiceStatus =
 /**
  * 상태 전이 매트릭스
  */
-export const TAX_INVOICE_TRANSITIONS: Record<
-  TaxInvoiceStatus,
-  TaxInvoiceStatus[]
-> = {
+export const TAX_INVOICE_TRANSITIONS: Record<TaxInvoiceStatus, TaxInvoiceStatus[]> = {
   REQUESTED: ['EXPORTED', 'CANCELLED'],
   EXPORTED: ['ISSUED_CONFIRMED', 'FAILED'],
   ISSUED_CONFIRMED: ['NEEDS_MODIFICATION'],
@@ -387,25 +344,13 @@ export const TAX_INVOICE_TRANSITIONS: Record<
 // ===============================
 // Cash Receipt 타입들
 // ===============================
-export type CashReceiptEvent = InferSelectModel<
-  typeof schema.cashReceiptEvents
->;
-export type NewCashReceiptEvent = InferInsertModel<
-  typeof schema.cashReceiptEvents
->;
-export type UpdateCashReceiptEvent = Partial<
-  Omit<NewCashReceiptEvent, 'id' | 'createdAt'>
->;
+export type CashReceiptEvent = InferSelectModel<typeof schema.cashReceiptEvents>;
+export type NewCashReceiptEvent = InferInsertModel<typeof schema.cashReceiptEvents>;
+export type UpdateCashReceiptEvent = Partial<Omit<NewCashReceiptEvent, 'id' | 'createdAt'>>;
 
-export type CashReceiptEventDetail = InferSelectModel<
-  typeof schema.cashReceiptEventDetails
->;
-export type NewCashReceiptEventDetail = InferInsertModel<
-  typeof schema.cashReceiptEventDetails
->;
-export type UpdateCashReceiptEventDetail = Partial<
-  Omit<NewCashReceiptEventDetail, 'id' | 'createdAt'>
->;
+export type CashReceiptEventDetail = InferSelectModel<typeof schema.cashReceiptEventDetails>;
+export type NewCashReceiptEventDetail = InferInsertModel<typeof schema.cashReceiptEventDetails>;
+export type UpdateCashReceiptEventDetail = Partial<Omit<NewCashReceiptEventDetail, 'id' | 'createdAt'>>;
 
 /**
  * 현금영수증 이벤트와 상세 정보를 조인한 결과 타입
@@ -413,3 +358,16 @@ export type UpdateCashReceiptEventDetail = Partial<
 export type CashReceiptEventWithDetails = CashReceiptEvent & {
   details: CashReceiptEventDetail;
 };
+
+// ===============================
+// Payment PIN 타입들
+// ===============================
+export type UserPaymentPassword = InferSelectModel<typeof schema.userPaymentPasswords>;
+export type NewUserPaymentPassword = InferInsertModel<typeof schema.userPaymentPasswords>;
+export type UpdateUserPaymentPassword = Partial<Omit<NewUserPaymentPassword, 'userId' | 'createdAt' | 'updatedAt'>>;
+
+export type PinAccessLog = InferSelectModel<typeof schema.pinAccessLogs>;
+export type NewPinAccessLog = InferInsertModel<typeof schema.pinAccessLogs>;
+
+export type PinHistory = InferSelectModel<typeof schema.pinHistory>;
+export type NewPinHistory = InferInsertModel<typeof schema.pinHistory>;
