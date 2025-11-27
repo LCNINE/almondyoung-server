@@ -412,6 +412,9 @@ export class SalesOrdersService {
     const db = tx ?? this.db.db;
     return db.query.salesOrders.findFirst({
       where: (o, { eq }) => eq(o.id, id),
+      with: {
+        lines: true,
+      },
     });
   }
 
@@ -437,6 +440,9 @@ export class SalesOrdersService {
       limit: params.limit,
       offset: params.offset,
       orderBy: (o, { desc }) => [desc(o.createdAt as any)] as any,
+      with: {
+        lines: true,
+      },
     } as any);
     return rows;
   }
