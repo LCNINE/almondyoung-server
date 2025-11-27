@@ -356,7 +356,7 @@ export const holders = pgTable('holders', {
 
 export const skus = pgTable('skus', {
   id: uuid('id').primaryKey().defaultRandom(),
-  holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("00000000-0000-0000-0000-000000000000").notNull(),
+  holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("019d0001-0000-7000-a000-000000000001").notNull(),
   groupId: uuid('group_id').references(() => skuGroups.id),
   optionKey: varchar('option_key', { length: 255 }),
 
