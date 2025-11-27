@@ -56,13 +56,15 @@ export class InventoryService implements OnModuleInit {
     return this.inTx(async (trx) => {
       const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, currentStock, ...skuData } = createSkuDto;
 
+      // undefined 값을 가진 필드를 제거
       const cleanSkuData = this.removeUndefinedFields(skuData);
 
       const [newSku] = await trx.insert(wmsTables.skus).values({
+        name: skuData.name, // 필수 필드 명시적으로 보장
         ...cleanSkuData,
         ...(skuGroupId && { groupId: skuGroupId }),
         code: this._generateSkuCode(),
-      }).returning();
+      } as any).returning();
 
       if (supplierIds && supplierIds.length > 0) {
         await trx.insert(wmsTables.skuSuppliers).values(
