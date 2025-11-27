@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray, type InferInsertModel } from 'drizzle-orm';
+import { eq, inArray, desc, type InferInsertModel } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -439,11 +439,11 @@ export class SalesOrdersService {
     const rows = await db.query.salesOrders.findMany({
       limit: params.limit,
       offset: params.offset,
-      orderBy: (o, { desc }) => [desc(o.createdAt as any)] as any,
+      orderBy: desc(wmsTables.salesOrders.createdAt),
       with: {
         lines: true,
       },
-    } as any);
+    });
     return rows;
   }
 
