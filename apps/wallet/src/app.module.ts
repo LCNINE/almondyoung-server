@@ -72,7 +72,7 @@ import { OmsClientMock } from './services/tax/oms-client.mock';
 import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.controller';
 import { OutboxService } from './services/outbox/outbox.service';
-import { OutboxDispatcher } from 'apps/outbox-demo/src/test/services/outbox-dispatcher.service';
+import { OutboxDispatcherService } from './services/outbox/outbox-dispatcher.service';
 
 @Module({
   imports: [
@@ -131,7 +131,7 @@ import { OutboxDispatcher } from 'apps/outbox-demo/src/test/services/outbox-disp
 
     // --- Outbox Pattern ---
     OutboxService,
-    OutboxDispatcher,
+    OutboxDispatcherService,
     // --- Intent Implementation Layer ---
     IntentReader,
     IntentCreator,
@@ -203,4 +203,4 @@ import { OutboxDispatcher } from 'apps/outbox-demo/src/test/services/outbox-disp
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule {}
+export class AppModule { }
