@@ -37,6 +37,8 @@ export class WishlistService {
             eq(schema.wishlist.productId, productId),
           ),
         );
+
+      return
     }
 
     // 찜목록에 없으면 추가
