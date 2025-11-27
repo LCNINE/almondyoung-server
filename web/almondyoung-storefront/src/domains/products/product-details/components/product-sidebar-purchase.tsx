@@ -1,21 +1,21 @@
 "use client"
 
-import { useState } from "react"
 import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { useAddToCart } from "@hooks/api/use-add-to-cart"
+import type { ProductDetail } from "@lib/types/ui/product"
 import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
 import { Bell, Heart, MessageCircle, Zap } from "lucide-react"
-import { useAddToCart } from "@hooks/api/use-add-to-cart"
+import { useState } from "react"
+import { ProductOptionSelector } from "./product-option-selector"
 import { ProductPriceDisplay } from "./product-price-display"
 import { ProductRatingDisplay } from "./product-rating-display"
 import { ProductShippingInfo } from "./product-shipping-info"
-import { ProductOptionSelector } from "./product-option-selector"
-import type { ProductDetail } from "@lib/types/ui/product"
 
 type Props = {
   product: ProductDetail
-  isInWishlist: boolean
-  wishlistLoading: boolean
-  onWishlistToggle: () => void
+  isWishlisted: boolean
+  isWishlistPending: boolean
+  onWishlistToggle: (productId: string) => void
   countryCode: string
 }
 
@@ -26,8 +26,8 @@ type Props = {
  */
 export function ProductSidebarPurchase({
   product,
-  isInWishlist,
-  wishlistLoading,
+  isWishlisted,
+  isWishlistPending,
   onWishlistToggle,
   countryCode,
 }: Props) {
@@ -154,13 +154,13 @@ export function ProductSidebarPurchase({
               variant="outline"
               color="secondary"
               size="md"
-              onClick={onWishlistToggle}
-              disabled={wishlistLoading}
+              onClick={() => onWishlistToggle(product.id)}
+              disabled={isWishlistPending}
               aria-label="찜하기"
             >
               <Heart
                 className={`h-7 w-7 ${
-                  isInWishlist ? "text-red-500" : "text-gray-300"
+                  isWishlisted ? "text-red-500" : "text-gray-300"
                 }`}
               />
               찜

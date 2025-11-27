@@ -17,7 +17,7 @@ export function routeHandler(handler: RouteHandlerFunction) {
 
         // error.tsx에서 처리
         if (statusCode === 401) {
-          return NextResponse.json({ error: "TOKEN_EXPIRED" }, { status: 401 })
+          return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
         }
 
         return NextResponse.json(

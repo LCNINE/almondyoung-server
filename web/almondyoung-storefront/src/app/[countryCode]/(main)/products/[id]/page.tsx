@@ -1,13 +1,12 @@
-import { Suspense } from "react"
-// import ProductDetailClient from "domains/products/product-details/productDetail.client" // 원본 보존
-import { ProductDetailPageNew } from "domains/products/product-details" // 새 버전
-import { ProductDetail } from "@lib/types/ui/product"
-import productDetailData from "@lib/data/dummy/get-product-details.json"
-// 더미 JSON 데이터 import (서버 데이터 구조 그대로)
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
-import { ProductDetailReview } from "./components"
-import { ReviewCardList } from "domains/reviews/summary/review-card-list"
-import ProductDetailClient from "domains/products/product-details/productDetail.client"
+import { fetchMe } from "@lib/api/users/me"
+import productDetailData from "@lib/data/dummy/get-product-details.json"
+import { ProductDetail } from "@lib/types/ui/product"
+import { UserDetail } from "types/global"
+import ProductDetailPage from "domains/products/product-details/product-detail-page"
+import { Suspense } from "react"
+import { getWishlist } from "@lib/api/users/wishlist/server"
+import { WishlistDto } from "@lib/api/users/wishlist/types"
 
 /**
  * 서버 데이터를 ProductDetail 타입으로 변환
@@ -112,7 +111,13 @@ export default async function Page({
   const { id, countryCode } = await params
   let product: ProductDetail | null = null
   let error: string | null = null
-  const user = null
+  const user: UserDetail | null = await fetchMe().catch(() => null)
+  const wishlist: WishlistDto = await getWishlist()
+
+  //todo: 확인필요함 더미데이터에서는 상품 id값이 달라서 false로 계속 나왔었음
+  const isWishlisted = wishlist.data.some(
+    (wishlist) => wishlist.productId === id
+  )
 
   try {
     // 더미 JSON 데이터를 UI 타입으로 변환 (모든 ID에 대해 같은 데이터 반환)
@@ -132,7 +137,7 @@ export default async function Page({
     >
       <div className="md:bg-muted/50 min-h-screen bg-white">
         <Suspense fallback={<div className="p-8">로딩 중…</div>}>
-          <ProductDetailPageNew
+          <ProductDetailPage
             params={Promise.resolve({ id, countryCode })}
             product={product}
             error={error}

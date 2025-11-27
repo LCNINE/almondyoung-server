@@ -1,4 +1,4 @@
-import { WishlistItem } from "@lib/api/users/wishlist"
+import { WishlistItem } from "@lib/api/users/wishlist/server"
 import { ProductDetail } from "@lib/types/ui/product"
 import { getProductDetailService } from "@lib/services/pim/products/getProductDetailService"
 import { getWishlistService } from "./wishlist"

@@ -3,27 +3,26 @@
 import { Breadcrumb } from "@components/layout/components/breadcrumb"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
-import { useWishlist } from "@hooks/api/use-wishlist"
+import { toggleWishlist } from "@lib/api/users/wishlist/client"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { ProductCard } from "@lib/types/ui/product"
-import { UserBasicInfo } from "@lib/types/ui/user"
 import { getRecommendedProducts } from "app/data/__mocks__/recommended-products.mock"
 import { ProductRecommandSlider } from "components/product-recommand-slider"
-import {
-  ReviewSummary,
-  ProductReviewThumbnailGallery,
-} from "domains/reviews/summary"
 import { ReviewDetailCardList } from "domains/reviews/details"
-import { use, useRef, useState } from "react"
+import {
+  ProductReviewThumbnailGallery,
+  ReviewSummary,
+} from "domains/reviews/summary"
+import { use, useRef, useState, useTransition } from "react"
+import { toast } from "sonner"
+import { UserDetail } from "types/global"
+import { ProductDetailInfo } from "./components/product-detail-info"
 import { ProductImageGallery } from "./components/product-image-gallery"
+import { ProductInfoAccordion } from "./components/product-info-accordion"
 import { ProductInfoMobile } from "./components/product-info-mobile"
+import { ProductQnaSection } from "./components/product-qna-section"
 import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
-import { ProductDetailInfo } from "./components/product-detail-info"
-import { ProductQnaSection } from "./components/product-qna-section"
-import { ProductInfoAccordion } from "./components/product-info-accordion"
-import { ProductBottomBar } from "./components/product-bottom-bar"
-import { ProductBottomSheet } from "./components/product-bottom-sheet"
 
 interface ProductDetailPageProps {
   params: Promise<{
@@ -32,7 +31,7 @@ interface ProductDetailPageProps {
   }>
   product: ProductDetail | null
   error?: string | null
-  user: UserBasicInfo | null
+  user: UserDetail | null
 }
 
 // Mock 데이터
@@ -178,7 +177,7 @@ const reviewListData = {
  * - CSS 중첩 최소화
  * - 컴포넌트 분리
  */
-const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
+const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   params,
   product,
   error,
@@ -194,6 +193,8 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
   const [mainImage, setMainImage] = useState(
     product?.thumbnails?.[0] || product?.thumbnail || ""
   )
+  const [isWishlisted, setIsWishlisted] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   // ===== Refs =====
   const detailRef = useRef<HTMLDivElement>(null)
@@ -203,11 +204,6 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
 
   // ===== Hooks =====
   const { addToCart } = useAddToCart()
-  const {
-    toggleItem,
-    isInWishlist,
-    isLoading: wishlistLoading,
-  } = useWishlist(user)
 
   useRecentViews(null, {
     userId: user?.id,
@@ -243,27 +239,36 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
     refs[tab]?.current?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
-  const handleWishlistToggle = async () => {
-    try {
-      await toggleItem(product.id)
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "위시리스트 처리에 실패했습니다."
-
-      if (
-        errorMessage.includes("로그인") ||
-        errorMessage.includes("401") ||
-        errorMessage.includes("authentication")
-      ) {
-        if (confirm("로그인이 필요합니다. 로그인 페이지로 이동하시겠습니까?")) {
-          window.location.href = `/${countryCode}/login`
-        }
-        return
-      }
-      alert(errorMessage)
+  const handleWishlistToggle = (productId: string) => {
+    console.log("productId:", productId)
+    if (!user) {
+      toast.error(
+        "로그인이 필요한 기능입니다. 먼저 로그인 후 다시 시도해 주세요."
+      )
+      return
     }
+
+    const previousState: boolean = isWishlisted
+
+    setIsWishlisted(!isWishlisted)
+
+    startTransition(async () => {
+      try {
+        // 성공
+        await toggleWishlist(productId)
+        toast.success(
+          isWishlisted
+            ? "찜 목록에서 상품이 삭제되었습니다."
+            : "상품이 찜 목록에 추가되었습니다."
+        )
+      } catch (error) {
+        // 실패시 상태 복원
+        setIsWishlisted(previousState)
+
+        console.error("찜하기 실패", error)
+        toast.error("찜 처리 중 오류가 발생했습니다. 다시 시도해 주세요.")
+      }
+    })
   }
 
   const recommendedProducts = getRecommendedProducts().map((p) => ({
@@ -400,15 +405,13 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
                 />
               </div>
 
-     
-                <ReviewDetailCardList
-                  reviews={reviewListData.reviews}
-                  itemsPerPage={5}
-                  onLike={(reviewId, liked) =>
-                    console.log(`Review ${reviewId} liked: ${liked}`)
-                  }
-                />
-            
+              <ReviewDetailCardList
+                reviews={reviewListData.reviews}
+                itemsPerPage={5}
+                onLike={(reviewId, liked) =>
+                  console.log(`Review ${reviewId} liked: ${liked}`)
+                }
+              />
             </div>
 
             {/* Q&A */}
@@ -425,8 +428,8 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
           {/* 사이드바 (데스크탑) */}
           <ProductSidebarPurchase
             product={product}
-            isInWishlist={isInWishlist(product.id)}
-            wishlistLoading={wishlistLoading}
+            isWishlisted={isWishlisted}
+            isWishlistPending={isPending}
             onWishlistToggle={handleWishlistToggle}
             countryCode={countryCode}
           />
@@ -438,4 +441,4 @@ const ProductDetailPageNew: React.FC<ProductDetailPageProps> = ({
   )
 }
 
-export default ProductDetailPageNew
+export default ProductDetailPage

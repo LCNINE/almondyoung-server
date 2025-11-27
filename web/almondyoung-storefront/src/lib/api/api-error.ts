@@ -14,7 +14,6 @@ export class ApiError extends Error {
 
 /**
  * 인증 관련 오류 전용 클래스
- * - ApiError를 상속받지만, 인증 복구(AuthRestore) 로직에서만 특별히 취급됩니다.
  */
 export class ApiAuthError extends ApiError {
   constructor(

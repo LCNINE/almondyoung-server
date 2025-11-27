@@ -20,10 +20,7 @@ export default function Error({
     hasTriedRef.current = true
 
     const tokenRefresh = async () => {
-      if (
-        error.digest === "TOKEN_EXPIRED" ||
-        error.message === "TOKEN_EXPIRED"
-      ) {
+      if (error.digest === "Unauthorized" || error.message === "Unauthorized") {
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
 
         try {
@@ -36,7 +33,7 @@ export default function Error({
             // 토큰 복구 성공하면 새로고침
             console.log("토큰 복구 성공")
             await new Promise((resolve) => setTimeout(resolve, 100))
-            window.location.reload()
+            router.refresh()
             return
           }
 
@@ -46,7 +43,7 @@ export default function Error({
           if (isMainPage && data.isMainPage) {
             // 메인페이지에서 리프레시 토큰도 만료되면 로그아웃 처리만하고 새로고침
             await new Promise((resolve) => setTimeout(resolve, 100))
-            window.location.reload()
+            router.refresh()
             return
           }
 
@@ -59,13 +56,13 @@ export default function Error({
           if (isMainPage) {
             // 메인페이지에서 에러 발생 시 로그아웃 처리만하고 새로고침
             await new Promise((resolve) => setTimeout(resolve, 100))
-            window.location.reload()
+            router.refresh()
             return
           }
 
           // 다른 페이지는 로그인 페이지로 리다이렉트
           const currentUrl = encodeURIComponent(pathname)
-          window.location.href = `/kr/login?redirect_to=${currentUrl}`
+          router.push(`/kr/login?redirect_to=${currentUrl}`)
         }
       } else {
         // TOKEN_EXPIRED가 아닌 다른 에러인 경우
