@@ -4,14 +4,16 @@ import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schem
 import { and, eq } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
+import { UpdateShopInfoDto } from './dto/update-shop-info';
+import { ShopException } from './exceptions/shop.exceptions';
 
 @Injectable()
 export class ShopService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
-  async modify(
+  async createShopInfo(
     createShopDto: CreateShopInfoDto,
     userId: string,
   ): Promise<void> {
@@ -25,17 +27,47 @@ export class ShopService {
       updatedAt: new Date(),
     };
 
+    const existingShop = await this.findOneByUserId(userId);
+
+    if (existingShop) {
+      throw new ShopException({ message: '상점 정보가 이미 존재합니다.', errorCode: 'SHOP_INFO_ALREADY_EXISTS' })
+    }
+
     await this.dbService.db
       .insert(schema.shops)
       .values({
         userId: userId,
         ...shopData,
       })
-      .onConflictDoUpdate({
-        target: [schema.shops.userId],
-        set: shopData,
-      })
-      .execute();
+
+    return;
+  }
+
+
+  async updateShopInfo(
+    updateShopDto: UpdateShopInfoDto,
+    userId: string,
+  ): Promise<void> {
+    const shopData = {
+      shopType: updateShopDto.shopType,
+      categories: updateShopDto.categories,
+      targetCustomers: updateShopDto.targetCustomers,
+      openDays: updateShopDto.openDays,
+      isOperating: updateShopDto.isOperating,
+      yearsOperating: updateShopDto.yearsOperating,
+      updatedAt: new Date(),
+    };
+
+    const existingShop = await this.findOneByUserId(userId);
+
+    if (!existingShop) {
+      throw new ShopException({ message: '상점 정보가 존재하지 않습니다.', errorCode: 'SHOP_INFO_NOT_FOUND' })
+    }
+
+    await this.dbService.db
+      .update(schema.shops)
+      .set(shopData)
+      .where(eq(schema.shops.userId, userId));
 
     return;
   }
