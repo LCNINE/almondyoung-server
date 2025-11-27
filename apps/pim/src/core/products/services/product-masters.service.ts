@@ -716,7 +716,9 @@ export class ProductMastersService {
       // 데이터 쿼리 (JOIN 포함, 하위 카테고리도 포함)
       const dataQuery = client
         .select({
-          id: productMasterVersions.id,
+          id: productMasterVersions.masterId,
+          masterId: productMasterVersions.masterId,
+          versionId: productMasterVersions.id,
           name: productMasterVersions.name,
           thumbnail: productMasterVersions.thumbnail,
           isMembershipOnly: productMasterVersions.isMembershipOnly,
@@ -794,7 +796,9 @@ export class ProductMastersService {
     // 목록용으로 필요한 필드만 선택
     const dataQuery = client
       .select({
-        id: productMasterVersions.id,
+        id: productMasterVersions.masterId,
+        masterId: productMasterVersions.masterId,
+        versionId: productMasterVersions.id,
         name: productMasterVersions.name,
         brand: productMasterVersions.brand,
         thumbnail: productMasterVersions.thumbnail,

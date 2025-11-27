@@ -22,7 +22,7 @@ export class PricingService {
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
     private readonly calculatorService: PricingCalculatorService,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -138,9 +138,10 @@ export class PricingService {
         trx,
       );
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
+      // version 결정 (지정되지 않으면 active 버전 사용, 없으면 draft 버전 사용)
       let actualVersion = version;
       if (actualVersion === undefined) {
+        //  active 버전 찾기
         const [activeMaster] = await trx
           .select({ version: productMasterVersions.version })
           .from(productMasterVersions)
@@ -152,10 +153,27 @@ export class PricingService {
           )
           .limit(1);
 
-        if (!activeMaster) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
+        if (activeMaster) {
+          actualVersion = activeMaster.version;
+        } else {
+          //  active 버전이 없으면 draft 버전 찾기 (신규 상품의 경우)
+          const [draftMaster] = await trx
+            .select({ version: productMasterVersions.version })
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.masterId, masterId),
+                eq(productMasterVersions.versionStatus, 'draft'),
+              ),
+            )
+            .orderBy(asc(productMasterVersions.version))
+            .limit(1);
+
+          if (!draftMaster) {
+            throw new NotFoundException(`No active or draft version found for master ${masterId}`);
+          }
+          actualVersion = draftMaster.version;
         }
-        actualVersion = activeMaster.version;
       }
 
       // draft 상태 검증
@@ -214,9 +232,9 @@ export class PricingService {
           layer: 'base_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
@@ -229,9 +247,9 @@ export class PricingService {
           layer: 'membership_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
@@ -244,9 +262,9 @@ export class PricingService {
           layer: 'tiered_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
@@ -283,9 +301,10 @@ export class PricingService {
     return this.inTx(async (trx) => {
       await this.ensureMasterExists(masterId, trx);
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
+      // version 결정 (지정되지 않으면 active 버전 사용, 없으면 draft 버전 사용)
       let actualVersion = version;
       if (actualVersion === undefined) {
+        // 먼저 active 버전 찾기
         const [activeMaster] = await trx
           .select({ version: productMasterVersions.version })
           .from(productMasterVersions)
@@ -297,10 +316,27 @@ export class PricingService {
           )
           .limit(1);
 
-        if (!activeMaster) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
+        if (activeMaster) {
+          actualVersion = activeMaster.version;
+        } else {
+          //  active 버전이 없으면 draft 버전 찾기 (신규 상품의 경우)
+          const [draftMaster] = await trx
+            .select({ version: productMasterVersions.version })
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.masterId, masterId),
+                eq(productMasterVersions.versionStatus, 'draft'),
+              ),
+            )
+            .orderBy(asc(productMasterVersions.version))
+            .limit(1);
+
+          if (!draftMaster) {
+            throw new NotFoundException(`No active or draft version found for master ${masterId}`);
+          }
+          actualVersion = draftMaster.version;
         }
-        actualVersion = activeMaster.version;
       }
 
       // 매핑된 pricingRule ID 조회
