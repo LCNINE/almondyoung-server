@@ -1,5 +1,5 @@
 import { AuthorizationGuard, JwtPayload, RequireScopes } from '@app/roles';
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -16,7 +16,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @Controller('shop')
 @UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class ShopController {
-  constructor(private readonly shopService: ShopService) {}
+  constructor(private readonly shopService: ShopService) { }
 
   @ApiOperation({ summary: '상점 정보 조회' })
   @ApiResponse({ status: 200, description: '상점 정보 조회 성공' })
@@ -26,14 +26,25 @@ export class ShopController {
     return this.shopService.findOneByUserId(user.id);
   }
 
-  @ApiOperation({ summary: '상점 정보 생성 및 수정' })
+  @ApiOperation({ summary: '상점 정보 생성' })
   @ApiResponse({ status: 201, description: '상점 정보 생성 성공' })
   @Post('info')
   @RequireScopes(['user:modify', 'master'])
-  modify(
+  createShopInfo(
     @Body() createShopDto: CreateShopInfoDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.shopService.modify(createShopDto, user.id);
+    return this.shopService.createShopInfo(createShopDto, user.id);
+  }
+
+  @ApiOperation({ summary: '상점 정보 수정' })
+  @ApiResponse({ status: 200, description: '상점 정보 수정 성공' })
+  @Put('info')
+  @RequireScopes(['user:modify', 'master'])
+  updateShopInfo(
+    @Body() updateShopDto: CreateShopInfoDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.shopService.updateShopInfo(updateShopDto, user.id);
   }
 }
