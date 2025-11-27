@@ -36,38 +36,23 @@ export type PricingSnapshot = {
   couponId?: string;
   discountRate?: number;
 };
-export type PaymentIntentType =
-  (typeof paymentIntentTypeEnum.enumValues)[number];
+export type PaymentIntentType = (typeof paymentIntentTypeEnum.enumValues)[number];
 export type PaymentProvider = (typeof paymentProviderEnum.enumValues)[number];
-export type PaymentSessionStatus =
-  (typeof paymentSessionStatusEnum.enumValues)[number];
-export type PaymentProfileStatus =
-  (typeof paymentProfileStatusEnum.enumValues)[number];
+export type PaymentSessionStatus = (typeof paymentSessionStatusEnum.enumValues)[number];
+export type PaymentProfileStatus = (typeof paymentProfileStatusEnum.enumValues)[number];
 export type PaymentPurpose = (typeof paymentPurposeEnum.enumValues)[number];
-export type BnplAccountStatus =
-  (typeof bnplAccountStatusEnum.enumValues)[number];
+export type BnplAccountStatus = (typeof bnplAccountStatusEnum.enumValues)[number];
 export type RefundStatus = (typeof refundStatusEnum.enumValues)[number];
-export type PointTransactionType =
-  (typeof pointTransactionTypeEnum.enumValues)[number];
+export type PointTransactionType = (typeof pointTransactionTypeEnum.enumValues)[number];
 // ───────────────────────────────────────────
 // Status Constants - Centralized Status Management (MVP Simplified)
 // ────────────────────────────────────────────
 
 // PaymentIntentType
-export const paymentIntentTypeEnum = pgEnum('payment_intent_type', [
-  'ORDER',
-  'BNPL_CAPTURE',
-  'MEMBERSHIP_FEE',
-]);
+export const paymentIntentTypeEnum = pgEnum('payment_intent_type', ['ORDER', 'BNPL_CAPTURE', 'MEMBERSHIP_FEE']);
 
 // PaymentProvider (CMS 고정 제거)
-export const paymentProviderEnum = pgEnum('payment_provider', [
-  'TOSS',
-  'KAKAOPAY',
-  'HMS_CARD',
-  'HMS_BNPL',
-  'POINTS',
-]);
+export const paymentProviderEnum = pgEnum('payment_provider', ['TOSS', 'KAKAOPAY', 'HMS_CARD', 'HMS_BNPL', 'POINTS']);
 
 // PaymentSessionStatus
 export const paymentSessionStatusEnum = pgEnum('payment_session_status', [
@@ -82,55 +67,27 @@ export const paymentSessionStatusEnum = pgEnum('payment_session_status', [
 ]);
 
 // TransactionStatus
-export const transactionStatusEnum = pgEnum('transaction_status', [
-  'AUTHORIZED',
-  'CAPTURED',
-  'FAILED',
-  'CANCELLED',
-]);
+export const transactionStatusEnum = pgEnum('transaction_status', ['AUTHORIZED', 'CAPTURED', 'FAILED', 'CANCELLED']);
 
 // PaymentProfileStatus
-export const paymentProfileStatusEnum = pgEnum('payment_profile_status', [
-  'PENDING',
-  'ACTIVE',
-  'INACTIVE',
-]);
+export const paymentProfileStatusEnum = pgEnum('payment_profile_status', ['PENDING', 'ACTIVE', 'INACTIVE']);
 
 // PaymentPurpose
-export const paymentPurposeEnum = pgEnum('payment_purpose', [
-  'SUBSCRIPTION',
-  'PURCHASE',
-  'BOTH',
-]);
+export const paymentPurposeEnum = pgEnum('payment_purpose', ['SUBSCRIPTION', 'PURCHASE', 'BOTH']);
 
 // BNPLAccountStatus
 
 // RefundStatus
-export const refundStatusEnum = pgEnum('refund_status', [
-  'REQUESTED',
-  'APPROVED',
-  'COMPLETED',
-  'CANCELLED',
-  'FAILED',
-]);
+export const refundStatusEnum = pgEnum('refund_status', ['REQUESTED', 'APPROVED', 'COMPLETED', 'CANCELLED', 'FAILED']);
 
 // Supabase 실제 enum: "Point Action"
-export const pointActionEnum = pgEnum('point_action', [
-  'EARN',
-  'EARN_CANCEL',
-  'REDEEM',
-  'REDEEM_CANCEL',
-]);
+export const pointActionEnum = pgEnum('point_action', ['EARN', 'EARN_CANCEL', 'REDEEM', 'REDEEM_CANCEL']);
 
 // 레거시 호환성용 (기존 코드에서 사용)
 export const pointTransactionTypeEnum = pointActionEnum;
 
 // Outbox Status (Transactional Outbox Pattern)
-export const outboxStatusEnum = pgEnum('outbox_status', [
-  'PENDING',
-  'PUBLISHED',
-  'FAILED',
-]);
+export const outboxStatusEnum = pgEnum('outbox_status', ['PENDING', 'PUBLISHED', 'FAILED']);
 
 export const TaxInvoiceStatus = {
   PENDING: 'PENDING',
@@ -196,11 +153,7 @@ export const ValidationFailedReason = {
   DATE_ERROR: 'DATE_ERROR',
 } as const;
 
-export const bnplAccountStatusEnum = pgEnum('bnpl_account_status', [
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-]);
+export const bnplAccountStatusEnum = pgEnum('bnpl_account_status', ['ACTIVE', 'SUSPENDED', 'CLOSED']);
 
 export const bnplEventTypeEnum = pgEnum('bnpl_event_type', [
   // 거래 이벤트
@@ -251,8 +204,7 @@ export const bnplReasonCodeEnum = pgEnum('bnpl_reason_code', [
 ]);
 
 export type BnplEventType = (typeof bnplEventTypeEnum.enumValues)[number];
-export type BnplEventCategory =
-  (typeof bnplEventCategoryEnum.enumValues)[number];
+export type BnplEventCategory = (typeof bnplEventCategoryEnum.enumValues)[number];
 export type BnplEventStatus = (typeof bnplEventStatusEnum.enumValues)[number];
 // ────────────────────────────────────────────
 // Payment Method Schemas - 정규화된 구조 (민감값 저장 금지)
@@ -286,12 +238,8 @@ export const paymentProfiles = pgTable(
     // ✅ Soft Delete (삭제 시각이 기록되면 삭제된 것으로 간주)
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     // 1. 조회 성능 최적화 (삭제 안 된 내역만 조회)
@@ -380,9 +328,7 @@ export const cmsBatchConsents = pgTable(
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     metadata: jsonb('metadata'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('idx_consents_payment_profile').on(table.cmsBatchProfileId),
@@ -414,12 +360,8 @@ export const bnplAccounts = pgTable(
     nextBillingDate: date('next_billing_date'), // 다음 CMS 출금 신청일
     lastBilledAt: timestamp('last_billed_at', { withTimezone: true }),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex('uq_bnpl_user').on(t.userId),
@@ -468,9 +410,7 @@ export const bnplEvents = pgTable(
 
     actor: varchar('actor', { length: 32 }).notNull().default('SYSTEM'),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('idx_be_account').on(t.accountId),
@@ -501,10 +441,7 @@ export const bnplCmsResponses = pgTable(
       .references(() => bnplAccounts.id, { onDelete: 'cascade' }),
 
     // 개별 이벤트 참조 (선택적 - 배치 전체 응답인 경우 null)
-    eventId: varchar('event_id', { length: 26 }).references(
-      () => bnplEvents.id,
-      { onDelete: 'cascade' },
-    ),
+    eventId: varchar('event_id', { length: 26 }).references(() => bnplEvents.id, { onDelete: 'cascade' }),
 
     // 응답 타입
     responseType: varchar('response_type', { length: 32 }).notNull(),
@@ -522,9 +459,7 @@ export const bnplCmsResponses = pgTable(
     // 메타데이터
     metadata: jsonb('metadata'),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('idx_bnpl_cms_batch').on(t.batchId),
@@ -565,9 +500,7 @@ export const bnplEventDetails = pgTable(
     availableBefore: bigint('available_before', { mode: 'number' }).notNull(),
     availableAfter: bigint('available_after', { mode: 'number' }).notNull(),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('idx_bed_event').on(t.eventId),
@@ -595,12 +528,8 @@ export const userRefundAccounts = pgTable(
       length: 128,
     }).notNull(),
     isDefault: boolean('is_default').notNull().default(false),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex('idx_user_default_refund_account')
@@ -627,9 +556,7 @@ export const idempotencyKeys = pgTable(
     responseCode: integer('response_code'),
     responseBody: text('response_body'),
     status: text('status').$type<'PENDING' | 'SUCCESS' | 'FAILED'>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
   (table) => [
@@ -668,13 +595,9 @@ export const pointEvents = pgTable(
     reason: text('reason'),
     memo: text('memo'),
     orderId: varchar('order_id', { length: 100 }),
-    originalEventId: integer('original_event_id').references(
-      () => pointEvents.id,
-    ),
+    originalEventId: integer('original_event_id').references(() => pointEvents.id),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_point_events_partner').on(table.partnerId),
@@ -701,16 +624,10 @@ export const pointEventDetails = pgTable(
     amount: integer('amount').notNull(),
 
     // Supabase 복식부기 핵심 필드들
-    earnedEventDetailId: integer('earned_event_detail_id').references(
-      () => pointEventDetails.id,
-    ),
-    originalEventDetailId: integer('original_event_detail_id').references(
-      () => pointEventDetails.id,
-    ),
+    earnedEventDetailId: integer('earned_event_detail_id').references(() => pointEventDetails.id),
+    originalEventDetailId: integer('original_event_detail_id').references(() => pointEventDetails.id),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_point_event_details_event').on(table.pointEventId),
@@ -732,9 +649,7 @@ export const partners = pgTable(
     memberId: varchar('member_id', { length: 36 }).notNull(),
     name: varchar('name', { length: 100 }).notNull(),
     referralCode: varchar('referral_code', { length: 50 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_partners_mall').on(table.mallId),
@@ -755,9 +670,7 @@ export const referrals = pgTable(
     partnerId: integer('partner_id')
       .notNull()
       .references(() => partners.id),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_referrals_member').on(table.memberId),
@@ -776,9 +689,7 @@ export const referralRewards = pgTable(
     mallId: varchar('mall_id', { length: 36 }).notNull(),
     memberId: varchar('member_id', { length: 36 }).notNull(),
     requestId: integer('request_id').notNull(), // trigger_reward_process에서 받은 ID
-    rewardedAt: timestamp('rewarded_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    rewardedAt: timestamp('rewarded_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('idx_referral_rewards_member').on(table.memberId),
@@ -806,13 +717,8 @@ export const overdueAccounts = pgTable('overdue_accounts', {
   id: varchar('id', { length: 26 }).primaryKey().$defaultFn(generateUUIDv7),
   userId: varchar('user_id', { length: 64 }).notNull(),
   overdueCount: integer('overdue_count').notNull().default(1), // 연체 횟수 누적
-  lastFailedAt: timestamp('last_failed_at', { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  status: varchar('status', { length: 20 })
-    .$type<'ACTIVE' | 'SUSPENDED'>()
-    .notNull()
-    .default('ACTIVE'),
+  lastFailedAt: timestamp('last_failed_at', { withTimezone: true }).defaultNow().notNull(),
+  status: varchar('status', { length: 20 }).$type<'ACTIVE' | 'SUSPENDED'>().notNull().default('ACTIVE'),
 });
 
 // );
@@ -832,48 +738,39 @@ export const bnplEventsRelations = relations(bnplEvents, ({ one, many }) => ({
   cmsResponses: many(bnplCmsResponses),
 }));
 
-export const bnplCmsResponsesRelations = relations(
-  bnplCmsResponses,
-  ({ one }) => ({
-    account: one(bnplAccounts, {
-      fields: [bnplCmsResponses.accountId],
-      references: [bnplAccounts.id],
-    }),
-    event: one(bnplEvents, {
-      fields: [bnplCmsResponses.eventId],
-      references: [bnplEvents.id],
-    }),
+export const bnplCmsResponsesRelations = relations(bnplCmsResponses, ({ one }) => ({
+  account: one(bnplAccounts, {
+    fields: [bnplCmsResponses.accountId],
+    references: [bnplAccounts.id],
   }),
-);
+  event: one(bnplEvents, {
+    fields: [bnplCmsResponses.eventId],
+    references: [bnplEvents.id],
+  }),
+}));
 
 // ③ 디테일 → 이벤트 / 디테일 자기참조
-export const bnplEventDetailsRelations = relations(
-  bnplEventDetails,
-  ({ one }) => ({
-    event: one(bnplEvents, {
-      fields: [bnplEventDetails.eventId],
-      references: [bnplEvents.id],
-    }),
-    // 이 디테일이 어떤 구매 디테일에서 파생되었는가 (부분환불 등)
-    purchaseDetail: one(bnplEventDetails, {
-      fields: [bnplEventDetails.purchaseEventDetailId],
-      references: [bnplEventDetails.id],
-    }),
-    // 이 디테일이 어떤 원본 디테일의 정정/취소인가
-    originalDetail: one(bnplEventDetails, {
-      fields: [bnplEventDetails.originalEventDetailId],
-      references: [bnplEventDetails.id],
-    }),
+export const bnplEventDetailsRelations = relations(bnplEventDetails, ({ one }) => ({
+  event: one(bnplEvents, {
+    fields: [bnplEventDetails.eventId],
+    references: [bnplEvents.id],
   }),
-);
+  // 이 디테일이 어떤 구매 디테일에서 파생되었는가 (부분환불 등)
+  purchaseDetail: one(bnplEventDetails, {
+    fields: [bnplEventDetails.purchaseEventDetailId],
+    references: [bnplEventDetails.id],
+  }),
+  // 이 디테일이 어떤 원본 디테일의 정정/취소인가
+  originalDetail: one(bnplEventDetails, {
+    fields: [bnplEventDetails.originalEventDetailId],
+    references: [bnplEventDetails.id],
+  }),
+}));
 
 // User refund account relations
-export const userRefundAccountsRelations = relations(
-  userRefundAccounts,
-  ({ many }) => ({
-    refundEvents: many(paymentRefunds),
-  }),
-);
+export const userRefundAccountsRelations = relations(userRefundAccounts, ({ many }) => ({
+  refundEvents: many(paymentRefunds),
+}));
 
 // Point Relations (Supabase 기반 - pointAccounts 없음)
 export const pointEventsRelations = relations(pointEvents, ({ one, many }) => ({
@@ -888,31 +785,28 @@ export const pointEventsRelations = relations(pointEvents, ({ one, many }) => ({
   }),
 }));
 
-export const pointEventDetailsRelations = relations(
-  pointEventDetails,
-  ({ one }) => ({
-    // detail → event (OK)
-    event: one(pointEvents, {
-      fields: [pointEventDetails.pointEventId],
-      references: [pointEvents.id],
-      relationName: 'event_details_to_event',
-    }),
-
-    // detail → earned detail (self reference)
-    earnedFrom: one(pointEventDetails, {
-      fields: [pointEventDetails.earnedEventDetailId],
-      references: [pointEventDetails.id],
-      relationName: 'detail_to_earned_detail',
-    }),
-
-    // detail → original detail (self reference)  **여기가 문제였음**
-    originalOf: one(pointEventDetails, {
-      fields: [pointEventDetails.originalEventDetailId],
-      references: [pointEventDetails.id],
-      relationName: 'detail_to_original_detail',
-    }),
+export const pointEventDetailsRelations = relations(pointEventDetails, ({ one }) => ({
+  // detail → event (OK)
+  event: one(pointEvents, {
+    fields: [pointEventDetails.pointEventId],
+    references: [pointEvents.id],
+    relationName: 'event_details_to_event',
   }),
-);
+
+  // detail → earned detail (self reference)
+  earnedFrom: one(pointEventDetails, {
+    fields: [pointEventDetails.earnedEventDetailId],
+    references: [pointEventDetails.id],
+    relationName: 'detail_to_earned_detail',
+  }),
+
+  // detail → original detail (self reference)  **여기가 문제였음**
+  originalOf: one(pointEventDetails, {
+    fields: [pointEventDetails.originalEventDetailId],
+    references: [pointEventDetails.id],
+    relationName: 'detail_to_original_detail',
+  }),
+}));
 
 // 세금계산서 상태 (내부 운영 상태)
 export const taxInvoiceStatusEnum = pgEnum('tax_invoice_status', [
@@ -1002,9 +896,7 @@ export const taxInvoices = pgTable(
     cancelReason: varchar('cancel_reason', { length: 32 }),
     errorCode: varchar('error_code', { length: 32 }),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .default(sql`now()`),
@@ -1054,9 +946,7 @@ export const taxInvoiceEvents = pgTable(
     // 실행자 (USER / ADMIN / SYSTEM / CRON / 등)
     actor: varchar('actor', { length: 64 }).notNull().default('SYSTEM'),
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('idx_tie_invoice').on(t.invoiceId),
@@ -1082,9 +972,7 @@ export const taxInvoiceSnapshots = pgTable(
 
     payload: jsonb('payload').notNull(), // { order, lines, businessInfo, amounts, ... }
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('idx_tis_invoice').on(t.invoiceId)],
 );
@@ -1093,26 +981,21 @@ export const taxInvoiceSnapshots = pgTable(
 // 4️⃣ 사용자 세금계산서 기본 설정 (Preference)
 // ────────────────────────────────────────────
 
-export const userTaxInvoicePreferences = pgTable(
-  'user_tax_invoice_preferences',
-  {
-    userId: varchar('user_id', { length: 64 }).primaryKey(),
+export const userTaxInvoicePreferences = pgTable('user_tax_invoice_preferences', {
+  userId: varchar('user_id', { length: 64 }).primaryKey(),
 
-    // 기본 신청 여부 (true면 주문 시 자동 신청 체크)
-    defaultEnabled: integer('default_enabled').notNull().default(0), // 0=false, 1=true (boolean 대신 integer로 가면 driz + pg 쉽게)
+  // 기본 신청 여부 (true면 주문 시 자동 신청 체크)
+  defaultEnabled: integer('default_enabled').notNull().default(0), // 0=false, 1=true (boolean 대신 integer로 가면 driz + pg 쉽게)
 
-    // 기본 사용할 사업자 정보 (스냅샷 아님, 설정용)
-    defaultBusinessInfo: jsonb('default_business_info'),
-    // { name, businessNumber, address, ownerName }
+  // 기본 사용할 사업자 정보 (스냅샷 아님, 설정용)
+  defaultBusinessInfo: jsonb('default_business_info'),
+  // { name, businessNumber, address, ownerName }
 
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .default(sql`now()`),
-  },
-);
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .default(sql`now()`),
+});
 
 // 원천 이벤트 로그
 export const cashReceiptEvents = pgTable(
@@ -1124,9 +1007,7 @@ export const cashReceiptEvents = pgTable(
     eventType: text('event_type').notNull(), // ISSUE, CANCEL
     requestPayload: jsonb('request_payload'), // 발급 요청 원본
     responsePayload: jsonb('response_payload'), // 응답 원본
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_cash_receipt_events_receipt').on(table.cashReceiptId)],
 );
@@ -1149,9 +1030,7 @@ export const cashReceiptEventDetails = pgTable(
     cancelDate: date('cancel_date'),
     cancelApprovalNumber: text('cancel_approval_number'),
     cancelReason: text('cancel_reason'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_cash_receipt_event_details_event').on(table.eventId)],
 );
@@ -1183,25 +1062,17 @@ export const paymentIntents = pgTable(
 
     status: paymentSessionStatusEnum('status').notNull().default('PENDING'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    refundedAmount: bigint('refunded_amount', { mode: 'number' })
-      .notNull()
-      .default(0),
+    refundedAmount: bigint('refunded_amount', { mode: 'number' }).notNull().default(0),
     authorizedAt: timestamp('authorized_at', { withTimezone: true }),
     capturedAt: timestamp('captured_at', { withTimezone: true }),
     metadata: jsonb('metadata'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('idx_payment_intents_customer_id').on(table.customerId),
     index('idx_payment_intents_status').on(table.status),
-    index('idx_payment_intents_merchant_reference_id').on(
-      table.merchantReferenceId,
-    ),
+    index('idx_payment_intents_merchant_reference_id').on(table.merchantReferenceId),
   ],
 );
 
@@ -1221,25 +1092,13 @@ export const paymentAttempts = pgTable(
     approvalNumber: varchar('approval_number', { length: 255 }),
     amount: bigint('amount', { mode: 'number' }).notNull(),
     status: transactionStatusEnum('status').notNull(),
-    actor: text('actor')
-      .$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>()
-      .notNull()
-      .default('USER'),
+    actor: text('actor').$type<'USER' | 'SYSTEM' | 'SCHEDULER' | 'ADMIN'>().notNull().default('USER'),
     request_payload: jsonb('request_payload'),
     provider_raw_response: jsonb('provider_raw_response'),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index('idx_payment_attempts_intent_created').on(
-      table.intentId,
-      table.createdAt,
-    ),
-  ],
+  (table) => [index('idx_payment_attempts_intent_created').on(table.intentId, table.createdAt)],
 );
 /**
  * PaymentRefund 테이블 - 환불
@@ -1261,12 +1120,8 @@ export const paymentRefunds = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     completedBy: varchar('completed_by', { length: 64 }),
     metadata: jsonb('metadata'),
-    refundAccountId: varchar('refund_account_id', { length: 36 }).references(
-      () => userRefundAccounts.id,
-    ),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    refundAccountId: varchar('refund_account_id', { length: 36 }).references(() => userRefundAccounts.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index('idx_payment_refunds_intent_id').on(table.intentId),
@@ -1283,25 +1138,19 @@ export const taxInvoicesRelations = relations(taxInvoices, ({ one, many }) => ({
   events: many(taxInvoiceEvents),
 }));
 
-export const taxInvoiceEventsRelations = relations(
-  taxInvoiceEvents,
-  ({ one }) => ({
-    invoice: one(taxInvoices, {
-      fields: [taxInvoiceEvents.invoiceId],
-      references: [taxInvoices.id],
-    }),
+export const taxInvoiceEventsRelations = relations(taxInvoiceEvents, ({ one }) => ({
+  invoice: one(taxInvoices, {
+    fields: [taxInvoiceEvents.invoiceId],
+    references: [taxInvoices.id],
   }),
-);
+}));
 
-export const cashReceiptEventsRelations = relations(
-  cashReceiptEvents,
-  ({ one }) => ({
-    eventDetails: one(cashReceiptEventDetails, {
-      fields: [cashReceiptEvents.id],
-      references: [cashReceiptEventDetails.eventId],
-    }),
+export const cashReceiptEventsRelations = relations(cashReceiptEvents, ({ one }) => ({
+  eventDetails: one(cashReceiptEventDetails, {
+    fields: [cashReceiptEvents.id],
+    references: [cashReceiptEventDetails.eventId],
   }),
-);
+}));
 
 // BNPL View들 제거됨 - 물리테이블만 사용
 // settlement_batch = BNPL Invoice
@@ -1323,53 +1172,21 @@ export const outboxEvents = pgTable(
   'outbox_events',
   {
     id: varchar('id', { length: 36 }).primaryKey().$defaultFn(generateUUIDv7),
-
-    // 이벤트 메타데이터
     eventType: varchar('event_type', { length: 128 }).notNull(),
     aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
-    aggregateId: varchar('aggregate_id', { length: 128 }).notNull(),
-
-    // Kafka 파티셔닝
+    aggregateId: varchar('aggregate_id', { length: 36 }).notNull(),
     partitionKey: varchar('partition_key', { length: 128 }).notNull(),
-
-    // 이벤트 페이로드 (JSON)
-    payload: jsonb('payload').notNull().$type<Record<string, any>>(),
-
-    // 메타데이터 (선택적)
-    metadata: jsonb('metadata').$type<Record<string, any>>(),
-
-    // 발행 상태
+    payload: jsonb('payload').notNull(),
     status: outboxStatusEnum('status').notNull().default('PENDING'),
-
-    // 재시도 관리
     attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    errorMessage: text('error_message'),
-
-    // 발행 시각
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     publishedAt: timestamp('published_at', { withTimezone: true }),
-
-    // 감사 필드
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    // 미발행 이벤트 조회용 인덱스 (OutboxDispatcher 성능 최적화)
-    index('idx_outbox_status_next').on(table.status, table.nextAttemptAt),
-
-    // 중복 발행 방지용 인덱스
-    index('idx_outbox_aggregate').on(
-      table.aggregateType,
-      table.aggregateId,
-      table.eventType,
-    ),
-  ],
+  (t) => ({
+    idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
+  }),
 );
 
 // ═══════════════════════════════════════════════

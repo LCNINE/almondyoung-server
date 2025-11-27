@@ -19,7 +19,7 @@ export * from './fulfillments.stream';
 // Payment Stream
 export * from './payment.stream';
 
-// Wallet Stream
+// Wallet Stream (included in PAYMENT_STREAM)
 
 // Channel Adapter Stream
 export * from './adapter.stream';
