@@ -7,7 +7,7 @@ import {
   PaymentEvents,
 } from '@packages/event-contracts/streams';
 import { walletSchema } from '../../shared/database/schema';
-import { eq, and, lte, sql } from 'drizzle-orm';
+import { eq, and, lte, sql, inArray } from 'drizzle-orm';
 
 /**
  * OutboxDispatcherService
@@ -88,7 +88,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           .set({
             attempts: sql`${walletSchema.outboxEvents.attempts} + 1`,
           })
-          .where(sql`${walletSchema.outboxEvents.id} = ANY(${eventIds})`);
+          .where(inArray(walletSchema.outboxEvents.id, eventIds));
 
         return pendingEvents;
       });
@@ -213,7 +213,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         eventIds
           ? and(
             eq(walletSchema.outboxEvents.status, 'FAILED'),
-            sql`${walletSchema.outboxEvents.id} = ANY(${eventIds})`,
+            inArray(walletSchema.outboxEvents.id, eventIds),
           )
           : eq(walletSchema.outboxEvents.status, 'FAILED'),
       )
