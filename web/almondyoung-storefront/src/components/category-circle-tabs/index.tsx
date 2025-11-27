@@ -1,5 +1,6 @@
 import Image from "next/image"
 import * as React from "react"
+import type { CategoryResponse } from "@lib/api/pim/pim-types"
 
 // --- 데이터 타입 및 더미 데이터 ---
 
@@ -19,20 +20,15 @@ const PLACEHOLDER_IMAGES = [
 
 /**
  * 카테고리 탭 아이템의 데이터 구조
- */ interface CategoryCircleItemProps {
-  name: string
-  imageUrl: string
-  id: string
+ */
+interface CategoryCircleItemProps {
+  category: CategoryResponse
   isSelected: boolean
   onSelect: (id: string) => void
 }
 
 interface CategoryCircleTabsProps {
-  items: {
-    id: string
-    name: string
-    imageUrl: string
-  }[]
+  items: CategoryResponse[]
   selectedId: string
   onSelect: (id: string) => void
 }
@@ -40,16 +36,17 @@ interface CategoryCircleTabsProps {
 // --- 하위 컴포넌트: 개별 아이템 ---
 
 function CategoryCircleItem({
-  name,
-  imageUrl,
-  id,
+  category,
   isSelected,
   onSelect,
 }: CategoryCircleItemProps) {
+  // 서버 데이터 구조: imageUrl 또는 thumbnail 사용
+  const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGES[0]
+
   return (
     <button
       type="button"
-      onClick={() => onSelect(id)}
+      onClick={() => onSelect(category.id)}
       className="group flex flex-col items-center text-center outline-none"
     >
       {/* [디자인] 이전 HTML의 스타일 적용:
@@ -64,7 +61,7 @@ function CategoryCircleItem({
       >
         <Image
           src={imageUrl}
-          alt={name}
+          alt={category.name}
           width={117}
           height={117}
           loading="lazy"
@@ -79,7 +76,7 @@ function CategoryCircleItem({
             : "text-gray-900 group-hover:text-gray-700"
         }`}
       >
-        {name}
+        {category.name}
       </span>
     </button>
   )
@@ -100,13 +97,11 @@ export function CategoryCircleTabs({
          - gap-4 / md:gap-6
       */}
       <div className="grid max-w-[1002px] grid-cols-4 gap-4 md:grid-cols-6 md:gap-6">
-        {items.map((item) => (
+        {items.map((category) => (
           <CategoryCircleItem
-            key={item.id}
-            id={item.id}
-            name={item.name}
-            imageUrl={item.imageUrl}
-            isSelected={selectedId === item.id}
+            key={category.id}
+            category={category}
+            isSelected={selectedId === category.id}
             onSelect={onSelect}
           />
         ))}
