@@ -6,5 +6,10 @@ export * from './pim/pim.client';
 export * from './pim/pim.orchestrator';
 export * from './streams';
 
+// Filters
+export * from './filters/application.exception';
+export * from './filters/domain-exceptions';
+export * from './filters/http-exception.filter';
+
 // Re-export from packages for backward compatibility
 export * from '@packages/domain-types';

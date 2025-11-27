@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -410,6 +411,45 @@ export class ProductMastersController {
       }
       throw new HttpException(
         `Failed to restore master: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Patch(':masterId/unpublish')
+  @ApiOperation({
+    summary: '제품 마스터 비공개 처리',
+    description: `
+      현재 Active 상태인 버전을 Inactive로 전환하여 상품을 비공개 처리합니다.
+      
+      Master당 Active 버전은 최대 1개이므로, 해당 버전을 찾아서 Inactive로 전환합니다.
+      비공개된 상품을 다시 공개하려면 새 Draft 버전을 만들어 publish 해야 합니다.
+    `,
+  })
+  @ApiParam({ 
+    name: 'masterId', 
+    description: 'Master ID (product_masters.id)',
+  })
+  @ApiResponse({ status: 200, description: '상품 비공개 처리 성공' })
+  @ApiResponse({ status: 404, description: 'Master를 찾을 수 없거나 Active 버전이 없음' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async unpublish(@Param('masterId') masterId: string) {
+    try {
+      await this.productVersionsService.unpublishMaster(masterId);
+      return {
+        success: true,
+        message: 'Master unpublished successfully',
+        masterId,
+      };
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new HttpException(
+          'Master not found or no active version exists',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      throw new HttpException(
+        `Failed to unpublish master: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

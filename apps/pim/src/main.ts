@@ -7,6 +7,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { PimModule } from './pim.module';
 import fastifyMultipart from '@fastify/multipart';
+import { GlobalExceptionFilter } from '@app/shared';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -31,35 +32,7 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters({
-    catch(exception: any, host: any) {
-      const ctx = host.switchToHttp();
-      const response = ctx.getResponse();
-      const request = ctx.getRequest();
-
-      const status = exception.getStatus?.() || 500;
-
-      console.error('❌ [PIM] 전역 에러 발생:', {
-        timestamp: new Date().toISOString(),
-        path: request.url,
-        method: request.method,
-        status: status,
-        errorName: exception.name,
-        errorMessage: exception.message,
-      });
-
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('Stack trace:', exception.stack);
-      }
-
-      response.code(status).send({
-        statusCode: status,
-        message: exception.message,
-        error: exception.name,
-        ...(exception.response && { details: exception.response }),
-      });
-    },
-  });
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.enableCors({
     origin: true,
