@@ -34,9 +34,9 @@ export class BusinessLicensesService {
     private readonly httpService: HttpService,
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
-  async getBusinessLicensesByUserId(
+  async getMyBusinessLicense(
     userId: string,
   ): Promise<BusinessLicenseResponseDto | null> {
     const [result] = await this.dbService.db
