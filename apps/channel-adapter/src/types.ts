@@ -7,6 +7,7 @@ import {
   syncStatuses,
   wmsOrderMappings,
   pendingOrders,
+  outboxEvents,
 } from './schema';
 
 // ===== DATABASE SERVICE 타입 =====
@@ -17,6 +18,7 @@ export const channelAdapterSchema = {
   syncStatuses,
   wmsOrderMappings,
   pendingOrders,
+  outboxEvents,
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;
@@ -24,23 +26,17 @@ export type DbService = import('@app/db').DbService<ChannelAdapterSchema>;
 // ===== EVENT LOGS 타입 =====
 export type EventLog = InferSelectModel<typeof eventLogs>;
 export type NewEventLog = InferInsertModel<typeof eventLogs>;
-export type UpdateEventLog = Partial<
-  Omit<NewEventLog, 'id' | 'createdAt' | 'processedAt'>
->;
+export type UpdateEventLog = Partial<Omit<NewEventLog, 'id' | 'createdAt' | 'processedAt'>>;
 
 // ===== SYNC HISTORIES 타입 =====
 export type SyncHistory = InferSelectModel<typeof syncHistories>;
 export type NewSyncHistory = InferInsertModel<typeof syncHistories>;
-export type UpdateSyncHistory = Partial<
-  Omit<NewSyncHistory, 'id' | 'createdAt'>
->;
+export type UpdateSyncHistory = Partial<Omit<NewSyncHistory, 'id' | 'createdAt'>>;
 
 // ===== PROCESSED EVENTS 타입 =====
 export type ProcessedEvent = InferSelectModel<typeof processedEvents>;
 export type NewProcessedEvent = InferInsertModel<typeof processedEvents>;
-export type UpdateProcessedEvent = Partial<
-  Omit<NewProcessedEvent, 'idempotencyKey' | 'createdAt'>
->;
+export type UpdateProcessedEvent = Partial<Omit<NewProcessedEvent, 'idempotencyKey' | 'createdAt'>>;
 
 // ===== SYNC STATUSES 타입 =====
 export type SyncStatus = InferSelectModel<typeof syncStatuses>;
@@ -50,18 +46,19 @@ export type UpdateSyncStatus = Partial<Omit<NewSyncStatus, 'id' | 'createdAt'>>;
 // ===== WMS ORDER MAPPINGS 타입 =====
 export type WmsOrderMapping = InferSelectModel<typeof wmsOrderMappings>;
 export type NewWmsOrderMapping = InferInsertModel<typeof wmsOrderMappings>;
-export type UpdateWmsOrderMapping = Partial<
-  Omit<NewWmsOrderMapping, 'id' | 'createdAt'>
->;
+export type UpdateWmsOrderMapping = Partial<Omit<NewWmsOrderMapping, 'id' | 'createdAt'>>;
 
 // ===== PENDING ORDERS 타입 (미매핑 주문 계류) =====
 export type PendingOrder = InferSelectModel<typeof pendingOrders>;
 export type NewPendingOrder = InferInsertModel<typeof pendingOrders>;
-export type UpdatePendingOrder = Partial<
-  Omit<NewPendingOrder, 'id' | 'createdAt'>
->;
+export type UpdatePendingOrder = Partial<Omit<NewPendingOrder, 'id' | 'createdAt'>>;
 
 export type PendingOrderStatus = 'pending_mapping' | 'processing' | 'completed' | 'failed';
+
+// ===== OUTBOX EVENTS 타입 =====
+export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
+export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
+export type UpdateOutboxEvent = Partial<Omit<NewOutboxEvent, 'id' | 'createdAt'>>;
 
 export interface UnmappedItem {
   channelItemId: string;
@@ -69,12 +66,7 @@ export interface UnmappedItem {
   channelOptionName?: string;
 }
 
-export type DataType =
-  | 'orders'
-  | 'order_status'
-  | 'claims'
-  | 'inventory'
-  | 'products';
+export type DataType = 'orders' | 'order_status' | 'claims' | 'inventory' | 'products';
 
 export interface SyncResult {
   success: boolean;
@@ -154,10 +146,7 @@ export interface OrderStatusSyncPayload {
 }
 
 /** 모든 동기화 타입의 유니언 */
-export type SyncToChannelPayload =
-  | ProductSyncPayload
-  | InventorySyncPayload
-  | OrderStatusSyncPayload;
+export type SyncToChannelPayload = ProductSyncPayload | InventorySyncPayload | OrderStatusSyncPayload;
 
 export type ClaimType = 'CANCEL' | 'RETURN' | 'EXCHANGE';
 
@@ -276,11 +265,7 @@ export type { InternalOrderEvent } from '@packages/domain-types';
  */
 export interface InternalExchangeEvent {
   eventId: string; // 고유 이벤트 ID
-  eventType:
-    | 'exchange_created'
-    | 'exchange_updated'
-    | 'exchange_completed'
-    | 'exchange_rejected';
+  eventType: 'exchange_created' | 'exchange_updated' | 'exchange_completed' | 'exchange_rejected';
 
   // 핵심 식별자들 (표준화된 내부 ID)
   claimId: string; // 내부 표준 클레임 ID (쿠팡 exchangeId 등을 번역)
@@ -344,11 +329,7 @@ export interface InternalExchangeEvent {
  */
 export interface InternalReturnEvent {
   eventId: string;
-  eventType:
-    | 'return_created'
-    | 'return_updated'
-    | 'return_completed'
-    | 'return_rejected';
+  eventType: 'return_created' | 'return_updated' | 'return_completed' | 'return_rejected';
 
   // 핵심 식별자들
   claimId: string; // 내부 표준 클레임 ID
