@@ -95,12 +95,7 @@ export const processedEvents = pgTable(
   },
   (table) => [
     // 이 4키로 유니크 보장하고 싶다면 유지해도 됨 (비즈니스 키)
-    uniqueIndex('uq_processed_source_event').on(
-      table.source,
-      table.eventType,
-      table.resourceId,
-      table.eventVersion,
-    ),
+    uniqueIndex('uq_processed_source_event').on(table.source, table.eventType, table.resourceId, table.eventVersion),
     // ❌ 기존: uniqueIndex('idx_processed_status')...
     // ✅ 수정: 검색용 일반 인덱스
     index('idx_processed_status').on(table.status),
@@ -131,10 +126,7 @@ export const wmsOrderMappings = pgTable(
   },
   (table) => [
     // 채널+주문ID 조합으로 유니크 (WMS와 동일한 제약조건)
-    uniqueIndex('uq_wms_mapping_channel_order').on(
-      table.salesChannel,
-      table.channelOrderId,
-    ),
+    uniqueIndex('uq_wms_mapping_channel_order').on(table.salesChannel, table.channelOrderId),
     // WMS UUID로 역방향 조회용
     index('idx_wms_mapping_wms_id').on(table.wmsOrderId),
     index('idx_wms_mapping_created').on(table.createdAt),
@@ -163,10 +155,7 @@ export const syncStatuses = pgTable(
     createdAt: timestamp('created_at').default(sql`now()`),
   },
   (table) => [
-    uniqueIndex('uq_sync_status_channel_data').on(
-      table.channelId,
-      table.dataType,
-    ),
+    uniqueIndex('uq_sync_status_channel_data').on(table.channelId, table.dataType),
     // ❌ uniqueIndex → ✅ index
     index('idx_sync_status_status').on(table.status),
     index('idx_sync_status_last_sync').on(table.lastSyncAt),
@@ -190,11 +179,15 @@ export const pendingOrders = pgTable(
     // 'pending_mapping' | 'processing' | 'completed' | 'failed'
 
     // 미매핑 항목 정보 (관리자 UI 표시용)
-    unmappedItems: jsonb('unmapped_items').$type<{
-      channelItemId: string;
-      channelItemName: string;
-      channelOptionName?: string;
-    }[]>().notNull(),
+    unmappedItems: jsonb('unmapped_items')
+      .$type<
+        {
+          channelItemId: string;
+          channelItemName: string;
+          channelOptionName?: string;
+        }[]
+      >()
+      .notNull(),
 
     // 원본 주문 데이터 (재처리용)
     rawOrderEvent: jsonb('raw_order_event').notNull(),
@@ -211,11 +204,49 @@ export const pendingOrders = pgTable(
   (table) => [
     index('idx_pending_orders_status').on(table.status),
     index('idx_pending_orders_channel').on(table.channel),
-    uniqueIndex('uq_pending_orders_external').on(
-      table.channel,
-      table.externalOrderId,
-    ),
+    uniqueIndex('uq_pending_orders_external').on(table.channel, table.externalOrderId),
     index('idx_pending_orders_created').on(table.createdAt),
+  ],
+);
+
+// 🔹 Outbox Events 테이블 (Transactional Outbox Pattern)
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    // 이벤트 식별
+    eventType: varchar('event_type', { length: 100 }).notNull(), // 'OrderSyncCompleted', 'CommandExecuted' 등
+    aggregateType: varchar('aggregate_type', { length: 50 }).notNull().default('ChannelAdapter'),
+    aggregateId: varchar('aggregate_id', { length: 255 }).notNull(), // 채널별 주문/상품 ID (varchar)
+    partitionKey: varchar('partition_key', { length: 255 }).notNull(), // Kafka 파티션 키
+
+    // 페이로드
+    payload: jsonb('payload').notNull(),
+    metadata: jsonb('metadata'), // correlationId, causationId 등
+
+    // 상태 관리
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    // 'pending' | 'processing' | 'published' | 'failed'
+
+    // 재시도 관리
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at').defaultNow(),
+    errorMessage: text('error_message'),
+
+    // 타임스탬프
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    publishedAt: timestamp('published_at'),
+    failedAt: timestamp('failed_at'),
+  },
+  (table) => [
+    // 상태별 조회 최적화
+    index('idx_outbox_status_created').on(table.status, table.createdAt),
+    index('idx_outbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
+    // 파티션 키 인덱스
+    index('idx_outbox_partition_key').on(table.partitionKey),
   ],
 );
 
@@ -231,6 +262,7 @@ export const channelAdapterSchema = {
   wmsOrderMappings,
   syncStatuses,
   pendingOrders,
+  outboxEvents, // ← 추가
 } as const;
 
 export type ChannelAdapterSchema = typeof channelAdapterSchema;

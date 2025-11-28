@@ -1,12 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { ChannelAdapterEvents } from '@packages/event-contracts/streams';
-import {
-  ChannelAdapterFactory,
-  ChannelType,
-} from './adapters/channel-adapter.factory';
+import { ChannelAdapterFactory, ChannelType } from './adapters/channel-adapter.factory';
 import { ChannelCommand, SyncResult } from '../types';
 import { ChannelsConfig } from '../config/channels.config';
+import { OutboxService } from './outbox.service';
 
 /**
  * 채널 명령 Manager
@@ -27,8 +23,7 @@ export class ChannelCommandManager {
 
   constructor(
     private readonly adapterFactory: ChannelAdapterFactory,
-    @InjectStreamPublisher('channel-adapter.events.v1')
-    private readonly eventPublisher: StreamPublisher<ChannelAdapterEvents>,
+    private readonly outboxService: OutboxService,
   ) {}
 
   /**
@@ -40,10 +35,7 @@ export class ChannelCommandManager {
    * @param command - 실행할 명령
    * @returns 실행 결과
    */
-  async execute(
-    channel: ChannelType,
-    command: ChannelCommand,
-  ): Promise<SyncResult> {
+  async execute(channel: ChannelType, command: ChannelCommand): Promise<SyncResult> {
     const startTime = Date.now();
 
     // 1️⃣ 검증 (Manager 책임!)
@@ -63,12 +55,13 @@ export class ChannelCommandManager {
 
     const duration = Date.now() - startTime;
 
-    // 3️⃣ 이벤트 발행
+    // 3️⃣ Outbox에 이벤트 enqueue
     const targetId = this.extractTargetId(command);
 
-    await this.eventPublisher.publishEvent({
+    await this.outboxService.enqueue({
       eventType: 'CommandExecuted',
       aggregateId: `${channel}-${targetId}`,
+      partitionKey: channel,
       payload: {
         channelType: channel,
         commandType: command.type,
@@ -81,14 +74,9 @@ export class ChannelCommandManager {
     });
 
     if (result.success) {
-      this.logger.log(
-        `✅ [${channel}] 명령 실행 성공: ${command.type} (${duration}ms)`,
-      );
+      this.logger.log(`✅ [${channel}] 명령 실행 성공: ${command.type} (${duration}ms)`);
     } else {
-      this.logger.warn(
-        `⚠️ [${channel}] 명령 실행 실패: ${command.type} (${duration}ms)`,
-        { errors: result.errors },
-      );
+      this.logger.warn(`⚠️ [${channel}] 명령 실행 실패: ${command.type} (${duration}ms)`, { errors: result.errors });
     }
 
     return result;
@@ -113,9 +101,7 @@ export class ChannelCommandManager {
     this.logger.log(`🌐 전체 채널 명령 실행: ${command.type}`);
 
     // 병렬 처리로 성능 개선
-    const settledResults = await Promise.allSettled(
-      channels.map((channel) => this.execute(channel, command)),
-    );
+    const settledResults = await Promise.allSettled(channels.map((channel) => this.execute(channel, command)));
 
     const results = settledResults.map((settled, index) => {
       const channel = channels[index];
@@ -127,10 +113,7 @@ export class ChannelCommandManager {
           success: settled.value.success,
         };
       } else {
-        this.logger.error(
-          `❌ [${channel}] 명령 실행 실패:`,
-          settled.reason?.message,
-        );
+        this.logger.error(`❌ [${channel}] 명령 실행 실패:`, settled.reason?.message);
         return {
           channel,
           result: {
@@ -144,9 +127,7 @@ export class ChannelCommandManager {
     });
 
     const successCount = results.filter((r) => r.success).length;
-    this.logger.log(
-      `🎯 전체 채널 명령 실행 완료: ${successCount}/${channels.length}개 성공`,
-    );
+    this.logger.log(`🎯 전체 채널 명령 실행 완료: ${successCount}/${channels.length}개 성공`);
 
     return results;
   }
@@ -210,8 +191,7 @@ export class ChannelCommandManager {
    */
   private extractTargetId(command: ChannelCommand): string {
     if ('orderId' in command) return command.orderId;
-    if ('orderIds' in command && command.orderIds?.length)
-      return command.orderIds[0];
+    if ('orderIds' in command && command.orderIds?.length) return command.orderIds[0];
     if ('claimId' in command) return command.claimId;
     return 'unknown';
   }
