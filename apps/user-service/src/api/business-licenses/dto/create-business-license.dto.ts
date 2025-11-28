@@ -29,12 +29,20 @@ export class BusinessLicenseBaseDto {
   metadata?: string;
 }
 
+
+// 사업자 생성 dto
+export class CreateBusinessLicenseDto extends PickType(
+  BusinessLicenseBaseDto,
+  ['businessNumber', 'representativeName'] as const,
+) { }
+
 // 파일 업로드용 dto
 export class CreateBusinessLicenseWithFileDto extends PickType(
   BusinessLicenseBaseDto,
   ['file', 'shopId', 'metadata'] as const,
-) {}
+) { }
 
+// 사업자 정보 외부 조회용 dto
 export class FetchBusinessLicenseDto {
   @Transform(({ value }) => value?.replace(/-/g, ''))
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })

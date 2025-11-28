@@ -17,14 +17,14 @@ import {
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { BusinessLicensesHelper } from './business-licenses.helper';
-import { FetchBusinessLicenseResponseDto } from './dto/business-license.response.dto';
+import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
 import {
+  CreateBusinessLicenseDto,
   CreateBusinessLicenseWithFileDto,
   FetchBusinessLicenseDto,
 } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
-import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 
 @Injectable()
 export class BusinessLicensesService {
@@ -35,6 +35,27 @@ export class BusinessLicensesService {
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
   ) { }
+
+  async createBusinessLicense(
+    userId: string,
+    data: CreateBusinessLicenseDto,
+  ): Promise<void> {
+    const existing = await this.checkDuplicateBusinessLicense(userId);
+    if (existing) {
+      throw new ConflictException(
+        '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+      );
+    }
+
+    await this.dbService.db.insert(businessLicenses).values({
+      userId,
+      businessNumber: data.businessNumber,
+      representativeName: data.representativeName,
+      status: 'approved',
+    });
+
+    return
+  }
 
   async getMyBusinessLicense(
     userId: string,
@@ -52,7 +73,7 @@ export class BusinessLicensesService {
    */
   async fetchBusinessLicense(
     fetchBusinessLicenseDto: FetchBusinessLicenseDto,
-  ): Promise<FetchBusinessLicenseResponseDto> {
+  ): Promise<void> {
     const { businessNumber, representativeName } = fetchBusinessLicenseDto;
 
     const baseUrl = this.configService.get<string>('BIZNO_URL');
@@ -76,7 +97,7 @@ export class BusinessLicensesService {
       });
     }
 
-    return businessInfo;
+    return;
   }
 
   async createWithFile(
@@ -84,6 +105,7 @@ export class BusinessLicensesService {
     userId: string,
   ): Promise<void> {
     const existing = await this.checkDuplicateBusinessLicense(userId);
+
     if (existing) {
       throw new ConflictException(
         '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
