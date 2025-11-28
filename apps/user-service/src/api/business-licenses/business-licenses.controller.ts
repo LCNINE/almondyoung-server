@@ -21,10 +21,10 @@ import {
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import {
-  BusinessLicenseResponseDto,
-  FetchBusinessLicenseResponseDto,
+  BusinessLicenseResponseDto
 } from './dto/business-license.response.dto';
 import {
+  CreateBusinessLicenseDto,
   CreateBusinessLicenseWithFileDto,
   FetchBusinessLicenseDto,
 } from './dto/create-business-license.dto';
@@ -38,6 +38,24 @@ export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
   ) { }
+
+  @Post()
+  @ApiOperation({
+    summary: '사업자 등록',
+    description: '사업자 등록을 생성합니다.',
+  })
+  @ApiBody({ type: CreateBusinessLicenseDto })
+  @ApiResponse({ status: 201, description: '사업자 등록 생성 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 409, description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.' })
+  @RequireScopes(['user:modify'])
+  async createBusinessLicense(
+    @Body() data: CreateBusinessLicenseDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.businessLicensesService.createBusinessLicense(user.id, data);
+  }
 
   @Get('/me')
   @ApiOperation({
@@ -62,7 +80,6 @@ export class BusinessLicensesController {
   @ApiResponse({
     status: 200,
     description: '사업자 등록 정보 조회 성공',
-    type: FetchBusinessLicenseResponseDto,
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
