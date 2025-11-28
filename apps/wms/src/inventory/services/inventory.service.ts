@@ -510,33 +510,34 @@ export class InventoryService implements OnModuleInit {
       }
 
       // Build base query with stock summary join (for filtering only)
-      let query = trx
-        .select({
-          sku: wmsTables.skus,
-        })
+      // First, get distinct SKU IDs with all filters applied
+      // Use groupBy to ensure distinct SKU IDs before pagination
+      let skuIdQuery = trx
+        .select({ skuId: wmsTables.skus.id })
         .from(wmsTables.skus)
-        .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId));
+        .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId))
+        .groupBy(wmsTables.skus.id);
 
       // Apply base conditions
       if (conditions.length > 0) {
-        query = query.where(and(...conditions)) as any;
+        skuIdQuery = skuIdQuery.where(and(...conditions)) as any;
       }
 
       // Display mode filters (applied to joined stockSummary)
       if (filters.displayMode) {
         switch (filters.displayMode) {
           case StockDisplayMode.BELOW_SAFETY:
-            query = query.where(
+            skuIdQuery = skuIdQuery.where(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
             ) as any;
             break;
           case StockDisplayMode.WITH_STOCK:
-            query = query.where(
+            skuIdQuery = skuIdQuery.where(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
             ) as any;
             break;
           case StockDisplayMode.OUT_OF_STOCK:
-            query = query.where(
+            skuIdQuery = skuIdQuery.where(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
             ) as any;
             break;
@@ -545,24 +546,29 @@ export class InventoryService implements OnModuleInit {
 
       // Warehouse filter (via stock summary)
       if (filters.warehouseId) {
-        query = query.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
+        skuIdQuery = skuIdQuery.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
       }
 
-      // Sorting
+      // Sorting - need to join back to skus table for sorting
       const sortField = filters.sortBy ?? 'createdAt';
       const sortDirection = filters.sortOrder ?? 'desc';
 
+      // For sorting, we need to reference the actual skus table fields
+      // So we'll use a subquery approach or order by the joined table
+      // Since we're selecting distinct skuId, we need to order by the skus table fields
+      // We'll use a subquery to get the sort value
       if (sortDirection === 'asc') {
-        query = query.orderBy(asc(wmsTables.skus[sortField])) as any;
+        skuIdQuery = skuIdQuery.orderBy(asc(wmsTables.skus[sortField])) as any;
       } else {
-        query = query.orderBy(sql`${wmsTables.skus[sortField]} DESC`) as any;
+        skuIdQuery = skuIdQuery.orderBy(sql`${wmsTables.skus[sortField]} DESC`) as any;
       }
 
-      // Pagination
-      query = query.limit(filters.limit ?? 50).offset(filters.offset ?? 0) as any;
+      // Pagination - now applied to distinct SKU IDs
+      skuIdQuery = skuIdQuery.limit(filters.limit ?? 50).offset(filters.offset ?? 0) as any;
 
-      // Execute query
-      const results = await query;
+      // Execute query to get distinct SKU IDs
+      const skuIdResults = await skuIdQuery;
+      const uniqueSkuIds = skuIdResults.map(row => row.skuId);
 
       // Count total (with same conditions)
       let countQuery = trx
@@ -602,8 +608,7 @@ export class InventoryService implements OnModuleInit {
       const [countResult] = await countQuery;
       const total = Number(countResult?.count ?? 0);
 
-      // Map to DTOs
-      const uniqueSkuIds = [...new Set(results.map(row => row.sku.id))];
+      // Map to DTOs - now we have the correct number of unique SKU IDs
       const items = await Promise.all(
         uniqueSkuIds.map(skuId => this.getSkuById(skuId, trx))
       );
