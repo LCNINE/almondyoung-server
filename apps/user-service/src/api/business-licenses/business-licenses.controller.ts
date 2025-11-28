@@ -37,22 +37,22 @@ import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
-  ) {}
+  ) { }
 
-  @Get('/:userId')
+  @Get('/me')
   @ApiOperation({
-    summary: '사용자의 사업자 등록 정보 조회',
-    description: '사용자의 사업자 등록 정보를 조회합니다.',
+    summary: '현재 사용자의 사업자 등록 정보 조회',
+    description: '현재 사용자의 사업자 등록 정보를 조회합니다.',
   })
   @ApiParam({ name: 'userId', description: '사용자 ID' })
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @RequireScopes(['user:read'])
-  async getBusinessLicensesByUserId(
-    @Param('userId') userId: string,
+  async getMyBusinessLicense(
+    @CurrentUser() user: JwtPayload,
   ): Promise<BusinessLicenseResponseDto | null> {
-    return this.businessLicensesService.getBusinessLicensesByUserId(userId);
+    return this.businessLicensesService.getMyBusinessLicense(user.id);
   }
 
   @ApiOperation({
