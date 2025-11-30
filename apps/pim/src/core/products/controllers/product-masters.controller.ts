@@ -205,6 +205,7 @@ export class ProductMastersController {
       const deleted = await this.productMastersService.findDeleted();
       return ProductMapper.toDtoArray(deleted);
     } catch (error) {
+      console.error('Failed to get deleted masters:', error);
       throw new HttpException(
         'Failed to get deleted masters',
         HttpStatus.INTERNAL_SERVER_ERROR,
