@@ -384,14 +384,14 @@ export class SalesChannelsService {
         }
         break;
 
-      case 'smartstore':
+      case 'naver':
         if (config && (!config.clientId || !config.clientSecret)) {
           errors.push('SmartStore channel requires clientId and clientSecret in config');
         }
         break;
 
       default:
-        if (!['medusa', 'coupang', 'smartstore'].includes(site)) {
+        if (!['medusa', 'naver', 'coupang', 'phone_order', 'other'].includes(site)) {
           errors.push(`Unsupported channel type: ${site}. Supported types are: medusa, coupang, smartstore`);
         }
     }
