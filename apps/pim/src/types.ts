@@ -300,16 +300,6 @@ export interface MasterDetailDto extends ProductMasterVersion {
   }>;
 }
 
-// Variant 일괄 수정 DTO
-export interface UpdateVariantBulkDto {
-  variantIds: string[];
-  updates: {
-    status?: string;
-    displayOrder?: number;
-    images?: string[];
-  };
-}
-
 // 가격 조회 응답 DTO
 export interface VariantWithPriceDto extends ProductVariant {
   masterId: string;

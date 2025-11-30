@@ -106,7 +106,7 @@ export class ProductVariantsController {
     }
   }
 
-  
+
   @Get('masters/:masterId/versions/:versionId')
   @ApiOperation({
     summary: '버전별 제품 변형 조회',
@@ -287,7 +287,7 @@ export class ProductVariantsController {
   ): Promise<void> {
     try {
       await this.productVariantsService.bulkUpdateVariants(
-        bulkUpdateDto as any,
+        bulkUpdateDto,
       );
     } catch (error) {
       if (
