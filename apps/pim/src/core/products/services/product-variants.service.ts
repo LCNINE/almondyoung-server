@@ -20,6 +20,7 @@ import {
   variantOptionValues
 } from '../../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
+import { UpdateProductVariantDto } from '../dto';
 
 @Injectable()
 export class ProductVariantsService {
@@ -430,7 +431,7 @@ export class ProductVariantsService {
       .where(inArray(productVariants.id, variantIds));
   }
 
-  async updateVariant(variantId: string, data: UpdateProductVariant, tx?: DbTransaction): Promise<ProductVariant> {
+  async updateVariant(variantId: string, data: UpdateProductVariantDto, tx?: DbTransaction): Promise<ProductVariant> {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
@@ -446,10 +447,6 @@ export class ProductVariantsService {
       ...data,
       updatedAt: new Date(),
     };
-
-    delete (updateData as any).id;
-    delete (updateData as any).createdAt;
-    delete (updateData as any).masterId;
 
     const result = await client
       .update(productVariants)

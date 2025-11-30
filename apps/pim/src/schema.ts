@@ -456,15 +456,13 @@ export const productVariants = pgTable(
       .$defaultFn(() => uuidv7()),
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
     images: jsonb('images'), // string[] - 품목별 이미지
-    priceAdjustment: bigint('price_adjustment', { mode: 'number' }).default(0), // 기준가 대비 조정 (원 단위)
-    // 물리적 속성 제거: weightAdjustment 등
+
     displayOrder: integer('display_order').default(0), // 표시 순서
     status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
     isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
 
     // Phase 1 new fields
     variantCode: varchar('variant_code', { length: 100 }).unique(),
-    variantImages: jsonb('variant_images').$type<string[]>(),
 
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
