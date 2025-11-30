@@ -142,6 +142,7 @@ export class SalesOrdersService {
           totalAmount: dto.totalAmount ?? null,
           shippingFee: dto.shippingFee ?? 0,
           processedAt: dto.processedAt ? new Date(dto.processedAt) : null,
+          memo: dto.memo ?? null,
         })
         .where(eq(wmsTables.salesOrders.id, id));
       const updated = await this.getOne(id, trx);
