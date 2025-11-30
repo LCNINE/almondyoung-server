@@ -32,7 +32,7 @@ export class ProductVariantsService {
   }
 
 
-  async getVariantsByMaster(masterId: string, version?: number, filters?: {
+  async getVariantsByMaster(masterId: string, versionId?: string, filters?: {
     status?: string;
     includePrice?: boolean;
     page?: number;
@@ -55,9 +55,9 @@ export class ProductVariantsService {
     const includePrice = filters?.includePrice !== false;
 
     // version이 지정되지 않으면 active 버전 사용
-    let actualVersion = version;
-    if (actualVersion === undefined) {
-      const [activeMaster] = await client
+    let actualVersionNumber: number;
+    if (versionId === undefined) {
+      const [activeVersion] = await client
         .select({ version: productMasterVersions.version })
         .from(productMasterVersions)
         .where(
@@ -68,16 +68,27 @@ export class ProductVariantsService {
         )
         .limit(1);
 
-      if (!activeMaster) {
+      if (!activeVersion) {
         throw new Error(`No active version found for master ${masterId}`);
       }
-      actualVersion = activeMaster.version;
+      actualVersionNumber = activeVersion.version;
+    }
+    else {
+      const [version] = await client
+        .select({ version: productMasterVersions.version })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
+
+      if (!version) {
+        throw new Error(`Version not found: ${versionId}`);
+      }
+      actualVersionNumber = version.version;
     }
 
     // 매핑 테이블을 통해 variants 조회
     const whereConditions: SQL[] = [
       eq(productMasterVariants.masterId, masterId),
-      eq(productMasterVariants.version, actualVersion),
+      eq(productMasterVariants.version, actualVersionNumber),
     ];
 
     if (filters?.status) {
