@@ -223,8 +223,8 @@ export class ProductMastersController {
       **출력:** Active 버전의 상세 정보
     `,
   })
-  @ApiParam({ 
-    name: 'id', 
+  @ApiParam({
+    name: 'id',
     description: 'Master ID - active 버전을 자동으로 조회합니다',
   })
   @ApiResponse({
@@ -327,8 +327,8 @@ export class ProductMastersController {
       삭제된 Master는 복원이 가능합니다.
     `,
   })
-  @ApiParam({ 
-    name: 'masterId', 
+  @ApiParam({
+    name: 'masterId',
     description: 'Master ID (product_masters.id)',
   })
   @ApiResponse({ status: 200, description: 'Master 소프트 삭제 성공' })
@@ -340,12 +340,12 @@ export class ProductMastersController {
     @Body('userId') userId?: string,
   ) {
     try {
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       const deleted = await this.productMastersService.softDeleteMaster(
         masterId,
         userIdToUse,
       );
-      
+
       return {
         success: true,
         message: 'Master deleted successfully',
@@ -375,8 +375,8 @@ export class ProductMastersController {
     summary: '제품 마스터 복원',
     description: '소프트 삭제된 Master를 복원합니다.',
   })
-  @ApiParam({ 
-    name: 'masterId', 
+  @ApiParam({
+    name: 'masterId',
     description: 'Master ID (product_masters.id)',
   })
   @ApiResponse({ status: 200, description: 'Master 복원 성공' })
@@ -388,12 +388,12 @@ export class ProductMastersController {
     @Body('userId') userId?: string,
   ) {
     try {
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       const restored = await this.productMastersService.restoreMaster(
         masterId,
         userIdToUse,
       );
-      
+
       return {
         success: true,
         message: 'Master restored successfully',
@@ -426,8 +426,8 @@ export class ProductMastersController {
       비공개된 상품을 다시 공개하려면 새 Draft 버전을 만들어 publish 해야 합니다.
     `,
   })
-  @ApiParam({ 
-    name: 'masterId', 
+  @ApiParam({
+    name: 'masterId',
     description: 'Master ID (product_masters.id)',
   })
   @ApiResponse({ status: 200, description: '상품 비공개 처리 성공' })
@@ -465,8 +465,8 @@ export class ProductMastersController {
       현재 구현은 Master ID가 아닌 Version ID를 기대합니다.
     `,
   })
-  @ApiParam({ 
-    name: 'id', 
+  @ApiParam({
+    name: 'id',
     description: 'Version ID (현재 구현에서는 Master ID가 아님)',
   })
   @ApiResponse({ status: 200, description: '제품 마스터 영구 삭제 성공' })
@@ -478,7 +478,7 @@ export class ProductMastersController {
   ): Promise<{ deleted: boolean }> {
     try {
       // TODO: Get userId from JWT auth
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       return await this.productMastersService.hardDelete(id, userIdToUse);
     } catch (error) {
       if (error.message.includes('not found')) {
