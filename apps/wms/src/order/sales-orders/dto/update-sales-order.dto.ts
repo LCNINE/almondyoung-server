@@ -1,11 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsNumber, ValidateNested, IsDateString } from 'class-validator';
+import { IsOptional, IsNumber, ValidateNested, IsDateString, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CustomerDto } from '../../shared/dto/customer.dto';
 import { AddressDto } from '../../shared/dto/address.dto';
 
 export class UpdateSalesOrderDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Customer information',
     type: CustomerDto,
     required: false
@@ -15,7 +15,7 @@ export class UpdateSalesOrderDto {
   @IsOptional()
   customer?: CustomerDto;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Shipping address',
     type: AddressDto,
     required: false
@@ -35,7 +35,7 @@ export class UpdateSalesOrderDto {
   @IsOptional()
   shippingFee?: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: 'Processed at',
     required: false,
     type: String,
@@ -44,5 +44,14 @@ export class UpdateSalesOrderDto {
   @IsDateString()
   @IsOptional()
   processedAt?: string;
+
+  @ApiProperty({
+    description: 'Memo',
+    required: false,
+    example: '기타 메모 내용'
+  })
+  @IsString()
+  @IsOptional()
+  memo?: string;
 }
 
