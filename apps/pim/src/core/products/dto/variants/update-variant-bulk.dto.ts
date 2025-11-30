@@ -25,13 +25,12 @@ class BulkUpdateItemDto {
 }
 
 export class UpdateVariantBulkDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '수정할 변형 정보 배열',
     type: [BulkUpdateItemDto],
     minItems: 1
   })
   @IsArray()
-  @MinLength(1, { each: false })
   @ValidateNested({ each: true })
   @Type(() => BulkUpdateItemDto)
   updates: BulkUpdateItemDto[];
