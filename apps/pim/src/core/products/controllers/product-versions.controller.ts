@@ -48,7 +48,7 @@ export class ProductVersionsController {
   ): Promise<VersionTreeResponseDto[]> {
     try {
       const tree = await this.productVersionsService.getVersionTree(masterId);
-      return tree.map(this._mapToResponseDto);
+      return tree.map((node) => this._mapToResponseDto(node));
     } catch (error) {
       this.logger.error(`Failed to get version tree: ${error.message}`, error.stack);
       if (error.message.includes('not found')) {
