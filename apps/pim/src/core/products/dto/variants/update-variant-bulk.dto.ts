@@ -7,6 +7,16 @@ class BulkUpdateItemDto {
   @IsString()
   id: string;
 
+  @ApiProperty({
+    description: '제품 변형 이름',
+    minLength: 1,
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  variantName?: string;
+
   @ApiProperty({ description: '상태', required: false })
   @IsOptional()
   @IsString()
