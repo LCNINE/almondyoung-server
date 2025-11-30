@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
-  UpdateVariantBulkDto,
   VariantWithPriceDto,
   ProductVariant,
   UpdateProductVariant,
@@ -20,7 +19,7 @@ import {
   variantOptionValues
 } from '../../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
-import { UpdateProductVariantDto } from '../dto';
+import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 
 @Injectable()
 export class ProductVariantsService {
@@ -462,11 +461,7 @@ export class ProductVariantsService {
   }
 
   async bulkUpdateVariants(data: UpdateVariantBulkDto, tx?: DbTransaction): Promise<void> {
-    if (!data.variantIds || data.variantIds.length === 0) {
-      throw new Error('Variant IDs are required');
-    }
-
-    if (!data.updates || Object.keys(data.updates).length === 0) {
+    if (!data.updates || data.updates.length === 0) {
       throw new Error('Updates are required');
     }
 
@@ -475,35 +470,35 @@ export class ProductVariantsService {
     const existingVariants = await client
       .select({ id: productVariants.id })
       .from(productVariants)
-      .where(inArray(productVariants.id, data.variantIds));
+      .where(inArray(productVariants.id, data.updates.map(u => u.id)));
 
     const existingIds = existingVariants.map(v => v.id);
-    const missingIds = data.variantIds.filter(id => !existingIds.includes(id));
+    const missingIds = data.updates.map(u => u.id).filter(id => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
       throw new Error(`Variants not found: ${missingIds.join(', ')}`);
     }
 
-    if (data.updates.status) {
-      const validStatuses = ['active', 'inactive'];
-      if (!validStatuses.includes(data.updates.status)) {
-        throw new Error(`Invalid status: ${data.updates.status}. Valid statuses are: ${validStatuses.join(', ')}`);
-      }
+    const validStatuses = ['active', 'inactive'];
+    if (data.updates.map(u => u.status).some(status => status && !validStatuses.includes(status))) {
+      throw new Error(`Invalid status: ${data.updates.map(u => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
 
-    if (data.updates.displayOrder !== undefined && data.updates.displayOrder < 0) {
+    if (data.updates.map(u => u.displayOrder).some(displayOrder => displayOrder !== undefined && displayOrder < 0)) {
       throw new Error('Display order must be non-negative');
     }
 
-    const updateData = {
-      ...data.updates,
+    const updateData = data.updates.map(u => ({
+      ...u,
       updatedAt: new Date()
-    };
+    }));
 
-    await client
-      .update(productVariants)
-      .set(updateData)
-      .where(inArray(productVariants.id, data.variantIds));
+    for (const update of updateData) {
+      await client
+        .update(productVariants)
+        .set(update)
+        .where(eq(productVariants.id, update.id));
+    }
   }
 
 
