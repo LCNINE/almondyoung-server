@@ -105,6 +105,9 @@ export class SalesOrderResponseDto {
     @ApiProperty({ description: '처리 일시', nullable: true })
     processedAt: Date | null;
 
+    @ApiProperty({ description: '메모', nullable: true })
+    memo: string | null;
+
     @ApiProperty({ description: '생성 일시' })
     createdAt: Date;
 
