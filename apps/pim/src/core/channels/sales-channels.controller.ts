@@ -390,7 +390,7 @@ export class SalesChannelsController {
     @Body() configDto: ValidateChannelConfigDto,
   ): Promise<ChannelValidationResponseDto> {
     try {
-      if (!configDto.type) {
+      if (!configDto.site) {
         throw new HttpException(
           'Channel type is required',
           HttpStatus.BAD_REQUEST,
@@ -398,7 +398,7 @@ export class SalesChannelsController {
       }
 
       return (await this.salesChannelsService.validateChannelConfig(
-        configDto.type,
+        configDto.site,
         configDto.config,
       )) as ChannelValidationResponseDto;
     } catch (error) {
