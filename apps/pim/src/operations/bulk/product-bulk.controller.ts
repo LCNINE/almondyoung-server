@@ -6,7 +6,7 @@ import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 @ApiTags('Product Bulk Operations')
 @Controller('masters/bulk')
 export class ProductBulkController {
-  constructor(private bulkService: ProductBulkService) {}
+  constructor(private bulkService: ProductBulkService) { }
 
   @Post('update')
   @ApiOperation({
@@ -22,7 +22,7 @@ export class ProductBulkController {
   ) {
     try {
       // TODO: Get userId from JWT auth
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       return await this.bulkService.bulkUpdate(dto, userIdToUse);
     } catch (error) {
       throw new HttpException(
@@ -46,7 +46,7 @@ export class ProductBulkController {
   ) {
     try {
       // TODO: Get userId from JWT auth
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       return await this.bulkService.bulkSoftDelete(dto, userIdToUse);
     } catch (error) {
       throw new HttpException(
@@ -70,7 +70,7 @@ export class ProductBulkController {
   ) {
     try {
       // TODO: Get userId from JWT auth
-      const userIdToUse = userId || 'system';
+      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       return await this.bulkService.bulkRestore(dto, userIdToUse);
     } catch (error) {
       throw new HttpException(
