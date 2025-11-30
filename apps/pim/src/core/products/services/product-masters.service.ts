@@ -1533,16 +1533,55 @@ export class ProductMastersService {
   async findDeleted(tx?: DbTransaction): Promise<ProductMasterVersion[]> {
     const client = this.getClient(tx);
 
-    return client
+    // 모든 master 를 가져오고, 각 master 에 보여줄 버전을 1) active, 2) inactive 최신, 3) 없으면 null 순서로 선택
+    const masters = await client
       .select()
-      .from(productMasterVersions)
-      .where(
-        and(
-          isNotNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active')
+      .from(productMasters)
+      .where(isNotNull(productMasters.deletedAt)); // 삭제된 master 만 가져올 경우
+
+    const results: ProductMasterVersion[] = [];
+
+    for (const master of masters) {
+      // 1. active 버전 조회
+      const [activeVersion] = await client
+        .select()
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, master.id),
+            eq(productMasterVersions.versionStatus, 'active')
+          )
         )
-      )
-      .orderBy(desc(productMasterVersions.deletedAt));
+        .limit(1);
+
+      if (activeVersion) {
+        results.push(activeVersion);
+        continue;
+      }
+
+      // 2. 가장 최근 inactive 버전 조회
+      const [inactiveVersion] = await client
+        .select()
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, master.id),
+            eq(productMasterVersions.versionStatus, 'inactive')
+          )
+        )
+        .orderBy(desc(productMasterVersions.createdAt))
+        .limit(1);
+
+      if (inactiveVersion) {
+        results.push(inactiveVersion);
+        continue;
+      }
+
+      // 3. 해당 master 에 보여줄 버전 없음 → null
+      results.push(null as unknown as ProductMasterVersion);
+    }
+
+    return results;
   }
 
   /**
