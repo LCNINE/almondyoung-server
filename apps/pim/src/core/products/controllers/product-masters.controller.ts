@@ -34,7 +34,7 @@ import {
   MasterListResponseDto,
   MasterUpdateResponseDto,
 } from '../dto';
-import { ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
+import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
 
 @ApiTags('Product Masters')
@@ -198,12 +198,12 @@ export class ProductMastersController {
     summary: '삭제된 제품 마스터 목록 조회',
     description: '소프트 삭제된 제품 마스터 목록을 조회합니다.',
   })
-  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공', type: [ProductDto] })
+  @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공', type: [MasterProductWithPrimaryVersionDto] })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getDeleted(): Promise<ProductDto[]> {
+  async getDeleted(): Promise<MasterProductWithPrimaryVersionDto[]> {
     try {
       const deleted = await this.productMastersService.findDeleted();
-      return ProductMapper.toDtoArray(deleted);
+      return deleted;
     } catch (error) {
       console.error('Failed to get deleted masters:', error);
       throw new HttpException(
