@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ProductMasterEntity } from '../entities/master.entity';
+import { ProductMasterVersionEntity } from '../entities/master-version.entity';
 
 export class ProductDto {
   @ApiProperty({ description: 'Version ID' })
@@ -103,3 +105,7 @@ export class ProductListResponseDto {
 }
 
 
+export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
+  @ApiProperty({ description: '주 버전', type: ProductMasterVersionEntity, nullable: true })
+  primaryVersion: ProductMasterVersionEntity | null;
+}

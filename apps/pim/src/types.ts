@@ -67,6 +67,10 @@ export type UpdateProductMasterVersion = Partial<
   tagValueIds?: string[];
 };
 
+export type ProductMasterWithVersion = ProductMaster & {
+  version: ProductMasterVersion | null;
+};
+
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
 export type ProductMasterCategory = InferSelectModel<
   typeof productMasterCategories

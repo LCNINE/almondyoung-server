@@ -13,6 +13,7 @@ import {
   index,
   foreignKey,
   primaryKey,
+  pgEnum,
 } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
 
@@ -99,7 +100,7 @@ export const productMasters = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
     createdBy: uuid('created_by'),
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by'),
@@ -111,6 +112,7 @@ export const productMasters = pgTable(
 );
 
 // ===== 2.1. PRODUCT MASTER VERSIONS (판매상품 버전별 데이터) =====
+export const ProductMasterVersionStatusEnum = pgEnum('product_master_version_status', ['draft', 'inactive', 'active']);
 export const productMasterVersions = pgTable(
   'product_master_versions',
   {
@@ -124,7 +126,7 @@ export const productMasterVersions = pgTable(
       .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull().default(1),
     parentVersionId: uuid('parent_version_id'),
-    versionStatus: varchar('version_status', { length: 20 })
+    versionStatus: ProductMasterVersionStatusEnum('version_status')
       .notNull()
       .default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
@@ -174,8 +176,8 @@ export const productMasterVersions = pgTable(
     supplierId: uuid('supplier_id'),
 
     // Purchase Restrictions
-    ageRestriction: integer('age_restriction').default(0),
-    minQuantity: integer('min_quantity').default(1),
+    ageRestriction: integer('age_restriction').default(0).notNull(),
+    minQuantity: integer('min_quantity').default(1).notNull(),
     maxQuantity: integer('max_quantity'),
 
     // Sales Period
@@ -196,12 +198,12 @@ export const productMasterVersions = pgTable(
 
     // Audit Fields
     seller: varchar('seller', { length: 100 }),
-    registrationDate: timestamp('registration_date').defaultNow(),
+    registrationDate: timestamp('registration_date').defaultNow().notNull(),
     lastEditDate: timestamp('last_edit_date'),
     // ===== Phase 1 NEW FIELDS END =====
 
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
     createdBy: uuid('created_by'),
     updatedBy: uuid('updated_by'),
   },
