@@ -95,6 +95,7 @@ export class ProductVariantsController {
         filters,
       );
     } catch (error) {
+      console.error(error);
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
       }
