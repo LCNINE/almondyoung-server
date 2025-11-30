@@ -106,6 +106,82 @@ export class ProductVariantsController {
     }
   }
 
+  
+  @Get('masters/:masterId/versions/:versionId')
+  @ApiOperation({
+    summary: '버전별 제품 변형 조회',
+    description: '특정 제품 마스터의 특정 버전의 모든 변형(색상, 사이즈 등)을 조회합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: '제품 마스터 ID' })
+  @ApiParam({ name: 'versionId', description: '버전 ID' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    type: String,
+    description: '변형 상태 필터',
+  })
+  @ApiQuery({
+    name: 'includePrice',
+    required: false,
+    type: String,
+    description: '가격 정보 포함 여부 (true/false, 기본값: true)',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: String,
+    description: '페이지 번호',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: String,
+    description: '페이지 당 아이템 수',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '제품 변형 목록 조회 성공',
+    type: VariantListResponseDto,
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 500, description: '서버 오류' })
+  async getVariantsByMasterAndVersion(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Query()
+    query: {
+      status?: string;
+      includePrice?: string;
+      page?: string;
+      limit?: string;
+    },
+  ): Promise<VariantListResponseDto> {
+    try {
+      const filters = {
+        status: query.status,
+        includePrice: query.includePrice !== 'false',
+        page: query.page ? parseInt(query.page) : undefined,
+        limit: query.limit ? parseInt(query.limit) : undefined,
+      };
+
+      return await this.productVariantsService.getVariantsByMaster(
+        masterId,
+        versionId, // version (optional)
+        filters,
+      );
+    } catch (error) {
+      console.error(error);
+      if (error.message.includes('required')) {
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+      }
+      throw new HttpException(
+        'Failed to get variants by master',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
   @Get(':id')
   @ApiOperation({
     summary: '제품 변형 상세 조회',
