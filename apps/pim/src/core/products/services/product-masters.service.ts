@@ -12,6 +12,7 @@ import {
   UpdateProductMasterVersion,
   DbTransaction,
   OptionDiff,
+  ProductMasterWithVersion,
 } from '../../../types';
 import {
   type PimSchema,
@@ -38,6 +39,8 @@ import {
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
 import { v7 as uuidv7 } from 'uuid';
+import { ProductMasterVersionEntity } from '../dto/entities/master-version.entity';
+import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 
 @Injectable()
 export class ProductMastersService {
@@ -1530,7 +1533,7 @@ export class ProductMastersService {
   /**
    * Get all soft-deleted products
    */
-  async findDeleted(tx?: DbTransaction): Promise<ProductMasterVersion[]> {
+  async findDeleted(tx?: DbTransaction): Promise<MasterProductWithPrimaryVersionDto[]> {
     const client = this.getClient(tx);
 
     // 모든 master 를 가져오고, 각 master 에 보여줄 버전을 1) active, 2) inactive 최신, 3) 없으면 null 순서로 선택
@@ -1539,9 +1542,11 @@ export class ProductMastersService {
       .from(productMasters)
       .where(isNotNull(productMasters.deletedAt)); // 삭제된 master 만 가져올 경우
 
-    const results: ProductMasterVersion[] = [];
+    const results: MasterProductWithPrimaryVersionDto[] = [];
 
     for (const master of masters) {
+      let primaryVersion: ProductMasterVersionEntity | null = null;
+
       // 1. active 버전 조회
       const [activeVersion] = await client
         .select()
@@ -1555,30 +1560,31 @@ export class ProductMastersService {
         .limit(1);
 
       if (activeVersion) {
-        results.push(activeVersion);
-        continue;
+        primaryVersion = activeVersion as ProductMasterVersionEntity; // TODO: 타입 불안정 수정
       }
-
-      // 2. 가장 최근 inactive 버전 조회
-      const [inactiveVersion] = await client
-        .select()
-        .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, master.id),
-            eq(productMasterVersions.versionStatus, 'inactive')
+      else {
+        // 2. 가장 최근 inactive 버전 조회
+        const [inactiveVersion] = await client
+          .select()
+          .from(productMasterVersions)
+          .where(
+            and(
+              eq(productMasterVersions.masterId, master.id),
+              eq(productMasterVersions.versionStatus, 'inactive')
+            )
           )
-        )
-        .orderBy(desc(productMasterVersions.createdAt))
-        .limit(1);
+          .orderBy(desc(productMasterVersions.createdAt))
+          .limit(1);
 
-      if (inactiveVersion) {
-        results.push(inactiveVersion);
-        continue;
+        if (inactiveVersion) {
+          primaryVersion = inactiveVersion as ProductMasterVersionEntity; // TODO: 타입 불안정 수정
+        }
       }
 
-      // 3. 해당 master 에 보여줄 버전 없음 → null
-      results.push(null as unknown as ProductMasterVersion);
+      results.push({
+        ...master,
+        primaryVersion: primaryVersion,
+      })
     }
 
     return results;
