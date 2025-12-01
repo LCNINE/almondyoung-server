@@ -2,18 +2,18 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, inArray, and } from 'drizzle-orm';
-import { 
+import {
   productOptionValues,
   productOptionGroups,
   productVariants,
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
-  pimSchema 
+  pimSchema
 } from '../../schema';
 import { DbTransaction } from '../../types';
-import { 
-  ValidatedPricingRulesSet, 
+import {
+  ValidatedPricingRulesSet,
   pricingRulesSetSchema,
   hasWithOptionScope,
   hasVariantsScope,
@@ -27,7 +27,7 @@ export class PricingValidatorService {
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly calculatorService: PricingCalculatorService,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -46,12 +46,18 @@ export class PricingValidatorService {
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
     return this.inTx(async (trx) => {
+      console.error(
+        'RAW rulesDto:',
+        JSON.stringify(rulesDto, null, 2),
+      ); // ✅ 이거 추가
+
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
       if (!parseResult.success) {
         console.error(
           'pricingRulesSetSchema issues:',
           JSON.stringify(parseResult.error.issues, null, 2),
         );
+
         throw new BadRequestException({
           message: 'Invalid pricing rules structure',
           errors: parseResult.error.issues,
