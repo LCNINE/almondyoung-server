@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, HttpStatus } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
 import { PathBuilderService } from '../storage/path-builder.service';
 import { FileRepository } from '../shared/repositories/file.repository';
@@ -17,18 +17,17 @@ export class UploadService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    try {
 
     const fileId = uuidv7();
     const extension = this.getFileExtension(file.filename);
 
-      const filePath = this.pathBuilder.buildPath({
-        context: dto.context,
-        fileId,
-        extension,
-        userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
-        status: 'active',
-      });
+    const filePath = this.pathBuilder.buildPath({
+      context: dto.context,
+      fileId,
+      extension,
+      userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
+      status: 'active',
+    });
 
     const uploadResult = await this.storageService.upload({
       key: filePath,
@@ -37,11 +36,8 @@ export class UploadService {
       metadata: {
         uploadedBy: userId,
         context: dto.context,
-        uploadedBy: userId,
-        storageProvider: uploadResult.provider.toLowerCase(),
-        metadata: dto.metadata,
-        activatedAt: new Date(),
-      });
+      },
+    });
 
     const fileRecord = await this.fileRepository.create({
       id: fileId,
@@ -59,15 +55,13 @@ export class UploadService {
       activatedAt: new Date(),
     });
 
-    } catch (error) {
-      console.error("파일업로드 에러 :", error)
-      throw new BadRequestException({
-        message: error.message ?? '파일 업로드 중 오류가 발생했습니다.',
-        errorCode: error.errorCode ?? 'FILE_UPLOAD_FAILED',
-        httpStatus: HttpStatus.BAD_REQUEST,
-      });
-
-    }
+    return {
+      id: fileRecord.id,
+      url: fileRecord.url,
+      fileName: fileRecord.fileName,
+      size: fileRecord.size,
+      status: fileRecord.status,
+    };
   }
 
   async batchUploadFiles(
@@ -98,7 +92,7 @@ export class UploadService {
       total: uploadedFiles.length,
     };
   }
-  
+
   private getFileExtension(filename: string): string {
     const parts = filename.split('.');
     return parts.length > 1 ? parts.pop() || '' : '';
