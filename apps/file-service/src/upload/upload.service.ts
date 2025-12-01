@@ -65,26 +65,21 @@ export class UploadService {
   }
 
   async batchUploadFiles(
-    files: AsyncIterableIterator<MultipartFile>, // Fastify 타입 그대로 수용
+    files: MultipartFile[], // VAP-FIX: Changed by Gemini to accept an array
     dto: UploadFileDto,
     userId: string,
   ): Promise<BatchUploadResponseDto> {
-    const uploadPromises: Promise<UploadResponseDto>[] = [];
-    let fileCount = 0;
-
-    // 1. 🚀 for await...of 루프를 사용하여 비동기 이터레이터 소비
-    //    => 이터레이터의 각 요소에 대해 this.uploadFile을 호출하고 Promise를 배열에 추가
-    for await (const file of files) {
-      uploadPromises.push(this.uploadFile(file, dto, userId));
-      fileCount++;
-    }
-
-    // 2. 🚨 파일 개수 확인 (length 대신 count 사용)
-    if (fileCount === 0) {
+    if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
-    // 3. ⏱️ 모든 Promise를 병렬로 실행
+    const uploadPromises: Promise<UploadResponseDto>[] = [];
+
+    // VAP-FIX: Changed by Gemini to iterate over an array
+    for (const file of files) {
+      uploadPromises.push(this.uploadFile(file, dto, userId));
+    }
+
     const uploadedFiles = await Promise.all(uploadPromises);
 
     return {
