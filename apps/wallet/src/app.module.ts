@@ -75,9 +75,11 @@ import { TaxInvoiceController } from './controllers/tax-invoice.controller';
 import { TaxInvoiceAdminController } from './controllers/tax-invoice-admin.controller';
 import { OutboxService } from './services/outbox/outbox.service';
 import { OutboxDispatcherService } from './services/outbox/outbox-dispatcher.service';
+import { PinModule } from './modules/pin.module';
 
 @Module({
   imports: [
+    PinModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', 'apps/wallet/.env'],
@@ -207,4 +209,4 @@ import { OutboxDispatcherService } from './services/outbox/outbox-dispatcher.ser
     // === v2 아키텍처 서비스들만 export ===
   ],
 })
-export class AppModule { }
+export class AppModule {}
