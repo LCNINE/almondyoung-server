@@ -16,9 +16,7 @@ import {
 } from '../storage-provider.interface';
 
 @Injectable()
-export class LocalStorageProvider
-  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort
-{
+export class LocalStorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(LocalStorageProvider.name);
   private readonly baseDir = path.join(process.cwd(), 'uploads');
   private readonly port: string;
@@ -34,7 +32,7 @@ export class LocalStorageProvider
 
       await fs.mkdir(dir, { recursive: true });
 
-      await fs.writeFile(filePath, request.buffer);
+      await fs.writeFile(filePath, request.stream);
 
       const url = `http://localhost:${this.port}/files/local/${request.key}`;
 
@@ -72,4 +70,3 @@ export class LocalStorageProvider
     return { signedUrl, expiresAt };
   }
 }
-
