@@ -6,12 +6,13 @@ import {
   IsString,
   IsUUID,
   Length,
+  ValidateIf,
 } from 'class-validator';
 
 export class BusinessLicenseBaseDto {
-  @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
-  @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
-  file: string;
+  @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
+  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
+  fileUrl?: string | null;
 
   @IsOptional({ message: '상점ID는 선택사항입니다.' })
   @IsUUID('4', { message: '상점ID는 UUID 형식이어야 합니다.' })
@@ -29,18 +30,23 @@ export class BusinessLicenseBaseDto {
   metadata?: string;
 }
 
-
 // 사업자 생성 dto
-export class CreateBusinessLicenseDto extends PickType(
-  BusinessLicenseBaseDto,
-  ['businessNumber', 'representativeName'] as const,
-) { }
+export class CreateBusinessLicenseDto {
+  @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
+  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
+  @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @Transform(({ value }) => value?.replace(/-/g, ''))
+  businessNumber?: string;
 
-// 파일 업로드용 dto
-export class CreateBusinessLicenseWithFileDto extends PickType(
-  BusinessLicenseBaseDto,
-  ['file', 'shopId', 'metadata'] as const,
-) { }
+  @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
+  @IsNotEmpty({ message: '대표자명은 필수입니다.' })
+  @Length(1, 20)
+  representativeName?: string;
+
+  @IsOptional()
+  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
+  fileUrl?: string | null;
+}
 
 // 사업자 정보 외부 조회용 dto
 export class FetchBusinessLicenseDto {

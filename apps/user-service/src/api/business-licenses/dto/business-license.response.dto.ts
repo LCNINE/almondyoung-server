@@ -67,7 +67,7 @@ export class BusinessLicenseResponseDto {
     type: String,
     nullable: true,
   })
-  verificationFile?: string | null;
+  fileUrl?: string | null;
 
   @ApiProperty({
     description: '추가 메타데이터',

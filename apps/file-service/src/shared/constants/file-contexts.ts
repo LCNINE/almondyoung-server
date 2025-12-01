@@ -6,6 +6,7 @@ export const FILE_CONTEXTS = {
   INVOICE: 'invoice',
   RECEIPT: 'receipt',
   SHIPMENT_LABEL: 'shipment-label',
+  BUSINESS_VERIFICATION_FILE: 'business-verification-file',
 } as const;
 
 export type FileContext = (typeof FILE_CONTEXTS)[keyof typeof FILE_CONTEXTS];
