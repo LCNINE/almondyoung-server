@@ -1,22 +1,22 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { FileServiceModule } from './file-service.module';
 import fastifyCookie from '@fastify/cookie';
+import fastifyMultipart from '@fastify/multipart';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    FileServiceModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(FileServiceModule, new FastifyAdapter());
 
   // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
   await app.register(fastifyCookie);
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+    },
+  });
 
   // Passport와 Fastify 호환성을 위한 훅 (중요!)
   app
@@ -66,13 +66,7 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'Accept',
-      'Cookie',
-      'Set-Cookie',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
     exposedHeaders: ['Set-Cookie'],
   });
   app.enableShutdownHooks();
@@ -81,7 +75,7 @@ async function bootstrap() {
     .setTitle('File Service API')
     .setDescription(
       '파일 업로드, 다운로드, 생명주기 관리 API\n\n' +
-      '파일 업로드(단일/일괄), 다운로드(Signed URL), 활성화/삭제 등 파일 관리 기능을 제공합니다.',
+        '파일 업로드(단일/일괄), 다운로드(Signed URL), 활성화/삭제 등 파일 관리 기능을 제공합니다.',
     )
     .setVersion('1.0.0')
     .addTag('Health', '서비스 헬스체크')
@@ -110,12 +104,15 @@ async function bootstrap() {
   });
 
   // YAML 문서 charset 헤더 설정
-  app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-    if (request.url === '/docs.yaml') {
-      reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-    }
-    done();
-  });
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   // Railway는 PORT 환경변수를 제공하므로 우선 사용
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
