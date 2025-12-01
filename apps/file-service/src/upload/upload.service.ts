@@ -31,7 +31,7 @@ export class UploadService {
 
     const uploadResult = await this.storageService.upload({
       key: filePath,
-      buffer: await file.toBuffer(),
+      stream: file.file, //buffer에서 stream으로 변환 추후 문제가되면 수정
       contentType: file.mimetype,
       metadata: {
         uploadedBy: userId,
