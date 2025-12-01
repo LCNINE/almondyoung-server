@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { FastifyRequest } from 'fastify';
+import { MultipartFile } from '@fastify/multipart'; // VAP-FIX: Gemini's fix - Import type
 
 /**
  * @description
@@ -33,12 +34,13 @@ export class FileTransformInterceptor implements NestInterceptor {
     }
 
     const body = {};
-    const files = [];
+    const files: MultipartFile[] = []; // VAP-FIX: Gemini's fix - Explicitly type the array
 
     try {
       const parts = request.parts();
       for await (const part of parts) {
-        if (part.file) {
+        // VAP-FIX: Gemini's fix - Use a type guard to check for file parts
+        if ('filename' in part) {
           // It's a file part
           // To keep memory usage low, we pass the stream object itself.
           // The service layer will be responsible for processing the stream.
