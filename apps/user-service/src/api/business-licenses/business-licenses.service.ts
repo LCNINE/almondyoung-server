@@ -122,8 +122,8 @@ export class BusinessLicensesService {
     return;
   }
 
-  async updateBusinessLicenseByBusinessLicenseId(
-    businessLicenseId: string,
+  async updateBusinessLicenseByBusinessId(
+    businessId: string,
     data: UpdateBusinessLicenseDto,
     userId: string,
   ): Promise<void> {
@@ -142,7 +142,7 @@ export class BusinessLicensesService {
       if (existingBusiness.status === 'rejected') {
         const fileUrl = data.fileUrl ?? existingBusiness.fileUrl ?? '';
 
-        await this.resubmitRejectedLicense(businessLicenseId, fileUrl);
+        await this.resubmitRejectedLicense(businessId, fileUrl);
         return;
       }
 
