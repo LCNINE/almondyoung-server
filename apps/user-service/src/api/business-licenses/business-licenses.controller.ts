@@ -21,13 +21,13 @@ import {
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import {
+  CreateBusinessLicenseDto,
+  FetchBusinessLicenseDto,
+  UpdateBusinessLicenseDto
+} from './dto/business-license.dto';
+import {
   BusinessLicenseResponseDto
 } from './dto/business-license.response.dto';
-import {
-  CreateBusinessLicenseDto,
-  FetchBusinessLicenseDto
-} from './dto/create-business-license.dto';
-import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
