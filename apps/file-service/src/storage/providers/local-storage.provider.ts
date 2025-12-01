@@ -32,7 +32,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
 
       await fs.mkdir(dir, { recursive: true });
 
-      await fs.writeFile(filePath, request.stream);
+      await fs.writeFile(filePath, request.buffer);
 
       const url = `http://localhost:${this.port}/files/local/${request.key}`;
 
