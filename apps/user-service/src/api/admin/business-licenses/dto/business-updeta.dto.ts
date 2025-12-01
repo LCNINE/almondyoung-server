@@ -3,9 +3,6 @@ import * as schema from '../../../../../database/drizzle/schema';
 import { statusEnum } from "../../../../../database/drizzle/schema";
 
 export class BusinessAdminUpdateDto {
-    @IsOptional({ message: '증빙 검증 파일 업로드는 선택사항입니다.' })
-    file?: Express.Multer.File | null;
-
     @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
     @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
     fileUrl?: string | null;
