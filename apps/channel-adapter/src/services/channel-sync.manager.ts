@@ -54,10 +54,10 @@ export class ChannelSyncManager {
       await tx.insert(syncHistories).values({
         channelId: channel,
         syncType: dataType,
-        totalCount: events.length,
+      totalCount: events.length,
         successCount: events.length,
         failedCount: 0,
-        status: 'success',
+      status: 'success',
         startedAt: new Date(),
         completedAt: new Date(),
       });
@@ -78,32 +78,32 @@ export class ChannelSyncManager {
       }
 
       // 3️⃣ Outbox에 이벤트 enqueue (같은 트랜잭션!)
-      if (dataType === 'orders') {
+    if (dataType === 'orders') {
         await this.outboxService.enqueue(
           {
-            eventType: 'OrderSyncCompleted',
-            aggregateId: `${channel}-sync`,
+        eventType: 'OrderSyncCompleted',
+        aggregateId: `${channel}-sync`,
             partitionKey: channel,
-            payload: {
-              channelType: channel,
-              syncType: 'inbound' as const,
-              orderCount: events.length,
-              orders: events.map((e) => ({
-                channelType: channel,
-                externalOrderId: e.externalOrderId,
-                status: e.status,
+        payload: {
+          channelType: channel,
+          syncType: 'inbound' as const,
+          orderCount: events.length,
+          orders: events.map((e) => ({
+            channelType: channel,
+            externalOrderId: e.externalOrderId,
+            status: e.status,
                 quantity: e.quantity || 1,
                 priceAmount: e.priceAmount || 0,
-              })),
+          })),
               syncDurationMs: Date.now() - startTime,
             },
             metadata: {
               dataType,
-            },
+        },
           },
           tx,
         );
-      }
+    }
     });
 
     this.logger.log(`✅ [${channel}] ${events.length}건 동기화 완료`);
