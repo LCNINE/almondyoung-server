@@ -33,6 +33,7 @@ async function buildBackendUrl(
   const { path } = await params
   const pathString = path.join("/")
   const searchParams = request.nextUrl.search
+  // 기존 wallet 경로 처리
   return `${BACKEND_BASE_URL}/wallet/${pathString}${searchParams}`
 }
 

@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation"
 import { PaymentMethodAddDrawer } from "../add/payment-method-add-drawer"
 import { MembershipCardAddDrawer } from "../add/membership-card-add-drawer"
 import { BnplHistoryDrawer } from "../bnpl/bnpl-history-drawer"
-import { PinSettingsDrawer } from "../pin/pin-settings-drawer"
 import { getBnplSummary, type BnplSummary } from "@lib/api/wallet"
 
 // 🎯 Card 컴포넌트 개선 (재사용성을 위해 유지)
@@ -367,10 +366,6 @@ export default function PaymentManagement() {
       <BnplHistoryDrawer
         open={isBnplDrawerOpen}
         onOpenChange={setIsBnplDrawerOpen}
-      />
-      <PinSettingsDrawer
-        open={isPinSettingsDrawerOpen}
-        onOpenChange={setIsPinSettingsDrawerOpen}
       />
     </div>
   )
