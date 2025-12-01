@@ -46,7 +46,7 @@ export const mobileSubHeaders: Record<string, string> = {
   "/mypage/addresses": "배송지 관리",
   "/mypage/payment-methods": "결제수단 관리",
   "/mypage/coupons": "쿠폰",
-  "/mypage/points": "포인트",
+  "/mypage/point": "포인트",
 
   // 장바구니/결제
   "/cart/checkout": "주문/결제",

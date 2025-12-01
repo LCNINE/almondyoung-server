@@ -67,6 +67,7 @@ export async function GET(request: NextRequest, { params }: any) {
       method: "GET",
       headers: headers,
       cache: "no-store",
+      credentials: "include",
     })
 
     return processResponse(res)

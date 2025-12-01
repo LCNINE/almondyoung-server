@@ -1,178 +1,194 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk"
+import React, { useState } from "react"
+import { useRouter } from "next/navigation"
+import { ChevronLeft, ChevronRight, Info } from "lucide-react"
+import { cn } from "@lib/utils" // 프로젝트의 cn 유틸리티 경로에 맞게 수정해주세요
 
-interface IntentResponse {
-  id: string
-  customerId: string
-  amount: number
-  type: string
-  status: string
-  createdAt: string
-  updatedAt: string
+// ----------------------------------------------------------------------
+// 🧱 Components
+// ----------------------------------------------------------------------
+
+// 1. 공통 리스트 아이템 (화살표형)
+interface LinkRowProps {
+  label: string
+  onClick: () => void
 }
 
-export default function TestPage() {
-  const [intent, setIntent] = useState<IntentResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const paymentRef = useRef<any>(null)
+const LinkRow = ({ label, onClick }: LinkRowProps) => {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center justify-between border-b border-gray-100 px-5 py-5 transition-colors active:bg-gray-50"
+    >
+      <span className="text-base font-medium text-[#1c1c1e]">{label}</span>
+      <ChevronRight className="h-5 w-5 text-gray-400" />
+    </button>
+  )
+}
 
-  // Intent 생성
-  const createIntent = async () => {
-    try {
-      setLoading(true)
-      setError(null)
+// 2. 토글 스위치 컴포넌트
+interface SwitchProps {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+}
 
-      const response = await fetch(`/api/wallet/payments/intents`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          customerId: `test_customer_${Date.now()}`,
-          amount: 100,
-          type: "ORDER",
-        }),
-      })
+const Switch = ({ checked, onCheckedChange }: SwitchProps) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        "relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none",
+        checked ? "bg-[#f29219]" : "bg-[#e5e5ea]" // 활성화 시 브랜드 컬러, 비활성화 시 회색
+      )}
+    >
+      <span
+        className={cn(
+          "pointer-events-none inline-block h-[26px] w-[26px] rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out",
+          checked ? "translate-x-[22px]" : "translate-x-[2px]"
+        )}
+      />
+    </button>
+  )
+}
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || "Intent 생성 실패")
-      }
-
-      const data: IntentResponse = await response.json()
-      setIntent(data)
-
-      // Intent 생성 후 토스 결제 SDK 초기화
-      await initializeTossPayment(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "알 수 없는 오류")
-      console.error("Intent 생성 실패:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 토스 결제 SDK 초기화
-  const initializeTossPayment = async (intentData: IntentResponse) => {
-    try {
-      const clientKey = "test_ck_pP2YxJ4K87ZZmMga5K59rRGZwXLO"
-      const tossPayments = await loadTossPayments(clientKey)
-
-      // 표준 결제창 사용
-      const payment = tossPayments.payment({
-        customerKey: intentData.customerId,
-      })
-
-      paymentRef.current = payment
-      console.log("✅ 토스 결제 SDK 초기화 완료")
-    } catch (err) {
-      setError(
-        "토스 SDK 초기화 실패: " +
-          (err instanceof Error ? err.message : "알 수 없는 오류")
-      )
-      console.error("토스 SDK 초기화 실패:", err)
-    }
-  }
-
-  // 결제 요청
-  const handlePayment = async () => {
-    if (!intent || !paymentRef.current) {
-      setError("Intent가 초기화되지 않았습니다.")
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError(null)
-
-      const baseUrl = window.location.origin
-      const countryCode = window.location.pathname.split("/")[1]
-
-      // 표준 결제창으로 카드 결제 요청
-      await paymentRef.current.requestPayment({
-        method: "CARD", // 카드 결제
-        amount: {
-          currency: "KRW",
-          value: intent.amount,
-        },
-        orderId: intent.id, // intentId를 orderId로 사용
-        orderName: "테스트 상품",
-        successUrl: `${baseUrl}/${countryCode}/test/callback`,
-        failUrl: `${baseUrl}/${countryCode}/test/callback`,
-        customerEmail: "customer123@gmail.com",
-        customerName: "김토스",
-        customerMobilePhone: "01012341234",
-        card: {
-          useEscrow: false,
-          flowMode: "DEFAULT",
-          useCardPoint: false,
-          useAppCardOnly: false,
-        },
-      })
-
-      console.log("✅ 결제창 요청 성공")
-    } catch (err: any) {
-      if (err?.code === "USER_CANCEL") {
-        setError("결제가 취소되었습니다.")
-        return
-      }
-
-      setError("결제 요청 실패: " + (err?.message || "알 수 없는 오류"))
-      console.error("결제 요청 실패:", err)
-    } finally {
-      setLoading(false)
-    }
-  }
+// 3. 안내 모달 컴포넌트
+const InfoModal = ({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean
+  onClose: () => void
+}) => {
+  if (!isOpen) return null
 
   return (
-    <div className="container mx-auto max-w-4xl p-8">
-      <h1 className="mb-6 text-3xl font-bold">토스 결제 테스트</h1>
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6">
+      {/* 백드롭 */}
+      <div
+        className="absolute inset-0 bg-black/60 transition-opacity"
+        onClick={onClose}
+      />
 
-      {/* Intent 생성 버튼 */}
-      <div className="mb-6">
-        <button
-          onClick={createIntent}
-          disabled={loading || !!intent}
-          className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-gray-400"
-        >
-          {loading ? "처리 중..." : intent ? "Intent 생성 완료" : "Intent 생성"}
-        </button>
-      </div>
+      {/* 모달 본문 */}
+      <div className="relative z-10 flex w-full max-w-[320px] flex-col overflow-hidden rounded-[2px] bg-white shadow-lg">
+        <div className="flex flex-col gap-4 p-6">
+          <h3 className="text-lg font-bold text-[#1c1c1e]">원터치결제란?</h3>
+          <ul className="flex flex-col gap-2 text-sm leading-relaxed text-[#1c1c1e]">
+            <li className="flex gap-1.5">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+              <span>
+                저장된 결제수단으로 결제 시 비밀번호 입력없이 간편하게 결제하는
+                방식입니다.
+              </span>
+            </li>
+            <li className="flex gap-1.5">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+              <span>
+                쿠팡/쿠팡페이의 보안시스템을 통해 안전한 거래임이 확인된
+                경우에만 원터치결제가 진행됩니다.
+              </span>
+            </li>
+            <li className="flex gap-1.5">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+              <span>
+                안전한 결제를 위해 추가 확인이 필요한 경우 비밀번호를 요구할 수
+                있습니다.
+              </span>
+            </li>
+            <li className="flex gap-1.5">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-gray-400" />
+              <span>
+                쿠페이를 사용하는 쿠팡의 모든 서비스에 원터치결제가 적용됩니다.
+              </span>
+            </li>
+          </ul>
+        </div>
 
-      {/* Intent 정보 표시 */}
-      {intent && (
-        <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
-          <h2 className="mb-2 text-xl font-semibold">Intent 정보</h2>
-          <p>
-            <strong>Intent ID:</strong> {intent.id}
-          </p>
-          <p>
-            <strong>금액:</strong> {intent.amount.toLocaleString()}원
-          </p>
-          <p>
-            <strong>상태:</strong> {intent.status}
-          </p>
-
-          {/* 결제 버튼 */}
+        {/* 확인 버튼 */}
+        <div className="border-t border-gray-100 p-4">
           <button
-            onClick={handlePayment}
-            disabled={loading}
-            className="mt-4 w-full rounded bg-blue-600 py-3 font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+            onClick={onClose}
+            className="w-full rounded-[4px] border border-gray-300 bg-white py-3 text-sm font-bold text-[#1c1c1e] active:bg-gray-50"
           >
-            {loading ? "처리 중..." : "결제하기"}
+            확인
           </button>
         </div>
-      )}
+      </div>
+    </div>
+  )
+}
 
-      {/* 에러 메시지 */}
-      {error && (
-        <div className="mb-6 rounded border border-red-400 bg-red-100 p-4 text-red-700">
-          <strong>오류:</strong> {error}
+// ----------------------------------------------------------------------
+// 🚀 Main Page
+// ----------------------------------------------------------------------
+
+export default function SecuritySettingsPage() {
+  const router = useRouter()
+
+  // 상태 관리
+  const [isOneTouchEnabled, setIsOneTouchEnabled] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  return (
+    <div className="min-h-screen bg-white font-['Pretendard']">
+      {/* Header */}
+      <header className="sticky top-0 z-10 flex h-14 items-center gap-2 bg-white px-4">
+        <button
+          onClick={() => router.back()}
+          className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full hover:bg-gray-100"
+        >
+          <ChevronLeft className="h-6 w-6 text-black" />
+        </button>
+        <h1 className="text-lg font-bold text-black">
+          결제 비밀번호 · 보안 설정
+        </h1>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex flex-col border-t border-gray-100">
+        {/* 1. 비밀번호 변경 */}
+        <LinkRow
+          label="비밀번호 변경"
+          onClick={() => router.push("/security/change-password")}
+        />
+
+        {/* 2. 비밀번호 초기화 */}
+        <LinkRow
+          label="비밀번호 초기화"
+          onClick={() => router.push("/security/reset-password")}
+        />
+
+        {/* 3. 원터치결제 사용 (Toggle Row) */}
+        <div className="flex w-full items-center justify-between border-b border-gray-100 px-5 py-5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-base font-medium text-[#1c1c1e]">
+              원터치결제 사용
+            </span>
+            {/* 정보 아이콘 버튼 */}
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="text-gray-400 transition-colors hover:text-gray-600"
+              aria-label="원터치결제 설명 보기"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* 토글 스위치 */}
+          <Switch
+            checked={isOneTouchEnabled}
+            onCheckedChange={setIsOneTouchEnabled}
+          />
         </div>
-      )}
+      </main>
+
+      {/* 모달 */}
+      <InfoModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   )
 }

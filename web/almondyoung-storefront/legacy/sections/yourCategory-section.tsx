@@ -1,10 +1,11 @@
 import Link from "next/link"
-import type { PimCategory } from "@lib/types/dto/pim"
+
 import { getAllCategoriesCached } from "@lib/services/pim/category/getCategory"
 import Image from "next/image"
-
+import { getCategoryTree } from "@lib/api/pim"
 export const CategorySelectSection = async (props: { countryCode: string }) => {
-  const categories = await getAllCategoriesCached()
+  const categories = await getCategoryTree()
+
   return (
     <div>
       {/* 카테고리 선택 섹션 - PIM 카테고리 데이터 사용 */}
@@ -22,10 +23,10 @@ export const CategorySelectSection = async (props: { countryCode: string }) => {
 
             <div className="flex flex-wrap justify-center gap-2 md:gap-4">
               {/* 매핑된 카테고리 표시 */}
-              {categories.slice(0, 7).map((category) => (
+              {categories.categories.slice(0, 7).map((category) => (
                 <Link
                   key={category.id}
-                  href={`/${props.countryCode}/main/${category.slug}`}
+                  href={`/${props.countryCode}/category/${category.slug}`}
                   className="hover:border-yellow-30 flex flex-wrap items-center justify-center gap-2 rounded-sm border border-white bg-white px-2 py-2 transition-all duration-300 hover:border hover:shadow-md md:rounded-xl md:px-4 lg:px-6"
                 >
                   <Image

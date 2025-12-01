@@ -26,7 +26,7 @@ function Card({
 
 const ACCOUNT_MENU_ITEMS = [
   { label: "계좌 사용 내역", href: "#" },
-  { label: "결제 비밀번호 / 보안 설정", href: "#" },
+  { label: "결제 비밀번호 / 보안 설정", action: "pin-settings" },
   { label: "현금영수증 설정", href: "#" },
   { label: "나중결제 약관 및 정책", href: "#" },
 ]
@@ -258,6 +258,7 @@ export default function PaymentManagement() {
   const [isMembershipCardDrawerOpen, setIsMembershipCardDrawerOpen] =
     useState(false)
   const [isBnplDrawerOpen, setIsBnplDrawerOpen] = useState(false)
+  const [isPinSettingsDrawerOpen, setIsPinSettingsDrawerOpen] = useState(false)
   const [bnplSummary, setBnplSummary] = useState<BnplSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -322,18 +323,33 @@ export default function PaymentManagement() {
         <ul className="divide-y divide-gray-200">
           {ACCOUNT_MENU_ITEMS.map((item) => (
             <li key={item.label}>
-              <a
-                href={item.href}
-                className="flex items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
-              >
-                <span className="text-base font-normal text-black md:text-lg">
-                  {item.label}
-                </span>
-                <ChevronRight
-                  className="h-5 w-5 text-gray-400"
-                  aria-hidden="true"
-                />
-              </a>
+              {item.action === "pin-settings" ? (
+                <button
+                  onClick={() => setIsPinSettingsDrawerOpen(true)}
+                  className="flex w-full items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
+                >
+                  <span className="text-base font-normal text-black md:text-lg">
+                    {item.label}
+                  </span>
+                  <ChevronRight
+                    className="h-5 w-5 text-gray-400"
+                    aria-hidden="true"
+                  />
+                </button>
+              ) : (
+                <a
+                  href={item.href}
+                  className="flex items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
+                >
+                  <span className="text-base font-normal text-black md:text-lg">
+                    {item.label}
+                  </span>
+                  <ChevronRight
+                    className="h-5 w-5 text-gray-400"
+                    aria-hidden="true"
+                  />
+                </a>
+              )}
             </li>
           ))}
         </ul>

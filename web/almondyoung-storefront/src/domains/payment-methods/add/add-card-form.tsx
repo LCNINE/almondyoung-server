@@ -1,7 +1,7 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { createHmsCardProfile } from "@lib/api/wallet"
+import { createHmsCardProfile } from "@lib/api/wallet/wallet-api"
 import { toast } from "sonner"
 import { HttpApiError } from "@lib/api/api-error"
 import { ChevronLeft } from "lucide-react"

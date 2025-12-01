@@ -27,7 +27,7 @@ export const ProductThumbnail = ({
         : "bg-muted relative aspect-[1/1] w-full overflow-hidden rounded-[15px] md:rounded-[5px]"
     }
   >
-    <img src={src} alt={alt} className="h-full w-full object-cover" />
+    <img src={src || "/placeholder.png"} alt={alt} className="h-full w-full object-cover" />
     {show && (
       <span className="absolute top-0 left-0 z-10 flex items-center justify-center bg-black/80 text-white md:bg-black">
         <span className="flex h-7 w-7 items-center justify-center text-xs md:h-7 md:w-7 md:pt-[7px] md:pr-[11px] md:pb-[9px] md:pl-[11px] md:text-base">

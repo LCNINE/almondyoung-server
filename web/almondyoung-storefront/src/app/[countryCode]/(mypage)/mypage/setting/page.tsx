@@ -1,4 +1,5 @@
 import { WithHeaderLayout } from "@components/layout"
+import MypageLayout from "@components/layout/mypage-layout"
 import { SettingClient } from "domains/settings/setting-client"
 import { Metadata } from "next"
 
@@ -11,11 +12,13 @@ export default function SettingPage() {
   return (
     <WithHeaderLayout
       config={{
-        showDesktopHeader: false,
+        showDesktopHeader: true,
         showMobileHeader: false,
       }}
     >
-      <SettingClient />
+      <MypageLayout>
+        <SettingClient />
+      </MypageLayout>
     </WithHeaderLayout>
   )
 }
