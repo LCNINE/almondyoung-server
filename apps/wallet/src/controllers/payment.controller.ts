@@ -35,6 +35,7 @@ import { FastifyRequest } from 'fastify';
 
 import { ApiTags, ApiBody, ApiConsumes, ApiOperation, ApiResponse, ApiParam, ApiHeader } from '@nestjs/swagger';
 import { RefundService } from '../services/refund.service';
+import { PinService } from '../services/pin/pin.service';
 
 // Zod 스키마 및 DTO 임포트
 import {
@@ -93,6 +94,7 @@ export class PaymentController {
     private readonly db: DbService<typeof walletSchema>,
     private readonly idempotencyService: IdempotencyService,
     private readonly refundService: RefundService,
+    private readonly pinService: PinService,
   ) {}
 
   @Post('intents')
@@ -302,7 +304,7 @@ export class PaymentController {
     description: '서버 내부 오류',
     type: ErrorResponseDto,
   })
-  @Public()
+  @UseGuards(JwtAuthGuard)
   async authorizePayment(
     @Param('intentId') intentId: string,
     @Body(new ZodValidationPipe(AuthorizePaymentSchema))
@@ -317,6 +319,16 @@ export class PaymentController {
       const intent = await this.intentService.findById(intentId);
       if (!intent) {
         throw new Error('Intent not found');
+      }
+
+      // PIN 검증: PIN이 없는 유저의 결제 요청 거절
+      // intent의 customerId를 사용하여 PIN 상태 확인
+      const pinStatus = await this.pinService.getStatus(intent.customerId);
+      if (!pinStatus.hasPin) {
+        throw new Error('PIN_NOT_REGISTERED');
+      }
+      if (pinStatus.status === 'LOCKED') {
+        throw new Error('PIN_LOCKED');
       }
 
       // Provider 타입 결정
@@ -1105,6 +1117,25 @@ export class PaymentController {
 
     // 문자열 패턴 기반 에러 매핑 (CTO 스타일)
     const message = errorMessage.toLowerCase();
+
+    // 400: PIN 미등록
+    if (message.includes('pin_not_registered')) {
+      throw new BadRequestException({
+        code: 'PIN_NOT_REGISTERED',
+        message: 'PIN이 등록되지 않았습니다. 결제 전에 PIN을 등록해주세요.',
+      });
+    }
+
+    // 403: PIN 잠금
+    if (message.includes('pin_locked')) {
+      throw new HttpException(
+        {
+          code: 'PIN_LOCKED',
+          message: '비밀번호 입력 횟수를 초과하여 잠겼습니다. 재설정이 필요합니다.',
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
 
     // 404: 리소스를 찾을 수 없는 경우
     if (message.includes('not found')) {
