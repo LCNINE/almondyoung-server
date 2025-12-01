@@ -11,7 +11,7 @@ export enum StorageProviderType {
 
 export interface UploadRequest {
   key: string;
-  stream: NodeJS.ReadableStream;
+  buffer: Buffer;
   contentType: string;
   metadata?: Record<string, string>;
 }
