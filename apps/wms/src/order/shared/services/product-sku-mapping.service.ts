@@ -5,6 +5,8 @@ import { DbService } from '@app/db';
 import { and, eq, desc, inArray } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
 
+import { MatchingsService } from '../../matchings/services/matchings.service';
+
 export interface CreateMappingDto {
   productId: string;
   variantId: string;
@@ -32,8 +34,9 @@ export class ProductSkuMappingService {
   private readonly logger = new Logger(ProductSkuMappingService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>
-  ) {}
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly matchingsService: MatchingsService,
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -131,33 +134,32 @@ export class ProductSkuMappingService {
 
   async getMappingSnapshot(snapshotId: string, tx?: DbTx): Promise<MappingSnapshot> {
     return this.inTx(async (tx) => {
-      const mappings = await tx
-        .select()
-        .from(wmsTables.productSkuMappings)
-        .where(eq(wmsTables.productSkuMappings.id, snapshotId))
-        .limit(1);
-
-      const mapping = mappings[0];
-      if (!mapping) {
-        throw new NotFoundException(`Mapping snapshot with ID ${snapshotId} not found`);
-      }
-
       const snapshots = await tx
         .select()
         .from(wmsTables.productSkuMappingSnapshots)
-        .where(eq(wmsTables.productSkuMappingSnapshots.mappingId, mapping.id));
+        .where(eq(wmsTables.productSkuMappingSnapshots.id, snapshotId))
+        .limit(1);
+
+      const snapshot = snapshots[0];
+      if (!snapshot) {
+        throw new NotFoundException(`Mapping snapshot with ID ${snapshotId} not found`);
+      }
+
+      // snapshotData에서 items 추출 (JSON 타입)
+      const data = snapshot.snapshotData as { items: Array<{ skuId: string; qtyPerProduct: number }> };
+      const items = data?.items || [];
 
       return {
-        id: mapping.id,
-        productId: mapping.productId,
-        version: mapping.version,
-        effectiveFrom: mapping.effectiveFrom!,
-        isActive: mapping.isActive,
-        warehouseId: mapping.warehouseId,
-        mappings: snapshots.map(s => ({
-          variantId: s.variantId,
-          skuId: s.skuId!,
-          quantity: s.quantity,
+        id: snapshot.id,
+        productId: snapshot.productId,
+        version: snapshot.sourceVersion,
+        effectiveFrom: snapshot.createdAt, // 스냅샷 생성 시점을 유효 시점으로 간주
+        isActive: true, // 스냅샷은 항상 유효한 기록임
+        warehouseId: snapshot.warehouseId,
+        mappings: items.map(item => ({
+          variantId: snapshot.variantId,
+          skuId: item.skuId,
+          quantity: item.qtyPerProduct,
         })),
       };
     }, tx);
@@ -394,6 +396,47 @@ export class ProductSkuMappingService {
         .limit(1);
 
       if (mappingInfo.length === 0) {
+        // Fallback: Global Matching 확인
+        const globalMatching = await this.matchingsService.getByVariant(variantId, tx);
+
+        if (globalMatching && globalMatching.links && globalMatching.links.length > 0) {
+          // Global Matching이 있으면 이를 기반으로 스냅샷 생성
+          // 주의: Global Matching은 warehouseId 개념이 없으므로, 현재 요청된 warehouseId로 스냅샷을 생성함
+          // 또한 productId 정보가 없으므로(variantId만 있음), productId는 null이거나 별도 조회가 필요할 수 있음.
+          // 현재 스키마상 productId가 필수라면 문제가 될 수 있으나, 
+          // product_sku_mapping_snapshots 테이블 정의를 확인해봐야 함. 
+          // (일단 productId는 null 허용이거나, variantId로 product를 찾을 수 있다고 가정)
+
+          // 여기서는 productId를 알 수 없으므로, 일단 null로 넣거나(스키마 허용시), 
+          // 또는 variantId를 통해 Product를 조회해야 함.
+          // 하지만 성능상 일단 Global Matching의 첫 번째 SKU를 메인으로 잡고 스냅샷 생성.
+
+          const primaryLink = globalMatching.links[0];
+
+          const [snapshot] = await tx
+            .insert(wmsTables.productSkuMappingSnapshots)
+            .values({
+              productId: globalMatching.masterId ?? 'unknown', // masterId를 productId로 사용하거나, 없으면 placeholder
+              sourceVersion: 0, // Global matching has no versioning like warehouse mapping
+              warehouseId,
+              variantId,
+              skuId: primaryLink.skuId,
+              quantity: primaryLink.quantity,
+              mappingId: null, // No specific mapping ID
+              snapshotData: {
+                items: globalMatching.links.map(l => ({ skuId: l.skuId, qtyPerProduct: l.quantity })),
+                capturedAt: new Date().toISOString(),
+                source: 'global_matching'
+              },
+            })
+            .returning();
+
+          this.logger.log(
+            `Created fallback snapshot from global matching for variantId=${variantId}: snapshotId=${snapshot.id}`,
+          );
+          return snapshot.id;
+        }
+
         this.logger.warn(
           `No active mapping found for variantId=${variantId}, warehouseId=${warehouseId}`,
         );

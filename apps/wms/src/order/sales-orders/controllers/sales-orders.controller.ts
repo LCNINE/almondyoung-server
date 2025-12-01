@@ -11,6 +11,7 @@ import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
+import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -67,12 +68,10 @@ export class SalesOrdersController {
   }
 
   @Get()
-  @ApiOperation({ summary: '판매 주문 목록 조회', description: '판매 주문 목록을 조회합니다. 각 주문의 라인 정보가 포함됩니다.' })
-  @ApiQuery({ name: 'limit', required: false, description: '조회할 최대 개수', example: 20 })
-  @ApiQuery({ name: 'offset', required: false, description: '건너뛸 개수', example: 0 })
+  @ApiOperation({ summary: '판매 주문 목록 조회', description: '판매 주문 목록을 조회합니다. 필터링을 지원합니다.' })
   @ApiResponse({ status: 200, description: '판매 주문 목록 조회 성공', type: [SalesOrderResponseDto] })
-  list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
-    return this.service.list({ limit: limit ? parseInt(limit, 10) : 20, offset: offset ? parseInt(offset, 10) : 0 });
+  list(@Query() query: SalesOrderFilterDto) {
+    return this.service.list(query);
   }
 }
 

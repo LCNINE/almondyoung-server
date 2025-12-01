@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray, desc, type InferInsertModel } from 'drizzle-orm';
+import { eq, inArray, desc, and, gte, lte, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -13,6 +13,7 @@ import { ProductSkuMappingService } from '../../shared/services/product-sku-mapp
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
+import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { AddressDto } from '../../shared/dto/address.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 
@@ -452,15 +453,40 @@ export class SalesOrdersService {
     });
   }
 
-  async list(params: { limit: number; offset: number }, tx?: DbTx) {
+  async list(params: SalesOrderFilterDto, tx?: DbTx) {
     const db = tx ?? this.db.db;
+    const conditions: SQL[] = [];
+
+    if (params.startDate) {
+      conditions.push(gte(wmsTables.salesOrders.orderDate, new Date(params.startDate)));
+    }
+    if (params.endDate) {
+      // 종료일은 해당 일자의 마지막 시간까지 포함해야 함
+      // YYYY-MM-DD 입력 시 00:00:00으로 생성되므로, 23:59:59로 설정하여 비교
+      const end = new Date(params.endDate);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(wmsTables.salesOrders.orderDate, end));
+    }
+    if (params.channel) {
+      conditions.push(eq(wmsTables.salesOrders.salesChannel, params.channel as any));
+    }
+    if (params.status) {
+      conditions.push(eq(wmsTables.salesOrders.status, params.status as any));
+    }
 
     // 1. 주문 목록 조회
-    const orders = await db
+    let query = db
       .select()
       .from(wmsTables.salesOrders)
-      .limit(params.limit)
-      .offset(params.offset)
+      .$dynamic();
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const orders = await query
+      .limit(params.limit ?? 20)
+      .offset(params.offset ?? 0)
       .orderBy(desc(wmsTables.salesOrders.createdAt));
 
     if (orders.length === 0) {
