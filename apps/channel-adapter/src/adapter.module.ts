@@ -69,10 +69,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }
@@ -96,16 +96,16 @@ function createKafkaConfig() {
     // 운영 환경에서만 실제 EventsModule 활성화
     ...(process.env.NODE_ENV === 'production'
       ? [
-          EventsModule.forRoot({
-            streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
-            serviceName: 'channel-adapter',
-            kafka: createKafkaConfig(),
-            validation: {
-              validateOnPublish: true,
-              throwOnValidationError: true,
-            },
-          }),
-        ]
+        EventsModule.forRoot({
+          streams: [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, FULFILLMENT_STREAM],
+          serviceName: 'channel-adapter',
+          kafka: createKafkaConfig(),
+          validation: {
+            validateOnPublish: true,
+            throwOnValidationError: true,
+          },
+        }),
+      ]
       : []),
   ],
   controllers: [ChannelAdapterController, SyncStatusController, FulfillmentEventsConsumer],
@@ -147,15 +147,15 @@ function createKafkaConfig() {
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
       ? [
-          {
-            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_orders.events.v1',
-            useClass: NullEventPublisher,
-          },
-        ]
+        {
+          provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
+          useClass: NullEventPublisher,
+        },
+        {
+          provide: 'STREAM_PUBLISHER_orders.events.v1',
+          useClass: NullEventPublisher,
+        },
+      ]
       : []),
   ],
 })

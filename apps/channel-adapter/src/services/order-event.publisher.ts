@@ -171,6 +171,7 @@ export class OrderEventPublisher {
           orderId,
           salesChannel,
           variantId: listing.variantId,
+          source: 'channel-adapter',
         },
       },
       tx,
@@ -260,7 +261,7 @@ export class OrderEventPublisher {
         aggregateId: orderEvent.externalOrderId,
         partitionKey: channel,
         payload,
-        aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
+        aggregateType: 'Order', // 채널 어댑터 서비스에서 발행한 이벤트
         metadata: {
           modifiedBy,
           hasAddressChange: !!changes.shippingAddress,
