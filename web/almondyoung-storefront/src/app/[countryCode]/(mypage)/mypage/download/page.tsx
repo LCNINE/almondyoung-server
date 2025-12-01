@@ -8,7 +8,7 @@ import { AlertCircle } from "lucide-react"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "다운로드",
+  title: "마이페이지 | 다운로드",
   description: "다운로드 내역을 확인하세요",
 }
 

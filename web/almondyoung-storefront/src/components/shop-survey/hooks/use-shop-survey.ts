@@ -1,4 +1,4 @@
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import { getShopSurveyApi, modifyShopSurveyApi } from "@lib/data/shop-suvery"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -21,7 +21,7 @@ export const useShopSurvey = () => {
 
       return response
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof HttpApiError) {
         toast.error(error.message)
         return
       }
@@ -39,7 +39,7 @@ export const useShopSurvey = () => {
       const response = await getShopSurveyApi()
       return response
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof HttpApiError) {
         toast.error(error.message)
         return
       }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import {
   getPaymentProfiles,
   setDefaultPaymentProfile,
@@ -66,13 +66,13 @@ export default function PaymentMethodScreen() {
       toast.success("기본 결제 수단이 변경되었습니다.")
 
       // 프로필 목록 새로고침
-        const data = await getPaymentProfiles()
+      const data = await getPaymentProfiles()
       const hmsCardProfiles = data.filter(
         (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
       )
       setProfiles(hmsCardProfiles)
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof HttpApiError) {
         if (error.status === 400 && error.message.includes("HMS_CARD")) {
           toast.error("멤버십 결제는 HMS 카드만 사용할 수 있습니다.")
         } else {

@@ -89,9 +89,12 @@ const ProductInfo = ({
         <ProductTitle>{product.name}</ProductTitle>
 
         {/* 재고 알림 */}
-        {showStockAlert && (
-          <ProductStockAlert stock={product.stock?.available ?? 0} />
-        )}
+
+        <div className="min-h-[20px] md:min-h-[24px]">
+          {showStockAlert && (
+            <ProductStockAlert stock={product.stock?.available ?? 0} />
+          )}
+        </div>
 
         {/* 가격 */}
         <ProductPrice

@@ -1,26 +1,15 @@
 import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
 
-export interface WishlistItem {
-  id: string
-  userId: string
-  productId: string
-  createdAt: string
-}
-
-/**
- * 상품을 위시리스트에 추가/제거합니다
- */
-export const toggleWishlist = async (productId: string) => {
-  const response = await fetch(`/api/users/wishlist`, {
+export const uploadFile = async (formData: FormData) => {
+  const response = await fetch(`/api/file/upload`, {
     method: "POST",
-    body: JSON.stringify({ productId }),
-    headers: {
-      "Content-Type": "application/json",
-    },
     credentials: "include",
+    body: formData,
   })
 
   const data = await response.json()
+
+  console.log("data:", data)
 
   if (!response.ok) {
     if (response.status === 401) {
@@ -33,7 +22,7 @@ export const toggleWishlist = async (productId: string) => {
     }
 
     throw new HttpApiError(
-      data.message || "Failed to add product to wishlist",
+      data.message || "Failed to upload file",
       response.status,
       response.statusText,
       data

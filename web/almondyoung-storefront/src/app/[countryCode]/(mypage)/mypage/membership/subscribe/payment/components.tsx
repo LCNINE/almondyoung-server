@@ -44,7 +44,7 @@ import {
   TabsTrigger,
 } from "@components/common/ui/tabs"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import { cn } from "@lib/utils"
 import { useUser } from "contexts/user-context"
 import { Calendar, CreditCard, Gift, TriangleAlert } from "lucide-react"
@@ -260,7 +260,7 @@ export function MembershipForm({
       toast.success("멤버십이 등록되었습니다!")
       router.push("/mypage/membership")
     } catch (error) {
-      if (error instanceof ApiError) {
+      if (error instanceof HttpApiError) {
         toast.error(error.message)
       } else {
         toast.error("멤버십 등록에 실패했습니다.")

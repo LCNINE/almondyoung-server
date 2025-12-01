@@ -1,6 +1,6 @@
 "use server"
 
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
 import { transferCart } from "@lib/api/medusa/customer"
@@ -33,7 +33,7 @@ export async function login(
     const resultData = await result.json()
 
     if (!result.ok) {
-      throw new ApiError(
+      throw new HttpApiError(
         resultData.message || "로그인에 실패했습니다",
         result.status,
         resultData
@@ -51,7 +51,7 @@ export async function login(
   } catch (error: any) {
     console.error("User service login error:", error)
 
-    if (error instanceof ApiError) {
+    if (error instanceof HttpApiError) {
       if (error.status === 400) {
         return {
           success: false,
