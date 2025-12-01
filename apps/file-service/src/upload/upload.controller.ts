@@ -1,11 +1,18 @@
-import { Controller, Post, Body, BadRequestException, UseInterceptors, ValidationPipe, UsePipes } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 import { User } from '@app/authorization';
-import { FileTransformInterceptor } from './file-transform.interceptor'; // VAP-FIX: Gemini's fix
-import { MultipartFile } from '@fastify/multipart';
 
 interface JwtPayload {
   userId: string;
@@ -20,9 +27,6 @@ interface JwtPayload {
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
-  /**
-   * 단일 파일 업로드
-   */
   @Post('upload')
   @ApiOperation({ summary: 'Upload a single file' })
   @ApiConsumes('multipart/form-data')
@@ -30,7 +34,10 @@ export class UploadController {
     schema: {
       type: 'object',
       properties: {
-        file: { type: 'string', format: 'binary' },
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
         context: {
           type: 'string',
           enum: [
@@ -43,7 +50,10 @@ export class UploadController {
             'shipment-label',
           ],
         },
-        metadata: { type: 'object', description: 'Optional metadata' },
+        metadata: {
+          type: 'object',
+          description: 'Optional metadata',
+        },
       },
       required: ['file', 'context'],
     },
@@ -54,22 +64,19 @@ export class UploadController {
     type: UploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
-  @UseInterceptors(FileTransformInterceptor)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: false }))
-  async uploadFile(@Body() dto: UploadFileDto, @User() user: JwtPayload): Promise<UploadResponseDto> {
-    const file = dto.files?.[0] as MultipartFile;
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadFileDto,
+    @User() user: JwtPayload,
+  ): Promise<UploadResponseDto> {
     if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    const result = await this.uploadService.uploadFile(file, dto, user.userId);
-    return result;
+    return this.uploadService.uploadFile(file, dto, user.userId);
   }
 
-  /**
-   * 다중 파일 업로드
-   */
   @Post('batch-upload')
   @ApiOperation({ summary: 'Upload multiple files' })
   @ApiConsumes('multipart/form-data')
@@ -77,7 +84,13 @@ export class UploadController {
     schema: {
       type: 'object',
       properties: {
-        files: { type: 'array', items: { type: 'string', format: 'binary' } },
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
         context: {
           type: 'string',
           enum: [
@@ -90,7 +103,10 @@ export class UploadController {
             'shipment-label',
           ],
         },
-        metadata: { type: 'object', description: 'Optional metadata' },
+        metadata: {
+          type: 'object',
+          description: 'Optional metadata',
+        },
       },
       required: ['files', 'context'],
     },
@@ -101,16 +117,16 @@ export class UploadController {
     type: BatchUploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
-  @UseInterceptors(FileTransformInterceptor)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: false }))
-  async batchUploadFiles(@Body() dto: UploadFileDto, @User() user: JwtPayload): Promise<BatchUploadResponseDto> {
-    const files = dto.files as MultipartFile[];
+  @UseInterceptors(FilesInterceptor('files'))
+  async batchUploadFiles(
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() dto: UploadFileDto,
+    @User() user: JwtPayload,
+  ): Promise<BatchUploadResponseDto> {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
 
-    const result = await this.uploadService.batchUploadFiles(files, dto, user.userId);
-    return result;
+    return this.uploadService.batchUploadFiles(files, dto, user.userId);
   }
 }
