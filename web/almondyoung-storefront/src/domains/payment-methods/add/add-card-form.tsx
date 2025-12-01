@@ -1,7 +1,7 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { createHmsCardProfile } from "@lib/api/wallet"
+import { createHmsCardProfile } from "@lib/api/wallet/wallet-api"
 import { toast } from "sonner"
 import { ApiError } from "@lib/api/api-error"
 import { ChevronLeft } from "lucide-react"
@@ -75,7 +75,7 @@ export default function AddCardForm({ onComplete, onBack }: AddCardFormProps) {
     <div className="flex min-h-full flex-col bg-white p-4">
       <div className="mb-6 flex items-center gap-2">
         {onBack && (
-          <button onClick={onBack} className="p-1 -ml-2">
+          <button onClick={onBack} className="-ml-2 p-1">
             <ChevronLeft className="h-6 w-6" />
           </button>
         )}

@@ -205,6 +205,126 @@ export async function authorizePayment(intentId: string, data: any) {
 }
 
 // ==========================================
+// 결제 비밀번호 (PIN) 관련 API
+// ==========================================
+
+/**
+ * PIN 상태 조회
+ */
+export async function getPinStatus(): Promise<{
+  hasPin: boolean;
+  status: 'ACTIVE' | 'LOCKED' | 'NONE';
+  failureCount: number;
+}> {
+  const res = await fetch(`${API_BASE}/payments/pin/status`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `Failed to fetch PIN status: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * PIN 등록
+ */
+export async function registerPin(pin: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/payments/pin/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ pin }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `Failed to register PIN: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * PIN 검증
+ */
+export async function verifyPin(pin: string): Promise<{ verified: boolean }> {
+  const res = await fetch(`${API_BASE}/payments/pin/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ pin }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `Failed to verify PIN: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * PIN 재설정 (본인인증 토큰 필요)
+ */
+export async function resetPin(
+  newPin: string,
+  verificationToken: string
+): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/payments/pin/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-verification-token': verificationToken,
+    },
+    credentials: 'include',
+    body: JSON.stringify({ newPin }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `Failed to reset PIN: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * PIN 변경
+ */
+export async function changePin(
+  currentPin: string,
+  newPin: string
+): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/payments/pin/change`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ currentPin, newPin }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `Failed to change PIN: ${res.statusText}`);
+  }
+
+  return res.json();
+}
+
+// ==========================================
 // 포인트 관련 API
 // ==========================================
 
