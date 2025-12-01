@@ -9,9 +9,6 @@ import {
 } from 'class-validator';
 
 export class BusinessLicenseBaseDto {
-  @IsOptional({ message: '증빙 검증 파일 업로드는 선택사항입니다.' })
-  file?: Express.Multer.File | null;
-
   @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
   @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
   fileUrl?: string | null;
@@ -35,7 +32,7 @@ export class BusinessLicenseBaseDto {
 // 사업자 생성 dto
 export class CreateBusinessLicenseDto extends PickType(
   BusinessLicenseBaseDto,
-  ['businessNumber', 'representativeName', 'file'] as const,
+  ['businessNumber', 'representativeName', 'fileUrl'] as const,
 ) { }
 
 // 사업자 정보 외부 조회용 dto

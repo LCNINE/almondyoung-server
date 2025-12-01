@@ -4,8 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UploadResponseDto } from 'apps/file-service/src/upload/dto/upload-response.dto';
-import { UploadService } from 'apps/file-service/src/upload/upload.service';
 import {
   userServiceSchema,
   type UserServiceSchema,
@@ -31,8 +29,6 @@ export class BusinessLicensesService {
   constructor(
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
-
-    private readonly uploadService: UploadService,
   ) { }
 
   async getBusinessLicensesByUserId(
@@ -166,10 +162,6 @@ export class BusinessLicensesService {
     businessLicenseId: string,
     updateBusinessLicenseDto: BusinessAdminUpdateDto,
   ): Promise<void> {
-
-    const { userId, file, ...data } = updateBusinessLicenseDto;
-
-    let fileResponse: UploadResponseDto | null = null;
     try {
 
       const existingBusiness = await this.getBusinessLicenseByBusinessLicenseId(businessLicenseId);
@@ -178,15 +170,11 @@ export class BusinessLicensesService {
         throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
       }
 
-      if (file) {
-        fileResponse = await this.uploadService.uploadFile(file, { context: 'business-verification-file' }, userId);
-      }
-
       const [query] = await this.dbService.db
         .update(schema.businessLicenses)
         .set({
-          ...data,
-          fileUrl: fileResponse?.url ?? existingBusiness.fileUrl,
+          ...updateBusinessLicenseDto,
+          fileUrl: updateBusinessLicenseDto.fileUrl ?? existingBusiness.fileUrl,
         })
         .where(eq(schema.businessLicenses.id, businessLicenseId));
 
