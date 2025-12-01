@@ -96,7 +96,7 @@ export class BusinessLicensesController {
     summary: '사업자 등록 정보 수정',
     description: '기존 사업자 등록 정보를 수정합니다.',
   })
-  @ApiParam({ name: 'business-license-id', description: '사업자 등록 정보 ID' })
+  @ApiParam({ name: 'businessId', description: '사업자 등록 정보 ID' })
   @ApiBody({ type: UpdateBusinessLicenseDto })
   @ApiResponse({
     status: 200,
@@ -107,15 +107,15 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
-  @Put(':business-license-id')
+  @Put(':businessId')
   @RequireScopes(['user:modify'])
-  async updateBusinessLicenseByBusinessLicenseId(
-    @Param('business-license-id') businessLicenseId: string,
+  async updateBusinessLicenseByBusinessId(
+    @Param('businessId') businessId: string,
     @Body() data: UpdateBusinessLicenseDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.businessLicensesService.updateBusinessLicenseByBusinessLicenseId(
-      businessLicenseId,
+    return this.businessLicensesService.updateBusinessLicenseByBusinessId(
+      businessId,
       data,
       user.id,
     );
