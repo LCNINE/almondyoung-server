@@ -6,8 +6,8 @@ import { eq, inArray, sql } from 'drizzle-orm';
 @Injectable()
 export class MatchingsService {
   private readonly logger = new Logger(MatchingsService.name);
-  
-  constructor(private readonly db: DbService<typeof wmsSchema>) {}
+
+  constructor(private readonly db: DbService<typeof wmsSchema>) { }
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -24,7 +24,7 @@ export class MatchingsService {
   async upsert(dto: { variantId: string; masterId?: string | null; links: Array<{ skuId: string; quantity: number }>; policy?: Partial<{ inventoryManagement: boolean; preStockSellable: boolean; alwaysSellableZeroStock: boolean; }> }, tx?: DbTx) {
     return this.inTx(async (trx) => {
       if (!dto.variantId) throw new BadRequestException('variantId required');
-      
+
       const existing = await trx.query.productMatchings.findFirst({ where: (m, { eq }) => eq(m.variantId, dto.variantId) });
       const base = {
         variantId: dto.variantId,
@@ -52,6 +52,13 @@ export class MatchingsService {
           dto.links.map(l => ({ productMatchingId: matchingId, skuId: l.skuId, quantity: Math.max(1, l.quantity | 0) })),
         );
       }
+
+      // Update related sales_order_lines to reflect the new/updated matching immediately
+      await trx
+        .update(wmsTables.salesOrderLines)
+        .set({ productMatchingId: matchingId })
+        .where(eq(wmsTables.salesOrderLines.variantId, dto.variantId));
+
       return this.getByVariant(dto.variantId, trx);
     }, tx);
   }
