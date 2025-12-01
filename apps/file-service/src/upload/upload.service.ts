@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, HttpStatus } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
 import { PathBuilderService } from '../storage/path-builder.service';
 import { FileRepository } from '../shared/repositories/file.repository';
@@ -22,51 +22,62 @@ export class UploadService {
     if (!file) {
       throw new BadRequestException('File is required');
     }
+    try {
 
-    const fileId = uuidv7();
-    const extension = this.getFileExtension(file.originalname);
+      const fileId = uuidv7();
+      const extension = this.getFileExtension(file.originalname);
 
-    const filePath = this.pathBuilder.buildPath({
-      context: dto.context,
-      fileId,
-      extension,
-      userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
-      status: 'active',
-    });
-
-    const uploadResult = await this.storageService.upload({
-      key: filePath,
-      buffer: file.buffer,
-      contentType: file.mimetype,
-      metadata: {
-        uploadedBy: userId,
+      const filePath = this.pathBuilder.buildPath({
         context: dto.context,
-      },
-    });
+        fileId,
+        extension,
+        userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
+        status: 'active',
+      });
 
-    const fileRecord = await this.fileRepository.create({
-      id: fileId,
-      fileName: `${fileId}.${extension}`,
-      originalName: file.originalname,
-      filePath: uploadResult.key,
-      url: uploadResult.url,
-      size: file.size,
-      mimeType: file.mimetype,
-      status: 'active',
-      context: dto.context,
-      uploadedBy: userId,
-      storageProvider: uploadResult.provider.toLowerCase(),
-      metadata: dto.metadata,
-      activatedAt: new Date(),
-    });
+      const uploadResult = await this.storageService.upload({
+        key: filePath,
+        buffer: file.buffer,
+        contentType: file.mimetype,
+        metadata: {
+          uploadedBy: userId,
+          context: dto.context,
+        },
+      });
 
-    return {
-      id: fileRecord.id,
-      url: fileRecord.url,
-      fileName: fileRecord.fileName,
-      size: fileRecord.size,
-      status: fileRecord.status,
-    };
+      const fileRecord = await this.fileRepository.create({
+        id: fileId,
+        fileName: `${fileId}.${extension}`,
+        originalName: file.originalname,
+        filePath: uploadResult.key,
+        url: uploadResult.url,
+        size: file.size,
+        mimeType: file.mimetype,
+        status: 'active',
+        context: dto.context,
+        uploadedBy: userId,
+        storageProvider: uploadResult.provider.toLowerCase(),
+        metadata: dto.metadata,
+        activatedAt: new Date(),
+      });
+
+      return {
+        id: fileRecord.id,
+        url: fileRecord.url,
+        fileName: fileRecord.fileName,
+        size: fileRecord.size,
+        status: fileRecord.status,
+      };
+
+    } catch (error) {
+      console.error("파일업로드 에러 :", error)
+      throw new BadRequestException({
+        message: error.message ?? '파일 업로드 중 오류가 발생했습니다.',
+        errorCode: error.errorCode ?? 'FILE_UPLOAD_FAILED',
+        httpStatus: HttpStatus.BAD_REQUEST,
+      });
+
+    }
   }
 
   async batchUploadFiles(
