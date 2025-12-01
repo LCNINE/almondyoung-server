@@ -8,8 +8,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UploadResponseDto } from 'apps/file-service/src/upload/dto/upload-response.dto';
-import { UploadService } from 'apps/file-service/src/upload/upload.service';
 import * as cheerio from 'cheerio';
 import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
@@ -35,7 +33,6 @@ export class BusinessLicensesService {
     private readonly httpService: HttpService,
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
-    private readonly uploadService: UploadService,
   ) { }
 
   async createBusinessLicense(
@@ -50,18 +47,12 @@ export class BusinessLicensesService {
         );
       }
 
-      let fileResponse: UploadResponseDto | null = null;
-
-      if (data.file) {
-        fileResponse = await this.uploadService.uploadFile(data.file, { context: 'business-verification-file' }, userId);
-      }
-
       await this.dbService.db.insert(businessLicenses).values({
         userId,
         businessNumber: data.businessNumber,
         representativeName: data.representativeName,
         status: 'approved',
-        fileUrl: fileResponse?.url ?? null,
+        fileUrl: data.fileUrl ?? null,
       });
 
       return
@@ -125,7 +116,6 @@ export class BusinessLicensesService {
 
     try {
       const existingBusiness = await this.findBusinessLicenseByUserId(userId);
-      let fileResponse: UploadResponseDto | null = null;
 
       if (!existingBusiness) {
         throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
@@ -134,13 +124,9 @@ export class BusinessLicensesService {
       await this.validateOwnership(existingBusiness, userId);
 
 
-      if (data.file) {
-        fileResponse = await this.uploadService.uploadFile(data.file, { context: 'business-verification-file' }, userId);
-      }
-
       // 거절된 사업자 등록 정보를 다시 제출할 때
       if (existingBusiness.status === 'rejected') {
-        const fileUrl = fileResponse?.url ?? existingBusiness.fileUrl ?? '';
+        const fileUrl = data.fileUrl ?? existingBusiness.fileUrl ?? '';
 
         await this.resubmitRejectedLicense(businessLicenseId, fileUrl);
         return;
