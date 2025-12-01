@@ -8,6 +8,7 @@ import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { AuthorizationModule, authorizationSchema, JwtAuthGuard } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { PaymentController } from './controllers/payment.controller';
+import { BnplWithdrawalController } from './controllers/bnpl-withdrawal.controller';
 import { PointController } from './controllers/point.controller';
 import { PointAdminController } from './controllers/point-admin.controller';
 
@@ -53,6 +54,7 @@ import { HmsCardRefundProvider } from './providers/hms-card.refund';
 import { TossRefundProvider } from './providers/toss.refund';
 import { IdempotencyService } from './services/idempotency.service';
 import { BnplService } from './services/bnpl/bnpl.service';
+import { BnplWithdrawalService } from './services/bnpl/bnpl-withdrawal.service';
 import { BnplAccountReader } from './services/bnpl/bnpl-account.reader';
 import { BnplAccountCreator } from './services/bnpl/bnpl-account.creator';
 import { BnplCreditManager } from './services/bnpl/bnpl-credit.manager';
@@ -106,6 +108,7 @@ import { OutboxDispatcherService } from './services/outbox/outbox-dispatcher.ser
   controllers: [
     // === 신규 아키텍처 ===
     PaymentController,
+    BnplWithdrawalController,
     PointController,
     PointAdminController,
     TaxInvoiceController,
@@ -118,6 +121,7 @@ import { OutboxDispatcherService } from './services/outbox/outbox-dispatcher.ser
     PaymentProfileService,
 
     BnplService,
+    BnplWithdrawalService,
     BnplSettlementService,
     RefundService,
 
