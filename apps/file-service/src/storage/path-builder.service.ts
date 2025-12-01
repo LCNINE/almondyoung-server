@@ -7,7 +7,8 @@ export type FileContext =
   | 'user-document'
   | 'invoice'
   | 'receipt'
-  | 'shipment-label';
+  | 'shipment-label'
+  | 'business-verification-file';
 
 export interface BuildPathParams {
   context: FileContext;
@@ -46,6 +47,9 @@ export class PathBuilderService {
 
       case 'shipment-label':
         return `shipments/labels/${year}/${month}/${fileId}.${extension}`;
+
+      case 'business-verification-file':
+        return `business-licenses/verification-files/${year}/${month}/${fileId}.${extension}`;
 
       default:
         return `${context}/${year}/${month}/${fileId}.${extension}`;
