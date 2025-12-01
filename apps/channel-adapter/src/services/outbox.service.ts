@@ -46,7 +46,7 @@ export class OutboxService {
     const exec = async (trx: DbTx) => {
       await trx.insert(outboxEvents).values({
         eventType: params.eventType,
-        aggregateType: params.aggregateType,
+        aggregateType: 'ChannelAdapter',
         aggregateId: params.aggregateId,
         partitionKey: params.partitionKey,
         payload: params.payload as any,
