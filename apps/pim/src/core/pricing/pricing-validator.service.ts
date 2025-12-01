@@ -48,6 +48,10 @@ export class PricingValidatorService {
     return this.inTx(async (trx) => {
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
       if (!parseResult.success) {
+        console.error(
+          'pricingRulesSetSchema issues:',
+          JSON.stringify(parseResult.error.issues, null, 2),
+        );
         throw new BadRequestException({
           message: 'Invalid pricing rules structure',
           errors: parseResult.error.issues,
