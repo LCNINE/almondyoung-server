@@ -3,8 +3,9 @@ import { BusinessLicensesController } from './business-licenses.controller';
 import { BusinessLicensesService } from './business-licenses.service';
 
 @Module({
+  imports: [],
   controllers: [BusinessLicensesController],
   providers: [BusinessLicensesService],
   exports: [BusinessLicensesService],
 })
-export class AdminBusinessLicensesModule {}
+export class AdminBusinessLicensesModule { }

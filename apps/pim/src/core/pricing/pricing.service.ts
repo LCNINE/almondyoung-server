@@ -22,7 +22,7 @@ export class PricingService {
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
     private readonly calculatorService: PricingCalculatorService,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -175,6 +175,7 @@ export class PricingService {
       }
 
       if (versionToModify.versionStatus !== 'draft') {
+        console.error('❌ version is not draft:', versionToModify.versionStatus);
         throw new BadRequestException('Cannot modify pricing rules for active or inactive versions');
       }
 
@@ -214,9 +215,9 @@ export class PricingService {
           layer: 'base_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
@@ -229,9 +230,9 @@ export class PricingService {
           layer: 'membership_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,
@@ -244,9 +245,9 @@ export class PricingService {
           layer: 'tiered_price',
           order: rule.order,
           scopeType: rule.scopeType,
-          scopeTargetIds: 
-            rule.scopeType === 'all_variants' 
-              ? null 
+          scopeTargetIds:
+            rule.scopeType === 'all_variants'
+              ? null
               : ('scopeTargetIds' in rule ? rule.scopeTargetIds : null),
           operationType: rule.operationType,
           operationValue: rule.operationValue,

@@ -276,7 +276,7 @@ export const businessLicenses = pgTable(
     reviewComment: text('review_comment'), // 검토 코멘트
     verifiedAt: timestamp('verified_at'), // 인증 완료 일시
     deletedAt: timestamp('deleted_at'), // 삭제 일시
-    file: varchar('file', { length: 1024 }), // 증빙 검증 파일 url
+    fileUrl: varchar('file_url', { length: 1024 }), // 증빙 검증 파일 url
     // 부가 정보 저장 가능
     metadata: jsonb('metadata'),
     ...timestampColumns,
@@ -287,7 +287,7 @@ export const businessLicenses = pgTable(
     shopUniqueIdx: unique().on(table.shopId), // 상점당 하나의 사업자 등록만 허용
     verificationOrFullInfo: check(
       'business_licenses_verification_or_full_info',
-      sql`${table.file} is not null OR (${table.businessNumber} is not null AND ${table.representativeName} is not null)`,
+      sql`${table.fileUrl} is not null OR (${table.businessNumber} is not null AND ${table.representativeName} is not null)`,
     ),
   }),
 );

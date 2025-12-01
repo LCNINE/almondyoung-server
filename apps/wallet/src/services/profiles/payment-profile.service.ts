@@ -42,14 +42,24 @@ export class PaymentProfileService {
     private readonly cmsBatchRepo: CmsBatchProfilesRepository,
     private readonly configService: ConfigService,
     private readonly bnplService: BnplService,
-  ) {}
+  ) { }
 
   // 결제 프로필 목록 조회 (상세 정보 포함)
   async getPaymentProfiles(userId: string) {
     return this.db.db.transaction(async (tx) => {
-      // 사용자의 모든 결제 프로필 조회
+      // 사용자의 모든 결제 프로필 조회 (deletedAt 제외 - 스키마 호환성)
       const profiles = await tx
-        .select()
+        .select({
+          id: schema.paymentProfiles.id,
+          userId: schema.paymentProfiles.userId,
+          kind: schema.paymentProfiles.kind,
+          provider: schema.paymentProfiles.provider,
+          status: schema.paymentProfiles.status,
+          name: schema.paymentProfiles.name,
+          isDefault: schema.paymentProfiles.isDefault,
+          createdAt: schema.paymentProfiles.createdAt,
+          updatedAt: schema.paymentProfiles.updatedAt,
+        })
         .from(schema.paymentProfiles)
         .where(eq(schema.paymentProfiles.userId, userId));
 

@@ -168,6 +168,27 @@ export class AuthController {
     return this.authService.checkPassword(password, user.id);
   }
 
+  @ApiOperation({ summary: 'PIN 재설정을 위한 본인인증 토큰 발급' })
+  @ApiResponse({
+    status: 200,
+    description: '본인인증 토큰 발급 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        verificationToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+      },
+    },
+  })
+  @Post('verify-password-for-pin-reset')
+  @UseGuards(AuthGuard('jwt'))
+  @RequireScopes(['user:modify', 'master', 'admin:access'])
+  async verifyPasswordForPinReset(
+    @Body(ValidationPipe) { password }: { password: string },
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.authService.verifyPasswordAndIssuePinResetToken(password, user.id);
+  }
+
   @ApiOperation({ summary: '카카오 로그인' })
   @ApiResponse({ status: 200, description: '카카오 로그인 성공' })
   @Get('kakao/signin')

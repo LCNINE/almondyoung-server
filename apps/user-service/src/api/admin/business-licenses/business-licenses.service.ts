@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  userServiceSchema,
+  type UserServiceSchema,
+} from 'apps/user-service/database/drizzle/schema';
+import {
   and,
   asc,
   count,
@@ -16,20 +20,16 @@ import {
   lte,
 } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
-import { UpdateBusinessLicenseDtoWithReviewCommentAndStatus } from '../../business-licenses/dto/update-business-license.dto';
-import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
-import {
-  userServiceSchema,
-  type UserServiceSchema,
-} from 'apps/user-service/database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
+import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
+import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 
 @Injectable()
 export class BusinessLicensesService {
   constructor(
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
   async getBusinessLicensesByUserId(
     userId: string,
@@ -96,7 +96,7 @@ export class BusinessLicensesService {
         whereConditions.push(inArray(schema.businessLicenses.status, status));
       }
       if (hasVerificationFile) {
-        whereConditions.push(isNotNull(schema.businessLicenses.file));
+        whereConditions.push(isNotNull(schema.businessLicenses.fileUrl));
       }
       if (Daterange) {
         whereConditions.push(
@@ -143,7 +143,7 @@ export class BusinessLicensesService {
 
   async getBusinessLicenseByBusinessLicenseId(
     id: string,
-  ): Promise<schema.BusinessLicense | null> {
+  ): Promise<BusinessLicenseResponseDto | null> {
     try {
       const [query] = await this.dbService.db
         .select()
@@ -158,14 +158,24 @@ export class BusinessLicensesService {
     }
   }
 
-  async updateBusinessLicenseByBusinessLicenseId(
+  async updateBusinessLicenseByBusinessId(
     businessLicenseId: string,
-    updateBusinessLicenseDto: UpdateBusinessLicenseDtoWithReviewCommentAndStatus,
+    updateBusinessLicenseDto: BusinessAdminUpdateDto,
   ): Promise<void> {
     try {
+
+      const existingBusiness = await this.getBusinessLicenseByBusinessLicenseId(businessLicenseId);
+
+      if (!existingBusiness) {
+        throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
+      }
+
       const [query] = await this.dbService.db
         .update(schema.businessLicenses)
-        .set(updateBusinessLicenseDto)
+        .set({
+          ...updateBusinessLicenseDto,
+          fileUrl: updateBusinessLicenseDto.fileUrl ?? existingBusiness.fileUrl,
+        })
         .where(eq(schema.businessLicenses.id, businessLicenseId));
 
       return;
