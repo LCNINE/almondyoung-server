@@ -162,16 +162,15 @@ export class OrderEventPublisher {
     // OutboxDispatcherService가 eventType으로 orders.events.v1 또는 channel-adapter.events.v1로 분기
     await this.outboxService.enqueue(
       {
-        eventType: 'OrderCreated',
-        aggregateId: orderEvent.externalOrderId,
+      eventType: 'OrderCreated',
+      aggregateId: orderEvent.externalOrderId,
         partitionKey: channel,
-        payload,
+      payload,
         aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
         metadata: {
           orderId,
           salesChannel,
           variantId: listing.variantId,
-          source: 'channel-adapter',
         },
       },
       tx,
@@ -209,10 +208,10 @@ export class OrderEventPublisher {
     // Outbox에 enqueue
     await this.outboxService.enqueue(
       {
-        eventType: 'OrderCancelled',
-        aggregateId: orderEvent.externalOrderId,
+      eventType: 'OrderCancelled',
+      aggregateId: orderEvent.externalOrderId,
         partitionKey: channel,
-        payload,
+      payload,
         aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
         metadata: {
           reason,
@@ -257,11 +256,11 @@ export class OrderEventPublisher {
     // Outbox에 enqueue
     await this.outboxService.enqueue(
       {
-        eventType: 'OrderModified',
-        aggregateId: orderEvent.externalOrderId,
+      eventType: 'OrderModified',
+      aggregateId: orderEvent.externalOrderId,
         partitionKey: channel,
-        payload,
-        aggregateType: 'Order', // 채널 어댑터 서비스에서 발행한 이벤트
+      payload,
+        aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
         metadata: {
           modifiedBy,
           hasAddressChange: !!changes.shippingAddress,
