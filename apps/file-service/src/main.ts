@@ -5,7 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { FileServiceModule } from './file-service.module';
 import fastifyCookie from '@fastify/cookie';
-import fastifyMultipart from '@fastify/multipart';
+import fastifyMultipart, { MultipartFile } from '@fastify/multipart';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(FileServiceModule, new FastifyAdapter());
