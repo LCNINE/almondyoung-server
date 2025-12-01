@@ -27,6 +27,7 @@ import { DbTransaction, IUser, ProviderType } from '../../commons/types';
 import {
   JWT_ACCESS_TOKEN_EXPIRATION,
   JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION,
+  JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION,
   JWT_REFRESH_TOKEN_EXPIRATION,
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
@@ -883,6 +884,35 @@ export class AuthService {
         },
       });
     }, tx);
+  }
+
+  /**
+ * PIN 재설정을 위한 verification token 발급
+ * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
+ */
+  async verifyPasswordAndIssuePinResetToken(
+    password: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<{ verificationToken: string }> {
+    // 1. 로그인 비밀번호 검증
+    await this.checkPassword(password, userId, tx);
+
+    // 2. verification token 발급 (JWT with scope: PIN_RESET)
+    const payload = {
+      sub: userId,
+      scopes: ['PIN_RESET'],
+      purpose: 'pin_reset',
+    };
+
+    const verificationToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
+      expiresIn: this.parseExpiresIn(JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION),
+    });
+
+    this.logger.log(`PIN reset verification token issued for user: ${userId}`);
+
+    return { verificationToken };
   }
 
   // 리프레시 토큰 만료 시간 결정
