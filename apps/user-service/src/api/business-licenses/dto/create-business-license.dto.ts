@@ -9,9 +9,12 @@ import {
 } from 'class-validator';
 
 export class BusinessLicenseBaseDto {
-  @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
-  @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
-  file: string;
+  @IsOptional({ message: '증빙 검증 파일 업로드는 선택사항입니다.' })
+  file?: Express.Multer.File | null;
+
+  @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
+  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
+  fileUrl?: string | null;
 
   @IsOptional({ message: '상점ID는 선택사항입니다.' })
   @IsUUID('4', { message: '상점ID는 UUID 형식이어야 합니다.' })
@@ -29,17 +32,10 @@ export class BusinessLicenseBaseDto {
   metadata?: string;
 }
 
-
 // 사업자 생성 dto
 export class CreateBusinessLicenseDto extends PickType(
   BusinessLicenseBaseDto,
-  ['businessNumber', 'representativeName'] as const,
-) { }
-
-// 파일 업로드용 dto
-export class CreateBusinessLicenseWithFileDto extends PickType(
-  BusinessLicenseBaseDto,
-  ['file', 'shopId', 'metadata'] as const,
+  ['businessNumber', 'representativeName', 'file'] as const,
 ) { }
 
 // 사업자 정보 외부 조회용 dto

@@ -8,6 +8,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { UploadResponseDto } from 'apps/file-service/src/upload/dto/upload-response.dto';
+import { UploadService } from 'apps/file-service/src/upload/upload.service';
 import * as cheerio from 'cheerio';
 import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
@@ -20,8 +22,7 @@ import { BusinessLicensesHelper } from './business-licenses.helper';
 import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
 import {
   CreateBusinessLicenseDto,
-  CreateBusinessLicenseWithFileDto,
-  FetchBusinessLicenseDto,
+  FetchBusinessLicenseDto
 } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
@@ -34,27 +35,43 @@ export class BusinessLicensesService {
     private readonly httpService: HttpService,
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
+    private readonly uploadService: UploadService,
   ) { }
 
   async createBusinessLicense(
     userId: string,
     data: CreateBusinessLicenseDto,
   ): Promise<void> {
-    const existing = await this.checkDuplicateBusinessLicense(userId);
-    if (existing) {
-      throw new ConflictException(
-        '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+    try {
+      const existing = await this.checkDuplicateBusinessLicense(userId);
+      if (existing) {
+        throw new ConflictException(
+          '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+        );
+      }
+
+      let fileResponse: UploadResponseDto | null = null;
+
+      if (data.file) {
+        fileResponse = await this.uploadService.uploadFile(data.file, { context: 'business-verification-file' }, userId);
+      }
+
+      await this.dbService.db.insert(businessLicenses).values({
+        userId,
+        businessNumber: data.businessNumber,
+        representativeName: data.representativeName,
+        status: 'approved',
+        fileUrl: fileResponse?.url ?? null,
+      });
+
+      return
+    } catch (error) {
+      console.log('error::', error);
+      throw new BadRequestException(
+        error.message ??
+        '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
       );
     }
-
-    await this.dbService.db.insert(businessLicenses).values({
-      userId,
-      businessNumber: data.businessNumber,
-      representativeName: data.representativeName,
-      status: 'approved',
-    });
-
-    return
   }
 
   async getMyBusinessLicense(
@@ -100,50 +117,45 @@ export class BusinessLicensesService {
     return;
   }
 
-  async createWithFile(
-    data: CreateBusinessLicenseWithFileDto,
-    userId: string,
-  ): Promise<void> {
-    const existing = await this.checkDuplicateBusinessLicense(userId);
-
-    if (existing) {
-      throw new ConflictException(
-        '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-      );
-    }
-
-    await this.dbService.db.insert(businessLicenses).values({
-      userId,
-      shopId: data.shopId ?? null,
-      status: 'under_review',
-      file: data.file,
-      metadata: data.metadata ? JSON.parse(data.metadata) : null,
-    });
-  }
-
   async updateBusinessLicenseByBusinessLicenseId(
     businessLicenseId: string,
     data: UpdateBusinessLicenseDto,
     userId: string,
   ): Promise<void> {
-    const existingBusiness = await this.findBusinessLicenseByUserId(userId);
 
-    if (!existingBusiness) {
-      throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
-    }
+    try {
+      const existingBusiness = await this.findBusinessLicenseByUserId(userId);
+      let fileResponse: UploadResponseDto | null = null;
 
-    await this.validateOwnership(existingBusiness, userId);
+      if (!existingBusiness) {
+        throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
+      }
 
-    // 거절된 사업자 등록 정보를 다시 제출할 때
-    if (existingBusiness.status === 'rejected') {
-      await this.resubmitRejectedLicense(businessLicenseId, data.file);
-      return;
-    }
+      await this.validateOwnership(existingBusiness, userId);
 
-    // 승인된 사업자 등록 정보를 업데이트할 때
-    if (existingBusiness.status === 'approved') {
-      await this.updateApprovedLicense(existingBusiness.id, data);
-      return;
+
+      if (data.file) {
+        fileResponse = await this.uploadService.uploadFile(data.file, { context: 'business-verification-file' }, userId);
+      }
+
+      // 거절된 사업자 등록 정보를 다시 제출할 때
+      if (existingBusiness.status === 'rejected') {
+        const fileUrl = fileResponse?.url ?? existingBusiness.fileUrl ?? '';
+
+        await this.resubmitRejectedLicense(businessLicenseId, fileUrl);
+        return;
+      }
+
+      // 승인된 사업자 등록 정보를 업데이트할 때
+      if (existingBusiness.status === 'approved') {
+        await this.updateApprovedLicense(existingBusiness.id, data);
+        return;
+      }
+    } catch (error) {
+      console.log('error::', error);
+      throw new BadRequestException(
+        '사업자 등록 정보를 수정하는 중 오류가 발생했습니다.',
+      );
     }
   }
 
@@ -210,12 +222,12 @@ export class BusinessLicensesService {
 
   private async resubmitRejectedLicense(
     businessLicenseId: string,
-    file: string,
+    fileUrl: string,
   ): Promise<void> {
     await this.dbService.db
       .update(businessLicenses)
       .set({
-        file,
+        fileUrl,
         status: 'under_review',
       })
       .where(eq(businessLicenses.id, businessLicenseId));
@@ -227,7 +239,10 @@ export class BusinessLicensesService {
   ): Promise<void> {
     await this.dbService.db
       .update(businessLicenses)
-      .set(data)
+      .set({
+        ...data,
+        fileUrl: data.fileUrl,
+      })
       .where(eq(businessLicenses.id, businessLicenseId));
   }
 }

@@ -25,8 +25,7 @@ import {
 } from './dto/business-license.response.dto';
 import {
   CreateBusinessLicenseDto,
-  CreateBusinessLicenseWithFileDto,
-  FetchBusinessLicenseDto,
+  FetchBusinessLicenseDto
 } from './dto/create-business-license.dto';
 import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 
@@ -91,26 +90,6 @@ export class BusinessLicensesController {
     return this.businessLicensesService.fetchBusinessLicense(
       fetchBusinessLicenseDto,
     );
-  }
-
-  /**
-   * 파일로 사업자 등록요청할 때 사용
-   */
-  @Post('with-file')
-  @ApiOperation({ summary: '파일로 사업자 등록요청' })
-  @ApiResponse({ status: 201, description: '파일로 사업자 등록요청 성공' })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  @ApiResponse({
-    status: 409,
-    description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-  })
-  @RequireScopes(['user:modify'])
-  async createWithFile(
-    @Body() data: CreateBusinessLicenseWithFileDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.businessLicensesService.createWithFile(data, user.id);
   }
 
   @ApiOperation({
