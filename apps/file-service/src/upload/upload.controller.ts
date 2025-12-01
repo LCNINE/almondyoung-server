@@ -3,17 +3,17 @@ import {
   Post,
   Body,
   BadRequestException,
-  Req,
-  UsePipes, // 💡 UsePipes 임포트
+  UseInterceptors,
   ValidationPipe,
+  UsePipes,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 import { User } from '@app/authorization';
-import { FastifyRequest } from 'fastify';
-import { MultipartFile } from '@fastify/multipart'; // 필요한 타입 임포트
+import { FileTransformInterceptor } from './file-transform.interceptor'; // VAP-FIX: Gemini's fix
+import { MultipartFile } from '@fastify/multipart';
 
 interface JwtPayload {
   userId: string;
@@ -62,39 +62,19 @@ export class UploadController {
     type: UploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @UsePipes() // 🚨 핵심 수정: 글로벌 ValidationPipe 적용을 중지합니다. (RangeError 방지)
+  // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
+  @UseInterceptors(FileTransformInterceptor)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async uploadFile(
-    @Req() request: FastifyRequest,
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
   ): Promise<UploadResponseDto> {
-    // 💡 1. @Body()는 ValidationPipe를 통과하지 않으므로, request.body를 DTO 타입으로 간주하고 사용합니다.
-    const bodyDto: UploadFileDto = request.body as any; // 타입 단언 (context, metadata 포함)
-
-    // 2. 파일 파트 추출
-    const part = (await request.file()) as MultipartFile | undefined;
-
-    if (!part) {
+    const file = dto.files?.[0] as MultipartFile;
+    if (!file) {
       throw new BadRequestException('File is required');
     }
 
-    // 3. metadata 수동 파싱 및 context 검증 (RangeError 방지를 위해 수동 검증 필수)
-    if (!bodyDto.context) {
-      // ValidationPipe가 없으므로 context 누락을 수동으로 확인
-      throw new BadRequestException('Context field is required.');
-    }
-
-    if (bodyDto.metadata && typeof bodyDto.metadata === 'string') {
-      try {
-        bodyDto.metadata = JSON.parse(bodyDto.metadata);
-      } catch (e) {
-        throw new BadRequestException('Invalid metadata format. Must be a valid JSON string.');
-      }
-    }
-
-    // 4. 서비스 호출 (Part 객체와 처리된 DTO 전달)
-    const result = await this.uploadService.uploadFile(part, bodyDto, user.userId);
-
+    const result = await this.uploadService.uploadFile(file, dto, user.userId);
     return result;
   }
 
@@ -132,34 +112,19 @@ export class UploadController {
     type: BatchUploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @UsePipes() // 🚨 핵심 수정: 글로벌 ValidationPipe 적용을 중지합니다. (RangeError 방지)
+  // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
+  @UseInterceptors(FileTransformInterceptor)
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async batchUploadFiles(
-    @Req() request: FastifyRequest,
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
   ): Promise<BatchUploadResponseDto> {
-    // 💡 1. @Body()는 ValidationPipe를 통과하지 않으므로, request.body를 DTO 타입으로 간주하고 사용합니다.
-    const bodyDto: UploadFileDto = request.body as any;
-
-    // 2. 파일 파트 추출 (AsyncIterator)
-    const files = request.files();
-
-    // 3. metadata 수동 파싱 및 context 검증
-    if (!bodyDto.context) {
-      throw new BadRequestException('Context field is required.');
+    const files = dto.files as MultipartFile[];
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one file is required');
     }
 
-    if (bodyDto.metadata && typeof bodyDto.metadata === 'string') {
-      try {
-        bodyDto.metadata = JSON.parse(bodyDto.metadata);
-      } catch (e) {
-        throw new BadRequestException('Invalid metadata format. Must be a valid JSON string.');
-      }
-    }
-
-    // 4. 서비스 호출 (Iterator와 검증된 DTO 전달)
-    const result = await this.uploadService.batchUploadFiles(files, bodyDto, user.userId);
-
+    const result = await this.uploadService.batchUploadFiles(files, dto, user.userId);
     return result;
   }
 }
