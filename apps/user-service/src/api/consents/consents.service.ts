@@ -1,22 +1,21 @@
 // apps/user-service/src/api/consents/consents.service.ts 수정
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import { eq, SQL } from 'drizzle-orm';
-import { DbTransaction } from '../../commons/types';
-import { CreateConsentDto } from './dto/consent-dto';
 import {
   userConsents,
   users, // users 테이블 추가
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
+import { eq, SQL } from 'drizzle-orm';
+import { DbTransaction } from '../../commons/types';
+import { CreateConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
-import { ConsentsNotFoundException } from './exceptions/consents.exceptions';
 
 @Injectable()
 export class ConsentsService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -33,7 +32,7 @@ export class ConsentsService {
       .where(eq(userConsents.userId, userId));
 
     if (!consents) {
-      throw new ConsentsNotFoundException('User consent not found');
+      return null;
     }
     return consents;
   }
