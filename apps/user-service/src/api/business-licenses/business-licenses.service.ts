@@ -2,10 +2,9 @@ import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
-  ConflictException,
   HttpStatus,
   Injectable,
-  NotFoundException,
+  NotFoundException
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cheerio from 'cheerio';
@@ -40,28 +39,43 @@ export class BusinessLicensesService {
     data: CreateBusinessLicenseDto,
   ): Promise<void> {
     try {
+      const hasFileUrl = !!data.fileUrl;
+      const hasBusinessInfo = data.businessNumber && data.representativeName;
+
+      if (!hasFileUrl && !hasBusinessInfo) {
+        throw new BusinessLicenseException({
+          message: '파일 URL 또는 사업자번호와 대표자명을 함께 제공해야 합니다.',
+          errorCode: 'BUSINESS_LICENSE_FILE_URL_OR_BUSINESS_NUMBER_AND_REPRESENTATIVE_NAME_REQUIRED',
+          httpStatus: HttpStatus.BAD_REQUEST,
+        });
+      }
+
       const existing = await this.checkDuplicateBusinessLicense(userId);
       if (existing) {
-        throw new ConflictException(
-          '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-        );
+        throw new BusinessLicenseException({
+          message: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+          errorCode: 'BUSINESS_LICENSE_ALREADY_EXISTS',
+          httpStatus: HttpStatus.CONFLICT,
+        });
       }
 
       await this.dbService.db.insert(businessLicenses).values({
         userId,
-        businessNumber: data.businessNumber,
-        representativeName: data.representativeName,
+        businessNumber: data.businessNumber ?? null,
+        representativeName: data.representativeName ?? null,
         status: 'approved',
         fileUrl: data.fileUrl ?? null,
       });
 
-      return
+      return;
     } catch (error) {
       console.log('error::', error);
-      throw new BadRequestException(
-        error.message ??
-        '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
-      );
+
+      throw new BusinessLicenseException({
+        message: error.message ?? '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
+        errorCode: error.errorCode ?? 'BUSINESS_LICENSE_CREATION_FAILED',
+        httpStatus: HttpStatus.BAD_REQUEST,
+      });
     }
   }
 
