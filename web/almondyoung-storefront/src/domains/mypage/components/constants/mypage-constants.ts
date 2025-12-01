@@ -17,6 +17,11 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "쿠폰", icon: "🏷️", path: "/mypage/coupons" },
   { label: "다운로드", icon: "📥", path: "/mypage/download" },
   // { label: "구독 관리", icon: "🔁", path: "/mypage/subscribe/manage" },
+  {
+    label: "사업자 정보",
+    icon: "💼",
+    path: "/mypage/business",
+  },
   { label: "로그아웃", icon: "🚪", path: "/mypage/logout" },
 ]
 
@@ -99,6 +104,12 @@ export const SIDEBAR_MENU_ITEMS = [
   //   hasSubMenu: false,
   //   path: "/mypage/subscribe/manage",
   // },
+  {
+    id: "business",
+    label: "사업자 정보",
+    hasSubMenu: false,
+    path: "/mypage/business",
+  },
 ]
 
 export const BREAKPOINTS = {

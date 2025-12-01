@@ -24,6 +24,11 @@ export const getAuthHeaders = async (
   }
 }
 
+export const getAccessToken = async () => {
+  const cookies = await nextCookies()
+  return cookies.get("accessToken")?.value
+}
+
 export const getCacheTag = async (tag: string): Promise<string> => {
   try {
     const cookies = await nextCookies()

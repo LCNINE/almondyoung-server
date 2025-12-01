@@ -1,6 +1,6 @@
 import MypageLayout from "@components/layout/mypage-layout"
 import { fetchMe } from "@lib/api/users/me"
-import { UserDetail } from "domains/auth/types"
+import { UserDetail } from "types/global"
 import { MyPageDesktopContent } from "../components/desktop"
 import { MyPageMobileContent } from "../components/mobile"
 

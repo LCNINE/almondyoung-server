@@ -2,13 +2,13 @@ import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
 import { fetchMe } from "@lib/api/users/me"
-import { UserDetail } from "domains/auth/types"
+import { UserDetail } from "types/global"
 import DownloadPageTemplate from "domains/mypage/template/download-page-template"
 import { AlertCircle } from "lucide-react"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "다운로드",
+  title: "마이페이지 | 다운로드",
   description: "다운로드 내역을 확인하세요",
 }
 

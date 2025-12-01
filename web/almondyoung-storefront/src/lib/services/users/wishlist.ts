@@ -3,7 +3,7 @@ import {
   getWishlist,
   removeFromWishlist,
   WishlistItem,
-} from "@lib/api/users/wishlist"
+} from "@lib/api/users/wishlist/server"
 import { emitWishlistChange } from "./wishlist-events"
 
 // 서비스 옵션 타입

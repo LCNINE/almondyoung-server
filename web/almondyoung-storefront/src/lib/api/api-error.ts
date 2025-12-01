@@ -1,4 +1,4 @@
-export class ApiError extends Error {
+export class HttpApiError extends Error {
   public digest?: string
 
   constructor(
@@ -14,9 +14,8 @@ export class ApiError extends Error {
 
 /**
  * 인증 관련 오류 전용 클래스
- * - ApiError를 상속받지만, 인증 복구(AuthRestore) 로직에서만 특별히 취급됩니다.
  */
-export class ApiAuthError extends ApiError {
+export class ApiAuthError extends HttpApiError {
   constructor(
     message = "UNAUTHORIZED",
     status = 401,
@@ -32,7 +31,7 @@ export class ApiAuthError extends ApiError {
 /**
  * 네트워크 에러 전용 클래스
  */
-export class ApiNetworkError extends ApiError {
+export class ApiNetworkError extends HttpApiError {
   constructor(
     message = "NETWORK_ERROR",
     status = 500,

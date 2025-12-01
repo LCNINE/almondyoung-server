@@ -10,12 +10,12 @@ export interface AddressDto {
   updatedAt: Date
 }
 
-// Wishlist DTO
 export interface WishlistDto {
   id: string
-  userId: string
   productId: string
   createdAt: string
+  updatedAt: string
+  userId: string
 }
 
 // 카테고리 정보 DTO
@@ -32,8 +32,8 @@ export interface ShopInfoDto {
   yearsOperating: number | null //운영 연수
   shopType?: "solo" | "small" | "large" | null //상점 유형
   categories: string[] //카테고리 정보 (문자열 배열 - 실제 백엔드 응답에 맞춤)
-  targetCustomers: string[] | null //타겟 고객 정보
-  openDays: string[] | null //영업일 정보
+  targetCustomers: unknown //타겟 고객 정보
+  openDays: unknown //영업일 정보
   createdAt: Date //상점 생성일
   updatedAt: Date
 }

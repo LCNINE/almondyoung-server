@@ -1,7 +1,7 @@
 "use client"
 
 import { SignupSchema } from "domains/auth/schemas/signup-schema"
-import { ApiError } from "../api-error"
+import { HttpApiError } from "../api-error"
 
 type LocalSignupRequest = Omit<SignupSchema, "passwordConfirm" | "marketingAll">
 type LocalSignupResponse = {
@@ -32,7 +32,7 @@ export const createUser = async (
   const result = await response.json()
 
   if (!response.ok || !result.success) {
-    throw new ApiError(
+    throw new HttpApiError(
       result.error || "회원가입에 실패했습니다.",
       response.status,
       response.statusText,
@@ -56,7 +56,7 @@ export const findIdByEmail = async (email: string) => {
   const result = await response.json()
 
   if (!response.ok || !result.success) {
-    throw new ApiError(
+    throw new HttpApiError(
       result.error || "아이디 찾기에 실패했습니다.",
       response.status,
       response.statusText,
@@ -82,7 +82,7 @@ export const findPwByEmailAndLoginId = async (
   const result = await response.json()
 
   if (!response.ok || !result.success) {
-    throw new ApiError(
+    throw new HttpApiError(
       result.error || "비밀번호 찾기에 실패했습니다.",
       response.status,
       response.statusText,

@@ -1,4 +1,4 @@
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import { createUser } from "@lib/api/users/auth"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -30,7 +30,7 @@ export const useSignup = (form: UseFormReturn<SignupSchema>) => {
 
       return response
     } catch (err) {
-      if (err instanceof ApiError) {
+      if (err instanceof HttpApiError) {
         const errorMessage = err.message
         if (err.status === 409) {
           if (errorMessage.includes("아이디")) {

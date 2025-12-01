@@ -1,7 +1,7 @@
 import { MembershipForm } from "./components"
 import type { PlanWithTier } from "@lib/types/membership"
 
-import { ApiError } from "@lib/api/api-error"
+import { HttpApiError } from "@lib/api/api-error"
 import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getPlansServer } from "@lib/api/membership"
@@ -54,7 +54,7 @@ async function getPaymentProfiles() {
     // 에러 상세 정보 로깅
     console.error("❌ Payment profiles API error:", {
       message: error instanceof Error ? error.message : "Unknown error",
-      status: error instanceof ApiError ? error.status : undefined,
+      status: error instanceof HttpApiError ? error.status : undefined,
     })
     // 프로필이 없거나 에러 발생 시 빈 배열 반환
     return []
