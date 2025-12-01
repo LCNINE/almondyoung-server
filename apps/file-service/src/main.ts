@@ -16,6 +16,7 @@ async function bootstrap() {
     limits: {
       fileSize: 10 * 1024 * 1024,
     },
+    attachFieldsToBody: true, // 💡 이 옵션이 없으면 request.body에 텍스트 필드가 들어가지 않습니다.
   });
 
   // Passport와 Fastify 호환성을 위한 훅 (중요!)
