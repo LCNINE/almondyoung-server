@@ -1,9 +1,4 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,16 +14,16 @@ import {
   StorageProviderType,
   StorageError,
 } from '../storage-provider.interface';
+import { Readable } from 'stream';
 
 @Injectable()
-export class S3StorageProvider
-  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
+export class S3StorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(S3StorageProvider.name);
   private s3Client: S3Client;
   private bucketName: string;
   private region: string;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
     const storageProvider = this.configService.get<string>('STORAGE_PROVIDER', 'S3');
@@ -39,12 +34,8 @@ export class S3StorageProvider
 
   private initializeS3Client(): void {
     this.region = this.configService.getOrThrow<string>('AWS_REGION');
-    const accessKeyId = this.configService.getOrThrow<string>(
-      'AWS_ACCESS_KEY_ID',
-    );
-    const secretAccessKey = this.configService.getOrThrow<string>(
-      'AWS_SECRET_ACCESS_KEY',
-    );
+    const accessKeyId = this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY');
     this.bucketName = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
 
     this.s3Client = new S3Client({
@@ -63,7 +54,8 @@ export class S3StorageProvider
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: request.key,
-        Body: request.buffer,
+        // 기존에는 buffer였음 그러나 stream으로 변경 추후 문제가되면 수정
+        Body: request.stream as Readable,
         ContentType: request.contentType,
         Metadata: request.metadata,
       });
@@ -110,13 +102,13 @@ export class S3StorageProvider
       const command =
         request.operation === 'put'
           ? new PutObjectCommand({
-            Bucket: this.bucketName,
-            Key: request.key,
-          })
+              Bucket: this.bucketName,
+              Key: request.key,
+            })
           : new GetObjectCommand({
-            Bucket: this.bucketName,
-            Key: request.key,
-          });
+              Bucket: this.bucketName,
+              Key: request.key,
+            });
 
       const signedUrl = await getSignedUrl(this.s3Client, command, {
         expiresIn: request.expiresIn,
@@ -131,4 +123,3 @@ export class S3StorageProvider
     }
   }
 }
-
