@@ -11,7 +11,7 @@ export enum StorageProviderType {
 
 export interface UploadRequest {
   key: string;
-  buffer: Buffer;
+  stream: NodeJS.ReadableStream;
   contentType: string;
   metadata?: Record<string, string>;
 }
@@ -85,4 +85,3 @@ export class StorageError extends Error {
     super(message ?? code);
   }
 }
-
