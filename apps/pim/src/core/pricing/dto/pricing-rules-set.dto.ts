@@ -12,6 +12,12 @@ export class PricingRuleDto {
   @ApiProperty({ description: 'Rule order within layer', minimum: 1 })
   order: number;
 
+  @ApiProperty({
+    description: 'Layer type',
+    enum: ['base_price', 'membership_price', 'tiered_price'],
+  })
+  layer: 'base_price' | 'membership_price' | 'tiered_price';
+
   @ApiProperty({ 
     description: 'Scope type', 
     enum: ['all_variants', 'with_option', 'variants'] 
