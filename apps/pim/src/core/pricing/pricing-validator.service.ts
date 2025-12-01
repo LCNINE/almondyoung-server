@@ -49,7 +49,7 @@ export class PricingValidatorService {
       console.error(
         'RAW rulesDto:',
         JSON.stringify(rulesDto, null, 2),
-      ); // ✅ 이거 추가
+      );
 
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
       if (!parseResult.success) {
