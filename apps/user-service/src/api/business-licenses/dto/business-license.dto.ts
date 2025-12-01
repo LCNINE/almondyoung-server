@@ -1,37 +1,32 @@
-import { PickType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   Length,
-  ValidateIf,
+  ValidateIf
 } from 'class-validator';
-
-export class BusinessLicenseBaseDto {
-  @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
-  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
-  fileUrl?: string | null;
-
-  @IsOptional({ message: '상점ID는 선택사항입니다.' })
-  @IsUUID('4', { message: '상점ID는 UUID 형식이어야 합니다.' })
-  shopId?: string;
-
-  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
-  @Length(10, 10)
-  businessNumber: string;
-
-  @IsNotEmpty({ message: '대표자명은 필수입니다.' })
-  @Length(1, 100)
-  representativeName: string;
-
-  @IsOptional({ message: '메타데이터는 선택사항입니다.' })
-  metadata?: string;
-}
 
 // 사업자 생성 dto
 export class CreateBusinessLicenseDto {
+  @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
+  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
+  @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @Transform(({ value }) => value?.replace(/-/g, ''))
+  businessNumber?: string;
+
+  @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
+  @IsNotEmpty({ message: '대표자명은 필수입니다.' })
+  @Length(1, 20)
+  representativeName?: string;
+
+  @IsOptional()
+  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
+  fileUrl?: string | null;
+}
+
+// 사업자 수정 dto
+export class UpdateBusinessLicenseDto {
   @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
