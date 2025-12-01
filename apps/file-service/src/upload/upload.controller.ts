@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  BadRequestException,
-  UseInterceptors,
-  ValidationPipe,
-  UsePipes,
-} from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException, UseInterceptors, ValidationPipe, UsePipes } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
@@ -64,11 +56,8 @@ export class UploadController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
   @UseInterceptors(FileTransformInterceptor)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  async uploadFile(
-    @Body() dto: UploadFileDto,
-    @User() user: JwtPayload,
-  ): Promise<UploadResponseDto> {
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: false }))
+  async uploadFile(@Body() dto: UploadFileDto, @User() user: JwtPayload): Promise<UploadResponseDto> {
     const file = dto.files?.[0] as MultipartFile;
     if (!file) {
       throw new BadRequestException('File is required');
@@ -114,11 +103,8 @@ export class UploadController {
   @ApiResponse({ status: 400, description: 'Bad request' })
   // VAP-FIX: Gemini's fix - Apply the interceptor and standard validation pipe.
   @UseInterceptors(FileTransformInterceptor)
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  async batchUploadFiles(
-    @Body() dto: UploadFileDto,
-    @User() user: JwtPayload,
-  ): Promise<BatchUploadResponseDto> {
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: false }))
+  async batchUploadFiles(@Body() dto: UploadFileDto, @User() user: JwtPayload): Promise<BatchUploadResponseDto> {
     const files = dto.files as MultipartFile[];
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
