@@ -5,14 +5,15 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { FileServiceModule } from './file-service.module';
 import fastifyCookie from '@fastify/cookie';
-import fastifyMultipart, { MultipartFile } from '@fastify/multipart';
+import multipart from '@fastify/multipart';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(FileServiceModule, new FastifyAdapter());
 
   // 쿠키 파서 등록 (JWT 토큰 인증을 위해 필요)
   await app.register(fastifyCookie);
-  await app.register(fastifyMultipart, {
+  // Changed by Gemini for file upload fix
+  await app.register(multipart, {
     limits: {
       fileSize: 10 * 1024 * 1024,
     },
