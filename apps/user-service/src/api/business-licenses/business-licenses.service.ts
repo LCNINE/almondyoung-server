@@ -16,12 +16,12 @@ import {
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { BusinessLicensesHelper } from './business-licenses.helper';
-import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
 import {
   CreateBusinessLicenseDto,
-  FetchBusinessLicenseDto
-} from './dto/create-business-license.dto';
-import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
+  FetchBusinessLicenseDto,
+  UpdateBusinessLicenseDto
+} from './dto/business-license.dto';
+import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
 
 @Injectable()
