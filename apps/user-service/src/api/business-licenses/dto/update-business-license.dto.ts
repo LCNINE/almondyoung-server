@@ -7,9 +7,12 @@ import { BusinessLicenseBaseDto } from './create-business-license.dto';
 export class UpdateBusinessLicenseDto extends PartialType(
   BusinessLicenseBaseDto,
 ) {
-  @IsNotEmpty({ message: '증빙 검증 파일은 필수입니다.' })
-  @IsString({ message: '증빙 검증 파일은 문자열이어야 합니다.' })
-  file: string;
+  @IsOptional({ message: '증빙 검증 파일 업로드는 선택사항입니다.' })
+  file?: Express.Multer.File | null;
+
+  @IsOptional({ message: '증빙 검증 파일 URL은 선택사항입니다.' })
+  @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
+  fileUrl?: string | null;
 }
 
 export class UpdateBusinessLicenseDtoWithReviewCommentAndStatus extends PartialType(
@@ -17,7 +20,7 @@ export class UpdateBusinessLicenseDtoWithReviewCommentAndStatus extends PartialT
 ) {
   @IsString({ message: '검토 코멘트는 문자열이어야 합니다.' })
   @IsOptional({ message: '검토 코멘트는 선택사항입니다.' })
-  reviewCommen?: string;
+  reviewComment?: string;
 
   @IsIn(statusEnum.enumValues, { each: true })
   @IsString({ message: '상태는 문자열이어야 합니다.' })
