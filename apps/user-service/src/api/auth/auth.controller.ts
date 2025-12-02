@@ -194,7 +194,7 @@ export class AuthController {
   @Get('kakao/signin')
   @UseGuards(AuthGuard('kakao'))
   @Public()
-  async kakaoAuth() {
+  async kakaoAuth(@Query('redirect_to') redirectTo?: string) {
     // 카카오 로그인 리다이렉트
   }
 
