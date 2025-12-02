@@ -24,11 +24,14 @@ export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {
     });
   }
 
-  validate(accessToken: string, refreshToken: string, profile: Profile) {
+  validate(accessToken: string, refreshToken: string, profile: Profile, req: any) {
+
+    console.log('redirect_to::', req.query?.redirect_to);
     return {
       name: profile.displayName,
       email: profile._json.kakao_account.email,
       providerId: profile.id,
+      redirectTo: req.query?.redirect_to
     };
   }
 }
