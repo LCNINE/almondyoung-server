@@ -2,7 +2,21 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsArray, IsString, IsOptional, IsNumber, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class BulkUpdatesDto {
+class BulkUpdateItemDto {
+  @ApiProperty({ description: '품목 ID' })
+  @IsString()
+  id: string;
+
+  @ApiProperty({
+    description: '제품 변형 이름',
+    minLength: 1,
+    required: false
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  variantName?: string;
+
   @ApiProperty({ description: '상태', required: false })
   @IsOptional()
   @IsString()
@@ -21,19 +35,14 @@ class BulkUpdatesDto {
 }
 
 export class UpdateVariantBulkDto {
-  @ApiProperty({ 
-    description: '변형 ID 목록',
-    type: [String],
+  @ApiProperty({
+    description: '수정할 변형 정보 배열',
+    type: [BulkUpdateItemDto],
     minItems: 1
   })
   @IsArray()
-  @MinLength(1)
-  @IsString({ each: true })
-  variantIds: string[];
-
-  @ApiProperty({ description: '수정할 정보', type: BulkUpdatesDto })
-  @ValidateNested()
-  @Type(() => BulkUpdatesDto)
-  updates: BulkUpdatesDto;
+  @ValidateNested({ each: true })
+  @Type(() => BulkUpdateItemDto)
+  updates: BulkUpdateItemDto[];
 }
 

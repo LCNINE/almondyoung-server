@@ -55,14 +55,50 @@ export class ProductCategoriesService {
       const client = tx ?? trx;
 
       const { tagGroupLinks, ...categoryData } = data;
+
+      // parentId가 있으면 부모 카테고리 조회하여 level/path 계산
+      let level = 0;
+      let parentPath = '';
+
+      if (categoryData.parentId) {
+        const [parentCategory] = await client
+          .select({
+            level: pimSchema.productCategories.level,
+            path: pimSchema.productCategories.path,
+          })
+          .from(pimSchema.productCategories)
+          .where(eq(pimSchema.productCategories.id, categoryData.parentId));
+
+        if (!parentCategory) {
+          throw new NotFoundError(`Parent category not found: ${categoryData.parentId}`);
+        }
+
+        level = parentCategory.level + 1;
+        parentPath = parentCategory.path;
+      }
+
       const newCategoryData: NewProductCategory = {
         ...categoryData,
         slug: categoryData.slug ?? Math.random().toString(36).slice(2, 8),
+        level,
       };
+
       const [newCategory] = await client
         .insert(pimSchema.productCategories)
         .values(newCategoryData)
         .returning();
+
+      // path 계산 및 업데이트
+      const calculatedPath = parentPath
+        ? `${parentPath}/${newCategory.id}`
+        : newCategory.id;
+
+      await client
+        .update(pimSchema.productCategories)
+        .set({ path: calculatedPath })
+        .where(eq(pimSchema.productCategories.id, newCategory.id));
+
+      newCategory.path = calculatedPath;
 
       if (tagGroupLinks && tagGroupLinks.length > 0) {
         await this._linkTagGroups(newCategory.id, tagGroupLinks, client);

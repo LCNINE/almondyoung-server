@@ -10,11 +10,13 @@ import { SalesOrdersService } from '../services/sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
+import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
+import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
 export class SalesOrdersController {
-  constructor(private readonly service: SalesOrdersService) {}
+  constructor(private readonly service: SalesOrdersService) { }
 
   @Post()
   @ApiOperation({ summary: '판매 주문 생성', description: '새로운 판매 주문을 생성합니다.' })
@@ -57,13 +59,19 @@ export class SalesOrdersController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: '판매 주문 조회', description: 'ID로 판매 주문을 조회합니다. 주문 라인 정보가 포함됩니다.' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiResponse({ status: 200, description: '판매 주문 조회 성공', type: SalesOrderResponseDto })
+  @ApiResponse({ status: 404, description: '판매 주문을 찾을 수 없음' })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
   }
 
   @Get()
-  list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
-    return this.service.list({ limit: limit ? parseInt(limit, 10) : 20, offset: offset ? parseInt(offset, 10) : 0 });
+  @ApiOperation({ summary: '판매 주문 목록 조회', description: '판매 주문 목록을 조회합니다. 필터링을 지원합니다.' })
+  @ApiResponse({ status: 200, description: '판매 주문 목록 조회 성공', type: [SalesOrderResponseDto] })
+  list(@Query() query: SalesOrderFilterDto) {
+    return this.service.list(query);
   }
 }
 

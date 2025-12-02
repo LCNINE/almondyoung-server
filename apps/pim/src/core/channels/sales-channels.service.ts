@@ -358,11 +358,11 @@ export class SalesChannelsService {
     };
   }
 
-  async validateChannelConfig(type: string, config: any): Promise<{
+  async validateChannelConfig(site: string, config: any): Promise<{
     isValid: boolean;
     errors: string[];
   }> {
-    if (!type) {
+    if (!site) {
       return {
         isValid: false,
         errors: ['Channel type is required']
@@ -371,7 +371,7 @@ export class SalesChannelsService {
 
     const errors: string[] = [];
 
-    switch (type) {
+    switch (site) {
       case 'medusa':
         if (config && !config.baseUrl) {
           errors.push('Medusa channel requires baseUrl in config');
@@ -384,15 +384,15 @@ export class SalesChannelsService {
         }
         break;
 
-      case 'smartstore':
+      case 'naver':
         if (config && (!config.clientId || !config.clientSecret)) {
           errors.push('SmartStore channel requires clientId and clientSecret in config');
         }
         break;
 
       default:
-        if (!['medusa', 'coupang', 'smartstore'].includes(type)) {
-          errors.push(`Unsupported channel type: ${type}. Supported types are: medusa, coupang, smartstore`);
+        if (!['medusa', 'naver', 'coupang', 'phone_order', 'other'].includes(site)) {
+          errors.push(`Unsupported channel type: ${site}. Supported types are: medusa, coupang, smartstore`);
         }
     }
 

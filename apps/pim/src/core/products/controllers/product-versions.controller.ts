@@ -29,7 +29,7 @@ export class ProductVersionsController {
   constructor(
     private readonly productVersionsService: ProductVersionsService,
     private readonly productMastersService: ProductMastersService,
-  ) {}
+  ) { }
 
   @Get()
   @ApiOperation({
@@ -48,7 +48,7 @@ export class ProductVersionsController {
   ): Promise<VersionTreeResponseDto[]> {
     try {
       const tree = await this.productVersionsService.getVersionTree(masterId);
-      return tree.map(this._mapToResponseDto);
+      return tree.map((node) => this._mapToResponseDto(node));
     } catch (error) {
       this.logger.error(`Failed to get version tree: ${error.message}`, error.stack);
       if (error.message.includes('not found')) {
@@ -110,14 +110,14 @@ export class ProductVersionsController {
   ) {
     try {
       const version = await this.productVersionsService.getVersionById(versionId);
-      
+
       if (version.masterId !== masterId) {
         throw new HttpException(
           'Version does not belong to the specified master',
           HttpStatus.BAD_REQUEST,
         );
       }
-      
+
       return {
         ...version,
         createdAt: version.createdAt?.toISOString() || null,
@@ -141,7 +141,10 @@ export class ProductVersionsController {
   @Post()
   @ApiOperation({
     summary: '새 Draft 버전 생성',
-    description: '기존 버전을 기반으로 새로운 draft 버전을 생성합니다.',
+    description: `기존 버전을 기반으로 새로운 draft 버전을 생성합니다.
+    
+    parentVersionId가 제공되지 않으면 현재 active 버전을 부모로 사용합니다.
+    active 버전이 없는 경우 400 에러를 반환합니다.`,
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
   @ApiResponse({
@@ -149,15 +152,29 @@ export class ProductVersionsController {
     description: 'Draft 버전 생성 성공',
   })
   @ApiResponse({ status: 404, description: '부모 버전을 찾을 수 없음' })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 400, description: 'active 버전이 없거나 잘못된 요청' })
   async createDraftVersion(
     @Param('masterId') masterId: string,
     @Body() dto: CreateDraftVersionDto,
   ) {
     try {
-      const userId = 'system';
+      let parentVersionId = dto.parentVersionId;
+
+      if (!parentVersionId) {
+        try {
+          const activeVersion = await this.productVersionsService.getActiveVersion(masterId);
+          parentVersionId = activeVersion.id;
+        } catch {
+          throw new HttpException(
+            'No active version found. Please provide parentVersionId explicitly.',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      const userId = '00000000-0000-0000-0000-000000000000';
       const version = await this.productVersionsService.createDraftVersion(
-        dto.parentVersionId,
+        parentVersionId,
         userId,
         dto.copyMappings !== false,
       );
@@ -168,6 +185,9 @@ export class ProductVersionsController {
       };
     } catch (error) {
       this.logger.error(`Failed to create draft version: ${error.message}`, error.stack);
+      if (error instanceof HttpException) {
+        throw error;
+      }
       if (error.message.includes('not found')) {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }
@@ -204,7 +224,7 @@ export class ProductVersionsController {
   ) {
     try {
       // TODO: JWT에서 실제 userId 추출
-      const userId = 'system';
+      const userId = '00000000-0000-0000-0000-000000000000';
 
       // 권한 확인 (draft 상태인지, 소유자인지)
       const canModify = await this.productVersionsService.canUserModifyVersion(

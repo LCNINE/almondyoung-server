@@ -150,13 +150,13 @@ export class AuthController {
     return this.authService.resendVerificationEmail(email, redirectTo);
   }
 
-  @ApiOperation({ summary: '회원 탈퇴' })
-  @ApiResponse({ status: 200, description: '회원 탈퇴 성공' })
-  @Delete('account')
+  @ApiOperation({ summary: '회원 소프트 탈퇴' })
+  @ApiResponse({ status: 200, description: '회원 소프트 탈퇴 성공' })
+  @Delete('')
   @UseGuards(AuthGuard('jwt'))
   @RequireScopes(['user:delete'])
-  async removeAccount(@CurrentUser() user: JwtPayload) {
-    return this.authService.removeAccount(user.id);
+  async softDeleteUser(@CurrentUser() user: JwtPayload) {
+    return this.authService.softDeleteUser(user.id);
   }
 
   @ApiOperation({ summary: '비밀번호 확인' })

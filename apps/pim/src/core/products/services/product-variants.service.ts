@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
-  UpdateVariantBulkDto,
   VariantWithPriceDto,
   ProductVariant,
   UpdateProductVariant,
@@ -20,6 +19,7 @@ import {
   variantOptionValues
 } from '../../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
+import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 
 @Injectable()
 export class ProductVariantsService {
@@ -32,7 +32,7 @@ export class ProductVariantsService {
   }
 
 
-  async getVariantsByMaster(masterId: string, version?: number, filters?: {
+  async getVariantsByMaster(masterId: string, versionId?: string, filters?: {
     status?: string;
     includePrice?: boolean;
     page?: number;
@@ -55,9 +55,9 @@ export class ProductVariantsService {
     const includePrice = filters?.includePrice !== false;
 
     // version이 지정되지 않으면 active 버전 사용
-    let actualVersion = version;
-    if (actualVersion === undefined) {
-      const [activeMaster] = await client
+    let actualVersionNumber: number;
+    if (versionId === undefined) {
+      const [activeVersion] = await client
         .select({ version: productMasterVersions.version })
         .from(productMasterVersions)
         .where(
@@ -68,16 +68,27 @@ export class ProductVariantsService {
         )
         .limit(1);
 
-      if (!activeMaster) {
+      if (!activeVersion) {
         throw new Error(`No active version found for master ${masterId}`);
       }
-      actualVersion = activeMaster.version;
+      actualVersionNumber = activeVersion.version;
+    }
+    else {
+      const [version] = await client
+        .select({ version: productMasterVersions.version })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
+
+      if (!version) {
+        throw new Error(`Version not found: ${versionId}`);
+      }
+      actualVersionNumber = version.version;
     }
 
     // 매핑 테이블을 통해 variants 조회
     const whereConditions: SQL[] = [
       eq(productMasterVariants.masterId, masterId),
-      eq(productMasterVariants.version, actualVersion),
+      eq(productMasterVariants.version, actualVersionNumber),
     ];
 
     if (filters?.status) {
@@ -419,7 +430,7 @@ export class ProductVariantsService {
       .where(inArray(productVariants.id, variantIds));
   }
 
-  async updateVariant(variantId: string, data: UpdateProductVariant, tx?: DbTransaction): Promise<ProductVariant> {
+  async updateVariant(variantId: string, data: UpdateProductVariantDto, tx?: DbTransaction): Promise<ProductVariant> {
     if (!variantId) {
       throw new Error('Variant ID is required');
     }
@@ -436,10 +447,6 @@ export class ProductVariantsService {
       updatedAt: new Date(),
     };
 
-    delete (updateData as any).id;
-    delete (updateData as any).createdAt;
-    delete (updateData as any).masterId;
-
     const result = await client
       .update(productVariants)
       .set(updateData)
@@ -454,11 +461,7 @@ export class ProductVariantsService {
   }
 
   async bulkUpdateVariants(data: UpdateVariantBulkDto, tx?: DbTransaction): Promise<void> {
-    if (!data.variantIds || data.variantIds.length === 0) {
-      throw new Error('Variant IDs are required');
-    }
-
-    if (!data.updates || Object.keys(data.updates).length === 0) {
+    if (!data.updates || data.updates.length === 0) {
       throw new Error('Updates are required');
     }
 
@@ -467,35 +470,35 @@ export class ProductVariantsService {
     const existingVariants = await client
       .select({ id: productVariants.id })
       .from(productVariants)
-      .where(inArray(productVariants.id, data.variantIds));
+      .where(inArray(productVariants.id, data.updates.map(u => u.id)));
 
     const existingIds = existingVariants.map(v => v.id);
-    const missingIds = data.variantIds.filter(id => !existingIds.includes(id));
+    const missingIds = data.updates.map(u => u.id).filter(id => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
       throw new Error(`Variants not found: ${missingIds.join(', ')}`);
     }
 
-    if (data.updates.status) {
-      const validStatuses = ['active', 'inactive'];
-      if (!validStatuses.includes(data.updates.status)) {
-        throw new Error(`Invalid status: ${data.updates.status}. Valid statuses are: ${validStatuses.join(', ')}`);
-      }
+    const validStatuses = ['active', 'inactive'];
+    if (data.updates.map(u => u.status).some(status => status && !validStatuses.includes(status))) {
+      throw new Error(`Invalid status: ${data.updates.map(u => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
 
-    if (data.updates.displayOrder !== undefined && data.updates.displayOrder < 0) {
+    if (data.updates.map(u => u.displayOrder).some(displayOrder => displayOrder !== undefined && displayOrder < 0)) {
       throw new Error('Display order must be non-negative');
     }
 
-    const updateData = {
-      ...data.updates,
+    const updateData = data.updates.map(u => ({
+      ...u,
       updatedAt: new Date()
-    };
+    }));
 
-    await client
-      .update(productVariants)
-      .set(updateData)
-      .where(inArray(productVariants.id, data.variantIds));
+    for (const update of updateData) {
+      await client
+        .update(productVariants)
+        .set(update)
+        .where(eq(productVariants.id, update.id));
+    }
   }
 
 

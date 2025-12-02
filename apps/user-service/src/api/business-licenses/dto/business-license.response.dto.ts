@@ -1,18 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class FetchBusinessLicenseResponseDto {
-  @ApiProperty({
-    description: '사업자 등록 번호',
-    type: String,
-  })
-  businessNumber: string;
-
-  @ApiProperty({
-    description: '대표자 이름',
-    type: String,
-  })
-  ceoName: string;
-}
 
 export class BusinessLicenseResponseDto {
   @ApiProperty({
@@ -80,7 +67,7 @@ export class BusinessLicenseResponseDto {
     type: String,
     nullable: true,
   })
-  verificationFile?: string | null;
+  fileUrl?: string | null;
 
   @ApiProperty({
     description: '추가 메타데이터',

@@ -16,9 +16,7 @@ import {
 } from '../storage-provider.interface';
 
 @Injectable()
-export class LocalStorageProvider
-  implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort
-{
+export class LocalStorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(LocalStorageProvider.name);
   private readonly baseDir = path.join(process.cwd(), 'uploads');
   private readonly port: string;
@@ -72,4 +70,3 @@ export class LocalStorageProvider
     return { signedUrl, expiresAt };
   }
 }
-

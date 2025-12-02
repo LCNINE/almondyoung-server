@@ -67,6 +67,10 @@ export type UpdateProductMasterVersion = Partial<
   tagValueIds?: string[];
 };
 
+export type ProductMasterWithVersion = ProductMaster & {
+  version: ProductMasterVersion | null;
+};
+
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
 export type ProductMasterCategory = InferSelectModel<
   typeof productMasterCategories
@@ -294,16 +298,6 @@ export interface MasterDetailDto extends ProductMasterVersion {
     groupName: string;
     displayOrder: number;
   }>;
-}
-
-// Variant 일괄 수정 DTO
-export interface UpdateVariantBulkDto {
-  variantIds: string[];
-  updates: {
-    status?: string;
-    displayOrder?: number;
-    images?: string[];
-  };
 }
 
 // 가격 조회 응답 DTO

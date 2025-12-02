@@ -14,6 +14,11 @@ export class CreateSkuDto {
   @IsOptional()
   skuGroupId?: string;
 
+  @ApiProperty({ description: 'Holder ID (재고 보유자 ID)', example: 'a1b2c3d4-e5f6-7890-1234-567890abcdef', required: false })
+  @IsUUID()
+  @IsOptional()
+  holderId?: string;
+
   @ApiProperty({ description: 'SKU 이름' })
   @IsString()
   @IsNotEmpty()
