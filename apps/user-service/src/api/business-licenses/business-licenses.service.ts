@@ -237,6 +237,19 @@ export class BusinessLicensesService {
     businessLicenseId: string,
     data: UpdateBusinessLicenseDto,
   ): Promise<void> {
+    // 새롭게 첨부한 파일이 있을 때 status를 under_review로 변경
+    if (data.fileUrl) {
+      await this.dbService.db
+        .update(businessLicenses)
+        .set({
+          ...data,
+          status: 'under_review',
+          fileUrl: data.fileUrl,
+        })
+        .where(eq(businessLicenses.id, businessLicenseId));
+      return;
+    }
+
     await this.dbService.db
       .update(businessLicenses)
       .set({
@@ -244,5 +257,7 @@ export class BusinessLicensesService {
         fileUrl: data.fileUrl,
       })
       .where(eq(businessLicenses.id, businessLicenseId));
+
+    return;
   }
 }
