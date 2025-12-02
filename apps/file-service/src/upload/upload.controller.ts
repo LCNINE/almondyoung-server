@@ -71,9 +71,6 @@ export class UploadController {
     @User() user: JwtPayload,
   ): Promise<UploadResponseDto> {
 
-    console.log('file::', file);
-    console.log('dto::', dto);
-    console.log('user::', user);
     if (!file) {
       throw new BadRequestException('File is required');
     }
