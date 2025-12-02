@@ -52,7 +52,7 @@ export class AuthService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
-  ) { }
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -107,7 +107,6 @@ export class AuthService {
             throw new ConflictException('이미 가입된 이메일입니다. 로그인을 시도해주세요.');
           }
 
-
           const existsUserId = await this.usersService.findUserByLoginId(signUpDto.loginId, client);
           if (existsUserId && existsUserId.id !== existingUser.id) {
             throw new ConflictException('이미 존재하는 아이디입니다.');
@@ -118,20 +117,21 @@ export class AuthService {
             throw new ConflictException('이미 존재하는 닉네임입니다.');
           }
 
-
           const saltOrRounds = 10;
           const hash = await bcrypt.hash(signUpDto.password, saltOrRounds);
 
-
-          await client.update(userServiceSchema.users).set({
-            email: signUpDto.email,
-            username: signUpDto.username,
-            nickname: signUpDto.nickname,
-            loginId: signUpDto.loginId,
-            password: hash,
-            isEmailVerified: false,
-            updatedAt: new Date(),
-          }).where(eq(userServiceSchema.users.id, existingUser.id));
+          await client
+            .update(userServiceSchema.users)
+            .set({
+              email: signUpDto.email,
+              username: signUpDto.username,
+              nickname: signUpDto.nickname,
+              loginId: signUpDto.loginId,
+              password: hash,
+              isEmailVerified: false,
+              updatedAt: new Date(),
+            })
+            .where(eq(userServiceSchema.users.id, existingUser.id));
 
           await client
             .update(userServiceSchema.userConsents)
@@ -174,7 +174,6 @@ export class AuthService {
               redirectTo: redirect_to ?? '/',
             },
           });
-
 
           return {
             message: '이전에 가입 시도한 이력이 있습니다. 새로운 인증 링크를 해당 이메일로 발송했습니다.',
@@ -868,6 +867,35 @@ export class AuthService {
     if (!isAuth) throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
     return;
+  }
+
+  /**
+   * PIN 재설정을 위한 verification token 발급
+   * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
+   */
+  async verifyPasswordAndIssuePinResetToken(
+    password: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<{ verificationToken: string }> {
+    // 1. 로그인 비밀번호 검증
+    await this.checkPassword(password, userId, tx);
+
+    // 2. verification token 발급 (JWT with scope: PIN_RESET)
+    const payload = {
+      sub: userId,
+      scopes: ['PIN_RESET'],
+      purpose: 'pin_reset',
+    };
+
+    const verificationToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
+      expiresIn: JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION,
+    });
+
+    this.logger.log(`PIN reset verification token issued for user: ${userId}`);
+
+    return { verificationToken };
   }
 
   async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
