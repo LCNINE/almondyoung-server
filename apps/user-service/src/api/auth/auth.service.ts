@@ -321,6 +321,17 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
+
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserEmailVerified',
+        aggregateId: verificationToken.user.id,
+        payload: {
+          userId: verificationToken.user.id,
+          email: verificationToken.user.email,
+          name: verificationToken.user.username,
+        },
+      });
+
       return reply.status(302).redirect(url.toString());
     } catch (error) {
       if (error instanceof UnauthorizedException || error instanceof InternalServerErrorException) {
@@ -431,6 +442,7 @@ export class AuthService {
       name: string;
       email: string;
       providerId: string;
+      redirectTo?: string;
     },
     provider: ProviderType,
     reply: FastifyReply,
@@ -458,6 +470,8 @@ export class AuthService {
       return existingUser;
     };
 
+
+    console.log("sogininwithSocial:::::::", socialUser.redirectTo)
     if (tx) {
       const result = await processSignIn(tx);
 
@@ -884,7 +898,7 @@ export class AuthService {
     return { verificationToken };
   }
 
-  async removeAccount(userId: string, tx?: DbTransaction): Promise<void> {
+  async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
       await tx
         .update(userServiceSchema.users)
@@ -901,6 +915,35 @@ export class AuthService {
         },
       });
     }, tx);
+  }
+
+  /**
+ * PIN 재설정을 위한 verification token 발급
+ * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
+ */
+  async verifyPasswordAndIssuePinResetToken(
+    password: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<{ verificationToken: string }> {
+    // 1. 로그인 비밀번호 검증
+    await this.checkPassword(password, userId, tx);
+
+    // 2. verification token 발급 (JWT with scope: PIN_RESET)
+    const payload = {
+      sub: userId,
+      scopes: ['PIN_RESET'],
+      purpose: 'pin_reset',
+    };
+
+    const verificationToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
+      expiresIn: this.parseExpiresIn(JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION),
+    });
+
+    this.logger.log(`PIN reset verification token issued for user: ${userId}`);
+
+    return { verificationToken };
   }
 
   // 리프레시 토큰 만료 시간 결정

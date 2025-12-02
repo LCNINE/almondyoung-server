@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, Profile } from 'passport-kakao';
-import { FastifyReply, FastifyRequest } from 'fastify';
+import { Profile, Strategy } from 'passport-kakao';
 
 @Injectable()
 export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {

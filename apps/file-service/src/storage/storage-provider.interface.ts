@@ -85,4 +85,3 @@ export class StorageError extends Error {
     super(message ?? code);
   }
 }
-

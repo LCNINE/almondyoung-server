@@ -21,14 +21,13 @@ import {
 import { JwtAuthGuard } from '../../commons/guards/jwt-auth.guard';
 import { BusinessLicensesService } from './business-licenses.service';
 import {
-  BusinessLicenseResponseDto,
-  FetchBusinessLicenseResponseDto,
-} from './dto/business-license.response.dto';
-import {
-  CreateBusinessLicenseWithFileDto,
+  CreateBusinessLicenseDto,
   FetchBusinessLicenseDto,
-} from './dto/create-business-license.dto';
-import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
+  UpdateBusinessLicenseDto
+} from './dto/business-license.dto';
+import {
+  BusinessLicenseResponseDto
+} from './dto/business-license.response.dto';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
@@ -37,22 +36,40 @@ import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
 export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
-  ) {}
+  ) { }
 
-  @Get('/:userId')
+  @Post()
   @ApiOperation({
-    summary: '사용자의 사업자 등록 정보 조회',
-    description: '사용자의 사업자 등록 정보를 조회합니다.',
+    summary: '사업자 등록',
+    description: '사업자 등록을 생성합니다.',
+  })
+  @ApiBody({ type: CreateBusinessLicenseDto })
+  @ApiResponse({ status: 201, description: '사업자 등록 생성 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 409, description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.' })
+  @RequireScopes(['user:modify'])
+  async createBusinessLicense(
+    @Body() data: CreateBusinessLicenseDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.businessLicensesService.createBusinessLicense(user.id, data);
+  }
+
+  @Get('/me')
+  @ApiOperation({
+    summary: '현재 사용자의 사업자 등록 정보 조회',
+    description: '현재 사용자의 사업자 등록 정보를 조회합니다.',
   })
   @ApiParam({ name: 'userId', description: '사용자 ID' })
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @RequireScopes(['user:read'])
-  async getBusinessLicensesByUserId(
-    @Param('userId') userId: string,
+  async getMyBusinessLicense(
+    @CurrentUser() user: JwtPayload,
   ): Promise<BusinessLicenseResponseDto | null> {
-    return this.businessLicensesService.getBusinessLicensesByUserId(userId);
+    return this.businessLicensesService.getMyBusinessLicense(user.id);
   }
 
   @ApiOperation({
@@ -62,7 +79,6 @@ export class BusinessLicensesController {
   @ApiResponse({
     status: 200,
     description: '사업자 등록 정보 조회 성공',
-    type: FetchBusinessLicenseResponseDto,
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
@@ -76,31 +92,11 @@ export class BusinessLicensesController {
     );
   }
 
-  /**
-   * 파일로 사업자 등록요청할 때 사용
-   */
-  @Post('with-file')
-  @ApiOperation({ summary: '파일로 사업자 등록요청' })
-  @ApiResponse({ status: 201, description: '파일로 사업자 등록요청 성공' })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  @ApiResponse({
-    status: 409,
-    description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-  })
-  @RequireScopes(['user:modify'])
-  async createWithFile(
-    @Body() data: CreateBusinessLicenseWithFileDto,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    return this.businessLicensesService.createWithFile(data, user.id);
-  }
-
   @ApiOperation({
     summary: '사업자 등록 정보 수정',
     description: '기존 사업자 등록 정보를 수정합니다.',
   })
-  @ApiParam({ name: 'business-license-id', description: '사업자 등록 정보 ID' })
+  @ApiParam({ name: 'businessId', description: '사업자 등록 정보 ID' })
   @ApiBody({ type: UpdateBusinessLicenseDto })
   @ApiResponse({
     status: 200,
@@ -111,15 +107,15 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
-  @Put(':business-license-id')
+  @Put(':businessId')
   @RequireScopes(['user:modify'])
-  async updateBusinessLicenseByBusinessLicenseId(
-    @Param('business-license-id') businessLicenseId: string,
+  async updateBusinessLicenseByBusinessId(
+    @Param('businessId') businessId: string,
     @Body() data: UpdateBusinessLicenseDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.businessLicensesService.updateBusinessLicenseByBusinessLicenseId(
-      businessLicenseId,
+    return this.businessLicensesService.updateBusinessLicenseByBusinessId(
+      businessId,
       data,
       user.id,
     );

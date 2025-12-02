@@ -2,10 +2,9 @@ import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
-  ConflictException,
   HttpStatus,
   Injectable,
-  NotFoundException,
+  NotFoundException
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cheerio from 'cheerio';
@@ -17,14 +16,13 @@ import {
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
 import { BusinessLicensesHelper } from './business-licenses.helper';
-import { FetchBusinessLicenseResponseDto } from './dto/business-license.response.dto';
 import {
-  CreateBusinessLicenseWithFileDto,
+  CreateBusinessLicenseDto,
   FetchBusinessLicenseDto,
-} from './dto/create-business-license.dto';
-import { UpdateBusinessLicenseDto } from './dto/update-business-license.dto';
+  UpdateBusinessLicenseDto
+} from './dto/business-license.dto';
+import { BusinessLicenseResponseDto, } from './dto/business-license.response.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
-import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 
 @Injectable()
 export class BusinessLicensesService {
@@ -34,9 +32,54 @@ export class BusinessLicensesService {
     private readonly httpService: HttpService,
     private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
-  async getBusinessLicensesByUserId(
+  async createBusinessLicense(
+    userId: string,
+    data: CreateBusinessLicenseDto,
+  ): Promise<void> {
+    try {
+      const hasFileUrl = !!data.fileUrl;
+      const hasBusinessInfo = data.businessNumber && data.representativeName;
+
+      if (!hasFileUrl && !hasBusinessInfo) {
+        throw new BusinessLicenseException({
+          message: '파일 URL 또는 사업자번호와 대표자명을 함께 제공해야 합니다.',
+          errorCode: 'BUSINESS_LICENSE_FILE_URL_OR_BUSINESS_NUMBER_AND_REPRESENTATIVE_NAME_REQUIRED',
+          httpStatus: HttpStatus.BAD_REQUEST,
+        });
+      }
+
+      const existing = await this.checkDuplicateBusinessLicense(userId);
+      if (existing) {
+        throw new BusinessLicenseException({
+          message: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+          errorCode: 'BUSINESS_LICENSE_ALREADY_EXISTS',
+          httpStatus: HttpStatus.CONFLICT,
+        });
+      }
+
+      await this.dbService.db.insert(businessLicenses).values({
+        userId,
+        businessNumber: data.businessNumber ?? null,
+        representativeName: data.representativeName ?? null,
+        status: 'approved',
+        fileUrl: data.fileUrl ?? null,
+      });
+
+      return;
+    } catch (error) {
+      console.log('error::', error);
+
+      throw new BusinessLicenseException({
+        message: error.message ?? '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
+        errorCode: error.errorCode ?? 'BUSINESS_LICENSE_CREATION_FAILED',
+        httpStatus: HttpStatus.BAD_REQUEST,
+      });
+    }
+  }
+
+  async getMyBusinessLicense(
     userId: string,
   ): Promise<BusinessLicenseResponseDto | null> {
     const [result] = await this.dbService.db
@@ -52,7 +95,7 @@ export class BusinessLicensesService {
    */
   async fetchBusinessLicense(
     fetchBusinessLicenseDto: FetchBusinessLicenseDto,
-  ): Promise<FetchBusinessLicenseResponseDto> {
+  ): Promise<void> {
     const { businessNumber, representativeName } = fetchBusinessLicenseDto;
 
     const baseUrl = this.configService.get<string>('BIZNO_URL');
@@ -76,52 +119,43 @@ export class BusinessLicensesService {
       });
     }
 
-    return businessInfo;
+    return;
   }
 
-  async createWithFile(
-    data: CreateBusinessLicenseWithFileDto,
-    userId: string,
-  ): Promise<void> {
-    const existing = await this.checkDuplicateBusinessLicense(userId);
-    if (existing) {
-      throw new ConflictException(
-        '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
-      );
-    }
-
-    await this.dbService.db.insert(businessLicenses).values({
-      userId,
-      shopId: data.shopId ?? null,
-      status: 'under_review',
-      file: data.file,
-      metadata: data.metadata ? JSON.parse(data.metadata) : null,
-    });
-  }
-
-  async updateBusinessLicenseByBusinessLicenseId(
-    businessLicenseId: string,
+  async updateBusinessLicenseByBusinessId(
+    businessId: string,
     data: UpdateBusinessLicenseDto,
     userId: string,
   ): Promise<void> {
-    const existingBusiness = await this.findBusinessLicenseByUserId(userId);
 
-    if (!existingBusiness) {
-      throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
-    }
+    try {
+      const existingBusiness = await this.findBusinessLicenseByUserId(userId);
 
-    await this.validateOwnership(existingBusiness, userId);
+      if (!existingBusiness) {
+        throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
+      }
 
-    // 거절된 사업자 등록 정보를 다시 제출할 때
-    if (existingBusiness.status === 'rejected') {
-      await this.resubmitRejectedLicense(businessLicenseId, data.file);
-      return;
-    }
+      await this.validateOwnership(existingBusiness, userId);
 
-    // 승인된 사업자 등록 정보를 업데이트할 때
-    if (existingBusiness.status === 'approved') {
-      await this.updateApprovedLicense(existingBusiness.id, data);
-      return;
+
+      // 거절된 사업자 등록 정보를 다시 제출할 때
+      if (existingBusiness.status === 'rejected') {
+        const fileUrl = data.fileUrl ?? existingBusiness.fileUrl ?? '';
+
+        await this.resubmitRejectedLicense(businessId, fileUrl);
+        return;
+      }
+
+      // 승인된 사업자 등록 정보를 업데이트할 때
+      if (existingBusiness.status === 'approved') {
+        await this.updateApprovedLicense(existingBusiness.id, data);
+        return;
+      }
+    } catch (error) {
+      console.log('error::', error);
+      throw new BadRequestException(
+        '사업자 등록 정보를 수정하는 중 오류가 발생했습니다.',
+      );
     }
   }
 
@@ -188,12 +222,12 @@ export class BusinessLicensesService {
 
   private async resubmitRejectedLicense(
     businessLicenseId: string,
-    file: string,
+    fileUrl: string,
   ): Promise<void> {
     await this.dbService.db
       .update(businessLicenses)
       .set({
-        file,
+        fileUrl,
         status: 'under_review',
       })
       .where(eq(businessLicenses.id, businessLicenseId));
@@ -205,7 +239,10 @@ export class BusinessLicensesService {
   ): Promise<void> {
     await this.dbService.db
       .update(businessLicenses)
-      .set(data)
+      .set({
+        ...data,
+        fileUrl: data.fileUrl,
+      })
       .where(eq(businessLicenses.id, businessLicenseId));
   }
 }

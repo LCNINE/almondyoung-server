@@ -18,8 +18,8 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
-import { UpdateBusinessLicenseDtoWithReviewCommentAndStatus } from '../../business-licenses/dto/update-business-license.dto';
 import { BusinessLicensesService } from './business-licenses.service';
+import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 
 @ApiTags('사업자 등록 관리')
@@ -29,7 +29,7 @@ import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 export class BusinessLicensesController {
   constructor(
     private readonly businessLicensesService: BusinessLicensesService,
-  ) {}
+  ) { }
 
   @Get('/user/:userId')
   @ApiOperation({
@@ -77,7 +77,7 @@ export class BusinessLicensesController {
     );
   }
 
-  @Put(':id')
+  @Put(':businessId')
   @RequireScopes(['master', 'admin:users:modify'])
   @ApiOperation({
     summary: '사업자 등록 정보 수정',
@@ -87,14 +87,13 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 200, description: '사업자 등록 정보 수정 성공' })
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   async updateBusinessLicenseById(
-    @Param('id') id: string,
+    @Param('businessId') businessId: string,
     @Body()
-    updateBusinessLicenseDto: UpdateBusinessLicenseDtoWithReviewCommentAndStatus,
+    updateBusinessLicenseDto: BusinessAdminUpdateDto,
   ) {
-    const businessLicenseId = id;
 
-    return this.businessLicensesService.updateBusinessLicenseByBusinessLicenseId(
-      businessLicenseId,
+    return this.businessLicensesService.updateBusinessLicenseByBusinessId(
+      businessId,
       updateBusinessLicenseDto,
     );
   }

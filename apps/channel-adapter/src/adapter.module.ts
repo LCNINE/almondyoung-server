@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import * as os from 'os';
 import { HttpModule } from '@nestjs/axios';
+import { ScheduleModule } from '@nestjs/schedule';
 import { EventsModule, StreamPublisher } from '@app/events';
 import { NaverSmartstoreAdapter } from './services/adapters/naver-smartstore.adapter';
 import { CoupangAdapter } from './services/adapters/coupang.adapter';
@@ -32,10 +33,11 @@ import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
 import { ChannelSyncManager } from './services/channel-sync.manager';
 import { ChannelCommandManager } from './services/channel-command.manager';
-import { ChannelAdapterRepository } from './services/channel-adapter.repository';
 import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
 import { PendingOrderService } from './services/pending-order.service';
+import { OutboxService } from './services/outbox.service';
+import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 
 // Kafka 설정 생성 함수 (운영 환경 전용)
 function createKafkaConfig() {
@@ -81,6 +83,7 @@ function createKafkaConfig() {
       isGlobal: true,
       validate: validateChannelAdapterEnv,
     }),
+    ScheduleModule.forRoot(), // ← Cron 활성화
     HttpModule,
     DbModule.forRoot({
       config: {
@@ -126,7 +129,6 @@ function createKafkaConfig() {
     ChannelDataReader,
     ChannelSyncManager,
     ChannelCommandManager,
-    ChannelAdapterRepository,
     PendingOrderRepository,
 
     // PIM 매핑 조회 클라이언트
@@ -137,6 +139,10 @@ function createKafkaConfig() {
 
     // 주문 이벤트 발행 서비스
     OrderEventPublisher,
+
+    // Outbox 패턴 서비스
+    OutboxService,
+    OutboxDispatcherService,
 
     // 개발/테스트 환경: NullEventPublisher를 토큰으로 제공
     ...(process.env.NODE_ENV !== 'production'
@@ -153,4 +159,4 @@ function createKafkaConfig() {
       : []),
   ],
 })
-export class AdapterModule { }
+export class AdapterModule {}

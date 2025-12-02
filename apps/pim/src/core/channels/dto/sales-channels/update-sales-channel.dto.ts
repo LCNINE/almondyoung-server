@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsBoolean, IsUrl, IsEnum, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateSalesChannelDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '채널 유형',
     enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
     required: false
@@ -25,7 +25,7 @@ export class UpdateSalesChannelDto {
   @IsUUID()
   categoryId?: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '판매 채널 이름',
     minLength: 1,
     maxLength: 255,
@@ -68,12 +68,12 @@ export class SetChannelActiveDto {
 }
 
 export class ValidateChannelConfigDto {
-  @ApiProperty({ 
-    description: '채널 타입',
-    enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE']
+  @ApiProperty({
+    description: '채널 사이트 종류',
+    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other']
   })
-  @IsEnum(['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'])
-  type: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
+  @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
+  site: 'medusa' | 'naver' | 'coupang' | 'phone_order' | 'other';
 
   @ApiProperty({ description: '검증할 채널 설정 데이터', required: false })
   @IsOptional()

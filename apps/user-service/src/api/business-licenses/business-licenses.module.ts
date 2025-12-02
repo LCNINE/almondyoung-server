@@ -10,4 +10,4 @@ import { BusinessLicensesService } from './business-licenses.service';
   providers: [BusinessLicensesService, BusinessLicensesHelper],
   exports: [BusinessLicensesService],
 })
-export class BusinessLicensesModule {}
+export class BusinessLicensesModule { }
