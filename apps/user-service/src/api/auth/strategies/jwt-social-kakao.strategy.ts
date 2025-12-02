@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, Profile } from 'passport-kakao';
-import { FastifyReply, FastifyRequest } from 'fastify';
+import { Profile, Strategy } from 'passport-kakao';
 
 @Injectable()
 export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {
@@ -24,14 +23,11 @@ export class JwtKakaoStrategy extends PassportStrategy(Strategy, 'kakao') {
     });
   }
 
-  validate(accessToken: string, refreshToken: string, profile: Profile, req: any) {
-
-    console.log('redirect_to::', req.query?.redirect_to);
+  validate(accessToken: string, refreshToken: string, profile: Profile) {
     return {
       name: profile.displayName,
       email: profile._json.kakao_account.email,
       providerId: profile.id,
-      redirectTo: req.query?.redirect_to
     };
   }
 }
