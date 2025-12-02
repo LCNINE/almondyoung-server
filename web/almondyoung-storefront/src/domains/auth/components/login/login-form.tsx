@@ -188,7 +188,7 @@ export function LoginForm() {
             {isPending ? <Spinner size="sm" color="white" /> : "로그인"}
           </CustomButton>
           <div className="relative w-full">
-            <KakaoLoginBtn />
+            <KakaoLoginBtn redirectTo={redirectTo} />
           </div>
         </div>
       </form>

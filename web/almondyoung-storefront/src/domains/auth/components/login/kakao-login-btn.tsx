@@ -3,7 +3,7 @@
 import { CustomButton } from "@components/common/custom-buttons"
 import Image from "next/image"
 
-export function KakaoLoginBtn() {
+export function KakaoLoginBtn({ redirectTo }: { redirectTo: string }) {
   const handleKakaoLogin = () => {
     const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL
 

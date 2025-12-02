@@ -16,4 +16,6 @@ export default async function SocialCallbackPage({
   redirect(
     `/api/auth/callback/social-signup?userId=${params.userId}&social=kakao&redirect_to=${encodeURIComponent(redirectTo)}`
   )
+
+  return null
 }

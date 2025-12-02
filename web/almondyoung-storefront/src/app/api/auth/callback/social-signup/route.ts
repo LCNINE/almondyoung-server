@@ -1,7 +1,7 @@
 import { medusaSignin } from "@lib/api/medusa/signin"
 import { medusaSignup } from "@lib/api/medusa/signup"
 import { appConfig } from "@lib/app-config"
-import { setTokenCookies } from "@lib/data/cookies"
+import { getAccessToken, setTokenCookies } from "@lib/data/cookies"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
@@ -41,10 +41,23 @@ export async function GET(request: NextRequest) {
     const { accessToken, refreshToken } = result.data
     setTokenCookies(accessToken, refreshToken)
 
+    const token = await getAccessToken()
+
     // 이미 메두사 회원인지 체크
     const medusaSigninResponse = await medusaSignin()
 
     if (medusaSigninResponse.success) {
+      // 소셜 유저 동의 페이지로 리다이렉트
+      const consentsRes = await getSocialUserConsentRedirectUrl(token!)
+      if (!consentsRes) {
+        return NextResponse.redirect(
+          new URL(
+            `/${countryCode}/consents?redirect_to=${redirectTo}`,
+            request.url
+          )
+        )
+      }
+
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
 
@@ -89,6 +102,17 @@ export async function GET(request: NextRequest) {
     // 메두사 회원 로그인 처리
     await medusaSignin()
 
+    // 소셜 유저 동의 페이지로 리다이렉트
+    const consentsRes = await getSocialUserConsentRedirectUrl(token!)
+    if (!consentsRes) {
+      return NextResponse.redirect(
+        new URL(
+          `/${countryCode}/consents?redirect_to=${redirectTo}`,
+          request.url
+        )
+      )
+    }
+
     return NextResponse.redirect(new URL(redirectTo, request.url))
   } catch (error) {
     console.error("Signup callback error:", error)
@@ -98,4 +122,23 @@ export async function GET(request: NextRequest) {
       new URL(`/${countryCode}/login?error=callback_failed`, request.url)
     )
   }
+}
+
+// 소셜 유저 동의 페이지로 리다이렉트
+async function getSocialUserConsentRedirectUrl(token: string) {
+  const response = await fetch(`${process.env.BACKEND_URL}/users/consents`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: token,
+    },
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  const data = await response.json()
+
+  return data.data
 }

@@ -1,7 +1,7 @@
-import { getSEOTags } from "@lib/seo"
-import { appConfig } from "@lib/app-config"
-import { Toaster } from "sonner"
 import { MobileBackHeader } from "@components/layout/components/header/m.back-header"
+import { appConfig } from "@lib/app-config"
+import { getSEOTags } from "@lib/seo"
+import { Toaster } from "sonner"
 
 export const metadata = getSEOTags({
   title: `${appConfig.appName}`,
