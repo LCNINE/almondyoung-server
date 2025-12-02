@@ -25,7 +25,7 @@ interface JwtPayload {
 @ApiSecurity('cookie')
 @Controller('api/v1/files')
 export class UploadController {
-  constructor(private readonly uploadService: UploadService) {}
+  constructor(private readonly uploadService: UploadService) { }
 
   @Post('upload')
   @ApiOperation({ summary: 'Upload a single file' })
@@ -70,6 +70,10 @@ export class UploadController {
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
   ): Promise<UploadResponseDto> {
+
+    console.log('file::', file);
+    console.log('dto::', dto);
+    console.log('user::', user);
     if (!file) {
       throw new BadRequestException('File is required');
     }
