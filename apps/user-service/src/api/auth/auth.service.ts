@@ -52,7 +52,7 @@ export class AuthService {
     private readonly eventPublisher: StreamPublisher<UserEvents>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -867,35 +867,6 @@ export class AuthService {
     if (!isAuth) throw new UnauthorizedException('비밀번호가 일치하지 않습니다');
 
     return;
-  }
-
-  /**
-   * PIN 재설정을 위한 verification token 발급
-   * 로그인 비밀번호를 검증한 후, PIN_RESET scope를 가진 JWT 토큰을 발급합니다.
-   */
-  async verifyPasswordAndIssuePinResetToken(
-    password: string,
-    userId: string,
-    tx?: DbTransaction,
-  ): Promise<{ verificationToken: string }> {
-    // 1. 로그인 비밀번호 검증
-    await this.checkPassword(password, userId, tx);
-
-    // 2. verification token 발급 (JWT with scope: PIN_RESET)
-    const payload = {
-      sub: userId,
-      scopes: ['PIN_RESET'],
-      purpose: 'pin_reset',
-    };
-
-    const verificationToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.getOrThrow<string>('AUTH_SECRET'),
-      expiresIn: JWT_PIN_RESET_VERIFICATION_TOKEN_EXPIRATION,
-    });
-
-    this.logger.log(`PIN reset verification token issued for user: ${userId}`);
-
-    return { verificationToken };
   }
 
   async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
