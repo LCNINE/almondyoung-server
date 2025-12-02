@@ -443,6 +443,7 @@ export class AuthService {
       name: string;
       email: string;
       providerId: string;
+      redirectTo?: string;
     },
     provider: ProviderType,
     reply: FastifyReply,
@@ -470,6 +471,8 @@ export class AuthService {
       return existingUser;
     };
 
+
+    console.log("sogininwithSocial:::::::", socialUser.redirectTo)
     if (tx) {
       const result = await processSignIn(tx);
 
