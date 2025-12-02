@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { eq, inArray, type InferInsertModel } from 'drizzle-orm';
+import { eq, inArray, desc, and, gte, lte, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { FulfillmentsService } from '../../fulfillments/services/fulfillments.service';
 import { ORDER_EVENTS } from '../../shared/events';
@@ -13,6 +13,7 @@ import { ProductSkuMappingService } from '../../shared/services/product-sku-mapp
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
+import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { AddressDto } from '../../shared/dto/address.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 
@@ -142,6 +143,7 @@ export class SalesOrdersService {
           totalAmount: dto.totalAmount ?? null,
           shippingFee: dto.shippingFee ?? 0,
           processedAt: dto.processedAt ? new Date(dto.processedAt) : null,
+          memo: dto.memo ?? null,
         })
         .where(eq(wmsTables.salesOrders.id, id));
       const updated = await this.getOne(id, trx);
@@ -410,9 +412,29 @@ export class SalesOrdersService {
 
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    return db.query.salesOrders.findFirst({
-      where: (o, { eq }) => eq(o.id, id),
-    });
+
+    // 1. 주문 조회
+    const [order] = await db
+      .select()
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, id))
+      .limit(1);
+
+    if (!order) {
+      return null;
+    }
+
+    // 2. 주문 라인 조회
+    const lines = await db
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
+
+    // 3. 주문에 라인 정보 추가
+    return {
+      ...order,
+      lines,
+    };
   }
 
   /**
@@ -431,14 +453,69 @@ export class SalesOrdersService {
     });
   }
 
-  async list(params: { limit: number; offset: number }, tx?: DbTx) {
+  async list(params: SalesOrderFilterDto, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    const rows = await db.query.salesOrders.findMany({
-      limit: params.limit,
-      offset: params.offset,
-      orderBy: (o, { desc }) => [desc(o.createdAt as any)] as any,
-    } as any);
-    return rows;
+    const conditions: SQL[] = [];
+
+    if (params.startDate) {
+      conditions.push(gte(wmsTables.salesOrders.orderDate, new Date(params.startDate)));
+    }
+    if (params.endDate) {
+      // 종료일은 해당 일자의 마지막 시간까지 포함해야 함
+      // YYYY-MM-DD 입력 시 00:00:00으로 생성되므로, 23:59:59로 설정하여 비교
+      const end = new Date(params.endDate);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(wmsTables.salesOrders.orderDate, end));
+    }
+    if (params.channel) {
+      conditions.push(eq(wmsTables.salesOrders.salesChannel, params.channel as any));
+    }
+    if (params.status) {
+      conditions.push(eq(wmsTables.salesOrders.status, params.status as any));
+    }
+
+    // 1. 주문 목록 조회
+    let query = db
+      .select()
+      .from(wmsTables.salesOrders)
+      .$dynamic();
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const orders = await query
+      .limit(params.limit ?? 20)
+      .offset(params.offset ?? 0)
+      .orderBy(desc(wmsTables.salesOrders.createdAt));
+
+    if (orders.length === 0) {
+      return [];
+    }
+
+    // 2. 주문 ID 목록 추출
+    const orderIds = orders.map((o) => o.id);
+
+    // 3. 주문 라인 조회
+    const lines = await db
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
+
+    // 4. 주문 라인을 주문별로 그룹화
+    const linesByOrderId = new Map<string, typeof lines>();
+    for (const line of lines) {
+      if (!linesByOrderId.has(line.salesOrderId)) {
+        linesByOrderId.set(line.salesOrderId, []);
+      }
+      linesByOrderId.get(line.salesOrderId)!.push(line);
+    }
+
+    // 5. 주문에 라인 정보 추가
+    return orders.map((order) => ({
+      ...order,
+      lines: linesByOrderId.get(order.id) || [],
+    }));
   }
 
   /**

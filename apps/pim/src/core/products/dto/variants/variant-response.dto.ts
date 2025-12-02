@@ -13,9 +13,6 @@ export class ProductVariantDto {
   @ApiProperty({ description: '변형 이미지 (JSONB)' })
   images: any;
 
-  @ApiProperty({ description: '가격 조정', nullable: true })
-  priceAdjustment: number | null;
-
   @ApiProperty({ description: '표시 순서', nullable: true })
   displayOrder: number | null;
 

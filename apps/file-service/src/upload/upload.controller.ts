@@ -8,21 +8,10 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiConsumes,
-  ApiBody,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiSecurity,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
-import {
-  UploadResponseDto,
-  BatchUploadResponseDto,
-} from './dto/upload-response.dto';
+import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 import { User } from '@app/authorization';
 
 interface JwtPayload {

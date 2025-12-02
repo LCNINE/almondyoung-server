@@ -1,22 +1,22 @@
 // apps/user-service/src/api/consents/consents.service.ts 수정
 import { DbService, InjectDb } from '@app/db';
-import { Injectable } from '@nestjs/common';
-import { eq, SQL } from 'drizzle-orm';
-import { DbTransaction } from '../../commons/types';
-import { CreateConsentDto } from './dto/consent-dto';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   userConsents,
   users, // users 테이블 추가
   type UserServiceSchema,
 } from 'apps/user-service/database/drizzle/schema';
+import { eq, SQL } from 'drizzle-orm';
+import { DbTransaction } from '../../commons/types';
+import { CreateConsentDto } from './dto/consent-dto';
+import { ConsentsException } from './exceptions/consents.exceptions';
 import { UserConsent } from './types/consent.type';
-import { ConsentsNotFoundException } from './exceptions/consents.exceptions';
 
 @Injectable()
 export class ConsentsService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -33,7 +33,7 @@ export class ConsentsService {
       .where(eq(userConsents.userId, userId));
 
     if (!consents) {
-      throw new ConsentsNotFoundException('User consent not found');
+      return null;
     }
     return consents;
   }
@@ -45,10 +45,22 @@ export class ConsentsService {
   ): Promise<void> {
     const db = this.getClient(tx);
 
+    const existingConsent = await this.getMyConsent(userId, tx);
+
+    if (existingConsent) {
+      throw new ConsentsException({
+        message: '이미 동의 정보가 존재합니다.',
+        errorCode: 'USER_CONSENT_ALREADY_EXISTS',
+        httpStatus: HttpStatus.CONFLICT,
+      });
+    }
+
     await db.insert(userConsents).values({
       userId,
       ...createConsentDto,
     });
+
+    return
   }
 
   // notification-service용: 마케팅 동의 여부만 확인

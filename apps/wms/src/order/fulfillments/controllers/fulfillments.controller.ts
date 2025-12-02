@@ -15,6 +15,7 @@ import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
+import { FulfillmentOrderResponseDto } from '../dto/fulfillment-order-response.dto';
 
 @ApiTags('Fulfillments')
 @Controller('fulfillments')
@@ -78,9 +79,9 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회', description: '특정 주문처리의 상세 정보를 조회합니다.' })
+  @ApiOperation({ summary: '주문처리 상세 조회', description: '특정 주문처리의 상세 정보를 조회합니다. Invoice 정보가 포함됩니다.' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiResponse({ status: 200, description: '주문처리 상세 조회 성공' })
+  @ApiResponse({ status: 200, description: '주문처리 상세 조회 성공', type: FulfillmentOrderResponseDto })
   @ApiResponse({ status: 404, description: '주문처리를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   getOne(@Param('id') id: string) {
@@ -88,10 +89,10 @@ export class FulfillmentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: '주문처리 목록 조회', description: '주문처리 목록을 페이지네이션과 함께 조회합니다.' })
+  @ApiOperation({ summary: '주문처리 목록 조회', description: '주문처리 목록을 페이지네이션과 함께 조회합니다. 각 주문의 Invoice 정보가 포함됩니다.' })
   @ApiQuery({ name: 'limit', required: false, type: String, description: '조회할 아이템 수 (기본값: 20)' })
   @ApiQuery({ name: 'offset', required: false, type: String, description: '건너뛸 아이템 수 (기본값: 0)' })
-  @ApiResponse({ status: 200, description: '주문처리 목록 조회 성공' })
+  @ApiResponse({ status: 200, description: '주문처리 목록 조회 성공', type: [FulfillmentOrderResponseDto] })
   @ApiResponse({ status: 500, description: '서버 오류' })
   list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
     return this.service.list({ limit: limit ? parseInt(limit, 10) : 20, offset: offset ? parseInt(offset, 10) : 0 });

@@ -915,6 +915,9 @@ export const salesOrders = pgTable('sales_orders', {
   mergeGroupId: varchar('merge_group_id', { length: 64 }), // 합배송 그룹 ID
   isMerged: boolean('is_merged').notNull().default(false), // 합배송 여부
 
+  // 메모
+  memo: text('memo'), // 메모
+
   // 타임스탬프
   orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),

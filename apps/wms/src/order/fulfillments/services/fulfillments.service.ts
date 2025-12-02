@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../../database/schemas/wms-schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, desc } from 'drizzle-orm';
 import { PoliciesService } from '../../shared/services/policies.service';
 import { AvailabilityService } from '../../shared/services/availability.service';
 import { FULFILLMENT_EVENTS } from '../../shared/events';
@@ -33,7 +33,7 @@ export class FulfillmentsService {
     private readonly matchings?: MatchingsService,
     private readonly outbox?: OutboxService,
     private readonly audit?: AuditService,
-  ) {}
+  ) { }
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -638,19 +638,82 @@ export class FulfillmentsService {
 
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    return db.query.fulfillmentOrders.findFirst({
-      where: (o, { eq }) => eq(o.id, id),
-    });
+
+    // 1. Fulfillment Order 조회
+    const [fulfillmentOrder] = await db
+      .select()
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.id, id))
+      .limit(1);
+
+    if (!fulfillmentOrder) {
+      return null;
+    }
+
+    // 2. Invoice 조회 (있으면)
+    const invoiceRows = await db
+      .select({
+        id: wmsTables.invoices.id,
+        invoiceNumber: wmsTables.invoices.invoiceNumber,
+        status: wmsTables.invoices.status,
+        carrierCode: wmsTables.invoices.carrierCode,
+        issueMethod: wmsTables.invoices.issueMethod,
+      })
+      .from(wmsTables.invoices)
+      .where(eq(wmsTables.invoices.fulfillmentOrderId, id))
+      .limit(1);
+
+    const invoice = invoiceRows[0] || null;
+
+    // 3. Fulfillment Order에 Invoice 정보 추가
+    return {
+      ...fulfillmentOrder,
+      invoice: invoice || null,
+    };
   }
 
   async list(params: { limit: number; offset: number }, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    const rows = await db.query.fulfillmentOrders.findMany({
-      limit: params.limit,
-      offset: params.offset,
-      orderBy: (o, { desc }) => [desc(o.createdAt as any)] as any,
-    } as any);
-    return rows;
+
+    // 1. Fulfillment Order 목록 조회
+    const fulfillmentOrders = await db
+      .select()
+      .from(wmsTables.fulfillmentOrders)
+      .limit(params.limit)
+      .offset(params.offset)
+      .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
+
+    if (fulfillmentOrders.length === 0) {
+      return [];
+    }
+
+    // 2. Fulfillment Order ID 목록 추출
+    const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
+
+    // 3. Invoice 목록 조회 (한 번에)
+    const invoices = await db
+      .select({
+        id: wmsTables.invoices.id,
+        fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+        invoiceNumber: wmsTables.invoices.invoiceNumber,
+        status: wmsTables.invoices.status,
+        carrierCode: wmsTables.invoices.carrierCode,
+        issueMethod: wmsTables.invoices.issueMethod,
+      })
+      .from(wmsTables.invoices)
+      .where(inArray(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderIds));
+
+    // 4. Invoice를 Fulfillment Order ID별로 그룹화
+    const invoicesByFoId = new Map<string, typeof invoices[0]>();
+    for (const invoice of invoices) {
+      invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
+    }
+
+    // 5. Fulfillment Order에 Invoice 정보 추가
+    return fulfillmentOrders.map((fo) => ({
+      ...fo,
+      invoice: invoicesByFoId.get(fo.id) || null,
+    }));
   }
 
   async checkAvailability(fulfillmentOrderId: string, tx?: DbTx) {

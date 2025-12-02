@@ -24,6 +24,12 @@ export interface UserVerificationPayload {
   redirectTo: string;
 }
 
+export interface UserEmailVerifiedPayload {
+  userId: string;
+  email: string;
+  name: string;
+}
+
 export interface UserUpdatedPayload {
   userId: string;
   email?: string;
@@ -72,6 +78,12 @@ const UserVerificationSchema = z.object({
   redirectTo: z.string(),
 });
 
+const UserEmailVerifiedSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1),
+});
+
 const UserUpdatedSchema = z.object({
   userId: z.string().min(1),
   email: z.string().email().optional(),
@@ -112,6 +124,7 @@ export const USER_STREAM = stream({
   events: {
     UserCreated: event<'UserCreated', UserCreatedPayload>('UserCreated', UserCreatedSchema),
     UserVerification: event<'UserVerification', UserVerificationPayload>('UserVerification', UserVerificationSchema),
+    UserEmailVerified: event<'UserEmailVerified', UserEmailVerifiedPayload>('UserEmailVerified', UserVerificationSchema),
     UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
     UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
     UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),

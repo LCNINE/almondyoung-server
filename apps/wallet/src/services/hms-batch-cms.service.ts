@@ -256,10 +256,9 @@ export class HmsBatchCmsService {
       );
 
       throw new Error(
-        `HMS 회원 등록 실패: ${errorMessage}${
-          developerMessage && developerMessage !== errorMessage
-            ? ` (${developerMessage})`
-            : ''
+        `HMS 회원 등록 실패: ${errorMessage}${developerMessage && developerMessage !== errorMessage
+          ? ` (${developerMessage})`
+          : ''
         }`,
       );
     }
@@ -329,8 +328,7 @@ export class HmsBatchCmsService {
       );
 
       throw new Error(
-        `HMS 동의서 등록 실패: ${hmsError.message}${
-          hmsError.developerMessage ? ` (${hmsError.developerMessage})` : ''
+        `HMS 동의서 등록 실패: ${hmsError.message}${hmsError.developerMessage ? ` (${hmsError.developerMessage})` : ''
         }`,
       );
     }
@@ -400,12 +398,179 @@ export class HmsBatchCmsService {
         hmsError.message;
 
       throw new Error(
-        `HMS 회원 삭제 실패: ${errorMessage}${
-          hmsError.developerMessage && hmsError.developerMessage !== errorMessage
-            ? ` (${hmsError.developerMessage})`
-            : ''
+        `HMS 회원 삭제 실패: ${errorMessage}${hmsError.developerMessage && hmsError.developerMessage !== errorMessage
+          ? ` (${hmsError.developerMessage})`
+          : ''
         }`,
       );
+    }
+  }
+
+  /**
+   * 출금 요청 (CMS 결제)
+   */
+  async requestWithdrawal(params: {
+    transactionId: string;
+    memberId: string;
+    paymentDate: string;
+    callAmount: number;
+  }) {
+    this.logger.log(
+      `➡️ HMS 출금 요청: transactionId=${params.transactionId}, memberId=${params.memberId}`,
+    );
+
+    try {
+      const response = await this.memberApiClient.post('/payments/cms', params);
+      const result = response.data;
+
+      this.logger.log(`✅ HMS 출금 요청 성공: ${params.transactionId}`);
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error: any) {
+      const hmsError = error.hmsError || {
+        message: error.message || '출금 요청 중 오류 발생',
+        developerMessage: error.message,
+      };
+
+      this.logger.error(
+        `❌ HMS 출금 요청 실패: ${hmsError.message}`,
+        hmsError.developerMessage
+          ? `Developer Message: ${hmsError.developerMessage}`
+          : undefined,
+      );
+
+      return {
+        success: false,
+        message: hmsError.message,
+        developerMessage: hmsError.developerMessage,
+      };
+    }
+  }
+
+  /**
+   * 출금 조회
+   */
+  async getWithdrawal(transactionId: string) {
+    this.logger.log(`➡️ HMS 출금 조회: ${transactionId}`);
+
+    try {
+      const response = await this.memberApiClient.get(
+        `/payments/cms/${transactionId}`,
+      );
+      const result = response.data;
+
+      this.logger.log(`✅ HMS 출금 조회 성공: ${transactionId}`);
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error: any) {
+      const hmsError = error.hmsError || {
+        message: error.message || '출금 조회 중 오류 발생',
+        developerMessage: error.message,
+      };
+
+      this.logger.error(
+        `❌ HMS 출금 조회 실패: ${hmsError.message}`,
+        hmsError.developerMessage
+          ? `Developer Message: ${hmsError.developerMessage}`
+          : undefined,
+      );
+
+      throw new Error(
+        `HMS 출금 조회 실패: ${hmsError.message}${hmsError.developerMessage ? ` (${hmsError.developerMessage})` : ''
+        }`,
+      );
+    }
+  }
+
+  /**
+   * 출금 삭제 (취소)
+   */
+  async deleteWithdrawal(transactionId: string) {
+    this.logger.log(`➡️ HMS 출금 삭제: ${transactionId}`);
+
+    try {
+      const response = await this.memberApiClient.delete(
+        `/payments/cms/${transactionId}`,
+      );
+
+      // 204 No Content가 정상 응답
+      if (response.status === 204 || response.status === 200) {
+        this.logger.log(`✅ HMS 출금 삭제 성공: ${transactionId}`);
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        message: `Unexpected status code: ${response.status}`,
+      };
+    } catch (error: any) {
+      const hmsError = error.hmsError || {
+        message: error.message || '출금 삭제 중 오류 발생',
+        developerMessage: error.message,
+      };
+
+      this.logger.error(
+        `❌ HMS 출금 삭제 실패: ${hmsError.message}`,
+        hmsError.developerMessage
+          ? `Developer Message: ${hmsError.developerMessage}`
+          : undefined,
+      );
+
+      throw new Error(
+        `HMS 출금 삭제 실패: ${hmsError.message}${hmsError.developerMessage ? ` (${hmsError.developerMessage})` : ''
+        }`,
+      );
+    }
+  }
+
+  /**
+   * 출금 수정
+   */
+  async updateWithdrawal(
+    transactionId: string,
+    params: {
+      paymentDate: string;
+      callAmount: number;
+    },
+  ) {
+    this.logger.log(`➡️ HMS 출금 수정: ${transactionId}`);
+
+    try {
+      const response = await this.memberApiClient.put(
+        `/payments/cms/${transactionId}`,
+        params,
+      );
+      const result = response.data;
+
+      this.logger.log(`✅ HMS 출금 수정 성공: ${transactionId}`);
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error: any) {
+      const hmsError = error.hmsError || {
+        message: error.message || '출금 수정 중 오류 발생',
+        developerMessage: error.message,
+      };
+
+      this.logger.error(
+        `❌ HMS 출금 수정 실패: ${hmsError.message}`,
+        hmsError.developerMessage
+          ? `Developer Message: ${hmsError.developerMessage}`
+          : undefined,
+      );
+
+      return {
+        success: false,
+        message: hmsError.message,
+        developerMessage: hmsError.developerMessage,
+      };
     }
   }
 }
