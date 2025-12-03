@@ -20,7 +20,7 @@ import {
   fetchExternalBusinessInfo,
   updateBusiness,
 } from "@lib/api/users/business/client"
-import type { BusinessInfo } from "@lib/api/users/business/types"
+import type { BusinessInfo } from "@lib/types/dto/business"
 import type { FilesDto } from "@lib/types/dto/files"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import { ViewMode } from "domains/mypage/template/business-info-template"
@@ -55,6 +55,7 @@ export default function BusinessInfoForm({
       fileUrl: initialData?.fileUrl ?? undefined,
       file: undefined,
       metadata: initialData?.metadata ?? undefined,
+      externalBusinessStatus: "null",
       isSubmitting: false,
     },
   })
@@ -102,6 +103,8 @@ export default function BusinessInfoForm({
             businessNumber,
             representativeName,
             fileUrl: fileRes?.data?.url,
+            externalBusinessStatus:
+              form.watch("externalBusinessStatus") === "success" ? true : false,
             metadata,
           })
 
@@ -112,13 +115,20 @@ export default function BusinessInfoForm({
             toast.error("사업자 정보를 찾을 수 없습니다.")
             return
           }
-
           // fileRes.data.url이 있으면 기존 사업자번호랑 대표자는 ''로 설정
           const res = await updateBusiness({
             business: {
               businessNumber: fileRes?.data.url ? "" : businessNumber,
               representativeName: fileRes?.data.url ? "" : representativeName,
-              fileUrl: fileRes?.data?.url ?? "",
+              fileUrl: fileRes?.data?.url
+                ? fileRes.data.url
+                : initialData?.fileUrl
+                  ? initialData.fileUrl
+                  : "",
+              externalBusinessStatus:
+                form.watch("externalBusinessStatus") === "success"
+                  ? true
+                  : false,
               metadata,
             },
             businessId: initialData?.id!,
@@ -191,10 +201,12 @@ export default function BusinessInfoForm({
           toast.success(
             '사업자 정보 조회가 완료되었습니다. 아래 "등록하기" 버튼을 눌러 사업자 정보를 등록해주세요.'
           )
-        }
 
-        form.setValue("isSubmitting", true)
+          form.setValue("externalBusinessStatus", "success")
+          form.setValue("isSubmitting", true)
+        }
       } catch (error: any) {
+        form.setValue("externalBusinessStatus", "failed")
         if (error instanceof HttpApiError) {
           switch (error.data.message) {
             case "사업자번호는 10자리이어야 합니다.":
@@ -279,20 +291,31 @@ export default function BusinessInfoForm({
 
         {/* todo : Badge 상태 관리 필요 */}
         <div className="flex items-center gap-2">
-          <Badge
-            variant="secondary"
-            className="bg-gray-20 hover:bg-gray-30 px-2 py-1 text-xs"
-          >
-            <span className="font-normal">미조회</span>
-          </Badge>
+          {form.watch("externalBusinessStatus") === "success" ? (
+            <Badge variant="default" className="px-2 py-1 text-xs">
+              <span className="font-normal">조회 완료</span>
+            </Badge>
+          ) : form.watch("externalBusinessStatus") === "failed" ? (
+            <Badge
+              variant="destructive"
+              className="px-2 py-1 text-xs text-white"
+            >
+              <span className="font-normal">조회 실패</span>
+            </Badge>
+          ) : (
+            <Badge
+              variant="secondary"
+              className="bg-gray-20 hover:bg-gray-30 px-2 py-1 text-xs"
+            >
+              <span className="font-normal">미조회</span>
+            </Badge>
+          )}
 
           <Button
             type="button"
             className="ml-auto min-w-[120px] flex-none"
             onClick={handleExternalBusinessInfo}
-            disabled={
-              isSearchPending || !!form.watch("file") || !!form.watch("fileUrl")
-            }
+            disabled={isSearchPending}
           >
             {isSearchPending ? "조회 중..." : "조회하기"}
           </Button>

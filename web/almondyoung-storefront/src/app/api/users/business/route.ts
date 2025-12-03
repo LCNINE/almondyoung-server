@@ -2,8 +2,7 @@ import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
-  const { businessNumber, representativeName, file, metadata } =
-    await request.json()
+  const businessData = await request.json()
 
   const cookies = request.cookies.toString()
 
@@ -16,10 +15,7 @@ export async function POST(request: NextRequest) {
         Cookie: cookies,
       },
       body: JSON.stringify({
-        businessNumber,
-        representativeName,
-        file,
-        metadata,
+        ...businessData,
       }),
     }
   )

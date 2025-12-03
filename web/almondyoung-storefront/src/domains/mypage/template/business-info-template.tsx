@@ -1,6 +1,6 @@
 "use client"
 
-import type { BusinessInfo } from "@lib/api/users/business/types"
+import type { BusinessInfo } from "@lib/types/dto/business"
 import { ArrowLeft } from "lucide-react"
 import { useState } from "react"
 import { UserDetail } from "types/global"

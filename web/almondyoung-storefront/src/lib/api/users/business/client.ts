@@ -1,8 +1,5 @@
+import { BusinessInfoRequestDto } from "@lib/types/dto/business"
 import { ApiAuthError, HttpApiError } from "../../api-error"
-import {
-  CreateBusinessInfoRequestDto,
-  UpdateBusinessInfoRequestDto,
-} from "./types"
 
 // 사업자 정보 외부 조회
 export const fetchExternalBusinessInfo = async (
@@ -31,9 +28,7 @@ export const fetchExternalBusinessInfo = async (
   return data
 }
 
-export const createBusiness = async (
-  business: CreateBusinessInfoRequestDto
-) => {
+export const createBusiness = async (business: BusinessInfoRequestDto) => {
   const response = await fetch(`/api/users/business`, {
     method: "POST",
     headers: {
@@ -70,7 +65,7 @@ export const updateBusiness = async ({
   business,
   businessId,
 }: {
-  business: UpdateBusinessInfoRequestDto
+  business: BusinessInfoRequestDto
   businessId: string
 }) => {
   const response = await fetch(`/api/users/business/${businessId}`, {

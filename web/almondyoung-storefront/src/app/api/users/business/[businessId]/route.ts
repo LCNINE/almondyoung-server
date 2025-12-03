@@ -8,8 +8,7 @@ export async function PUT(
 ) {
   const { businessId } = await params
 
-  const { businessNumber, representativeName, fileUrl, metadata } =
-    await request.json()
+  const businessData = await request.json()
 
   const cookieStore = await nextCookies()
   const cookieHeader = cookieStore.toString()
@@ -23,10 +22,7 @@ export async function PUT(
         Cookie: cookieHeader,
       },
       body: JSON.stringify({
-        businessNumber,
-        representativeName,
-        fileUrl,
-        metadata,
+        ...businessData,
       }),
     }
   )

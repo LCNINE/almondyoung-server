@@ -1,3 +1,4 @@
+// 사업자등록번호 포맷팅
 export const formatBusinessNumber = (value: string) => {
   const numbers = value.replace(/\D/g, "")
   if (numbers.length <= 3) return numbers

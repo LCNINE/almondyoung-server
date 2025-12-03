@@ -7,6 +7,7 @@ export const businessDtoSchema = z
     file: z.instanceof(File).optional(),
     metadata: z.unknown().optional(),
     isSubmitting: z.boolean(),
+    externalBusinessStatus: z.enum(["success", "failed", "null"]),
   })
   .superRefine((data, ctx) => {
     const hasBusinessInfo =

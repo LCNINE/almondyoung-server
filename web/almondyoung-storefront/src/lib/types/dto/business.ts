@@ -17,18 +17,12 @@ export interface BusinessInfoResponseDto {
   data: BusinessInfo
 }
 
-export interface CreateBusinessInfoRequestDto {
+export interface BusinessInfoRequestDto {
   businessNumber: string
   representativeName: string
   fileUrl?: string
   metadata?: unknown
-}
-
-export interface UpdateBusinessInfoRequestDto {
-  businessNumber?: string
-  representativeName?: string
-  fileUrl?: string
-  metadata?: unknown
+  externalBusinessStatus?: boolean
 }
 
 /** 사업자 정보 외부 조회 응답 DTO */
