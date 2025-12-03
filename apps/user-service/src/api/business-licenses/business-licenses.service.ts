@@ -135,22 +135,13 @@ export class BusinessLicensesService {
         throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
       }
 
+      // 해당 사용자의 사업자 등록 정보가 맞는지 체크
       await this.validateOwnership(existingBusiness, userId);
 
+      // 사업자 등록 정보 업데이트
+      await this.updateApprovedLicense(businessId, data);
 
-      // 거절된 사업자 등록 정보를 다시 제출할 때
-      if (existingBusiness.status === 'rejected') {
-        const fileUrl = data.fileUrl ?? existingBusiness.fileUrl ?? '';
-
-        await this.resubmitRejectedLicense(businessId, fileUrl);
-        return;
-      }
-
-      // 승인된 사업자 등록 정보를 업데이트할 때
-      if (existingBusiness.status === 'approved') {
-        await this.updateApprovedLicense(existingBusiness.id, data);
-        return;
-      }
+      return;
     } catch (error) {
       console.log('error::', error);
       throw new BadRequestException(
@@ -220,25 +211,26 @@ export class BusinessLicensesService {
     }
   }
 
-  private async resubmitRejectedLicense(
-    businessLicenseId: string,
-    fileUrl: string,
-  ): Promise<void> {
-    await this.dbService.db
-      .update(businessLicenses)
-      .set({
-        fileUrl,
-        status: 'under_review',
-      })
-      .where(eq(businessLicenses.id, businessLicenseId));
-  }
-
   private async updateApprovedLicense(
     businessLicenseId: string,
     data: UpdateBusinessLicenseDto,
   ): Promise<void> {
-    // 새롭게 첨부한 파일이 있을 때 status를 under_review로 변경
-    if (data.fileUrl) {
+
+    // 외부 사업자 조회 결과, true일때 status를 approved로 변경
+    if (data.externalBusinessStatus) {
+      await this.dbService.db
+        .update(businessLicenses)
+        .set({
+          ...data,
+          status: 'approved',
+          fileUrl: null,
+        })
+        .where(eq(businessLicenses.id, businessLicenseId));
+
+      return
+    }
+    // 외부 사업자 조회 결과, false일때 혹은 새롭게 첨부한 파일이 있을 때 status를 under_review로 변
+    else if (!data.externalBusinessStatus || data.fileUrl) {
       await this.dbService.db
         .update(businessLicenses)
         .set({
@@ -249,15 +241,5 @@ export class BusinessLicensesService {
         .where(eq(businessLicenses.id, businessLicenseId));
       return;
     }
-
-    await this.dbService.db
-      .update(businessLicenses)
-      .set({
-        ...data,
-        fileUrl: data.fileUrl,
-      })
-      .where(eq(businessLicenses.id, businessLicenseId));
-
-    return;
   }
 }
