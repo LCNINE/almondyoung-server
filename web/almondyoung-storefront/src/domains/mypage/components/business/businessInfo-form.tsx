@@ -254,6 +254,12 @@ export default function BusinessInfoForm({
                       form.clearErrors("businessNumber")
                       form.trigger("businessNumber")
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault() // form submit 방지
+                        handleExternalBusinessInfo()
+                      }
+                    }}
                     disabled={form.formState.dirtyFields.file}
                     maxLength={12}
                   />
@@ -279,6 +285,12 @@ export default function BusinessInfoForm({
                     onChange={(e) => {
                       field.onChange(e.target.value.trim().replace(/\s/g, ""))
                       form.clearErrors("representativeName")
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleExternalBusinessInfo()
+                      }
                     }}
                     disabled={form.formState.dirtyFields.file}
                   />
