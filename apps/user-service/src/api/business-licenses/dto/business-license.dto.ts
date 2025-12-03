@@ -31,11 +31,7 @@ export class UpdateBusinessLicenseDto {
   @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
-  @Transform(({ value }) => {
-    console.log('원본:', value, '길이:', value?.length);
-    return value?.replace(/-/g, '');
-  })
-
+  @Transform(({ value }) => value?.replace(/-/g, ''))
   businessNumber?: string;
 
   @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
