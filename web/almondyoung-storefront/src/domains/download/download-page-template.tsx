@@ -1,13 +1,13 @@
 "use client"
 
 import { Button } from "@components/common/ui/button"
-import { UserDetail } from "domains/auth/types"
+import type { UserDetail } from "types/global"
 import { ChevronLeft, ChevronRight, Filter } from "lucide-react"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { DownloadCard } from "../components/download/download-card"
-import { DownloadFilters } from "../components/download/download-filters"
-import { DigitalAssetLicense, FilterStatus } from "../types/mypage-types"
+import { DownloadCard } from "./components/download-card"
+import { DownloadFilters } from "./components/download-filters"
+import type { DigitalAssetLicense } from "@lib/types/ui/digital-aseet.ui"
 
 interface DownloadPageTemplateProps {
   user: UserDetail
@@ -15,6 +15,16 @@ interface DownloadPageTemplateProps {
   currentPage: number
   itemsPerPage: number
   is_exercised: string | null
+}
+
+export interface DigitalAssetsResponse {
+  success: boolean
+  data: {
+    licenses: DigitalAssetLicense[]
+    count: number
+    skip: number
+    take: number
+  }
 }
 
 export default function DownloadPageTemplate({
@@ -26,7 +36,7 @@ export default function DownloadPageTemplate({
 }: DownloadPageTemplateProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [filter, setFilter] = useState<FilterStatus>("all")
+  const [filter, setFilter] = useState<"all" | "new" | "used">("all")
 
   useEffect(() => {
     setFilter(

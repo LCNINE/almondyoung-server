@@ -8,19 +8,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@components/common/ui/dropdown-menu"
-import { FilterStatus } from "domains/mypage/types/mypage-types"
 import { Filter } from "lucide-react"
 
 interface DownloadFiltersProps {
-  currentFilter: FilterStatus
-  onFilterChange: (filter: FilterStatus) => void
+  currentFilter: "all" | "new" | "used"
+  onFilterChange: (filter: "all" | "new" | "used") => void
 }
 
 export function DownloadFilters({
   currentFilter,
   onFilterChange,
 }: DownloadFiltersProps) {
-  const filterLabels: Record<FilterStatus, string> = {
+  const filterLabels: Record<"all" | "new" | "used", string> = {
     all: "전체",
     new: "새로운 상품",
     used: "사용된 상품",
@@ -40,7 +39,9 @@ export function DownloadFilters({
           <DropdownMenuSeparator />
           <DropdownMenuRadioGroup
             value={currentFilter}
-            onValueChange={(value) => onFilterChange(value as FilterStatus)}
+            onValueChange={(value) =>
+              onFilterChange(value as "all" | "new" | "used")
+            }
           >
             <DropdownMenuRadioItem value="all">전체</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="new">

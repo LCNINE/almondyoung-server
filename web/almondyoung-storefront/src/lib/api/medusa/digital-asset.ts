@@ -1,5 +1,5 @@
 import { getAuthHeaders } from "@lib/data/cookies"
-import { DigitalAssetsResponse } from "domains/mypage/types/mypage-types"
+import { DigitalAssetsResponse } from "@lib/types/dto/digital-asset.dto"
 
 export const getDigitalAssets = async (
   skip: number = 0,

@@ -2,10 +2,10 @@ import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
 import { fetchMe } from "@lib/api/users/me"
-import { UserDetail } from "types/global"
-import DownloadPageTemplate from "domains/mypage/template/download-page-template"
+import DownloadPageTemplate from "domains/download/download-page-template"
 import { AlertCircle } from "lucide-react"
 import { Metadata } from "next"
+import { UserDetail } from "types/global"
 
 export const metadata: Metadata = {
   title: "마이페이지 | 다운로드",
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default async function DownloadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; is_exercised?: string }>
+  searchParams: Promise<{ page?: string; is_exercised?: string | null }>
 }) {
   const currentUser = await fetchMe()
   const params = await searchParams

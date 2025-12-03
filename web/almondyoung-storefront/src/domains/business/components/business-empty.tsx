@@ -1,13 +1,11 @@
 import { Button } from "@components/common/ui/button"
 import { Building2, Plus } from "lucide-react"
 
-interface BusinessInfoEmptyProps {
+interface BusinessEmptyProps {
   onRegister: () => void
 }
 
-export default function BusinessInfoEmpty({
-  onRegister,
-}: BusinessInfoEmptyProps) {
+export default function BusinessEmpty({ onRegister }: BusinessEmptyProps) {
   return (
     <div className="border-border bg-muted/30 flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-16 text-center">
       <div className="bg-primary/10 mb-4 flex h-16 w-16 items-center justify-center rounded-full">

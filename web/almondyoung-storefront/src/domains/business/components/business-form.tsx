@@ -23,7 +23,7 @@ import {
 import type { BusinessInfo } from "@lib/types/dto/business"
 import type { FilesDto } from "@lib/types/dto/files"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
-import { ViewMode } from "domains/mypage/template/business-info-template"
+import type { ViewMode } from "domains/business/template/business-info-template"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import { useForm } from "react-hook-form"
@@ -39,7 +39,7 @@ interface BusinessInfoFormProps {
   isEditing?: boolean
 }
 
-export default function BusinessInfoForm({
+export default function BusinessForm({
   initialData,
   onCancel,
   viewMode,

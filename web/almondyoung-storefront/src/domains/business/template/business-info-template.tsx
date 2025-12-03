@@ -4,9 +4,9 @@ import type { BusinessInfo } from "@lib/types/dto/business"
 import { ArrowLeft } from "lucide-react"
 import { useState } from "react"
 import { UserDetail } from "types/global"
-import BusinessInfoDisplay from "../components/business/businessInfo-display"
-import BusinessInfoEmpty from "../components/business/businessInfo-empty"
-import BusinessInfoForm from "../components/business/businessInfo-form"
+import BusinessDisplay from "../components/business-display"
+import BusinessEmpty from "../components/business-empty"
+import BusinessForm from "../components/business-form"
 
 export type ViewMode = "display" | "edit" | "register" | "empty"
 
@@ -44,15 +44,15 @@ export default function BusinessInfoTemplate({
 
       {/* 콘텐츠 */}
       {viewMode === "empty" && (
-        <BusinessInfoEmpty onRegister={() => setViewMode("register")} />
+        <BusinessEmpty onRegister={() => setViewMode("register")} />
       )}
 
       {viewMode === "display" && business && (
-        <BusinessInfoDisplay data={business} onEdit={handleEdit} />
+        <BusinessDisplay data={business} onEdit={handleEdit} />
       )}
 
       {viewMode === "register" && (
-        <BusinessInfoForm
+        <BusinessForm
           viewMode={viewMode}
           setViewMode={setViewMode}
           onCancel={handleCancel}
@@ -60,7 +60,7 @@ export default function BusinessInfoTemplate({
         />
       )}
       {viewMode === "edit" && business && (
-        <BusinessInfoForm
+        <BusinessForm
           initialData={business}
           viewMode={viewMode}
           setViewMode={setViewMode}

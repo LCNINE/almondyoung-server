@@ -9,13 +9,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@components/common/ui/dialog"
-import type { BusinessInfo } from "@lib/api/users/business/types"
+import type { BusinessInfo } from "@lib/types/dto/business"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
 import { Pencil } from "lucide-react"
 import Image from "next/image"
 
-interface BusinessInfoDisplayProps {
+interface BusinessDisplayProps {
   data: BusinessInfo
   onEdit: () => void
 }
@@ -55,10 +55,10 @@ const getStatusBadge = (status?: BusinessInfo["status"]) => {
   }
 }
 
-export default function BusinessInfoDisplay({
+export default function BusinessDisplay({
   data,
   onEdit,
-}: BusinessInfoDisplayProps) {
+}: BusinessDisplayProps) {
   return (
     <div className="space-y-6">
       <div className="border-border bg-card rounded-lg border">

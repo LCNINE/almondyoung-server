@@ -5,7 +5,7 @@ import MypageLayout from "@components/layout/mypage-layout"
 import { getMyBusiness } from "@lib/api/users/business/server"
 import { fetchMe } from "@lib/api/users/me"
 import { getSEOTags } from "@lib/seo"
-import BusinessInfoTemplate from "domains/mypage/template/business-info-template"
+import BusinessInfoTemplate from "domains/business/template/business-info-template"
 import { Suspense } from "react"
 
 export const metadata = getSEOTags({
