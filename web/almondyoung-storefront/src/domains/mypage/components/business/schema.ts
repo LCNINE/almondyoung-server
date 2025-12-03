@@ -1,8 +1,8 @@
 import z from "zod"
 export const businessDtoSchema = z
   .object({
-    businessNumber: z.string().min(1, "사업자등록번호를 입력해주세요"),
-    representativeName: z.string().min(1, "대표자명을 입력해주세요"),
+    businessNumber: z.string(),
+    representativeName: z.string(),
     fileUrl: z.string().url().optional(),
     file: z.instanceof(File).optional(),
     metadata: z.unknown().optional(),

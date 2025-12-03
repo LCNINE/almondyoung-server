@@ -6,6 +6,7 @@ export interface BusinessInfo {
   representativeName?: string | null // 대표자명
   reviewComment?: string | null // 관리자 리뷰 코멘트
   fileUrl?: string | null // 검증 파일
+  status?: "under_review" | "approved" | "rejected" // 검증 상태
   metadata?: unknown // 메타데이터
   createdAt: Date
   updatedAt: Date

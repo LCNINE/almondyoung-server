@@ -1,13 +1,18 @@
-import { revalidatePath, revalidateTag } from "next/cache"
+import { revalidateTag } from "next/cache"
+import { cookies as nextCookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 
-export async function PUT(request: NextRequest, { params }: any) {
-  const { businessId } = params
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ businessId: string }> }
+) {
+  const { businessId } = await params
 
-  const { businessNumber, representativeName, file, metadata } =
+  const { businessNumber, representativeName, fileUrl, metadata } =
     await request.json()
 
-  const cookies = request.cookies.toString()
+  const cookieStore = await nextCookies()
+  const cookieHeader = cookieStore.toString()
 
   const response = await fetch(
     `${process.env.BACKEND_URL}/users/business-licenses/${businessId}`,
@@ -15,12 +20,12 @@ export async function PUT(request: NextRequest, { params }: any) {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Cookie: cookies,
+        Cookie: cookieHeader,
       },
       body: JSON.stringify({
         businessNumber,
         representativeName,
-        file,
+        fileUrl,
         metadata,
       }),
     }

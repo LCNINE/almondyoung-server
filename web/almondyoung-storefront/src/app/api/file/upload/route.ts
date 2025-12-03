@@ -1,19 +1,24 @@
+import { cookies as nextCookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
-  const cookies = request.cookies.toString()
   const formData = await request.formData()
 
-  const response = await fetch(`${process.env.BACKEND_URL}/files/upload`, {
-    method: "POST",
-    body: formData,
-    headers: {
-      Cookie: cookies,
-    },
-  })
+  const cookieStore = await nextCookies()
+  const cookieHeader = cookieStore.toString()
+
+  const response = await fetch(
+    `${process.env.BACKEND_URL}/fs/api/v1/files/upload`,
+    {
+      method: "POST",
+      body: formData,
+      headers: {
+        Cookie: cookieHeader,
+      },
+    }
+  )
 
   const data = await response.json()
-
   if (!response.ok) {
     return NextResponse.json(
       {

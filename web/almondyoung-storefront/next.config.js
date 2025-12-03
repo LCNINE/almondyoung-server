@@ -69,6 +69,10 @@ const nextConfig = {
         protocol: "https",
         hostname: "i.pinimg.com",
       },
+      {
+        protocol: "https",
+        hostname: "almondyoung.s3.ap-northeast-2.amazonaws.com",
+      },
     ],
   },
 }

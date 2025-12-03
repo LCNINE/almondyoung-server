@@ -21,6 +21,7 @@ import {
   updateBusiness,
 } from "@lib/api/users/business/client"
 import type { BusinessInfo } from "@lib/api/users/business/types"
+import type { FilesDto } from "@lib/types/dto/files"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import { ViewMode } from "domains/mypage/template/business-info-template"
 import { useRouter } from "next/navigation"
@@ -66,8 +67,13 @@ export default function BusinessInfoForm({
   const handleSubmit = (data: BusinessDtoSchema) => {
     const { businessNumber, representativeName, fileUrl, file, metadata } = data
 
+    if (!form.watch("isSubmitting")) {
+      toast.info("사업자를 조회하시거나 새로운 파일을 첨부해주세요!")
+      return
+    }
+
     startSubmitTransition(async () => {
-      let fileRes
+      let fileRes: FilesDto | null = null
 
       if (file) {
         const formData = new FormData()
@@ -77,7 +83,6 @@ export default function BusinessInfoForm({
 
         try {
           fileRes = await uploadFile(formData)
-          console.log("fileRes:", fileRes)
         } catch (error) {
           console.log("error:", error)
           if (error instanceof HttpApiError) {
@@ -91,34 +96,50 @@ export default function BusinessInfoForm({
       }
 
       try {
+        // 새로 등록
         if (viewMode === "register") {
           const res = await createBusiness({
             businessNumber,
             representativeName,
-            fileUrl: fileRes?.data?.fileUrl,
+            fileUrl: fileRes?.data?.url,
             metadata,
           })
 
           router.refresh()
         } else if (viewMode === "edit") {
+          // 기존 정보 수정
           if (!initialData?.id) {
             toast.error("사업자 정보를 찾을 수 없습니다.")
             return
           }
 
-          const res = await updateBusiness(
-            {
-              businessNumber,
-              representativeName,
-              fileUrl: fileRes?.data?.fileUrl,
+          // fileRes.data.url이 있으면 기존 사업자번호랑 대표자는 ''로 설정
+          const res = await updateBusiness({
+            business: {
+              businessNumber: fileRes?.data.url ? "" : businessNumber,
+              representativeName: fileRes?.data.url ? "" : representativeName,
+              fileUrl: fileRes?.data?.url ?? "",
               metadata,
             },
-            initialData?.id!
-          )
+            businessId: initialData?.id!,
+          })
         }
+
         router.refresh()
         setViewMode("display")
-        toast.success(viewMode === "edit" ? "수정 완료" : "등록 완료")
+
+        const toastMessage = (mode: ViewMode | "fileUpload") => {
+          switch (mode) {
+            case "register":
+              return "사업자 정보 등록이 완료되었습니다."
+            case "edit":
+              return "사업자 정보 수정이 완료되었습니다."
+            case "fileUpload":
+              return "새로운 파일이 업로드 되었습니다. 관리자의 검토 후 승인 완료 됩니다."
+          }
+        }
+
+        toast.success(toastMessage(fileRes?.data.url ? "fileUpload" : viewMode))
       } catch (error) {
         console.log("error:", error)
         if (error instanceof HttpApiError) {
@@ -269,7 +290,9 @@ export default function BusinessInfoForm({
             type="button"
             className="ml-auto min-w-[120px] flex-none"
             onClick={handleExternalBusinessInfo}
-            disabled={isSearchPending || form.formState.dirtyFields.file}
+            disabled={
+              isSearchPending || !!form.watch("file") || !!form.watch("fileUrl")
+            }
           >
             {isSearchPending ? "조회 중..." : "조회하기"}
           </Button>
@@ -294,8 +317,8 @@ export default function BusinessInfoForm({
 
           <Button
             type="submit"
-            className="relative flex-1 md:min-w-[120px] md:flex-none"
-            disabled={isSubmitPending || !form.getValues("isSubmitting")}
+            className={`relative flex-1 md:min-w-[120px] md:flex-none`}
+            disabled={isSubmitPending}
           >
             {isSubmitPending ? (
               <>

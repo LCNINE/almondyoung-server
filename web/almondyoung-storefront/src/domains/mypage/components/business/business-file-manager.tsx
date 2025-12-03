@@ -11,6 +11,7 @@ import { ChevronsDown, Upload, X } from "lucide-react"
 import React from "react"
 import { useFormContext } from "react-hook-form"
 import { BusinessDtoSchema } from "./schema"
+import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
 
 export default function BusinessFileManager({
   isFilled,
@@ -76,7 +77,7 @@ function BusinessFileForm() {
 
     if (newFile) {
       form.setValue("file", newFile, {
-        shouldDirty: true, // 이미 있음
+        shouldDirty: true,
         shouldTouch: true,
         shouldValidate: true,
       })
@@ -87,15 +88,13 @@ function BusinessFileForm() {
   }
 
   const handleRemoveFile = () => {
-    if (file) {
-      form.setValue("file", undefined)
-      form.setValue("fileUrl", undefined)
-    }
+    form.setValue("file", undefined)
+    form.setValue("fileUrl", undefined)
   }
 
   return (
     <div className="flex items-center gap-3">
-      <label className="border-input bg-background hover:bg-muted flex cursor-pointer items-center gap-2 rounded-md border-2 px-4 py-2 text-sm transition-colors">
+      <label className="border-input bg-background hover:bg-muted flex shrink-0 cursor-pointer items-center gap-2 rounded-md border-2 px-4 py-2 text-sm transition-colors">
         <Upload className="h-4 w-4" />
         파일 선택
         <input
@@ -146,9 +145,7 @@ function FilePreview({
     return (
       <div className="bg-muted flex items-center gap-2 rounded-md px-3 py-2 text-sm">
         <span className="max-w-[200px] truncate text-blue-600 underline">
-          <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-            기존 파일 보기
-          </a>
+          {getDisplayFilename(fileUrl, 20)}
         </span>
         <button
           type="button"

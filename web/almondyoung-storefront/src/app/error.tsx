@@ -33,7 +33,8 @@ export default function Error({
             // 토큰 복구 성공하면 새로고침
             console.log("토큰 복구 성공")
             await new Promise((resolve) => setTimeout(resolve, 100))
-            router.refresh()
+            window.location.reload()
+
             return
           }
 
@@ -77,17 +78,52 @@ export default function Error({
     tokenRefresh()
   }, [error, reset, router, pathname])
 
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <div className="mb-4">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-gray-300 border-r-transparent"></div>
+  if (error.digest === "Unauthorized" || error.message === "Unauthorized") {
+    return <div className="flex min-h-screen items-center justify-center"></div>
+  } else {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
+        <div className="flex w-full max-w-md flex-col items-center rounded-lg bg-white py-10 shadow-md">
+          <svg
+            className="mb-6 h-16 w-16 text-red-500"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="2"
+              fill="#f8717130"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M15 9l-6 6m0-6l6 6"
+            />
+          </svg>
+          <h1 className="mb-2 text-2xl font-semibold text-red-600">
+            문제가 발생했어요
+          </h1>
+          <p className="mb-6 text-center text-gray-700">
+            죄송합니다. 예기치 않은 오류가 발생했습니다.
+            <br />
+            잠시 후 다시 시도해주시거나, 지속적으로 문제가 발생한다면
+            <br />
+            고객센터로 문의해주세요.
+          </p>
+          <button
+            onClick={() => (window.location.href = "/")}
+            className="rounded bg-red-500 px-6 py-2 text-white transition hover:bg-red-600"
+          >
+            홈으로 이동
+          </button>
         </div>
-        <p className="font-medium text-gray-700">
-          인증 상태를 복구 중입니다...
-        </p>
-        <p className="mt-2 text-sm text-gray-500">잠시만 기다려주세요</p>
       </div>
-    </div>
-  )
+    )
+  }
 }
