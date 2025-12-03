@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsBoolean,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -41,6 +42,10 @@ export class UpdateBusinessLicenseDto {
   @IsOptional()
   @IsString({ message: '증빙 검증 파일 URL은 문자열이어야 합니다.' })
   fileUrl?: string | null;
+
+  @IsOptional()
+  @IsBoolean({ message: '외부 사업자 상태는 불리언이어야 합니다.' })
+  externalBusinessStatus?: boolean;
 }
 
 // 사업자 정보 외부 조회용 dto
