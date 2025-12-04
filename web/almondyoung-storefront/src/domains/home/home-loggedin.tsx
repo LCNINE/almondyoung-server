@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
 import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { BasicProductCard } from "@components/products/product-card"
@@ -12,21 +13,59 @@ import { ProductListSection } from "./components/list/product-list-section"
 import SectionHeader from "./components/list/section-header"
 import UserReport from "./components/report/user-report"
 import { ProductCard } from "@lib/types/ui/product"
-
-// 더미 JSON 데이터 import (개인화된 사용자는 주로 구매하는 카테고리 데이터 사용)
-import hairProducts from "@lib/data/dummy/get-hair-list.json"
+import { getProductListService } from "@lib/services/pim/products/getProductListService"
+import {
+  homeSectionsConfig,
+  loggedInSectionIds,
+} from "@lib/data/home-sections-config"
 
 // 로그인한 사용자용 홈페이지 섹션들
 export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
-  // 개인화 데이터 - 실제로는 사용자의 주요 구매 카테고리를 기반으로 함
-  const personalizedProducts = hairProducts.data as ProductCard[]
+  // 섹션별 제품 상태 관리
+  const [sectionProducts, setSectionProducts] = useState<
+    Record<string, ProductCard[]>
+  >({})
+  const [isLoadingSections, setIsLoadingSections] = useState<
+    Record<string, boolean>
+  >({})
 
-  // 각 섹션별 상품 할당 (데이터 재사용으로 모든 섹션에 표시)
-  const recommendedProducts = personalizedProducts.slice(0, 10) // 추천제품
-  const frequentProducts = personalizedProducts.slice(2, 12) // 자주 구매하는 재료
-  const cartWaitingProducts = personalizedProducts.slice(4, 14) // 장바구니 대기 상품
-  const expertProducts = personalizedProducts.slice(1, 11) // 전문가용 추천
-  const membershipProducts = personalizedProducts.slice(3, 13) // 멤버십 전용
+  // 섹션별 제품 조회 (등록일자 최근순)
+  useEffect(() => {
+    const loadSectionProducts = async () => {
+      const loadingStates: Record<string, boolean> = {}
+      const products: Record<string, ProductCard[]> = {}
+
+      for (const sectionId of loggedInSectionIds) {
+        loadingStates[sectionId] = true
+        setIsLoadingSections((prev) => ({ ...prev, [sectionId]: true }))
+
+        try {
+          const config = homeSectionsConfig[sectionId]
+          if (config) {
+            const result = await getProductListService(config.queryParams)
+            products[sectionId] = result.items
+          }
+        } catch (error) {
+          console.error(`섹션 ${sectionId} 제품 조회 실패:`, error)
+          products[sectionId] = []
+        } finally {
+          loadingStates[sectionId] = false
+          setIsLoadingSections((prev) => ({ ...prev, [sectionId]: false }))
+        }
+      }
+
+      setSectionProducts(products)
+    }
+
+    loadSectionProducts()
+  }, [])
+
+  // 섹션별 제품 가져오기
+  const recommendedProducts = sectionProducts.recommended || []
+  const frequentProducts = sectionProducts.frequentIngredients || []
+  const cartWaitingProducts = sectionProducts.cartWaiting || []
+  const expertProducts = sectionProducts.expertRecommended || []
+  const membershipProducts = sectionProducts.membershipProducts || []
 
   return (
     <>
@@ -50,37 +89,49 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
       {/* 추천제품 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title={`${user?.username || "고객"}님을 위한 추천제품`}
-          description="#시즌제품 #스마트케어 #머신 신제품"
+          title={`${user?.username || "고객"}님을 위한 ${homeSectionsConfig.recommended.title}`}
+          description={homeSectionsConfig.recommended.description}
         />
-        <ProductList
-          products={recommendedProducts}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.recommended ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={recommendedProducts}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
 
       {/* 자주 구매하는 재료 다시담기 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title="자주 구매하는 재료 다시담기"
-          description="자주 구매하는 재료를 다시담기"
+          title={homeSectionsConfig.frequentIngredients.title}
+          description={homeSectionsConfig.frequentIngredients.description}
         />
-        <ProductList
-          products={frequentProducts}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.frequentIngredients ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={frequentProducts}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
 
       {/* 장바구니에서 기다리는 상품 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title="장바구니에서 기다리는 상품"
-          description="장바구니에서 기다리는 상품을 만나보세요"
+          title={homeSectionsConfig.cartWaiting.title}
+          description={homeSectionsConfig.cartWaiting.description}
         />
-        <ProductList
-          products={cartWaitingProducts}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.cartWaiting ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={cartWaitingProducts}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
 
       {/* 메인 배너 캐러셀 */}
@@ -99,26 +150,34 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
       {/* 전문가를 위한 추천제품 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title="전문가를 위한 추천제품"
-          description="전문가를 위한 추천제품을 만나보세요"
+          title={homeSectionsConfig.expertRecommended.title}
+          description={homeSectionsConfig.expertRecommended.description}
         />
-        <ProductList
-          products={expertProducts}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.expertRecommended ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={expertProducts}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
 
       {/* 멤버십 전용 상품 섹션 */}
       <ProductListSection>
         <MembershipBanner className="mb-4" />
         <SectionHeader
-          title="웰컴드 전체 제품 100원"
-          description="웰컴드 전체 제품을 만나보세요"
+          title={homeSectionsConfig.membershipProducts.title}
+          description={homeSectionsConfig.membershipProducts.description}
         />
-        <ProductList
-          products={membershipProducts}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.membershipProducts ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={membershipProducts}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
     </>
   )

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import hairListData from "@lib/data/dummy/get-hair-list.json"
+// TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
 import { CategoryCircleTabs } from "@components/category-circle-tabs"
 import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
 import {
@@ -16,6 +16,7 @@ import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
 import type { CategoryDetailResponse } from "@lib/api/pim/pim-types"
+import type { ProductCard } from "@lib/types/ui/product"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
 // 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
@@ -28,12 +29,16 @@ interface CategoryPageClientProps {
   slug: string
   categoryInfo: CategoryInfo
   categoryData: CategoryDetailResponse // null 가능성 제거 (Container에서 처리함)
+  initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
+  initialTotal?: number // 전체 상품 수
 }
 
 export function CategoryPageClient({
   slug,
   categoryInfo,
   categoryData,
+  initialProducts = [],
+  initialTotal = 0,
 }: CategoryPageClientProps) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -45,12 +50,9 @@ export function CategoryPageClient({
       : ""
   )
 
-  // TODO: 실제 상품 리스트도 API 연동 필요 (현재는 더미 데이터 유지)
-  const startIndex = (page - 1) * pageSize
-  const paginatedProducts = hairListData.data.slice(
-    startIndex,
-    startIndex + pageSize
-  )
+  // 서버에서 받은 초기 상품 목록 사용
+  // TODO: 페이지네이션 시 추가 API 호출 필요 (클라이언트에서)
+  const paginatedProducts = initialProducts
 
   const openMobileFilter = () => {
     overlay.open(({ isOpen, close, unmount }) => (

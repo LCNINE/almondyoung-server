@@ -3,11 +3,46 @@ import { WithHeaderLayout } from "@components/layout"
 import ProtectedRoute from "@components/protected-route"
 import HomeTemplate from "domains/home/template/home-template"
 import { CategorySelectSection } from "../../../../legacy/sections/yourCategory-section"
+import { getCategoryTree } from "@lib/api/pim/pim-api"
+import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
+import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { ProductCard } from "@lib/types/ui/product"
 
 export default async function Home(props: {
   params: Promise<{ countryCode: string }>
 }) {
   const { countryCode } = await props.params
+
+  // 카테고리 트리 조회
+  let categories: CategoryTreeNode[] = []
+  let initialCategoryProducts: ProductCard[] = []
+  let initialCategoryId: string | null = null
+
+  try {
+    const categoryTree = await getCategoryTree()
+    categories = categoryTree.categories || []
+
+    // 첫 번째 카테고리 선택 (또는 루트 카테고리의 첫 번째 자식)
+    if (categories.length > 0) {
+      // 루트 카테고리의 첫 번째 자식이 있으면 그것을 사용, 없으면 루트 카테고리 사용
+      const firstCategory = categories[0]
+      initialCategoryId = firstCategory.children && firstCategory.children.length > 0
+        ? firstCategory.children[0].id
+        : firstCategory.id
+
+      // 초기 카테고리의 제품 목록 조회
+      if (initialCategoryId) {
+        const productsResult = await getProductsByCategoryService(initialCategoryId, {
+          page: 1,
+          limit: 20,
+        })
+        initialCategoryProducts = productsResult.items || []
+      }
+    }
+  } catch (error) {
+    console.error("❌ [Home] 카테고리/제품 로드 실패:", error)
+    // 에러 발생 시 빈 배열로 계속 진행
+  }
 
   return (
     <ProtectedRoute>
@@ -17,7 +52,12 @@ export default async function Home(props: {
           showMobileHeader: true,
         }}
       >
-        <HomeTemplate countryCode={countryCode} />
+        <HomeTemplate
+          countryCode={countryCode}
+          categories={categories}
+          initialCategoryId={initialCategoryId}
+          initialCategoryProducts={initialCategoryProducts}
+        />
         <CategorySelectSection countryCode={countryCode} />
 
         {/* 테마 매니저 (개발 모드에서만 표시) */}

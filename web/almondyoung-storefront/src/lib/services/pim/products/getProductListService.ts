@@ -30,32 +30,17 @@ export interface ProductListServiceOpts {
   withReview?: boolean
 }
 
-// PIM API가 filters.* 형태를 기대한다고 가정한 매핑 함수
+// PIM API 쿼리 파라미터 매핑 함수
+// 실제 PIM API는 쿼리 파라미터로 직접 전달
 function buildPimQuery(params: ProductListParams) {
-  const {
-    page = 1,
-    limit = 24,
-    sort,
-    query,
-    categoryId,
-    brand,
-    tags,
-    stock,
-  } = params
-
-  // 백엔드 스펙에 맞춰 filters 객체로 묶어 전달
-  const filters: Record<string, unknown> = {}
-  if (categoryId) filters.categoryId = categoryId
-  if (brand) filters.brand = brand
-  if (tags?.length) filters.tags = tags
-  if (stock?.length) filters.stock = stock
-
   return {
-    page,
-    limit,
-    sort,
-    query,
-    filters,
+    page: params.page,
+    limit: params.limit,
+    status: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터
+    categoryId: params.categoryId,
+    brand: params.brand,
+    search: params.query, // 검색어는 search 파라미터로 전달
+    // TODO: tags, stock 필터는 PIM API에서 지원하는지 확인 필요
   }
 }
 
@@ -73,7 +58,27 @@ export async function getProductListService(
     const pimParams = buildPimQuery(params)
     const res = await getAllProductList(pimParams)
 
-    const items: ProductCard[] = res.items.map(toProductCard)
+    // API 응답 구조에 따라 items 또는 data 필드 사용
+    const productItems = res.items || (res as any).data || []
+    
+    if (!Array.isArray(productItems)) {
+      console.error(`❌ [getProductListService] items가 배열이 아님:`, typeof productItems, productItems)
+      throw new Error(`Invalid API response: items is not an array`)
+    }
+
+    let items: ProductCard[] = productItems.map(toProductCard)
+
+    // 정렬 처리 (클라이언트 사이드)
+    if (params.sort) {
+      const [field, order] = params.sort.split(":")
+      if (field === "createdAt") {
+        items.sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+          return order === "desc" ? dateB - dateA : dateA - dateB
+        })
+      }
+    }
 
     // ▼ 확장 포인트 (필요 시 주석 해제)
     // const [reviewMap, stockMap, userMetaMap] = await Promise.all([
@@ -122,54 +127,72 @@ export async function getProductsByCategoryService(
   page: number
   limit: number
 }> {
+  console.log(`🚀 [getProductsByCategoryService] 시작:`, { categoryId, params })
+  
   try {
-    // 🎭 임시: Mock 데이터 반환 (API 연동 전까지)
-    // import는 상단에서 처리
-    const skinProducts = await import("@lib/data/dummy/get-skin-list.json")
-    const mockData = skinProducts.default || skinProducts
-
-    const page = params?.page || 1
-    const limit = params?.limit || 20
-    const startIndex = (page - 1) * limit
-    const items = mockData.data.slice(
-      startIndex,
-      startIndex + limit
-    ) as ProductCard[]
-
-    return {
-      items,
-      total: mockData.data.length,
-      page,
-      limit,
-    }
-
-    /* 실제 API 호출 코드 (주석 처리)
     // AbortSignal 처리
     const signal = opts instanceof AbortSignal ? opts : undefined
-    
+
     // "all" 카테고리 ID인 경우 전체 상품 조회 (categoryId 필터 제외)
-    const queryParams: any = {
+    const queryParams: {
+      page?: number
+      limit?: number
+      status?: string
+      categoryId?: string
+    } = {
       page: params?.page,
       limit: params?.limit,
-      sort: params?.sort,
-      tags: params?.tags,
-      stock: params?.stock,
+      status: "active", // active 상태만 조회
     }
-    
+
     // "all"이 아닌 경우에만 categoryId 필터 추가
     if (categoryId !== "all") {
       queryParams.categoryId = categoryId
     }
+
+    console.log(`📤 [getProductsByCategoryService] API 호출 파라미터:`, queryParams)
+
+    const res = await getPimCategoryProducts(
+      categoryId === "all" ? "" : categoryId,
+      queryParams,
+      signal
+    )
+
+    console.log(`📥 [getProductsByCategoryService] API 응답:`, { 
+      itemCount: res.items?.length || 0, 
+      total: res.total,
+      responseType: Array.isArray(res) ? 'array' : 'object',
+      hasItems: 'items' in res,
+      hasData: 'data' in res,
+      fullResponse: res,
+    })
+
+    // API 응답 구조에 따라 items 또는 data 필드 사용
+    // 백엔드 응답이 {data: [...], total: 13} 형태일 수도 있음
+    const productItems = res.items || (res as any).data || []
     
-    const res = await getAllProductList(queryParams, signal)
-    
-    const items = res.items.map(toProductCard)
-    
+    if (!Array.isArray(productItems)) {
+      console.error(`❌ [getProductsByCategoryService] items가 배열이 아님:`, typeof productItems, productItems)
+      throw new Error(`Invalid API response: items is not an array`)
+    }
+
+    const items: ProductCard[] = productItems.map(toProductCard)
+
+    console.log(`✅ [getProductsByCategoryService] 완료:`, { 
+      itemCount: items.length, 
+      total: res.total 
+    })
+
     return { items, total: res.total, page: res.page, limit: res.limit }
-    */
   } catch (error) {
     console.error("❌ [getProductsByCategoryService] 에러:", error)
-    throw error
+    // 실패 시에도 호출부가 안전하게 동작하도록 보수적 폴백
+    return {
+      items: [],
+      total: 0,
+      page: params?.page ?? 1,
+      limit: params?.limit ?? 20,
+    }
   }
 }
 

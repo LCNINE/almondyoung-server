@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
 import { getCategoryBySlug } from "@lib/api/pim/pim-api"
+import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 
 interface CategoryPageContainerProps {
   params: Promise<{
@@ -29,11 +30,38 @@ export async function CategoryPageContainer({
     // imageUrl 등이 있다면 여기서 매핑
   }
 
+  // 4. 카테고리별 상품 목록 로드
+  console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, { 
+    categoryId: categoryData.id, 
+    categoryName: categoryData.name 
+  })
+  
+  let initialProducts: any[] = []
+  let initialTotal = 0
+  
+  try {
+    const productsResult = await getProductsByCategoryService(categoryData.id, {
+      page: 1,
+      limit: 20,
+    })
+    initialProducts = productsResult.items
+    initialTotal = productsResult.total
+    console.log(`✅ [CategoryPageContainer] 상품 목록 로드 완료:`, { 
+      itemCount: initialProducts.length, 
+      total: initialTotal 
+    })
+  } catch (error) {
+    console.error("❌ [CategoryPageContainer] 상품 목록 로드 실패:", error)
+    // 에러 발생 시 빈 배열로 계속 진행
+  }
+
   return (
     <CategoryPageClient
       slug={slug}
       categoryInfo={categoryInfo}
       categoryData={categoryData}
+      initialProducts={initialProducts}
+      initialTotal={initialTotal}
     />
   )
 }
