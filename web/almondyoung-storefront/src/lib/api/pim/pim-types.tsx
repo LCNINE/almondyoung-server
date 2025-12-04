@@ -261,3 +261,93 @@ export interface PimVariant {
     label?: string
   }>
 }
+
+// ==========================================
+// Elasticsearch 검색 API 타입
+// ==========================================
+
+/**
+ * 태그 필터 DTO
+ * 그룹 간 AND, 그룹 내 OR 조건
+ */
+export interface TagFilterDto {
+  groupId: string
+  valueIds: string[]
+}
+
+/**
+ * 상품 태그 DTO
+ */
+export interface ProductTagDto {
+  group_id: string
+  group_name: string
+  value_id: string
+  value_name: string
+}
+
+/**
+ * 검색 결과 상품 아이템 DTO
+ */
+export interface ProductSearchItemDto {
+  master_id: string
+  product_id: string
+  version: number
+  name: string
+  description: string | null
+  product_code: string | null
+  brand: string | null
+  status: string
+  approval_status: string | null
+  price: number | null
+  category_id: string | null
+  category_name: string | null
+  category_path: string | null
+  tags: ProductTagDto[]
+  created_at: string
+  updated_at: string
+  _score?: number
+}
+
+/**
+ * 페이지네이션 DTO
+ */
+export interface PaginationDto {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
+/**
+ * 태그 값 집계 DTO
+ */
+export interface TagValueAggregationDto {
+  value_id: string
+  value_name: string
+  count: number
+}
+
+/**
+ * 태그 그룹 집계 DTO
+ */
+export interface TagGroupAggregationDto {
+  group_id: string
+  group_name: string
+  values: TagValueAggregationDto[]
+}
+
+/**
+ * 검색 집계 DTO
+ */
+export interface SearchAggregationsDto {
+  tags?: TagGroupAggregationDto[]
+}
+
+/**
+ * 검색 응답 DTO
+ */
+export interface ProductSearchResponseDto {
+  items: ProductSearchItemDto[]
+  pagination: PaginationDto
+  aggregations?: SearchAggregationsDto
+}

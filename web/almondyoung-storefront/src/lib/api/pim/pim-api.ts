@@ -7,6 +7,8 @@ import type {
   ProductListResponse,
   ProductMasterDetailResponse,
   VariantListResponse,
+  ProductSearchResponseDto,
+  TagFilterDto,
 } from "./pim-types"
 
 const API_ENDPOINT = "/api/pim"
@@ -287,4 +289,65 @@ export async function getPimProductVariants(
     : `/variants/masters/${masterId}`
   
   return fetchPim<VariantListResponse>(path, { signal })
+}
+
+// ==========================================
+// Elasticsearch 검색 API
+// ==========================================
+
+/**
+ * Elasticsearch 기반 상품 검색
+ * GET /products/search
+ * 
+ * @param params 검색 파라미터
+ * @param signal AbortSignal (선택)
+ * @returns 검색 결과
+ */
+export async function searchProducts(
+  params?: {
+    keyword?: string
+    categoryId?: string
+    brands?: string[]
+    minPrice?: number
+    maxPrice?: number
+    status?: string
+    tagFilters?: TagFilterDto[]
+    sortBy?: "relevance" | "price" | "createdAt"
+    sortOrder?: "asc" | "desc"
+    page?: number
+    limit?: number
+  },
+  signal?: AbortSignal
+): Promise<ProductSearchResponseDto> {
+  console.log(`🚀 [searchProducts] 호출:`, params)
+  
+  const queryParams = new URLSearchParams()
+  
+  if (params?.keyword) queryParams.set("keyword", params.keyword)
+  if (params?.categoryId) queryParams.set("categoryId", params.categoryId)
+  if (params?.brands && params.brands.length > 0) {
+    params.brands.forEach((brand) => queryParams.append("brands", brand))
+  }
+  if (params?.minPrice !== undefined) queryParams.set("minPrice", params.minPrice.toString())
+  if (params?.maxPrice !== undefined) queryParams.set("maxPrice", params.maxPrice.toString())
+  if (params?.status) queryParams.set("status", params.status)
+  if (params?.tagFilters && params.tagFilters.length > 0) {
+    params.tagFilters.forEach((filter, index) => {
+      queryParams.set(`tagFilters[${index}][groupId]`, filter.groupId)
+      filter.valueIds.forEach((valueId, valueIndex) => {
+        queryParams.append(`tagFilters[${index}][valueIds][]`, valueId)
+      })
+    })
+  }
+  if (params?.sortBy) queryParams.set("sortBy", params.sortBy)
+  if (params?.sortOrder) queryParams.set("sortOrder", params.sortOrder)
+  if (params?.page) queryParams.set("page", params.page.toString())
+  if (params?.limit) queryParams.set("limit", params.limit.toString())
+
+  const query = queryParams.toString()
+  const path = query ? `/products/search?${query}` : "/products/search"
+  
+  console.log(`📤 [searchProducts] 요청 경로: ${path}`)
+  
+  return fetchPim<ProductSearchResponseDto>(path, { signal })
 }
