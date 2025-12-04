@@ -16,6 +16,7 @@ import type {
   PriceInfo,
   PriceRange,
 } from "@lib/types/ui/product"
+import type { ProductSearchItemDto } from "@lib/api/pim/pim-types"
 
 type RawOpt = {
   optionGroupId?: string
@@ -297,3 +298,35 @@ const buildSlug = (name: string, id: string) =>
   `${name}`.trim().toLowerCase().replace(/\s+/g, "-").slice(0, 64) +
   "-" +
   id.slice(0, 6)
+
+// ---------- Elasticsearch 검색 결과용 ----------
+/**
+ * Elasticsearch 검색 결과를 ProductCard로 변환
+ * ProductSearchItemDto -> ProductCard
+ */
+export const toProductCardFromSearch = (
+  dto: ProductSearchItemDto
+): ProductCard => {
+  // 썸네일 추출 (description에서 이미지 추출 또는 기본값)
+  const thumbnail =
+    extractFirstImgFromHtml(dto.description) ||
+    "/api/placeholder/240/240"
+
+  // 태그를 문자열 배열로 변환
+  const tags = dto.tags?.map((tag) => tag.value_name) || []
+
+  return {
+    id: dto.product_id || dto.master_id, // product_id 우선, 없으면 master_id
+    name: dto.name,
+    brand: dto.brand || undefined,
+    thumbnail,
+    basePrice: dto.price ?? undefined,
+    membershipPrice: dto.price ?? undefined, // 검색 결과에는 멤버십 가격 정보가 없을 수 있음
+    isMembershipOnly: false, // 검색 결과에는 멤버십 전용 정보가 없을 수 있음
+    status: dto.status || "active",
+    tags,
+    stock: {},
+    optionMeta: { isSingle: true }, // 검색 결과에는 옵션 정보가 없으므로 기본값
+    createdAt: dto.created_at,
+  }
+}

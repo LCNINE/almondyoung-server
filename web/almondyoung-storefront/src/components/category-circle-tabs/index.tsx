@@ -1,4 +1,5 @@
 import Image from "next/image"
+import Link from "next/link"
 import * as React from "react"
 import type { CategoryResponse } from "@lib/api/pim/pim-types"
 
@@ -24,13 +25,16 @@ const PLACEHOLDER_IMAGES = [
 interface CategoryCircleItemProps {
   category: CategoryResponse
   isSelected: boolean
-  onSelect: (id: string) => void
+  countryCode: string
+  parentSlug: string
 }
 
 interface CategoryCircleTabsProps {
   items: CategoryResponse[]
   selectedId: string
   onSelect: (id: string) => void
+  countryCode: string
+  parentSlug: string
 }
 
 // --- 하위 컴포넌트: 개별 아이템 ---
@@ -38,15 +42,18 @@ interface CategoryCircleTabsProps {
 function CategoryCircleItem({
   category,
   isSelected,
-  onSelect,
+  countryCode,
+  parentSlug,
 }: CategoryCircleItemProps) {
   // 서버 데이터 구조: imageUrl 또는 thumbnail 사용
   const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGES[0]
+  
+  // sub 페이지로 이동하는 링크 생성
+  const href = `/${countryCode}/category/${parentSlug}/${category.slug}`
 
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(category.id)}
+    <Link
+      href={href}
       className="group flex flex-col items-center text-center outline-none"
     >
       {/* [디자인] 이전 HTML의 스타일 적용:
@@ -78,7 +85,7 @@ function CategoryCircleItem({
       >
         {category.name}
       </span>
-    </button>
+    </Link>
   )
 }
 
@@ -88,6 +95,8 @@ export function CategoryCircleTabs({
   items,
   selectedId,
   onSelect,
+  countryCode,
+  parentSlug,
 }: CategoryCircleTabsProps) {
   return (
     <section className="mb-8 md:mb-12">
@@ -102,7 +111,8 @@ export function CategoryCircleTabs({
             key={category.id}
             category={category}
             isSelected={selectedId === category.id}
-            onSelect={onSelect}
+            countryCode={countryCode}
+            parentSlug={parentSlug}
           />
         ))}
       </div>

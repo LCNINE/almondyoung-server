@@ -1,4 +1,3 @@
-import { WithHeaderLayout } from "@components/layout/with-header-layout"
 import { fetchMe } from "@lib/api/users/me"
 import { ProductDetail } from "@lib/types/ui/product"
 import { UserDetail } from "types/global"
@@ -32,22 +31,15 @@ export default async function Page({
   }
 
   return (
-    <WithHeaderLayout
-      config={{
-        showDesktopHeader: true,
-        showMobileHeader: true,
-      }}
-    >
-      <div className="md:bg-muted/50 min-h-screen bg-white">
-        <Suspense fallback={<div className="p-8">로딩 중…</div>}>
-          <ProductDetailPage
-            params={Promise.resolve({ id, countryCode })}
-            product={product}
-            error={error}
-            user={user}
-          />
-        </Suspense>
-      </div>
-    </WithHeaderLayout>
+    <div className="md:bg-muted/50 min-h-screen bg-white">
+      <Suspense fallback={<div className="p-8">로딩 중…</div>}>
+        <ProductDetailPage
+          params={Promise.resolve({ id, countryCode })}
+          product={product}
+          error={error}
+          user={user}
+        />
+      </Suspense>
+    </div>
   )
 }

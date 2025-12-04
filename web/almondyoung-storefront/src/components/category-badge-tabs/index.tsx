@@ -1,5 +1,6 @@
 import React from "react"
 import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 
 // --- 반응형 스타일 변수 ---
 
@@ -37,7 +38,7 @@ export function CategoryBadgeTabs({
 }: CategoryBadgeTabsProps) {
   // 카테고리 트리에서 실제 표시할 카테고리 추출
   // level 0인 카테고리만 필터링
-  // main 반영 여부 필드가 있으면 메인 반영하는 것만 가져오기
+  // showOnMainCategory가 true인 카테고리만 가져오기
   const displayCategories = React.useMemo(() => {
     if (categories.length === 0) return []
     
@@ -49,10 +50,8 @@ export function CategoryBadgeTabs({
       // isActive가 false인 것은 제외
       if (category.isActive === false) return false
       
-      // main 반영 여부 필드가 있으면 메인 반영하는 것만
-      // showInMain 또는 isMain 필드가 있으면 true인 것만
-      if ('showInMain' in category && category.showInMain === false) return false
-      if ('isMain' in category && category.isMain === false) return false
+      // showOnMainCategory가 true인 것만 (display_settings에서 파싱)
+      if (!getShowOnMainCategory(category)) return false
       
       return true
     })

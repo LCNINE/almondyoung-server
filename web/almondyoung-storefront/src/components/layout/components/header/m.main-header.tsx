@@ -9,6 +9,7 @@ import Link from "next/link"
 import { useParams, usePathname, useRouter } from "next/navigation"
 import React, { useMemo, useState } from "react"
 import CartSheet from "../../../cart/cart-sheet"
+import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 
 // 기본 카테고리 제거 - 서버 데이터만 사용
 
@@ -58,13 +59,18 @@ export const MobileHeader: React.FC<{
 
   // 상단 노출용(최대 7개)
   // 카테고리가 없으면 기본 카테고리 사용
-  const topCategories: PimCategory[] = useMemo(
-    () =>
-      Array.isArray(categories) && categories.length > 0
-        ? categories.slice(0, 8)
-        : [],
-    [categories]
-  )
+  // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
+  const topCategories: PimCategory[] = useMemo(() => {
+    if (!Array.isArray(categories) || categories.length === 0) {
+      return []
+    }
+
+    const filtered = categories.filter((cat) => getShowOnMainCategory(cat))
+    const sorted = filtered.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    const sliced = sorted.slice(0, 8)
+
+    return sliced
+  }, [categories])
 
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")

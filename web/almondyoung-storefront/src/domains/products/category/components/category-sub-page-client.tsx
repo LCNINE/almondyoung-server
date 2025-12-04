@@ -1,52 +1,46 @@
 "use client"
 
 import { useState } from "react"
-// TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
-import { CategoryCircleTabs } from "@components/category-circle-tabs"
-import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
-import {
-  BasicProductCard,
-  TimeSaleProductCard,
-} from "@components/products/product-card"
+import Link from "next/link"
+import { BasicProductCard } from "@components/products/product-card"
 import ProductFilterSidebar from "@components/product-filter-sidebar"
 import ProductSortToolbar from "@components/product-sort-toolbar"
-import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
+import CustomDropdown from "@components/dropdown"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
-import CustomDropdown from "@components/dropdown"
 import type { CategoryDetailResponse } from "@lib/api/pim/pim-types"
 import type { ProductCard } from "@lib/types/ui/product"
 
-// 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
-// 가능하면 DTO나 간단한 인터페이스로 유지하는 것이 좋습니다.
 export interface CategoryInfo {
   title: string
   description: string
 }
 
-interface CategoryPageClientProps {
+interface CategorySubPageClientProps {
   slug: string
+  subSlug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryDetailResponse // null 가능성 제거 (Container에서 처리함)
-  initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
-  initialTotal?: number // 전체 상품 수
+  categoryData: CategoryDetailResponse
+  initialProducts?: ProductCard[]
+  initialTotal?: number
   countryCode: string
+  parentSlug: string
 }
 
-export function CategoryPageClient({
+export function CategorySubPageClient({
   slug,
+  subSlug,
   categoryInfo,
   categoryData,
   initialProducts = [],
   initialTotal = 0,
   countryCode,
-}: CategoryPageClientProps) {
+  parentSlug,
+}: CategorySubPageClientProps) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
-  // 서버에서 받은 초기 상품 목록 사용
-  // TODO: 페이지네이션 시 추가 API 호출 필요 (클라이언트에서)
   const paginatedProducts = initialProducts
 
   const openMobileFilter = () => {
@@ -54,6 +48,9 @@ export function CategoryPageClient({
       <MobileFilterSheet isOpen={isOpen} close={close} exit={unmount} />
     ))
   }
+
+  // 하위 카테고리가 있는지 확인
+  const hasChildren = categoryData.children && categoryData.children.length > 0
 
   return (
     <main className="">
@@ -63,14 +60,13 @@ export function CategoryPageClient({
             <ProductFilterSidebar />
           </aside>
           <div className="min-w-0 flex-1">
-            {/* 카테고리 헤더(타이틀/설명/배너) */}
+            {/* 카테고리 헤더 */}
             <div className="mb-8">
               <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
                 <div className="flex-1">
                   <h1 className="mb-2 text-2xl font-bold text-gray-900 md:text-3xl">
                     {categoryInfo.title}
                   </h1>
-
                   <p className="text-sm leading-relaxed text-gray-600 md:text-base">
                     {categoryInfo.description}
                   </p>
@@ -78,65 +74,46 @@ export function CategoryPageClient({
               </div>
             </div>
 
-            {categoryData.children && categoryData.children.length > 0 && (
-              <CategoryCircleTabs
-                items={categoryData.children} // 서버 DTO 구조 그대로 전달
-                selectedId=""
-                onSelect={() => {}}
-                countryCode={countryCode}
-                parentSlug={slug}
-              />
+            {/* 하위 카테고리 탭 */}
+            {hasChildren && (
+              <section className="mb-8">
+                <nav aria-label="하위 카테고리" className="w-full">
+                  <ul className="scrollbar-hide flex flex-nowrap items-center gap-[5px] overflow-x-auto md:flex-wrap md:gap-1.5 md:overflow-x-visible">
+                    {categoryData.children!.map((child) => {
+                      const isActive = child.slug === subSlug
+                      // 재귀적으로 하위 카테고리를 표시하기 위해 현재 카테고리의 slug를 parentSlug로 사용
+                      const href = `/${countryCode}/category/${categoryData.slug}/${child.slug}`
+                      
+                      return (
+                        <li key={child.id} className="flex-shrink-0">
+                          <Link
+                            href={href}
+                            className={`
+                              flex items-center justify-center gap-2.5 rounded-full 
+                              px-2.5 py-1 text-sm 
+                              md:px-3.5 md:py-2 md:text-base 
+                              outline outline-[0.50px] outline-offset-[-0.50px] 
+                              border-gray-200
+                              font-['Pretendard'] transition-colors
+                              whitespace-nowrap
+                              ${
+                                isActive
+                                  ? "bg-black outline-black text-zinc-100 font-normal md:bg-zinc-800 md:outline-zinc-800 md:font-bold"
+                                  : "outline-Grays-Gray-3 text-Grays-Gray font-normal hover:bg-gray-100"
+                              }
+                            `}
+                            aria-pressed={isActive}
+                          >
+                            {child.name}
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </nav>
+              </section>
             )}
 
-            {/* 프로모션 배너 */}
-            <section className="my-4">
-              <BannerCarousel
-                slides={[
-                  {
-                    id: "1",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                  {
-                    id: "2",
-                    image: {
-                      src: "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-                      alt: "프로모션 배너",
-                    },
-                  },
-                ]}
-                height="120px"
-                autoPlay={true}
-                autoPlayInterval={6000}
-                className="lg:overflow-hidden lg:rounded-2xl"
-              />
-            </section>
-
-            {/* 타임 세일 섹션 */}
-            <SectionSliderHorizontal
-              title={`${categoryInfo.title} 재료 타임 세일!`}
-              itemCount={8}
-            >
-              {paginatedProducts.slice(0, 8).map((product, index) => (
-                <div key={product.id} className="w-48 shrink-0 snap-start">
-                  <TimeSaleProductCard
-                    product={{
-                      ...product,
-                      // 💡 서버에서 올 데이터 (고정값 시뮬레이션)
-                      basePrice: 30000, // 정가
-                      membershipPrice: 9000, // 할인가
-                      isMembershipOnly: false,
-                      isTimeSale: true,
-                      status: "active",
-                      timer: { hours: 16, minutes: 1, seconds: 10 },
-                    }}
-                    minWidth={192}
-                  />
-                </div>
-              ))}
-            </SectionSliderHorizontal>
             <section>
               {/* 모바일: 필터 버튼 + 정렬 툴바 */}
               <div className="mb-4 flex justify-end gap-4 md:hidden">
@@ -166,9 +143,10 @@ export function CategoryPageClient({
                 <ProductSortToolbar />
               </div>
             </section>
+            
             <section>
               {/* Product Grid */}
-              {paginatedProducts.length && (
+              {paginatedProducts.length > 0 && (
                 <>
                   <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
                     {paginatedProducts.map((product, idx) => (
@@ -187,3 +165,4 @@ export function CategoryPageClient({
     </main>
   )
 }
+

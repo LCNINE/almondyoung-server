@@ -13,7 +13,7 @@ interface CategoryPageContainerProps {
 export async function CategoryPageContainer({
   params,
 }: CategoryPageContainerProps) {
-  const { slug } = await params
+  const { slug, countryCode } = await params
 
   // 1. API 모듈을 통해 데이터 조회 (서버 -> 라우트핸들러 -> 백엔드)
   const categoryData = await getCategoryBySlug(slug)
@@ -62,6 +62,7 @@ export async function CategoryPageContainer({
       categoryData={categoryData}
       initialProducts={initialProducts}
       initialTotal={initialTotal}
+      countryCode={countryCode}
     />
   )
 }

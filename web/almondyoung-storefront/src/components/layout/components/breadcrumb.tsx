@@ -93,7 +93,66 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
       return list
     }
 
-    // (B) 메인 카테고리: /:cc/category/:slug (새 구조)
+    // (B) 서브 카테고리: /:cc/category/:parentSlug/:subSlug (새 구조)
+    if (segs[1] === 'category' && segs[2] && segs[3]) {
+      const parentSlug = segs[2]
+      const subSlug = segs[3]
+      
+      // 서버 categoryPath 있으면 사용
+      if (serverPath) {
+        list.push(...serverPath)
+        return list
+      }
+      
+      // 카테고리 트리에서 서브 카테고리 찾기
+      const findCategory = (cats: PimCategory[]): PimCategory | null => {
+        for (const cat of cats) {
+          if (cat.slug === subSlug || cat.id === subSlug) {
+            return cat
+          }
+          const children = "children" in cat ? cat.children : undefined
+          if (children && children.length > 0) {
+            const found = findCategory(children)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      
+      const subCategory = findCategory(categories)
+      if (subCategory) {
+        // 서브 카테고리의 전체 조상 경로 찾기
+        const ancestors = buildAncestors(categories, (c) => c.id === subCategory.id)
+        
+        // 조상 경로를 순회하며 브레드크럼 구성
+        for (let i = 0; i < ancestors.length; i++) {
+          const cat = ancestors[i]
+          
+          // 최상위 카테고리는 메인 카테고리 경로로
+          if (cat.parentId === null) {
+            list.push({ 
+              label: cat.name, 
+              href: `/${countryCode}/category/${cat.slug}` 
+            })
+          } else {
+            // 하위 카테고리는 부모의 slug를 찾아서 sub 경로로
+            // 조상 경로에서 부모 찾기
+            const parentIndex = ancestors.findIndex(a => a.id === cat.parentId)
+            const parentCat = parentIndex >= 0 ? ancestors[parentIndex] : null
+            const parentSlugForSub = parentCat?.slug || parentSlug
+            
+            list.push({ 
+              label: cat.name, 
+              href: `/${countryCode}/category/${parentSlugForSub}/${cat.slug}` 
+            })
+          }
+        }
+      }
+      
+      return list
+    }
+
+    // (C) 메인 카테고리: /:cc/category/:slug (새 구조)
     if (segs[1] === 'category' && segs[2] && segs[2] !== 'sub') {
       const slug = segs[2]
       
@@ -133,7 +192,7 @@ export const Breadcrumb: React.FC<BreadcrumbProps> = ({
       return list
     }
 
-    // (C) 서브 카테고리: /:cc/category/sub/:id
+    // (D) 구형 서브 카테고리: /:cc/category/sub/:id (레거시 지원)
     if (segs[1] === 'category' && segs[2] === 'sub' && segs[3]) {
       const token = segs[3]
       const ancestors = buildAncestors(categories, matchByAny(token))

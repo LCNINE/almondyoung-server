@@ -7,6 +7,8 @@ import type {
   ProductListResponse,
   ProductMasterDetailResponse,
   VariantListResponse,
+  ProductSearchResponseDto,
+  TagFilterDto,
 } from "./pim-types"
 
 const API_ENDPOINT = "/api/pim"
@@ -33,8 +35,6 @@ function getBaseUrl() {
  */
 async function fetchPim<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${getBaseUrl()}${API_ENDPOINT}${path}`
-  
-  console.log(`🌐 [fetchPim] API 호출 시작: ${url}`)
 
   try {
     const res = await fetch(url, {
@@ -47,30 +47,16 @@ async function fetchPim<T>(path: string, options?: RequestInit): Promise<T> {
       ...options,
     })
 
-    console.log(`📡 [fetchPim] 응답 상태: ${res.status} ${res.statusText}`)
-
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: "Unknown error" }))
-      console.error(`❌ [fetchPim] API 에러:`, error)
       throw new Error(
         error.message || `PIM API Request Failed: ${res.status} ${res.statusText}`
       )
     }
 
     const data = await res.json()
-    
-    // 응답 구조 디버깅 (개인정보 제외)
-    console.log(`✅ [fetchPim] API 호출 성공: ${path}`, {
-      hasItems: 'items' in data,
-      hasData: 'data' in data,
-      itemCount: Array.isArray(data) ? data.length : data?.items?.length || data?.data?.length || 0,
-      total: data?.total,
-      responseKeys: Object.keys(data || {}),
-    })
-    
     return data
   } catch (error) {
-    console.error(`❌ [fetchPim] 네트워크 에러:`, error)
     throw error
   }
 }
@@ -144,14 +130,12 @@ export async function getCategoryBySlug(
     const targetNode = findNodeBySlug(tree.categories, slug)
 
     if (!targetNode) {
-      console.warn(`[PIM API] Category not found for slug: ${slug}`)
       return null
     }
 
     // 3. 찾은 ID로 상세 정보 조회
     return await getCategoryById(targetNode.id)
   } catch (error) {
-    console.error(`[PIM API] Error finding category by slug:`, error)
     return null
   }
 }
@@ -201,8 +185,6 @@ export async function getAllProductList(
   const query = queryParams.toString()
   const path = query ? `/masters?${query}` : "/masters"
   
-  console.log(`📤 [getAllProductList] 요청 경로: ${path}`)
-  
   return fetchPim<ProductListResponse>(path, { signal })
 }
 
@@ -226,14 +208,10 @@ export async function getPimCategoryProducts(
   },
   signal?: AbortSignal
 ): Promise<ProductListResponse> {
-  console.log(`🚀 [getPimCategoryProducts] 호출:`, { categoryId, params })
-  
   // categoryId가 빈 문자열이면 전체 조회 (categoryId 파라미터 제외)
   const queryParams = categoryId
     ? { ...params, categoryId }
     : params
-
-  console.log(`📤 [getPimCategoryProducts] 최종 쿼리 파라미터:`, queryParams)
 
   return getAllProductList(queryParams, signal)
 }
@@ -287,4 +265,61 @@ export async function getPimProductVariants(
     : `/variants/masters/${masterId}`
   
   return fetchPim<VariantListResponse>(path, { signal })
+}
+
+// ==========================================
+// Elasticsearch 검색 API
+// ==========================================
+
+/**
+ * Elasticsearch 기반 상품 검색
+ * GET /products/search
+ * 
+ * @param params 검색 파라미터
+ * @param signal AbortSignal (선택)
+ * @returns 검색 결과
+ */
+export async function searchProducts(
+  params?: {
+    keyword?: string
+    categoryId?: string
+    brands?: string[]
+    minPrice?: number
+    maxPrice?: number
+    status?: string
+    tagFilters?: TagFilterDto[]
+    sortBy?: "relevance" | "price" | "createdAt"
+    sortOrder?: "asc" | "desc"
+    page?: number
+    limit?: number
+  },
+  signal?: AbortSignal
+): Promise<ProductSearchResponseDto> {
+  const queryParams = new URLSearchParams()
+  
+  if (params?.keyword) queryParams.set("keyword", params.keyword)
+  if (params?.categoryId) queryParams.set("categoryId", params.categoryId)
+  if (params?.brands && params.brands.length > 0) {
+    params.brands.forEach((brand) => queryParams.append("brands", brand))
+  }
+  if (params?.minPrice !== undefined) queryParams.set("minPrice", params.minPrice.toString())
+  if (params?.maxPrice !== undefined) queryParams.set("maxPrice", params.maxPrice.toString())
+  if (params?.status) queryParams.set("status", params.status)
+  if (params?.tagFilters && params.tagFilters.length > 0) {
+    params.tagFilters.forEach((filter, index) => {
+      queryParams.set(`tagFilters[${index}][groupId]`, filter.groupId)
+      filter.valueIds.forEach((valueId, valueIndex) => {
+        queryParams.append(`tagFilters[${index}][valueIds][]`, valueId)
+      })
+    })
+  }
+  if (params?.sortBy) queryParams.set("sortBy", params.sortBy)
+  if (params?.sortOrder) queryParams.set("sortOrder", params.sortOrder)
+  if (params?.page) queryParams.set("page", params.page.toString())
+  if (params?.limit) queryParams.set("limit", params.limit.toString())
+
+  const query = queryParams.toString()
+  const path = query ? `/products/search?${query}` : "/products/search"
+  
+  return fetchPim<ProductSearchResponseDto>(path, { signal })
 }
