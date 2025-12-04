@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useEffect } from "react"
 import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
 import {
   BasicProductCard,
@@ -10,153 +10,251 @@ import {
 import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { MembershipBanner } from "domains/home/components/banner/membership-banner"
 import { ProductCard } from "@lib/types/ui/product"
-// import { CategoryProductsSection } from "app/[countryCode]/(main)/components/sections/category-products-section"
-
-// 더미 JSON 데이터 import (서버 데이터 구조 그대로)
-import hairProducts from "@lib/data/dummy/get-hair-list.json"
-import nailProducts from "@lib/data/dummy/get-nail-list.json"
-import semiProducts from "@lib/data/dummy/get-semi-permanent-list.json"
-import waxingProducts from "@lib/data/dummy/get-waxing-list.json"
-import tattooProducts from "@lib/data/dummy/get-tattoo-list.json"
-import skinProducts from "@lib/data/dummy/get-skin-list.json"
-
 import ProductListSix from "domains/home/components/list/product-list-six"
 import SectionHeader from "./components/list/section-header"
 import ProductList from "./components/list/product-list"
 import { ProductListSection } from "./components/list/product-list-section"
-import CategoryBadgeList from "@components/category-badge-tabs"
-
-// 서버 데이터를 그대로 사용 (변환 불필요)
-
-//  카테고리 별 제품 API 상품 목록 데이터에서 카테고리로 params넣으면 해결되지않을까? 랭킹부분은 인기순으로 prams 넣으면되고
-//  신상품 API 상품 목록 데이터에서 신상품으로 params넣으면되고
-//  웰컴딜 API 상품 목록 데이터에서 웰컴딜으로 params넣으면되고
-//  타임세일 API 상품 목록 데이터에서 타임세일으로 params넣으면되고
-//  디저틸 템플릿 API 상품 목록 데이터에서 디저틸 템플릿으로 params넣으면되고
-//  인기 급상승 제품  디자인에는 없지만 기존에는 구현되어있었음. 어느게 사실?
+import CategoryBadgeTabs from "@components/category-badge-tabs"
+import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
+import { getProductListService } from "@lib/services/pim/products/getProductListService"
+import {
+  homeSectionsConfig,
+  logoutSectionIds,
+} from "@lib/data/home-sections-config"
 
 // 비로그인 사용자용 홈페이지 섹션들
 export const HomeLogout: React.FC<{
-  categories: any
-}> = ({ categories }) => {
+  categories: CategoryTreeNode[]
+  initialCategoryId: string | null
+  initialCategoryProducts: ProductCard[]
+}> = ({ categories, initialCategoryId, initialCategoryProducts }) => {
+  // 카테고리별 제품 섹션 상태 관리
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
+    initialCategoryId || ""
+  )
+  const [categoryProducts, setCategoryProducts] = useState<ProductCard[]>(
+    initialCategoryProducts
+  )
+  const [isLoadingCategoryProducts, setIsLoadingCategoryProducts] =
+    useState(false)
+
   // 타임세일 카테고리 상태 관리
   const [selectedTimeSaleCategory, setSelectedTimeSaleCategory] =
-    useState("all")
-  // 더미 JSON 데이터를 그대로 사용 (서버 구조 = UI 구조)
-  const allProducts = useMemo(
-    () => ({
-      hair: hairProducts.data as ProductCard[],
-      nail: nailProducts.data as ProductCard[],
-      semi: semiProducts.data as ProductCard[],
-      waxing: waxingProducts.data as ProductCard[],
-      tattoo: tattooProducts.data as ProductCard[],
-      skin: skinProducts.data as ProductCard[],
-    }),
-    []
-  )
+    useState<string>(initialCategoryId || "all")
+  const [timeSaleProducts, setTimeSaleProducts] = useState<ProductCard[]>([])
+  const [isLoadingTimeSaleProducts, setIsLoadingTimeSaleProducts] =
+    useState(false)
 
-  // 각 섹션별 상품 할당 (제목은 유지하되 상품은 더미 데이터 사용)
-  const hotKeywordProducts: ProductCard[] = [] // 비어있음
-  const newProducts = allProducts.hair.slice(0, 10) // 신상품: 헤어 상품 사용
-  const welcomeDealProducts = allProducts.nail.slice(0, 10) // 웰컴딜: 네일 상품 사용
-  const recommendedProducts = allProducts.semi.slice(0, 10) // 재구매 많은: 반영구 상품
-  const fitTop10Products = allProducts.waxing.slice(0, 10) // 인기 급상승: 왁싱 상품
+  // 섹션별 제품 상태 관리
+  const [sectionProducts, setSectionProducts] = useState<
+    Record<string, ProductCard[]>
+  >({})
+  const [isLoadingSections, setIsLoadingSections] = useState<Record<string, boolean>>({})
 
-  // 카테고리별 상품 (타임세일용)
-  const allCategoryProducts = useMemo(() => {
-    const result: Record<string, ProductCard[]> = {
-      all: [...allProducts.hair.slice(0, 5), ...allProducts.nail.slice(0, 5)],
+  // 카테고리 선택 시 제품 조회
+  useEffect(() => {
+    if (!selectedCategoryId) return
+
+    setIsLoadingCategoryProducts(true)
+    getProductsByCategoryService(selectedCategoryId, {
+      page: 1,
+      limit: 10,
+    })
+      .then((result) => {
+        setCategoryProducts(result.items)
+      })
+      .catch((error) => {
+        console.error("카테고리별 제품 조회 실패:", error)
+        setCategoryProducts([])
+      })
+      .finally(() => {
+        setIsLoadingCategoryProducts(false)
+      })
+  }, [selectedCategoryId])
+
+  // 타임세일 카테고리 선택 시 제품 조회
+  useEffect(() => {
+    if (!selectedTimeSaleCategory || selectedTimeSaleCategory === "all") {
+      // 전체 조회
+      setIsLoadingTimeSaleProducts(true)
+      getProductListService({
+        page: 1,
+        limit: 20,
+        sort: "createdAt:desc",
+      })
+        .then((result) => {
+          setTimeSaleProducts(result.items)
+        })
+        .catch((error) => {
+          console.error("타임세일 제품 조회 실패:", error)
+          setTimeSaleProducts([])
+        })
+        .finally(() => {
+          setIsLoadingTimeSaleProducts(false)
+        })
+    } else {
+      setIsLoadingTimeSaleProducts(true)
+      getProductsByCategoryService(selectedTimeSaleCategory, {
+        page: 1,
+        limit: 20,
+      })
+        .then((result) => {
+          setTimeSaleProducts(result.items)
+        })
+        .catch((error) => {
+          console.error("타임세일 카테고리별 제품 조회 실패:", error)
+          setTimeSaleProducts([])
+        })
+        .finally(() => {
+          setIsLoadingTimeSaleProducts(false)
+        })
+    }
+  }, [selectedTimeSaleCategory])
+
+  // 섹션별 제품 조회 (등록일자 최근순)
+  useEffect(() => {
+    const loadSectionProducts = async () => {
+      const loadingStates: Record<string, boolean> = {}
+      const products: Record<string, ProductCard[]> = {}
+
+      for (const sectionId of logoutSectionIds) {
+        loadingStates[sectionId] = true
+        setIsLoadingSections((prev) => ({ ...prev, [sectionId]: true }))
+
+        try {
+          const config = homeSectionsConfig[sectionId]
+          if (config) {
+            const result = await getProductListService(config.queryParams)
+            products[sectionId] = result.items
+          }
+        } catch (error) {
+          console.error(`섹션 ${sectionId} 제품 조회 실패:`, error)
+          products[sectionId] = []
+        } finally {
+          loadingStates[sectionId] = false
+          setIsLoadingSections((prev) => ({ ...prev, [sectionId]: false }))
+        }
+      }
+
+      setSectionProducts(products)
     }
 
-    // 각 카테고리에 해당하는 상품 매핑
-    categories.slice(0, 7).forEach((category: any, index: any) => {
-      const productsList = [
-        allProducts.hair,
-        allProducts.nail,
-        allProducts.semi,
-        allProducts.waxing,
-        allProducts.tattoo,
-        allProducts.skin,
-      ]
-      result[category.id] = productsList[index % productsList.length].slice(
-        0,
-        10
-      )
-    })
+    loadSectionProducts()
+  }, [])
 
-    return result
-  }, [categories, allProducts])
-
-  const timeSaleProducts = allCategoryProducts[selectedTimeSaleCategory] || []
 
   return (
     <div className="w-full">
+      {/* 카테고리별 제품 섹션 */}
       <ProductListSection>
         <SectionHeader
           title="카테고리별 제품"
           description="카테고리별 제품을 만나보세요"
         />
-        <CategoryBadgeList />
+        <CategoryBadgeTabs
+          categories={categories}
+          selectedCategoryId={selectedCategoryId}
+          onCategorySelect={setSelectedCategoryId}
+        />
         <div className="mt-6">
-          <ProductListSix
-            products={fitTop10Products}
-            renderCard={(product, index) => (
-              <RankProductCard product={product} rank={index + 1} />
-            )}
-          />
+          {isLoadingCategoryProducts ? (
+            <div className="py-8 text-center text-gray-500">로딩 중...</div>
+          ) : categoryProducts.length === 0 ? (
+            <div className="py-8 text-center text-gray-500">
+              <p>해당 카테고리에 등록된 상품이 없습니다.</p>
+            </div>
+          ) : (
+            <ProductListSix
+              products={categoryProducts}
+              renderCard={(product, index) => (
+                <RankProductCard product={product} rank={index + 1} />
+              )}
+            />
+          )}
         </div>
       </ProductListSection>
 
       {/* 신상품 섹션 */}
       <ProductListSection>
-        <SectionHeader title="신상품" description="신상품을 만나보세요" />
-        <ProductList
-          products={newProducts.slice(0, 10)}
-          renderCard={(product) => <BasicProductCard product={product} />}
+        <SectionHeader
+          title={homeSectionsConfig.newProducts.title}
+          description={homeSectionsConfig.newProducts.description}
         />
+        {isLoadingSections.newProducts ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={sectionProducts.newProducts || []}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
 
       {/* 웰컴딜 섹션 */}
       <ProductListSection>
         <MembershipBanner className="mb-4" />
         <SectionHeader
-          title="웰컴딜 전체 제품 100원"
-          description="웰컴딜 전체 제품을 만나보세요"
+          title={homeSectionsConfig.welcomeDeal.title}
+          description={homeSectionsConfig.welcomeDeal.description}
         />
-        <ProductList
-          products={welcomeDealProducts.slice(0, 10)}
-          renderCard={(product) => <BasicProductCard product={product} />}
-        />
+        {isLoadingSections.welcomeDeal ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={sectionProducts.welcomeDeal || []}
+            renderCard={(product) => <BasicProductCard product={product} />}
+          />
+        )}
       </ProductListSection>
+
       {/* 타임세일 섹션 */}
       <ProductListSection>
         <SectionHeader
           title="타임세일"
           description="타임세일 전체 제품을 만나보세요"
         />
-        <CategoryBadgeList />
+        <CategoryBadgeTabs
+          categories={categories}
+          selectedCategoryId={selectedTimeSaleCategory}
+          onCategorySelect={setSelectedTimeSaleCategory}
+        />
         <div className="mt-6">
-          <ProductList
-            products={timeSaleProducts}
-            renderCard={(product) => (
-              <DiscountProductCard product={product} minWidth={100} />
-            )}
-          />
+          {isLoadingTimeSaleProducts ? (
+            <div className="py-8 text-center text-gray-500">로딩 중...</div>
+          ) : timeSaleProducts.length === 0 ? (
+            <div className="py-8 text-center text-gray-500">
+              <p>해당 카테고리에 등록된 상품이 없습니다.</p>
+            </div>
+          ) : (
+            <ProductList
+              products={timeSaleProducts}
+              renderCard={(product) => (
+                <DiscountProductCard product={product} minWidth={100} />
+              )}
+            />
+          )}
         </div>
       </ProductListSection>
+
       {/* 디지털 템플릿 섹션 */}
-      {allProducts.tattoo.length > 0 && (
+      {(sectionProducts.digitalTemplate?.length || 0) > 0 && (
         <ProductListSection>
           <SectionHeader
-            title="간편편집, 뷰티샵 디지털 템플릿"
-            description="캔바로 쉽게 편집할 수 있는 전문가용 템플릿"
+            title={homeSectionsConfig.digitalTemplate.title}
+            description={homeSectionsConfig.digitalTemplate.description}
           />
-          <ProductList
-            products={allProducts.tattoo.slice(0, 10)}
-            renderCard={(product) => <BasicProductCard product={product} />}
-          />
+          {isLoadingSections.digitalTemplate ? (
+            <div className="py-8 text-center text-gray-500">로딩 중...</div>
+          ) : (
+            <ProductList
+              products={sectionProducts.digitalTemplate || []}
+              renderCard={(product) => <BasicProductCard product={product} />}
+            />
+          )}
         </ProductListSection>
       )}
+
       {/* 메인 배너 캐러셀 */}
       <div className="w-full lg:py-8">
         <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
@@ -170,30 +268,40 @@ export const HomeLogout: React.FC<{
         </div>
       </div>
 
+      {/* 인기 급상승 제품 섹션 */}
       <ProductListSection className="bg-linear-to-b from-purple-50 to-white">
         <SectionHeader
-          title="인기 급상승 제품"
-          description="이번 주 가장 인기 있는 제품들을 만나보세요"
+          title={homeSectionsConfig.hotRising.title}
+          description={homeSectionsConfig.hotRising.description}
         />
-        <ProductList
-          products={fitTop10Products}
-          renderCard={(product, index) => (
-            <RankProductCard product={product} rank={index + 1} />
-          )}
-        />
+        {isLoadingSections.hotRising ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={sectionProducts.hotRising || []}
+            renderCard={(product, index) => (
+              <RankProductCard product={product} rank={index + 1} />
+            )}
+          />
+        )}
       </ProductListSection>
 
+      {/* 재구매 많은 제품 섹션 */}
       <ProductListSection>
         <SectionHeader
-          title="재구매 많은 제품"
-          description="한 번 사면 반드시 다시 구매하는 제품들을 만나보세요"
+          title={homeSectionsConfig.frequentRebuy.title}
+          description={homeSectionsConfig.frequentRebuy.description}
         />
-        <ProductList
-          products={fitTop10Products}
-          renderCard={(product, index) => (
-            <BasicProductCard product={product} />
-          )}
-        />
+        {isLoadingSections.frequentRebuy ? (
+          <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        ) : (
+          <ProductList
+            products={sectionProducts.frequentRebuy || []}
+            renderCard={(product, index) => (
+              <BasicProductCard product={product} />
+            )}
+          />
+        )}
       </ProductListSection>
 
       {/* SEO를 위한 추가 컨텐츠 (숨김 처리 가능) */}

@@ -2,8 +2,7 @@ import { useState, useCallback } from "react"
 import { RecentViewProductThumbnail } from "@lib/types/ui/product"
 import { UserBasicInfo } from "@lib/types/ui/user"
 
-// 더미 데이터 import
-import hairListData from "@lib/data/dummy/get-hair-list.json"
+// TODO: 실제 API 연동 필요
 
 interface UseRecentViewsOptions {
   userId?: string
@@ -37,14 +36,9 @@ export function useRecentViews(
   user: UserBasicInfo | null,
   options: UseRecentViewsOptions = {}
 ): UseRecentViewsReturn {
-  // 더미 데이터 변환: 3개만 가져오기
-  const dummyRecentViews: RecentViewProductThumbnail[] = hairListData.data
-    .slice(0, 3)
-    .map((item) => ({
-      productId: item.id,
-      viewedAt: item.createdAt,
-      thumbnail: item.thumbnail,
-    }))
+  // TODO: 실제 API 연동 필요
+  // 현재는 빈 배열로 대체
+  const dummyRecentViews: RecentViewProductThumbnail[] = []
 
   const [recentViews] = useState<RecentViewProductThumbnail[]>(dummyRecentViews)
   const [isLoading] = useState(false)

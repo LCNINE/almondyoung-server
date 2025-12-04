@@ -10,8 +10,7 @@ import ProductSortToolbar from "@components/product-sort-toolbar"
 import { SlidersHorizontal } from "lucide-react"
 import { SectionSliderHorizontal } from "@components/section-sliders-horizontal"
 
-// 더미 데이터 (추후 API로 교체)
-import hairListData from "@lib/data/dummy/get-hair-list.json"
+// TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
 import { MobileFilterSheet } from "./components"
 import CustomDropdown from "@components/dropdown"
 
@@ -81,12 +80,9 @@ export default function ClassPage() {
     { id: "jeju", label: "제주" },
   ]
 
-  // 페이지네이션된 상품 (더미 데이터 사용)
+  // TODO: 서버에서 데이터를 받아서 props로 전달하도록 변경 필요
   const startIndex = (page - 1) * pageSize
-  const paginatedProducts = hairListData.data.slice(
-    startIndex,
-    startIndex + pageSize
-  )
+  const paginatedProducts: any[] = [] // TODO: props로 받은 데이터 사용
 
   // 모바일 필터 열기
   const openMobileFilter = () => {
