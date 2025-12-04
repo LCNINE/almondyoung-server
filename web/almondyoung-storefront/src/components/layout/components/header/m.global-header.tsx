@@ -10,6 +10,7 @@ import { useParams, usePathname } from "next/navigation"
 import React, { useMemo, useState } from "react"
 import CartSheet from "../../../cart/cart-sheet"
 import { useUser } from "contexts/user-context"
+import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 
 // 기본 카테고리 제거 - 서버 데이터만 사용
 
@@ -54,13 +55,27 @@ export const MobileGlobalHeader: React.FC = () => {
   const { categories } = useCategories()
 
   // 상단 노출용 카테고리 (최대 8개)
-  const topCategories: PimCategory[] = useMemo(
-    () =>
-      Array.isArray(categories) && categories.length > 0
-        ? categories.slice(0, 8)
-        : [],
-    [categories]
-  )
+  // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
+  const topCategories: PimCategory[] = useMemo(() => {
+    if (!Array.isArray(categories) || categories.length === 0) {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[MobileGlobalHeader] 카테고리가 없습니다")
+      }
+      return []
+    }
+
+    const filtered = categories.filter((cat) => getShowOnMainCategory(cat))
+    const sorted = filtered.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    const sliced = sorted.slice(0, 8)
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        `[MobileGlobalHeader] 카테고리 필터링: 전체 ${categories.length}개 → showOnMainCategory=true ${filtered.length}개 → 정렬 후 ${sorted.length}개 → 최종 ${sliced.length}개`
+      )
+    }
+
+    return sliced
+  }, [categories])
 
   const [isSearchFocused, setIsSearchFocused] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")

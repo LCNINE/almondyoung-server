@@ -5,7 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
 // [제거] useLayoutEffect, useRef
-import { useState } from "react"
+import { useMemo, useState } from "react"
 //categorysheet
 import { CategorySheet } from "@components/category/categorySheet"
 // [제거] Portal
@@ -19,6 +19,7 @@ import { UserBasicInfo } from "@lib/types/ui/user"
 //search input
 import { SearchInput } from "./search-input"
 import { useUser } from "contexts/user-context"
+import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 
 /** 트리에서 조상 경로를 찾는 유틸 */
 function buildAncestors(
@@ -90,12 +91,28 @@ export function DesktopHeader() {
   const [open, setOpen] = useState(false)
   const [showNotification] = useState(true)
 
-  // 상단 네비게이션에 보여줄 상위 카테고리(최대 7개 정도)
   // 서버 데이터만 사용
-  const topLevel: PimCategory[] =
-    Array.isArray(categories) && categories.length > 0
-      ? categories.slice(0, 8)
-      : []
+  // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
+  const topLevel: PimCategory[] = useMemo(() => {
+    if (!Array.isArray(categories) || categories.length === 0) {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[DesktopHeader] 카테고리가 없습니다")
+      }
+      return []
+    }
+
+    const filtered = categories.filter((cat) => getShowOnMainCategory(cat))
+    const sorted = filtered.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    const sliced = sorted.slice(0, 8)
+
+    if (process.env.NODE_ENV === "development") {
+      console.log(
+        `[DesktopHeader] 카테고리 필터링: 전체 ${categories.length}개 → showOnMainCategory=true ${filtered.length}개 → 정렬 후 ${sorted.length}개 → 최종 ${sliced.length}개`
+      )
+    }
+
+    return sliced
+  }, [categories])
 
   // 전문 분야 하이라이트
   const isSpecialtyCategory = (name: string) => {
@@ -113,7 +130,7 @@ export function DesktopHeader() {
 
     // 1. 사용자 전문분야와 직접 매칭 (name으로 비교)
     const directMatch = userSpecialties.some(
-      (specialty) =>
+      (specialty: string) =>
         specialty && (name.includes(specialty) || specialty.includes(name))
     )
 

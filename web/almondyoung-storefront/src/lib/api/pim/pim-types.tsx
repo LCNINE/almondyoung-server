@@ -4,6 +4,20 @@
  * 스키마에 있지만 DTO에 명시되지 않은 필드(imageUrl)는 optional로 추가했습니다.
  */
 
+// 카테고리 표시 설정 (display_settings JSON 파싱용)
+export interface CategoryDisplaySettings {
+  mobileOnly?: boolean
+  pcAndMobile?: boolean
+  menuPositions?: {
+    topMenu?: boolean
+    leftSide?: boolean
+    footerMenu?: boolean
+  }
+  defaultSortField?: string
+  showOnMainCategory?: boolean
+  productDisplayOrder?: "asc" | "desc"
+}
+
 // 카테고리 트리 노드 (트리 조회용)
 // 서버의 CategoryTreeNodeDto 구조
 export interface CategoryTreeNode {
@@ -19,9 +33,10 @@ export interface CategoryTreeNode {
   children?: CategoryTreeNode[]
   // 스키마에 있지만 DTO에 명시되지 않은 필드
   imageUrl?: string | null
-  // 메인 반영 여부 (서버 응답에 있을 수 있음)
-  showInMain?: boolean
-  isMain?: boolean
+  // 표시 설정 (이미 파싱된 객체, camelCase)
+  displaySettings?: CategoryDisplaySettings | null
+  // 하위 호환성을 위한 필드 (JSON 문자열, snake_case)
+  display_settings?: string | null
 }
 
 // 카테고리 트리 응답
@@ -52,6 +67,8 @@ export interface CategoryResponse {
   basePrice?: string | null
   // 스키마에 있지만 DTO에 명시되지 않은 필드
   imageUrl?: string | null
+  // 표시 설정 (JSON 문자열)
+  display_settings?: string | null
 }
 
 // 카테고리 상세 응답

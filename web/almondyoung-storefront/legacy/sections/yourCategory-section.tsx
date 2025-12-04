@@ -3,8 +3,15 @@ import Link from "next/link"
 import { getAllCategoriesCached } from "@lib/services/pim/category/getCategory"
 import Image from "next/image"
 import { getCategoryTree } from "@lib/api/pim"
+import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 export const CategorySelectSection = async (props: { countryCode: string }) => {
   const categories = await getCategoryTree()
+
+  // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
+  const filteredCategories = categories.categories
+    .filter((category) => getShowOnMainCategory(category))
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .slice(0, 7)
 
   return (
     <div>
@@ -23,7 +30,7 @@ export const CategorySelectSection = async (props: { countryCode: string }) => {
 
             <div className="flex flex-wrap justify-center gap-2 md:gap-4">
               {/* 매핑된 카테고리 표시 */}
-              {categories.categories.slice(0, 7).map((category) => (
+              {filteredCategories.map((category) => (
                 <Link
                   key={category.id}
                   href={`/${props.countryCode}/category/${category.slug}`}
