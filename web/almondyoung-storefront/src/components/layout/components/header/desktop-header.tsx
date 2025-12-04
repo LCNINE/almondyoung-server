@@ -147,17 +147,16 @@ export function DesktopHeader() {
       pathname?.includes("/category/") &&
       pathname?.split("/category/")[1]?.includes("/")
     ) {
-      const { categories } = useCategories()
-
-      // 현재 서브 카테고리 ID 추출
+      // 이미 선언된 categories 변수 사용 (조건부 Hook 호출 제거)
+      // 현재 서브 카테고리 slug 추출
       const pathParts = pathname.split("/category/")[1]?.split("/")
-      const subId = pathParts?.[1]
-      if (!subId) return false
+      const subSlug = pathParts?.[1]
+      if (!subSlug) return false
 
       // 카테고리 트리에서 해당 서브 카테고리 찾기
       const findCategory = (cats: PimCategory[]): PimCategory | null => {
         for (const cat of cats) {
-          if (cat.id === subId) return cat
+          if (cat.slug === subSlug) return cat
           // CategoryTreeNode만 children을 가질 수 있음
           const children = "children" in cat ? cat.children : undefined
           if (children && children.length > 0) {
