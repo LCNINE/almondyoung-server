@@ -58,21 +58,12 @@ export const MobileGlobalHeader: React.FC = () => {
   // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
   const topCategories: PimCategory[] = useMemo(() => {
     if (!Array.isArray(categories) || categories.length === 0) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[MobileGlobalHeader] 카테고리가 없습니다")
-      }
       return []
     }
 
     const filtered = categories.filter((cat) => getShowOnMainCategory(cat))
     const sorted = filtered.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
     const sliced = sorted.slice(0, 8)
-
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        `[MobileGlobalHeader] 카테고리 필터링: 전체 ${categories.length}개 → showOnMainCategory=true ${filtered.length}개 → 정렬 후 ${sorted.length}개 → 최종 ${sliced.length}개`
-      )
-    }
 
     return sliced
   }, [categories])

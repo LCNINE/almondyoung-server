@@ -31,19 +31,6 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
   const currentUser =
     userResult.status === "fulfilled" ? userResult.value : null
 
-  // 개발 환경 로깅
-  if (process.env.NODE_ENV === "development") {
-    if (categoriesResult.status === "rejected") {
-      console.warn("[RootLayout] 카테고리 로드 실패:", categoriesResult.reason)
-    } else {
-      console.log(
-        `[RootLayout] ${categories.length}개 카테고리 로드 완료`
-      )
-    }
-    if (userResult.status === "rejected") {
-      console.warn("[RootLayout] 사용자 정보 로드 실패:", userResult.reason)
-    }
-  }
 
   return (
     <html lang="ko" suppressHydrationWarning>

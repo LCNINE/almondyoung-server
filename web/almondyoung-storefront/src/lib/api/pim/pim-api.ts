@@ -35,8 +35,6 @@ function getBaseUrl() {
  */
 async function fetchPim<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${getBaseUrl()}${API_ENDPOINT}${path}`
-  
-  console.log(`🌐 [fetchPim] API 호출 시작: ${url}`)
 
   try {
     const res = await fetch(url, {
@@ -49,30 +47,16 @@ async function fetchPim<T>(path: string, options?: RequestInit): Promise<T> {
       ...options,
     })
 
-    console.log(`📡 [fetchPim] 응답 상태: ${res.status} ${res.statusText}`)
-
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: "Unknown error" }))
-      console.error(`❌ [fetchPim] API 에러:`, error)
       throw new Error(
         error.message || `PIM API Request Failed: ${res.status} ${res.statusText}`
       )
     }
 
     const data = await res.json()
-    
-    // 응답 구조 디버깅 (개인정보 제외)
-    console.log(`✅ [fetchPim] API 호출 성공: ${path}`, {
-      hasItems: 'items' in data,
-      hasData: 'data' in data,
-      itemCount: Array.isArray(data) ? data.length : data?.items?.length || data?.data?.length || 0,
-      total: data?.total,
-      responseKeys: Object.keys(data || {}),
-    })
-    
     return data
   } catch (error) {
-    console.error(`❌ [fetchPim] 네트워크 에러:`, error)
     throw error
   }
 }
@@ -146,14 +130,12 @@ export async function getCategoryBySlug(
     const targetNode = findNodeBySlug(tree.categories, slug)
 
     if (!targetNode) {
-      console.warn(`[PIM API] Category not found for slug: ${slug}`)
       return null
     }
 
     // 3. 찾은 ID로 상세 정보 조회
     return await getCategoryById(targetNode.id)
   } catch (error) {
-    console.error(`[PIM API] Error finding category by slug:`, error)
     return null
   }
 }
@@ -203,8 +185,6 @@ export async function getAllProductList(
   const query = queryParams.toString()
   const path = query ? `/masters?${query}` : "/masters"
   
-  console.log(`📤 [getAllProductList] 요청 경로: ${path}`)
-  
   return fetchPim<ProductListResponse>(path, { signal })
 }
 
@@ -228,14 +208,10 @@ export async function getPimCategoryProducts(
   },
   signal?: AbortSignal
 ): Promise<ProductListResponse> {
-  console.log(`🚀 [getPimCategoryProducts] 호출:`, { categoryId, params })
-  
   // categoryId가 빈 문자열이면 전체 조회 (categoryId 파라미터 제외)
   const queryParams = categoryId
     ? { ...params, categoryId }
     : params
-
-  console.log(`📤 [getPimCategoryProducts] 최종 쿼리 파라미터:`, queryParams)
 
   return getAllProductList(queryParams, signal)
 }
@@ -319,8 +295,6 @@ export async function searchProducts(
   },
   signal?: AbortSignal
 ): Promise<ProductSearchResponseDto> {
-  console.log(`🚀 [searchProducts] 호출:`, params)
-  
   const queryParams = new URLSearchParams()
   
   if (params?.keyword) queryParams.set("keyword", params.keyword)
@@ -346,8 +320,6 @@ export async function searchProducts(
 
   const query = queryParams.toString()
   const path = query ? `/products/search?${query}` : "/products/search"
-  
-  console.log(`📤 [searchProducts] 요청 경로: ${path}`)
   
   return fetchPim<ProductSearchResponseDto>(path, { signal })
 }

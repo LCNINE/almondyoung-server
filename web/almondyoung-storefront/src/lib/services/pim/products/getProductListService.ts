@@ -62,7 +62,6 @@ export async function getProductListService(
     const productItems = res.items || (res as any).data || []
     
     if (!Array.isArray(productItems)) {
-      console.error(`❌ [getProductListService] items가 배열이 아님:`, typeof productItems, productItems)
       throw new Error(`Invalid API response: items is not an array`)
     }
 
@@ -127,8 +126,6 @@ export async function getProductsByCategoryService(
   page: number
   limit: number
 }> {
-  console.log(`🚀 [getProductsByCategoryService] 시작:`, { categoryId, params })
-  
   try {
     // AbortSignal 처리
     const signal = opts instanceof AbortSignal ? opts : undefined
@@ -150,42 +147,24 @@ export async function getProductsByCategoryService(
       queryParams.categoryId = categoryId
     }
 
-    console.log(`📤 [getProductsByCategoryService] API 호출 파라미터:`, queryParams)
-
     const res = await getPimCategoryProducts(
       categoryId === "all" ? "" : categoryId,
       queryParams,
       signal
     )
 
-    console.log(`📥 [getProductsByCategoryService] API 응답:`, { 
-      itemCount: res.items?.length || 0, 
-      total: res.total,
-      responseType: Array.isArray(res) ? 'array' : 'object',
-      hasItems: 'items' in res,
-      hasData: 'data' in res,
-      fullResponse: res,
-    })
-
     // API 응답 구조에 따라 items 또는 data 필드 사용
     // 백엔드 응답이 {data: [...], total: 13} 형태일 수도 있음
     const productItems = res.items || (res as any).data || []
     
     if (!Array.isArray(productItems)) {
-      console.error(`❌ [getProductsByCategoryService] items가 배열이 아님:`, typeof productItems, productItems)
       throw new Error(`Invalid API response: items is not an array`)
     }
 
     const items: ProductCard[] = productItems.map(toProductCard)
 
-    console.log(`✅ [getProductsByCategoryService] 완료:`, { 
-      itemCount: items.length, 
-      total: res.total 
-    })
-
     return { items, total: res.total, page: res.page, limit: res.limit }
   } catch (error) {
-    console.error("❌ [getProductsByCategoryService] 에러:", error)
     // 실패 시에도 호출부가 안전하게 동작하도록 보수적 폴백
     return {
       items: [],

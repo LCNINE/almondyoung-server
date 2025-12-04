@@ -65,7 +65,6 @@ export async function searchProductService(
       aggregations: response.aggregations,
     }
   } catch (error) {
-    console.error("❌ [searchProductService] 검색 실패:", error)
     throw error
   }
 }

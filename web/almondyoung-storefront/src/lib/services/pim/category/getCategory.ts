@@ -37,22 +37,9 @@ async function fetchCategoriesWithISR(): Promise<PimCategory[]> {
     // 라우트 핸들러를 통해 백엔드 API 호출
     const response = await getCategoryTree()
     const categories = response?.categories ?? []
-    console.log(
-      `✅ [fetchCategoriesWithISR] ${categories.length}개 카테고리 로드 완료`
-    )
     return categories
   } catch (error) {
     // 타임아웃, 네트워크 에러 등 모든 에러 처리
-    if (
-      error instanceof Error &&
-      (error.name === "AbortError" || error.name === "TimeoutError")
-    ) {
-      console.warn(
-        "[fetchCategoriesWithISR] 타임아웃 (3초 초과) - 빈 배열 반환"
-      )
-    } else {
-      console.error("[fetchCategoriesWithISR] 에러 발생:", error)
-    }
     return [] // 🛡️ 항상 빈 배열 반환 (앱 크래시 방지)
   }
 }
@@ -60,7 +47,6 @@ async function fetchCategoriesWithISR(): Promise<PimCategory[]> {
 // 캐시 무효화 함수 (필요시 사용)
 export function invalidateCategoriesCache(): void {
   delete _mem.categories
-  console.log("🌐 [invalidateCategoriesCache] 메모리 캐시 무효화")
 }
 
 // getAllCategories 별칭 (기존 코드 호환성을 위해)
