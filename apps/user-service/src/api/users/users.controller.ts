@@ -109,7 +109,7 @@ export class UsersController {
     @CurrentUser() user: JwtPayload,
     @Body() updateUserDto: UpdateUserDto,
   ) {
-    console.log('updateUserDto:::', updateUserDto);
+
     await this.usersService.updateMyProfile(user.id, updateUserDto);
     return;
   }
