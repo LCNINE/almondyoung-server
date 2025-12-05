@@ -33,7 +33,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @Controller('users')
 @UseGuards(JwtAuthGuard, AuthorizationGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
@@ -109,6 +109,7 @@ export class UsersController {
     @CurrentUser() user: JwtPayload,
     @Body() updateUserDto: UpdateUserDto,
   ) {
+    console.log('updateUserDto:::', updateUserDto);
     await this.usersService.updateMyProfile(user.id, updateUserDto);
     return;
   }

@@ -1,4 +1,3 @@
-import { PartialType } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
@@ -10,7 +9,7 @@ import {
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
 
-export class UpdateUserDto extends PartialType(AddressDto) {
+export class UpdateUserDto {
   @ApiProperty({
     description: '사용자 이름',
     example: '홍길동',
@@ -65,4 +64,6 @@ export class UpdateUserDto extends PartialType(AddressDto) {
   @IsOptional()
   @IsString({ message: '프로필 이미지 URL는 문자열이어야 합니다.' })
   profileImageUrl?: string;
+
+  address?: AddressDto | null;
 }
