@@ -6,6 +6,7 @@ import {
   IsString,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
 
@@ -65,5 +66,11 @@ export class UpdateUserDto {
   @IsString({ message: '프로필 이미지 URL는 문자열이어야 합니다.' })
   profileImageUrl?: string;
 
+  @ApiProperty({
+    description: '주소 정보',
+    type: AddressDto,
+    required: false,
+  })
+  @IsOptional()
   address?: AddressDto | null;
 }
