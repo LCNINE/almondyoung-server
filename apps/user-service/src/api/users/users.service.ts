@@ -232,7 +232,7 @@ export class UsersService {
       phoneNumber,
       birthDate,
       profileImageUrl,
-      ...address
+      address
     } = updateUserDto;
 
     const client = this.getClient(tx);
@@ -245,26 +245,25 @@ export class UsersService {
           .where(eq(schema.users.id, userId));
       }
 
-      if (Object.keys(address).length > 0) {
-        await client
-          .insert(schema.profiles)
-          .values({
-            userId,
-            birthDate: birthDate ? new Date(birthDate as any) : undefined,
-            phoneNumber: phoneNumber,
-            profileImageUrl: profileImageUrl,
-            address,
-          })
-          .onConflictDoUpdate({
-            target: schema.profiles.userId,
-            set: {
-              phoneNumber: phoneNumber,
-              profileImageUrl: profileImageUrl,
-              birthDate: birthDate ? new Date(birthDate as any) : undefined,
-              address,
-            },
-          });
-      }
+      await client
+        .insert(schema.profiles)
+        .values({
+          userId,
+          birthDate: birthDate ? new Date(birthDate) : undefined,
+          phoneNumber,
+          profileImageUrl,
+          address: address ? JSON.stringify(address) : undefined,
+        })
+        .onConflictDoUpdate({
+          target: schema.profiles.userId,
+          set: {
+            ...(phoneNumber && { phoneNumber }),
+            ...(profileImageUrl && { profileImageUrl }),
+            ...(birthDate && { birthDate: new Date(birthDate) }),
+            ...(address && { address: JSON.stringify(address) }),
+          },
+        });
+
 
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
       if (!tx) {
@@ -277,6 +276,8 @@ export class UsersService {
           },
         });
       }
+
+      return;
     } catch (error) {
       throw new InternalServerErrorException(
         '사용자 정보 업데이트 중 오류가 발생했습니다.',
