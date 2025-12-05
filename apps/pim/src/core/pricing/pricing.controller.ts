@@ -10,7 +10,7 @@ import {
   HttpStatus,
   Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { PricingService } from './pricing.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import {
@@ -49,6 +49,7 @@ export class PricingController {
   @Put('rules')
   @ApiOperation({ summary: 'Replace all pricing rules for a master product' })
   @ApiParam({ name: 'masterId', description: 'Master product ID' })
+  @ApiBody({ type: ReplacePricingRulesDto, description: 'Pricing rules to replace' })
   @ApiResponse({
     status: 200,
     description: 'Pricing rules replaced',

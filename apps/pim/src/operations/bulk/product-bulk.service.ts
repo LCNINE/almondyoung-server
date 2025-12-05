@@ -13,7 +13,7 @@ import { DbTransaction } from '../../types';
 export class ProductBulkService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -38,7 +38,7 @@ export class ProductBulkService {
       .where(
         and(
           inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       )
       .returning();
@@ -73,7 +73,7 @@ export class ProductBulkService {
       .where(
         and(
           inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       )
       .returning();
@@ -108,7 +108,7 @@ export class ProductBulkService {
       .where(
         and(
           inArray(productMasterVersions.id, dto.productIds),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       )
       .returning();

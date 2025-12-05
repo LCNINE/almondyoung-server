@@ -13,7 +13,7 @@ export class ProductDto {
   version: number;
 
   @ApiProperty({ description: 'Version status', enum: ['draft', 'inactive', 'active'] })
-  versionStatus: string;
+  status: string;
 
   @ApiProperty({ description: '제품명' })
   name: string;
@@ -30,9 +30,6 @@ export class ProductDto {
   @ApiProperty({ description: '이미지', nullable: true })
   images: any;
 
-  @ApiProperty({ description: '속성', nullable: true })
-  attributes: any;
-
   @ApiProperty({ description: 'SEO 제목', nullable: true })
   seoTitle: string | null;
 
@@ -41,9 +38,6 @@ export class ProductDto {
 
   @ApiProperty({ description: 'SEO 키워드', type: [String], nullable: true })
   seoKeywords: string[] | null;
-
-  @ApiProperty({ description: '제품 상태' })
-  status: string;
 
   @ApiProperty({ description: '승인 상태' })
   approvalStatus: string;
