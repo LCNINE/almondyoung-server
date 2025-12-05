@@ -113,6 +113,7 @@ export const productMasters = pgTable(
 
 // ===== 2.1. PRODUCT MASTER VERSIONS (판매상품 버전별 데이터) =====
 export const ProductMasterVersionStatusEnum = pgEnum('product_master_version_status', ['draft', 'inactive', 'active']);
+export const ProductMasterVersionApprovalStatusEnum = pgEnum('product_master_version_approval_status', ['draft', 'pending', 'approved', 'rejected']);
 export const productMasterVersions = pgTable(
   'product_master_versions',
   {
@@ -126,7 +127,7 @@ export const productMasterVersions = pgTable(
       .references(() => productMasters.id, { onDelete: 'cascade' }),
     version: integer('version').notNull().default(1),
     parentVersionId: uuid('parent_version_id'),
-    versionStatus: ProductMasterVersionStatusEnum('version_status')
+    status: ProductMasterVersionStatusEnum('status')
       .notNull()
       .default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
@@ -136,21 +137,15 @@ export const productMasterVersions = pgTable(
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
     thumbnail: text('thumbnail'), // 썸네일 이미지 URL
-    // categoryId removed - now using many-to-many relationship via productMasterCategories
-    // basePrice removed - 가격은 전적으로 pricing rules로 결정
-    // 물리적 속성 제거: weight, dimensions, costPrice 등
-    tags: text('tags').array(), // 마케팅 태그
+
     images: jsonb('images'), // 상품 이미지 (string[])
-    attributes: jsonb('attributes'), // 판매 관련 속성 (색상, 소재, 용량 등의 표시용 정보)
     seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
     seoDescription: text('seo_description'), // SEO 설명
     seoKeywords: text('seo_keywords').array(), // SEO 키워드
     // 고지훈 임시 시연용수정 - 상품 상세설명 (HTML 에디터용)
     descriptionHtml: text('description_html'), // 상품 상세설명 HTML (단일 필드)
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive, draft
-    // 구매제한 관련 필드들
-    isWholesaleOnly: boolean('is_wholesale_only').default(false), // 도매회원 전용
-    isMembershipOnly: boolean('is_membership_only').default(false), // 멤버십회원 전용
+    isWholesaleOnly: boolean('is_wholesale_only').default(false).notNull(), // 도매회원 전용
+    isMembershipOnly: boolean('is_membership_only').default(false).notNull(), // 멤버십회원 전용
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
@@ -185,7 +180,7 @@ export const productMasterVersions = pgTable(
     salesEndDate: timestamp('sales_end_date'),
 
     // Approval Workflow
-    approvalStatus: varchar('approval_status', { length: 20 })
+    approvalStatus: ProductMasterVersionApprovalStatusEnum('approval_status')
       .notNull()
       .default('draft'), // 'draft', 'pending', 'approved', 'rejected'
     approvedAt: timestamp('approved_at'),
@@ -199,7 +194,6 @@ export const productMasterVersions = pgTable(
     // Audit Fields
     seller: varchar('seller', { length: 100 }),
     registrationDate: timestamp('registration_date').defaultNow().notNull(),
-    lastEditDate: timestamp('last_edit_date'),
     // ===== Phase 1 NEW FIELDS END =====
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -215,7 +209,7 @@ export const productMasterVersions = pgTable(
     }),
     // Indexes
     index('idx_versions_master_id').on(table.masterId),
-    index('idx_versions_status').on(table.versionStatus),
+    index('idx_versions_status').on(table.status),
     index('idx_versions_master_version').on(table.masterId, table.version),
     index('idx_versions_name').on(table.name),
     index('idx_versions_brand').on(table.brand),
@@ -228,7 +222,7 @@ export const productMasterVersions = pgTable(
     index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
     uniqueIndex('unique_master_active_version')
       .on(table.masterId)
-      .where(sql`${table.versionStatus} = 'active'`),
+      .where(sql`${table.status} = 'active'`),
     uniqueIndex('unique_master_version').on(table.masterId, table.version),
   ],
 );
@@ -246,16 +240,16 @@ export const productMasterCategories = pgTable(
     categoryId: uuid('category_id')
       .notNull()
       .references(() => productCategories.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     isPrimary: boolean('is_primary').default(false), // 주 카테고리 여부
     createdAt: timestamp('created_at').defaultNow(),
     createdBy: uuid('created_by'),
   },
   (table) => [
-    index('idx_master_categories_master_version').on(table.masterId, table.version),
+    index('idx_master_categories_master_version').on(table.masterId, table.versionId),
     index('idx_master_categories_category').on(table.categoryId),
     index('idx_master_categories_primary').on(table.masterId, table.isPrimary),
-    uniqueIndex('unique_master_category_version').on(table.masterId, table.categoryId, table.version),
+    uniqueIndex('unique_master_category_version').on(table.masterId, table.categoryId, table.versionId),
   ],
 );
 
@@ -272,18 +266,18 @@ export const productMasterOptionGroups = pgTable(
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
     index('idx_master_option_groups_master_version').on(
       table.masterId,
-      table.version,
+      table.versionId,
     ),
     uniqueIndex('unique_master_option_group_version').on(
       table.masterId,
       table.optionGroupId,
-      table.version,
+      table.versionId,
     ),
   ],
 );
@@ -301,18 +295,18 @@ export const productMasterVariants = pgTable(
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
     index('idx_master_variants_master_version').on(
       table.masterId,
-      table.version,
+      table.versionId,
     ),
     uniqueIndex('unique_master_variant_version').on(
       table.masterId,
       table.variantId,
-      table.version,
+      table.versionId,
     ),
   ],
 );
@@ -330,18 +324,18 @@ export const productMasterPricingRules = pgTable(
     pricingRuleId: uuid('pricing_rule_id')
       .notNull()
       .references(() => pricingRules.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at').defaultNow(),
   },
   (table) => [
     index('idx_master_pricing_rules_master_version').on(
       table.masterId,
-      table.version,
+      table.versionId,
     ),
     uniqueIndex('unique_master_pricing_rule_version').on(
       table.masterId,
       table.pricingRuleId,
-      table.version,
+      table.versionId,
     ),
   ],
 );
@@ -359,7 +353,7 @@ export const productOptionGroupDisplays = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
     description: text('description'),
@@ -370,13 +364,13 @@ export const productOptionGroupDisplays = pgTable(
     index('idx_option_group_displays_lookup').on(
       table.optionGroupId,
       table.masterId,
-      table.version,
+      table.versionId,
       table.locale,
     ),
     uniqueIndex('unique_option_group_display').on(
       table.optionGroupId,
       table.masterId,
-      table.version,
+      table.versionId,
       table.locale,
     ),
   ],
@@ -395,7 +389,7 @@ export const productOptionValueDisplays = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
     colorCode: varchar('color_code', { length: 7 }),
@@ -407,13 +401,13 @@ export const productOptionValueDisplays = pgTable(
     index('idx_option_value_displays_lookup').on(
       table.optionValueId,
       table.masterId,
-      table.version,
+      table.versionId,
       table.locale,
     ),
     uniqueIndex('unique_option_value_display').on(
       table.optionValueId,
       table.masterId,
-      table.version,
+      table.versionId,
       table.locale,
     ),
   ],
@@ -595,26 +589,6 @@ export const pricingRules = pgTable(
   },
 );
 
-// ===== 13. UPLOADS (파일 업로드) =====
-export const uploads = pgTable(
-  'uploads',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    fileName: varchar('file_name', { length: 255 }).notNull(),
-    originalName: varchar('original_name', { length: 255 }).notNull(),
-    mimeType: varchar('mime_type', { length: 100 }).notNull(),
-    filePath: text('file_path').notNull(), // 실제 파일 저장 경로
-    url: text('url').notNull(), // 접근 가능한 URL
-    size: integer('size'), // 파일 사이즈 (bytes)
-    createdAt: timestamp('created_at').defaultNow(),
-  },
-  (table) => [
-    index('idx_uploads_created_at').on(table.createdAt),
-    index('idx_uploads_mime_type').on(table.mimeType),
-  ],
-);
 
 // ===== 12. PRODUCT IMAGES (상품 이미지) =====
 export const productImages = pgTable(
@@ -623,22 +597,20 @@ export const productImages = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
+    versionId: uuid('version_id')
       .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
-    uploadId: uuid('upload_id')
-      .notNull()
-      .references(() => uploads.id, { onDelete: 'cascade' }),
-    isPrimary: boolean('is_primary').default(false), // 대표이미지 여부
-    sortOrder: integer('sort_order').default(0), // 부가이미지 순서 (1-5)
-    createdAt: timestamp('created_at').defaultNow(),
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    fileId: uuid('file_id').notNull(),
+    isPrimary: boolean('is_primary').notNull().default(false), // 대표이미지 여부
+    sortOrder: integer('sort_order').notNull().default(0), // 부가이미지 순서 (1-5)
+    createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
-    index('idx_product_images_master').on(table.masterId),
-    index('idx_product_images_primary').on(table.masterId, table.isPrimary),
-    index('idx_product_images_sort').on(table.masterId, table.sortOrder),
+    index('idx_product_images_version').on(table.versionId),
+    index('idx_product_images_primary').on(table.versionId, table.isPrimary),
+    index('idx_product_images_sort').on(table.versionId, table.sortOrder),
     uniqueIndex('unique_product_primary_image')
-      .on(table.masterId)
+      .on(table.versionId)
       .where(sql`${table.isPrimary} = true`),
   ],
 );
@@ -790,15 +762,15 @@ export const productTagValues = pgTable(
     masterId: uuid('master_id')
       .notNull()
       .references(() => productMasters.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
+    versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
     tagValueId: uuid('tag_value_id')
       .notNull()
       .references(() => tagValues.id, { onDelete: 'restrict' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [
-    primaryKey({ columns: [table.masterId, table.version, table.tagValueId] }),
-    index('idx_product_tag_values_master_version').on(table.masterId, table.version),
+    primaryKey({ columns: [table.masterId, table.versionId, table.tagValueId] }),
+    index('idx_product_tag_values_master_version').on(table.masterId, table.versionId),
     index('idx_product_tag_values_tag').on(table.tagValueId),
   ],
 );
@@ -944,7 +916,6 @@ export const pimSchema = {
   channelProducts,
   channelVariantListings,
   pricingRules,
-  uploads,
   productImages,
   productApprovalHistory,
   productAuditLog,

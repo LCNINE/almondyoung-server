@@ -14,7 +14,7 @@ import { DbTransaction } from '../../../types';
 export class ProductSearchService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -36,7 +36,7 @@ export class ProductSearchService {
     const conditions: SQL[] = [];
 
     // Active version filter (default for searches)
-    conditions.push(eq(productMasterVersions.versionStatus, 'active'));
+    conditions.push(eq(productMasterVersions.status, 'active'));
 
     // Soft delete filter
     if (!query.includeDeleted) {
@@ -120,7 +120,7 @@ export class ProductSearchService {
         productMasterCategories,
         and(
           eq(productMasterCategories.masterId, productMasterVersions.masterId),
-          eq(productMasterCategories.version, productMasterVersions.version)
+          eq(productMasterCategories.versionId, productMasterVersions.id)
         ),
       )
       .where(and(...conditions, categoryCondition))
@@ -140,7 +140,7 @@ export class ProductSearchService {
         productMasterCategories,
         and(
           eq(productMasterCategories.masterId, productMasterVersions.masterId),
-          eq(productMasterCategories.version, productMasterVersions.version)
+          eq(productMasterCategories.versionId, productMasterVersions.id)
         ),
       )
       .where(and(...conditions, categoryCondition));

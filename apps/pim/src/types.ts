@@ -20,7 +20,6 @@ import {
   channelProducts,
   channelVariantListings,
   pricingRules,
-  uploads,
   productImages,
   productApprovalHistory,
   productAuditLog,
@@ -68,7 +67,7 @@ export type UpdateProductMasterVersion = Partial<
 };
 
 export type ProductMasterWithVersion = ProductMaster & {
-  version: ProductMasterVersion | null;
+  version: ProductMasterVersion;
 };
 
 // ===== PRODUCT MASTER CATEGORIES (Junction Table) 타입 =====
@@ -230,10 +229,6 @@ export type ScopeType = 'all_variants' | 'with_option' | 'variants';
 // 연산 타입
 export type OperationType = 'offset' | 'scale' | 'override';
 
-// ===== UPLOADS 타입 =====
-export type Upload = InferSelectModel<typeof uploads>;
-export type NewUpload = InferInsertModel<typeof uploads>;
-export type UpdateUpload = Partial<Omit<NewUpload, 'id' | 'createdAt'>>;
 
 // ===== PRODUCT IMAGES 타입 =====
 export type ProductImage = InferSelectModel<typeof productImages>;
@@ -280,7 +275,8 @@ export interface MasterListItemDto {
 }
 
 // Product Master 상세 응답 DTO (모든 정보 포함)
-export interface MasterDetailDto extends ProductMasterVersion {
+export interface ProductDetailDto extends ProductMasterVersion {
+  images: ProductImage[];
   optionGroups: (ProductOptionGroup & {
     values: ProductOptionValue[];
   })[];
@@ -303,6 +299,7 @@ export interface MasterDetailDto extends ProductMasterVersion {
 // 가격 조회 응답 DTO
 export interface VariantWithPriceDto extends ProductVariant {
   masterId: string;
+  versionId: string;
   price: number;
   optionValues: ProductOptionValue[];
 }
@@ -424,7 +421,7 @@ export interface VersionTreeNode {
   id: string;
   masterId: string;
   version: number;
-  versionStatus: VersionStatus;
+  status: VersionStatus;
   name: string;
   parentVersionId: string | null;
   children: VersionTreeNode[];

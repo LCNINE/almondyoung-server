@@ -37,7 +37,7 @@ export class PricingService {
 
   async getMasterRules(
     masterId: string,
-    version?: number,
+    versionId?: string,
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
@@ -47,7 +47,7 @@ export class PricingService {
       let allRules: any[];
 
       // version 지정 여부에 따라 조건 추가
-      if (version !== undefined) {
+      if (versionId !== undefined) {
         allRules = await trx
           .select({
             id: pricingRules.id,
@@ -61,7 +61,7 @@ export class PricingService {
             createdAt: pricingRules.createdAt,
             updatedAt: pricingRules.updatedAt,
             masterId: productMasterPricingRules.masterId,
-            version: productMasterPricingRules.version,
+            versionId: productMasterPricingRules.versionId,
           })
           .from(pricingRules)
           .innerJoin(
@@ -71,7 +71,7 @@ export class PricingService {
           .where(
             and(
               eq(productMasterPricingRules.masterId, masterId),
-              eq(productMasterPricingRules.version, version),
+              eq(productMasterPricingRules.versionId, versionId),
             ),
           )
           .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
@@ -90,7 +90,7 @@ export class PricingService {
             createdAt: pricingRules.createdAt,
             updatedAt: pricingRules.updatedAt,
             masterId: productMasterPricingRules.masterId,
-            version: productMasterPricingRules.version,
+            versionId: productMasterPricingRules.versionId,
           })
           .from(pricingRules)
           .innerJoin(
@@ -101,8 +101,8 @@ export class PricingService {
             productMasterVersions,
             and(
               eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
-              eq(productMasterPricingRules.version, productMasterVersions.version),
-              eq(productMasterVersions.versionStatus, 'active'),
+              eq(productMasterPricingRules.versionId, productMasterVersions.id),
+              eq(productMasterVersions.status, 'active'),
             ),
           )
           .where(eq(productMasterVersions.masterId, masterId))
@@ -126,7 +126,7 @@ export class PricingService {
   async replaceMasterRules(
     masterId: string,
     rulesDto: ReplacePricingRulesDto,
-    version?: number,
+    versionId?: string,
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
@@ -139,43 +139,46 @@ export class PricingService {
       );
 
       // version 결정 (지정되지 않으면 active 버전 사용)
-      let actualVersion = version;
-      if (actualVersion === undefined) {
-        const [activeMaster] = await trx
-          .select({ version: productMasterVersions.version })
+      let actualVersionId: string;
+      if (versionId === undefined) {
+        const [activeVersion] = await trx
+          .select({ id: productMasterVersions.id })
           .from(productMasterVersions)
           .where(
             and(
               eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.versionStatus, 'active'),
+              eq(productMasterVersions.status, 'active'),
             ),
           )
           .limit(1);
 
-        if (!activeMaster) {
+        if (!activeVersion) {
           throw new NotFoundException(`No active version found for master ${masterId}`);
         }
-        actualVersion = activeMaster.version;
+        actualVersionId = activeVersion.id;
+      }
+      else {
+        actualVersionId = versionId;
       }
 
       // draft 상태 검증
       const [versionToModify] = await trx
-        .select({ versionStatus: productMasterVersions.versionStatus })
+        .select({ status: productMasterVersions.status })
         .from(productMasterVersions)
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.version, actualVersion),
+            eq(productMasterVersions.id, actualVersionId),
           ),
         )
         .limit(1);
 
       if (!versionToModify) {
-        throw new NotFoundException(`Version ${actualVersion} not found for master ${masterId}`);
+        throw new NotFoundException(`Version ${actualVersionId} not found for master ${masterId}`);
       }
 
-      if (versionToModify.versionStatus !== 'draft') {
-        console.error('❌ version is not draft:', versionToModify.versionStatus);
+      if (versionToModify.status !== 'draft') {
+        console.error('❌ version is not draft:', versionToModify.status);
         throw new BadRequestException('Cannot modify pricing rules for active or inactive versions');
       }
 
@@ -186,7 +189,7 @@ export class PricingService {
         .where(
           and(
             eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.version, actualVersion),
+            eq(productMasterPricingRules.versionId, actualVersionId),
           ),
         );
 
@@ -196,7 +199,7 @@ export class PricingService {
         .where(
           and(
             eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.version, actualVersion),
+            eq(productMasterPricingRules.versionId, actualVersionId),
           ),
         );
 
@@ -263,8 +266,7 @@ export class PricingService {
           id: uuidv7(),
           masterId,
           pricingRuleId: rule.id,
-          version: actualVersion,
-          createdAt: new Date(),
+          versionId: actualVersionId,
         }));
 
         await trx.insert(productMasterPricingRules).values(mappings);
@@ -272,38 +274,40 @@ export class PricingService {
 
       await this.validatorService.validateCalculatedPrices(masterId, trx);
 
-      return this.getMasterRules(masterId, actualVersion, trx);
+      return this.getMasterRules(masterId, actualVersionId, trx);
     }, tx);
   }
 
   async deleteMasterRules(
     masterId: string,
-    version?: number,
+    versionId?: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
       await this.ensureMasterExists(masterId, trx);
 
       // version 결정 (지정되지 않으면 active 버전 사용)
-      let actualVersion = version;
-      if (actualVersion === undefined) {
-        const [activeMaster] = await trx
-          .select({ version: productMasterVersions.version })
+      let actualVersionId: string;
+      if (versionId === undefined) {
+        const [activeVersion] = await trx
+          .select({ id: productMasterVersions.id })
           .from(productMasterVersions)
           .where(
             and(
               eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.versionStatus, 'active'),
+              eq(productMasterVersions.status, 'active'),
             ),
           )
           .limit(1);
 
-        if (!activeMaster) {
+        if (!activeVersion) {
           throw new NotFoundException(`No active version found for master ${masterId}`);
         }
-        actualVersion = activeMaster.version;
+        actualVersionId = activeVersion.id;
       }
-
+      else {
+        actualVersionId = versionId;
+      }
       // 매핑된 pricingRule ID 조회
       const mappedRuleIds = await trx
         .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
@@ -311,7 +315,7 @@ export class PricingService {
         .where(
           and(
             eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.version, actualVersion),
+            eq(productMasterPricingRules.versionId, actualVersionId),
           ),
         );
 
@@ -321,7 +325,7 @@ export class PricingService {
         .where(
           and(
             eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.version, actualVersion),
+            eq(productMasterPricingRules.versionId, actualVersionId),
           ),
         );
 
@@ -353,7 +357,7 @@ export class PricingService {
           .where(
             and(
               eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.versionStatus, 'active'),
+              eq(productMasterVersions.status, 'active'),
             ),
           );
 

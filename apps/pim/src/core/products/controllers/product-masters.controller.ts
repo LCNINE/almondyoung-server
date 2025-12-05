@@ -36,11 +36,14 @@ import {
 } from '../dto';
 import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
+import { DbService, InjectDb } from '@app/db';
+import { PimSchema } from 'apps/pim/src/schema';
 
 @ApiTags('Product Masters')
 @Controller('masters')
 export class ProductMastersController {
   constructor(
+    @InjectDb() private readonly dbService: DbService<PimSchema>,
     private readonly productMastersService: ProductMastersService,
     private readonly productVersionsService: ProductVersionsService,
   ) { }
@@ -62,27 +65,15 @@ export class ProductMastersController {
       **출력:** Master ID, Version ID, Version 번호 등을 포함한 응답
     `,
   })
-  @ApiBody({
-    type: CreateMasterDtoSwagger,
-    description: '모든 필드 선택사항. 빈 객체로 호출 가능',
-    required: false,
-  })
   @ApiResponse({
     status: 201,
-    description: '제품 마스터 생성 성공 (즉시 완료, 비동기 처리 없음)',
+    description: '제품 마스터 생성 성공',
     type: ProductDto,
   })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 데이터',
-  })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createMaster(
-    @Body(new ZodValidationPipe(CreateMasterSchema))
-    createMasterDto: CreateMasterDto = {},
-  ): Promise<ProductDto> {
+  async createMaster(): Promise<ProductDto> {
     try {
-      const master = await this.productMastersService.createMaster(createMasterDto);
+      const master = await this.productMastersService.createMaster();
       return ProductMapper.toDto(master);
     } catch (error) {
       console.error('Create master error:', error);
@@ -142,7 +133,7 @@ export class ProductMastersController {
     description: '검색 키워드',
   })
   @ApiQuery({
-    name: 'versionStatus',
+    name: 'status',
     required: false,
     type: String,
     enum: ['draft', 'inactive', 'active'],
@@ -165,11 +156,10 @@ export class ProductMastersController {
     query: {
       page?: string;
       limit?: string;
-      status?: string;
       categoryId?: string;
       brand?: string;
       search?: string;
-      versionStatus?: 'draft' | 'inactive' | 'active';
+      status?: 'draft' | 'inactive' | 'active';
       includeAllVersions?: boolean;
     },
   ): Promise<MasterListResponseDto> {
@@ -177,11 +167,10 @@ export class ProductMastersController {
       const filters = {
         page: query.page ? parseInt(query.page) : undefined,
         limit: query.limit ? parseInt(query.limit) : undefined,
-        status: query.status,
         categoryId: query.categoryId,
         brand: query.brand,
         search: query.search,
-        versionStatus: query.includeAllVersions ? undefined : (query.versionStatus || 'active'),
+        status: query.includeAllVersions ? undefined : (query.status || 'active'),
       };
 
       return await this.productMastersService.getMasters(filters);
@@ -282,15 +271,6 @@ export class ProductMastersController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getMasterDetail(@Param('id') id: string) {
     try {
-      // 이미지 정보를 포함한 마스터 조회
-      const masterWithImages =
-        await this.productMastersService.getMasterWithImages(id);
-
-      if (!masterWithImages) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-
-      // 기존 상세 정보도 가져오기 (옵션 그룹, 변형, 채널 제품 등)
       const masterDetail = await this.productMastersService.getMasterDetail(id);
 
       if (!masterDetail) {
@@ -298,10 +278,7 @@ export class ProductMastersController {
       }
 
       // 이미지 정보를 포함한 응답 반환
-      return {
-        ...masterDetail,
-        images: masterWithImages.images,
-      };
+      return masterDetail
     } catch (error) {
       if (
         error.message === 'Master not found' ||
@@ -342,7 +319,7 @@ export class ProductMastersController {
   ) {
     try {
       const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      const deleted = await this.productMastersService.softDeleteMaster(
+      const deleted = await this.productMastersService.deleteMaster(
         masterId,
         userIdToUse,
       );
@@ -392,7 +369,6 @@ export class ProductMastersController {
       const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
       const restored = await this.productMastersService.restoreMaster(
         masterId,
-        userIdToUse,
       );
 
       return {

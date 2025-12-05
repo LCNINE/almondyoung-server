@@ -7,17 +7,15 @@ export class ProductMapper {
       id: version.id,
       masterId: version.masterId,
       version: version.version,
-      versionStatus: version.versionStatus,
+      status: version.status,
       name: version.name,
       description: version.description,
       brand: version.brand,
       thumbnail: version.thumbnail,
       images: version.images,
-      attributes: version.attributes,
       seoTitle: version.seoTitle,
       seoDescription: version.seoDescription,
       seoKeywords: version.seoKeywords,
-      status: version.status,
       approvalStatus: version.approvalStatus,
       productType: version.productType,
       productCode: version.productCode,
@@ -47,6 +45,7 @@ export class ProductMapper {
   static toListItemArray(versions: ProductMasterVersion[]): ProductListItemDto[] {
     return versions.map(v => this.toListItem(v));
   }
+
 }
 
 

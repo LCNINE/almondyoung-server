@@ -2,17 +2,17 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, and, asc, SQL } from 'drizzle-orm';
-import { 
+import {
   pricingRules,
   productMasterPricingRules,
   productMasterVersions,
   productVariants,
   productMasterVariants,
   variantOptionValues,
-  pimSchema 
+  pimSchema
 } from '../../schema';
-import { 
-  DbTransaction, 
+import {
+  DbTransaction,
   PricingRule,
   PriceCalculationResult,
   AppliedRuleInfo,
@@ -27,7 +27,7 @@ export class PricingCalculatorService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -54,7 +54,7 @@ export class PricingCalculatorService {
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.versionStatus, 'active'),
+            eq(productMasterVersions.status, 'active'),
           ),
         );
 
@@ -100,7 +100,7 @@ export class PricingCalculatorService {
         .where(
           and(
             eq(productMasterVariants.masterId, version.masterId),
-            eq(productMasterVariants.version, version.version),
+            eq(productMasterVariants.versionId, versionId),
             eq(productMasterVariants.variantId, variantId),
           ),
         );
@@ -115,7 +115,7 @@ export class PricingCalculatorService {
         version.masterId,
         undefined,
         trx,
-        version.version,
+        versionId,
       );
 
       let currentPrice = 0;
@@ -225,7 +225,7 @@ export class PricingCalculatorService {
         .where(
           and(
             eq(productMasterVariants.masterId, version.masterId),
-            eq(productMasterVariants.version, version.version),
+            eq(productMasterVariants.versionId, versionId),
             eq(productMasterVariants.variantId, variantId),
           ),
         );
@@ -256,7 +256,7 @@ export class PricingCalculatorService {
         version.masterId,
         'tiered_price',
         trx,
-        version.version,
+        versionId,
       );
 
       const tieredPrices: TieredPriceInfo[] = [];
@@ -312,7 +312,7 @@ export class PricingCalculatorService {
     masterId: string,
     layer?: 'base_price' | 'membership_price' | 'tiered_price',
     tx?: DbTransaction,
-    version?: number,
+    versionId?: string,
   ): Promise<{
     basePriceRules: PricingRule[];
     membershipPriceRules: PricingRule[];
@@ -335,10 +335,10 @@ export class PricingCalculatorService {
       let allRules: RuleRow[];
 
       // version이 지정되면 해당 버전만, 아니면 active 버전 사용
-      if (version !== undefined) {
+      if (versionId) {
         const conditions: SQL[] = [
           eq(productMasterPricingRules.masterId, masterId),
-          eq(productMasterPricingRules.version, version),
+          eq(productMasterPricingRules.versionId, versionId),
         ];
 
         if (layer) {
@@ -369,7 +369,7 @@ export class PricingCalculatorService {
         // active 버전의 rules 가져오기
         const conditions: SQL[] = [
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
         ];
 
         if (layer) {
@@ -398,7 +398,7 @@ export class PricingCalculatorService {
             productMasterVersions,
             and(
               eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
-              eq(productMasterPricingRules.version, productMasterVersions.version),
+              eq(productMasterPricingRules.versionId, productMasterVersions.id),
             ),
           )
           .where(and(...conditions))

@@ -383,7 +383,7 @@ export class ProductVersionsController {
       id: node.id,
       masterId: node.masterId,
       version: node.version,
-      versionStatus: node.versionStatus,
+      status: node.status,
       name: node.name,
       parentVersionId: node.parentVersionId,
       children: node.children.map((child: any) => this._mapToResponseDto(child)),

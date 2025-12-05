@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
   VariantWithPriceDto,
@@ -20,15 +20,25 @@ import {
 } from '../../../schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
+import { ProductVersionsService } from './product-versions.service';
+
+type VariantDetailKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
+type VariantOptionsKeysParam = { variantId: string, versionId: string } | { variantId: string, masterId: string };
+
 
 @Injectable()
 export class ProductVariantsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly productVersionsService: ProductVersionsService,
   ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
+  }
+
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
+    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
 
@@ -55,15 +65,15 @@ export class ProductVariantsService {
     const includePrice = filters?.includePrice !== false;
 
     // version이 지정되지 않으면 active 버전 사용
-    let actualVersionNumber: number;
+    let actualVersionId: string;
     if (versionId === undefined) {
       const [activeVersion] = await client
-        .select({ version: productMasterVersions.version })
+        .select({ id: productMasterVersions.id })
         .from(productMasterVersions)
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.versionStatus, 'active'),
+            eq(productMasterVersions.status, 'active'),
           ),
         )
         .limit(1);
@@ -71,24 +81,24 @@ export class ProductVariantsService {
       if (!activeVersion) {
         throw new Error(`No active version found for master ${masterId}`);
       }
-      actualVersionNumber = activeVersion.version;
+      actualVersionId = activeVersion.id;
     }
     else {
       const [version] = await client
-        .select({ version: productMasterVersions.version })
+        .select({ id: productMasterVersions.id })
         .from(productMasterVersions)
         .where(eq(productMasterVersions.id, versionId));
 
       if (!version) {
         throw new Error(`Version not found: ${versionId}`);
       }
-      actualVersionNumber = version.version;
+      actualVersionId = version.id;
     }
 
     // 매핑 테이블을 통해 variants 조회
     const whereConditions: SQL[] = [
       eq(productMasterVariants.masterId, masterId),
-      eq(productMasterVariants.version, actualVersionNumber),
+      eq(productMasterVariants.versionId, actualVersionId),
     ];
 
     if (filters?.status) {
@@ -155,6 +165,7 @@ export class ProductVariantsService {
 
       variantsWithPriceData.push({
         ...variant,
+        versionId: actualVersionId,
         masterId: row.product_master_variants.masterId,
         price,
         optionValues
@@ -169,105 +180,104 @@ export class ProductVariantsService {
     };
   }
 
-  async getVariantDetail(variantId: string, masterId?: string, version?: number, tx?: DbTransaction): Promise<VariantWithPriceDto | null> {
-    if (!variantId) {
-      throw new Error('Variant ID is required');
-    }
+  async getVariantDetail(keys: VariantDetailKeysParam, tx?: DbTransaction): Promise<VariantWithPriceDto | null> {
+    return await this.inTx(async (tx) => {
+      // version ID를 결정
+      let versionId: string;
+      let masterId: string;
 
-    const client = this.getClient(tx);
+      if ('versionId' in keys) {
+        versionId = keys.versionId;
+        const [version] = await tx.select({ masterId: productMasterVersions.masterId })
+          .from(productMasterVersions)
+          .where(eq(productMasterVersions.id, versionId))
+          .limit(1);
 
-    // masterId와 version 정보 확보
-    let actualMasterId = masterId;
-    let actualVersion = version;
+        if (!version) {
+          throw new NotFoundException(`Version ${versionId} not found`);
+        }
 
-    if (!actualMasterId || actualVersion === undefined) {
-      const mappingInfo = await client
-        .select({
-          masterId: productMasterVariants.masterId,
-          version: productMasterVariants.version,
-        })
-        .from(productMasterVariants)
-        .where(eq(productMasterVariants.variantId, variantId))
-        .limit(1);
-
-      if (mappingInfo.length === 0) {
-        return null;
+        masterId = version.masterId;
+      }
+      else {
+        const activeVersion = await this.productVersionsService.getActiveVersion(keys.masterId, tx);
+        versionId = activeVersion.id;
+        masterId = keys.masterId;
       }
 
-      actualMasterId = actualMasterId || mappingInfo[0].masterId;
-      actualVersion = actualVersion ?? mappingInfo[0].version;
-    }
+      const variantId = keys.variantId;
 
-    const variants = await client
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.id, variantId));
+      const [variant] = await tx
+        .select()
+        .from(productVariants)
+        .where(eq(productVariants.id, variantId))
+        .limit(1);
 
-    if (variants.length === 0) {
-      return null;
-    }
+      if (!variant) {
+        throw new NotFoundException(`Variant ${variantId} not found`);
+      }
 
-    const variant = variants[0];
+      // Display 테이블을 통해 optionValues 조회
+      const optionValues = await tx
+        .select({
+          id: productOptionValues.id,
+          optionGroupId: productOptionValues.optionGroupId,
+          displayName: productOptionValueDisplays.displayName,
+          sortOrder: productOptionValueDisplays.sortOrder,
+          createdAt: productOptionValues.createdAt,
+        })
+        .from(variantOptionValues)
+        .innerJoin(
+          productOptionValues,
+          eq(variantOptionValues.optionValueId, productOptionValues.id),
+        )
+        .innerJoin(
+          productOptionValueDisplays,
+          and(
+            eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+            eq(productOptionValueDisplays.versionId, versionId),
+            eq(productOptionValueDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .innerJoin(
+          productOptionGroups,
+          eq(productOptionValues.optionGroupId, productOptionGroups.id),
+        )
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+            eq(productOptionGroupDisplays.versionId, versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(eq(variantOptionValues.variantId, variantId))
+        .orderBy(
+          asc(productOptionGroupDisplays.sortOrder),
+          asc(productOptionValueDisplays.sortOrder),
+        );
 
-    // Display 테이블을 통해 optionValues 조회
-    const optionValues = await client
-      .select({
-        id: productOptionValues.id,
-        optionGroupId: productOptionValues.optionGroupId,
-        displayName: productOptionValueDisplays.displayName,
-        sortOrder: productOptionValueDisplays.sortOrder,
-        createdAt: productOptionValues.createdAt,
-      })
-      .from(variantOptionValues)
-      .innerJoin(
-        productOptionValues,
-        eq(variantOptionValues.optionValueId, productOptionValues.id),
-      )
-      .innerJoin(
-        productOptionValueDisplays,
-        and(
-          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-          eq(productOptionValueDisplays.masterId, actualMasterId),
-          eq(productOptionValueDisplays.version, actualVersion),
-          eq(productOptionValueDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .innerJoin(
-        productOptionGroups,
-        eq(productOptionValues.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productOptionGroupDisplays,
-        and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          eq(productOptionGroupDisplays.masterId, actualMasterId),
-          eq(productOptionGroupDisplays.version, actualVersion),
-          eq(productOptionGroupDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(eq(variantOptionValues.variantId, variantId))
-      .orderBy(
-        asc(productOptionGroupDisplays.sortOrder),
-        asc(productOptionValueDisplays.sortOrder),
-      );
 
-    let price: number;
-    try {
-      price = await this.calculateVariantPrice(variantId, tx);
-    } catch (error) {
-      console.warn(`Failed to calculate price for variant ${variantId}:`, error.message);
-      price = 0;
-    }
+      let price: number;
+      try {
+        price = await this.calculateVariantPrice(variantId, tx);
+      } catch (error) {
+        console.warn(`Failed to calculate price for variant ${variantId}:`, error.message);
+        price = 0;
+      }
 
-    return {
-      ...variant,
-      masterId: actualMasterId,
-      price,
-      optionValues
-    };
+      return {
+        ...variant,
+        masterId,
+        versionId,
+        price,
+        optionValues
+      };
+    }, tx)
+
   }
 
-  async getVariantOptions(variantId: string, masterId?: string, version?: number, tx?: DbTransaction): Promise<Array<{
+  async getVariantOptions(keys: VariantOptionsKeysParam, tx?: DbTransaction): Promise<Array<{
     optionGroup: {
       id: string;
       displayName: string;
@@ -279,87 +289,79 @@ export class ProductVariantsService {
       sortOrder: number | null;
     };
   }>> {
-    if (!variantId) {
-      throw new Error('Variant ID is required');
-    }
+    return await this.inTx(async (tx) => {
+      let versionId: string;
+      let masterId: string;
 
-    const client = this.getClient(tx);
+      if ('versionId' in keys) {
+        versionId = keys.versionId;
+        const [version] = await tx.select({ masterId: productMasterVersions.masterId })
+          .from(productMasterVersions)
+          .where(eq(productMasterVersions.id, versionId))
+          .limit(1);
 
-    const exists = await this.existsVariant(variantId, tx);
-    if (!exists) {
-      throw new Error(`Variant not found: ${variantId}`);
-    }
+        if (!version) {
+          throw new NotFoundException(`Version ${versionId} not found`);
+        }
 
-    // masterId와 version 정보 확보
-    let actualMasterId = masterId;
-    let actualVersion = version;
-
-    if (!actualMasterId || actualVersion === undefined) {
-      const mappingInfo = await client
-        .select({
-          masterId: productMasterVariants.masterId,
-          version: productMasterVariants.version,
-        })
-        .from(productMasterVariants)
-        .where(eq(productMasterVariants.variantId, variantId))
-        .limit(1);
-
-      if (mappingInfo.length === 0) {
-        throw new Error(`Variant ${variantId} not found in mapping table`);
+        masterId = version.masterId;
+      }
+      else {
+        const activeVersion = await this.productVersionsService.getActiveVersion(keys.masterId, tx);
+        versionId = activeVersion.id;
+        masterId = keys.masterId;
       }
 
-      actualMasterId = actualMasterId || mappingInfo[0].masterId;
-      actualVersion = actualVersion ?? mappingInfo[0].version;
-    }
+      const variantId = keys.variantId;
 
-    // Display 테이블을 통해 optionInfo 조회
-    const optionInfo = await client
-      .select({
-        optionGroup: {
-          id: productOptionGroups.id,
-          displayName: productOptionGroupDisplays.displayName,
-          sortOrder: productOptionGroupDisplays.sortOrder
-        },
-        optionValue: {
-          id: productOptionValues.id,
-          displayName: productOptionValueDisplays.displayName,
-          sortOrder: productOptionValueDisplays.sortOrder,
-        }
-      })
-      .from(variantOptionValues)
-      .innerJoin(
-        productOptionValues,
-        eq(variantOptionValues.optionValueId, productOptionValues.id),
-      )
-      .innerJoin(
-        productOptionValueDisplays,
-        and(
-          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-          eq(productOptionValueDisplays.masterId, actualMasterId),
-          eq(productOptionValueDisplays.version, actualVersion),
-          eq(productOptionValueDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .innerJoin(
-        productOptionGroups,
-        eq(productOptionValues.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productOptionGroupDisplays,
-        and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          eq(productOptionGroupDisplays.masterId, actualMasterId),
-          eq(productOptionGroupDisplays.version, actualVersion),
-          eq(productOptionGroupDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(eq(variantOptionValues.variantId, variantId))
-      .orderBy(
-        asc(productOptionGroupDisplays.sortOrder),
-        asc(productOptionValueDisplays.sortOrder),
-      );
 
-    return optionInfo;
+      // Display 테이블을 통해 optionInfo 조회
+      const optionInfo = await tx
+        .select({
+          optionGroup: {
+            id: productOptionGroups.id,
+            displayName: productOptionGroupDisplays.displayName,
+            sortOrder: productOptionGroupDisplays.sortOrder
+          },
+          optionValue: {
+            id: productOptionValues.id,
+            displayName: productOptionValueDisplays.displayName,
+            sortOrder: productOptionValueDisplays.sortOrder,
+          }
+        })
+        .from(variantOptionValues)
+        .innerJoin(
+          productOptionValues,
+          eq(variantOptionValues.optionValueId, productOptionValues.id),
+        )
+        .innerJoin(
+          productOptionValueDisplays,
+          and(
+            eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+            eq(productOptionValueDisplays.versionId, versionId),
+            eq(productOptionValueDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .innerJoin(
+          productOptionGroups,
+          eq(productOptionValues.optionGroupId, productOptionGroups.id),
+        )
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+            eq(productOptionGroupDisplays.versionId, versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(eq(variantOptionValues.variantId, variantId))
+        .orderBy(
+          asc(productOptionGroupDisplays.sortOrder),
+          asc(productOptionValueDisplays.sortOrder),
+        );
+
+      return optionInfo;
+    }, tx)
   }
 
 
@@ -534,82 +536,43 @@ export class ProductVariantsService {
     return result[0].count > 0;
   }
 
-  async belongsToMaster(variantId: string, masterId: string, version?: number, tx?: DbTransaction): Promise<boolean> {
-    if (!variantId || !masterId) {
-      return false;
-    }
 
-    const client = this.getClient(tx);
-
-    // 매핑 테이블을 통해 확인
-    const conditions: SQL[] = [
-      eq(productMasterVariants.variantId, variantId),
-      eq(productMasterVariants.masterId, masterId),
-    ];
-
-    if (version !== undefined) {
-      conditions.push(eq(productMasterVariants.version, version));
-    }
-
-    const result = await client
-      .select({ count: count() })
-      .from(productMasterVariants)
-      .where(and(...conditions));
-
-    return result[0].count > 0;
-  }
-
-  async getActiveVariants(masterId: string, version?: number, tx?: DbTransaction): Promise<ProductVariant[]> {
+  async getActiveVariants(masterId: string, versionId?: string, tx?: DbTransaction): Promise<ProductVariant[]> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
 
-    const client = this.getClient(tx);
+    return await this.inTx(async (tx) => {
+      let targetVersionId: string;
 
-    // version이 지정되지 않으면 active 버전 사용
-    let actualVersion = version;
-    if (actualVersion === undefined) {
-      const [activeMaster] = await client
-        .select({ version: productMasterVersions.version })
-        .from(productMasterVersions)
+      if (!versionId) {
+        const targetVersion = await this.productVersionsService.getActiveVersion(masterId, tx);
+        targetVersionId = targetVersion.id;
+      }
+      else {
+        targetVersionId = versionId;
+      }
+
+      const results = await tx
+        .select()
+        .from(productMasterVariants)
         .innerJoin(
-          productMasters,
-          eq(productMasterVersions.masterId, productMasters.id)
+          productVariants,
+          eq(productMasterVariants.variantId, productVariants.id),
         )
         .where(
           and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.versionStatus, 'active'),
-            isNull(productMasters.deletedAt)
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.versionId, targetVersionId),
+            eq(productVariants.status, 'active'),
           ),
         )
-        .limit(1);
+        .orderBy(asc(productVariants.displayOrder));
 
-      if (!activeMaster) {
-        throw new Error(`No active version found for master ${masterId}`);
-      }
-      actualVersion = activeMaster.version;
-    }
-
-    // 매핑 테이블을 통해 active status variants 조회
-    const results = await client
-      .select()
-      .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .where(
-        and(
-          eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.version, actualVersion),
-          eq(productVariants.status, 'active'),
-        ),
-      )
-      .orderBy(asc(productVariants.displayOrder));
-
-    return results.map(r => r.product_variants);
+      return results.map(r => r.product_variants);
+    }, tx)
   }
+
 
   async updateDisplayOrder(variantId: string, displayOrder: number, tx?: DbTransaction): Promise<void> {
     if (!variantId) {

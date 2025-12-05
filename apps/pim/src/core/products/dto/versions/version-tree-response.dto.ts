@@ -14,7 +14,7 @@ export class VersionTreeResponseDto {
     description: '버전 상태',
     enum: ['draft', 'inactive', 'active'],
   })
-  versionStatus: 'draft' | 'inactive' | 'active';
+  status: 'draft' | 'inactive' | 'active';
 
   @ApiProperty({ description: '상품명' })
   name: string;

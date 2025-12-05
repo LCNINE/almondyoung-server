@@ -620,9 +620,7 @@ export class ProductCategoriesService {
         description: pimSchema.productMasterVersions.description,
         brand: pimSchema.productMasterVersions.brand,
         thumbnail: pimSchema.productMasterVersions.thumbnail,
-        tags: pimSchema.productMasterVersions.tags,
         images: pimSchema.productMasterVersions.images,
-        attributes: pimSchema.productMasterVersions.attributes,
         seoTitle: pimSchema.productMasterVersions.seoTitle,
         seoDescription: pimSchema.productMasterVersions.seoDescription,
         seoKeywords: pimSchema.productMasterVersions.seoKeywords,
@@ -640,13 +638,13 @@ export class ProductCategoriesService {
         pimSchema.productMasterCategories,
         and(
           eq(pimSchema.productMasterCategories.masterId, pimSchema.productMasterVersions.masterId),
-          eq(pimSchema.productMasterCategories.version, pimSchema.productMasterVersions.version)
+          eq(pimSchema.productMasterCategories.versionId, pimSchema.productMasterVersions.id)
         ),
       )
       .where(
         and(
           inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
-          eq(pimSchema.productMasterVersions.versionStatus, 'active')
+          eq(pimSchema.productMasterVersions.status, 'active')
         )
       )
       .orderBy(pimSchema.productMasterVersions.name);
@@ -693,13 +691,13 @@ export class ProductCategoriesService {
         pimSchema.productMasterCategories,
         and(
           eq(pimSchema.productMasterCategories.masterId, pimSchema.productMasterVersions.masterId),
-          eq(pimSchema.productMasterCategories.version, pimSchema.productMasterVersions.version)
+          eq(pimSchema.productMasterCategories.versionId, pimSchema.productMasterVersions.id)
         ),
       )
       .where(
         and(
           inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
-          eq(pimSchema.productMasterVersions.versionStatus, 'active')
+          eq(pimSchema.productMasterVersions.status, 'active')
         )
       );
 
@@ -739,7 +737,7 @@ export class ProductCategoriesService {
         .where(
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
-            eq(pimSchema.productMasterVersions.versionStatus, 'active')
+            eq(pimSchema.productMasterVersions.status, 'active')
           )
         );
 
@@ -763,7 +761,7 @@ export class ProductCategoriesService {
           .where(
             and(
               eq(pimSchema.productMasterCategories.masterId, pv.masterId),
-              eq(pimSchema.productMasterCategories.version, pv.version)
+              eq(pimSchema.productMasterCategories.versionId, pv.versionId)
             )
           );
       }
@@ -771,7 +769,7 @@ export class ProductCategoriesService {
       // 4. 새 카테고리 관계 생성 (올바른 Master ID + Version 사용)
       const newRelations = productVersions.map((pv) => ({
         masterId: pv.masterId,
-        version: pv.version,
+        versionId: pv.versionId,
         categoryId: categoryId,
         isPrimary: true,
         createdAt: new Date(),
@@ -822,7 +820,7 @@ export class ProductCategoriesService {
         .where(
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
-            eq(pimSchema.productMasterVersions.versionStatus, 'active')
+            eq(pimSchema.productMasterVersions.status, 'active')
           )
         );
 
@@ -850,8 +848,8 @@ export class ProductCategoriesService {
               productVersions.map((pv) => pv.masterId)
             ),
             inArray(
-              pimSchema.productMasterCategories.version,
-              productVersions.map((pv) => pv.version)
+              pimSchema.productMasterCategories.versionId,
+              productVersions.map((pv) => pv.versionId)
             ),
             eq(pimSchema.productMasterCategories.categoryId, categoryId)
           )
@@ -859,18 +857,18 @@ export class ProductCategoriesService {
 
       // 4. 이미 연결된 상품 필터링
       const existingKeys = new Set(
-        existingRelations.map((r) => `${r.masterId}:${r.version}`)
+        existingRelations.map((r) => `${r.masterId}:${r.versionId}`)
       );
 
       const newProductVersions = productVersions.filter(
-        (pv) => !existingKeys.has(`${pv.masterId}:${pv.version}`)
+        (pv) => !existingKeys.has(`${pv.masterId}:${pv.versionId}`)
       );
 
       // 5. 아직 연결되지 않은 상품들만 새로 연결 (올바른 Master ID + Version 사용)
       if (newProductVersions.length > 0) {
         const newRelations = newProductVersions.map((pv) => ({
           masterId: pv.masterId,
-          version: pv.version,
+          versionId: pv.versionId,
           categoryId: categoryId,
           isPrimary: false,
           createdAt: new Date(),
