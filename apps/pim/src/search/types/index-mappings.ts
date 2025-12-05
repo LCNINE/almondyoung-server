@@ -4,7 +4,7 @@ export const PIM_PRODUCTS_MAPPINGS = {
   properties: {
     master_id: { type: 'keyword' as const },
     product_id: { type: 'keyword' as const },
-    version: { type: 'integer' as const },
+    version_id: { type: 'keyword' as const },
     name: {
       type: 'text' as const,
       analyzer: 'standard',
@@ -39,7 +39,7 @@ export const PIM_PRODUCTS_MAPPINGS = {
 export interface ElasticsearchProductDocument {
   master_id: string;
   product_id: string;
-  version: number;
+  version_id: string;
   name: string;
   description: string | null;
   product_code: string | null;

@@ -13,11 +13,11 @@ export class ProductQueryDto {
 
   @IsOptional()
   @IsEnum(['draft', 'pending', 'approved', 'rejected'])
-  approvalStatus?: string;
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
 
   @IsOptional()
   @IsEnum(['active', 'inactive'])
-  status?: string;
+  status?: 'active' | 'inactive';
 
   @IsOptional()
   @IsString()

@@ -13,7 +13,7 @@ import { DbTransaction } from '../types';
 interface ProductMasterActiveVersionChangedPayload {
   masterId: string;
   productId: string | null;
-  version: number | null;
+  versionId: string | null;
   name: string | null;
   previousActiveVersionId: string | null;
   changeReason: 'published' | 'unpublished' | 'rollback';
@@ -62,18 +62,18 @@ export class ElasticsearchSyncService {
   private async handleActiveVersionChanged(
     payload: ProductMasterActiveVersionChangedPayload,
   ): Promise<void> {
-    const { masterId, productId, version } = payload;
+    const { masterId, productId, versionId } = payload;
 
-    if (!productId || version === null) {
+    if (!productId || versionId === null) {
       this.logger.log(`Unpublished master ${masterId}, deleting from ES`);
       await this.deleteProductFromEs(masterId);
       return;
     }
 
     this.logger.log(
-      `Syncing active version ${version} of master ${masterId} to ES`,
+      `Syncing active version ${versionId} of master ${masterId} to ES`,
     );
-    const document = await this._buildElasticsearchDocument(productId, version);
+    const document = await this._buildElasticsearchDocument(productId, versionId);
     await this.indexProductToEs(masterId, document);
   }
 
@@ -87,14 +87,14 @@ export class ElasticsearchSyncService {
 
   private async _buildElasticsearchDocument(
     productId: string,
-    version: number,
+    versionId: string,
   ): Promise<ElasticsearchProductDocument> {
     return this.db.db.transaction(async (tx) => {
       const [product] = await tx
         .select({
           id: productMasterVersions.id,
           masterId: productMasterVersions.masterId,
-          version: productMasterVersions.version,
+          versionId: productMasterVersions.id,
           name: productMasterVersions.name,
           description: productMasterVersions.description,
           productCode: productMasterVersions.productCode,
@@ -113,7 +113,7 @@ export class ElasticsearchSyncService {
           productMasterCategories,
           and(
             eq(productMasterVersions.masterId, productMasterCategories.masterId),
-            eq(productMasterVersions.version, productMasterCategories.version),
+            eq(productMasterVersions.id, productMasterCategories.versionId),
           ),
         )
         .leftJoin(
@@ -147,7 +147,7 @@ export class ElasticsearchSyncService {
         .where(
           and(
             eq(productTagValues.masterId, product.masterId),
-            eq(productTagValues.version, product.version),
+            eq(productTagValues.versionId, product.id),
             eq(tagGroups.isActive, true),
             eq(tagValues.isActive, true),
           ),
@@ -166,7 +166,7 @@ export class ElasticsearchSyncService {
       return {
         master_id: product.masterId,
         product_id: product.id,
-        version: product.version,
+        version_id: product.id,
         name: product.name,
         description: product.description,
         product_code: product.productCode,

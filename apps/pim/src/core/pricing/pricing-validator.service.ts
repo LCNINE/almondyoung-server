@@ -133,8 +133,8 @@ export class PricingValidatorService {
         productMasterVersions,
         and(
           eq(productMasterOptionGroups.masterId, productMasterVersions.masterId),
-          eq(productMasterOptionGroups.version, productMasterVersions.version),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterOptionGroups.versionId, productMasterVersions.id),
+          eq(productMasterVersions.status, 'active'),
         ),
       )
       .where(
@@ -179,8 +179,8 @@ export class PricingValidatorService {
         productMasterVersions,
         and(
           eq(productMasterVariants.masterId, productMasterVersions.masterId),
-          eq(productMasterVariants.version, productMasterVersions.version),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVariants.versionId, productMasterVersions.id),
+          eq(productMasterVersions.status, 'active'),
         ),
       )
       .where(
@@ -252,8 +252,8 @@ export class PricingValidatorService {
           productMasterVersions,
           and(
             eq(productMasterVariants.masterId, productMasterVersions.masterId),
-            eq(productMasterVariants.version, productMasterVersions.version),
-            eq(productMasterVersions.versionStatus, 'active'),
+            eq(productMasterVariants.versionId, productMasterVersions.id),
+            eq(productMasterVersions.status, 'active'),
           ),
         )
         .where(eq(productMasterVersions.masterId, masterId));

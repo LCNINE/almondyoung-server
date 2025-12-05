@@ -54,7 +54,7 @@ export class ChannelProductsService {
       .where(
         and(
           eq(productMasterVersions.masterId, data.masterId),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       );
 
@@ -217,7 +217,7 @@ export class ChannelProductsService {
         productMasterVersions,
         and(
           eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
         ),
       );
 
@@ -244,18 +244,15 @@ export class ChannelProductsService {
           id: productMasterVersions.id,
           masterId: productMasterVersions.masterId,
           version: productMasterVersions.version,
-          versionStatus: productMasterVersions.versionStatus,
+          status: productMasterVersions.status,
           name: productMasterVersions.name,
           description: productMasterVersions.description,
           brand: productMasterVersions.brand,
           thumbnail: productMasterVersions.thumbnail,
-          tags: productMasterVersions.tags,
           images: productMasterVersions.images,
-          attributes: productMasterVersions.attributes,
           seoTitle: productMasterVersions.seoTitle,
           seoDescription: productMasterVersions.seoDescription,
           seoKeywords: productMasterVersions.seoKeywords,
-          status: productMasterVersions.status,
           createdAt: productMasterVersions.createdAt,
           updatedAt: productMasterVersions.updatedAt,
           createdBy: productMasterVersions.createdBy,
@@ -267,7 +264,7 @@ export class ChannelProductsService {
         productMasterVersions,
         and(
           eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
         ),
       )
       .orderBy(desc(channelProducts.createdAt))
@@ -396,7 +393,7 @@ export class ChannelProductsService {
         productMasterVersions,
         and(
           eq(channelProducts.masterId, productMasterVersions.masterId),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         ),
       )
       .where(
@@ -567,7 +564,7 @@ export class ChannelProductsService {
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       );
 
@@ -729,7 +726,7 @@ export class ChannelProductsService {
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.versionStatus, 'active')
+            eq(productMasterVersions.status, 'active')
           )
         );
 

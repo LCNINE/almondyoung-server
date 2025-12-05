@@ -131,7 +131,7 @@ async function bootstrap() {
       .from(productMasterVersions)
       .where(
         and(
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
           isNull(productMasterVersions.deletedAt),
         ),
       );

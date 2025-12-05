@@ -16,7 +16,7 @@ export class DashboardService {
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -41,7 +41,7 @@ export class DashboardService {
       .where(
         and(
           isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       );
 
@@ -55,7 +55,7 @@ export class DashboardService {
       .where(
         and(
           isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       )
       .groupBy(productMasterVersions.status);
@@ -70,7 +70,7 @@ export class DashboardService {
       .where(
         and(
           isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active')
+          eq(productMasterVersions.status, 'active')
         )
       )
       .groupBy(productMasterVersions.approvalStatus);
@@ -82,7 +82,7 @@ export class DashboardService {
       .where(
         and(
           isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
           gte(productMasterVersions.createdAt, todayStart),
         ),
       );
@@ -132,7 +132,7 @@ export class DashboardService {
       .where(
         and(
           isNull(productMasterVersions.deletedAt),
-          eq(productMasterVersions.versionStatus, 'active'),
+          eq(productMasterVersions.status, 'active'),
           eq(productMasterVersions.status, 'active'),
         ),
       )

@@ -11,7 +11,7 @@ export class ProductMasterVersionEntity {
   parentVersionId: string | null;
 
   @ApiProperty({ description: '버전 상태', enum: ['draft', 'inactive', 'active'] })
-  versionStatus: 'draft' | 'inactive' | 'active';
+  status: 'draft' | 'inactive' | 'active';
 
   @ApiProperty({ description: '버전 초안 소유자 ID' })
   draftOwnerId: string | null; // nullable
@@ -28,26 +28,14 @@ export class ProductMasterVersionEntity {
   @ApiProperty({ description: '썸네일 이미지 파일 ID', nullable: true })
   thumbnail: string | null;
 
-  @ApiProperty({ description: '마케팅 태그', nullable: true })
-  tags: string[] | null;
+  @ApiProperty({ description: 'SEO 제목', nullable: true })
+  seoTitle: string | null;
 
-  @ApiProperty({ description: '상품 이미지' })
-  images: string[];
+  @ApiProperty({ description: 'SEO 설명', nullable: true })
+  seoDescription: string | null;
 
-  @ApiProperty({ description: '판매 관련 속성' })
-  attributes: Record<string, any>;
-
-  @ApiProperty({ description: 'SEO 제목' })
-  seoTitle: string;
-
-  @ApiProperty({ description: 'SEO 설명' })
-  seoDescription: string;
-
-  @ApiProperty({ description: 'SEO 키워드' })
-  seoKeywords: string[];
-
-  @ApiProperty({ description: '상품 상태 (아마 Legacy)', enum: ['active', 'inactive', 'draft'] })
-  status: 'active' | 'inactive' | 'draft';
+  @ApiProperty({ description: 'SEO 키워드', nullable: true })
+  seoKeywords: string[] | null;
 
   @ApiProperty({ description: '도매회원 전용' })
   isWholesaleOnly: boolean;
@@ -55,11 +43,11 @@ export class ProductMasterVersionEntity {
   @ApiProperty({ description: '멤버십회원 전용' })
   isMembershipOnly: boolean;
 
-  @ApiProperty({ description: '상품 타입', enum: ['limited_edition', 'regular_sale'] })
-  productType: 'limited_edition' | 'regular_sale';
+  @ApiProperty({ description: '상품 타입' })
+  productType: string;
 
-  @ApiProperty({ description: '상품 코드' })
-  productCode: string;
+  @ApiProperty({ description: '상품 코드', nullable: true })
+  productCode: string | null;
 
   @ApiProperty({ description: '상품 별칭', nullable: true })
   alternativeName: string | null;
@@ -124,18 +112,15 @@ export class ProductMasterVersionEntity {
   @ApiProperty({ description: '등록일시' })
   registrationDate: Date;
 
-  @ApiProperty({ description: '최종 수정일시' })
-  lastEditDate: Date;
-
   @ApiProperty({ description: '생성일시' })
   createdAt: Date;
 
   @ApiProperty({ description: '수정일시' })
   updatedAt: Date;
 
-  @ApiProperty({ description: '생성자' })
-  createdBy: string;
+  @ApiProperty({ description: '생성자', nullable: true })
+  createdBy: string | null;
 
-  @ApiProperty({ description: '수정자' })
-  updatedBy: string;
+  @ApiProperty({ description: '수정자', nullable: true })
+  updatedBy: string | null;
 }

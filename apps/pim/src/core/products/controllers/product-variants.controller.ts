@@ -188,6 +188,8 @@ export class ProductVariantsController {
     description: '특정 제품 변형의 상세 정보를 조회합니다.',
   })
   @ApiParam({ name: 'id', description: '제품 변형 ID' })
+  @ApiParam({ name: 'versionId', description: '버전 ID (둘 중 하나 제공)' })
+  @ApiParam({ name: 'masterId', description: '마스터 ID (둘 중 하나 제공)' })
   @ApiResponse({
     status: 200,
     description: '제품 변형 상세 조회 성공',
@@ -198,9 +200,17 @@ export class ProductVariantsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getVariantDetail(
     @Param('id') id: string,
+    @Param('versionId') versionId?: string,
+    @Param('masterId') masterId?: string,
   ): Promise<VariantWithPriceDto> {
+    if (!versionId && !masterId) {
+      throw new HttpException('Version ID or master ID is required', HttpStatus.BAD_REQUEST);
+    }
+
     try {
-      const variant = await this.productVariantsService.getVariantDetail(id);
+      const variant = versionId
+        ? await this.productVariantsService.getVariantDetail({ variantId: id, versionId })
+        : await this.productVariantsService.getVariantDetail({ variantId: id, masterId: masterId! });
 
       if (!variant) {
         throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);

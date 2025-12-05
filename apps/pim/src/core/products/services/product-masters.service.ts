@@ -1,18 +1,16 @@
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
-  CreateMasterDto,
-  MasterDetailDto,
   ProductMaster,
   ProductMasterVersion,
-  NewProductMaster,
-  NewProductMasterVersion,
   UpdateProductMasterVersion,
   DbTransaction,
   OptionDiff,
   ProductMasterWithVersion,
+  ProductImage,
+  ProductDetailDto,
 } from '../../../types';
 import {
   type PimSchema,
@@ -27,7 +25,6 @@ import {
   productVariants,
   variantOptionValues,
   productImages,
-  uploads,
   productAuditLog,
   productMasterOptionGroups,
   productMasterVariants,
@@ -41,6 +38,35 @@ import { ProductVersionsService } from './product-versions.service';
 import { v7 as uuidv7 } from 'uuid';
 import { ProductMasterVersionEntity } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
+
+
+type VersionOptionValueDisplay = {
+  optionValueId: string;
+  displayName: string;
+  colorCode: string | null;
+  imageUrl: string | null;
+  sortOrder: number | null;
+};
+
+type VersionOptionGroupWithDisplays = {
+  optionGroupId: string;
+  displayName: string;
+  description: string | null;
+  sortOrder: number | null;
+  values: VersionOptionValueDisplay[];
+};
+
+// generateOptionCombinations 결과에서 사용하는 항목 타입
+type VariantCombinationItem = {
+  id: string;
+  displayName: string;
+  groupName?: string | null;
+  name?: string | null;
+};
+
+type VariantCombination = VariantCombinationItem[];
+
+
 
 @Injectable()
 export class ProductMastersService {
@@ -56,8 +82,15 @@ export class ProductMastersService {
     private readonly productVersionsService: ProductVersionsService,
   ) { }
 
-  private getClient(tx?: DbTransaction) {
-    return tx ?? this.db.db;
+  private get client() {
+    return this.db.db;
+  }
+
+  private async inTx<T>(
+    fn: (tx: DbTransaction) => Promise<T>,
+    tx?: DbTransaction,
+  ): Promise<T> {
+    return tx ? fn(tx) : this.client.transaction(fn);
   }
 
   /**
@@ -109,91 +142,62 @@ export class ProductMastersService {
   }
 
   async createMaster(
-    data: CreateMasterDto,
     tx?: DbTransaction,
   ): Promise<ProductMasterVersion> {
-    return tx
-      ? this._createMasterWithinTransaction(data, tx)
-      : this.db.db.transaction(async (txn) => {
-        return this._createMasterWithinTransaction(data, txn);
+    return this.inTx(async (tx) => {
+      const masterId = uuidv7();
+      const versionId = uuidv7();
+
+      // 1. 마스터 메타데이터 생성
+      const [master] = await tx
+        .insert(productMasters)
+        .values({
+          id: masterId,
+        })
+        .returning();
+
+      // 2. 첫 번째 버전 생성
+      const versionData = {
+        id: versionId,
+        masterId: masterId,
+        createdBy: '00000000-0000-0000-0000-000000000000',
+        status: 'draft' as const,
+      };
+
+      const [version] = await tx
+        .insert(productMasterVersions)
+        .values(versionData)
+        .returning();
+
+      // 3. 항상 기본 variant 1개 생성 (옵션 없음)
+      const [variant] = await tx
+        .insert(productVariants)
+        .values({
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+        })
+        .returning();
+
+      // 4. 매핑 테이블에 연결
+      await tx.insert(productMasterVariants).values({
+        id: uuidv7(),
+        masterId: masterId,
+        variantId: variant.id,
+        versionId: version.id,
+        createdAt: new Date(),
       });
-  }
 
-  private async _createMasterWithinTransaction(
-    data: CreateMasterDto,
-    tx: DbTransaction,
-  ): Promise<ProductMasterVersion> {
-    const masterId = uuidv7();
-    const versionId = uuidv7();
+      // 5. WMS 이벤트 발행
+      await this.publishVariantCreatedEvent(version, variant, null);
 
-    // 1. 마스터 메타데이터 생성
-    const [master] = await tx
-      .insert(productMasters)
-      .values({
-        id: masterId,
-        createdBy: (data as any).createdBy ?? null,
-      })
-      .returning();
-
-    // 2. 첫 번째 버전 생성
-    const versionData = {
-      id: versionId,
-      masterId: masterId,
-      version: 1,
-      versionStatus: 'draft',
-      parentVersionId: null,
-      draftOwnerId: null,
-
-      // 제공된 필드만 사용, 나머지는 기본값
-      name: data.name || '새 상품',
-      description: data.description ?? null,
-      brand: data.brand ?? null,
-      thumbnail: (data as any).thumbnailFileId ?? null,
-      descriptionHtml: data.description ?? null,
-      tags: data.tags ?? [],
-      images: data.images ?? null,
-      attributes: data.attributes ?? {},
-      seoTitle: data.seoTitle ?? null,
-      seoDescription: data.seoDescription ?? null,
-      seoKeywords: data.seoKeywords ?? [],
-      isWholesaleOnly: data.isWholesaleOnly ?? false,
-      isMembershipOnly: data.isMembershipOnly ?? false,
-      status: 'draft',
-    };
-
-    const [version] = await tx
-      .insert(productMasterVersions)
-      .values(versionData as any)
-      .returning();
-
-    // 3. 항상 기본 variant 1개 생성 (옵션 없음)
-    const [variant] = await tx
-      .insert(productVariants)
-      .values({
-        variantName: null,
-        isDefault: true,
-        status: 'active',
-      })
-      .returning();
-
-    // 4. 매핑 테이블에 연결
-    await tx.insert(productMasterVariants).values({
-      id: uuidv7(),
-      masterId: masterId,
-      variantId: variant.id,
-      version: 1,
-      createdAt: new Date(),
-    });
-
-    // 5. WMS 이벤트 발행
-    await this.publishVariantCreatedEvent(version, variant, null);
-
-    return version;
+      return version;
+    }, tx);
   }
 
   private async _linkCategories(
     masterId: string,
-    version: number,
+    versionId: string,
     categoryIds: string[],
     primaryCategoryId: string | undefined,
     tx: DbTransaction,
@@ -223,7 +227,7 @@ export class ProductMastersService {
     // Create category relations
     const categoryRelations = categoryIds.map(categoryId => ({
       masterId: masterId,
-      version: version,
+      versionId: versionId,
       categoryId: categoryId,
       isPrimary: categoryId === primaryCategoryId,
       createdAt: new Date(),
@@ -233,10 +237,13 @@ export class ProductMastersService {
   }
 
   private async _generateVariants(
-    version: ProductMasterVersion,
-    optionGroups: any[],
+    masterId: string,
+    versionId: string,
+    optionGroups: VersionOptionGroupWithDisplays[],
     tx: DbTransaction,
   ): Promise<void> {
+    const version = await this.getVersionById(versionId, {}, tx);
+
     if (!optionGroups || optionGroups.length === 0) {
       const [variant] = await tx
         .insert(productVariants)
@@ -247,22 +254,19 @@ export class ProductMastersService {
         })
         .returning();
 
-      // 매핑 테이블에 연결
       await tx.insert(productMasterVariants).values({
         id: uuidv7(),
-        masterId: version.masterId,
+        masterId,
         variantId: variant.id,
-        version: version.version,
-        createdAt: new Date(),
+        versionId,
       });
 
-      // 이벤트 발행
       await this.publishVariantCreatedEvent(version, variant, null);
-
       return;
     }
 
-    const combinations = this.generateOptionCombinations(optionGroups);
+    const combinations: VariantCombination[] =
+      this.generateOptionCombinations(optionGroups);
 
     for (const combination of combinations) {
       const [variant] = await tx
@@ -274,13 +278,11 @@ export class ProductMastersService {
         })
         .returning();
 
-      // 매핑 테이블에 연결
       await tx.insert(productMasterVariants).values({
         id: uuidv7(),
-        masterId: version.masterId,
+        masterId,
         variantId: variant.id,
-        version: version.version,
-        createdAt: new Date(),
+        versionId,
       });
 
       for (const optionValue of combination) {
@@ -290,44 +292,70 @@ export class ProductMastersService {
         });
       }
 
-      // 이벤트 발행 (옵션 조합 포함)
       await this.publishVariantCreatedEvent(
         version,
         variant,
         combination.map((opt) => ({
-          name: opt.groupName || opt.name,
+          name: opt.groupName ?? opt.name ?? opt.displayName,
           value: opt.displayName,
         })),
       );
     }
   }
 
+
   async getVersionById(
     versionId: string,
+    options?: { includeDeleted?: boolean },
     tx?: DbTransaction,
-    options?: { includeDeleted?: boolean; throwIfNotFound?: boolean }
-  ): Promise<ProductMasterVersion | null> {
+  ): Promise<ProductMasterVersion> {
     if (!versionId) {
       throw new Error('Version ID is required');
     }
-
-    const client = this.getClient(tx);
 
     const conditions = [eq(productMasterVersions.id, versionId)];
     if (!options?.includeDeleted) {
       conditions.push(isNull(productMasterVersions.deletedAt));
     }
 
-    const result = await client
-      .select()
-      .from(productMasterVersions)
-      .where(and(...conditions));
+    const version = await this.inTx(async (tx) => {
+      const result = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(and(...conditions));
 
-    const version = result.length > 0 ? result[0] : null;
+      return result.length > 0 ? result[0] : null;
+    }, tx);
 
-    if (!version && options?.throwIfNotFound) {
-      throw new Error(`Version ${versionId} not found`);
+    if (!version) {
+      throw new NotFoundException(`Version ${versionId} not found`);
     }
+
+    return version;
+  }
+
+  async tryGetVersionById(
+    versionId: string,
+    options?: { includeDeleted?: boolean },
+    tx?: DbTransaction,
+  ): Promise<ProductMasterVersion | null> {
+    if (!versionId) {
+      throw new Error('Version ID is required');
+    }
+
+    const conditions = [eq(productMasterVersions.id, versionId)];
+    if (!options?.includeDeleted) {
+      conditions.push(isNull(productMasterVersions.deletedAt));
+    }
+
+    const version = await this.inTx(async (tx) => {
+      const result = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(and(...conditions));
+
+      return result.length > 0 ? result[0] : null;
+    }, tx);
 
     return version;
   }
@@ -335,110 +363,14 @@ export class ProductMastersService {
   async getMasterById(
     masterId: string,
     tx?: DbTransaction,
-  ): Promise<ProductMasterVersion | null> {
+  ): Promise<ProductMasterWithVersion> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
 
-    const client = this.getClient(tx);
-
-    const [activeVersion] = await client
-      .select()
-      .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
-          isNull(productMasterVersions.deletedAt),
-          isNull(productMasters.deletedAt)
-        )
-      )
-      .limit(1);
-
-    return activeVersion ? activeVersion.product_master_versions : null;
-  }
-
-  async getMasterWithImages(
-    masterId: string,
-    tx?: DbTransaction,
-  ): Promise<
-    (ProductMasterVersion & { images: { primary: any; additional: any[] } }) | null
-  > {
-    if (!masterId) {
-      throw new Error('Master ID is required');
-    }
-
-    const client = this.getClient(tx);
-
-    // 1. 상품 기본 정보 조회 (active 버전)
-    const versionResult = await client
-      .select()
-      .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
-          isNull(productMasters.deletedAt)
-        ),
-      )
-      .limit(1);
-
-    if (versionResult.length === 0) {
-      return null;
-    }
-
-    const version = versionResult[0].product_master_versions;
-
-    // 2. 상품에 연결된 이미지 + 업로드 정보 join
-    const images = await client
-      .select({
-        id: productImages.id,
-        isPrimary: productImages.isPrimary,
-        sortOrder: productImages.sortOrder,
-        url: uploads.url,
-        originalName: uploads.originalName,
-        fileName: uploads.fileName,
-        mimeType: uploads.mimeType,
-        size: uploads.size,
-      })
-      .from(productImages)
-      .innerJoin(uploads, eq(productImages.uploadId, uploads.id))
-      .where(eq(productImages.masterId, masterId))
-      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
-
-    // 3. 대표이미지와 부가이미지 분리
-    const primaryImage = images.find((img) => img.isPrimary) || null;
-    const additionalImages = images.filter((img) => !img.isPrimary);
-
-    return {
-      ...version,
-      images: {
-        primary: primaryImage,
-        additional: additionalImages,
-      },
-    };
-  }
-
-  async getMasterDetail(
-    masterId: string,
-    version?: number,
-    tx?: DbTransaction,
-  ): Promise<MasterDetailDto | null> {
-    const client = this.getClient(tx);
-
-    // version이 지정되지 않으면 active 버전 사용
-    let actualVersion = version;
-    if (actualVersion === undefined) {
-      const [activeVersion] = await client
-        .select({ version: productMasterVersions.version })
+    const masterWithVersion = await this.inTx(async (tx) => {
+      const [result] = await tx
+        .select()
         .from(productMasterVersions)
         .innerJoin(
           productMasters,
@@ -447,74 +379,179 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.versionStatus, 'active'),
+            eq(productMasterVersions.status, 'active'),
+            isNull(productMasterVersions.deletedAt),
             isNull(productMasters.deletedAt)
-          ),
+          )
         )
         .limit(1);
 
-      if (!activeVersion) {
-        return null;
-      }
-      actualVersion = activeVersion.version;
+      return result ? {
+        ...result.product_masters,
+        version: result.product_master_versions,
+      } : null;
+    }, tx)
+
+    if (!masterWithVersion) {
+      throw new NotFoundException(`Master ${masterId} not found`);
     }
 
-    const [versionData] = await client
-      .select()
-      .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.version, actualVersion),
-          isNull(productMasters.deletedAt)
+    return masterWithVersion;
+  }
+
+  async tryGetMasterById(
+    masterId: string,
+    tx?: DbTransaction,
+  ): Promise<ProductMasterWithVersion | null> {
+    if (!masterId) {
+      throw new Error('Master ID is required');
+    }
+
+    const masterWithVersion = await this.inTx(async (tx) => {
+      const [result] = await tx
+        .select()
+        .from(productMasterVersions)
+        .innerJoin(
+          productMasters,
+          eq(productMasterVersions.masterId, productMasters.id)
         )
-      )
-      .limit(1);
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            isNull(productMasterVersions.deletedAt),
+            isNull(productMasters.deletedAt)
+          )
+        )
+        .limit(1);
 
-    if (!versionData) {
-      return null;
+      return result ? {
+        ...result.product_masters,
+        version: result.product_master_versions,
+      } : null;
+    }, tx)
+
+    return masterWithVersion;
+  }
+
+  async getVersionWithImages(
+    versionId: string,
+    tx?: DbTransaction,
+  ): Promise<
+    ProductMasterVersion & { images: ProductImage[] }
+  > {
+    if (!versionId) {
+      throw new Error('Master ID is required');
     }
 
-    const version_data = versionData.product_master_versions;
+    const versionWithImages = await this.inTx(async (tx) => {
+      const [version] = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId));
 
-    // 매핑 테이블을 통해 optionGroups 조회 + Display 테이블 JOIN
-    const optionGroupResults = await client
-      .select({
-        id: productOptionGroups.id,
-        displayName: productOptionGroupDisplays.displayName,
-        sortOrder: productOptionGroupDisplays.sortOrder,
-        createdAt: productOptionGroups.createdAt,
-      })
-      .from(productMasterOptionGroups)
-      .innerJoin(
-        productOptionGroups,
-        eq(productMasterOptionGroups.optionGroupId, productOptionGroups.id),
-      )
-      .innerJoin(
-        productOptionGroupDisplays,
-        and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          eq(productOptionGroupDisplays.masterId, masterId),
-          eq(productOptionGroupDisplays.version, actualVersion),
-          eq(productOptionGroupDisplays.locale, 'ko-KR'),
-        ),
-      )
-      .where(
-        and(
-          eq(productMasterOptionGroups.masterId, masterId),
-          eq(productMasterOptionGroups.version, actualVersion),
-        ),
-      )
-      .orderBy(asc(productOptionGroupDisplays.sortOrder));
+      if (!version) {
+        throw new NotFoundException(`Version ${versionId} not found`);
+      }
 
-    const optionGroupsWithValues: any[] = [];
-    for (const group of optionGroupResults) {
-      // Display 테이블을 통해 optionValues 조회
-      const values = await client
+      const images = await tx
+        .select()
+        .from(productImages)
+        .where(eq(productImages.versionId, versionId))
+        .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
+      return {
+        ...version,
+        images,
+      };
+    }, tx)
+
+    return versionWithImages;
+  }
+
+
+  async getMasterDetail(
+    masterId: string,
+    versionId?: string,
+    tx?: DbTransaction,
+  ): Promise<ProductDetailDto> {
+    const detailedMasterProduct = await this.inTx(async (tx) => {
+      let targetVersion: ProductMasterVersion;
+
+      if (!versionId) {
+        const [row] = await tx
+          .select()
+          .from(productMasterVersions)
+          .innerJoin(
+            productMasters,
+            eq(productMasterVersions.masterId, productMasters.id),
+          )
+          .where(
+            and(
+              eq(productMasterVersions.masterId, masterId),
+              eq(productMasterVersions.status, 'active'),
+            ),
+          )
+          .limit(1);
+
+        if (!row) {
+          throw new NotFoundException(
+            `Active version for master ${masterId} not found`,
+          );
+        }
+
+        const { product_master_versions } = row;
+
+
+        if (!product_master_versions) {
+          throw new NotFoundException(
+            `Active version for master ${masterId} not found`,
+          );
+        }
+        targetVersion = product_master_versions
+      }
+      else {
+        targetVersion = await this.getVersionById(versionId, {}, tx);
+        if (targetVersion.masterId !== masterId) {
+          throw new BadRequestException(
+            `Version ${versionId} does not belong to master ${masterId}`,
+          );
+        }
+      }
+
+      // 매핑 테이블을 통해 optionGroups 조회 + Display 테이블 JOIN
+      const optionGroupResults = await tx
+        .select({
+          id: productOptionGroups.id,
+          displayName: productOptionGroupDisplays.displayName,
+          sortOrder: productOptionGroupDisplays.sortOrder,
+          createdAt: productOptionGroups.createdAt,
+        })
+        .from(productMasterOptionGroups)
+        .innerJoin(
+          productOptionGroups,
+          eq(productMasterOptionGroups.optionGroupId, productOptionGroups.id),
+        )
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+            eq(productOptionGroupDisplays.masterId, masterId),
+            eq(productOptionGroupDisplays.versionId, targetVersion.id),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(
+          and(
+            eq(productMasterOptionGroups.masterId, masterId),
+            eq(productMasterOptionGroups.versionId, targetVersion.id),
+          ),
+        )
+        .orderBy(asc(productOptionGroupDisplays.sortOrder));
+
+
+      const optionGroupIds = optionGroupResults.map(g => g.id);
+
+      const allValues = await tx
         .select({
           id: productOptionValues.id,
           optionGroupId: productOptionValues.optionGroupId,
@@ -528,90 +565,113 @@ export class ProductMastersService {
           and(
             eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
             eq(productOptionValueDisplays.masterId, masterId),
-            eq(productOptionValueDisplays.version, actualVersion),
+            eq(productOptionValueDisplays.versionId, targetVersion.id),
             eq(productOptionValueDisplays.locale, 'ko-KR'),
           ),
         )
-        .where(eq(productOptionValues.optionGroupId, group.id))
-        .orderBy(asc(productOptionValueDisplays.sortOrder));
+        .where(inArray(productOptionValues.optionGroupId, optionGroupIds))
+        .orderBy(
+          asc(productOptionValues.optionGroupId),
+          asc(productOptionValueDisplays.sortOrder),
+        );
 
-      optionGroupsWithValues.push({
+      const valuesByGroup = new Map<string, typeof allValues>();
+      for (const v of allValues) {
+        const list = valuesByGroup.get(v.optionGroupId) ?? [];
+        list.push(v);
+        valuesByGroup.set(v.optionGroupId, list);
+      }
+
+      const optionGroupsWithValues = optionGroupResults.map(group => ({
         ...group,
-        values,
-      });
-    }
+        values: valuesByGroup.get(group.id) ?? [],
+      }));
 
-    // 매핑 테이블을 통해 variants 조회
-    const variantResults = await client
-      .select()
-      .from(productMasterVariants)
-      .innerJoin(
-        productVariants,
-        eq(productMasterVariants.variantId, productVariants.id),
-      )
-      .where(
-        and(
-          eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.version, actualVersion),
-        ),
-      )
-      .orderBy(asc(productVariants.displayOrder));
 
-    const variants = variantResults.map((r) => r.product_variants);
-
-    const channelProducts = [];
-
-    // 태그 값 조회 (masterId, version 기준)
-    const tagResults = await client
-      .select({
-        tagValueId: productTagValues.tagValueId,
-        tagValueName: tagValues.name,
-        tagValueDisplayOrder: tagValues.displayOrder,
-        tagGroupId: tagGroups.id,
-        tagGroupName: tagGroups.name,
-      })
-      .from(productTagValues)
-      .innerJoin(
-        tagValues,
-        eq(productTagValues.tagValueId, tagValues.id)
-      )
-      .innerJoin(
-        tagGroups,
-        eq(tagValues.groupId, tagGroups.id)
-      )
-      .where(
-        and(
-          eq(productTagValues.masterId, masterId),
-          eq(productTagValues.version, actualVersion),
-          eq(tagValues.isActive, true),
-          eq(tagGroups.isActive, true)
+      // 매핑 테이블을 통해 variants 조회
+      const variantResults = await tx
+        .select()
+        .from(productMasterVariants)
+        .innerJoin(
+          productVariants,
+          eq(productMasterVariants.variantId, productVariants.id),
         )
-      )
-      .orderBy(
-        asc(tagGroups.displayOrder),
-        asc(tagValues.displayOrder)
-      );
+        .where(
+          and(
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.versionId, targetVersion.id),
+          ),
+        )
+        .orderBy(asc(productVariants.displayOrder));
 
-    const tags = tagResults.map(r => ({
-      id: r.tagValueId,
-      name: r.tagValueName,
-      displayOrder: r.tagValueDisplayOrder,
-      groupId: r.tagGroupId,
-      groupName: r.tagGroupName,
-    }));
+      const variants = variantResults.map((r) => r.product_variants);
 
-    return {
-      ...version_data,
-      optionGroups: optionGroupsWithValues,
-      variants: variants.map((v) => ({ ...v, optionValues: [] })),
-      channelProducts,
-      tagValues: tags,
-    };
+      const channelProducts = [];
+
+      // 태그 값 조회 (masterId, version 기준)
+      const tagResults = await tx
+        .select({
+          tagValueId: productTagValues.tagValueId,
+          tagValueName: tagValues.name,
+          tagValueDisplayOrder: tagValues.displayOrder,
+          tagGroupId: tagGroups.id,
+          tagGroupName: tagGroups.name,
+        })
+        .from(productTagValues)
+        .innerJoin(
+          tagValues,
+          eq(productTagValues.tagValueId, tagValues.id)
+        )
+        .innerJoin(
+          tagGroups,
+          eq(tagValues.groupId, tagGroups.id)
+        )
+        .where(
+          and(
+            eq(productTagValues.masterId, masterId),
+            eq(productTagValues.versionId, targetVersion.id),
+            eq(tagValues.isActive, true),
+            eq(tagGroups.isActive, true)
+          )
+        )
+        .orderBy(
+          asc(tagGroups.displayOrder),
+          asc(tagValues.displayOrder)
+        );
+
+      const tags = tagResults.map(r => ({
+        id: r.tagValueId,
+        name: r.tagValueName,
+        displayOrder: r.tagValueDisplayOrder,
+        groupId: r.tagGroupId,
+        groupName: r.tagGroupName,
+      }));
+
+      // 이미지 조회
+      const images = await tx
+        .select()
+        .from(productImages)
+        .where(eq(productImages.versionId, targetVersion.id))
+        .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
+      return {
+        ...targetVersion,
+        images,
+        optionGroups: optionGroupsWithValues,
+        variants: variants.map((v) => ({ ...v, optionValues: [] })),
+        channelProducts,
+        tagValues: tags,
+      };
+
+    }, tx)
+
+
+    return detailedMasterProduct;
   }
 
   async getMasters(
     filters?: {
-      status?: string;
+      status?: 'draft' | 'inactive' | 'active';
       categoryId?: string;
       brand?: string;
       search?: string;
@@ -635,89 +695,105 @@ export class ProductMastersService {
     page: number;
     limit: number;
   }> {
-    const client = this.getClient(tx);
+    return this.inTx(async (trx) => {
+      // ===== 페이징 기초 계산 =====
+      const returnAll = filters?.page === undefined;
+      const page = filters?.page ?? 1;
+      const limit = returnAll ? 99999 : Math.min(filters?.limit ?? 20, 100);
+      const offset = (page - 1) * limit;
 
-    // 고지훈 임시 수정 - page가 없으면 전체 상품 반환 (검색 기능용)
-    const returnAll = filters?.page === undefined;
-    const page = filters?.page || 1;
-    const limit = returnAll ? 99999 : Math.min(filters?.limit || 20, 100);
-    const offset = (page - 1) * limit;
+      // ===== 공통 where 조건 빌드 =====
+      const whereConditions: any[] = [];
 
-    const whereConditions: any[] = [];
+      // 1) active 버전만
+      whereConditions.push(eq(productMasterVersions.status, 'active'));
 
-    // Only show active versions
-    whereConditions.push(eq(productMasterVersions.versionStatus, 'active'));
+      // 2) soft delete 필터
+      if (!filters?.includeDeleted) {
+        whereConditions.push(isNull(productMasterVersions.deletedAt));
+        whereConditions.push(isNull(productMasters.deletedAt));
+      }
 
-    // Add soft delete filter (unless explicitly including deleted)
-    if (!filters?.includeDeleted) {
-      whereConditions.push(isNull(productMasterVersions.deletedAt));
-      whereConditions.push(isNull(productMasters.deletedAt));
-    }
+      if (filters?.status) {
+        whereConditions.push(eq(productMasterVersions.status, filters.status));
+      }
 
-    if (filters?.status) {
-      whereConditions.push(eq(productMasterVersions.status, filters.status));
-    }
+      if (filters?.brand) {
+        whereConditions.push(eq(productMasterVersions.brand, filters.brand));
+      }
 
-    if (filters?.brand) {
-      whereConditions.push(eq(productMasterVersions.brand, filters.brand));
-    }
-    if (filters?.search) {
-      whereConditions.push(ilike(productMasterVersions.name, `%${filters.search}%`));
-    }
+      if (filters?.search) {
+        whereConditions.push(
+          ilike(productMasterVersions.name, `%${filters.search}%`),
+        );
+      }
 
-    // 고지훈 임시 수정 - 카테고리 필터링 구현 (하위 카테고리 포함)
-    // 카테고리 필터가 있는 경우와 없는 경우를 분리 처리
-    if (filters?.categoryId) {
-      // 1. 하위 카테고리 ID 목록 가져오기
-      const categoryIds = [filters.categoryId];
+      // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 =====
+      let categoryIds: string[] | undefined;
 
-      // 하위 카테고리 조회 (재귀적으로 모든 하위 카테고리 찾기)
-      const getDescendants = async (parentId: string) => {
-        const children = await client
-          .select()
-          .from(productCategories)
-          .where(eq(productCategories.parentId, parentId));
+      if (filters?.categoryId) {
+        categoryIds = [];
 
-        for (const child of children) {
-          categoryIds.push(child.id);
-          await getDescendants(child.id); // 재귀 호출
+        const getDescendants = async (parentId: string) => {
+          const children = await trx
+            .select()
+            .from(productCategories)
+            .where(eq(productCategories.parentId, parentId));
+
+          for (const child of children) {
+            categoryIds!.push(child.id);
+            await getDescendants(child.id);
+          }
+        };
+
+        categoryIds.push(filters.categoryId);
+        await getDescendants(filters.categoryId);
+      }
+
+      // ===== 최종 where 절 빌더 =====
+      const buildWhere = () => {
+        const conditions = [...whereConditions];
+        if (categoryIds && categoryIds.length > 0) {
+          conditions.push(
+            inArray(productMasterCategories.categoryId, categoryIds),
+          );
         }
+        return conditions.length ? and(...conditions) : undefined;
       };
 
-      await getDescendants(filters.categoryId);
+      const whereClause = buildWhere();
 
-      // 2. 카테고리 필터가 있는 경우: JOIN 사용
-      const whereClause =
-        whereConditions.length > 0 ? and(...whereConditions) : undefined;
-
-      // COUNT 쿼리 (JOIN 포함, 하위 카테고리도 포함)
-      const countBaseQuery = client
+      // ===== COUNT 쿼리용 baseQuery =====
+      const baseCountQuery = trx
         .select({ count: count() })
         .from(productMasterVersions)
         .innerJoin(
           productMasters,
-          eq(productMasterVersions.masterId, productMasters.id)
-        )
-        .innerJoin(
-          productMasterCategories,
-          and(
-            eq(productMasterVersions.masterId, productMasterCategories.masterId),
-            eq(productMasterVersions.version, productMasterCategories.version),
-          ),
+          eq(productMasterVersions.masterId, productMasters.id),
         );
 
-      const countConditions = [
-        inArray(productMasterCategories.categoryId, categoryIds),
-      ];
-      if (whereClause) {
-        countConditions.push(whereClause);
-      }
+      const countQueryWithCategory = categoryIds && categoryIds.length > 0
+        ? baseCountQuery.innerJoin(
+          productMasterCategories,
+          and(
+            eq(
+              productMasterCategories.masterId,
+              productMasterVersions.masterId,
+            ),
+            // 매핑 테이블은 versionId(UUID)를 참조
+            eq(productMasterCategories.versionId, productMasterVersions.id),
+          ),
+        )
+        : baseCountQuery;
 
-      const countQuery = countBaseQuery.where(and(...countConditions));
-      const [{ count: total }] = await countQuery;
+      const finalCountQuery = whereClause
+        ? countQueryWithCategory.where(whereClause)
+        : countQueryWithCategory;
 
-      // 데이터 쿼리 (JOIN 포함, 하위 카테고리도 포함)
-      const dataQuery = client
+      const [{ count: total }] = await finalCountQuery;
+
+      // ===== DATA 쿼리용 baseQuery =====
+      const baseDataQuery = trx
         .select({
           id: productMasterVersions.id,
           name: productMasterVersions.name,
@@ -729,44 +805,57 @@ export class ProductMastersService {
             SELECT COUNT(*)::int
             FROM ${productMasterOptionGroups}
             WHERE ${productMasterOptionGroups.masterId} = ${productMasterVersions.masterId}
-              AND ${productMasterOptionGroups.version} = ${productMasterVersions.version}
+              AND ${productMasterOptionGroups.versionId} = ${productMasterVersions.id}
           )`.as('option_group_count'),
           variantCount: sql<number>`(
             SELECT COUNT(*)::int
             FROM ${productMasterVariants}
             WHERE ${productMasterVariants.masterId} = ${productMasterVersions.masterId}
-              AND ${productMasterVariants.version} = ${productMasterVersions.version}
+              AND ${productMasterVariants.versionId} = ${productMasterVersions.id}
           )`.as('variant_count'),
         })
         .from(productMasterVersions)
         .innerJoin(
           productMasters,
-          eq(productMasterVersions.masterId, productMasters.id)
-        )
-        .innerJoin(
+          eq(productMasterVersions.masterId, productMasters.id),
+        );
+
+      const dataQueryWithCategory = categoryIds && categoryIds.length > 0
+        ? baseDataQuery.innerJoin(
           productMasterCategories,
           and(
-            eq(productMasterVersions.masterId, productMasterCategories.masterId),
-            eq(productMasterVersions.version, productMasterCategories.version),
+            eq(
+              productMasterCategories.masterId,
+              productMasterVersions.masterId,
+            ),
+            eq(productMasterCategories.versionId, productMasterVersions.id),
           ),
         )
-        .where(and(...countConditions))
-        .orderBy(desc(productMasterVersions.createdAt));
+        : baseDataQuery;
 
-      // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
-      if (!returnAll) {
-        dataQuery.limit(limit).offset(offset);
-      }
+      let finalDataQuery = whereClause
+        ? dataQueryWithCategory.where(whereClause)
+        : dataQueryWithCategory;
 
-      const rawData = await dataQuery;
+      const orderedFinalDataQuery = finalDataQuery.orderBy(
+        desc(productMasterVersions.createdAt),
+      );
 
-      // Date 객체를 ISO 문자열로 변환
+      const rawData = await (
+        returnAll
+          ? orderedFinalDataQuery
+          : orderedFinalDataQuery.limit(limit).offset(offset)
+      );
+
       const data = rawData.map((item) => ({
-        ...item,
-        createdAt: item.createdAt?.toISOString() || null,
-        // 고지훈 임시 시연용수정 - 썸네일 이미지 URL 제대로 반환
+        id: item.id,
+        name: item.name,
         thumbnail: item.thumbnail,
-        // 고지훈 임시 시연용수정 - 상세설명은 description에 저장됨
+        isMembershipOnly: item.isMembershipOnly,
+        status: item.status,
+        createdAt: item.createdAt?.toISOString() ?? null,
+        optionGroupCount: item.optionGroupCount,
+        variantCount: item.variantCount,
       }));
 
       return {
@@ -775,82 +864,10 @@ export class ProductMastersService {
         page,
         limit,
       };
-    }
-
-    // 카테고리 필터가 없는 경우: 기존 로직
-    const whereClause =
-      whereConditions.length > 0 ? and(...whereConditions) : undefined;
-    const countQuery = client
-      .select({ count: count() })
-      .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      );
-
-    if (whereClause) {
-      countQuery.where(whereClause);
-    }
-
-    const [{ count: total }] = await countQuery;
-
-    // 목록용으로 필요한 필드만 선택
-    const dataQuery = client
-      .select({
-        id: productMasterVersions.id,
-        name: productMasterVersions.name,
-        brand: productMasterVersions.brand,
-        thumbnail: productMasterVersions.thumbnail,
-        isMembershipOnly: productMasterVersions.isMembershipOnly,
-        status: productMasterVersions.status,
-        createdAt: productMasterVersions.createdAt,
-        optionGroupCount: sql<number>`(
-          SELECT COUNT(*)::int
-          FROM ${productMasterOptionGroups}
-          WHERE ${productMasterOptionGroups.masterId} = ${productMasterVersions.masterId}
-            AND ${productMasterOptionGroups.version} = ${productMasterVersions.version}
-        )`.as('option_group_count'),
-        variantCount: sql<number>`(
-          SELECT COUNT(*)::int
-          FROM ${productMasterVariants}
-          WHERE ${productMasterVariants.masterId} = ${productMasterVersions.masterId}
-            AND ${productMasterVariants.version} = ${productMasterVersions.version}
-        )`.as('variant_count'),
-      })
-      .from(productMasterVersions)
-      .innerJoin(
-        productMasters,
-        eq(productMasterVersions.masterId, productMasters.id)
-      )
-      .orderBy(desc(productMasterVersions.createdAt));
-
-    // 고지훈 임시 수정 - page가 있을 때만 limit/offset 적용
-    if (!returnAll) {
-      dataQuery.limit(limit).offset(offset);
-    }
-
-    if (whereClause) {
-      dataQuery.where(whereClause);
-    }
-
-    const rawData = await dataQuery;
-
-    // Date 객체를 ISO 문자열로 변환
-    const data = rawData.map((item) => ({
-      ...item,
-      createdAt: item.createdAt?.toISOString() || null,
-      // 고지훈 임시 시연용수정 - 썸네일 이미지 URL 제대로 반환
-      thumbnail: item.thumbnail,
-      // 고지훈 임시 시연용수정 - 상세설명은 description에 저장됨
-    }));
-
-    return {
-      data,
-      total,
-      page,
-      limit,
-    };
+    }, tx);
   }
+
+
 
   /**
    * Draft 버전 수정
@@ -868,42 +885,27 @@ export class ProductMastersService {
       throw new Error('Version ID is required');
     }
 
-    const executeUpdate = async (txClient: DbTransaction) => {
-      // 0. 기존 버전 조회
-      const existingMaster = await this.getVersionById(versionId, txClient);
-      if (!existingMaster) {
-        throw new Error(`Version not found: ${versionId}`);
-      }
+    return this.inTx(async (tx) => {
+      const existingVersion = await this.getVersionById(versionId, {}, tx);
 
-      // draft 상태 검증
-      if (existingMaster.versionStatus !== 'draft') {
+      if (existingVersion.status !== 'draft') {
         throw new Error('Only draft versions can be modified');
       }
 
-      // NOTE: Pricing strategy logic has been moved to PricingModule
-      // Use the new rule-based pricing API: PUT /products/:masterId/pricing-rules
-
-      // 3. 기본 필드 업데이트
+      // 기본 필드 수정
       const {
         categoryIds,
         primaryCategoryId,
         migrationData,
         optionDiff,
+        tagValueIds,
         ...masterUpdateData
       } = data;
 
-      // Map thumbnailFileId to thumbnail for schema compatibility
-      const updateData: any = { ...masterUpdateData };
-      if ((data as any).thumbnailFileId !== undefined) {
-        updateData.thumbnail = (data as any).thumbnailFileId;
-        delete updateData.thumbnailFileId;
-      }
-
-      // Update version basic info with type safety
-      const [updated] = await txClient
+      const [updated] = await tx
         .update(productMasterVersions)
         .set({
-          ...updateData,
+          ...masterUpdateData,
           updatedAt: new Date()
         })
         .where(eq(productMasterVersions.id, versionId))
@@ -913,37 +915,35 @@ export class ProductMastersService {
         throw new Error(`Failed to update version: ${versionId}`);
       }
 
-      // 4. 카테고리 업데이트
+      // 카테고리 업데이트
       if (categoryIds !== undefined) {
-        // Delete existing relations for this specific version
-        await txClient
+        await tx
           .delete(productMasterCategories)
           .where(
             and(
-              eq(productMasterCategories.masterId, existingMaster.masterId),
-              eq(productMasterCategories.version, existingMaster.version),
+              eq(productMasterCategories.masterId, updated.masterId),
+              eq(productMasterCategories.versionId, updated.id),
             ),
           );
 
-        // Create new relations
         if (categoryIds.length > 0) {
           await this._linkCategories(
-            existingMaster.masterId,
-            existingMaster.version,
+            updated.masterId,
+            updated.id,
             categoryIds,
             primaryCategoryId,
-            txClient
+            tx
           );
         }
       }
 
-      // 5. 옵션 diff 처리
+      // 옵션 diff 처리
       if (optionDiff) {
         const structureChanged = await this._applyOptionDiff(
           versionId,
-          existingMaster,
+          updated.masterId,
           optionDiff,
-          txClient,
+          tx,
         );
 
         // 옵션 구조 변경 시 variants 재생성
@@ -958,22 +958,22 @@ export class ProductMastersService {
           );
 
           await this._regenerateVariantsForVersion(
-            existingMaster.masterId,
-            existingMaster.version,
+            updated.masterId,
+            updated.id,
             changeType,
-            txClient,
+            tx,
           );
         }
       }
 
-      // 6. 태그 값 업데이트
+      // 태그 값 업데이트
       if (data.tagValueIds !== undefined) {
-        await txClient
+        await tx
           .delete(productTagValues)
           .where(
             and(
               eq(productTagValues.masterId, updated.masterId),
-              eq(productTagValues.version, updated.version)
+              eq(productTagValues.versionId, updated.id)
             )
           );
 
@@ -984,7 +984,7 @@ export class ProductMastersService {
             throw new Error('Duplicate tag value IDs are not allowed');
           }
 
-          const validTagValues = await txClient
+          const validTagValues = await tx
             .select({ id: tagValues.id })
             .from(tagValues)
             .where(
@@ -1000,10 +1000,10 @@ export class ProductMastersService {
             throw new Error(`Tag values not found or inactive: ${invalidIds.join(', ')}`);
           }
 
-          await txClient.insert(productTagValues).values(
+          await tx.insert(productTagValues).values(
             data.tagValueIds.map((tagValueId) => ({
               masterId: updated.masterId,
-              version: updated.version,
+              versionId: updated.id,
               tagValueId,
               createdAt: new Date(),
             }))
@@ -1012,250 +1012,201 @@ export class ProductMastersService {
       }
 
       return updated;
-    };
+    }, tx)
 
-    return tx ? executeUpdate(tx) : this.db.db.transaction(executeUpdate);
   }
 
-  async deleteMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {
-    if (!masterId) {
+
+  async generateVariants(versionId: string, tx?: DbTransaction): Promise<void> {
+    if (!versionId) {
       throw new Error('Master ID is required');
     }
 
-    const client = this.getClient(tx);
+    await this.inTx(async (tx) => {
 
-    const master = await this.getVersionById(masterId, tx);
-    if (!master) {
-      return false;
-    }
-    const result = await client
-      .delete(productMasterVersions)
-      .where(eq(productMasterVersions.id, masterId));
+      const version = await this.getVersionById(versionId, {}, tx);
+      if (!version) {
+        throw new Error(`Version not found: ${versionId}`);
+      }
 
-    return true;
-  }
+      // 매핑 테이블을 통해 기존 variants 확인
+      const existingMappings = await tx
+        .select({ count: count() })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.versionId, version.id),
+          ),
+        );
 
-  async generateVariants(masterId: string, tx?: DbTransaction): Promise<void> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
-    }
+      if (existingMappings[0].count > 0) {
+        throw new Error(
+          'Master already has variants. Use regenerateVariants to recreate them.',
+        );
+      }
 
-    const client = this.getClient(tx);
-
-    const exists = await this.existsMaster(masterId, tx);
-    if (!exists) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
-
-    const master = await this.getVersionById(masterId, tx);
-    if (!master) {
-      throw new Error(`Version not found: ${masterId}`);
-    }
-
-    // 매핑 테이블을 통해 기존 variants 확인
-    const existingMappings = await client
-      .select({ count: count() })
-      .from(productMasterVariants)
-      .where(
-        and(
-          eq(productMasterVariants.masterId, master.masterId),
-          eq(productMasterVariants.version, master.version),
-        ),
+      // Display 테이블을 통해 optionGroups 조회
+      const optionGroups = await this._getVersionOptionGroupsWithDisplays(
+        version.masterId,
+        version.id,
+        'ko-KR',
+        tx,
       );
 
-    if (existingMappings[0].count > 0) {
-      throw new Error(
-        'Master already has variants. Use regenerateVariants to recreate them.',
-      );
-    }
+      await this._generateVariants(version.masterId, version.id, optionGroups, tx);
 
-    // Display 테이블을 통해 optionGroups 조회
-    const optionGroups = await this._getVersionOptionGroupsWithDisplays(
-      master.masterId,
-      master.version,
-      'ko-KR',
-      client,
-    );
+    }, tx)
 
-    if (tx) {
-      await this._generateVariants(master, optionGroups, tx);
-    } else {
-      await this.db.db.transaction(async (txn) => {
-        await this._generateVariants(master, optionGroups, txn);
-      });
-    }
   }
 
   async generateDefaultVariant(
-    masterId: string,
+    versionId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    if (!masterId) {
-      throw new Error('Master ID is required');
-    }
+    await this.inTx(async (tx) => {
+      const version = await this.getVersionById(versionId, {}, tx);
+      if (!version) {
+        throw new Error(`Version not found: ${versionId}`);
+      }
 
-    const client = this.getClient(tx);
+      // 매핑 테이블을 통해 optionGroups 확인
+      const existingOptionGroups = await tx
+        .select({ count: count() })
+        .from(productMasterOptionGroups)
+        .where(
+          and(
+            eq(productMasterOptionGroups.masterId, version.masterId),
+            eq(productMasterOptionGroups.versionId, version.id),
+          ),
+        );
 
-    const exists = await this.existsMaster(masterId, tx);
-    if (!exists) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
+      if (existingOptionGroups[0].count > 0) {
+        throw new Error(
+          'Cannot generate default variant for master with option groups. Use generateVariants instead.',
+        );
+      }
 
-    const master = await this.getVersionById(masterId, tx);
-    if (!master) {
-      throw new Error(`Version not found: ${masterId}`);
-    }
+      // 매핑 테이블을 통해 기존 variants 확인
+      const existingVariants = await tx
+        .select({ count: count() })
+        .from(productMasterVariants)
+        .where(
+          and(
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.versionId, version.id),
+          ),
+        );
 
-    // 매핑 테이블을 통해 optionGroups 확인
-    const existingOptionGroups = await client
-      .select({ count: count() })
-      .from(productMasterOptionGroups)
-      .where(
-        and(
-          eq(productMasterOptionGroups.masterId, master.masterId),
-          eq(productMasterOptionGroups.version, master.version),
-        ),
-      );
+      if (existingVariants[0].count > 0) {
+        throw new Error(
+          'Master already has variants. Cannot generate default variant.',
+        );
+      }
 
-    if (existingOptionGroups[0].count > 0) {
-      throw new Error(
-        'Cannot generate default variant for master with option groups. Use generateVariants instead.',
-      );
-    }
+      // variant 생성 후 매핑
+      const [variant] = await tx
+        .insert(productVariants)
+        .values({
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+          displayOrder: 0,
+        })
+        .returning();
 
-    // 매핑 테이블을 통해 기존 variants 확인
-    const existingVariants = await client
-      .select({ count: count() })
-      .from(productMasterVariants)
-      .where(
-        and(
-          eq(productMasterVariants.masterId, master.masterId),
-          eq(productMasterVariants.version, master.version),
-        ),
-      );
+      await tx.insert(productMasterVariants).values({
+        id: uuidv7(),
+        masterId: version.masterId,
+        variantId: variant.id,
+        versionId: version.id,
+        createdAt: new Date(),
+      });
 
-    if (existingVariants[0].count > 0) {
-      throw new Error(
-        'Master already has variants. Cannot generate default variant.',
-      );
-    }
+    }, tx)
 
-    // variant 생성 후 매핑
-    const [variant] = await client
-      .insert(productVariants)
-      .values({
-        variantName: null,
-        isDefault: true,
-        status: 'active',
-        displayOrder: 0,
-      })
-      .returning();
 
-    await client.insert(productMasterVariants).values({
-      id: uuidv7(),
-      masterId: master.masterId,
-      variantId: variant.id,
-      version: master.version,
-      createdAt: new Date(),
-    });
   }
 
   async regenerateVariants(
-    masterId: string,
+    versionId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    if (!masterId) {
+    if (!versionId) {
       throw new Error('Master ID is required');
     }
 
-    const client = this.getClient(tx);
+    await this.inTx(async (tx) => {
+      const version = await this.getVersionById(versionId, {}, tx);
+      if (!version) {
+        throw new Error(`Version not found: ${versionId}`);
+      }
 
-    const exists = await this.existsMaster(masterId, tx);
-    if (!exists) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
-
-    const master = await this.getVersionById(masterId, tx);
-    if (!master) {
-      throw new Error(`Version not found: ${masterId}`);
-    }
-
-    const executeRegeneration = async (txn: DbTransaction) => {
       // 매핑 테이블을 통해 기존 variants 삭제
-      const existingMappings = await txn
+      const existingMappings = await tx
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
         .where(
           and(
-            eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, master.version),
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.versionId, version.id),
           ),
         );
 
       // 매핑 삭제
-      await txn
+      await tx
         .delete(productMasterVariants)
         .where(
           and(
-            eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, master.version),
+            eq(productMasterVariants.masterId, version.masterId),
+            eq(productMasterVariants.versionId, version.id),
           ),
         );
 
       // 실제 variant 레코드 삭제 (다른 버전에서 사용되지 않는 경우)
       if (existingMappings.length > 0) {
         for (const { variantId } of existingMappings) {
-          const otherMappings = await txn
+          const otherMappings = await tx
             .select({ count: count() })
             .from(productMasterVariants)
             .where(eq(productMasterVariants.variantId, variantId));
 
           if (otherMappings[0].count === 0) {
-            await txn.delete(productVariants).where(eq(productVariants.id, variantId));
+            await tx.delete(productVariants).where(eq(productVariants.id, variantId));
           }
         }
       }
 
       // 매핑 테이블과 Display 테이블을 통해 optionGroups 조회
       const optionGroups = await this._getVersionOptionGroupsWithDisplays(
-        master.masterId,
-        master.version,
+        version.masterId,
+        version.id,
         'ko-KR',
-        txn,
+        tx,
       );
 
-      await this._generateVariants(master, optionGroups, txn);
-    };
+      await this._generateVariants(version.masterId, version.id, optionGroups, tx);
+    }, tx)
 
-    if (tx) {
-      await executeRegeneration(tx);
-    } else {
-      await this.db.db.transaction(async (txn) => {
-        await executeRegeneration(txn);
-      });
-    }
   }
 
-  // NOTE: Pricing methods removed. Use PricingModule instead:
-  // - PricingService for rules management
-  // - PricingCalculatorService for price calculation
 
   async existsMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {
     if (!masterId) {
       return false;
     }
 
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({ count: count() })
-      .from(productMasters)
-      .where(
-        and(
-          eq(productMasters.id, masterId),
-          isNull(productMasters.deletedAt)
-        )
-      );
+    const result = await this.inTx(async (tx) => {
+      return await tx
+        .select({ count: count() })
+        .from(productMasters)
+        .where(
+          and(
+            eq(productMasters.id, masterId),
+            isNull(productMasters.deletedAt)
+          )
+        );
+    }, tx)
 
     return result[0].count > 0;
   }
@@ -1280,19 +1231,21 @@ export class ProductMastersService {
       );
     }
 
-    const client = this.getClient(tx);
+    await this.inTx(async (tx) => {
+      const exists = await this.existsMaster(masterId, tx);
+      if (!exists) {
+        throw new Error(`Master not found: ${masterId}`);
+      }
+      await tx
+        .update(productMasterVersions)
+        .set({
+          status: status as 'active' | 'inactive' | 'draft',
+          updatedAt: new Date(),
+        })
+        .where(eq(productMasterVersions.id, masterId));
+    }, tx)
 
-    const exists = await this.existsMaster(masterId, tx);
-    if (!exists) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
-    await client
-      .update(productMasterVersions)
-      .set({
-        status,
-        updatedAt: new Date(),
-      })
-      .where(eq(productMasterVersions.id, masterId));
+
   }
 
   private generateOptionCombinations(optionGroups: any[]): any[][] {
@@ -1358,40 +1311,42 @@ export class ProductMastersService {
   /**
    * Soft delete a product
    */
-  async softDelete(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    const client = this.getClient(tx);
+  async deleteVersion(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
+    const deleted = await this.inTx(async (tx) => {
+      // Check if product exists and is not already deleted
+      const product = await this.getVersionById(id, { includeDeleted: true }, tx);
+      if (!product) {
+        throw new Error(`Product with ID ${id} not found`);
+      }
 
-    // Check if product exists and is not already deleted
-    const product = await this.getVersionById(id, tx, { includeDeleted: true });
-    if (!product) {
-      throw new Error(`Product with ID ${id} not found`);
-    }
+      if (product.deletedAt) {
+        throw new Error('Product is already deleted');
+      }
 
-    if (product.deletedAt) {
-      throw new Error('Product is already deleted');
-    }
+      const [deleted] = await tx
+        .update(productMasterVersions)
+        .set({
+          deletedAt: new Date(),
+          deletedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(productMasterVersions.id, id))
+        .returning();
 
-    const [deleted] = await client
-      .update(productMasterVersions)
-      .set({
-        deletedAt: new Date(),
-        deletedBy: userId,
-        updatedAt: new Date(),
-      })
-      .where(eq(productMasterVersions.id, id))
-      .returning();
+      // Log audit event
+      await this.logAudit({
+        versionId: id,
+        action: 'deleted',
+        changes: { deletedAt: deleted.deletedAt },
+        userId,
+      }, tx);
 
-    // Log audit event
-    await this.logAudit({
-      versionId: id,
-      action: 'deleted',
-      changes: { deletedAt: deleted.deletedAt },
-      userId,
-    }, tx);
+      if (product.status === 'active') {
+        await this._emitMasterDeletedEvent(product.masterId);
+      }
 
-    if (product.versionStatus === 'active') {
-      await this._emitMasterDeletedEvent(product.masterId);
-    }
+      return deleted;
+    }, tx)
 
     return deleted;
   }
@@ -1400,41 +1355,41 @@ export class ProductMastersService {
    * Restore a soft-deleted product
    */
   async restore(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    const client = this.getClient(tx);
+    return await this.inTx(async (tx) => {
+      // Find product including deleted ones
+      const [product] = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, id));
 
-    // Find product including deleted ones
-    const [product] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, id));
+      if (!product) {
+        throw new Error(`Product with ID ${id} not found`);
+      }
 
-    if (!product) {
-      throw new Error(`Product with ID ${id} not found`);
-    }
+      if (!product.deletedAt) {
+        throw new Error('Product is not deleted');
+      }
 
-    if (!product.deletedAt) {
-      throw new Error('Product is not deleted');
-    }
+      const [restored] = await tx
+        .update(productMasterVersions)
+        .set({
+          deletedAt: null,
+          deletedBy: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(productMasterVersions.id, id))
+        .returning();
 
-    const [restored] = await client
-      .update(productMasterVersions)
-      .set({
-        deletedAt: null,
-        deletedBy: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(productMasterVersions.id, id))
-      .returning();
+      // Log audit event
+      await this.logAudit({
+        versionId: id,
+        action: 'restored',
+        changes: { deletedAt: null },
+        userId,
+      }, tx);
 
-    // Log audit event
-    await this.logAudit({
-      versionId: id,
-      action: 'restored',
-      changes: { deletedAt: null },
-      userId,
-    }, tx);
-
-    return restored;
+      return restored;
+    }, tx)
   }
 
   /**
@@ -1442,55 +1397,55 @@ export class ProductMastersService {
    * Master가 삭제되면 모든 Version은 자동으로 조회되지 않음 (join 시 필터링)
    * Active 버전이 있었다면 ProductMasterDeleted 이벤트 발행
    */
-  async softDeleteMaster(
+  async deleteMaster(
     masterId: string,
     userId: string,
     tx?: DbTransaction,
   ): Promise<ProductMaster> {
-    const client = this.getClient(tx);
+    return await this.inTx(async (tx) => {
+      // 1. Master 존재 및 삭제 여부 확인
+      const [master] = await tx
+        .select()
+        .from(productMasters)
+        .where(eq(productMasters.id, masterId));
 
-    // 1. Master 존재 및 삭제 여부 확인
-    const [master] = await client
-      .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, masterId));
+      if (!master) {
+        throw new Error(`Master not found: ${masterId}`);
+      }
 
-    if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
+      if (master.deletedAt) {
+        throw new Error('Master is already deleted');
+      }
 
-    if (master.deletedAt) {
-      throw new Error('Master is already deleted');
-    }
+      // 2. Active 버전 확인 (이벤트 발행용)
+      const [activeVersion] = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.status, 'active'),
+          ),
+        )
+        .limit(1);
 
-    // 2. Active 버전 확인 (이벤트 발행용)
-    const [activeVersion] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.versionStatus, 'active'),
-        ),
-      )
-      .limit(1);
+      // 3. Master soft delete
+      const [deletedMaster] = await tx
+        .update(productMasters)
+        .set({
+          deletedAt: new Date(),
+          deletedBy: userId,
+        })
+        .where(eq(productMasters.id, masterId))
+        .returning();
 
-    // 3. Master soft delete
-    const [deletedMaster] = await client
-      .update(productMasters)
-      .set({
-        deletedAt: new Date(),
-        deletedBy: userId,
-      })
-      .where(eq(productMasters.id, masterId))
-      .returning();
+      // 4. Active 버전이 있었다면 이벤트 발행
+      if (activeVersion) {
+        await this._emitMasterDeletedEvent(masterId);
+      }
 
-    // 4. Active 버전이 있었다면 이벤트 발행
-    if (activeVersion) {
-      await this._emitMasterDeletedEvent(masterId);
-    }
-
-    return deletedMaster;
+      return deletedMaster;
+    }, tx)
   }
 
   /**
@@ -1498,135 +1453,138 @@ export class ProductMastersService {
    */
   async restoreMaster(
     masterId: string,
-    userId: string,
     tx?: DbTransaction,
   ): Promise<ProductMaster> {
-    const client = this.getClient(tx);
+    return await this.inTx(async (tx) => {
+      // 1. Master 존재 확인 (includeDeleted)
+      const [master] = await tx
+        .select()
+        .from(productMasters)
+        .where(eq(productMasters.id, masterId));
 
-    // 1. Master 존재 확인 (includeDeleted)
-    const [master] = await client
-      .select()
-      .from(productMasters)
-      .where(eq(productMasters.id, masterId));
+      if (!master) {
+        throw new Error(`Master not found: ${masterId}`);
+      }
 
-    if (!master) {
-      throw new Error(`Master not found: ${masterId}`);
-    }
+      if (!master.deletedAt) {
+        throw new Error('Master is not deleted');
+      }
 
-    if (!master.deletedAt) {
-      throw new Error('Master is not deleted');
-    }
+      // 2. Master 복원
+      const [restoredMaster] = await tx
+        .update(productMasters)
+        .set({
+          deletedAt: null,
+          deletedBy: null,
+        })
+        .where(eq(productMasters.id, masterId))
+        .returning();
 
-    // 2. Master 복원
-    const [restoredMaster] = await client
-      .update(productMasters)
-      .set({
-        deletedAt: null,
-        deletedBy: null,
-      })
-      .where(eq(productMasters.id, masterId))
-      .returning();
-
-    return restoredMaster;
+      return restoredMaster;
+    }, tx)
   }
 
   /**
    * Get all soft-deleted products
    */
   async findDeleted(tx?: DbTransaction): Promise<MasterProductWithPrimaryVersionDto[]> {
-    const client = this.getClient(tx);
-
-    // 모든 master 를 가져오고, 각 master 에 보여줄 버전을 1) active, 2) inactive 최신, 3) 없으면 null 순서로 선택
-    const masters = await client
-      .select()
-      .from(productMasters)
-      .where(isNotNull(productMasters.deletedAt)); // 삭제된 master 만 가져올 경우
-
-    const results: MasterProductWithPrimaryVersionDto[] = [];
-
-    for (const master of masters) {
-      let primaryVersion: ProductMasterVersionEntity | null = null;
-
-      // 1. active 버전 조회
-      const [activeVersion] = await client
+    return await this.inTx(async (tx) => {
+      // 모든 master 를 가져오고, 각 master 에 보여줄 버전을 1) active, 2) inactive 최신, 3) 없으면 null 순서로 선택
+      const masters = await tx
         .select()
-        .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, master.id),
-            eq(productMasterVersions.versionStatus, 'active')
-          )
-        )
-        .limit(1);
+        .from(productMasters)
+        .where(isNotNull(productMasters.deletedAt)); // 삭제된 master 만 가져올 경우
 
-      if (activeVersion) {
-        primaryVersion = activeVersion as ProductMasterVersionEntity; // TODO: 타입 불안정 수정
-      }
-      else {
-        // 2. 가장 최근 inactive 버전 조회
-        const [inactiveVersion] = await client
+      const results: MasterProductWithPrimaryVersionDto[] = [];
+
+      for (const master of masters) {
+        let primaryVersion: ProductMasterVersionEntity | null = null;
+
+        // 1. active 버전 조회
+        const [activeVersion] = await tx
           .select()
           .from(productMasterVersions)
           .where(
             and(
               eq(productMasterVersions.masterId, master.id),
-              eq(productMasterVersions.versionStatus, 'inactive')
+              eq(productMasterVersions.status, 'active')
             )
           )
-          .orderBy(desc(productMasterVersions.createdAt))
           .limit(1);
 
-        if (inactiveVersion) {
-          primaryVersion = inactiveVersion as ProductMasterVersionEntity; // TODO: 타입 불안정 수정
+        if (activeVersion) {
+          primaryVersion = activeVersion;
         }
+        else {
+          // 2. 가장 최근 inactive 버전 조회
+          const [inactiveVersion] = await tx
+            .select()
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.masterId, master.id),
+                eq(productMasterVersions.status, 'inactive')
+              )
+            )
+            .orderBy(desc(productMasterVersions.createdAt))
+            .limit(1);
+
+          if (inactiveVersion) {
+            primaryVersion = inactiveVersion
+          }
+        }
+
+        results.push({
+          ...master,
+          primaryVersion: primaryVersion,
+        })
       }
 
-      results.push({
-        ...master,
-        primaryVersion: primaryVersion,
-      })
-    }
+      return results;
+    }, tx)
 
-    return results;
+
   }
 
   /**
    * Hard delete (permanent) - use with caution
    */
   async hardDelete(id: string, userId: string, tx?: DbTransaction): Promise<{ deleted: boolean }> {
-    const client = this.getClient(tx);
+    return await this.inTx(async (tx) => {
+      // Check if product exists
+      const [product] = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, id));
 
-    // Check if product exists
-    const [product] = await client
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, id));
+      if (!product) {
+        throw new Error(`Product with ID ${id} not found`);
+      }
 
-    if (!product) {
-      throw new Error(`Product with ID ${id} not found`);
-    }
+      // Log before deletion (orphaned record)
+      await this.logAudit({
+        versionId: id,
+        action: 'hard_deleted',
+        changes: { permanent: true },
+        userId,
+      }, tx);
 
-    // Log before deletion (orphaned record)
-    await this.logAudit({
-      versionId: id,
-      action: 'hard_deleted',
-      changes: { permanent: true },
-      userId,
-    }, tx);
+      await tx
+        .delete(productMasterVersions)
+        .where(eq(productMasterVersions.id, id));
 
-    await client
-      .delete(productMasterVersions)
-      .where(eq(productMasterVersions.id, id));
+      return { deleted: true };
+    }, tx)
 
-    return { deleted: true };
+
   }
 
   /**
    * Apply option diff to a draft version
    */
   private async _applyOptionDiff(
+    versionId: string,
     masterId: string,
-    master: ProductMasterVersion,
     optionDiff: OptionDiff,
     tx: DbTransaction,
   ): Promise<boolean> {
@@ -1646,8 +1604,8 @@ export class ProductMastersService {
         // Display 정보 저장
         await tx.insert(productOptionGroupDisplays).values({
           optionGroupId: optionGroup.id,
-          masterId: master.masterId,
-          version: master.version,
+          masterId: masterId,
+          versionId: versionId,
           locale,
           displayName: addOption.displayName,
           description: addOption.description,
@@ -1657,9 +1615,9 @@ export class ProductMastersService {
         // 매핑 테이블 연결
         await tx.insert(productMasterOptionGroups).values({
           id: uuidv7(),
-          masterId: master.masterId,
+          masterId: masterId,
           optionGroupId: optionGroup.id,
-          version: master.version,
+          versionId: versionId,
         });
 
         // 옵션 값들 생성
@@ -1671,8 +1629,8 @@ export class ProductMastersService {
 
           await tx.insert(productOptionValueDisplays).values({
             optionValueId: optionValue.id,
-            masterId: master.masterId,
-            version: master.version,
+            masterId: masterId,
+            versionId: versionId,
             locale,
             displayName: addValue.displayName,
             colorCode: addValue.colorCode,
@@ -1697,8 +1655,8 @@ export class ProductMastersService {
             .set(updates)
             .where(and(
               eq(productOptionGroupDisplays.optionGroupId, modify.optionGroupId),
-              eq(productOptionGroupDisplays.masterId, master.masterId),
-              eq(productOptionGroupDisplays.version, master.version),
+              eq(productOptionGroupDisplays.masterId, masterId),
+              eq(productOptionGroupDisplays.versionId, versionId),
               eq(productOptionGroupDisplays.locale, locale),
             ));
         }
@@ -1717,8 +1675,8 @@ export class ProductMastersService {
                 .set(valueUpdates)
                 .where(and(
                   eq(productOptionValueDisplays.optionValueId, valueModify.optionValueId),
-                  eq(productOptionValueDisplays.masterId, master.masterId),
-                  eq(productOptionValueDisplays.version, master.version),
+                  eq(productOptionValueDisplays.masterId, masterId),
+                  eq(productOptionValueDisplays.versionId, versionId),
                   eq(productOptionValueDisplays.locale, locale),
                 ));
             }
@@ -1739,8 +1697,8 @@ export class ProductMastersService {
 
           await tx.insert(productOptionValueDisplays).values({
             optionValueId: optionValue.id,
-            masterId: master.masterId,
-            version: master.version,
+            masterId: masterId,
+            versionId: versionId,
             locale,
             displayName: addValue.displayName,
             colorCode: addValue.colorCode,
@@ -1761,13 +1719,13 @@ export class ProductMastersService {
             .where(
               and(
                 eq(productOptionValueDisplays.optionValueId, optionValueId),
-                eq(productOptionValueDisplays.masterId, master.masterId),
-                eq(productOptionValueDisplays.version, master.version),
+                eq(productOptionValueDisplays.masterId, masterId),
+                eq(productOptionValueDisplays.versionId, versionId),
               ),
             );
 
           this.logger.log(
-            `Removed option value ${optionValueId} from master ${master.masterId} version ${master.version}`,
+            `Removed option value ${optionValueId} from master ${masterId} version ${versionId}`,
           );
         }
       }
@@ -1780,9 +1738,9 @@ export class ProductMastersService {
         await tx
           .delete(productMasterOptionGroups)
           .where(and(
-            eq(productMasterOptionGroups.masterId, master.masterId),
+            eq(productMasterOptionGroups.masterId, masterId),
             eq(productMasterOptionGroups.optionGroupId, optionGroupId),
-            eq(productMasterOptionGroups.version, master.version),
+            eq(productMasterOptionGroups.versionId, versionId),
           ));
       }
     }
@@ -1797,7 +1755,7 @@ export class ProductMastersService {
    */
   private async _regenerateVariantsForVersion(
     masterId: string,
-    currentVersion: number,
+    versionId: string,
     changeType: 'option_group_changed' | 'option_value_changed',
     tx: DbTransaction,
   ): Promise<void> {
@@ -1807,13 +1765,13 @@ export class ProductMastersService {
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.version, currentVersion)
+          eq(productMasterVersions.id, versionId)
         )
       )
       .limit(1);
 
     if (!master) {
-      throw new Error(`Master not found: ${masterId} version ${currentVersion}`);
+      throw new Error(`Master not found: ${masterId} version ${versionId}`);
     }
 
     const locale = 'ko-KR';
@@ -1821,7 +1779,7 @@ export class ProductMastersService {
     if (changeType === 'option_group_changed') {
       // 옵션 그룹 구조 변경 → 전체 재생성
       this.logger.log(
-        `Option group structure changed for ${master.masterId} v${currentVersion}. Regenerating all variants.`,
+        `Option group structure changed for ${master.masterId} v${versionId}. Regenerating all variants.`,
       );
 
       // 1. 기존 매핑 조회 (삭제 전에 저장)
@@ -1831,7 +1789,7 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, currentVersion),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
@@ -1843,14 +1801,14 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, currentVersion),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
       // 3. 현재 버전의 옵션 구조로 variant 전체 생성 (이벤트 없이)
       const optionGroups = await this._getVersionOptionGroupsWithDisplays(
         master.masterId,
-        currentVersion,
+        versionId,
         locale,
         tx,
       );
@@ -1864,7 +1822,7 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, currentVersion),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
@@ -1876,7 +1834,7 @@ export class ProductMastersService {
       if (removedVariantIds.length > 0) {
         await this._cleanupOrphanedVariants(
           master.masterId,
-          currentVersion,
+          versionId,
           removedVariantIds,
           tx,
         );
@@ -1888,19 +1846,19 @@ export class ProductMastersService {
     } else {
       // 옵션값만 변경 → 증분 업데이트 (승계 + 추가/제외)
       this.logger.log(
-        `Option values changed for ${master.masterId} v${currentVersion}. Applying incremental update.`,
+        `Option values changed for ${master.masterId} v${versionId}. Applying incremental update.`,
       );
 
       // 1. 현재 버전의 옵션 구조 조회
       const currentOptionGroups = await this._getVersionOptionGroupsWithDisplays(
         master.masterId,
-        currentVersion,
+        versionId,
         locale,
         tx,
       );
 
       if (currentOptionGroups.length === 0) {
-        this.logger.warn(`No option groups found for version ${currentVersion}. Skipping variant regeneration.`);
+        this.logger.warn(`No option groups found for version ${versionId}. Skipping variant regeneration.`);
         return;
       }
 
@@ -1910,7 +1868,7 @@ export class ProductMastersService {
       // 3. 부모 버전에서 기존 variant 조회
       const parentVersionVariants = await this._getParentVersionVariants(
         master.masterId,
-        currentVersion,
+        versionId,
         tx,
       );
 
@@ -1921,7 +1879,7 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, currentVersion),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
@@ -1933,7 +1891,7 @@ export class ProductMastersService {
         .where(
           and(
             eq(productMasterVariants.masterId, master.masterId),
-            eq(productMasterVariants.version, currentVersion),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
@@ -1954,14 +1912,14 @@ export class ProductMastersService {
             id: uuidv7(),
             masterId: master.masterId,
             variantId: matchingVariant.variantId,
-            version: currentVersion,
+            versionId: versionId,
             createdAt: new Date(),
           });
 
           newVariantIds.push(matchingVariant.variantId);
           inheritedCount++;
           this.logger.debug(
-            `Inherited variant ${matchingVariant.variantId} to v${currentVersion}`,
+            `Inherited variant ${matchingVariant.variantId} to v${versionId}`,
           );
         } else {
           // 신규 생성 (이벤트 없이)
@@ -1978,7 +1936,7 @@ export class ProductMastersService {
             id: uuidv7(),
             masterId: master.masterId,
             variantId: variant.id,
-            version: currentVersion,
+            versionId: versionId,
             createdAt: new Date(),
           });
 
@@ -1993,7 +1951,7 @@ export class ProductMastersService {
           newVariantIds.push(variant.id);
           createdCount++;
           this.logger.debug(
-            `Created new variant ${variant.id} for v${currentVersion}`,
+            `Created new variant ${variant.id} for v${versionId}`,
           );
         }
       }
@@ -2006,7 +1964,7 @@ export class ProductMastersService {
       if (removedVariantIds.length > 0) {
         await this._cleanupOrphanedVariants(
           master.masterId,
-          currentVersion,
+          versionId,
           removedVariantIds,
           tx,
         );
@@ -2022,7 +1980,7 @@ export class ProductMastersService {
    * 이벤트 발행 없이 variant 생성 (_generateVariants의 복사본)
    */
   private async _generateVariantsWithoutEvents(
-    master: ProductMasterVersion,
+    version: ProductMasterVersion,
     optionGroups: any[],
     tx: DbTransaction,
   ): Promise<void> {
@@ -2038,9 +1996,9 @@ export class ProductMastersService {
 
       await tx.insert(productMasterVariants).values({
         id: uuidv7(),
-        masterId: master.masterId,
+        masterId: version.masterId,
         variantId: variant.id,
-        version: master.version,
+        versionId: version.id,
         createdAt: new Date(),
       });
 
@@ -2061,9 +2019,9 @@ export class ProductMastersService {
 
       await tx.insert(productMasterVariants).values({
         id: uuidv7(),
-        masterId: master.masterId,
+        masterId: version.masterId,
         variantId: variant.id,
-        version: master.version,
+        versionId: version.id,
         createdAt: new Date(),
       });
 
@@ -2081,7 +2039,7 @@ export class ProductMastersService {
    */
   private async _getParentVersionVariants(
     masterId: string,
-    currentVersion: number,
+    versionId: string,
     tx: DbTransaction,
   ): Promise<Array<{ variantId: string; optionValueIds: string[] }>> {
     // 현재 버전의 부모 조회
@@ -2091,13 +2049,13 @@ export class ProductMastersService {
       .where(
         and(
           eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.version, currentVersion),
+          eq(productMasterVersions.id, versionId),
         ),
       )
       .limit(1);
 
     if (!currentVersionRow || !currentVersionRow.parentVersionId) {
-      this.logger.debug(`No parent version for v${currentVersion}`);
+      this.logger.debug(`No parent version for v${versionId}`);
       return [];
     }
 
@@ -2120,7 +2078,7 @@ export class ProductMastersService {
       .where(
         and(
           eq(productMasterVariants.masterId, masterId),
-          eq(productMasterVariants.version, parentVersion.version),
+          eq(productMasterVariants.versionId, parentVersion.id),
         ),
       );
 
@@ -2174,7 +2132,7 @@ export class ProductMastersService {
    */
   private async _cleanupOrphanedVariants(
     masterId: string,
-    currentVersion: number,
+    versionId: string,
     removedVariantIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
@@ -2188,15 +2146,15 @@ export class ProductMastersService {
       // 1. 이 variant를 참조하는 모든 버전 매핑 조회
       const allMappings = await tx
         .select({
-          version: productMasterVariants.version,
-          versionStatus: productMasterVersions.versionStatus,
+          versionId: productMasterVariants.versionId,
+          status: productMasterVersions.status,
         })
         .from(productMasterVariants)
         .innerJoin(
           productMasterVersions,
           and(
             eq(productMasterVariants.masterId, productMasterVersions.masterId),
-            eq(productMasterVariants.version, productMasterVersions.version),
+            eq(productMasterVariants.versionId, productMasterVersions.id),
           ),
         )
         .where(
@@ -2210,8 +2168,8 @@ export class ProductMastersService {
       const canDelete =
         allMappings.length === 0 ||
         (allMappings.length === 1 &&
-          allMappings[0].versionStatus === 'draft' &&
-          allMappings[0].version === currentVersion);
+          allMappings[0].status === 'draft' &&
+          allMappings[0].versionId === versionId);
 
       if (canDelete) {
         // 3. Variant 엔티티 삭제
@@ -2221,11 +2179,11 @@ export class ProductMastersService {
 
         deletedCount++;
         this.logger.log(
-          `Deleted orphaned variant entity: ${variantId} (only referenced by current draft v${currentVersion})`,
+          `Deleted orphaned variant entity: ${variantId} (only referenced by current draft v${versionId})`,
         );
       } else {
         this.logger.debug(
-          `Kept variant entity: ${variantId} (referenced by ${allMappings.length} version(s): ${allMappings.map((m) => `v${m.version}(${m.versionStatus})`).join(', ')})`,
+          `Kept variant entity: ${variantId} (referenced by ${allMappings.length} version(s): ${allMappings.map((m) => `v${m.versionId}(${m.status})`).join(', ')})`,
         );
       }
     }
@@ -2240,13 +2198,15 @@ export class ProductMastersService {
   /**
    * Get version option groups with display information
    */
+
+
   private async _getVersionOptionGroupsWithDisplays(
     masterId: string,
-    version: number,
+    versionId: string,
     locale: string = 'ko-KR',
     tx: DbTransaction,
-  ): Promise<any[]> {
-    const result = await tx
+  ): Promise<VersionOptionGroupWithDisplays[]> {
+    const groups = await tx
       .select({
         optionGroupId: productMasterOptionGroups.optionGroupId,
         displayName: productOptionGroupDisplays.displayName,
@@ -2257,23 +2217,33 @@ export class ProductMastersService {
       .innerJoin(
         productOptionGroupDisplays,
         and(
-          eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
-          eq(productMasterOptionGroups.masterId, productOptionGroupDisplays.masterId),
-          eq(productMasterOptionGroups.version, productOptionGroupDisplays.version),
+          eq(
+            productMasterOptionGroups.optionGroupId,
+            productOptionGroupDisplays.optionGroupId,
+          ),
+          eq(
+            productMasterOptionGroups.masterId,
+            productOptionGroupDisplays.masterId,
+          ),
+          eq(
+            productMasterOptionGroups.versionId,
+            productOptionGroupDisplays.versionId,
+          ),
           eq(productOptionGroupDisplays.locale, locale),
         ),
       )
       .where(
         and(
           eq(productMasterOptionGroups.masterId, masterId),
-          eq(productMasterOptionGroups.version, version),
+          eq(productMasterOptionGroups.versionId, versionId),
         ),
       )
       .orderBy(productOptionGroupDisplays.sortOrder);
 
-    // 각 옵션 그룹의 값들 조회
-    for (const group of result) {
-      (group as any).values = await tx
+    const result: VersionOptionGroupWithDisplays[] = [];
+
+    for (const group of groups) {
+      const values = await tx
         .select({
           optionValueId: productOptionValues.id,
           displayName: productOptionValueDisplays.displayName,
@@ -2287,16 +2257,22 @@ export class ProductMastersService {
           and(
             eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
             eq(productOptionValueDisplays.masterId, masterId),
-            eq(productOptionValueDisplays.version, version),
+            eq(productOptionValueDisplays.versionId, versionId),
             eq(productOptionValueDisplays.locale, locale),
           ),
         )
         .where(eq(productOptionValues.optionGroupId, group.optionGroupId))
         .orderBy(productOptionValueDisplays.sortOrder);
+
+      result.push({
+        ...group,
+        values,
+      });
     }
 
     return result;
   }
+
 
   /**
    * Log audit event
@@ -2310,14 +2286,13 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ) {
-    const client = this.getClient(tx);
-
-    await client.insert(productAuditLog).values({
-      versionId: data.versionId,
-      action: data.action,
-      changes: data.changes,
-      userId: data.userId,
-      timestamp: new Date(),
-    });
+    return this.inTx(async (tx) => {
+      await tx.insert(productAuditLog).values({
+        versionId: data.versionId,
+        action: data.action,
+        changes: data.changes,
+        userId: data.userId,
+      });
+    }, tx)
   }
 }
