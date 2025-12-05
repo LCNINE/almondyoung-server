@@ -9,6 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
+import { Type } from 'class-transformer';
 
 export class UpdateUserDto {
   @ApiProperty({
@@ -72,5 +73,7 @@ export class UpdateUserDto {
     required: false,
   })
   @IsOptional()
+  @ValidateNested()
+  @Type(() => AddressDto)
   address?: AddressDto | null;
 }
