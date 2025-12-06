@@ -16,11 +16,11 @@ export class ChannelCategoryDto {
   @ApiProperty({ description: '이 분류에 속한 채널 수', required: false })
   channelCount?: number;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class ChannelCategoryListResponseDto {

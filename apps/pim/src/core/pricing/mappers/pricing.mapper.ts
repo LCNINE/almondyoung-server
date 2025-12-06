@@ -10,10 +10,9 @@ export class PricingMapper {
   /**
    * Map entity to PricingRuleResponseDto
    */
-  static toRuleDto(entity: PricingRuleEntity & { masterId?: string }): PricingRuleResponseDto {
+  static toRuleDto(entity: PricingRuleEntity): PricingRuleResponseDto {
     return {
       id: entity.id,
-      masterId: entity.masterId,
       layer: entity.layer,
       order: entity.order,
       scopeType: entity.scopeType,

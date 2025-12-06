@@ -67,6 +67,11 @@ type VariantCombinationItem = {
 
 type VariantCombination = VariantCombinationItem[];
 
+// Master 목록 조회 모드
+type MasterListMode =
+  | 'active'           // active 버전만
+  | 'active-or-latest' // active 우선, 없으면 최신 inactive
+  | 'draft';           // draft 버전만
 
 
 @Injectable()
@@ -672,7 +677,8 @@ export class ProductMastersService {
 
   async getMasters(
     filters?: {
-      status?: 'draft' | 'inactive' | 'active';
+      mode?: MasterListMode;
+      createdBy?: string;
       categoryId?: string;
       brand?: string;
       search?: string;
@@ -682,16 +688,7 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    data: {
-      id: string;
-      name: string;
-      thumbnail: string | null;
-      isMembershipOnly: boolean | null;
-      status: string | null;
-      createdAt: string | null;
-      optionGroupCount: number;
-      variantCount: number;
-    }[];
+    data: (ProductMasterVersionEntity & { optionGroupCount?: number; variantCount?: number; thumbnail?: string | null })[];
     total: number;
     page: number;
     limit: number;
@@ -703,20 +700,92 @@ export class ProductMastersService {
       const limit = returnAll ? 99999 : Math.min(filters?.limit ?? 20, 100);
       const offset = (page - 1) * limit;
 
+      const mode = filters?.mode ?? 'active';
+
+      // ===== 모드별 버전 선택 로직 =====
+      // 각 master에서 어떤 버전을 선택할지 결정
+      let selectedVersionsSubquery;
+
+      if (mode === 'active') {
+        // 모드 1: active 버전만
+        selectedVersionsSubquery = trx
+          .select({
+            masterId: productMasterVersions.masterId,
+            versionId: productMasterVersions.id,
+            status: productMasterVersions.status,
+            createdAt: productMasterVersions.createdAt,
+            createdBy: productMasterVersions.createdBy,
+          })
+          .from(productMasterVersions)
+          .where(
+            and(
+              eq(productMasterVersions.status, 'active'),
+              isNull(productMasterVersions.deletedAt)
+            )
+          )
+          .as('selected_versions');
+      } else if (mode === 'active-or-latest') {
+        // 모드 2: active 우선, 없으면 최신 inactive
+        // ROW_NUMBER 윈도우 함수로 각 master별 우선순위 부여
+        selectedVersionsSubquery = trx
+          .select({
+            masterId: productMasterVersions.masterId,
+            versionId: productMasterVersions.id,
+            status: productMasterVersions.status,
+            createdAt: productMasterVersions.createdAt,
+            createdBy: productMasterVersions.createdBy,
+            rn: sql<number>`
+              ROW_NUMBER() OVER (
+                PARTITION BY ${productMasterVersions.masterId}
+                ORDER BY
+                  CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END,
+                  ${productMasterVersions.createdAt} DESC
+              )
+            `.as('rn'),
+          })
+          .from(productMasterVersions)
+          .where(
+            and(
+              inArray(productMasterVersions.status, ['active', 'inactive']),
+              isNull(productMasterVersions.deletedAt)
+            )
+          )
+          .as('ranked_versions');
+      } else {
+        // 모드 3: draft 버전만
+        selectedVersionsSubquery = trx
+          .select({
+            masterId: productMasterVersions.masterId,
+            versionId: productMasterVersions.id,
+            status: productMasterVersions.status,
+            createdAt: productMasterVersions.createdAt,
+            createdBy: productMasterVersions.createdBy,
+          })
+          .from(productMasterVersions)
+          .where(
+            and(
+              eq(productMasterVersions.status, 'draft'),
+              isNull(productMasterVersions.deletedAt)
+            )
+          )
+          .as('selected_versions');
+      }
+
       // ===== 공통 where 조건 빌드 =====
       const whereConditions: any[] = [];
 
-      // 1) active 버전만
-      whereConditions.push(eq(productMasterVersions.status, 'active'));
-
-      // 2) soft delete 필터
+      // soft delete 필터
       if (!filters?.includeDeleted) {
-        whereConditions.push(isNull(productMasterVersions.deletedAt));
         whereConditions.push(isNull(productMasters.deletedAt));
       }
 
-      if (filters?.status) {
-        whereConditions.push(eq(productMasterVersions.status, filters.status));
+      // createdBy 필터 (모든 모드에서 사용 가능)
+      if (filters?.createdBy) {
+        if (mode === 'active-or-latest') {
+          whereConditions.push(eq(selectedVersionsSubquery.createdBy, filters.createdBy));
+        } else {
+          whereConditions.push(eq(selectedVersionsSubquery.createdBy, filters.createdBy));
+        }
       }
 
       if (filters?.brand) {
@@ -764,79 +833,81 @@ export class ProductMastersService {
 
       const whereClause = buildWhere();
 
-      // ===== COUNT 쿼리용 baseQuery =====
-      const baseCountQuery = trx
-        .select({ count: count() })
-        .from(productMasterVersions)
-        .innerJoin(
-          productMasters,
-          eq(productMasterVersions.masterId, productMasters.id),
-        );
+      // ===== 모드별 조인 처리 =====
+      let baseQuery;
 
+      if (mode === 'active-or-latest') {
+        // active-or-latest: rn = 1인 것만 선택
+        const filteredVersions = trx
+          .select({
+            masterId: selectedVersionsSubquery.masterId,
+            versionId: selectedVersionsSubquery.versionId,
+            status: selectedVersionsSubquery.status,
+            createdAt: selectedVersionsSubquery.createdAt,
+            createdBy: selectedVersionsSubquery.createdBy,
+          })
+          .from(selectedVersionsSubquery)
+          .where(eq(selectedVersionsSubquery.rn, 1))
+          .as('filtered_versions');
+
+        baseQuery = trx
+          .select()
+          .from(productMasters)
+          .innerJoin(
+            filteredVersions,
+            eq(productMasters.id, filteredVersions.masterId)
+          )
+          .innerJoin(
+            productMasterVersions,
+            eq(filteredVersions.versionId, productMasterVersions.id)
+          );
+      } else {
+        // active, draft 모드
+        baseQuery = trx
+          .select()
+          .from(productMasters)
+          .innerJoin(
+            selectedVersionsSubquery,
+            eq(productMasters.id, selectedVersionsSubquery.masterId)
+          )
+          .innerJoin(
+            productMasterVersions,
+            eq(selectedVersionsSubquery.versionId, productMasterVersions.id)
+          );
+      }
+
+      // ===== COUNT 쿼리 =====
       const countQueryWithCategory = categoryIds && categoryIds.length > 0
-        ? baseCountQuery.innerJoin(
+        ? baseQuery.innerJoin(
           productMasterCategories,
           and(
-            eq(
-              productMasterCategories.masterId,
-              productMasterVersions.masterId,
-            ),
-            // 매핑 테이블은 versionId(UUID)를 참조
+            eq(productMasterCategories.masterId, productMasters.id),
             eq(productMasterCategories.versionId, productMasterVersions.id),
           ),
         )
-        : baseCountQuery;
+        : baseQuery;
 
       const finalCountQuery = whereClause
         ? countQueryWithCategory.where(whereClause)
         : countQueryWithCategory;
 
-      const [{ count: total }] = await finalCountQuery;
+      const countResult = await finalCountQuery;
+      const total = countResult.length;
 
-      // ===== DATA 쿼리용 baseQuery =====
-      const baseDataQuery = trx
-        .select({
-          id: productMasterVersions.id,
-          name: productMasterVersions.name,
-          thumbnail: productMasterVersions.thumbnail,
-          isMembershipOnly: productMasterVersions.isMembershipOnly,
-          status: productMasterVersions.status,
-          createdAt: productMasterVersions.createdAt,
-          optionGroupCount: sql<number>`(
-            SELECT COUNT(*)::int
-            FROM ${productMasterOptionGroups}
-            WHERE ${productMasterOptionGroups.masterId} = ${productMasterVersions.masterId}
-              AND ${productMasterOptionGroups.versionId} = ${productMasterVersions.id}
-          )`.as('option_group_count'),
-          variantCount: sql<number>`(
-            SELECT COUNT(*)::int
-            FROM ${productMasterVariants}
-            WHERE ${productMasterVariants.masterId} = ${productMasterVersions.masterId}
-              AND ${productMasterVariants.versionId} = ${productMasterVersions.id}
-          )`.as('variant_count'),
-        })
-        .from(productMasterVersions)
-        .innerJoin(
-          productMasters,
-          eq(productMasterVersions.masterId, productMasters.id),
-        );
-
-      const dataQueryWithCategory = categoryIds && categoryIds.length > 0
-        ? baseDataQuery.innerJoin(
+      // ===== DATA 쿼리 =====
+      const dataQueryBase = categoryIds && categoryIds.length > 0
+        ? baseQuery.innerJoin(
           productMasterCategories,
           and(
-            eq(
-              productMasterCategories.masterId,
-              productMasterVersions.masterId,
-            ),
+            eq(productMasterCategories.masterId, productMasters.id),
             eq(productMasterCategories.versionId, productMasterVersions.id),
           ),
         )
-        : baseDataQuery;
+        : baseQuery;
 
       let finalDataQuery = whereClause
-        ? dataQueryWithCategory.where(whereClause)
-        : dataQueryWithCategory;
+        ? dataQueryBase.where(whereClause)
+        : dataQueryBase;
 
       const orderedFinalDataQuery = finalDataQuery.orderBy(
         desc(productMasterVersions.createdAt),
@@ -848,7 +919,38 @@ export class ProductMastersService {
           : orderedFinalDataQuery.limit(limit).offset(offset)
       );
 
-      const data = rawData.map((item) => ProductMasterMapper.toListItemDto(item as any));
+      // ===== 결과 가공: optionGroupCount, variantCount 계산 =====
+      const data = await Promise.all(
+        rawData.map(async (item) => {
+          const version = item.product_master_versions;
+
+          const [optionGroupCountResult] = await trx
+            .select({ count: count() })
+            .from(productMasterOptionGroups)
+            .where(
+              and(
+                eq(productMasterOptionGroups.masterId, version.masterId),
+                eq(productMasterOptionGroups.versionId, version.id)
+              )
+            );
+
+          const [variantCountResult] = await trx
+            .select({ count: count() })
+            .from(productMasterVariants)
+            .where(
+              and(
+                eq(productMasterVariants.masterId, version.masterId),
+                eq(productMasterVariants.versionId, version.id)
+              )
+            );
+
+          return {
+            ...version,
+            optionGroupCount: optionGroupCountResult.count,
+            variantCount: variantCountResult.count,
+          };
+        })
+      );
 
       return {
         data,

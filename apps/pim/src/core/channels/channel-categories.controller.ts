@@ -23,11 +23,12 @@ import {
   ChannelCategoryDto,
   ChannelCategoryListResponseDto,
 } from './dto/channel-categories';
+import { ChannelCategoryMapper } from './mappers';
 
 @ApiTags('Channel Categories')
 @Controller('channels/categories')
 export class ChannelCategoriesController {
-  constructor(private readonly channelCategoriesService: ChannelCategoriesService) {}
+  constructor(private readonly channelCategoriesService: ChannelCategoriesService) { }
 
   @Get()
   @ApiOperation({
@@ -42,7 +43,8 @@ export class ChannelCategoriesController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getCategories(): Promise<ChannelCategoryListResponseDto> {
     try {
-      const data = await this.channelCategoriesService.findAll();
+      const entities = await this.channelCategoriesService.findAll();
+      const data = ChannelCategoryMapper.toDtoArray(entities);
       return { data };
     } catch (error) {
       throw new HttpException(
@@ -73,7 +75,7 @@ export class ChannelCategoriesController {
         throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
       }
 
-      return category as ChannelCategoryDto;
+      return ChannelCategoryMapper.toDto(category);
     } catch (error) {
       if (
         error.message.includes('not found') ||
@@ -112,9 +114,8 @@ export class ChannelCategoriesController {
         );
       }
 
-      return (await this.channelCategoriesService.create(
-        createDto,
-      )) as ChannelCategoryDto;
+      const entity = await this.channelCategoriesService.create(createDto);
+      return ChannelCategoryMapper.toDto(entity);
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -149,10 +150,8 @@ export class ChannelCategoriesController {
     @Body() updateDto: UpdateChannelCategoryDto,
   ): Promise<ChannelCategoryDto> {
     try {
-      return (await this.channelCategoriesService.update(
-        id,
-        updateDto,
-      )) as ChannelCategoryDto;
+      const entity = await this.channelCategoriesService.update(id, updateDto);
+      return ChannelCategoryMapper.toDto(entity);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Category not found', HttpStatus.NOT_FOUND);

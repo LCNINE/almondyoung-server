@@ -113,13 +113,13 @@ export class PricingService {
       return {
         basePriceRules: allRules
           .filter((r) => r.layer === 'base_price')
-          .map(this.toResponseDto),
+          .map((r) => PricingMapper.toRuleDto(r)),
         membershipPriceRules: allRules
           .filter((r) => r.layer === 'membership_price')
-          .map(this.toResponseDto),
+          .map((r) => PricingMapper.toRuleDto(r)),
         tieredPriceRules: allRules
           .filter((r) => r.layer === 'tiered_price')
-          .map(this.toResponseDto),
+          .map((r) => PricingMapper.toRuleDto(r)),
       };
     }, tx);
   }
@@ -391,23 +391,6 @@ export class PricingService {
     if (masters.length === 0) {
       throw new NotFoundException(`Product master ${masterId} not found`);
     }
-  }
-
-  private toResponseDto(rule: {
-    id: string;
-    masterId: string;
-    version: number;
-    layer: string;
-    order: number;
-    scopeType: string;
-    scopeTargetIds: string[] | null;
-    operationType: string;
-    operationValue: number;
-    minQuantity: number | null;
-    createdAt: Date | null;
-    updatedAt: Date | null;
-  }): PricingRuleResponseDto {
-    return PricingMapper.toRuleDto(rule);
   }
 
   /**

@@ -21,6 +21,7 @@ import {
   VariantPriceSet,
   TieredPriceInfo
 } from '../../types';
+import { PricingRuleEntity } from '../../schema.types';
 
 @Injectable()
 export class PricingCalculatorService {
@@ -319,20 +320,7 @@ export class PricingCalculatorService {
     tieredPriceRules: PricingRule[];
   }> {
     return this.inTx(async (trx) => {
-      type RuleRow = {
-        id: string;
-        layer: string;
-        order: number;
-        scopeType: string;
-        scopeTargetIds: string[] | null;
-        operationType: string;
-        operationValue: number;
-        minQuantity: number | null;
-        createdAt: Date | null;
-        updatedAt: Date | null;
-      };
-
-      let allRules: RuleRow[];
+      let allRules: PricingRuleEntity[];
 
       // version이 지정되면 해당 버전만, 아니면 active 버전 사용
       if (versionId) {
