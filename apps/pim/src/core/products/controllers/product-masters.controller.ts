@@ -12,6 +12,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
+import { DateMapper } from '../../../common/mappers';
 import {
   ApiTags,
   ApiOperation,
@@ -38,6 +39,8 @@ import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, Pro
 import { ProductMapper } from '../mappers/product.mapper';
 import { DbService, InjectDb } from '@app/db';
 import { PimSchema } from 'apps/pim/src/schema';
+import { PaginatedResponseDto } from '../../../common/dto';
+import { ApiOkResponsePaginated } from '../../../common/decorators';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -89,10 +92,10 @@ export class ProductMastersController {
     summary: '제품 마스터 목록 조회',
     description: `
       제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.
-      
+
       **기본 동작:** Active 버전만 반환합니다.
       **옵션:** includeAllVersions=true 시 모든 버전 상태를 포함합니다.
-      
+
       각 항목은 Master ID와 active 버전의 정보를 포함합니다.
     `,
   })
@@ -145,10 +148,9 @@ export class ProductMastersController {
     type: Boolean,
     description: '모든 버전 포함 여부 (기본값: false, active만 조회)',
   })
-  @ApiResponse({
-    status: 200,
+  // 새로운 제네릭 패턴 사용: ApiOkResponsePaginated
+  @ApiOkResponsePaginated(MasterListItemDto, {
     description: '제품 마스터 목록 조회 성공',
-    type: MasterListResponseDto,
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getMasters(
@@ -162,7 +164,7 @@ export class ProductMastersController {
       status?: 'draft' | 'inactive' | 'active';
       includeAllVersions?: boolean;
     },
-  ): Promise<MasterListResponseDto> {
+  ): Promise<PaginatedResponseDto<MasterListItemDto>> {
     try {
       const filters = {
         page: query.page ? parseInt(query.page) : undefined,
@@ -328,7 +330,7 @@ export class ProductMastersController {
         success: true,
         message: 'Master deleted successfully',
         masterId: deleted.id,
-        deletedAt: deleted.deletedAt?.toISOString(),
+        deletedAt: DateMapper.toNullableString(deleted.deletedAt),
       };
     } catch (error) {
       if (error.message.includes('not found')) {

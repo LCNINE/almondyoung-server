@@ -46,11 +46,11 @@ export class PricingRuleResponseDto {
   })
   minQuantity: number | null;
 
-  @ApiProperty({ description: 'Created at' })
-  createdAt: Date;
+  @ApiProperty({ description: 'Created at (ISO 8601)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: 'Updated at' })
-  updatedAt: Date;
+  @ApiProperty({ description: 'Updated at (ISO 8601)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class PricingRulesResponseDto {

@@ -5,12 +5,12 @@ export class SalesChannelDto {
   @ApiProperty({ description: '판매 채널 ID (UUID 형식)' })
   id: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '채널 유형 (기본값: ONLINE)',
     enum: ['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'],
     default: 'ONLINE'
   })
-  type: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
+  type: string;
 
   @ApiProperty({
     description: '판매처 사이트',
@@ -21,9 +21,9 @@ export class SalesChannelDto {
   @ApiProperty({ description: '판매처 분류 ID', nullable: true })
   categoryId: string | null;
 
-  @ApiProperty({ 
-    description: '판매처 분류 정보', 
-    type: ChannelCategoryDto, 
+  @ApiProperty({
+    description: '판매처 분류 정보',
+    type: ChannelCategoryDto,
     nullable: true,
     required: false
   })
@@ -35,7 +35,7 @@ export class SalesChannelDto {
   @ApiProperty({ description: '채널 설명', nullable: true })
   description: string | null;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '채널 설정 (sender 정보 포함)',
     example: {
       sender: {
@@ -58,11 +58,11 @@ export class SalesChannelDto {
   @ApiProperty({ description: '인증 정보' })
   credentials: Record<string, any>;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class ChannelListResponseDto {

@@ -22,11 +22,11 @@ export class ProductVariantDto {
   @ApiProperty({ description: '기본 변형 여부', nullable: true })
   isDefault: boolean | null;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class VariantWithPriceDto extends ProductVariantDto {

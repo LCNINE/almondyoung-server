@@ -26,6 +26,8 @@ import {
   VariantUpdateResponseDto,
   VariantPriceResponseDto,
 } from '../dto';
+import { PaginatedResponseDto } from '../../../common/dto';
+import { ApiOkResponsePaginated } from '../../../common/decorators';
 
 @ApiTags('Product Variants')
 @Controller('variants')
@@ -64,10 +66,8 @@ export class ProductVariantsController {
     type: String,
     description: '페이지 당 아이템 수',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponsePaginated(VariantWithPriceDto, {
     description: '제품 변형 목록 조회 성공',
-    type: VariantListResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
@@ -80,7 +80,7 @@ export class ProductVariantsController {
       page?: string;
       limit?: string;
     },
-  ): Promise<VariantListResponseDto> {
+  ): Promise<PaginatedResponseDto<VariantWithPriceDto>> {
     try {
       const filters = {
         status: query.status,
@@ -138,10 +138,8 @@ export class ProductVariantsController {
     type: String,
     description: '페이지 당 아이템 수',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponsePaginated(VariantWithPriceDto, {
     description: '제품 변형 목록 조회 성공',
-    type: VariantListResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 500, description: '서버 오류' })
@@ -155,7 +153,7 @@ export class ProductVariantsController {
       page?: string;
       limit?: string;
     },
-  ): Promise<VariantListResponseDto> {
+  ): Promise<PaginatedResponseDto<VariantWithPriceDto>> {
     try {
       const filters = {
         status: query.status,

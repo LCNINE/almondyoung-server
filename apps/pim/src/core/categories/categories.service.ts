@@ -21,6 +21,7 @@ import {
   CategoryTagGroupsResponseDto,
   CategoryTagGroupItemDto,
 } from './dto';
+import { CategoryMapper } from './mappers';
 import {
   ProductMaster,
   DbTransaction,
@@ -104,7 +105,7 @@ export class ProductCategoriesService {
         await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
       }
 
-      const responseDto: CategoryResponseDto = newCategory;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
       return responseDto;
     });
   }
@@ -138,8 +139,7 @@ export class ProductCategoriesService {
         }
       }
 
-      const responseDto: CategoryResponseDto = updatedCategory;
-      return responseDto;
+      return CategoryMapper.toDto(updatedCategory);
     });
   }
 
@@ -249,8 +249,8 @@ export class ProductCategoriesService {
     );
 
     const responseDto: CategoryDetailResponseDto = {
-      ...category,
-      children: children,
+      ...CategoryMapper.toDto(category),
+      children: CategoryMapper.toDtoArray(children),
       productCount: directProductCount,
       totalProductCount: totalProductCount,
     };
@@ -266,7 +266,7 @@ export class ProductCategoriesService {
       .from(pimSchema.productCategories)
       .where(isNull(pimSchema.productCategories.parentId));
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -336,7 +336,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.parentId, categoryId))
       .orderBy(pimSchema.productCategories.sortOrder);
 
-    const responseDto: CategoryResponseDto[] = children;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(children);
     return responseDto;
   }
 
@@ -405,7 +405,7 @@ export class ProductCategoriesService {
       ? await executeMove(tx)
       : await this.db.db.transaction(executeMove);
 
-    const responseDto: CategoryResponseDto = result;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(result);
     return responseDto;
   }
 
@@ -544,7 +544,7 @@ export class ProductCategoriesService {
       .where(inArray(pimSchema.productCategories.id, pathIds))
       .orderBy(pimSchema.productCategories.level);
 
-    const responseDto: CategoryResponseDto[] = ancestors;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(ancestors);
     return responseDto;
   }
 
@@ -578,7 +578,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.sortOrder,
       );
 
-    const responseDto: CategoryResponseDto[] = descendants;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(descendants);
     return responseDto;
   }
 
@@ -938,7 +938,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.name,
       );
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -961,7 +961,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.name,
       );
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -1060,7 +1060,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updatedCategory;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
     return responseDto;
   }
 
@@ -1227,7 +1227,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1264,7 +1264,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1301,7 +1301,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1333,7 +1333,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
