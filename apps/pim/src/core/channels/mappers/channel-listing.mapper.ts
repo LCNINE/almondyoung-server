@@ -4,7 +4,8 @@ import {
   ChannelListingWithChannelDto,
   ChannelSiteInfoDto,
 } from '../dto/channel-listings/channel-listing-response.dto';
-import { ChannelVariantListingEntity } from '../../../schema.types';
+import { ChannelVariantListingEntity, SalesChannelEntity } from '../../../schema.types';
+import { SalesChannelMapper } from './sales-channel.mapper';
 
 /**
  * Mapper for ChannelListing DTOs
@@ -33,7 +34,7 @@ export class ChannelListingMapper {
   /**
    * Map entity to ChannelListingWithChannelDto
    */
-  static toWithChannelDto(entity: ChannelVariantListingEntity & { channel?: unknown }): ChannelListingWithChannelDto {
+  static toWithChannelDto(entity: ChannelVariantListingEntity & { channel: SalesChannelEntity }): ChannelListingWithChannelDto {
     return {
       id: entity.id,
       channelItemId: entity.channelItemId,
@@ -43,7 +44,7 @@ export class ChannelListingMapper {
       isActive: entity.isActive,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      channel: entity.channel,
+      channel: SalesChannelMapper.toDto(entity.channel),
     };
   }
 }

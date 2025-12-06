@@ -41,6 +41,7 @@ import { DbService, InjectDb } from '@app/db';
 import { PimSchema } from 'apps/pim/src/schema';
 import { PaginatedResponseDto } from '../../../common/dto';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
+import { ProductMasterMapper } from '../mappers';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -136,17 +137,17 @@ export class ProductMastersController {
     description: '검색 키워드',
   })
   @ApiQuery({
-    name: 'status',
+    name: 'mode',
     required: false,
     type: String,
-    enum: ['draft', 'inactive', 'active'],
-    description: '버전 상태 필터 (기본값: active)',
+    enum: ['active', 'active-or-latest', 'draft'],
+    description: '조회 모드: active(active 버전만), active-or-latest(active 우선, 없으면 최신 inactive), draft(draft 버전만). 기본값: active',
   })
   @ApiQuery({
-    name: 'includeAllVersions',
+    name: 'createdBy',
     required: false,
-    type: Boolean,
-    description: '모든 버전 포함 여부 (기본값: false, active만 조회)',
+    type: String,
+    description: '작성자 ID 필터 (모든 모드에서 사용 가능)',
   })
   // 새로운 제네릭 패턴 사용: ApiOkResponsePaginated
   @ApiOkResponsePaginated(MasterListItemDto, {
@@ -161,8 +162,8 @@ export class ProductMastersController {
       categoryId?: string;
       brand?: string;
       search?: string;
-      status?: 'draft' | 'inactive' | 'active';
-      includeAllVersions?: boolean;
+      mode?: 'active' | 'active-or-latest' | 'draft';
+      createdBy?: string;
     },
   ): Promise<PaginatedResponseDto<MasterListItemDto>> {
     try {
@@ -172,10 +173,17 @@ export class ProductMastersController {
         categoryId: query.categoryId,
         brand: query.brand,
         search: query.search,
-        status: query.includeAllVersions ? undefined : (query.status || 'active'),
+        mode: query.mode,
+        createdBy: query.createdBy,
       };
 
-      return await this.productMastersService.getMasters(filters);
+      const result = await this.productMastersService.getMasters(filters);
+      return {
+        data: result.data.map(item => Product.toListItemDto(item)),
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+      };
     } catch (error) {
       throw new HttpException(
         'Failed to get masters',

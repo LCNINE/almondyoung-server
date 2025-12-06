@@ -1,6 +1,7 @@
 import { DateMapper } from '../../../common/mappers';
 import { SalesChannelDto } from '../dto/sales-channels/sales-channel-response.dto';
-import { SalesChannelEntity } from '../../../schema.types';
+import { ChannelCategoryEntity, SalesChannelEntity } from '../../../schema.types';
+import { ChannelCategoryMapper } from './channel-category.mapper';
 
 /**
  * Mapper for SalesChannel DTOs
@@ -10,19 +11,19 @@ export class SalesChannelMapper {
   /**
    * Map entity to SalesChannelDto
    */
-  static toDto(entity: SalesChannelEntity & { category?: unknown }): SalesChannelDto {
+  static toDto(entity: SalesChannelEntity & { category?: ChannelCategoryEntity }): SalesChannelDto {
     return {
       id: entity.id,
       type: entity.type,
       site: entity.site,
       categoryId: entity.categoryId,
-      category: entity.category,
+      category: entity.category ? ChannelCategoryMapper.toDto(entity.category) : null,
       name: entity.name,
       description: entity.description,
-      config: entity.config,
+      config: entity.config ?? {},
       isActive: entity.isActive,
       apiEndpoint: entity.apiEndpoint,
-      credentials: entity.credentials,
+      credentials: entity.credentials ?? {},
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
     };
@@ -31,7 +32,7 @@ export class SalesChannelMapper {
   /**
    * Map array of entities to SalesChannelDto array
    */
-  static toDtoArray(entities: Array<SalesChannelEntity & { category?: unknown }>): SalesChannelDto[] {
+  static toDtoArray(entities: Array<SalesChannelEntity & { category?: ChannelCategoryEntity }>): SalesChannelDto[] {
     return entities.map(e => this.toDto(e));
   }
 }

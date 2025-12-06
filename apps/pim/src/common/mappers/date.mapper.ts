@@ -12,8 +12,8 @@ export class DateMapper {
    * DateMapper.toNotNullString(new Date()) // '2025-12-05T10:30:00.000Z'
    * DateMapper.toNotNullString(null) // ''
    */
-  static toNotNullString(date: Date | null | undefined): string {
-    return date?.toISOString() ?? '';
+  static toNotNullString(date: Date): string {
+    return date.toISOString();
   }
 
   /**

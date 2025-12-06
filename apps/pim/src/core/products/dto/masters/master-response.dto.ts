@@ -15,15 +15,11 @@ export class ProductMasterDto {
   brand: string | null;
 
   // basePrice removed - 가격은 pricing rules로 조회
-
-  @ApiProperty({ description: '마케팅 태그', type: [String], nullable: true })
-  tags: string[] | null;
+  // tags removed - 별도 태그 테이블로 정규화됨
+  // attributes removed - 삭제됨
 
   @ApiProperty({ description: '제품 이미지 (JSONB)' })
   images: any;
-
-  @ApiProperty({ description: '제품 속성 (JSONB)' })
-  attributes: any;
 
   @ApiProperty({ description: 'SEO 제목', nullable: true })
   seoTitle: string | null;
@@ -80,9 +76,6 @@ export class OptionGroupDto {
   @ApiProperty({ description: '옵션 그룹 ID' })
   id: string;
 
-  @ApiProperty({ description: '옵션 그룹명' })
-  name: string;
-
   @ApiProperty({ description: '옵션 그룹 표시명' })
   displayName: string;
 
@@ -94,9 +87,6 @@ export class OptionGroupDto {
 
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
-
-  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
-  updatedAt: string;
 
   @ApiProperty({ description: '옵션 값들', type: [OptionValueDto] })
   values: OptionValueDto[];
@@ -222,11 +212,11 @@ export class MasterListItemDto {
 
   // basePrice removed - 가격은 pricing rules로 조회
 
-  @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
-  isMembershipOnly: boolean | null;
+  @ApiProperty({ description: '멤버십회원 전용 여부' })
+  isMembershipOnly: boolean;
 
-  @ApiProperty({ description: '제품 상태', nullable: true })
-  status: string | null;
+  @ApiProperty({ description: '제품 상태' })
+  status: string;
 
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;

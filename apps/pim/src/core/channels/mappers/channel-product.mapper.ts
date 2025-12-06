@@ -4,7 +4,8 @@ import {
   ChannelProductWithChannelDto,
   ChannelProductWithMasterDto,
 } from '../dto/channel-products/channel-product-response.dto';
-import { ChannelProductEntity } from '../../../schema.types';
+import { ChannelProductEntity, SalesChannelEntity } from '../../../schema.types';
+import { SalesChannelMapper } from './sales-channel.mapper';
 
 /**
  * Mapper for ChannelProduct DTOs
@@ -30,36 +31,36 @@ export class ChannelProductMapper {
   /**
    * Map entity to ChannelProductWithChannelDto
    */
-  static toWithChannelDto(entity: ChannelProductEntity & { channel?: unknown }): ChannelProductWithChannelDto {
+  static toWithChannelDto(entity: ChannelProductEntity & { channel: SalesChannelEntity }): ChannelProductWithChannelDto {
     return {
       id: entity.id,
       masterId: entity.masterId,
       channelId: entity.channelId,
       name: entity.name,
       isActive: entity.isActive ?? false,
-      channelSpecificData: entity.channelSpecificData,
+      channelSpecificData: entity.channelSpecificData ?? {},
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      channel: entity.channel,
+      channel: SalesChannelMapper.toDto(entity.channel),
     };
   }
 
   /**
    * Map entity to ChannelProductWithMasterDto
    */
-  static toWithMasterDto(entity: ChannelProductEntity & { description?: string | null; images?: unknown; master?: unknown }): ChannelProductWithMasterDto {
-    return {
-      id: entity.id,
-      masterId: entity.masterId,
-      channelId: entity.channelId,
-      name: entity.name,
-      description: entity.description,
-      images: entity.images,
-      isActive: entity.isActive ?? false,
-      channelSpecificData: entity.channelSpecificData,
-      createdAt: DateMapper.toNotNullString(entity.createdAt),
-      updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      master: entity.master,
-    };
-  }
+  // static toWithMasterDto(entity: ChannelProductEntity & { description?: string | null; images?: unknown; master?: unknown }): ChannelProductWithMasterDto {
+  //   return {
+  //     id: entity.id,
+  //     masterId: entity.masterId,
+  //     channelId: entity.channelId,
+  //     name: entity.name,
+  //     description: entity.description,
+  //     images: entity.images,
+  //     isActive: entity.isActive ?? false,
+  //     channelSpecificData: entity.channelSpecificData,
+  //     createdAt: DateMapper.toNotNullString(entity.createdAt),
+  //     updatedAt: DateMapper.toNotNullString(entity.updatedAt),
+  //     master: entity.master,
+  //   };
+  // }
 }

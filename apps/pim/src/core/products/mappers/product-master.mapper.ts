@@ -31,9 +31,8 @@ export class ProductMasterMapper {
       name: entity.name,
       description: entity.description,
       brand: entity.brand,
-      tags: entity.tags,
+      // tags and attributes removed - deprecated/deleted fields
       images: entity.images,
-      attributes: entity.attributes,
       seoTitle: entity.seoTitle,
       seoDescription: entity.seoDescription,
       seoKeywords: entity.seoKeywords,
@@ -66,15 +65,13 @@ export class ProductMasterMapper {
   /**
    * Map entity to OptionGroupDto
    */
-  static toOptionGroupDto(entity: ProductOptionGroupEntity & { name?: string; displayName?: string; sortOrder?: number; isRequired?: boolean; values?: ProductOptionValueEntity[] }): OptionGroupDto {
+  static toOptionGroupDto(entity: ProductOptionGroupEntity & { displayName?: string; sortOrder?: number; isRequired?: boolean; values?: ProductOptionValueEntity[] }): OptionGroupDto {
     return {
       id: entity.id,
-      name: entity.name,
-      displayName: entity.displayName,
-      sortOrder: entity.sortOrder,
-      isRequired: entity.isRequired,
+      displayName: entity.displayName ?? '',
+      sortOrder: entity.sortOrder ?? 0,
+      isRequired: entity.isRequired ?? false,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
-      updatedAt: DateMapper.toNotNullString(entity.updatedAt),
       values: entity.values?.map((v) => this.toOptionValueDto(v)) ?? [],
     };
   }
@@ -143,7 +140,6 @@ export class ProductMasterMapper {
       id: '',
       type: 'marketplace',
       name: '',
-      site: '',
       isActive: false,
       apiConfig: null,
       supportedFeatures: null,

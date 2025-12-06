@@ -30,6 +30,7 @@ import {
 } from './dto';
 import { PaginatedResponseDto } from '../../common/dto';
 import { ApiOkResponsePaginated } from '../../common/decorators';
+import { SalesChannelMapper } from './mappers';
 
 @ApiTags('Sales Channels')
 @Controller('channels')
@@ -64,9 +65,10 @@ export class SalesChannelsController {
         );
       }
 
-      return (await this.salesChannelsService.createChannel(
+      const entity = await this.salesChannelsService.createChannel(
         createDto,
-      )) as SalesChannelDto;
+      );
+      return SalesChannelMapper.toDto(entity);
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -139,7 +141,11 @@ export class SalesChannelsController {
         limit: query.limit ? parseInt(query.limit) : undefined,
       };
 
-      return (await this.salesChannelsService.getChannels(filters)) as PaginatedResponseDto<SalesChannelDto>;
+      const result = await this.salesChannelsService.getChannels(filters);
+      return {
+        ...result,
+        data: SalesChannelMapper.toDtoArray(result.data),
+      };
     } catch (error) {
       throw new HttpException(
         'Failed to get channels',
@@ -161,7 +167,8 @@ export class SalesChannelsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getActiveChannels(): Promise<SalesChannelDto[]> {
     try {
-      return (await this.salesChannelsService.getActiveChannels()) as SalesChannelDto[];
+      const channels = await this.salesChannelsService.getActiveChannels();
+      return SalesChannelMapper.toDtoArray(channels);
     } catch (error) {
       throw new HttpException(
         'Failed to get active channels',
@@ -233,10 +240,11 @@ export class SalesChannelsController {
     @Body() updateDto: UpdateSalesChannelDto,
   ): Promise<SalesChannelDto> {
     try {
-      return (await this.salesChannelsService.updateChannel(
+      const entity = await this.salesChannelsService.updateChannel(
         id,
         updateDto,
-      )) as SalesChannelDto;
+      );
+      return SalesChannelMapper.toDto(entity);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
