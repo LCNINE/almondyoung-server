@@ -6,7 +6,7 @@ import {
   VariantDto,
   ChannelProductDto,
   ChannelInfoDto,
-  MasterListItemDto,
+  ProductSummaryDto,
 } from '../dto/masters/master-response.dto';
 import {
   ProductMasterVersionEntity,
@@ -47,13 +47,24 @@ export class ProductMasterMapper {
   }
 
   /**
-   * Map entity to MasterListItemDto
+   * Map entity to ProductSummaryDto
    */
-  static toListItemDto(entity: ProductMasterVersionEntity & { optionGroupCount?: number; variantCount?: number; thumbnail?: string | null }): MasterListItemDto {
+  static toProductSummary(entity: Partial<ProductMasterVersionEntity> & {
+    id: string;
+    name: string;
+    brand: string | null;
+    isMembershipOnly: boolean;
+    status: string;
+    createdAt: Date;
+    thumbnail?: string | null;
+    optionGroupCount?: number;
+    variantCount?: number;
+  }): ProductSummaryDto {
     return {
       id: entity.id,
       name: entity.name,
-      thumbnail: entity.thumbnail,
+      thumbnail: entity.thumbnail ?? null,
+      brand: entity.brand,
       isMembershipOnly: entity.isMembershipOnly,
       status: entity.status,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
