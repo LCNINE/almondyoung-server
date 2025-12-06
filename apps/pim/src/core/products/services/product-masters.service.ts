@@ -12,6 +12,7 @@ import {
   ProductImage,
   ProductDetailDto,
 } from '../../../types';
+import { ProductMasterMapper } from '../mappers';
 import {
   type PimSchema,
   productMasters,
@@ -847,16 +848,7 @@ export class ProductMastersService {
           : orderedFinalDataQuery.limit(limit).offset(offset)
       );
 
-      const data = rawData.map((item) => ({
-        id: item.id,
-        name: item.name,
-        thumbnail: item.thumbnail,
-        isMembershipOnly: item.isMembershipOnly,
-        status: item.status,
-        createdAt: item.createdAt?.toISOString() ?? null,
-        optionGroupCount: item.optionGroupCount,
-        variantCount: item.variantCount,
-      }));
+      const data = rawData.map((item) => ProductMasterMapper.toListItemDto(item as any));
 
       return {
         data,

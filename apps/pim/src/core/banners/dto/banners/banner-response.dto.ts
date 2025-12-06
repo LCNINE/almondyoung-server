@@ -30,11 +30,11 @@ export class BannerResponseDto {
   })
   linkedProductMasterIds: string[] | null;
 
-  @ApiProperty({ description: '게시 시작 일시', required: false, nullable: true })
-  displayStartAt: Date | null;
+  @ApiProperty({ description: '게시 시작 일시 (ISO 8601 형식)', required: false, nullable: true, example: '2025-12-05T10:30:00.000Z' })
+  displayStartAt: string | null;
 
-  @ApiProperty({ description: '게시 종료 일시', required: false, nullable: true })
-  displayEndAt: Date | null;
+  @ApiProperty({ description: '게시 종료 일시 (ISO 8601 형식)', required: false, nullable: true, example: '2025-12-05T10:30:00.000Z' })
+  displayEndAt: string | null;
 
   @ApiProperty({ description: '활성화 여부' })
   isActive: boolean;
@@ -42,13 +42,13 @@ export class BannerResponseDto {
   @ApiProperty({ description: '정렬 순서' })
   sortOrder: number;
 
-  @ApiProperty({ description: '삭제 시간', required: false, nullable: true })
-  deletedAt: Date | null;
+  @ApiProperty({ description: '삭제 시간 (ISO 8601 형식)', required: false, nullable: true, example: '2025-12-05T10:30:00.000Z' })
+  deletedAt: string | null;
 
-  @ApiProperty({ description: '생성 시간' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성 시간 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정 시간' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정 시간 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 

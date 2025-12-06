@@ -43,11 +43,11 @@ export class ProductMasterDto {
   @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
   isMembershipOnly: boolean | null;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '생성자', nullable: true })
   createdBy: string | null;
@@ -72,11 +72,8 @@ export class OptionValueDto {
   @ApiProperty({ description: '활성 여부' })
   isActive: boolean;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
-
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 }
 
 export class OptionGroupDto {
@@ -95,11 +92,11 @@ export class OptionGroupDto {
   @ApiProperty({ description: '필수 여부' })
   isRequired: boolean;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '옵션 값들', type: [OptionValueDto] })
   values: OptionValueDto[];
@@ -118,9 +115,6 @@ export class VariantDto {
   @ApiProperty({ description: '변형 이미지' })
   images: any;
 
-  @ApiProperty({ description: '가격 조정', nullable: true })
-  priceAdjustment: number | null;
-
   @ApiProperty({ description: '표시 순서', nullable: true })
   displayOrder: number | null;
 
@@ -130,11 +124,11 @@ export class VariantDto {
   @ApiProperty({ description: '기본 변형 여부', nullable: true })
   isDefault: boolean | null;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '옵션 값들' })
   optionValues: any[];
@@ -162,11 +156,11 @@ export class ChannelInfoDto {
   @ApiProperty({ description: '지원 기능' })
   supportedFeatures: any;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class ChannelProductDto {
@@ -188,11 +182,11 @@ export class ChannelProductDto {
   @ApiProperty({ description: '채널별 특화 데이터' })
   channelSpecificData: any;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '채널 정보', type: ChannelInfoDto })
   channel: ChannelInfoDto;
@@ -234,8 +228,8 @@ export class MasterListItemDto {
   @ApiProperty({ description: '제품 상태', nullable: true })
   status: string | null;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: string | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
   @ApiProperty({ description: '옵션 그룹 개수', minimum: 0 })
   optionGroupCount: number;

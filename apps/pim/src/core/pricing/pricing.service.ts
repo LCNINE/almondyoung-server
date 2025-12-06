@@ -9,6 +9,7 @@ import {
   PricingRulesResponseDto,
   PricingRuleResponseDto,
 } from './dto';
+import { PricingMapper } from './mappers';
 import { PricingValidatorService } from './pricing-validator.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { v7 as uuidv7 } from 'uuid';
@@ -406,19 +407,7 @@ export class PricingService {
     createdAt: Date | null;
     updatedAt: Date | null;
   }): PricingRuleResponseDto {
-    return {
-      id: rule.id,
-      masterId: rule.masterId,
-      layer: rule.layer as 'base_price' | 'membership_price' | 'tiered_price',
-      order: rule.order,
-      scopeType: rule.scopeType as 'all_variants' | 'with_option' | 'variants',
-      scopeTargetIds: rule.scopeTargetIds,
-      operationType: rule.operationType as 'offset' | 'scale' | 'override',
-      operationValue: rule.operationValue,
-      minQuantity: rule.minQuantity,
-      createdAt: rule.createdAt!,
-      updatedAt: rule.updatedAt!,
-    };
+    return PricingMapper.toRuleDto(rule);
   }
 
   /**

@@ -28,6 +28,7 @@ export interface ChannelListingWithChannel {
   channelPrice: number | null;
   isActive: boolean;
   createdAt: Date | null;
+  updatedAt: Date | null;
   channel: {
     id: string;
     name: string;
@@ -214,6 +215,7 @@ export class ChannelListingService {
         channelPrice: channelVariantListings.channelPrice,
         isActive: channelVariantListings.isActive,
         createdAt: channelVariantListings.createdAt,
+        updatedAt: channelVariantListings.updatedAt,
         channel: {
           id: salesChannels.id,
           name: salesChannels.name,
@@ -242,7 +244,7 @@ export class ChannelListingService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    items: ChannelVariantListing[];
+    data: ChannelVariantListing[];
     total: number;
   }> {
     const client = this.getClient(tx);
@@ -261,7 +263,7 @@ export class ChannelListingService {
       .from(channelVariantListings)
       .where(whereClause);
 
-    const items = await client
+    const data = await client
       .select()
       .from(channelVariantListings)
       .where(whereClause)
@@ -269,7 +271,7 @@ export class ChannelListingService {
       .offset(offset);
 
     return {
-      items,
+      data,
       total: Number(countResult?.count ?? 0),
     };
   }

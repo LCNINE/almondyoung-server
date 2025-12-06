@@ -1,3 +1,4 @@
+import { DateMapper } from '../../../common/mappers';
 import { ProductMasterVersion } from '../../../types';
 import { ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';
 
@@ -21,9 +22,9 @@ export class ProductMapper {
       productCode: version.productCode,
       isWholesaleOnly: version.isWholesaleOnly ?? false,
       isMembershipOnly: version.isMembershipOnly ?? false,
-      createdAt: version.createdAt?.toISOString() ?? '',
-      updatedAt: version.updatedAt?.toISOString() ?? '',
-      deletedAt: version.deletedAt?.toISOString() ?? null,
+      createdAt: DateMapper.toNotNullString(version.createdAt),
+      updatedAt: DateMapper.toNotNullString(version.updatedAt),
+      deletedAt: DateMapper.toNullableString(version.deletedAt),
     };
   }
 
@@ -38,7 +39,7 @@ export class ProductMapper {
       name: version.name,
       thumbnail: version.thumbnail,
       status: version.status,
-      createdAt: version.createdAt?.toISOString() ?? '',
+      createdAt: DateMapper.toNotNullString(version.createdAt),
     };
   }
 

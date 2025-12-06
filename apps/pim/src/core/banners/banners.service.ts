@@ -20,6 +20,7 @@ import {
   BannerResponseDto,
   BannerGroupWithBannersResponseDto,
 } from './dto';
+import { BannerMapper } from './mappers';
 
 @Injectable()
 export class BannersService {
@@ -58,7 +59,7 @@ export class BannersService {
         .values(newBannerGroup)
         .returning();
 
-      return createdGroup;
+      return BannerMapper.toGroupDto(createdGroup);
     }, tx);
   }
 
@@ -82,7 +83,7 @@ export class BannersService {
         throw new Error(`Banner group not found: ${id}`);
       }
 
-      return group;
+      return BannerMapper.toGroupDto(group);
     }, tx);
   }
 
@@ -122,8 +123,8 @@ export class BannersService {
         .orderBy(pimSchema.banners.sortOrder);
 
       return {
-        ...group,
-        banners: activeBanners,
+        ...BannerMapper.toGroupDto(group),
+        banners: BannerMapper.toDtoArray(activeBanners),
       };
     }, tx);
   }
@@ -145,7 +146,7 @@ export class BannersService {
         .where(and(...conditions))
         .orderBy(pimSchema.bannerGroups.sortOrder);
 
-      return groups;
+      return BannerMapper.toGroupDtoArray(groups);
     }, tx);
   }
 
@@ -175,7 +176,7 @@ export class BannersService {
         throw new Error(`Banner group not found: ${id}`);
       }
 
-      return updatedGroup;
+      return BannerMapper.toGroupDto(updatedGroup);
     }, tx);
   }
 
@@ -248,7 +249,7 @@ export class BannersService {
         .values(newBanner)
         .returning();
 
-      return createdBanner;
+      return BannerMapper.toDto(createdBanner);
     }, tx);
   }
 
@@ -272,7 +273,7 @@ export class BannersService {
         throw new Error(`Banner not found: ${id}`);
       }
 
-      return banner;
+      return BannerMapper.toDto(banner);
     }, tx);
   }
 
@@ -297,7 +298,7 @@ export class BannersService {
         .where(and(...conditions))
         .orderBy(pimSchema.banners.sortOrder);
 
-      return banners;
+      return BannerMapper.toDtoArray(banners);
     }, tx);
   }
 
@@ -331,7 +332,7 @@ export class BannersService {
         throw new Error(`Banner not found: ${id}`);
       }
 
-      return updatedBanner;
+      return BannerMapper.toDto(updatedBanner);
     }, tx);
   }
 
