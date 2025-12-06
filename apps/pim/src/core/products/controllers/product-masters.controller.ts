@@ -31,8 +31,7 @@ import {
   UpdateProductMasterDto,
   ProductMasterDto,
   MasterDetailDto,
-  MasterListItemDto,
-  MasterListResponseDto,
+  ProductSummaryDto,
   MasterUpdateResponseDto,
 } from '../dto';
 import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
@@ -90,14 +89,16 @@ export class ProductMastersController {
 
   @Get()
   @ApiOperation({
-    summary: '제품 마스터 목록 조회',
+    summary: '상품 목록 조회',
     description: `
-      제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.
+      상품 목록을 필터링 및 페이지네이션과 함께 조회합니다.
 
-      **기본 동작:** Active 버전만 반환합니다.
-      **옵션:** includeAllVersions=true 시 모든 버전 상태를 포함합니다.
+      **조회 모드**:
+      - active: 공개된 상품만 (기본값)
+      - active-or-latest: 공개 우선, 없으면 최신 비공개 상품
+      - draft: 임시 저장된 상품만
 
-      각 항목은 Master ID와 active 버전의 정보를 포함합니다.
+      각 항목은 상품의 요약 정보를 포함합니다.
     `,
   })
   @ApiQuery({
@@ -150,8 +151,8 @@ export class ProductMastersController {
     description: '작성자 ID 필터 (모든 모드에서 사용 가능)',
   })
   // 새로운 제네릭 패턴 사용: ApiOkResponsePaginated
-  @ApiOkResponsePaginated(MasterListItemDto, {
-    description: '제품 마스터 목록 조회 성공',
+  @ApiOkResponsePaginated(ProductSummaryDto, {
+    description: '상품 목록 조회 성공',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getMasters(
@@ -165,7 +166,7 @@ export class ProductMastersController {
       mode?: 'active' | 'active-or-latest' | 'draft';
       createdBy?: string;
     },
-  ): Promise<PaginatedResponseDto<MasterListItemDto>> {
+  ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
     try {
       const filters = {
         page: query.page ? parseInt(query.page) : undefined,
@@ -179,7 +180,7 @@ export class ProductMastersController {
 
       const result = await this.productMastersService.getMasters(filters);
       return {
-        data: result.data.map(item => Product.toListItemDto(item)),
+        data: result.data.map(item => ProductMasterMapper.toProductSummary(item)),
         total: result.total,
         page: result.page,
         limit: result.limit,

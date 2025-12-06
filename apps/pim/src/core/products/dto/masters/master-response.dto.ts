@@ -200,22 +200,23 @@ export class MasterDetailDto extends ProductMasterDto {
   tagValues?: ProductTagDto[];
 }
 
-export class MasterListItemDto {
-  @ApiProperty({ description: '제품 마스터 ID' })
+export class ProductSummaryDto {
+  @ApiProperty({ description: '상품 ID' })
   id: string;
 
-  @ApiProperty({ description: '제품 마스터 이름' })
+  @ApiProperty({ description: '상품명' })
   name: string;
 
   @ApiProperty({ description: '썸네일 이미지 URL', nullable: true })
   thumbnail: string | null;
 
-  // basePrice removed - 가격은 pricing rules로 조회
+  @ApiProperty({ description: '브랜드', nullable: true })
+  brand: string | null;
 
   @ApiProperty({ description: '멤버십회원 전용 여부' })
   isMembershipOnly: boolean;
 
-  @ApiProperty({ description: '제품 상태' })
+  @ApiProperty({ description: '상품 상태', enum: ['draft', 'inactive', 'active'] })
   status: string;
 
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
@@ -226,20 +227,6 @@ export class MasterListItemDto {
 
   @ApiProperty({ description: '변형 개수', minimum: 1 })
   variantCount: number;
-}
-
-export class MasterListResponseDto {
-  @ApiProperty({ description: '제품 마스터 목록', type: [MasterListItemDto] })
-  data: MasterListItemDto[];
-
-  @ApiProperty({ description: '현재 페이지 번호', minimum: 1 })
-  page: number;
-
-  @ApiProperty({ description: '페이지당 아이템 수', minimum: 1 })
-  limit: number;
-
-  @ApiProperty({ description: '전체 아이템 수', minimum: 0 })
-  total: number;
 }
 
 export class MasterUpdateResponseDto {
