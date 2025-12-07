@@ -7,6 +7,10 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { ProductAuditService } from './product-audit.service';
+import {
+  AuditLogItemDto,
+  ProductAuditHistoryItemDto,
+} from './dto';
 
 @ApiTags('Product Audit')
 @Controller('products/audit')
@@ -22,20 +26,7 @@ export class ProductAuditController {
   @ApiResponse({
     status: 200,
     description: '감사 이력 조회 성공',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          productId: { type: 'string' },
-          action: { type: 'string' },
-          userId: { type: 'string' },
-          changes: { type: 'object' },
-          createdAt: { type: 'string', format: 'date-time' },
-        },
-      },
-    },
+    type: [ProductAuditHistoryItemDto],
   })
   @ApiResponse({ status: 404, description: '제품을 찾을 수 없음' })
   async getProductAuditHistory(@Param('id') productId: string) {
@@ -57,19 +48,7 @@ export class ProductAuditController {
   @ApiResponse({
     status: 200,
     description: '최근 감사 로그 조회 성공',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          productId: { type: 'string' },
-          action: { type: 'string' },
-          userId: { type: 'string' },
-          createdAt: { type: 'string', format: 'date-time' },
-        },
-      },
-    },
+    type: [AuditLogItemDto],
   })
   async getRecentAuditLogs(@Query('limit') limit?: string) {
     return this.auditService.getRecentAuditLogs(
@@ -93,19 +72,7 @@ export class ProductAuditController {
   @ApiResponse({
     status: 200,
     description: '사용자별 감사 로그 조회 성공',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          productId: { type: 'string' },
-          action: { type: 'string' },
-          userId: { type: 'string' },
-          createdAt: { type: 'string', format: 'date-time' },
-        },
-      },
-    },
+    type: [AuditLogItemDto],
   })
   async getAuditLogsByUser(
     @Param('userId') userId: string,
@@ -136,19 +103,7 @@ export class ProductAuditController {
   @ApiResponse({
     status: 200,
     description: '액션별 감사 로그 조회 성공',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          productId: { type: 'string' },
-          action: { type: 'string' },
-          userId: { type: 'string' },
-          createdAt: { type: 'string', format: 'date-time' },
-        },
-      },
-    },
+    type: [AuditLogItemDto],
   })
   async getAuditLogsByAction(
     @Param('action') action: string,

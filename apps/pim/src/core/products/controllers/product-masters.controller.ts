@@ -25,12 +25,6 @@ import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
 import {
-  CreateMasterDto,
-  CreateMasterSchema,
-  CreateMasterDtoSwagger,
-  UpdateProductMasterDto,
-  ProductMasterDto,
-  MasterDetailDto,
   ProductSummaryDto,
   MasterUpdateResponseDto,
 } from '../dto';
@@ -77,7 +71,7 @@ export class ProductMastersController {
   async createMaster(): Promise<ProductDto> {
     try {
       const master = await this.productMastersService.createMaster();
-      return ProductMapper.toDto(master);
+      return ProductMapper.toDto(master, []);
     } catch (error) {
       console.error('Create master error:', error);
       throw new HttpException(
@@ -231,52 +225,7 @@ export class ProductMastersController {
   @ApiResponse({
     status: 200,
     description: '제품 마스터 상세 조회 성공',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        brand: { type: 'string' },
-        basePrice: { type: 'number' },
-        status: { type: 'string' },
-        isWholesaleOnly: { type: 'boolean' },
-        isMembershipOnly: { type: 'boolean' },
-        images: {
-          type: 'object',
-          properties: {
-            primary: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                url: { type: 'string' },
-                originalName: { type: 'string' },
-                fileName: { type: 'string' },
-                mimeType: { type: 'string' },
-                size: { type: 'number' },
-              },
-              nullable: true,
-            },
-            additional: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  url: { type: 'string' },
-                  originalName: { type: 'string' },
-                  fileName: { type: 'string' },
-                  sortOrder: { type: 'number' },
-                },
-              },
-            },
-          },
-        },
-        optionGroups: { type: 'array' },
-        variants: { type: 'array' },
-        channelProducts: { type: 'array' },
-      },
-    },
+    type: ProductDto,
   })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })

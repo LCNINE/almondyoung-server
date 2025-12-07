@@ -8,4 +8,7 @@ export * from './category-config.dto';
 export * from './category-tag-group-link.dto';
 export * from './category-tag-groups-response.dto';
 export * from './replace-tag-group-links.dto';
+export * from './move-products-to-category.dto';
+export * from './add-products-to-category.dto';
+export * from './update-visibility.dto';
 

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductMasterEntity } from '../entities/master.entity';
 import { ProductMasterVersionEntity } from '../entities/master-version.entity';
+import { ProductImageDto } from './product-image.dto';
 
 export class ProductDto {
   @ApiProperty({ description: 'Version ID' })
@@ -27,8 +28,13 @@ export class ProductDto {
   @ApiProperty({ description: '썸네일', nullable: true })
   thumbnail: string | null;
 
-  @ApiProperty({ description: '이미지', nullable: true })
-  images: any;
+  @ApiProperty({
+    description: '제품 이미지 목록',
+    type: [ProductImageDto],
+    required: false,
+    nullable: true,
+  })
+  images: ProductImageDto[] | null;
 
   @ApiProperty({ description: 'SEO 제목', nullable: true })
   seoTitle: string | null;
