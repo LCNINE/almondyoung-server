@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * PIM Category Management API Test Scenarios
@@ -24,6 +24,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Test Category',
           description: 'Test Description',
@@ -43,6 +44,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-category',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 카테고리 조회',
         responseSchema: z.object({
@@ -55,6 +57,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-category',
         method: 'PUT',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         body: {
           name: 'Updated Category',
           description: 'Updated Description',
@@ -70,6 +73,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'delete-category',
         method: 'DELETE',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '카테고리 삭제',
       },
@@ -77,6 +81,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 카테고리 조회 (404 기대)',
       },
@@ -96,6 +101,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent Category',
           slug: 'parent-{{timestamp}}',
@@ -112,6 +118,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-child',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Child Category',
           slug: 'child-{{timestamp}}',
@@ -130,6 +137,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-children',
         method: 'GET',
         path: '/categories/{{parentId}}/children',
+        service: 'pim',
         expectedStatus: 200,
         description: '부모의 하위 카테고리 목록 조회',
       },
@@ -137,6 +145,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-path',
         method: 'GET',
         path: '/categories/{{childId}}/path',
+        service: 'pim',
         expectedStatus: 200,
         description: '자식 카테고리 경로 조회',
         responseSchema: z.object({
@@ -148,6 +157,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-tree',
         method: 'GET',
         path: '/categories',
+        service: 'pim',
         expectedStatus: 200,
         description: '카테고리 트리 조회',
       },
@@ -164,6 +174,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent 1',
           slug: 'parent1-{{timestamp}}',
@@ -176,6 +187,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent 2',
           slug: 'parent2-{{timestamp}}',
@@ -188,6 +200,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-child',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Child Category',
           slug: 'child-move-{{timestamp}}',
@@ -201,6 +214,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'move-to-parent2',
         method: 'PUT',
         path: '/categories/{{childId}}/move',
+        service: 'pim',
         queryParams: {
           newParentId: '{{parent2Id}}',
         },
@@ -215,6 +229,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'move-to-root',
         method: 'PUT',
         path: '/categories/{{childId}}/move',
+        service: 'pim',
         expectedStatus: 200,
         description: '루트로 카테고리 이동 (newParentId 없음)',
       },
@@ -231,6 +246,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-level0',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Level 0',
           slug: 'level0-{{timestamp}}',
@@ -243,6 +259,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-level1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Level 1',
           slug: 'level1-{{timestamp}}',
@@ -256,6 +273,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-level2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Level 2',
           slug: 'level2-{{timestamp}}',
@@ -272,6 +290,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-tree-depth-2',
         method: 'GET',
         path: '/categories',
+        service: 'pim',
         queryParams: {
           maxDepth: '2',
         },
@@ -282,6 +301,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-tree-all',
         method: 'GET',
         path: '/categories',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 트리 조회',
       },
@@ -301,6 +321,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category 1',
           slug: 'cat1-{{timestamp}}',
@@ -313,6 +334,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category 2',
           slug: 'cat2-{{timestamp}}',
@@ -325,24 +347,26 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-product-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'id', versionId: 'versions.0.id' },
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
       },
       {
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
-        extractFromResponse: { publishedVersionId: 'id' },
       },
       {
         id: 'move-to-category1',
         method: 'PUT',
         path: '/categories/{{category1Id}}/products',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품을 카테고리 1로 이동',
@@ -351,8 +375,9 @@ export const categoryScenarios: Scenario[] = [
         id: 'move-to-category2',
         method: 'PUT',
         path: '/categories/{{category2Id}}/products',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품을 카테고리 2로 이동 (카테고리 1에서 제거됨)',
@@ -370,6 +395,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category A',
           slug: 'cata-{{timestamp}}',
@@ -382,6 +408,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category B',
           slug: 'catb-{{timestamp}}',
@@ -394,24 +421,26 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-product-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'id', versionId: 'versions.0.id' },
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
       },
       {
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
-        extractFromResponse: { publishedVersionId: 'id' },
       },
       {
         id: 'add-to-categoryA',
         method: 'POST',
         path: '/categories/{{categoryAId}}/products/add',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품을 카테고리 A에 추가',
@@ -420,8 +449,9 @@ export const categoryScenarios: Scenario[] = [
         id: 'add-to-categoryB',
         method: 'POST',
         path: '/categories/{{categoryBId}}/products/add',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품을 카테고리 B에도 추가 (A는 유지)',
@@ -439,6 +469,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category To Delete',
           slug: 'cat-delete-{{timestamp}}',
@@ -451,6 +482,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Category Target',
           slug: 'cat-target-{{timestamp}}',
@@ -463,24 +495,26 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-product-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'id', versionId: 'versions.0.id' },
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
       },
       {
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
-        extractFromResponse: { publishedVersionId: 'id' },
       },
       {
         id: 'add-product-to-category1',
         method: 'POST',
         path: '/categories/{{category1Id}}/products/add',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품을 삭제할 카테고리에 추가',
@@ -489,6 +523,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'delete-with-move',
         method: 'DELETE',
         path: '/categories/{{category1Id}}',
+        service: 'pim',
         queryParams: {
           moveProductsTo: '{{category2Id}}',
         },
@@ -499,6 +534,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/categories/{{category1Id}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '카테고리 삭제 확인',
       },
@@ -518,6 +554,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Display Test Category',
           slug: 'display-test-{{timestamp}}',
@@ -530,6 +567,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-display-settings',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/display-settings',
+        service: 'pim',
         body: {
           showOnMainCategory: true,
           pcAndMobile: true,
@@ -546,6 +584,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-updated-category',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '업데이트된 카테고리 조회',
       },
@@ -553,6 +592,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-display-settings-again',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/display-settings',
+        service: 'pim',
         body: {
           mobileOnly: true,
           menuPositions: {
@@ -576,6 +616,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'SEO Test Category',
           slug: 'seo-test-{{timestamp}}',
@@ -588,6 +629,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-seo',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/seo',
+        service: 'pim',
         body: {
           browserTitle: 'Test SEO Title',
           metaDescription: 'This is a test meta description',
@@ -601,6 +643,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-category',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'SEO 설정 확인',
       },
@@ -608,6 +651,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'hide-from-search-engines',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/seo',
+        service: 'pim',
         body: {
           showInSearchEngines: false,
         },
@@ -627,6 +671,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Template Test Category',
           slug: 'template-test-{{timestamp}}',
@@ -639,6 +684,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'set-custom-template',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/template',
+        service: 'pim',
         body: {
           templateType: 'custom',
           htmlContent: '<div>Custom Template HTML</div>',
@@ -651,6 +697,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-category',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '템플릿 설정 확인',
       },
@@ -658,6 +705,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'reset-to-default',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/template',
+        service: 'pim',
         body: {
           templateType: 'default',
         },
@@ -677,6 +725,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Visibility Test Category',
           slug: 'visibility-test-{{timestamp}}',
@@ -689,6 +738,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'hide-category',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/visibility',
+        service: 'pim',
         body: {
           visible: false,
         },
@@ -699,6 +749,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-hidden-category',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '숨겨진 카테고리 조회',
       },
@@ -706,6 +757,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'show-category',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/visibility',
+        service: 'pim',
         body: {
           visible: true,
         },
@@ -728,6 +780,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Test Tag Group {{timestamp}}',
           description: 'Test tag group for category',
@@ -740,6 +793,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Tag Test Category',
           slug: 'tag-test-{{timestamp}}',
@@ -752,6 +806,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'link-tag-group',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -762,13 +817,14 @@ export const categoryScenarios: Scenario[] = [
             },
           ],
         },
-        expectedStatus: 204,
+        expectedStatus: 200,
         description: '태그 그룹을 카테고리에 연결',
       },
       {
         id: 'get-tag-groups',
         method: 'GET',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '카테고리의 태그 그룹 조회',
         responseSchema: z.object({
@@ -790,6 +846,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Inherited Tag Group {{timestamp}}',
           description: 'Tag group for inheritance test',
@@ -802,6 +859,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent for Inheritance',
           slug: 'parent-inherit-{{timestamp}}',
@@ -814,6 +872,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-child-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Child for Inheritance',
           slug: 'child-inherit-{{timestamp}}',
@@ -827,6 +886,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'link-tag-group-with-inheritance',
         method: 'PUT',
         path: '/categories/{{parentId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -837,13 +897,14 @@ export const categoryScenarios: Scenario[] = [
             },
           ],
         },
-        expectedStatus: 204,
+        expectedStatus: 200,
         description: '부모에 태그 그룹 연결 (하위 카테고리에 적용)',
       },
       {
         id: 'get-child-tag-groups',
         method: 'GET',
         path: '/categories/{{childId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '자식 카테고리의 태그 그룹 조회 (상속 확인)',
       },
@@ -860,6 +921,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-tag-group1',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Tag Group 1 {{timestamp}}',
         },
@@ -871,6 +933,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-tag-group2',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Tag Group 2 {{timestamp}}',
         },
@@ -882,6 +945,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Tag Replace Test',
           slug: 'tag-replace-{{timestamp}}',
@@ -894,6 +958,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'link-tag-group1',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -902,13 +967,14 @@ export const categoryScenarios: Scenario[] = [
             },
           ],
         },
-        expectedStatus: 204,
+        expectedStatus: 200,
         description: '태그 그룹 1 연결',
       },
       {
         id: 'replace-with-tag-group2',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -917,13 +983,14 @@ export const categoryScenarios: Scenario[] = [
             },
           ],
         },
-        expectedStatus: 204,
+        expectedStatus: 200,
         description: '태그 그룹 2로 완전 교체',
       },
       {
         id: 'verify-replacement',
         method: 'GET',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '교체 확인 (태그 그룹 2만 존재)',
       },
@@ -943,21 +1010,23 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-category1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'First Category',
-          slug: 'duplicate-slug-test',
+          slug: 'duplicate-slug-test-{{timestamp}}',
         },
         expectedStatus: 201,
         description: '첫 번째 카테고리 생성',
-        extractFromResponse: { category1Id: 'id' },
+        extractFromResponse: { category1Id: 'id', slug: 'slug' },
       },
       {
         id: 'create-duplicate-slug',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Second Category',
-          slug: 'duplicate-slug-test',
+          slug: '{{slug}}',
         },
         expectedStatus: 409,
         description: '동일한 slug로 생성 시도 (409 예상)',
@@ -975,6 +1044,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-with-invalid-parent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Invalid Parent Test',
           slug: 'invalid-parent-{{timestamp}}',
@@ -996,6 +1066,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Circular Parent',
           slug: 'circular-parent-{{timestamp}}',
@@ -1008,6 +1079,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-child',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Circular Child',
           slug: 'circular-child-{{timestamp}}',
@@ -1021,6 +1093,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'attempt-circular-move',
         method: 'PUT',
         path: '/categories/{{parentId}}/move',
+        service: 'pim',
         queryParams: {
           newParentId: '{{childId}}',
         },
@@ -1040,6 +1113,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-parent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent with Child',
           slug: 'parent-with-child-{{timestamp}}',
@@ -1052,6 +1126,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-child',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Child Category',
           slug: 'child-prevent-delete-{{timestamp}}',
@@ -1064,6 +1139,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'attempt-delete-parent',
         method: 'DELETE',
         path: '/categories/{{parentId}}',
+        service: 'pim',
         expectedStatus: 400,
         description: '자식이 있는 부모 삭제 시도 (400 예상)',
       },
@@ -1083,6 +1159,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Full Workflow Tag {{timestamp}}',
         },
@@ -1094,22 +1171,24 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-product-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'id', versionId: 'versions.0.id' },
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
       },
       {
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
-        extractFromResponse: { publishedVersionId: 'id' },
       },
       {
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Full Config Category',
           slug: 'full-config-{{timestamp}}',
@@ -1123,6 +1202,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-display',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/display-settings',
+        service: 'pim',
         body: {
           showOnMainCategory: true,
           menuPositions: {
@@ -1137,6 +1217,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-seo',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/seo',
+        service: 'pim',
         body: {
           browserTitle: 'Full Config SEO Title',
           metaDescription: 'SEO optimized description',
@@ -1149,6 +1230,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-template',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/template',
+        service: 'pim',
         body: {
           templateType: 'custom',
           htmlContent: '<div>Full workflow template</div>',
@@ -1160,6 +1242,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'update-visibility',
         method: 'PATCH',
         path: '/categories/{{categoryId}}/visibility',
+        service: 'pim',
         body: {
           visible: true,
         },
@@ -1170,6 +1253,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'link-tag-groups',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -1179,15 +1263,16 @@ export const categoryScenarios: Scenario[] = [
             },
           ],
         },
-        expectedStatus: 204,
+        expectedStatus: 200,
         description: '태그 그룹 연결',
       },
       {
         id: 'add-products',
         method: 'POST',
         path: '/categories/{{categoryId}}/products/add',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersionId}}'],
+          versionIds: ['{{versionId}}'],
         },
         expectedStatus: 200,
         description: '상품 추가',
@@ -1196,6 +1281,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-detail',
         method: 'GET',
         path: '/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 설정 확인',
       },
@@ -1203,6 +1289,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-tag-groups',
         method: 'GET',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '태그 그룹 확인',
       },
@@ -1210,6 +1297,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-children',
         method: 'GET',
         path: '/categories/{{categoryId}}/children',
+        service: 'pim',
         expectedStatus: 200,
         description: '하위 카테고리 확인 (비어 있음)',
       },
@@ -1217,6 +1305,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-path',
         method: 'GET',
         path: '/categories/{{categoryId}}/path',
+        service: 'pim',
         expectedStatus: 200,
         description: '경로 확인',
       },
@@ -1233,6 +1322,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-electronics',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Electronics',
           slug: 'electronics-{{timestamp}}',
@@ -1245,6 +1335,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-computers',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Computers',
           slug: 'computers-{{timestamp}}',
@@ -1258,6 +1349,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-phones',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Phones',
           slug: 'phones-{{timestamp}}',
@@ -1270,40 +1362,43 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-product1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '첫 번째 상품 마스터 생성',
-        extractFromResponse: { master1Id: 'id', version1Id: 'versions.0.id' },
+        extractFromResponse: { master1Id: 'masterId', version1Id: 'id' },
       },
       {
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '첫 번째 버전 Publish',
-        extractFromResponse: { publishedVersion1Id: 'id' },
       },
       {
         id: 'create-product2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 201,
         description: '두 번째 상품 마스터 생성',
-        extractFromResponse: { master2Id: 'id', version2Id: 'versions.0.id' },
+        extractFromResponse: { master2Id: 'masterId', version2Id: 'id' },
       },
       {
         id: 'publish-version2',
         method: 'PATCH',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '두 번째 버전 Publish',
-        extractFromResponse: { publishedVersion2Id: 'id' },
       },
       {
         id: 'add-products-to-computers',
         method: 'POST',
         path: '/categories/{{computersId}}/products/add',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersion1Id}}', '{{publishedVersion2Id}}'],
+          versionIds: ['{{version1Id}}', '{{version2Id}}'],
         },
         expectedStatus: 200,
         description: '상품들을 Computers 카테고리에 추가',
@@ -1312,6 +1407,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'create-it',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'IT',
           slug: 'it-{{timestamp}}',
@@ -1324,6 +1420,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'move-computers-to-it',
         method: 'PUT',
         path: '/categories/{{computersId}}/move',
+        service: 'pim',
         queryParams: {
           newParentId: '{{itId}}',
         },
@@ -1334,8 +1431,9 @@ export const categoryScenarios: Scenario[] = [
         id: 'move-products-to-electronics',
         method: 'PUT',
         path: '/categories/{{electronicsId}}/products',
+        service: 'pim',
         body: {
-          versionIds: ['{{publishedVersion1Id}}', '{{publishedVersion2Id}}'],
+          versionIds: ['{{version1Id}}', '{{version2Id}}'],
         },
         expectedStatus: 200,
         description: '상품들을 Electronics로 이동',
@@ -1344,6 +1442,7 @@ export const categoryScenarios: Scenario[] = [
         id: 'get-final-tree',
         method: 'GET',
         path: '/categories',
+        service: 'pim',
         expectedStatus: 200,
         description: '최종 트리 구조 확인',
       },

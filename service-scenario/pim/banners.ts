@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 // Fixed file IDs for deterministic test runs
 const MOCK_FILE_IDS = {
@@ -24,6 +24,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'MAIN-BANNER-{{timestamp}}',
           title: '메인 배너',
@@ -54,6 +55,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-banner-group',
         method: 'GET',
         path: '/banner-groups/{{bannerGroupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 배너 그룹 조회',
         responseSchema: z.object({
@@ -73,6 +75,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-banner-group',
         method: 'PUT',
         path: '/banner-groups/{{bannerGroupId}}',
+        service: 'pim',
         body: {
           title: '메인 배너 (수정됨)',
           sortOrder: 10,
@@ -84,6 +87,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-update',
         method: 'GET',
         path: '/banner-groups/{{bannerGroupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '수정 확인',
         responseSchema: z.object({
@@ -95,6 +99,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'delete-banner-group',
         method: 'DELETE',
         path: '/banner-groups/{{bannerGroupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 그룹 삭제 (Soft Delete)',
       },
@@ -102,6 +107,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-delete',
         method: 'GET',
         path: '/banner-groups/{{bannerGroupId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제 확인 (404 예상)',
       },
@@ -118,6 +124,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'PROMO-{{timestamp}}',
           title: '프로모션 배너',
@@ -136,6 +143,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-active-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '활성 배너',
@@ -151,6 +159,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-inactive-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '비활성 배너',
@@ -166,6 +175,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-by-code',
         method: 'GET',
         path: '/banner-groups/by-code/{{groupCode}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '코드로 배너 그룹 조회 (활성 배너만 포함)',
         responseSchema: z.object({
@@ -188,6 +198,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'EVENT-{{timestamp}}',
           title: '이벤트 배너',
@@ -204,6 +215,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '신규 이벤트',
@@ -230,6 +242,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-banner',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 배너 조회',
         responseSchema: z.object({
@@ -243,6 +256,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-banner',
         method: 'PUT',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         body: {
           title: '신규 이벤트 (연장)',
           description: '이벤트 기간 연장',
@@ -255,6 +269,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-update',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '수정 확인',
         responseSchema: z.object({
@@ -266,6 +281,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'delete-banner',
         method: 'DELETE',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 삭제 (Soft Delete)',
       },
@@ -273,6 +289,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-delete',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제 확인 (404 예상)',
       },
@@ -289,6 +306,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'TEST-{{timestamp}}',
           title: '테스트 배너 그룹',
@@ -305,6 +323,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-active-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '활성 배너',
@@ -320,6 +339,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-inactive-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '비활성 배너',
@@ -335,6 +355,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-active-only',
         method: 'GET',
         path: '/banners/by-group/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '활성 배너만 조회 (기본)',
         responseSchema: z.array(z.any()).length(1),
@@ -343,6 +364,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-include-inactive',
         method: 'GET',
         path: '/banners/by-group/{{groupId}}',
+        service: 'pim',
         queryParams: {
           includeInactive: 'true',
         },
@@ -363,6 +385,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'PERIOD-{{timestamp}}',
           title: '기간 제한 배너',
@@ -380,6 +403,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-future-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '미래 배너',
@@ -397,6 +421,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-expired-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '만료된 배너',
@@ -414,6 +439,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-active-banner',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '현재 표시 배너',
@@ -431,6 +457,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-by-code-filtered',
         method: 'GET',
         path: '/banner-groups/by-code/{{groupCode}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '코드로 조회 (현재 시점에 표시 가능한 배너만)',
         responseSchema: z.object({
@@ -454,6 +481,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-main-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'MAIN-{{timestamp}}',
           title: '메인 배너 그룹',
@@ -467,6 +495,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-sub-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'SUB-{{timestamp}}',
           title: '서브 배너 그룹',
@@ -480,6 +509,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-all',
         method: 'GET',
         path: '/banner-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 배너 그룹 조회',
         responseSchema: z.array(z.any()).min(2),
@@ -488,6 +518,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-main-only',
         method: 'GET',
         path: '/banner-groups',
+        service: 'pim',
         queryParams: {
           category: 'main',
         },
@@ -512,6 +543,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'SORT-{{timestamp}}',
           title: '정렬 테스트 그룹',
@@ -528,6 +560,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-3',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '배너 3',
@@ -543,6 +576,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-1',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '배너 1',
@@ -558,6 +592,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-2',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '배너 2',
@@ -573,6 +608,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-sorted',
         method: 'GET',
         path: '/banners/by-group/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '정렬된 배너 목록 조회',
         responseSchema: z
@@ -597,6 +633,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'CASCADE-{{timestamp}}',
           title: '연쇄 삭제 테스트',
@@ -613,6 +650,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-1',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '하위 배너 1',
@@ -630,6 +668,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-2',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '하위 배너 2',
@@ -647,6 +686,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'delete-group',
         method: 'DELETE',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 그룹 삭제',
       },
@@ -654,6 +694,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-group-deleted',
         method: 'GET',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '배너 그룹 삭제 확인',
       },
@@ -661,6 +702,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-banner1-deleted',
         method: 'GET',
         path: '/banners/{{banner1Id}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '하위 배너 1 삭제 확인',
       },
@@ -668,6 +710,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-banner2-deleted',
         method: 'GET',
         path: '/banners/{{banner2Id}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '하위 배너 2 삭제 확인',
       },
@@ -684,6 +727,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-product-1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 1 생성',
@@ -695,6 +739,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-product-2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 2 생성',
@@ -706,6 +751,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'PRODUCT-{{timestamp}}',
           title: '상품 연결 배너',
@@ -722,6 +768,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-with-products',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '상품 프로모션',
@@ -740,6 +787,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-banner-with-products',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 조회 및 연결된 상품 확인',
         responseSchema: z.object({
@@ -751,6 +799,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-linked-products',
         method: 'PUT',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         body: {
           linkedProductMasterIds: ['{{product1Id}}'],
         },
@@ -761,6 +810,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-updated-products',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '수정된 연결 상품 확인',
         responseSchema: z.object({
@@ -780,6 +830,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group-with-dimensions',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'DIMENSION-{{timestamp}}',
           title: '크기 지정 배너',
@@ -806,6 +857,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-dimensions',
         method: 'PUT',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         body: {
           pcWidth: 2560,
           pcHeight: 800,
@@ -819,6 +871,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'verify-dimensions',
         method: 'GET',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '수정된 크기 정보 확인',
         responseSchema: z.object({
@@ -841,6 +894,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-first-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'DUPLICATE-CODE',
           title: '첫 번째 그룹',
@@ -854,6 +908,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-duplicate-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'DUPLICATE-CODE',
           title: '중복 코드 그룹',
@@ -876,6 +931,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-invalid-group',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '00000000-0000-0000-0000-000000000000',
           title: '잘못된 그룹 배너',
@@ -899,6 +955,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-group',
         method: 'POST',
         path: '/banner-groups',
+        service: 'pim',
         body: {
           code: 'WORKFLOW-{{timestamp}}',
           title: '워크플로우 테스트',
@@ -921,6 +978,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '연결할 상품 생성',
@@ -932,6 +990,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'create-banner-full',
         method: 'POST',
         path: '/banners',
+        service: 'pim',
         body: {
           bannerGroupId: '{{groupId}}',
           title: '완전한 배너',
@@ -955,6 +1014,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-banner',
         method: 'GET',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 상세 조회',
         responseSchema: z.object({
@@ -976,6 +1036,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-by-group',
         method: 'GET',
         path: '/banners/by-group/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '그룹별 배너 목록 조회',
         responseSchema: z.array(z.any()).min(1),
@@ -984,6 +1045,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'get-by-code',
         method: 'GET',
         path: '/banner-groups/by-code/{{groupCode}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '코드로 그룹 조회 (배너 포함)',
         responseSchema: z.object({
@@ -996,6 +1058,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'list-groups',
         method: 'GET',
         path: '/banner-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 그룹 목록 조회',
         responseSchema: z.array(z.any()).min(1),
@@ -1004,6 +1067,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-banner',
         method: 'PUT',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         body: {
           title: '수정된 배너',
           isActive: false,
@@ -1015,6 +1079,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'update-group',
         method: 'PUT',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         body: {
           title: '수정된 그룹',
         },
@@ -1025,6 +1090,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'delete-banner',
         method: 'DELETE',
         path: '/banners/{{bannerId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 삭제',
       },
@@ -1032,6 +1098,7 @@ export const bannerScenarios: Scenario[] = [
         id: 'delete-group',
         method: 'DELETE',
         path: '/banner-groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '배너 그룹 삭제',
       },

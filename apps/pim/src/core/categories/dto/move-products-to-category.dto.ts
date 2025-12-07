@@ -11,7 +11,7 @@ export class MoveProductsToCategoryDto {
     ],
   })
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   versionIds: string[];
 }
 

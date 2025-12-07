@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * Channel Integration Test Scenarios
@@ -20,6 +20,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -29,6 +30,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Integration Test Product {{timestamp}}',
           optionDiff: {
@@ -59,6 +61,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -66,6 +69,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-variants',
         method: 'GET',
         path: '/variants/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 Variant 조회 (4개)',
         extractFromResponse: {
@@ -82,6 +86,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-coupang',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Coupang {{timestamp}}',
           site: 'coupang',
@@ -95,6 +100,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-naver',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Naver {{timestamp}}',
           site: 'naver',
@@ -108,6 +114,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-product-coupang',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelCoupangId}}',
@@ -120,6 +127,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-product-naver',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelNaverId}}',
@@ -132,6 +140,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-coupang-v1',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId1}}',
           salesChannelId: '{{channelCoupangId}}',
@@ -144,6 +153,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-coupang-v2',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId2}}',
           salesChannelId: '{{channelCoupangId}}',
@@ -156,6 +166,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-coupang-v3',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId3}}',
           salesChannelId: '{{channelCoupangId}}',
@@ -168,6 +179,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-coupang-v4',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId4}}',
           salesChannelId: '{{channelCoupangId}}',
@@ -180,6 +192,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-naver-v1',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId1}}',
           salesChannelId: '{{channelNaverId}}',
@@ -192,6 +205,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-naver-v2',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId2}}',
           salesChannelId: '{{channelNaverId}}',
@@ -204,6 +218,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-naver-v3',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId3}}',
           salesChannelId: '{{channelNaverId}}',
@@ -216,6 +231,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-naver-v4',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId4}}',
           salesChannelId: '{{channelNaverId}}',
@@ -228,6 +244,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-channel-products-by-master',
         method: 'GET',
         path: '/channel-products/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터의 채널 제품 조회 (2개 확인)',
         responseSchema: z.array(z.any()).length(2),
@@ -236,6 +253,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-listings-by-variant-1',
         method: 'GET',
         path: '/channel-listings/by-variant/{{variantId1}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant 1의 채널 매핑 조회 (2개 확인)',
         responseSchema: z.array(z.any()).length(2),
@@ -244,6 +262,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-listings-by-variant-2',
         method: 'GET',
         path: '/channel-listings/by-variant/{{variantId2}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant 2의 채널 매핑 조회 (2개 확인)',
         responseSchema: z.array(z.any()).length(2),
@@ -252,6 +271,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-listings-by-variant-3',
         method: 'GET',
         path: '/channel-listings/by-variant/{{variantId3}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant 3의 채널 매핑 조회 (2개 확인)',
         responseSchema: z.array(z.any()).length(2),
@@ -260,6 +280,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-listings-by-variant-4',
         method: 'GET',
         path: '/channel-listings/by-variant/{{variantId4}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant 4의 채널 매핑 조회 (2개 확인)',
         responseSchema: z.array(z.any()).length(2),
@@ -277,6 +298,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -286,6 +308,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'update-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Price Differentiation Product {{timestamp}}',
         },
@@ -296,6 +319,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -303,6 +327,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-variants',
         method: 'GET',
         path: '/variants/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant 조회 (1개)',
         extractFromResponse: { variantId: 'data.0.id' },
@@ -311,6 +336,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-coupang',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Coupang {{timestamp}}',
           site: 'coupang',
@@ -324,6 +350,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-naver',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Naver {{timestamp}}',
           site: 'naver',
@@ -337,6 +364,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-11st',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: '11st {{timestamp}}',
           site: 'other',
@@ -350,6 +378,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-product-coupang',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelCoupangId}}',
@@ -361,6 +390,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-product-naver',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelNaverId}}',
@@ -372,6 +402,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-channel-product-11st',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channel11stId}}',
@@ -383,6 +414,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-coupang',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           salesChannelId: '{{channelCoupangId}}',
@@ -397,6 +429,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-naver',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           salesChannelId: '{{channelNaverId}}',
@@ -411,6 +444,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'create-listing-11st',
         method: 'POST',
         path: '/channel-listings',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           salesChannelId: '{{channel11stId}}',
@@ -425,6 +459,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'lookup-coupang-price',
         method: 'GET',
         path: '/channel-listings/lookup',
+        service: 'pim',
         queryParams: {
           salesChannelId: '{{channelCoupangId}}',
           channelItemId: '{{channelItemIdCoupang}}',
@@ -439,6 +474,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'lookup-naver-price',
         method: 'GET',
         path: '/channel-listings/lookup',
+        service: 'pim',
         queryParams: {
           salesChannelId: '{{channelNaverId}}',
           channelItemId: '{{channelItemIdNaver}}',
@@ -453,6 +489,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'lookup-11st-price',
         method: 'GET',
         path: '/channel-listings/lookup',
+        service: 'pim',
         queryParams: {
           salesChannelId: '{{channel11stId}}',
           channelItemId: '{{channelItemId11st}}',
@@ -467,6 +504,7 @@ export const channelIntegrationScenarios: Scenario[] = [
         id: 'get-variant-listings',
         method: 'GET',
         path: '/channel-listings/by-variant/{{variantId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Variant의 모든 채널 매핑 조회',
         responseSchema: z.array(z.any()).length(3),

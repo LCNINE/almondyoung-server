@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 export const searchScenarios: Scenario[] = [
   {
@@ -12,6 +12,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 1 생성',
@@ -24,6 +25,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-1',
         method: 'PUT',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: '나이키 에어맥스 운동화',
           description: '편안한 러닝화',
@@ -37,6 +39,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-1',
         method: 'PATCH',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 발행',
       },
@@ -44,6 +47,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 2 생성',
@@ -56,6 +60,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-2',
         method: 'PUT',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           name: '아디다스 슈퍼스타',
           description: '클래식 스니커즈',
@@ -69,6 +74,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-2',
         method: 'PATCH',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 2 발행',
       },
@@ -76,6 +82,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-nike',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           keyword: '나이키',
         },
@@ -104,13 +111,14 @@ export const searchScenarios: Scenario[] = [
         id: 'search-운동화',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           keyword: '운동화',
         },
         expectedStatus: 200,
         description: '키워드 "운동화"로 검색',
         responseSchema: z.object({
-          items: z.array(z.any()).min(1),
+          data: z.array(z.any()).min(1),
           pagination: z.object({
             total: z.number().min(1),
           }),
@@ -129,6 +137,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-category-shoes',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: '신발',
           slug: 'shoes-{{timestamp}}',
@@ -143,6 +152,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-category-clothes',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: '의류',
           slug: 'clothes-{{timestamp}}',
@@ -157,6 +167,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-shoes-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '신발 상품 생성',
@@ -169,6 +180,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-shoes-product',
         method: 'PUT',
         path: '/masters/{{shoesMasterId}}/versions/{{shoesVersionId}}',
+        service: 'pim',
         body: {
           name: '러닝화',
           categoryIds: ['{{shoesCategory}}'],
@@ -181,6 +193,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-shoes-product',
         method: 'PATCH',
         path: '/masters/{{shoesMasterId}}/versions/{{shoesVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '신발 상품 발행',
       },
@@ -188,6 +201,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-clothes-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '의류 상품 생성',
@@ -200,6 +214,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-clothes-product',
         method: 'PUT',
         path: '/masters/{{clothesMasterId}}/versions/{{clothesVersionId}}',
+        service: 'pim',
         body: {
           name: '티셔츠',
           categoryIds: ['{{clothesCategory}}'],
@@ -212,6 +227,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-clothes-product',
         method: 'PATCH',
         path: '/masters/{{clothesMasterId}}/versions/{{clothesVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '의류 상품 발행',
       },
@@ -219,6 +235,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-shoes-category',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           categoryId: '{{shoesCategory}}',
         },
@@ -252,6 +269,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Nike 상품 생성',
@@ -264,6 +282,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-nike-product',
         method: 'PUT',
         path: '/masters/{{nikeMasterId}}/versions/{{nikeVersionId}}',
+        service: 'pim',
         body: {
           name: 'Nike Air Force',
           brand: 'Nike',
@@ -275,6 +294,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-nike-product',
         method: 'PATCH',
         path: '/masters/{{nikeMasterId}}/versions/{{nikeVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Nike 상품 발행',
       },
@@ -282,6 +302,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-adidas-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Adidas 상품 생성',
@@ -294,6 +315,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-adidas-product',
         method: 'PUT',
         path: '/masters/{{adidasMasterId}}/versions/{{adidasVersionId}}',
+        service: 'pim',
         body: {
           name: 'Adidas Ultraboost',
           brand: 'Adidas',
@@ -305,6 +327,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-adidas-product',
         method: 'PATCH',
         path: '/masters/{{adidasMasterId}}/versions/{{adidasVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Adidas 상품 발행',
       },
@@ -312,6 +335,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-puma-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Puma 상품 생성',
@@ -324,6 +348,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-puma-product',
         method: 'PUT',
         path: '/masters/{{pumaMasterId}}/versions/{{pumaVersionId}}',
+        service: 'pim',
         body: {
           name: 'Puma Suede',
           brand: 'Puma',
@@ -335,6 +360,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-puma-product',
         method: 'PATCH',
         path: '/masters/{{pumaMasterId}}/versions/{{pumaVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Puma 상품 발행',
       },
@@ -342,6 +368,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-single-brand',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           brands: 'Nike',
         },
@@ -361,13 +388,14 @@ export const searchScenarios: Scenario[] = [
         id: 'search-multiple-brands',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           brands: JSON.stringify(['Nike', 'Adidas']),
         },
         expectedStatus: 200,
         description: '여러 브랜드 OR 검색',
         responseSchema: z.object({
-          items: z.array(z.any()).min(2),
+          data: z.array(z.any()).min(2),
           pagination: z.object({
             total: z.number().min(2),
           }),
@@ -395,6 +423,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-color-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: '색상',
           code: 'color-{{timestamp}}',
@@ -411,6 +440,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-red-tag',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: '빨강',
           displayOrder: 1,
@@ -426,6 +456,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-blue-tag',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: '파랑',
           displayOrder: 2,
@@ -441,6 +472,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-size-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: '사이즈',
           code: 'size-{{timestamp}}',
@@ -457,6 +489,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-small-tag',
         method: 'POST',
         path: '/tags/groups/{{sizeGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Small',
           displayOrder: 1,
@@ -472,6 +505,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-large-tag',
         method: 'POST',
         path: '/tags/groups/{{sizeGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Large',
           displayOrder: 2,
@@ -487,6 +521,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-red-small',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '빨강/Small 상품 생성',
@@ -499,6 +534,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-red-small',
         method: 'PUT',
         path: '/masters/{{redSmallMasterId}}/versions/{{redSmallVersionId}}',
+        service: 'pim',
         body: {
           name: '빨강 Small 상품',
           tagValueIds: ['{{redTagId}}', '{{smallTagId}}'],
@@ -510,6 +546,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-red-small',
         method: 'PATCH',
         path: '/masters/{{redSmallMasterId}}/versions/{{redSmallVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '빨강/Small 상품 발행',
       },
@@ -517,6 +554,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-blue-large',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '파랑/Large 상품 생성',
@@ -529,6 +567,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-blue-large',
         method: 'PUT',
         path: '/masters/{{blueLargeMasterId}}/versions/{{blueLargeVersionId}}',
+        service: 'pim',
         body: {
           name: '파랑 Large 상품',
           tagValueIds: ['{{blueTagId}}', '{{largeTagId}}'],
@@ -540,6 +579,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-blue-large',
         method: 'PATCH',
         path: '/masters/{{blueLargeMasterId}}/versions/{{blueLargeVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '파랑/Large 상품 발행',
       },
@@ -547,6 +587,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-red-large',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '빨강/Large 상품 생성',
@@ -559,6 +600,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-red-large',
         method: 'PUT',
         path: '/masters/{{redLargeMasterId}}/versions/{{redLargeVersionId}}',
+        service: 'pim',
         body: {
           name: '빨강 Large 상품',
           tagValueIds: ['{{redTagId}}', '{{largeTagId}}'],
@@ -570,6 +612,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-red-large',
         method: 'PATCH',
         path: '/masters/{{redLargeMasterId}}/versions/{{redLargeVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '빨강/Large 상품 발행',
       },
@@ -577,6 +620,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-single-tag-group',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           tagFilters: JSON.stringify([
             {
@@ -588,13 +632,14 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '단일 태그 그룹 필터링 (색상: 빨강)',
         responseSchema: z.object({
-          items: z.array(z.any()).min(2), // 빨강/Small, 빨강/Large
+          data: z.array(z.any()).min(2), // 빨강/Small, 빨강/Large
         }),
       },
       {
         id: 'search-multiple-values-or',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           tagFilters: JSON.stringify([
             {
@@ -606,13 +651,14 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '같은 그룹 내 여러 값 OR 검색 (색상: 빨강 OR 파랑)',
         responseSchema: z.object({
-          items: z.array(z.any()).min(3), // 모든 상품
+          data: z.array(z.any()).min(3), // 모든 상품
         }),
       },
       {
         id: 'search-multiple-groups-and',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           tagFilters: JSON.stringify([
             {
@@ -628,7 +674,7 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '여러 그룹 AND 검색 (색상: 빨강 AND 사이즈: Large)',
         responseSchema: z.object({
-          items: z.array(z.any()).length(1), // 빨강/Large만
+          data: z.array(z.any()).length(1), // 빨강/Large만
         }),
       },
     ],
@@ -644,6 +690,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 1 생성',
@@ -656,6 +703,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-1',
         method: 'PUT',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Product A',
         },
@@ -666,6 +714,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-1',
         method: 'PATCH',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 발행',
       },
@@ -673,6 +722,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 2 생성',
@@ -685,6 +735,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-2',
         method: 'PUT',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           name: 'Product B',
         },
@@ -695,6 +746,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-2',
         method: 'PATCH',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 2 발행',
       },
@@ -702,6 +754,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-product-3',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 3 생성',
@@ -714,6 +767,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-product-3',
         method: 'PUT',
         path: '/masters/{{master3Id}}/versions/{{version3Id}}',
+        service: 'pim',
         body: {
           name: 'Product C',
         },
@@ -724,6 +778,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-product-3',
         method: 'PATCH',
         path: '/masters/{{master3Id}}/versions/{{version3Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 3 발행',
       },
@@ -731,6 +786,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-sort-created-desc',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           sortBy: 'createdAt',
           sortOrder: 'desc',
@@ -738,13 +794,14 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '생성일 내림차순 정렬',
         responseSchema: z.object({
-          items: z.array(z.any()).min(3),
+          data: z.array(z.any()).min(3),
         }),
       },
       {
         id: 'search-sort-created-asc',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           sortBy: 'createdAt',
           sortOrder: 'asc',
@@ -752,13 +809,14 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '생성일 오름차순 정렬',
         responseSchema: z.object({
-          items: z.array(z.any()).min(3),
+          data: z.array(z.any()).min(3),
         }),
       },
       {
         id: 'search-page-1-limit-2',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           page: '1',
           limit: '2',
@@ -766,7 +824,7 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '첫 페이지 (limit=2)',
         responseSchema: z.object({
-          items: z.array(z.any()).max(2),
+          data: z.array(z.any()).max(2),
           pagination: z.object({
             page: z.literal(1),
             limit: z.literal(2),
@@ -779,6 +837,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-page-2-limit-2',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           page: '2',
           limit: '2',
@@ -786,7 +845,7 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '두 번째 페이지 (limit=2)',
         responseSchema: z.object({
-          items: z.array(z.any()).min(1),
+          data: z.array(z.any()).min(1),
           pagination: z.object({
             page: z.literal(2),
             limit: z.literal(2),
@@ -806,6 +865,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: '브랜드',
           code: 'brand-{{timestamp}}',
@@ -822,6 +882,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-tag',
         method: 'POST',
         path: '/tags/groups/{{brandGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Nike',
           displayOrder: 1,
@@ -837,6 +898,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-adidas-tag',
         method: 'POST',
         path: '/tags/groups/{{brandGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Adidas',
           displayOrder: 2,
@@ -852,6 +914,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-product-1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Nike 상품 1 생성',
@@ -864,6 +927,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-nike-product-1',
         method: 'PUT',
         path: '/masters/{{nike1MasterId}}/versions/{{nike1VersionId}}',
+        service: 'pim',
         body: {
           name: 'Nike Product 1',
           tagValueIds: ['{{nikeTagId}}'],
@@ -875,6 +939,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-nike-product-1',
         method: 'PATCH',
         path: '/masters/{{nike1MasterId}}/versions/{{nike1VersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Nike 상품 1 발행',
       },
@@ -882,6 +947,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-product-2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Nike 상품 2 생성',
@@ -894,6 +960,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-nike-product-2',
         method: 'PUT',
         path: '/masters/{{nike2MasterId}}/versions/{{nike2VersionId}}',
+        service: 'pim',
         body: {
           name: 'Nike Product 2',
           tagValueIds: ['{{nikeTagId}}'],
@@ -905,6 +972,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-nike-product-2',
         method: 'PATCH',
         path: '/masters/{{nike2MasterId}}/versions/{{nike2VersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Nike 상품 2 발행',
       },
@@ -912,6 +980,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-adidas-product',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Adidas 상품 생성',
@@ -924,6 +993,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-adidas-product',
         method: 'PUT',
         path: '/masters/{{adidasMasterId}}/versions/{{adidasVersionId}}',
+        service: 'pim',
         body: {
           name: 'Adidas Product',
           tagValueIds: ['{{adidasTagId}}'],
@@ -935,6 +1005,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-adidas-product',
         method: 'PATCH',
         path: '/masters/{{adidasMasterId}}/versions/{{adidasVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Adidas 상품 발행',
       },
@@ -942,10 +1013,11 @@ export const searchScenarios: Scenario[] = [
         id: 'search-with-aggregations',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Aggregations 포함 검색',
         responseSchema: z.object({
-          items: z.array(z.any()).min(3),
+          data: z.array(z.any()).min(3),
           pagination: z.object({
             page: z.number(),
             limit: z.number(),
@@ -984,6 +1056,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: '운동화',
           slug: 'sneakers-{{timestamp}}',
@@ -998,6 +1071,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-color-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: '색상',
           code: 'color-{{timestamp}}',
@@ -1014,6 +1088,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-black-tag',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: '검정',
           displayOrder: 1,
@@ -1029,6 +1104,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-white-tag',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: '흰색',
           displayOrder: 2,
@@ -1044,6 +1120,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-black',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Nike 검정 운동화 생성',
@@ -1056,6 +1133,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-nike-black',
         method: 'PUT',
         path: '/masters/{{nikeBlackMasterId}}/versions/{{nikeBlackVersionId}}',
+        service: 'pim',
         body: {
           name: 'Nike Air Max Black',
           brand: 'Nike',
@@ -1070,6 +1148,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-nike-black',
         method: 'PATCH',
         path: '/masters/{{nikeBlackMasterId}}/versions/{{nikeBlackVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Nike 검정 운동화 발행',
       },
@@ -1077,6 +1156,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-nike-white',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Nike 흰색 운동화 생성',
@@ -1089,6 +1169,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-nike-white',
         method: 'PUT',
         path: '/masters/{{nikeWhiteMasterId}}/versions/{{nikeWhiteVersionId}}',
+        service: 'pim',
         body: {
           name: 'Nike Air Force White',
           brand: 'Nike',
@@ -1103,6 +1184,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-nike-white',
         method: 'PATCH',
         path: '/masters/{{nikeWhiteMasterId}}/versions/{{nikeWhiteVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Nike 흰색 운동화 발행',
       },
@@ -1110,6 +1192,7 @@ export const searchScenarios: Scenario[] = [
         id: 'create-adidas-black',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'Adidas 검정 운동화 생성',
@@ -1122,6 +1205,7 @@ export const searchScenarios: Scenario[] = [
         id: 'update-adidas-black',
         method: 'PUT',
         path: '/masters/{{adidasBlackMasterId}}/versions/{{adidasBlackVersionId}}',
+        service: 'pim',
         body: {
           name: 'Adidas Ultraboost Black',
           brand: 'Adidas',
@@ -1136,6 +1220,7 @@ export const searchScenarios: Scenario[] = [
         id: 'publish-adidas-black',
         method: 'PATCH',
         path: '/masters/{{adidasBlackMasterId}}/versions/{{adidasBlackVersionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Adidas 검정 운동화 발행',
       },
@@ -1143,6 +1228,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-combined-filters',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           keyword: 'Nike',
           categoryId: '{{categoryId}}',
@@ -1185,6 +1271,7 @@ export const searchScenarios: Scenario[] = [
         id: 'search-narrow-filter',
         method: 'GET',
         path: '/products/search',
+        service: 'pim',
         queryParams: {
           categoryId: '{{categoryId}}',
           brands: 'Nike',
@@ -1198,7 +1285,7 @@ export const searchScenarios: Scenario[] = [
         expectedStatus: 200,
         description: '좁은 범위 필터 (Nike + 검정)',
         responseSchema: z.object({
-          items: z.array(z.any()).length(1), // Nike Air Max Black만
+          data: z.array(z.any()).length(1), // Nike Air Max Black만
           pagination: z.object({
             total: z.literal(1),
           }),

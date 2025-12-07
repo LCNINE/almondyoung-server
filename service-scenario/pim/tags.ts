@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * PIM Tags API Test Scenarios
@@ -26,6 +26,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Color {{timestamp}}',
           description: 'Product color tags',
@@ -48,6 +49,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-tag-group',
         method: 'GET',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '태그 그룹 조회',
         responseSchema: z.object({
@@ -61,6 +63,7 @@ export const tagScenarios: Scenario[] = [
         id: 'update-tag-group',
         method: 'PUT',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         body: {
           name: 'Updated Color {{timestamp}}',
           displayOrder: 20,
@@ -76,6 +79,7 @@ export const tagScenarios: Scenario[] = [
         id: 'soft-delete-tag-group',
         method: 'DELETE',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 204,
         description: '태그 그룹 soft delete',
       },
@@ -83,6 +87,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-inactive',
         method: 'GET',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Soft delete 확인 (isActive=false)',
         responseSchema: z.object({
@@ -102,6 +107,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-1',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Size {{timestamp}}',
           displayOrder: 5,
@@ -115,6 +121,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-2',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Weight {{timestamp}}',
           displayOrder: 10,
@@ -128,6 +135,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-all-groups',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 태그 그룹 목록 조회',
         responseSchema: z.array(z.any()),
@@ -136,6 +144,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-active-groups',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         queryParams: {
           isActive: 'true',
         },
@@ -147,6 +156,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-inactive-groups',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         queryParams: {
           isActive: 'false',
         },
@@ -167,6 +177,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Material {{timestamp}}',
         },
@@ -178,6 +189,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-1',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Cotton',
           displayOrder: 0,
@@ -189,6 +201,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-2',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Polyester',
           displayOrder: 1,
@@ -200,6 +213,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-3',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Silk',
           displayOrder: 2,
@@ -212,6 +226,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-group-detail',
         method: 'GET',
         path: '/tags/groups/{{groupId}}/detail',
+        service: 'pim',
         expectedStatus: 200,
         description: '태그 그룹 상세 조회',
         responseSchema: z.object({
@@ -242,6 +257,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Brand {{timestamp}}',
         },
@@ -253,6 +269,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-value',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Nike',
           displayOrder: 0,
@@ -272,6 +289,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-tag-value',
         method: 'GET',
         path: '/tags/values/{{valueId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '태그 값 조회',
         responseSchema: z.object({
@@ -284,6 +302,7 @@ export const tagScenarios: Scenario[] = [
         id: 'update-tag-value',
         method: 'PUT',
         path: '/tags/values/{{valueId}}',
+        service: 'pim',
         body: {
           name: 'Nike Pro',
           displayOrder: 5,
@@ -299,6 +318,7 @@ export const tagScenarios: Scenario[] = [
         id: 'soft-delete-tag-value',
         method: 'DELETE',
         path: '/tags/values/{{valueId}}',
+        service: 'pim',
         expectedStatus: 204,
         description: '태그 값 soft delete',
       },
@@ -306,6 +326,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-value-inactive',
         method: 'GET',
         path: '/tags/values/{{valueId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Soft delete 확인',
         responseSchema: z.object({
@@ -325,6 +346,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Season {{timestamp}}',
         },
@@ -336,6 +358,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-winter',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Winter',
           displayOrder: 3,
@@ -347,6 +370,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-summer',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Summer',
           displayOrder: 1,
@@ -358,6 +382,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-spring',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Spring',
           displayOrder: 2,
@@ -369,6 +394,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-fall',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Fall',
           displayOrder: 4,
@@ -381,6 +407,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-values-by-group',
         method: 'GET',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         expectedStatus: 200,
         description: '그룹별 태그 값 목록 조회',
         responseSchema: z.array(
@@ -403,6 +430,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Style {{timestamp}}',
         },
@@ -414,6 +442,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-casual',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Casual',
         },
@@ -425,6 +454,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-value-formal',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Formal',
         },
@@ -436,6 +466,7 @@ export const tagScenarios: Scenario[] = [
         id: 'error-duplicate-create',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Casual',
         },
@@ -446,6 +477,7 @@ export const tagScenarios: Scenario[] = [
         id: 'error-duplicate-update',
         method: 'PUT',
         path: '/tags/values/{{formalId}}',
+        service: 'pim',
         body: {
           name: 'Casual',
         },
@@ -468,6 +500,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Texture {{timestamp}}',
         },
@@ -479,6 +512,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-value',
         method: 'POST',
         path: '/tags/groups/{{groupId}}/values',
+        service: 'pim',
         body: {
           name: 'Smooth',
         },
@@ -490,6 +524,7 @@ export const tagScenarios: Scenario[] = [
         id: 'error-delete-group-with-values',
         method: 'DELETE',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 400,
         description: '값이 있는 그룹 삭제 시도 (400 에러)',
       },
@@ -497,6 +532,7 @@ export const tagScenarios: Scenario[] = [
         id: 'delete-tag-value',
         method: 'DELETE',
         path: '/tags/values/{{valueId}}',
+        service: 'pim',
         expectedStatus: 204,
         description: '태그 값 삭제',
       },
@@ -504,6 +540,7 @@ export const tagScenarios: Scenario[] = [
         id: 'success-delete-group',
         method: 'DELETE',
         path: '/tags/groups/{{groupId}}',
+        service: 'pim',
         expectedStatus: 204,
         description: '값 삭제 후 그룹 삭제 성공',
       },
@@ -520,6 +557,7 @@ export const tagScenarios: Scenario[] = [
         id: 'error-create-value-invalid-group',
         method: 'POST',
         path: '/tags/groups/00000000-0000-0000-0000-000000000000/values',
+        service: 'pim',
         body: {
           name: 'Test Value',
         },
@@ -542,6 +580,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Electronics {{timestamp}}',
           slug: 'electronics-{{timestamp}}',
@@ -554,6 +593,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group-color',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Color {{timestamp}}',
         },
@@ -565,6 +605,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group-size',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Size {{timestamp}}',
         },
@@ -576,6 +617,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group-material',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Material {{timestamp}}',
         },
@@ -587,6 +629,7 @@ export const tagScenarios: Scenario[] = [
         id: 'set-category-tag-groups',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -610,6 +653,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-category-tag-groups',
         method: 'GET',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '카테고리 태그 그룹 조회',
         responseSchema: z.object({
@@ -621,6 +665,7 @@ export const tagScenarios: Scenario[] = [
         id: 'replace-category-tag-groups',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -636,6 +681,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-replaced-tag-groups',
         method: 'GET',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '교체된 태그 그룹 확인',
         responseSchema: z.object({
@@ -655,6 +701,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-parent-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Fashion {{timestamp}}',
           slug: 'fashion-{{timestamp}}',
@@ -667,6 +714,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-child-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'T-Shirts {{timestamp}}',
           slug: 'tshirts-{{timestamp}}',
@@ -680,6 +728,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group-gender',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Gender {{timestamp}}',
         },
@@ -691,6 +740,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-gender-values',
         method: 'POST',
         path: '/tags/groups/{{genderGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Men',
         },
@@ -701,6 +751,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group-age',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Age Group {{timestamp}}',
         },
@@ -712,6 +763,7 @@ export const tagScenarios: Scenario[] = [
         id: 'set-parent-tag-groups',
         method: 'PUT',
         path: '/categories/{{parentCategoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -732,6 +784,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-child-tag-groups',
         method: 'GET',
         path: '/categories/{{childCategoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '자식 카테고리 태그 그룹 조회 (상속 확인)',
         responseSchema: z.object({
@@ -759,6 +812,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-grandparent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Products {{timestamp}}',
           slug: 'products-{{timestamp}}',
@@ -771,6 +825,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-parent',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Apparel {{timestamp}}',
           slug: 'apparel-{{timestamp}}',
@@ -784,6 +839,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-child',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Shirts {{timestamp}}',
           slug: 'shirts-{{timestamp}}',
@@ -797,6 +853,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Certification {{timestamp}}',
         },
@@ -808,6 +865,7 @@ export const tagScenarios: Scenario[] = [
         id: 'set-grandparent-tag-groups',
         method: 'PUT',
         path: '/categories/{{grandparentId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -823,6 +881,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-child-inherited-tags',
         method: 'GET',
         path: '/categories/{{childId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Child에서 grandparent 태그 상속 확인',
         responseSchema: z.object({
@@ -848,6 +907,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Test Category {{timestamp}}',
           slug: 'test-category-{{timestamp}}',
@@ -860,6 +920,7 @@ export const tagScenarios: Scenario[] = [
         id: 'error-invalid-tag-group-id',
         method: 'PUT',
         path: '/categories/{{categoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -886,6 +947,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-color',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Color {{timestamp}}',
           displayOrder: 0,
@@ -898,6 +960,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-size',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Size {{timestamp}}',
           displayOrder: 1,
@@ -910,6 +973,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-material',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Material {{timestamp}}',
           displayOrder: 2,
@@ -922,6 +986,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-color-values',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Red',
           displayOrder: 0,
@@ -934,6 +999,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-color-blue',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Blue',
           displayOrder: 1,
@@ -946,6 +1012,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-color-green',
         method: 'POST',
         path: '/tags/groups/{{colorGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Green',
           displayOrder: 2,
@@ -957,6 +1024,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-all-groups',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 태그 그룹 목록 조회',
         responseSchema: z.array(z.any()).min(3),
@@ -965,6 +1033,7 @@ export const tagScenarios: Scenario[] = [
         id: 'get-color-detail',
         method: 'GET',
         path: '/tags/groups/{{colorGroupId}}/detail',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Color 그룹 상세 조회',
         responseSchema: z.object({
@@ -975,6 +1044,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-parent-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Parent {{timestamp}}',
           slug: 'parent-{{timestamp}}',
@@ -987,6 +1057,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-child-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Child {{timestamp}}',
           slug: 'child-{{timestamp}}',
@@ -1000,6 +1071,7 @@ export const tagScenarios: Scenario[] = [
         id: 'link-color-to-parent',
         method: 'PUT',
         path: '/categories/{{parentCategoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -1016,6 +1088,7 @@ export const tagScenarios: Scenario[] = [
         id: 'link-size-to-parent',
         method: 'PUT',
         path: '/categories/{{parentCategoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -1035,6 +1108,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-child-inheritance',
         method: 'GET',
         path: '/categories/{{childCategoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '자식 카테고리에서 Color만 상속 확인',
         responseSchema: z.object({
@@ -1045,6 +1119,7 @@ export const tagScenarios: Scenario[] = [
         id: 'update-red-to-crimson',
         method: 'PUT',
         path: '/tags/values/{{redValueId}}',
+        service: 'pim',
         body: {
           name: 'Crimson',
         },
@@ -1055,6 +1130,7 @@ export const tagScenarios: Scenario[] = [
         id: 'delete-blue-value',
         method: 'DELETE',
         path: '/tags/values/{{blueValueId}}',
+        service: 'pim',
         expectedStatus: 204,
         description: 'Blue 값 삭제',
       },
@@ -1062,6 +1138,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-color-values',
         method: 'GET',
         path: '/tags/groups/{{colorGroupId}}/detail',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Color 그룹 값 확인 (Crimson, Green만)',
         responseSchema: z.object({
@@ -1072,6 +1149,7 @@ export const tagScenarios: Scenario[] = [
         id: 'replace-parent-tags',
         method: 'PUT',
         path: '/categories/{{parentCategoryId}}/tag-groups',
+        service: 'pim',
         body: {
           links: [
             {
@@ -1086,6 +1164,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-child-no-inheritance',
         method: 'GET',
         path: '/categories/{{childCategoryId}}/tag-groups',
+        service: 'pim',
         expectedStatus: 200,
         description: '자식 카테고리에서 상속 제거 확인',
         responseSchema: z.object({
@@ -1105,6 +1184,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-a',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Group A {{timestamp}}',
           displayOrder: 20,
@@ -1117,6 +1197,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-b',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Group B {{timestamp}}',
           displayOrder: 10,
@@ -1129,6 +1210,7 @@ export const tagScenarios: Scenario[] = [
         id: 'create-group-c',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Group C {{timestamp}}',
           displayOrder: 30,
@@ -1141,6 +1223,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-active-groups-ordered',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         queryParams: {
           isActive: 'true',
         },
@@ -1152,6 +1235,7 @@ export const tagScenarios: Scenario[] = [
         id: 'update-group-b-order',
         method: 'PUT',
         path: '/tags/groups/{{groupBId}}',
+        service: 'pim',
         body: {
           displayOrder: 25,
         },
@@ -1162,6 +1246,7 @@ export const tagScenarios: Scenario[] = [
         id: 'list-reordered-groups',
         method: 'GET',
         path: '/tags/groups',
+        service: 'pim',
         queryParams: {
           isActive: 'true',
         },
@@ -1173,6 +1258,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-value-v1',
         method: 'POST',
         path: '/tags/groups/{{groupAId}}/values',
+        service: 'pim',
         body: {
           name: 'V1',
           displayOrder: 5,
@@ -1185,6 +1271,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-value-v2',
         method: 'POST',
         path: '/tags/groups/{{groupAId}}/values',
+        service: 'pim',
         body: {
           name: 'V2',
           displayOrder: 1,
@@ -1197,6 +1284,7 @@ export const tagScenarios: Scenario[] = [
         id: 'add-value-v3',
         method: 'POST',
         path: '/tags/groups/{{groupAId}}/values',
+        service: 'pim',
         body: {
           name: 'V3',
           displayOrder: 3,
@@ -1208,6 +1296,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-value-order',
         method: 'GET',
         path: '/tags/groups/{{groupAId}}/detail',
+        service: 'pim',
         expectedStatus: 200,
         description: '값 정렬 확인 (V2, V3, V1 순)',
         responseSchema: z.object({
@@ -1218,6 +1307,7 @@ export const tagScenarios: Scenario[] = [
         id: 'update-v2-order',
         method: 'PUT',
         path: '/tags/values/{{v2Id}}',
+        service: 'pim',
         body: {
           displayOrder: 10,
         },
@@ -1228,6 +1318,7 @@ export const tagScenarios: Scenario[] = [
         id: 'verify-reordered-values',
         method: 'GET',
         path: '/tags/groups/{{groupAId}}/detail',
+        service: 'pim',
         expectedStatus: 200,
         description: '재정렬 확인 (V3, V1, V2 순)',
         responseSchema: z.object({

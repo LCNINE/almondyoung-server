@@ -26,7 +26,7 @@ export class UpdateProductMasterDto {
   })
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   categoryIds?: string[];
 
   @ApiProperty({
@@ -73,7 +73,7 @@ export class UpdateProductMasterDto {
   @ApiProperty({ description: '부가 이미지 파일 ID 배열 (최대 5개, file-service)', type: [String], required: false })
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   additionalImageFileIds?: string[];
 
   // ========== 마케팅/SEO 필드 ==========
@@ -136,7 +136,7 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsArray()
   @ArrayUnique({ message: 'Tag value IDs must be unique' })
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   tagValueIds?: string[];
 }
 
