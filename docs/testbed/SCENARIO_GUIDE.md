@@ -43,6 +43,39 @@ export const myScenarios: Scenario[] = [
 ];
 ```
 
+### 타입 정의
+
+시나리오와 스텝의 정확한 TypeScript 타입 정의는 다음과 같습니다:
+
+```typescript
+// service-scenario/types.ts
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export type ResponseSchemaFn = (ctx: Record<string, unknown>) => ZodType<unknown>;
+
+export interface ScenarioStep {
+  id: string;
+  method: HttpMethod;
+  path: string;
+  pathParams?: Record<string, string>;
+  queryParams?: Record<string, string>;
+  body?: Record<string, unknown>;
+  expectedStatus: number;
+  description: string;
+  extractFromResponse?: Record<string, string>;
+  responseSchema?: ZodType<unknown> | ResponseSchemaFn;
+}
+
+export interface Scenario {
+  id: string;
+  name: string;
+  category: string;
+  steps: ScenarioStep[];
+  validation: string;
+}
+```
+
 ### 필드 설명
 
 | 필드 | 타입 | 설명 |
@@ -120,6 +153,8 @@ export const allScenarios: Scenario[] = [
 ```
 
 ### ScenarioStep 필드
+
+정확한 타입 정의는 [기본 구조](#기본-구조) 섹션의 `ScenarioStep` 인터페이스를 참조하세요.
 
 | 필드 | 타입 | 필수 | 설명 |
 |------|------|------|------|

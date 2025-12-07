@@ -1,0 +1,970 @@
+import { z } from 'zod';
+import type { Scenario } from '../types';
+
+/**
+ * Channel Products API Test Scenarios
+ *
+ * Coverage: 9 endpoints
+ * - POST /channel-products (채널별 제품 생성)
+ * - GET /channel-products/masters/:masterId (마스터별 채널 제품 조회)
+ * - GET /channel-products/channels/:channelId (채널별 제품 조회)
+ * - GET /channel-products/:id (채널 제품 상세 조회)
+ * - PUT /channel-products/:id (채널 제품 수정)
+ * - DELETE /channel-products/:id (채널 제품 삭제)
+ * - GET /channel-products/masters/:masterId/channels/:channelId/merged (병합된 채널 제품 조회)
+ * - PUT /channel-products/:id/name (제품명 덮어쓰기)
+ * - PUT /channel-products/:id/status (채널 제품 상태 설정)
+ *
+ * Total Scenarios: 9
+ */
+
+export const channelProductScenarios: Scenario[] = [
+  // ========================================
+  // Group 1: Basic CRUD Operations (CHPROD-001 ~ CHPROD-003)
+  // ========================================
+  {
+    id: 'CHPROD-001',
+    name: '채널 제품 생성 → 조회 → 수정 → 삭제',
+    category: 'PIM > Channel Products',
+    validation: '채널 제품 전체 CRUD 플로우 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'update-version',
+        method: 'PUT',
+        path: '/masters/{{masterId}}/versions/{{versionId}}',
+        body: {
+          name: 'Product for Channel {{timestamp}}',
+          description: '채널 제품 테스트용 상품',
+          brand: 'Test Brand',
+        },
+        expectedStatus: 200,
+        description: '버전에 상품 정보 추가',
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Test Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+          isActive: true,
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+          description: '채널 설명',
+          isActive: true,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성',
+        extractFromResponse: { channelProductId: 'id' },
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          masterId: z.string().uuid(),
+          channelId: z.string().uuid(),
+          isActive: z.boolean(),
+        }),
+      },
+      {
+        id: 'get-channel-product',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '생성된 채널 제품 조회',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          masterId: z.string().uuid(),
+          channelId: z.string().uuid(),
+          isActive: z.literal(true),
+        }),
+      },
+      {
+        id: 'update-channel-product',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}',
+        body: {
+          description: '수정된 설명',
+          channelSpecificData: { shipping: 'free', warranty: '1year' },
+        },
+        expectedStatus: 200,
+        description: '채널 제품 수정',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+        }),
+      },
+      {
+        id: 'get-updated-product',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '수정된 채널 제품 조회',
+      },
+      {
+        id: 'delete-channel-product',
+        method: 'DELETE',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '채널 제품 삭제',
+      },
+      {
+        id: 'verify-deleted',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 404,
+        description: '삭제된 채널 제품 조회 (404 기대)',
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-002',
+    name: '채널 제품 상태 관리',
+    category: 'PIM > Channel Products',
+    validation: '채널 제품 활성화/비활성화 상태 관리 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'naver',
+          type: 'MARKETPLACE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+          isActive: true,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성 (활성 상태)',
+        extractFromResponse: { channelProductId: 'id' },
+      },
+      {
+        id: 'set-inactive',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}/status',
+        body: {
+          isActive: false,
+        },
+        expectedStatus: 200,
+        description: '채널 제품 비활성화',
+      },
+      {
+        id: 'verify-inactive',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '비활성 상태 확인',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          isActive: z.literal(false),
+        }),
+      },
+      {
+        id: 'set-active',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}/status',
+        body: {
+          isActive: true,
+        },
+        expectedStatus: 200,
+        description: '채널 제품 활성화',
+      },
+      {
+        id: 'verify-active',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '활성 상태 확인',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          isActive: z.literal(true),
+        }),
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-003',
+    name: '제품명 덮어쓰기',
+    category: 'PIM > Channel Products',
+    validation: '채널별 제품명 오버라이드 기능 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'update-version',
+        method: 'PUT',
+        path: '/masters/{{masterId}}/versions/{{versionId}}',
+        body: {
+          name: 'Original Product {{timestamp}}',
+        },
+        expectedStatus: 200,
+        description: '마스터 제품명 설정',
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'coupang',
+          type: 'MARKETPLACE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성 (이름 오버라이드 없음)',
+        extractFromResponse: { channelProductId: 'id' },
+      },
+      {
+        id: 'override-name-1',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}/name',
+        body: {
+          name: 'Channel Product Name {{timestamp}}',
+        },
+        expectedStatus: 200,
+        description: '제품명 덮어쓰기 (첫 번째)',
+      },
+      {
+        id: 'verify-override-1',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '오버라이드된 이름 확인',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          name: z.string(),
+        }),
+      },
+      {
+        id: 'override-name-2',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}/name',
+        body: {
+          name: 'Updated Channel Name {{timestamp}}',
+        },
+        expectedStatus: 200,
+        description: '제품명 덮어쓰기 (두 번째)',
+      },
+      {
+        id: 'verify-override-2',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '변경된 이름 확인',
+      },
+    ],
+  },
+
+  // ========================================
+  // Group 2: Query and Filter Operations (CHPROD-004 ~ CHPROD-006)
+  // ========================================
+  {
+    id: 'CHPROD-004',
+    name: '마스터별 채널 제품 조회',
+    category: 'PIM > Channel Products',
+    validation: '하나의 마스터가 여러 채널에 등록된 현황 조회 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel-1',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Medusa Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '채널 1 생성 (Medusa)',
+        extractFromResponse: { channelId1: 'id' },
+      },
+      {
+        id: 'create-channel-2',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Coupang Channel {{timestamp}}',
+          site: 'coupang',
+          type: 'MARKETPLACE',
+        },
+        expectedStatus: 201,
+        description: '채널 2 생성 (Coupang)',
+        extractFromResponse: { channelId2: 'id' },
+      },
+      {
+        id: 'create-channel-3',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Naver Channel {{timestamp}}',
+          site: 'naver',
+          type: 'MARKETPLACE',
+        },
+        expectedStatus: 201,
+        description: '채널 3 생성 (Naver)',
+        extractFromResponse: { channelId3: 'id' },
+      },
+      {
+        id: 'create-channel-product-1',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId1}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 1 생성',
+      },
+      {
+        id: 'create-channel-product-2',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId2}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 2 생성',
+      },
+      {
+        id: 'create-channel-product-3',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId3}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 3 생성',
+      },
+      {
+        id: 'get-by-master',
+        method: 'GET',
+        path: '/channel-products/masters/{{masterId}}',
+        expectedStatus: 200,
+        description: '마스터별 채널 제품 조회',
+        responseSchema: z.array(
+          z.object({
+            id: z.string().uuid(),
+            masterId: z.string().uuid(),
+            channelId: z.string().uuid(),
+            channel: z.object({
+              id: z.string().uuid(),
+              name: z.string(),
+              site: z.string(),
+            }),
+          }),
+        ).min(3),
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-005',
+    name: '채널별 제품 조회 (필터링 및 페이지네이션)',
+    category: 'PIM > Channel Products',
+    validation: '채널별 제품 목록 조회 시 필터링, 검색, 페이지네이션 확인',
+    steps: [
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Test Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-master-1',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '마스터 1 생성',
+        extractFromResponse: { masterId1: 'masterId', versionId1: 'id' },
+      },
+      {
+        id: 'publish-version-1',
+        method: 'PATCH',
+        path: '/masters/{{masterId1}}/versions/{{versionId1}}/publish',
+        expectedStatus: 200,
+        description: '버전 1 Publish',
+      },
+      {
+        id: 'create-master-2',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '마스터 2 생성',
+        extractFromResponse: { masterId2: 'masterId', versionId2: 'id' },
+      },
+      {
+        id: 'publish-version-2',
+        method: 'PATCH',
+        path: '/masters/{{masterId2}}/versions/{{versionId2}}/publish',
+        expectedStatus: 200,
+        description: '버전 2 Publish',
+      },
+      {
+        id: 'create-master-3',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '마스터 3 생성',
+        extractFromResponse: { masterId3: 'masterId', versionId3: 'id' },
+      },
+      {
+        id: 'publish-version-3',
+        method: 'PATCH',
+        path: '/masters/{{masterId3}}/versions/{{versionId3}}/publish',
+        expectedStatus: 200,
+        description: '버전 3 Publish',
+      },
+      {
+        id: 'create-master-4',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '마스터 4 생성',
+        extractFromResponse: { masterId4: 'masterId', versionId4: 'id' },
+      },
+      {
+        id: 'publish-version-4',
+        method: 'PATCH',
+        path: '/masters/{{masterId4}}/versions/{{versionId4}}/publish',
+        expectedStatus: 200,
+        description: '버전 4 Publish',
+      },
+      {
+        id: 'create-master-5',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '마스터 5 생성',
+        extractFromResponse: { masterId5: 'masterId', versionId5: 'id' },
+      },
+      {
+        id: 'publish-version-5',
+        method: 'PATCH',
+        path: '/masters/{{masterId5}}/versions/{{versionId5}}/publish',
+        expectedStatus: 200,
+        description: '버전 5 Publish',
+      },
+      {
+        id: 'create-channel-product-1',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId1}}',
+          channelId: '{{channelId}}',
+          isActive: true,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 1 생성 (활성)',
+      },
+      {
+        id: 'create-channel-product-2',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId2}}',
+          channelId: '{{channelId}}',
+          isActive: true,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 2 생성 (활성)',
+      },
+      {
+        id: 'create-channel-product-3',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId3}}',
+          channelId: '{{channelId}}',
+          isActive: false,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 3 생성 (비활성)',
+      },
+      {
+        id: 'create-channel-product-4',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId4}}',
+          channelId: '{{channelId}}',
+          isActive: false,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 4 생성 (비활성)',
+      },
+      {
+        id: 'create-channel-product-5',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId5}}',
+          channelId: '{{channelId}}',
+          isActive: false,
+        },
+        expectedStatus: 201,
+        description: '채널 제품 5 생성 (비활성)',
+      },
+      {
+        id: 'query-all',
+        method: 'GET',
+        path: '/channel-products/channels/{{channelId}}',
+        expectedStatus: 200,
+        description: '전체 제품 조회',
+        responseSchema: z.object({
+          data: z.array(z.any()).min(5),
+          total: z.number().min(5),
+          page: z.number(),
+          limit: z.number(),
+        }),
+      },
+      {
+        id: 'query-active',
+        method: 'GET',
+        path: '/channel-products/channels/{{channelId}}',
+        queryParams: {
+          isActive: 'true',
+        },
+        expectedStatus: 200,
+        description: '활성 제품만 조회',
+        responseSchema: z.object({
+          total: z.number().min(2),
+        }),
+      },
+      {
+        id: 'query-inactive',
+        method: 'GET',
+        path: '/channel-products/channels/{{channelId}}',
+        queryParams: {
+          isActive: 'false',
+        },
+        expectedStatus: 200,
+        description: '비활성 제품만 조회',
+        responseSchema: z.object({
+          total: z.number().min(3),
+        }),
+      },
+      {
+        id: 'query-paginated',
+        method: 'GET',
+        path: '/channel-products/channels/{{channelId}}',
+        queryParams: {
+          page: '1',
+          limit: '2',
+        },
+        expectedStatus: 200,
+        description: '페이지네이션 조회',
+        responseSchema: z.object({
+          data: z.array(z.any()).max(2),
+          page: z.literal(1),
+          limit: z.literal(2),
+        }),
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-006',
+    name: '병합된 채널 제품 조회',
+    category: 'PIM > Channel Products',
+    validation: '마스터 데이터와 채널 오버라이드가 병합된 뷰 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'update-version',
+        method: 'PUT',
+        path: '/masters/{{masterId}}/versions/{{versionId}}',
+        body: {
+          name: 'Master Product {{timestamp}}',
+          description: 'Master Description',
+        },
+        expectedStatus: 200,
+        description: '마스터 상품 정보 설정',
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+          name: 'Channel Override Name {{timestamp}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성 (이름 오버라이드)',
+        extractFromResponse: { channelProductId: 'id' },
+      },
+      {
+        id: 'get-merged',
+        method: 'GET',
+        path: '/channel-products/masters/{{masterId}}/channels/{{channelId}}/merged',
+        expectedStatus: 200,
+        description: '병합된 채널 제품 조회',
+        responseSchema: z.object({
+          id: z.string().uuid(),
+          masterId: z.string().uuid(),
+          channelId: z.string().uuid(),
+          name: z.string(),
+          isActive: z.boolean(),
+        }),
+      },
+      {
+        id: 'update-channel-product',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}',
+        body: {
+          channelSpecificData: { discount: '10%' },
+        },
+        expectedStatus: 200,
+        description: '채널 특화 데이터 추가',
+      },
+      {
+        id: 'get-merged-again',
+        method: 'GET',
+        path: '/channel-products/masters/{{masterId}}/channels/{{channelId}}/merged',
+        expectedStatus: 200,
+        description: '업데이트된 병합 뷰 조회',
+      },
+    ],
+  },
+
+  // ========================================
+  // Group 3: Edge Cases and Error Handling (CHPROD-007 ~ CHPROD-009)
+  // ========================================
+  {
+    id: 'CHPROD-007',
+    name: '채널 제품 중복 생성 방지',
+    category: 'PIM > Channel Products',
+    validation: '동일 마스터+채널 조합으로 중복 생성 불가 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성',
+      },
+      {
+        id: 'create-duplicate',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+        },
+        expectedStatus: 400,
+        description: '중복 생성 시도 (에러 기대)',
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-008',
+    name: '존재하지 않는 리소스로 생성 시도',
+    category: 'PIM > Channel Products',
+    validation: '잘못된 참조로 생성 시 에러 처리 확인',
+    steps: [
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-with-fake-master',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '00000000-0000-0000-0000-000000000000',
+          channelId: '{{channelId}}',
+        },
+        expectedStatus: 404,
+        description: '존재하지 않는 masterId로 생성 시도',
+      },
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-with-fake-channel',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '00000000-0000-0000-0000-000000000000',
+        },
+        expectedStatus: 404,
+        description: '존재하지 않는 channelId로 생성 시도',
+      },
+    ],
+  },
+
+  {
+    id: 'CHPROD-009',
+    name: '채널 제품 부분 수정',
+    category: 'PIM > Channel Products',
+    validation: '일부 필드만 수정 시 다른 필드 보존 확인',
+    steps: [
+      {
+        id: 'create-master',
+        method: 'POST',
+        path: '/masters',
+        body: {},
+        expectedStatus: 201,
+        description: '상품 마스터 생성',
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        expectedStatus: 200,
+        description: '버전 Publish',
+      },
+      {
+        id: 'create-channel',
+        method: 'POST',
+        path: '/channels',
+        body: {
+          name: 'Channel {{timestamp}}',
+          site: 'medusa',
+          type: 'ONLINE',
+        },
+        expectedStatus: 201,
+        description: '판매 채널 생성',
+        extractFromResponse: { channelId: 'id' },
+      },
+      {
+        id: 'create-channel-product',
+        method: 'POST',
+        path: '/channel-products',
+        body: {
+          masterId: '{{masterId}}',
+          channelId: '{{channelId}}',
+        },
+        expectedStatus: 201,
+        description: '채널 제품 생성',
+        extractFromResponse: { channelProductId: 'id' },
+      },
+      {
+        id: 'update-description',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}',
+        body: {
+          description: 'New Description',
+        },
+        expectedStatus: 200,
+        description: 'description만 수정',
+      },
+      {
+        id: 'verify-description',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: 'description 변경 확인',
+      },
+      {
+        id: 'update-specific-data',
+        method: 'PUT',
+        path: '/channel-products/{{channelProductId}}',
+        body: {
+          channelSpecificData: { shipping: 'free' },
+        },
+        expectedStatus: 200,
+        description: 'channelSpecificData만 수정',
+      },
+      {
+        id: 'verify-both-fields',
+        method: 'GET',
+        path: '/channel-products/{{channelProductId}}',
+        expectedStatus: 200,
+        description: '모든 필드 보존 확인',
+      },
+    ],
+  },
+];
