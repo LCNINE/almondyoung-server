@@ -109,3 +109,32 @@ export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
   @ApiProperty({ description: '주 버전', type: ProductMasterVersionEntity, nullable: true })
   primaryVersion: ProductMasterVersionEntity | null;
 }
+
+export class ProductSummaryDto {
+  @ApiProperty({ description: '상품 ID' })
+  id: string;
+
+  @ApiProperty({ description: '상품명' })
+  name: string;
+
+  @ApiProperty({ description: '썸네일 이미지 URL', nullable: true })
+  thumbnail: string | null;
+
+  @ApiProperty({ description: '브랜드', nullable: true })
+  brand: string | null;
+
+  @ApiProperty({ description: '멤버십회원 전용 여부' })
+  isMembershipOnly: boolean;
+
+  @ApiProperty({ description: '상품 상태', enum: ['draft', 'inactive', 'active'] })
+  status: string;
+
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
+
+  @ApiProperty({ description: '옵션 그룹 개수', minimum: 0 })
+  optionGroupCount: number;
+
+  @ApiProperty({ description: '변형 개수', minimum: 1 })
+  variantCount: number;
+}
