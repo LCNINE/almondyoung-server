@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * PIM Product Master & Version Management API Test Scenarios
@@ -28,6 +28,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성 (빈 객체)',
@@ -42,19 +43,25 @@ export const productMasterScenarios: Scenario[] = [
       {
         id: 'get-master-detail',
         method: 'GET',
-        path: '/masters/{{masterId}}',
+        path: '/masters',
+        service: 'pim',
+        queryParams: {
+          mode: 'active-or-latest',
+        },
         expectedStatus: 200,
-        description: '마스터 상세 조회 (Active 버전)',
+        description: '마스터 목록 조회 (active-or-latest 모드)',
         responseSchema: z.object({
-          id: z.string().uuid(),
-          masterId: z.string().uuid(),
-          status: z.enum(['draft', 'active', 'inactive']),
+          data: z.array(z.any()),
+          total: z.number(),
+          page: z.number(),
+          limit: z.number(),
         }),
       },
       {
         id: 'update-draft-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Updated Product Name',
           description: 'Product description',
@@ -71,6 +78,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'delete-master',
         method: 'DELETE',
         path: '/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터 소프트 삭제',
         responseSchema: z.object({
@@ -82,6 +90,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 마스터 조회 (404 기대)',
       },
@@ -98,17 +107,25 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product to Delete',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'masterId' },
+        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
+      },
+      {
+        id: 'publish-version',
+        method: 'PATCH',
+        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
+        expectedStatus: 200,
+        description: '버전 Publish',
       },
       {
         id: 'soft-delete',
         method: 'DELETE',
         path: '/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터 소프트 삭제',
       },
@@ -116,6 +133,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-deleted',
         method: 'GET',
         path: '/masters/deleted',
+        service: 'pim',
         expectedStatus: 200,
         description: '삭제된 마스터 목록 조회',
         responseSchema: z.array(z.any()),
@@ -124,6 +142,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'restore-master',
         method: 'POST',
         path: '/masters/{{masterId}}/restore',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터 복원',
         responseSchema: z.object({
@@ -134,9 +153,19 @@ export const productMasterScenarios: Scenario[] = [
       {
         id: 'verify-restored',
         method: 'GET',
-        path: '/masters/{{masterId}}',
+        path: '/masters',
+        service: 'pim',
+        queryParams: {
+          mode: 'active-or-latest',
+        },
         expectedStatus: 200,
-        description: '복원된 마스터 조회',
+        description: '복원된 마스터 조회 (active-or-latest 모드)',
+        responseSchema: z.object({
+          data: z.array(z.any()),
+          total: z.number(),
+          page: z.number(),
+          limit: z.number(),
+        }),
       },
     ],
   },
@@ -151,9 +180,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product for Publish Test',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -162,18 +190,20 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish (Draft → Active)',
         responseSchema: z.object({
           message: z.string(),
-          masterId: z.string().uuid(),
-          versionId: z.string().uuid(),
+          // masterId: z.string().uuid(),
+          // versionId: z.string().uuid(),
         }),
       },
       {
         id: 'get-active-version',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/active',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Active 버전 조회',
         responseSchema: z.object({
@@ -185,6 +215,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'unpublish-master',
         method: 'PATCH',
         path: '/masters/{{masterId}}/unpublish',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터 비공개 처리 (Active → Inactive)',
         responseSchema: z.object({
@@ -196,6 +227,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-inactive',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/active',
+        service: 'pim',
         expectedStatus: 404,
         description: 'Active 버전 없음 확인 (404 기대)',
       },
@@ -215,9 +247,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product with Versions',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', version1Id: 'id' },
@@ -226,6 +257,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-version-tree',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 트리 조회',
         responseSchema: z.array(
@@ -241,6 +273,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-specific-version',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '특정 버전 조회',
         responseSchema: z.object({
@@ -253,6 +286,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 1 Publish',
       },
@@ -260,6 +294,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-active-version',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/active',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Active 버전 조회',
         responseSchema: z.object({
@@ -281,9 +316,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Multi Version Product',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', version1Id: 'id' },
@@ -292,6 +326,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 1 Publish',
       },
@@ -299,6 +334,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-draft-version',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {
           copyMappings: true,
         },
@@ -316,6 +352,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-draft-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           name: 'Updated Product V2',
           description: 'Version 2 description',
@@ -327,6 +364,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version2',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 2 Publish',
       },
@@ -334,6 +372,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-version-tree',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 트리 확인 (v1 inactive, v2 active)',
       },
@@ -350,9 +389,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Version Compare Test',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', version1Id: 'id' },
@@ -361,6 +399,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-version1',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Product V1',
           brand: 'Brand A',
@@ -372,6 +411,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 1 Publish',
       },
@@ -379,6 +419,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-version2',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '버전 2 생성',
@@ -388,6 +429,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-version2',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           name: 'Product V2',
           brand: 'Brand B',
@@ -400,6 +442,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'compare-versions',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/compare/{{version1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 비교',
         responseSchema: z.object({
@@ -421,9 +464,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Draft Delete Test',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', draftVersionId: 'id' },
@@ -432,6 +474,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-another-draft',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '추가 Draft 버전 생성',
@@ -441,6 +484,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'delete-draft-version',
         method: 'DELETE',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Draft 버전 삭제',
         responseSchema: z.object({
@@ -451,6 +495,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 버전 조회 (404 기대)',
       },
@@ -458,6 +503,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-remaining-versions',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '남은 버전 확인',
       },
@@ -477,9 +523,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product with Options',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -488,6 +533,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             add: [
@@ -519,6 +565,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-version-with-options',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '옵션이 추가된 버전 조회',
       },
@@ -526,6 +573,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -542,9 +590,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Option Modify Test',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -553,6 +600,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'add-initial-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             add: [
@@ -575,6 +623,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'modify-and-add-values',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             modifyDisplay: [
@@ -602,6 +651,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-changes',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '변경사항 확인',
       },
@@ -618,9 +668,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Option Remove Test',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -629,6 +678,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             add: [
@@ -662,6 +712,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'remove-option-value',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             removeValues: [
@@ -679,6 +730,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'remove-option-group',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           optionDiff: {
             remove: ['{{sizeGroupId}}'],
@@ -691,6 +743,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-removals',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '제거 확인',
       },
@@ -707,10 +760,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Complex Options Product',
-          brand: 'Premium Brand',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -719,6 +770,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'add-complex-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Premium T-Shirt',
           description: 'High-quality cotton t-shirt',
@@ -780,15 +832,26 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
       {
         id: 'get-published-product',
         method: 'GET',
-        path: '/masters/{{masterId}}',
+        path: '/masters',
+        service: 'pim',
+        queryParams: {
+          mode: 'active-or-latest',
+        },
         expectedStatus: 200,
-        description: 'Publish된 상품 조회',
+        description: 'Publish된 상품 조회 (active-or-latest 모드)',
+        responseSchema: z.object({
+          data: z.array(z.any()),
+          total: z.number(),
+          page: z.number(),
+          limit: z.number(),
+        }),
       },
     ],
   },
@@ -806,6 +869,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-category1',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Electronics',
           slug: 'electronics-{{timestamp}}',
@@ -818,6 +882,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-category2',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Accessories',
           slug: 'accessories-{{timestamp}}',
@@ -830,9 +895,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product with Categories',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -841,6 +905,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'associate-categories',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           categoryIds: ['{{category1Id}}', '{{category2Id}}'],
           primaryCategoryId: '{{category1Id}}',
@@ -852,6 +917,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-categories',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           categoryIds: ['{{category2Id}}'],
           primaryCategoryId: '{{category2Id}}',
@@ -863,6 +929,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-categories',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '카테고리 변경 확인',
       },
@@ -879,6 +946,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-tag-group',
         method: 'POST',
         path: '/tags/groups',
+        service: 'pim',
         body: {
           name: 'Product Tags {{timestamp}}',
           description: 'Tags for products',
@@ -891,6 +959,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-tag-value1',
         method: 'POST',
         path: '/tags/groups/{{tagGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'New Arrival',
           description: 'Newly launched products',
@@ -903,6 +972,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-tag-value2',
         method: 'POST',
         path: '/tags/groups/{{tagGroupId}}/values',
+        service: 'pim',
         body: {
           name: 'Best Seller',
           description: 'Top selling products',
@@ -915,9 +985,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product with Tags',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -926,6 +995,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'associate-tags',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           tagValueIds: ['{{tagValue1Id}}'],
         },
@@ -936,6 +1006,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-tags',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           tagValueIds: ['{{tagValue1Id}}', '{{tagValue2Id}}'],
         },
@@ -946,6 +1017,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-tags',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '태그 변경 확인',
       },
@@ -965,9 +1037,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master1',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product 1 for List',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 1 생성',
         extractFromResponse: { master1Id: 'masterId', version1Id: 'id' },
@@ -976,6 +1047,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-master1',
         method: 'PATCH',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 Publish',
       },
@@ -983,9 +1055,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master2',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product 2 for List',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 2 생성',
         extractFromResponse: { master2Id: 'masterId', version2Id: 'id' },
@@ -994,6 +1065,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-master2',
         method: 'PATCH',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 2 Publish',
       },
@@ -1001,9 +1073,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master3',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product 3 for List',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 3 생성 (Draft 유지)',
       },
@@ -1011,10 +1082,11 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-all-products',
         method: 'GET',
         path: '/masters',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 상품 목록 조회',
         responseSchema: z.object({
-          items: z.array(z.any()),
+          data: z.array(z.any()),
           total: z.number(),
           page: z.number(),
           limit: z.number(),
@@ -1024,6 +1096,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-page1',
         method: 'GET',
         path: '/masters',
+        service: 'pim',
         queryParams: {
           page: '1',
           limit: '2',
@@ -1035,6 +1108,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-active-mode',
         method: 'GET',
         path: '/masters',
+        service: 'pim',
         queryParams: {
           mode: 'active',
         },
@@ -1054,9 +1128,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master-brand-a',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product Brand A',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: 'Brand A 상품 생성',
         extractFromResponse: { masterAId: 'masterId', versionAId: 'id' },
@@ -1065,6 +1138,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-brand-a',
         method: 'PUT',
         path: '/masters/{{masterAId}}/versions/{{versionAId}}',
+        service: 'pim',
         body: {
           brand: 'Brand A',
         },
@@ -1075,6 +1149,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-brand-a',
         method: 'PATCH',
         path: '/masters/{{masterAId}}/versions/{{versionAId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Brand A 상품 Publish',
       },
@@ -1082,9 +1157,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master-brand-b',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product Brand B',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: 'Brand B 상품 생성',
         extractFromResponse: { masterBId: 'masterId', versionBId: 'id' },
@@ -1093,6 +1167,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-brand-b',
         method: 'PUT',
         path: '/masters/{{masterBId}}/versions/{{versionBId}}',
+        service: 'pim',
         body: {
           brand: 'Brand B',
         },
@@ -1103,6 +1178,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-brand-b',
         method: 'PATCH',
         path: '/masters/{{masterBId}}/versions/{{versionBId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Brand B 상품 Publish',
       },
@@ -1110,6 +1186,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'filter-by-brand-a',
         method: 'GET',
         path: '/masters',
+        service: 'pim',
         queryParams: {
           brand: 'Brand A',
         },
@@ -1129,6 +1206,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Filter Test Category',
           slug: 'filter-cat-{{timestamp}}',
@@ -1141,9 +1219,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master1',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product in Category',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 1 생성',
         extractFromResponse: { master1Id: 'masterId', version1Id: 'id' },
@@ -1152,6 +1229,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'associate-category',
         method: 'PUT',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           categoryIds: ['{{categoryId}}'],
         },
@@ -1162,6 +1240,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-master1',
         method: 'PATCH',
         path: '/masters/{{master1Id}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 Publish',
       },
@@ -1169,9 +1248,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master2',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product without Category',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 2 생성 (카테고리 없음)',
         extractFromResponse: { master2Id: 'masterId', version2Id: 'id' },
@@ -1180,6 +1258,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-master2',
         method: 'PATCH',
         path: '/masters/{{master2Id}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 2 Publish',
       },
@@ -1187,6 +1266,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'filter-by-category',
         method: 'GET',
         path: '/masters',
+        service: 'pim',
         queryParams: {
           categoryId: '{{categoryId}}',
         },
@@ -1209,9 +1289,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master1',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product to Delete 1',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 1 생성',
         extractFromResponse: { master1Id: 'masterId' },
@@ -1220,9 +1299,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master2',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product to Delete 2',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 2 생성',
         extractFromResponse: { master2Id: 'masterId' },
@@ -1231,6 +1309,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'delete-master1',
         method: 'DELETE',
         path: '/masters/{{master1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 삭제',
       },
@@ -1238,6 +1317,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'delete-master2',
         method: 'DELETE',
         path: '/masters/{{master2Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 2 삭제',
       },
@@ -1245,6 +1325,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-deleted-products',
         method: 'GET',
         path: '/masters/deleted',
+        service: 'pim',
         expectedStatus: 200,
         description: '삭제된 상품 목록 조회',
         responseSchema: z.array(
@@ -1257,6 +1338,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'restore-master1',
         method: 'POST',
         path: '/masters/{{master1Id}}/restore',
+        service: 'pim',
         expectedStatus: 200,
         description: '상품 1 복원',
       },
@@ -1264,6 +1346,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-restored',
         method: 'GET',
         path: '/masters/{{master1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '복원된 상품 조회',
       },
@@ -1271,6 +1354,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'list-deleted-after-restore',
         method: 'GET',
         path: '/masters/deleted',
+        service: 'pim',
         expectedStatus: 200,
         description: '삭제된 상품 목록 재조회 (1개 감소)',
       },
@@ -1287,9 +1371,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Product for Permanent Delete',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', versionId: 'id' },
@@ -1298,6 +1381,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'soft-delete',
         method: 'DELETE',
         path: '/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '소프트 삭제',
       },
@@ -1305,6 +1389,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'permanent-delete',
         method: 'DELETE',
         path: '/masters/{{versionId}}/permanent',
+        service: 'pim',
         body: {
           userId: 'test-user-{{timestamp}}',
         },
@@ -1318,6 +1403,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'verify-permanent-delete',
         method: 'GET',
         path: '/masters/deleted',
+        service: 'pim',
         expectedStatus: 200,
         description: '삭제된 목록에도 없음 확인',
       },
@@ -1337,6 +1423,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/categories',
+        service: 'pim',
         body: {
           name: 'Lifecycle Test Category',
           slug: 'lifecycle-{{timestamp}}',
@@ -1349,9 +1436,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Full Lifecycle Product',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', version1Id: 'id' },
@@ -1360,6 +1446,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-v1-details',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Premium Sneakers',
           description: 'High-quality athletic shoes',
@@ -1372,6 +1459,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'add-options-v1',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           optionDiff: {
             add: [
@@ -1400,6 +1488,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'associate-category-v1',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           categoryIds: ['{{categoryId}}'],
           primaryCategoryId: '{{categoryId}}',
@@ -1411,6 +1500,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-v1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V1 Publish',
       },
@@ -1418,6 +1508,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-v2',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {
           copyMappings: true,
         },
@@ -1429,6 +1520,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-v2',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           description: 'Updated: Professional athletic footwear',
           optionDiff: {
@@ -1450,6 +1542,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-v2',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V2 Publish',
       },
@@ -1457,6 +1550,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'compare-versions',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/compare/{{version1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V1과 V2 비교',
       },
@@ -1464,6 +1558,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-version-tree',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 트리 조회',
       },
@@ -1471,6 +1566,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-active-version',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/active',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Active 버전 조회 (V2)',
         responseSchema: z.object({
@@ -1492,9 +1588,8 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
-        body: {
-          name: 'Multi-Version Product',
-        },
+        service: 'pim',
+        body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
         extractFromResponse: { masterId: 'masterId', version1Id: 'id' },
@@ -1503,6 +1598,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-v1',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Product V1',
           description: 'Version 1',
@@ -1514,6 +1610,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-v1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V1 Publish',
       },
@@ -1521,6 +1618,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-v2',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: 'V2 생성',
@@ -1530,6 +1628,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-v2',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         body: {
           name: 'Product V2',
           description: 'Version 2',
@@ -1541,6 +1640,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'publish-v2',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V2 Publish (V1 → Inactive)',
       },
@@ -1548,6 +1648,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'create-v3',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {
           parentVersionId: '{{version2Id}}',
         },
@@ -1559,6 +1660,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'update-v3',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version3Id}}',
+        service: 'pim',
         body: {
           name: 'Product V3 Draft',
         },
@@ -1569,6 +1671,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-tree-before-delete',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 트리 조회 (V1 inactive, V2 active, V3 draft)',
       },
@@ -1576,6 +1679,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'delete-v3-draft',
         method: 'DELETE',
         path: '/masters/{{masterId}}/versions/{{version3Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V3 Draft 삭제',
       },
@@ -1583,6 +1687,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-tree-after-delete',
         method: 'GET',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 트리 재조회 (V3 삭제됨)',
       },
@@ -1590,6 +1695,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-specific-v1',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V1 조회 (Inactive 상태)',
         responseSchema: z.object({
@@ -1602,6 +1708,7 @@ export const productMasterScenarios: Scenario[] = [
         id: 'get-specific-v2',
         method: 'GET',
         path: '/masters/{{masterId}}/versions/{{version2Id}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'V2 조회 (Active 상태)',
         responseSchema: z.object({

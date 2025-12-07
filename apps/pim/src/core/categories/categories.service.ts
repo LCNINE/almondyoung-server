@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
   NotFoundError,
@@ -84,29 +84,47 @@ export class ProductCategoriesService {
         level,
       };
 
-      const [newCategory] = await client
-        .insert(pimSchema.productCategories)
-        .values(newCategoryData)
-        .returning();
+      try {
+        const [newCategory] = await client
+          .insert(pimSchema.productCategories)
+          .values(newCategoryData)
+          .returning();
 
-      // path 계산 및 업데이트
-      const calculatedPath = parentPath
-        ? `${parentPath}/${newCategory.id}`
-        : newCategory.id;
+        // path 계산 및 업데이트
+        const calculatedPath = parentPath
+          ? `${parentPath}/${newCategory.id}`
+          : newCategory.id;
 
-      await client
-        .update(pimSchema.productCategories)
-        .set({ path: calculatedPath })
-        .where(eq(pimSchema.productCategories.id, newCategory.id));
+        await client
+          .update(pimSchema.productCategories)
+          .set({ path: calculatedPath })
+          .where(eq(pimSchema.productCategories.id, newCategory.id));
 
-      newCategory.path = calculatedPath;
+        newCategory.path = calculatedPath;
 
-      if (tagGroupLinks && tagGroupLinks.length > 0) {
-        await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
+        if (tagGroupLinks && tagGroupLinks.length > 0) {
+          await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
+        }
+
+        const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
+        return responseDto;
+      } catch (error: any) {
+        // Drizzle ORM이 에러를 래핑하므로 error.cause 확인 필요
+        const pgError = error.cause || error;
+
+        // PostgreSQL unique constraint violation (error code 23505)
+        if (pgError.code === '23505') {
+          // constraint 이름으로 slug 중복 감지
+          if (pgError.constraint_name === 'product_categories_slug_unique') {
+            throw new ConflictException(
+              `Category with slug "${categoryData.slug}" already exists`
+            );
+          }
+          // 다른 unique constraint 위반인 경우
+          throw new ConflictException('Duplicate entry detected');
+        }
+        throw error;
       }
-
-      const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
-      return responseDto;
     });
   }
 

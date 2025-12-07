@@ -10,6 +10,7 @@ import {
   HttpException,
   HttpStatus,
   Patch,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -268,6 +269,7 @@ export class ProductCategoriesController {
 
   // 고지훈 추가 - 기존 카테고리 유지하면서 추가
   @Post(':id/products/add')
+  @HttpCode(200)
   @ApiOperation({
     summary: '상품들을 카테고리에 추가',
     description:

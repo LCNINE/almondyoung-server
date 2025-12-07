@@ -10,7 +10,7 @@ import { pricingScenarios } from './pricing';
 import { tagScenarios } from './tags';
 import { bannerScenarios } from './banners';
 import { searchScenarios } from './search';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 export const allPimScenarios: Scenario[] = [
   ...categoryScenarios,

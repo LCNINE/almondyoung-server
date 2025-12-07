@@ -73,23 +73,12 @@ export class ProductVersionsController {
   })
   @ApiResponse({ status: 404, description: 'Active 버전을 찾을 수 없음' })
   async getActiveVersion(@Param('masterId') masterId: string) {
-    try {
-      const version = await this.productVersionsService.getActiveVersion(masterId);
-      return {
-        ...version,
-        createdAt: version.createdAt?.toISOString() || null,
-        updatedAt: version.updatedAt?.toISOString() || null,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to get active version: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to get active version: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const version = await this.productVersionsService.getActiveVersion(masterId);
+    return {
+      ...version,
+      createdAt: version.createdAt?.toISOString() || null,
+      updatedAt: version.updatedAt?.toISOString() || null,
+    };
   }
 
   @Get(':versionId')

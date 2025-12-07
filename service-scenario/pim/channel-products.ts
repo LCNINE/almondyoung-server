@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * Channel Products API Test Scenarios
@@ -32,6 +32,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -41,6 +42,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Product for Channel {{timestamp}}',
           description: '채널 제품 테스트용 상품',
@@ -53,6 +55,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -60,6 +63,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Test Channel {{timestamp}}',
           site: 'medusa',
@@ -74,6 +78,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -94,6 +99,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'get-channel-product',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 채널 제품 조회',
         responseSchema: z.object({
@@ -107,6 +113,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-channel-product',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         body: {
           description: '수정된 설명',
           channelSpecificData: { shipping: 'free', warranty: '1year' },
@@ -121,6 +128,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'get-updated-product',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '수정된 채널 제품 조회',
       },
@@ -128,6 +136,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'delete-channel-product',
         method: 'DELETE',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '채널 제품 삭제',
       },
@@ -135,6 +144,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 채널 제품 조회 (404 기대)',
       },
@@ -151,6 +161,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -160,6 +171,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -167,6 +179,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'naver',
@@ -180,6 +193,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -193,6 +207,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'set-inactive',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}/status',
+        service: 'pim',
         body: {
           isActive: false,
         },
@@ -203,6 +218,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-inactive',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '비활성 상태 확인',
         responseSchema: z.object({
@@ -214,6 +230,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'set-active',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}/status',
+        service: 'pim',
         body: {
           isActive: true,
         },
@@ -224,6 +241,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-active',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '활성 상태 확인',
         responseSchema: z.object({
@@ -244,6 +262,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -253,6 +272,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Original Product {{timestamp}}',
         },
@@ -263,6 +283,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -270,6 +291,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'coupang',
@@ -283,6 +305,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -295,6 +318,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'override-name-1',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}/name',
+        service: 'pim',
         body: {
           name: 'Channel Product Name {{timestamp}}',
         },
@@ -305,6 +329,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-override-1',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '오버라이드된 이름 확인',
         responseSchema: z.object({
@@ -316,6 +341,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'override-name-2',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}/name',
+        service: 'pim',
         body: {
           name: 'Updated Channel Name {{timestamp}}',
         },
@@ -326,6 +352,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-override-2',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '변경된 이름 확인',
       },
@@ -345,6 +372,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -354,6 +382,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -361,6 +390,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-1',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Medusa Channel {{timestamp}}',
           site: 'medusa',
@@ -374,6 +404,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-2',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Coupang Channel {{timestamp}}',
           site: 'coupang',
@@ -387,6 +418,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-3',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Naver Channel {{timestamp}}',
           site: 'naver',
@@ -400,6 +432,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-1',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId1}}',
@@ -411,6 +444,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-2',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId2}}',
@@ -422,6 +456,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-3',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId3}}',
@@ -433,6 +468,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'get-by-master',
         method: 'GET',
         path: '/channel-products/masters/{{masterId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '마스터별 채널 제품 조회',
         responseSchema: z.array(
@@ -461,6 +497,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Test Channel {{timestamp}}',
           site: 'medusa',
@@ -474,6 +511,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master-1',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '마스터 1 생성',
@@ -483,6 +521,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version-1',
         method: 'PATCH',
         path: '/masters/{{masterId1}}/versions/{{versionId1}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 1 Publish',
       },
@@ -490,6 +529,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master-2',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '마스터 2 생성',
@@ -499,6 +539,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version-2',
         method: 'PATCH',
         path: '/masters/{{masterId2}}/versions/{{versionId2}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 2 Publish',
       },
@@ -506,6 +547,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master-3',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '마스터 3 생성',
@@ -515,6 +557,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version-3',
         method: 'PATCH',
         path: '/masters/{{masterId3}}/versions/{{versionId3}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 3 Publish',
       },
@@ -522,6 +565,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master-4',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '마스터 4 생성',
@@ -531,6 +575,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version-4',
         method: 'PATCH',
         path: '/masters/{{masterId4}}/versions/{{versionId4}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 4 Publish',
       },
@@ -538,6 +583,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master-5',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '마스터 5 생성',
@@ -547,6 +593,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version-5',
         method: 'PATCH',
         path: '/masters/{{masterId5}}/versions/{{versionId5}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 5 Publish',
       },
@@ -554,6 +601,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-1',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId1}}',
           channelId: '{{channelId}}',
@@ -566,6 +614,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-2',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId2}}',
           channelId: '{{channelId}}',
@@ -578,6 +627,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-3',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId3}}',
           channelId: '{{channelId}}',
@@ -590,6 +640,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-4',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId4}}',
           channelId: '{{channelId}}',
@@ -602,6 +653,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product-5',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId5}}',
           channelId: '{{channelId}}',
@@ -614,6 +666,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'query-all',
         method: 'GET',
         path: '/channel-products/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '전체 제품 조회',
         responseSchema: z.object({
@@ -627,6 +680,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'query-active',
         method: 'GET',
         path: '/channel-products/channels/{{channelId}}',
+        service: 'pim',
         queryParams: {
           isActive: 'true',
         },
@@ -640,6 +694,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'query-inactive',
         method: 'GET',
         path: '/channel-products/channels/{{channelId}}',
+        service: 'pim',
         queryParams: {
           isActive: 'false',
         },
@@ -653,6 +708,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'query-paginated',
         method: 'GET',
         path: '/channel-products/channels/{{channelId}}',
+        service: 'pim',
         queryParams: {
           page: '1',
           limit: '2',
@@ -678,6 +734,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -687,6 +744,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-version',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Master Product {{timestamp}}',
           description: 'Master Description',
@@ -698,6 +756,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -705,6 +764,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'medusa',
@@ -718,6 +778,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -731,6 +792,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'get-merged',
         method: 'GET',
         path: '/channel-products/masters/{{masterId}}/channels/{{channelId}}/merged',
+        service: 'pim',
         expectedStatus: 200,
         description: '병합된 채널 제품 조회',
         responseSchema: z.object({
@@ -745,6 +807,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-channel-product',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         body: {
           channelSpecificData: { discount: '10%' },
         },
@@ -755,6 +818,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'get-merged-again',
         method: 'GET',
         path: '/channel-products/masters/{{masterId}}/channels/{{channelId}}/merged',
+        service: 'pim',
         expectedStatus: 200,
         description: '업데이트된 병합 뷰 조회',
       },
@@ -774,6 +838,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -783,6 +848,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -790,6 +856,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'medusa',
@@ -803,6 +870,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -814,6 +882,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-duplicate',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -834,6 +903,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'medusa',
@@ -847,6 +917,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-with-fake-master',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '00000000-0000-0000-0000-000000000000',
           channelId: '{{channelId}}',
@@ -858,6 +929,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -867,6 +939,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -874,6 +947,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-with-fake-channel',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '00000000-0000-0000-0000-000000000000',
@@ -894,6 +968,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -903,6 +978,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -910,6 +986,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel {{timestamp}}',
           site: 'medusa',
@@ -923,6 +1000,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'create-channel-product',
         method: 'POST',
         path: '/channel-products',
+        service: 'pim',
         body: {
           masterId: '{{masterId}}',
           channelId: '{{channelId}}',
@@ -935,6 +1013,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-description',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         body: {
           description: 'New Description',
         },
@@ -945,6 +1024,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-description',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'description 변경 확인',
       },
@@ -952,6 +1032,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'update-specific-data',
         method: 'PUT',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         body: {
           channelSpecificData: { shipping: 'free' },
         },
@@ -962,6 +1043,7 @@ export const channelProductScenarios: Scenario[] = [
         id: 'verify-both-fields',
         method: 'GET',
         path: '/channel-products/{{channelProductId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '모든 필드 보존 확인',
       },

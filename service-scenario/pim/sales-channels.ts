@@ -30,6 +30,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Test Channel {{timestamp}}',
           site: 'medusa',
@@ -54,6 +55,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-channel',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 채널 조회',
         responseSchema: z.object({
@@ -66,6 +68,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'update-channel',
         method: 'PUT',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         body: {
           name: 'Updated Channel {{timestamp}}',
           description: '수정된 설명',
@@ -81,6 +84,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'delete-channel',
         method: 'DELETE',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '채널 삭제',
       },
@@ -88,6 +92,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 채널 조회 (404 예상)',
       },
@@ -104,6 +109,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-category-1',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category 1 {{timestamp}}',
           displayOrder: 10,
@@ -116,6 +122,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-category-2',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category 2 {{timestamp}}',
           displayOrder: 20,
@@ -128,6 +135,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel with Category {{timestamp}}',
           site: 'naver',
@@ -142,6 +150,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'verify-category-1',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '분류 1 연결 확인',
         responseSchema: z.object({
@@ -159,6 +168,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'update-to-category-2',
         method: 'PUT',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         body: {
           categoryId: '{{category2Id}}',
         },
@@ -169,6 +179,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'verify-category-2',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '분류 2 연결 확인',
       },
@@ -185,6 +196,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Status Test Channel {{timestamp}}',
           site: 'coupang',
@@ -199,6 +211,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'deactivate-channel',
         method: 'PUT',
         path: '/channels/{{channelId}}/status',
+        service: 'pim',
         body: {
           isActive: false,
         },
@@ -209,6 +222,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'verify-inactive',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '비활성 상태 확인',
         responseSchema: z.object({
@@ -220,6 +234,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'activate-channel',
         method: 'PUT',
         path: '/channels/{{channelId}}/status',
+        service: 'pim',
         body: {
           isActive: true,
         },
@@ -230,6 +245,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'verify-active',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '활성 상태 확인',
         responseSchema: z.object({
@@ -250,6 +266,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-1',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel A {{timestamp}}',
           site: 'medusa',
@@ -263,6 +280,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-2',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel B {{timestamp}}',
           site: 'naver',
@@ -276,6 +294,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-3',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel C {{timestamp}}',
           site: 'coupang',
@@ -289,6 +308,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-4',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel D {{timestamp}}',
           site: 'phone_order',
@@ -302,6 +322,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-5',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Channel E {{timestamp}}',
           site: 'other',
@@ -315,6 +336,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'list-paginated',
         method: 'GET',
         path: '/channels',
+        service: 'pim',
         queryParams: {
           page: '1',
           limit: '3',
@@ -332,6 +354,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'list-active-only',
         method: 'GET',
         path: '/channels',
+        service: 'pim',
         queryParams: {
           isActive: 'true',
         },
@@ -357,6 +380,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-coupang-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Coupang Channel {{timestamp}}',
           site: 'coupang',
@@ -374,6 +398,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-coupang-channel',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Coupang 채널 조회',
         responseSchema: z.object({
@@ -387,6 +412,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-marketplace-channels',
         method: 'GET',
         path: '/channels/type/MARKETPLACE',
+        service: 'pim',
         expectedStatus: 200,
         description: 'MARKETPLACE 타입 채널 조회',
         responseSchema: z.array(
@@ -409,6 +435,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-naver-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Naver Channel {{timestamp}}',
           site: 'naver',
@@ -426,6 +453,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-naver-channel',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Naver 채널 조회',
         responseSchema: z.object({
@@ -438,6 +466,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-marketplace-channels',
         method: 'GET',
         path: '/channels/type/MARKETPLACE',
+        service: 'pim',
         expectedStatus: 200,
         description: 'MARKETPLACE 타입 채널 목록 조회',
         responseSchema: z.array(
@@ -459,6 +488,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-medusa-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Medusa Channel {{timestamp}}',
           site: 'medusa',
@@ -476,6 +506,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-medusa-channel',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Medusa 채널 조회',
         responseSchema: z.object({
@@ -489,6 +520,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-online-channels',
         method: 'GET',
         path: '/channels/type/ONLINE',
+        service: 'pim',
         expectedStatus: 200,
         description: 'ONLINE 타입 채널 조회',
         responseSchema: z.array(
@@ -510,6 +542,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-phone-order-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Phone Order Channel {{timestamp}}',
           site: 'phone_order',
@@ -524,6 +557,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-phone-order-channel',
         method: 'GET',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Phone Order 채널 조회',
         responseSchema: z.object({
@@ -536,6 +570,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-offline-channels',
         method: 'GET',
         path: '/channels/type/OFFLINE',
+        service: 'pim',
         expectedStatus: 200,
         description: 'OFFLINE 타입 채널 조회',
         responseSchema: z.array(
@@ -557,6 +592,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-mobile-app-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Mobile App Channel {{timestamp}}',
           site: 'other',
@@ -571,6 +607,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-social-commerce-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Social Commerce Channel {{timestamp}}',
           site: 'other',
@@ -585,6 +622,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-mobile-app-channels',
         method: 'GET',
         path: '/channels/type/MOBILE_APP',
+        service: 'pim',
         expectedStatus: 200,
         description: 'MOBILE_APP 타입 채널 조회',
         responseSchema: z.array(
@@ -597,6 +635,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-social-commerce-channels',
         method: 'GET',
         path: '/channels/type/SOCIAL_COMMERCE',
+        service: 'pim',
         expectedStatus: 200,
         description: 'SOCIAL_COMMERCE 타입 채널 조회',
         responseSchema: z.array(
@@ -621,6 +660,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-medusa-valid',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'medusa',
           config: {
@@ -638,6 +678,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-medusa-invalid',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'medusa',
           config: {},
@@ -662,6 +703,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-coupang-valid',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'coupang',
           config: {
@@ -680,6 +722,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-coupang-missing-access-key',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'coupang',
           config: {
@@ -697,6 +740,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-coupang-missing-secret-key',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'coupang',
           config: {
@@ -723,6 +767,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-naver-valid',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'naver',
           config: {
@@ -741,6 +786,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-naver-missing-client-id',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'naver',
           config: {
@@ -758,6 +804,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-naver-missing-client-secret',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'naver',
           config: {
@@ -784,6 +831,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-phone-order',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'phone_order',
         },
@@ -798,6 +846,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'validate-other',
         method: 'POST',
         path: '/channels/validate',
+        service: 'pim',
         body: {
           site: 'other',
         },
@@ -824,6 +873,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-active-channel-1',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Active Channel 1 {{timestamp}}',
           site: 'medusa',
@@ -838,6 +888,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-active-channel-2',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Active Channel 2 {{timestamp}}',
           site: 'naver',
@@ -852,6 +903,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-inactive-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Inactive Channel {{timestamp}}',
           site: 'coupang',
@@ -866,6 +918,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'get-active-channels',
         method: 'GET',
         path: '/channels/active',
+        service: 'pim',
         expectedStatus: 200,
         description: '활성 채널만 조회',
         responseSchema: z.array(
@@ -888,6 +941,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-search-1',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'SearchTest Channel A {{timestamp}}',
           site: 'medusa',
@@ -901,6 +955,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-search-2',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'SearchTest Channel B {{timestamp}}',
           site: 'naver',
@@ -914,6 +969,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'create-channel-search-3',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Different Name {{timestamp}}',
           site: 'coupang',
@@ -927,6 +983,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'search-by-name',
         method: 'GET',
         path: '/channels',
+        service: 'pim',
         queryParams: {
           search: 'SearchTest',
         },
@@ -940,6 +997,7 @@ export const salesChannelScenarios: Scenario[] = [
         id: 'combined-filter',
         method: 'GET',
         path: '/channels',
+        service: 'pim',
         queryParams: {
           type: 'MARKETPLACE',
           isActive: 'true',

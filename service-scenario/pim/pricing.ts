@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * PIM Pricing API Test Scenarios
@@ -28,6 +28,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -37,6 +38,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Pricing Test Product {{timestamp}}',
           optionDiff: {
@@ -65,6 +67,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-pricing-rules',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -99,6 +102,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'get-pricing-rules',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '가격 규칙 조회',
         responseSchema: z.object({
@@ -109,6 +113,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -116,6 +121,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'delete-pricing-rules',
         method: 'DELETE',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 204,
         description: '가격 규칙 삭제',
       },
@@ -123,6 +129,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-empty-rules',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '규칙 삭제 확인 (빈 배열)',
         responseSchema: z.object({
@@ -144,6 +151,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -153,6 +161,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Multi-layer Pricing {{timestamp}}',
           optionDiff: {
@@ -184,6 +193,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-multilayer-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -237,6 +247,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-all-layers',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '모든 레이어 규칙 조회',
         responseSchema: z.object({
@@ -258,6 +269,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -267,6 +279,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Replace Test {{timestamp}}',
           optionDiff: {
@@ -285,6 +298,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-initial-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -308,6 +322,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-initial-pricing',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '초기 규칙 확인',
         responseSchema: z.object({
@@ -322,6 +337,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'replace-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -353,6 +369,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-replaced-pricing',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '교체된 규칙 확인',
         responseSchema: z.object({
@@ -384,6 +401,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -393,6 +411,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Calculate Test {{timestamp}}',
           optionDiff: {
@@ -417,6 +436,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -437,6 +457,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -444,6 +465,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-price',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{redVariantId}}',
           customerType: 'regular',
@@ -474,6 +496,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -483,6 +506,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Membership Pricing {{timestamp}}',
           optionDiff: {
@@ -504,6 +528,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -532,6 +557,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -539,6 +565,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-membership-price',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           customerType: 'membership',
@@ -569,6 +596,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -578,6 +606,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Tiered Pricing {{timestamp}}',
           optionDiff: {
@@ -599,6 +628,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-tiered-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -644,6 +674,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -651,6 +682,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-qty-5',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           customerType: 'membership',
@@ -666,6 +698,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-qty-15',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           customerType: 'membership',
@@ -681,6 +714,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-qty-120',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{variantId}}',
           customerType: 'membership',
@@ -705,6 +739,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -714,6 +749,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Scope Test {{timestamp}}',
           optionDiff: {
@@ -749,6 +785,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-scope-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -785,6 +822,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -792,6 +830,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-red-variant',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{redSVariantId}}',
           customerType: 'regular',
@@ -806,6 +845,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-blue-variant',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{blueSVariantId}}',
           customerType: 'regular',
@@ -820,6 +860,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-green-variant',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{greenSVariantId}}',
           customerType: 'regular',
@@ -846,6 +887,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -855,6 +897,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Price Set Test {{timestamp}}',
           optionDiff: {
@@ -876,6 +919,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -921,6 +965,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -928,6 +973,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'get-price-set',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/price-set',
+        service: 'pim',
         queryParams: {
           variantId: '{{variantId}}',
         },
@@ -957,6 +1003,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -966,6 +1013,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Version Pricing {{timestamp}}',
           optionDiff: {
@@ -987,6 +1035,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-version1-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1007,6 +1056,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Version 1 Publish',
       },
@@ -1014,6 +1064,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-version2',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {
           copyMappings: true,
         },
@@ -1025,6 +1076,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-version2-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         queryParams: {
           versionId: '{{version2Id}}',
         },
@@ -1048,6 +1100,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version2',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Version 2 Publish',
       },
@@ -1055,6 +1108,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'get-active-price-set',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/price-set',
+        service: 'pim',
         queryParams: {
           variantId: '{{variantId}}',
         },
@@ -1068,6 +1122,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'get-version1-price-set',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/price-set',
+        service: 'pim',
         queryParams: {
           variantId: '{{variantId}}',
           versionId: '{{version1Id}}',
@@ -1094,6 +1149,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -1103,6 +1159,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Validation Test {{timestamp}}',
           optionDiff: {
@@ -1121,6 +1178,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-missing-base-all-variants',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1142,6 +1200,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-duplicate-order',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1169,6 +1228,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-tiered-without-minQuantity',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1197,6 +1257,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-base-with-minQuantity',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1227,6 +1288,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -1236,6 +1298,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{version1Id}}',
+        service: 'pim',
         body: {
           name: 'Active Version Test {{timestamp}}',
           optionDiff: {
@@ -1254,6 +1317,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version1',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version1Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Version 1 Publish (Active)',
       },
@@ -1261,6 +1325,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-modify-active-version',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1281,6 +1346,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-delete-active-version',
         method: 'DELETE',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 400,
         description: 'Active 버전 삭제 시도 (실패)',
       },
@@ -1288,6 +1354,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-version2',
         method: 'POST',
         path: '/masters/{{masterId}}/versions',
+        service: 'pim',
         body: {
           copyMappings: true,
         },
@@ -1299,6 +1366,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'success-modify-draft',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         queryParams: {
           versionId: '{{version2Id}}',
         },
@@ -1322,6 +1390,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version2',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{version2Id}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: 'Version 2 Publish',
       },
@@ -1329,6 +1398,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'error-modify-inactive-version',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         queryParams: {
           versionId: '{{version1Id}}',
         },
@@ -1361,6 +1431,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'create-master',
         method: 'POST',
         path: '/masters',
+        service: 'pim',
         body: {},
         expectedStatus: 201,
         description: '상품 마스터 생성',
@@ -1370,6 +1441,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'add-options',
         method: 'PUT',
         path: '/masters/{{masterId}}/versions/{{versionId}}',
+        service: 'pim',
         body: {
           name: 'Complex Pricing {{timestamp}}',
           optionDiff: {
@@ -1413,6 +1485,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'set-complex-pricing',
         method: 'PUT',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         body: {
           basePriceRules: [
             {
@@ -1466,6 +1539,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-rules',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '모든 규칙 조회',
         responseSchema: z.object({
@@ -1478,6 +1552,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'publish-version',
         method: 'PATCH',
         path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
+        service: 'pim',
         expectedStatus: 200,
         description: '버전 Publish',
       },
@@ -1485,6 +1560,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-regular-red',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{redSCottonVariantId}}',
           customerType: 'regular',
@@ -1500,6 +1576,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-membership-red',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{redSCottonVariantId}}',
           customerType: 'membership',
@@ -1515,6 +1592,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-membership-red-tiered',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{redSCottonVariantId}}',
           customerType: 'membership',
@@ -1530,6 +1608,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'calculate-blue-variant',
         method: 'POST',
         path: '/products/{{masterId}}/pricing/calculate',
+        service: 'pim',
         body: {
           variantId: '{{blueSCottonVariantId}}',
           customerType: 'membership',
@@ -1545,6 +1624,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'get-price-set',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/price-set',
+        service: 'pim',
         queryParams: {
           variantId: '{{redSCottonVariantId}}',
         },
@@ -1560,6 +1640,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'delete-all-rules',
         method: 'DELETE',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 204,
         description: '모든 가격 규칙 삭제',
       },
@@ -1567,6 +1648,7 @@ export const pricingScenarios: Scenario[] = [
         id: 'verify-deleted-rules',
         method: 'GET',
         path: '/products/{{masterId}}/pricing/rules',
+        service: 'pim',
         expectedStatus: 200,
         description: '규칙 삭제 확인',
         responseSchema: z.object({

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Scenario } from '../types';
+import type { Scenario } from '../types.ts';
 
 /**
  * 채널 분류 (Channel Categories) 시나리오
@@ -26,6 +26,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Test Category {{timestamp}}',
           description: '테스트 분류',
@@ -47,6 +48,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'get-category',
         method: 'GET',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '생성된 분류 조회',
         responseSchema: z.object({
@@ -59,6 +61,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'update-category',
         method: 'PUT',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         body: {
           name: 'Updated Category {{timestamp}}',
           description: '수정된 설명',
@@ -76,6 +79,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'delete-category',
         method: 'DELETE',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '분류 삭제',
       },
@@ -83,6 +87,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'verify-deleted',
         method: 'GET',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 404,
         description: '삭제된 분류 조회 (404 예상)',
       },
@@ -102,6 +107,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-category-1',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category A {{timestamp}}',
           displayOrder: 30,
@@ -114,6 +120,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-category-2',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category B {{timestamp}}',
           displayOrder: 10,
@@ -126,6 +133,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-category-3',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category C {{timestamp}}',
           displayOrder: 20,
@@ -138,6 +146,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'list-categories',
         method: 'GET',
         path: '/channels/categories',
+        service: 'pim',
         expectedStatus: 200,
         description: '분류 목록 조회 (정렬 확인)',
         responseSchema: z.object({
@@ -167,6 +176,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-category',
         method: 'POST',
         path: '/channels/categories',
+        service: 'pim',
         body: {
           name: 'Category with Channels {{timestamp}}',
           description: '채널이 연결될 분류',
@@ -179,6 +189,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'create-channel',
         method: 'POST',
         path: '/channels',
+        service: 'pim',
         body: {
           name: 'Test Channel {{timestamp}}',
           site: 'medusa',
@@ -193,6 +204,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'verify-category-with-channels',
         method: 'GET',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '채널이 연결된 분류 조회',
         responseSchema: z.object({
@@ -204,6 +216,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'try-delete-category',
         method: 'DELETE',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 409,
         description: '채널이 있는 분류 삭제 시도 (409 예상)',
       },
@@ -211,6 +224,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'delete-channel',
         method: 'DELETE',
         path: '/channels/{{channelId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '채널 먼저 삭제',
       },
@@ -218,6 +232,7 @@ export const channelCategoryScenarios: Scenario[] = [
         id: 'delete-category-success',
         method: 'DELETE',
         path: '/channels/categories/{{categoryId}}',
+        service: 'pim',
         expectedStatus: 200,
         description: '채널 삭제 후 분류 삭제 성공',
       },
