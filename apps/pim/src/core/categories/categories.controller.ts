@@ -32,6 +32,9 @@ import {
   UpdateTemplateConfigDto,
   ReplaceTagGroupLinksDto,
   CategoryTagGroupsResponseDto,
+  MoveProductsToCategoryDto,
+  AddProductsToCategoryDto,
+  UpdateVisibilityDto,
 } from './dto';
 
 @ApiTags('Categories')
@@ -231,23 +234,7 @@ export class ProductCategoriesController {
       '여러 상품을 특정 카테고리로 일괄 이동시킵니다. 기존 카테고리 관계는 삭제되고 새로운 카테고리로 대체됩니다. **주의:** 버전 ID를 사용합니다 (일반적으로 active 버전의 ID).',
   })
   @ApiParam({ name: 'id', description: '대상 카테고리 ID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        versionIds: {
-          type: 'array',
-          items: { type: 'string', format: 'uuid' },
-          description: '이동시킬 상품 버전 ID 배열 (active 버전의 Version ID)',
-          example: [
-            '550e8400-e29b-41d4-a716-446655440000',
-            '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
-          ],
-        },
-      },
-      required: ['versionIds'],
-    },
-  })
+  @ApiBody({ type: MoveProductsToCategoryDto, description: '이동시킬 상품 버전 ID 배열' })
   @ApiResponse({
     status: 200,
     description: '상품 이동 성공',
@@ -259,9 +246,9 @@ export class ProductCategoriesController {
   })
   async moveProductsToCategory(
     @Param('id') categoryId: string,
-    @Body() body: { versionIds: string[] },
+    @Body() dto: MoveProductsToCategoryDto,
   ): Promise<{ message: string; movedCount: number }> {
-    if (!body.versionIds || body.versionIds.length === 0) {
+    if (!dto.versionIds || dto.versionIds.length === 0) {
       throw new HttpException(
         'versionIds are required',
         HttpStatus.BAD_REQUEST,
@@ -269,13 +256,13 @@ export class ProductCategoriesController {
     }
 
     await this.productCategoriesService.moveProductsToCategory(
-      body.versionIds,
+      dto.versionIds,
       categoryId,
     );
 
     return {
       message: 'Products moved successfully',
-      movedCount: body.versionIds.length,
+      movedCount: dto.versionIds.length,
     };
   }
 
@@ -287,23 +274,7 @@ export class ProductCategoriesController {
       '여러 상품을 특정 카테고리에 추가로 연결합니다. 기존 카테고리 관계는 유지됩니다 (다대다 관계 지원). **주의:** 버전 ID를 사용합니다 (일반적으로 active 버전의 ID).',
   })
   @ApiParam({ name: 'id', description: '대상 카테고리 ID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        versionIds: {
-          type: 'array',
-          items: { type: 'string', format: 'uuid' },
-          description: '추가할 상품 버전 ID 배열 (active 버전의 Version ID)',
-          example: [
-            '550e8400-e29b-41d4-a716-446655440000',
-            '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
-          ],
-        },
-      },
-      required: ['versionIds'],
-    },
-  })
+  @ApiBody({ type: AddProductsToCategoryDto, description: '추가할 상품 버전 ID 배열' })
   @ApiResponse({
     status: 200,
     description: '상품 추가 성공',
@@ -315,9 +286,9 @@ export class ProductCategoriesController {
   })
   async addProductsToCategory(
     @Param('id') categoryId: string,
-    @Body() body: { versionIds: string[] },
+    @Body() dto: AddProductsToCategoryDto,
   ): Promise<{ message: string; addedCount: number }> {
-    if (!body.versionIds || body.versionIds.length === 0) {
+    if (!dto.versionIds || dto.versionIds.length === 0) {
       throw new HttpException(
         'versionIds are required',
         HttpStatus.BAD_REQUEST,
@@ -325,13 +296,13 @@ export class ProductCategoriesController {
     }
 
     await this.productCategoriesService.addProductsToCategory(
-      body.versionIds,
+      dto.versionIds,
       categoryId,
     );
 
     return {
       message: 'Products added successfully',
-      addedCount: body.versionIds.length,
+      addedCount: dto.versionIds.length,
     };
   }
 
@@ -412,19 +383,7 @@ export class ProductCategoriesController {
     description: '카테고리의 표시 여부를 업데이트합니다.',
   })
   @ApiParam({ name: 'id', description: '카테고리 ID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        visible: {
-          type: 'boolean',
-          description: '표시 여부',
-          example: true,
-        },
-      },
-      required: ['visible'],
-    },
-  })
+  @ApiBody({ type: UpdateVisibilityDto, description: '표시 여부 설정' })
   @ApiResponse({
     status: 200,
     description: '표시 여부 업데이트 성공',
@@ -433,11 +392,11 @@ export class ProductCategoriesController {
   @ApiResponse({ status: 404, description: '카테고리를 찾을 수 없음' })
   async updateVisibility(
     @Param('id') categoryId: string,
-    @Body('visible') visible: boolean,
+    @Body() dto: UpdateVisibilityDto,
   ): Promise<CategoryResponseDto> {
     return this.productCategoriesService.updateVisibility(
       categoryId,
-      visible,
+      dto.visible,
     );
   }
 

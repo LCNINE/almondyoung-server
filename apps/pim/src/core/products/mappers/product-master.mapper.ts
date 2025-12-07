@@ -16,6 +16,7 @@ import {
   SalesChannelEntity,
   ChannelProductEntity,
 } from '../../../schema.types';
+import { ProductImageDto } from '../dto/products/product-image.dto';
 
 /**
  * Mapper for ProductMaster DTOs
@@ -25,14 +26,14 @@ export class ProductMasterMapper {
   /**
    * Map entity to ProductMasterDto
    */
-  static toDto(entity: ProductMasterVersionEntity): ProductMasterDto {
+  static toDto(entity: ProductMasterVersionEntity, images: ProductImageDto[]): ProductMasterDto {
     return {
       id: entity.id,
       name: entity.name,
       description: entity.description,
       brand: entity.brand,
       // tags and attributes removed - deprecated/deleted fields
-      images: entity.images,
+      images: images,
       seoTitle: entity.seoTitle,
       seoDescription: entity.seoDescription,
       seoKeywords: entity.seoKeywords,

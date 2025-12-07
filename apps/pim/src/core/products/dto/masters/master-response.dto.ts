@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductTagDto } from './product-tag.dto';
+import { ProductImageDto } from '../products/product-image.dto';
 
 export class ProductMasterDto {
   @ApiProperty({ description: '제품 마스터 ID (UUID 형식)' })
@@ -18,8 +19,13 @@ export class ProductMasterDto {
   // tags removed - 별도 태그 테이블로 정규화됨
   // attributes removed - 삭제됨
 
-  @ApiProperty({ description: '제품 이미지 (JSONB)' })
-  images: any;
+  @ApiProperty({
+    description: '제품 이미지 목록',
+    type: [ProductImageDto],
+    required: false,
+    nullable: true,
+  })
+  images: ProductImageDto[] | null;
 
   @ApiProperty({ description: 'SEO 제목', nullable: true })
   seoTitle: string | null;
