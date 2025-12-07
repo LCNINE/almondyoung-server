@@ -20,6 +20,7 @@ import {
   VersionDiffItemDto,
 } from '../dto/versions';
 import { UpdateProductMasterDto } from '../dto';
+import { ProductVersionMapper } from '../mappers/product-version.mapper';
 
 @ApiTags('Product Versions')
 @Controller('masters/:masterId/versions')
@@ -84,13 +85,13 @@ export class ProductVersionsController {
   @Get(':versionId')
   @ApiOperation({
     summary: '특정 버전 조회',
-    description: 'Version ID로 특정 버전을 조회합니다. 모든 상태(draft, active, inactive)의 버전을 조회할 수 있습니다.',
+    description: 'Version ID로 특정 버전을 조회합니다. 모든 상태(draft, active, inactive)의 버전을 조회할 수 있습니다. 태그, 이미지, 옵션, 변형 정보를 포함합니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
   @ApiParam({ name: 'versionId', description: 'Version ID' })
   @ApiResponse({
     status: 200,
-    description: '버전 조회 성공',
+    description: '버전 상세 조회 성공 (태그, 이미지, 옵션, 변형 포함)',
   })
   @ApiResponse({ status: 404, description: '버전을 찾을 수 없음' })
   async getVersionById(
@@ -98,20 +99,16 @@ export class ProductVersionsController {
     @Param('versionId') versionId: string,
   ) {
     try {
-      const version = await this.productVersionsService.getVersionById(versionId);
+      const versionDetail = await this.productVersionsService.getVersionDetail(versionId);
 
-      if (version.masterId !== masterId) {
+      if (versionDetail.masterId !== masterId) {
         throw new HttpException(
           'Version does not belong to the specified master',
           HttpStatus.BAD_REQUEST,
         );
       }
 
-      return {
-        ...version,
-        createdAt: version.createdAt?.toISOString() || null,
-        updatedAt: version.updatedAt?.toISOString() || null,
-      };
+      return ProductVersionMapper.toDetailResponseDto(versionDetail);
     } catch (error) {
       this.logger.error(`Failed to get version: ${error.message}`, error.stack);
       if (error.message.includes('not found')) {
@@ -200,7 +197,7 @@ export class ProductVersionsController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Draft 버전 수정 성공',
+    description: 'Draft 버전 수정 성공 (태그, 이미지 등 포함)',
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 403, description: 'Draft 상태의 버전만 수정 가능' })
@@ -233,11 +230,8 @@ export class ProductVersionsController {
         updateData,
       );
 
-      return {
-        ...updatedVersion,
-        createdAt: updatedVersion.createdAt?.toISOString() || null,
-        updatedAt: updatedVersion.updatedAt?.toISOString() || null,
-      };
+      const versionDetail = await this.productVersionsService.getVersionDetail(updatedVersion.id);
+      return ProductVersionMapper.toDetailResponseDto(versionDetail);
     } catch (error) {
       this.logger.error(`Failed to update version: ${error.message}`, error.stack);
 
