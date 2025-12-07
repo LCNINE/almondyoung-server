@@ -4,10 +4,8 @@ import {
   OptionGroupDto,
   OptionValueDto,
   VariantDto,
-  ChannelProductDto,
-  ChannelInfoDto,
-  ProductSummaryDto,
 } from '../dto/masters/master-response.dto';
+import { ProductSummaryDto } from '../dto/products/product-response.dto';
 import {
   ProductMasterVersionEntity,
   ProductOptionGroupEntity,
@@ -124,53 +122,6 @@ export class ProductMasterMapper {
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
       optionValues: entity.optionValues ?? [],
       price: entity.price,
-    };
-  }
-
-  /**
-   * Map entity to ChannelInfoDto
-   */
-  static toChannelInfoDto(entity: SalesChannelEntity & { apiConfig?: unknown; supportedFeatures?: unknown }): ChannelInfoDto {
-    return {
-      id: entity.id,
-      type: entity.type,
-      name: entity.name,
-      isActive: entity.isActive,
-      apiConfig: entity.apiConfig,
-      supportedFeatures: entity.supportedFeatures,
-      createdAt: DateMapper.toNotNullString(entity.createdAt),
-      updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-    };
-  }
-
-  /**
-   * Map entity to ChannelProductDto
-   */
-  static toChannelProductDto(entity: ChannelProductEntity & { channel?: SalesChannelEntity & { apiConfig?: unknown; supportedFeatures?: unknown } }): ChannelProductDto {
-    // channel은 필수 필드이므로, undefined일 경우 기본값 제공
-    const defaultChannel: ChannelInfoDto = {
-      id: '',
-      type: 'marketplace',
-      name: '',
-      isActive: false,
-      apiConfig: null,
-      supportedFeatures: null,
-      createdAt: '',
-      updatedAt: '',
-    };
-
-    return {
-      id: entity.id,
-      masterId: entity.masterId,
-      channelId: entity.channelId,
-      name: entity.name,
-      isActive: entity.isActive,
-      channelSpecificData: entity.channelSpecificData,
-      createdAt: DateMapper.toNotNullString(entity.createdAt),
-      updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      channel: entity.channel
-        ? this.toChannelInfoDto(entity.channel)
-        : defaultChannel,
     };
   }
 }

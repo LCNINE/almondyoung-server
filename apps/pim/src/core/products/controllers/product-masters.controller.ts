@@ -25,10 +25,12 @@ import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
 import {
-  ProductSummaryDto,
-  MasterUpdateResponseDto,
-} from '../dto';
-import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
+  MasterProductWithPrimaryVersionDto,
+  ProductDto,
+  ProductListItemDto,
+  ProductListResponseDto,
+  ProductSummaryDto
+} from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
 import { DbService, InjectDb } from '@app/db';
 import { PimSchema } from 'apps/pim/src/schema';
