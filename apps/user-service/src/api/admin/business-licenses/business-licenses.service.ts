@@ -1,9 +1,11 @@
 import { DbService, InjectDb } from '@app/db';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import {
   BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { UserEvents } from '@packages/event-contracts';
 import {
   userServiceSchema,
   type UserServiceSchema,
@@ -21,6 +23,7 @@ import {
 } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
+import { UsersService } from '../../users/users.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 
@@ -29,6 +32,11 @@ export class BusinessLicensesService {
   constructor(
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
+
+    @InjectStreamPublisher('users.events.v1')
+    private readonly eventPublisher: StreamPublisher<UserEvents>,
+
+    private readonly usersService: UsersService,
   ) { }
 
   async getBusinessLicensesByUserId(
@@ -177,6 +185,21 @@ export class BusinessLicensesService {
           fileUrl: updateBusinessLicenseDto.fileUrl ?? existingBusiness.fileUrl,
         })
         .where(eq(schema.businessLicenses.id, businessLicenseId));
+
+      // 사업자 등록 정보 승인 시 이벤트 발행
+      if (updateBusinessLicenseDto.status === 'approved') {
+        const existingUser = await this.usersService.findUserById(existingBusiness.userId);
+
+        await this.eventPublisher.publishEvent({
+          eventType: 'BusinessLicenseApproved',
+          aggregateId: existingUser.id,
+          payload: {
+            userId: existingUser.id,
+            email: existingUser.email,
+            name: existingUser.username,
+          },
+        });
+      }
 
       return;
     } catch (error) {
