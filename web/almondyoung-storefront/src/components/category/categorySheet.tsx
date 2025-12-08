@@ -60,8 +60,8 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
       onClose()
     }
   }
-  const handleSubCategoryClick = (subCategoryId: string) => {
-    router.push(`/${countryCode}/category/sub/${subCategoryId}`)
+  const handleSubCategoryClick = (parentSlug: string, subSlug: string) => {
+    router.push(`/${countryCode}/category/${parentSlug}/${subSlug}`)
     onClose()
   }
 
@@ -252,7 +252,7 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                         <div
                           key={sub.id}
                           className="flex cursor-pointer flex-col items-center gap-2 p-2 hover:-translate-y-1 hover:font-bold"
-                          onClick={() => handleSubCategoryClick(sub.id)}
+                          onClick={() => handleSubCategoryClick(activeCat?.slug || "", sub.slug)}
                         >
                           <div className="overflow-hidden">
                             {sub.imageUrl && (
@@ -339,7 +339,7 @@ export const CategorySheet: React.FC<CategorySheetProps> = ({
                       <button
                         key={sub.id}
                         className="flex flex-col items-center gap-1"
-                        onClick={() => handleSubCategoryClick(sub.id)}
+                        onClick={() => handleSubCategoryClick(c.slug, sub.slug)}
                       >
                         <div className="bg-muted h-[55px] w-[55px] overflow-hidden rounded-full">
                           {sub.imageUrl && (
