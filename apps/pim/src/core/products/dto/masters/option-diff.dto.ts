@@ -116,21 +116,21 @@ export class RemoveOptionValuesDto {
   @IsUUID()
   optionGroupId: string;
 
-  @ApiProperty({ 
-    description: '삭제할 옵션 값 ID 목록', 
+  @ApiProperty({
+    description: '삭제할 옵션 값 ID 목록',
     type: [String],
     example: ['01234567-89ab-cdef-0123-456789abcdef']
   })
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   optionValueIds: string[];
 }
 
 export class OptionDiffDto {
-  @ApiProperty({ 
+  @ApiProperty({
     description: '새로 추가할 옵션 그룹',
     type: [AddOptionDto],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
@@ -138,10 +138,10 @@ export class OptionDiffDto {
   @Type(() => AddOptionDto)
   add?: AddOptionDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '기존 옵션 그룹의 표시 정보 수정',
     type: [ModifyOptionDisplayDto],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
@@ -149,10 +149,10 @@ export class OptionDiffDto {
   @Type(() => ModifyOptionDisplayDto)
   modifyDisplay?: ModifyOptionDisplayDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '기존 옵션 그룹에 새 값 추가',
     type: [AddOptionValuesDto],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
@@ -160,10 +160,10 @@ export class OptionDiffDto {
   @Type(() => AddOptionValuesDto)
   addValues?: AddOptionValuesDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '기존 옵션 그룹에서 값 제거',
     type: [RemoveOptionValuesDto],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
@@ -171,14 +171,14 @@ export class OptionDiffDto {
   @Type(() => RemoveOptionValuesDto)
   removeValues?: RemoveOptionValuesDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '제거할 옵션 그룹 ID 목록',
     type: [String],
-    required: false 
+    required: false
   })
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID(undefined, { each: true })
   remove?: string[];
 }
 

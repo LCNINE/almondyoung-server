@@ -28,6 +28,9 @@ import {
   ChannelListResponseDto,
   ChannelValidationResponseDto,
 } from './dto';
+import { PaginatedResponseDto } from '../../common/dto';
+import { ApiOkResponsePaginated } from '../../common/decorators';
+import { SalesChannelMapper } from './mappers';
 
 @ApiTags('Sales Channels')
 @Controller('channels')
@@ -62,9 +65,10 @@ export class SalesChannelsController {
         );
       }
 
-      return (await this.salesChannelsService.createChannel(
+      const entity = await this.salesChannelsService.createChannel(
         createDto,
-      )) as SalesChannelDto;
+      );
+      return SalesChannelMapper.toDto(entity);
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -114,10 +118,8 @@ export class SalesChannelsController {
     type: String,
     description: '페이지 당 아이템 수',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponsePaginated(SalesChannelDto, {
     description: '판매 채널 목록 조회 성공',
-    type: ChannelListResponseDto,
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannels(
@@ -129,7 +131,7 @@ export class SalesChannelsController {
       page?: string;
       limit?: string;
     },
-  ): Promise<ChannelListResponseDto> {
+  ): Promise<PaginatedResponseDto<SalesChannelDto>> {
     try {
       const filters = {
         isActive: query.isActive ? query.isActive === 'true' : undefined,
@@ -139,9 +141,11 @@ export class SalesChannelsController {
         limit: query.limit ? parseInt(query.limit) : undefined,
       };
 
-      return (await this.salesChannelsService.getChannels(
-        filters,
-      )) as ChannelListResponseDto;
+      const result = await this.salesChannelsService.getChannels(filters);
+      return {
+        ...result,
+        data: SalesChannelMapper.toDtoArray(result.data),
+      };
     } catch (error) {
       throw new HttpException(
         'Failed to get channels',
@@ -163,7 +167,8 @@ export class SalesChannelsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getActiveChannels(): Promise<SalesChannelDto[]> {
     try {
-      return (await this.salesChannelsService.getActiveChannels()) as SalesChannelDto[];
+      const channels = await this.salesChannelsService.getActiveChannels();
+      return SalesChannelMapper.toDtoArray(channels);
     } catch (error) {
       throw new HttpException(
         'Failed to get active channels',
@@ -235,10 +240,11 @@ export class SalesChannelsController {
     @Body() updateDto: UpdateSalesChannelDto,
   ): Promise<SalesChannelDto> {
     try {
-      return (await this.salesChannelsService.updateChannel(
+      const entity = await this.salesChannelsService.updateChannel(
         id,
         updateDto,
-      )) as SalesChannelDto;
+      );
+      return SalesChannelMapper.toDto(entity);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);

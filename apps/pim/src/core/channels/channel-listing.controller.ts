@@ -26,6 +26,7 @@ import {
   ChannelListingWithChannelDto,
   LookupChannelListingResponseDto,
 } from './dto';
+import { ChannelListingMapper } from './mappers';
 
 @ApiTags('Channel Listings')
 @Controller('channel-listings')
@@ -131,9 +132,8 @@ export class ChannelListingController {
         );
       }
 
-      return (await this.channelListingService.createListing(
-        dto,
-      )) as ChannelListingDto;
+      const listing = await this.channelListingService.createListing(dto);
+      return ChannelListingMapper.toDto(listing);
     } catch (error) {
       if (error.status === HttpStatus.CONFLICT) {
         throw error;
@@ -163,7 +163,8 @@ export class ChannelListingController {
     @Param('variantId') variantId: string,
   ): Promise<ChannelListingWithChannelDto[]> {
     try {
-      return await this.channelListingService.getListingsByVariant(variantId);
+      const listings = await this.channelListingService.getListingsByVariant(variantId);
+      return listings.map(listing => ChannelListingMapper.toWithChannelDto(listing));
     } catch (error) {
       throw new HttpException(
         'Failed to get channel listings',
@@ -195,7 +196,7 @@ export class ChannelListingController {
         );
       }
 
-      return listing as ChannelListingDto;
+      return ChannelListingMapper.toDto(listing);
     } catch (error) {
       if (error.status === HttpStatus.NOT_FOUND) {
         throw error;
@@ -234,7 +235,7 @@ export class ChannelListingController {
         );
       }
 
-      return updated as ChannelListingDto;
+      return ChannelListingMapper.toDto(updated);
     } catch (error) {
       if (error.status === HttpStatus.NOT_FOUND) {
         throw error;

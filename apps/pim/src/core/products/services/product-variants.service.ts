@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
-  VariantWithPriceDto,
   ProductVariant,
   UpdateProductVariant,
   DbTransaction
 } from '../../../types';
+import { ProductVariantMapper } from '../mappers';
+import { VariantWithPriceDto } from '../dto/variants/variant-response.dto';
 import {
   type PimSchema,
   productMasters,
@@ -163,13 +164,12 @@ export class ProductVariantsService {
         .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
         .where(eq(variantOptionValues.variantId, variant.id));
 
-      variantsWithPriceData.push({
+      variantsWithPriceData.push(ProductVariantMapper.toWithPriceDto({
         ...variant,
         versionId: actualVersionId,
         masterId: row.product_master_variants.masterId,
-        price,
         optionValues
-      });
+      }, price));
     }
 
     return {
@@ -266,13 +266,12 @@ export class ProductVariantsService {
         price = 0;
       }
 
-      return {
+      return ProductVariantMapper.toWithPriceDto({
         ...variant,
         masterId,
         versionId,
-        price,
         optionValues
-      };
+      }, price);
     }, tx)
 
   }

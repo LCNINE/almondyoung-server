@@ -53,11 +53,11 @@ export class ChannelListingDto {
   @ApiProperty({ description: '활성 상태' })
   isActive: boolean;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class ChannelListingWithChannelDto {
@@ -79,8 +79,11 @@ export class ChannelListingWithChannelDto {
   @ApiProperty({ description: '활성 상태' })
   isActive: boolean;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
+
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '채널 정보', type: ChannelSiteInfoDto })
   channel: ChannelSiteInfoDto;
@@ -88,7 +91,7 @@ export class ChannelListingWithChannelDto {
 
 export class ChannelListingListResponseDto {
   @ApiProperty({ description: '채널 매핑 목록', type: [ChannelListingWithChannelDto] })
-  items: ChannelListingWithChannelDto[];
+  data: ChannelListingWithChannelDto[];
 
   @ApiProperty({ description: '전체 개수' })
   total: number;

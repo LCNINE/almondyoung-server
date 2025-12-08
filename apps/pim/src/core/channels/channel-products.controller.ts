@@ -30,6 +30,9 @@ import {
   ChannelProductListResponseDto,
   MergedChannelProductDto,
 } from './dto';
+import { PaginatedResponseDto } from '../../common/dto';
+import { ApiOkResponsePaginated } from '../../common/decorators';
+import { ChannelProductMapper } from './mappers';
 
 @ApiTags('Channel Products')
 @Controller('channel-products')
@@ -72,9 +75,10 @@ export class ChannelProductsController {
         );
       }
 
-      return await this.channelProductsService.createChannelProduct(
+      const entity = await this.channelProductsService.createChannelProduct(
         createDto,
       );
+      return ChannelProductMapper.toDto(entity);
     } catch (error) {
       if (
         error.message.includes('required') ||
@@ -109,9 +113,10 @@ export class ChannelProductsController {
     @Param('masterId') masterId: string,
   ): Promise<ChannelProductWithChannelDto[]> {
     try {
-      return await this.channelProductsService.getChannelProductsByMaster(
+      const channelProducts = await this.channelProductsService.getChannelProductsByMaster(
         masterId,
-      );
+      )
+      return channelProducts.map(item => ChannelProductMapper.toWithChannelDto(item));
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -153,10 +158,8 @@ export class ChannelProductsController {
     type: String,
     description: '페이지 당 아이템 수',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponsePaginated(ChannelProductWithMasterDto, {
     description: '채널별 제품 조회 성공',
-    type: ChannelProductListResponseDto,
   })
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 500, description: '서버 오류' })
@@ -169,7 +172,7 @@ export class ChannelProductsController {
       page?: string;
       limit?: string;
     },
-  ): Promise<ChannelProductListResponseDto> {
+  ): Promise<PaginatedResponseDto<ChannelProductWithMasterDto>> {
     try {
       const filters = {
         isActive: query.isActive ? query.isActive === 'true' : undefined,
@@ -178,10 +181,10 @@ export class ChannelProductsController {
         limit: query.limit ? parseInt(query.limit) : undefined,
       };
 
-      return (await this.channelProductsService.getChannelProductsByChannel(
+      return await this.channelProductsService.getChannelProductsByChannel(
         channelId,
         filters,
-      )) as ChannelProductListResponseDto;
+      );
     } catch (error) {
       if (error.message.includes('required')) {
         throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
@@ -219,7 +222,7 @@ export class ChannelProductsController {
         );
       }
 
-      return channelProduct;
+      return ChannelProductMapper.toDto(channelProduct);
     } catch (error) {
       if (
         error.message === 'Channel product not found' ||
@@ -265,7 +268,7 @@ export class ChannelProductsController {
     try {
       const channelProduct =
         await this.channelProductsService.updateChannelProduct(id, updateDto);
-      return channelProduct
+      return ChannelProductMapper.toDto(channelProduct);
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new HttpException(

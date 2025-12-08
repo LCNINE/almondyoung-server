@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
   NotFoundError,
@@ -21,6 +21,7 @@ import {
   CategoryTagGroupsResponseDto,
   CategoryTagGroupItemDto,
 } from './dto';
+import { CategoryMapper } from './mappers';
 import {
   ProductMaster,
   DbTransaction,
@@ -83,29 +84,47 @@ export class ProductCategoriesService {
         level,
       };
 
-      const [newCategory] = await client
-        .insert(pimSchema.productCategories)
-        .values(newCategoryData)
-        .returning();
+      try {
+        const [newCategory] = await client
+          .insert(pimSchema.productCategories)
+          .values(newCategoryData)
+          .returning();
 
-      // path 계산 및 업데이트
-      const calculatedPath = parentPath
-        ? `${parentPath}/${newCategory.id}`
-        : newCategory.id;
+        // path 계산 및 업데이트
+        const calculatedPath = parentPath
+          ? `${parentPath}/${newCategory.id}`
+          : newCategory.id;
 
-      await client
-        .update(pimSchema.productCategories)
-        .set({ path: calculatedPath })
-        .where(eq(pimSchema.productCategories.id, newCategory.id));
+        await client
+          .update(pimSchema.productCategories)
+          .set({ path: calculatedPath })
+          .where(eq(pimSchema.productCategories.id, newCategory.id));
 
-      newCategory.path = calculatedPath;
+        newCategory.path = calculatedPath;
 
-      if (tagGroupLinks && tagGroupLinks.length > 0) {
-        await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
+        if (tagGroupLinks && tagGroupLinks.length > 0) {
+          await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
+        }
+
+        const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
+        return responseDto;
+      } catch (error: any) {
+        // Drizzle ORM이 에러를 래핑하므로 error.cause 확인 필요
+        const pgError = error.cause || error;
+
+        // PostgreSQL unique constraint violation (error code 23505)
+        if (pgError.code === '23505') {
+          // constraint 이름으로 slug 중복 감지
+          if (pgError.constraint_name === 'product_categories_slug_unique') {
+            throw new ConflictException(
+              `Category with slug "${categoryData.slug}" already exists`
+            );
+          }
+          // 다른 unique constraint 위반인 경우
+          throw new ConflictException('Duplicate entry detected');
+        }
+        throw error;
       }
-
-      const responseDto: CategoryResponseDto = newCategory;
-      return responseDto;
     });
   }
 
@@ -138,8 +157,7 @@ export class ProductCategoriesService {
         }
       }
 
-      const responseDto: CategoryResponseDto = updatedCategory;
-      return responseDto;
+      return CategoryMapper.toDto(updatedCategory);
     });
   }
 
@@ -249,8 +267,8 @@ export class ProductCategoriesService {
     );
 
     const responseDto: CategoryDetailResponseDto = {
-      ...category,
-      children: children,
+      ...CategoryMapper.toDto(category),
+      children: CategoryMapper.toDtoArray(children),
       productCount: directProductCount,
       totalProductCount: totalProductCount,
     };
@@ -266,7 +284,7 @@ export class ProductCategoriesService {
       .from(pimSchema.productCategories)
       .where(isNull(pimSchema.productCategories.parentId));
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -336,7 +354,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.parentId, categoryId))
       .orderBy(pimSchema.productCategories.sortOrder);
 
-    const responseDto: CategoryResponseDto[] = children;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(children);
     return responseDto;
   }
 
@@ -405,7 +423,7 @@ export class ProductCategoriesService {
       ? await executeMove(tx)
       : await this.db.db.transaction(executeMove);
 
-    const responseDto: CategoryResponseDto = result;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(result);
     return responseDto;
   }
 
@@ -544,7 +562,7 @@ export class ProductCategoriesService {
       .where(inArray(pimSchema.productCategories.id, pathIds))
       .orderBy(pimSchema.productCategories.level);
 
-    const responseDto: CategoryResponseDto[] = ancestors;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(ancestors);
     return responseDto;
   }
 
@@ -578,7 +596,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.sortOrder,
       );
 
-    const responseDto: CategoryResponseDto[] = descendants;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(descendants);
     return responseDto;
   }
 
@@ -938,7 +956,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.name,
       );
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -961,7 +979,7 @@ export class ProductCategoriesService {
         pimSchema.productCategories.name,
       );
 
-    const responseDto: CategoryResponseDto[] = categories;
+    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
     return responseDto;
   }
 
@@ -1060,7 +1078,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updatedCategory;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
     return responseDto;
   }
 
@@ -1227,7 +1245,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1264,7 +1282,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1301,7 +1319,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 
@@ -1333,7 +1351,7 @@ export class ProductCategoriesService {
       .where(eq(pimSchema.productCategories.id, categoryId))
       .returning();
 
-    const responseDto: CategoryResponseDto = updated;
+    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
     return responseDto;
   }
 

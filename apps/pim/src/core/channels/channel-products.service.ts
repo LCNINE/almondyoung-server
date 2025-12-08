@@ -28,6 +28,8 @@ import {
   SQL,
 } from 'drizzle-orm';
 import { ChannelProductWithChannelDto } from './dto';
+import { ChannelProductMapper } from './mappers';
+import { ChannelProductEntity, SalesChannelEntity } from '../../schema.types';
 
 @Injectable()
 export class ChannelProductsService {
@@ -126,7 +128,7 @@ export class ChannelProductsService {
   async getChannelProductsByMaster(
     masterId: string,
     tx?: DbTransaction,
-  ): Promise<ChannelProductWithChannelDto[]> {
+  ): Promise<(ChannelProductEntity & { channel: SalesChannelEntity })[]> {
     if (!masterId) {
       throw new Error('Master ID is required');
     }
@@ -137,28 +139,19 @@ export class ChannelProductsService {
     const result = await client
       .select({
         // ChannelProduct 필드들
-        id: channelProducts.id,
-        masterId: channelProducts.masterId,
-        channelId: channelProducts.channelId,
-        name: channelProducts.name,
-        isActive: channelProducts.isActive,
-        channelSpecificData: channelProducts.channelSpecificData,
-        createdAt: channelProducts.createdAt,
-        updatedAt: channelProducts.updatedAt,
+        channelProduct: channelProducts,
         // SalesChannel 필드들 (channel 객체로 그룹화) - DTO에 맞게 간소화
-        channel: {
-          id: salesChannels.id,
-          name: salesChannels.name,
-          type: salesChannels.type,
-          isActive: salesChannels.isActive,
-        },
+        channel: salesChannels,
       })
       .from(channelProducts)
       .innerJoin(salesChannels, eq(channelProducts.channelId, salesChannels.id))
       .where(eq(channelProducts.masterId, masterId))
       .orderBy(asc(salesChannels.name));
 
-    return result as ChannelProductWithChannelDto[];
+    return result.map(({ channelProduct, channel }) => ({
+      ...channelProduct,
+      channel: channel,
+    }));
   }
 
   async getChannelProductsByChannel(

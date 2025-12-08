@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductMasterEntity } from '../entities/master.entity';
 import { ProductMasterVersionEntity } from '../entities/master-version.entity';
+import { ProductImageDto } from './product-image.dto';
 
 export class ProductDto {
   @ApiProperty({ description: 'Version ID' })
@@ -27,8 +28,13 @@ export class ProductDto {
   @ApiProperty({ description: '썸네일', nullable: true })
   thumbnail: string | null;
 
-  @ApiProperty({ description: '이미지', nullable: true })
-  images: any;
+  @ApiProperty({
+    description: '제품 이미지 목록',
+    type: [ProductImageDto],
+    required: false,
+    nullable: true,
+  })
+  images: ProductImageDto[] | null;
 
   @ApiProperty({ description: 'SEO 제목', nullable: true })
   seoTitle: string | null;
@@ -102,4 +108,61 @@ export class ProductListResponseDto {
 export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
   @ApiProperty({ description: '주 버전', type: ProductMasterVersionEntity, nullable: true })
   primaryVersion: ProductMasterVersionEntity | null;
+}
+
+export class ProductSummaryDto {
+  @ApiProperty({ description: '상품 ID' })
+  id: string;
+
+  @ApiProperty({ description: '상품명' })
+  name: string;
+
+  @ApiProperty({ description: '썸네일 이미지 URL', nullable: true })
+  thumbnail: string | null;
+
+  @ApiProperty({ description: '브랜드', nullable: true })
+  brand: string | null;
+
+  @ApiProperty({ description: '멤버십회원 전용 여부' })
+  isMembershipOnly: boolean;
+
+  @ApiProperty({ description: '상품 상태', enum: ['draft', 'inactive', 'active'] })
+  status: string;
+
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
+
+  @ApiProperty({ description: '옵션 그룹 개수', minimum: 0 })
+  optionGroupCount: number;
+
+  @ApiProperty({ description: '변형 개수', minimum: 1 })
+  variantCount: number;
+
+  @ApiProperty({ 
+    description: '최저가 (일반 고객 기준)', 
+    nullable: true,
+    example: 10000 
+  })
+  minPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최고가 (일반 고객 기준)', 
+    nullable: true,
+    example: 50000 
+  })
+  maxPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최저 멤버십가', 
+    nullable: true,
+    example: 9000 
+  })
+  minMembershipPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최고 멤버십가', 
+    nullable: true,
+    example: 45000 
+  })
+  maxMembershipPrice: number | null;
 }
