@@ -1,9 +1,10 @@
-// 아이콘 라이브러리 (예: lucide-react)
+import Link from "next/link"
 import { CustomButton } from "@components/common/custom-buttons"
-import CommonButton from "@components/common/custom-buttons/common-button"
 import { MoreVertical } from "lucide-react"
 
 interface OrderCardContentProps {
+  /** 주문 ID */
+  orderId: string
   /** 주문 상태 (예: "배송 완료") */
   status: string
   /** 배송 관련 추가 정보 (예: "6/18(화) 도착") */
@@ -29,6 +30,7 @@ interface OrderCardContentProps {
  * 상품 정보, 상태, 액션 버튼 등을 포함합니다.
  */
 export default function OrderCardContent({
+  orderId,
   status,
   deliveryInfo,
   shippingNote,
@@ -127,7 +129,6 @@ export default function OrderCardContent({
       <div className="mt-5 flex items-center gap-2.5 md:hidden">
         <CustomButton
           type="button"
-          // (수정) "outline" "secondary" -> "solid" "secondary" (회색 버튼)
           variant="outline"
           color="secondary"
           size="lg"
@@ -136,32 +137,32 @@ export default function OrderCardContent({
         >
           주문 취소 / 반품 신청
         </CustomButton>
-        <CustomButton
-          type="button"
-          // (유지) "outline" "primary" (노란색 외곽선)
-          variant="outline"
-          color="primary"
-          size="lg"
-          className="flex-1"
-          fullWidth={true}
-        >
-          배송 조회
-        </CustomButton>
+        <Link href={`/mypage/order/track?orderId=${orderId}`} className="flex-1">
+          <CustomButton
+            type="button"
+            variant="outline"
+            color="primary"
+            size="lg"
+            fullWidth={true}
+          >
+            배송 조회
+          </CustomButton>
+        </Link>
       </div>
 
       {/* 데스크탑 버튼 (3개 세로) */}
       <aside className="hidden max-w-48 min-w-28 flex-1 flex-col gap-2.5 md:flex">
+        <Link href={`/mypage/order/track?orderId=${orderId}`}>
+          <CustomButton
+            variant="outline"
+            color="primary"
+            size="md"
+            fullWidth={true}
+          >
+            배송 조회
+          </CustomButton>
+        </Link>
         <CustomButton
-          // (유지) "outline" "primary" (노란색 외곽선)
-          variant="outline"
-          color="primary"
-          size="md"
-          fullWidth={true}
-        >
-          배송 조회
-        </CustomButton>
-        <CustomButton
-          // (수정) "secondary" -> "solid" "secondary" (회색 버튼)
           variant="outline"
           color="secondary"
           size="md"
