@@ -16,63 +16,57 @@ const baseTagStyle = `
 `
 // 비활성 스타일:
 const inactiveTagStyle = `
-  outline-Grays-Gray-3 text-Grays-Gray font-normal
+  outline-muted text-muted-foreground font-normal
   hover:bg-gray-100
 `
 // 활성 스타일:
 const activeTagStyle = `
-  bg-black outline-black text-zinc-100 font-normal
-  md:bg-zinc-800 md:outline-zinc-800 md:font-bold
+  bg-black outline-black text-white font-normal
+  md:bg-black md:outline-black md:font-bold
 `
 
 interface CategoryBadgeTabsProps {
   categories: CategoryTreeNode[]
-  selectedCategoryId?: string | null
+  initialCategoryId?: string | "first" // "first"면 첫 번째 카테고리, 특정 ID면 해당 카테고리
   onCategorySelect?: (categoryId: string) => void
 }
 
 export function CategoryBadgeTabs({
   categories,
-  selectedCategoryId,
+  initialCategoryId = "first",
   onCategorySelect,
 }: CategoryBadgeTabsProps) {
   // 카테고리 트리에서 실제 표시할 카테고리 추출
-  // level 0인 카테고리만 필터링
-  // showOnMainCategory가 true인 카테고리만 가져오기
   const displayCategories = React.useMemo(() => {
     if (categories.length === 0) return []
     
-    // level 0인 카테고리만 필터링
     const level0Categories = categories.filter((category) => {
-      // level이 0인 것만
       if (category.level !== 0) return false
-      
-      // isActive가 false인 것은 제외
       if (category.isActive === false) return false
-      
-      // showOnMainCategory가 true인 것만 (display_settings에서 파싱)
       if (!getShowOnMainCategory(category)) return false
-      
       return true
     })
     
-    // sortOrder로 정렬
     return level0Categories.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   }, [categories])
 
-  // 초기 선택 카테고리 설정
-  const [activeCategoryId, setActiveCategoryId] = React.useState<string>(() => {
-    if (selectedCategoryId) return selectedCategoryId
-    if (displayCategories.length > 0) return displayCategories[0].id
-    return ""
-  })
+  // 초기 카테고리 ID 결정
+  const defaultCategoryId = initialCategoryId === "first" 
+    ? displayCategories[0]?.id ?? "" 
+    : initialCategoryId
 
-  // selectedCategoryId가 변경되면 내부 상태도 업데이트
+  // 선택된 카테고리 상태
+  const [activeCategoryId, setActiveCategoryId] = React.useState<string>(defaultCategoryId)
+
+  // displayCategories가 로드되면 초기값 설정
   React.useEffect(() => {
-    if (selectedCategoryId !== undefined && selectedCategoryId !== null) {
-      setActiveCategoryId(selectedCategoryId)
+    if (displayCategories.length > 0 && !activeCategoryId) {
+      const targetId = initialCategoryId === "first" 
+        ? displayCategories[0].id 
+        : initialCategoryId
+      setActiveCategoryId(targetId)
     }
-  }, [selectedCategoryId])
+  }, [displayCategories, initialCategoryId, activeCategoryId])
 
   const handleCategoryClick = (categoryId: string) => {
     setActiveCategoryId(categoryId)

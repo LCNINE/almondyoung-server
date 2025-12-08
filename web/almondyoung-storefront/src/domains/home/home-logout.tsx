@@ -153,7 +153,7 @@ export const HomeLogout: React.FC<{
         />
         <CategoryBadgeTabs
           categories={categories}
-          selectedCategoryId={selectedCategoryId}
+          initialCategoryId={selectedCategoryId}
           onCategorySelect={setSelectedCategoryId}
         />
         <div className="mt-6">
