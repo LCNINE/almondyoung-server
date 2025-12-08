@@ -7,7 +7,6 @@ import {
   RankProductCard,
   DiscountProductCard,
 } from "@components/products/product-card"
-import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { MembershipBanner } from "domains/home/components/banner/membership-banner"
 import { ProductCard } from "@lib/types/ui/product"
 import ProductListSix from "domains/home/components/list/product-list-six"
@@ -255,18 +254,18 @@ export const HomeLogout: React.FC<{
         </ProductListSection>
       )}
 
-      {/* 메인 배너 캐러셀 */}
-      <div className="w-full lg:py-8">
+      {/* 메인 배너 캐러셀 - TODO: 실제 배너 데이터 API 연동 필요 */}
+      {/* <div className="w-full lg:py-8">
         <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
           <BannerCarousel
-            slides={bannerMockData}
+            slides={[]}
             height="120px"
             autoPlay={true}
             autoPlayInterval={6000}
             className="lg:overflow-hidden lg:rounded-2xl"
           />
         </div>
-      </div>
+      </div> */}
 
       {/* 인기 급상승 제품 섹션 */}
       <ProductListSection className="bg-linear-to-b from-purple-50 to-white">

@@ -6,7 +6,6 @@ import { useRecentViews } from "@hooks/api/use-recent-views"
 import { toggleWishlist } from "@lib/api/users/wishlist/client"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { ProductCard } from "@lib/types/ui/product"
-import { getRecommendedProducts } from "app/data/__mocks__/recommended-products.mock"
 import { ProductRecommandSlider } from "components/product-recommand-slider"
 import { ReviewDetailCardList } from "domains/reviews/details"
 import {
@@ -271,19 +270,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     })
   }
 
-  const recommendedProducts = getRecommendedProducts().map((p) => ({
-    id: p.id,
-    name: p.name,
-    thumbnail: p.thumbnail,
-    basePrice: p.basePrice,
-    membershipPrice: p.membershipPrice,
-    isMembershipOnly: p.isMembershipOnly,
-    status: p.status,
-    rating: p.rating,
-    reviewCount: p.reviewCount,
-    stock: p.stock,
-    optionMeta: p.optionMeta,
-  })) as ProductCard[]
+  // TODO: 실제 추천 제품 API 연동 필요
+  const recommendedProducts: ProductCard[] = []
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">

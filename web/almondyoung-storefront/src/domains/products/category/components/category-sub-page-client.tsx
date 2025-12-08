@@ -9,7 +9,7 @@ import CustomDropdown from "@components/dropdown"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
-import type { CategoryDetailResponse } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
 import type { ProductCard } from "@lib/types/ui/product"
 
 export interface CategoryInfo {
@@ -21,7 +21,7 @@ interface CategorySubPageClientProps {
   slug: string
   subSlug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryDetailResponse
+  categoryData: CategoryTreeNode
   initialProducts?: ProductCard[]
   initialTotal?: number
   countryCode: string

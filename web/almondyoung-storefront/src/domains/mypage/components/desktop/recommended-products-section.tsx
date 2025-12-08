@@ -1,7 +1,14 @@
 import { BasicProductCard } from "@components/products/product-card"
-import { recommendedProducts } from "app/data/__mocks__/recommended-products.mock"
+import type { ProductCard } from "@lib/types/ui/product"
+
+// TODO: 실제 추천 제품 API 연동 필요
+const recommendedProducts: ProductCard[] = []
 
 export function RecommendedProductsSection() {
+  if (recommendedProducts.length === 0) {
+    return null
+  }
+
   return (
     <section
       aria-labelledby="recommended-products-heading"

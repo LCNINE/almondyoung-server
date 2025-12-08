@@ -11,8 +11,6 @@ import { CategorySheet } from "@components/category/categorySheet"
 // [제거] Portal
 //providers
 import { useCategories } from "@lib/providers/category-provider"
-//mock data
-import { mockCartItems } from "app/data/__mocks__/user-cart-mock"
 //types
 import type { PimCategory } from "@lib/api/pim"
 import { UserBasicInfo } from "@lib/types/ui/user"
@@ -82,10 +80,8 @@ export function DesktopHeader() {
   // const [headerBottom, setHeaderBottom] = useState(0)
   // useLayoutEffect(() => { ... }, [])
 
-  // 장바구니 수(실서비스 연결 전까지 목업 유지)
-  const cartItemCount = user
-    ? mockCartItems.reduce((sum, item) => sum + item.quantity, 0)
-    : 0
+  // 장바구니 수 (TODO: 실제 API 연동 필요)
+  const cartItemCount = 0
 
   // 카테고리 드롭다운 상태
   const [open, setOpen] = useState(false)

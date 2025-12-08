@@ -121,90 +121,123 @@ export type PimCategory = CategoryTreeNode | CategoryResponse
 /**
  * 제품 마스터 목록 아이템
  * GET /masters 응답 구조
- * 
- * TODO: 가격 정보는 포함되지 않음
- * - 가격이 필요하면 Variant 조회 시 includePrice=true 옵션 사용
- * - 또는 가격 계산 API 별도 호출 필요
  */
 export interface ProductMasterListItem {
   id: string
   name: string
   description?: string | null
   brand?: string | null
-  basePrice: number // TODO: 실제로는 가격 정보가 없을 수 있음
-  status: "draft" | "active" | "inactive" | null
-  isWholesaleOnly?: boolean
-  isMembershipOnly?: boolean
+  // 가격 정보 (optional - Pricing API로 별도 조회 가능)
+  basePrice?: number | null
+  membershipPrice?: number | null
+  // 상태 정보
+  status: "draft" | "active" | "inactive" | string | null
+  isWholesaleOnly?: boolean | null
+  isMembershipOnly?: boolean | null
+  // 썸네일
   thumbnail?: string | null
+  // 옵션/변형 카운트
   optionGroupCount?: number
   variantCount?: number
+  // 태그
+  tags?: string[] | null
+  // 타임스탬프
   createdAt?: string | null
   updatedAt?: string | null
-  // TODO: 가격 정보 (price, membershipPrice 등)는 Variant 조회 또는 가격 계산 API로 별도 조회 필요
+}
+
+/**
+ * 리뷰 요약 정보 (transformer에서 사용)
+ */
+export interface ReviewSummary {
+  rating?: number
+  reviewCount?: number
+  qnaCount?: number
 }
 
 /**
  * 제품 마스터 상세 응답
  * GET /masters/:id 응답 구조
+ * 문서의 MasterDetailDto 기준으로 정의
  */
 export interface ProductMasterDetailResponse {
   id: string
   name: string
   description?: string | null
   brand?: string | null
-  basePrice: number
-  status: "draft" | "active" | "inactive" | null
-  isWholesaleOnly?: boolean
-  isMembershipOnly?: boolean
-  images?: {
-    primary?: {
-      id: string
-      url: string
-      originalName?: string
-      fileName?: string
-      mimeType?: string
-      size?: number
-    } | null
-    additional?: Array<{
-      id: string
-      url: string
-      originalName?: string
-      fileName?: string
-      sortOrder?: number
-    }>
-  }
-  optionGroups?: Array<{
-    id: string
-    name: string
-    displayName?: string
-    sortOrder?: number
-    values?: Array<{
-      id: string
-      value: string
-      displayName?: string
-      sortOrder?: number
-      isActive?: boolean
-    }>
-  }>
-  variants?: ProductVariantResponse[]
+  // 가격 정보 (optional - Pricing API로 별도 조회 가능)
+  basePrice?: number | null
+  membershipPrice?: number | null
+  // 상태 정보
+  status: "draft" | "active" | "inactive" | string | null
+  isWholesaleOnly?: boolean | null
+  isMembershipOnly?: boolean | null
+  // 마케팅/메타 정보
+  tags?: string[] | null
+  attributes?: Record<string, any> | null
+  // SEO 정보
+  seoTitle?: string | null
+  seoDescription?: string | null
+  seoKeywords?: string[] | null
+  // 상세 설명 HTML
+  descriptionHtml?: string | null
+  // 썸네일 (목록/상세 공통)
+  thumbnail?: string | null
+  // 이미지 (유연한 구조)
+  images?: any
+  // 옵션 그룹
+  optionGroups?: PimOptionGroup[]
+  // Variant 목록
+  variants?: PimVariant[]
+  // 채널 제품
   channelProducts?: any[]
-  // TODO: 가격 정보는 Variant 조회 또는 가격 계산 API로 별도 조회 필요
+  // 태그 값 (태그 그룹/값 상세)
+  tagValues?: ProductTagDto[]
+  // 리뷰 요약 (transformer에서 사용)
+  reviewSummary?: ReviewSummary | null
+  // 타임스탬프
+  createdAt?: Date | string | null
+  updatedAt?: Date | string | null
+  createdBy?: string | null
+  updatedBy?: string | null
 }
 
 /**
  * 제품 Variant 응답
  * GET /variants/masters/:masterId?includePrice=true 응답 구조
- * 
- * TODO: includePrice=true 옵션 사용 시 가격 정보 포함 가능
+ * 문서의 VariantWithPriceDto 기준으로 정의
  */
 export interface ProductVariantResponse {
   id: string
   masterId: string
+  // 변형명 (문서 기준)
+  variantName?: string | null
+  // SKU (하위 호환성 유지)
   sku?: string
-  options?: Record<string, string> // 예: { "색상": "빨강", "사이즈": "M" }
-  price?: number // TODO: includePrice=true 옵션 사용 시 포함됨
-  status?: "active" | "inactive" | null
-  // TODO: 가격 계산 API로 더 정확한 가격 정보 조회 가능
+  // 옵션 (하위 호환성)
+  options?: Record<string, string>
+  // 옵션 값 배열 (문서 기준 - transformer에서 사용)
+  optionValues?: Array<{
+    optionGroupId?: string
+    optionValueId?: string
+    value?: string
+    label?: string
+  }>
+  // 이미지
+  images?: any
+  // 표시 순서 (문서 기준)
+  displayOrder?: number | null
+  // 상태
+  status?: "active" | "inactive" | string | null
+  // 기본 변형 여부 (문서 기준)
+  isDefault?: boolean | null
+  // 가격 (includePrice=true 시 포함)
+  price?: number
+  // 가격 조정 (옵션 추가금)
+  priceAdjustment?: number
+  // 타임스탬프 (문서 기준)
+  createdAt?: Date | string | null
+  updatedAt?: Date | string | null
 }
 
 /**

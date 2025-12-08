@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
-import { CartItem, mockCartItems } from "../../../data/__mocks__/user-cart-mock"
+import type { CartItem } from "@lib/types/ui/cart"
 import { getAllCategories } from "@lib/services/pim/category/getCategory"
 import { ProductCard } from "@lib/types/ui/product"
 import { CartHeader } from "./cart-header"
@@ -29,30 +29,8 @@ export function CartMainClient({ user, isLoggedIn }: CartMainClientProps) {
       try {
         if (isLoggedIn && user) {
           console.log("사용자 장바구니 로드:", user.name)
-
-          // Mock 데이터에서 직접 장바구니 제품들 불러오기
-          console.log(
-            "Mock 데이터에서 장바구니 제품 로드:",
-            mockCartItems.length,
-            "개"
-          )
-          console.log(
-            "장바구니 제품들:",
-            mockCartItems.map((item: CartItem) => ({
-              id: item.productId,
-              name: item.product.name,
-              brand: item.product.brand,
-              quantity: item.quantity,
-            }))
-          )
-
-          // Mock 데이터를 그대로 사용 (isSelected는 false로 초기화)
-          const cartItems: CartItem[] = mockCartItems.map((item: CartItem) => ({
-            ...item,
-            isSelected: false, // 초기에는 선택되지 않은 상태
-          }))
-
-          setCartItems(cartItems)
+          // TODO: 실제 장바구니 API 연동 필요
+          setCartItems([])
         } else {
           // 비로그인 상태에서는 빈 장바구니
           console.log("비로그인 상태, 빈 장바구니")

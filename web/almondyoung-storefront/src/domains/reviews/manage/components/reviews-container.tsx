@@ -10,8 +10,12 @@ import { PageTitle } from "@components/common/page-title"
 import { useReviewActions } from "../hooks/use-review-actions"
 import { WritableReviewsSection } from "./writable-reviews-section"
 import { WrittenReviewsSection } from "./written-reviews-section"
-import { writableReviewsData, writtenReviewsData } from "../utils/mock-data"
 import { REVIEW_TAB_VALUES } from "../utils/constants"
+import type { WritableReview, WrittenReview } from "../types"
+
+// TODO: 실제 API 연동 필요
+const writableReviewsData: WritableReview[] = []
+const writtenReviewsData: WrittenReview[] = []
 
 /**
  * 리뷰 관리 컨테이너 컴포넌트

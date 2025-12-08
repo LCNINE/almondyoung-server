@@ -330,3 +330,4 @@ export const toProductCardFromSearch = (
     createdAt: dto.created_at,
   }
 }
+

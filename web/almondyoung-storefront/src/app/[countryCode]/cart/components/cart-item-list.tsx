@@ -2,7 +2,7 @@
 
 import React from "react"
 import { CartCard } from "@components/cart/cart-cards"
-import { CartItem } from "../../../data/__mocks__/user-cart-mock"
+import type { CartItem } from "@lib/types/ui/cart"
 
 interface CartItemListProps {
   items: CartItem[]
