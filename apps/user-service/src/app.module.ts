@@ -22,6 +22,7 @@ import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
 import { JwtAuthGuard } from './commons/guards/jwt-auth.guard';
 import { validateUserServiceEnv } from './config/env.validation';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),
@@ -57,10 +58,10 @@ function createKafkaConfig() {
     sasl:
       process.env.KAFKA_API_KEY && process.env.KAFKA_API_SECRET
         ? {
-            mechanism: 'plain' as const,
-            username: process.env.KAFKA_API_KEY,
-            password: process.env.KAFKA_API_SECRET,
-          }
+          mechanism: 'plain' as const,
+          username: process.env.KAFKA_API_KEY,
+          password: process.env.KAFKA_API_SECRET,
+        }
         : undefined,
   };
 }
@@ -94,6 +95,15 @@ function createKafkaConfig() {
         throwOnValidationError: true,
       },
     }),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          ttl: 60000,
+          limit: 10,
+        },
+      ],
+    }),
+
 
     ScheduleModule.forRoot(),
     AuthModule.register(),
@@ -118,4 +128,4 @@ function createKafkaConfig() {
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
