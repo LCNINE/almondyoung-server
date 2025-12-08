@@ -15,7 +15,7 @@ import {
   ApiParam,
   ApiResponse,
   ApiTags,
-} from '@nestjs/swagger';
+} from '@nestjs/swagger'; 
 import { JwtAuthGuard } from '../../../commons/guards/jwt-auth.guard';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { BusinessLicensesService } from './business-licenses.service';
