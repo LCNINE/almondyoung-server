@@ -101,18 +101,16 @@ export async function getCategoryPath(
 }
 
 /**
- * [Helper] Slug로 카테고리 ID 찾기 및 상세 조회
- * 백엔드에 Slug 조회 API가 없다면, 트리를 조회해서 매핑해야 합니다.
- * 이 로직을 API 함수 내부에 캡슐화하여 컴포넌트를 깔끔하게 유지합니다.
+ * [Helper] Slug로 카테고리 찾기
+ * 트리에서 Slug와 일치하는 카테고리 노드를 반환합니다.
+ * 트리 조회로 얻은 데이터를 그대로 반환하므로 추가 API 호출이 없습니다.
  */
 export async function getCategoryBySlug(
   slug: string
-): Promise<CategoryDetailResponse | null> {
+): Promise<CategoryTreeNode | null> {
   try {
-    // 1. 트리 조회 (전체 구조 파악)
     const tree = await getCategoryTree()
 
-    // 2. 트리에서 Slug와 일치하는 노드 찾기 (DFS)
     const findNodeBySlug = (
       nodes: CategoryTreeNode[],
       targetSlug: string
@@ -127,14 +125,7 @@ export async function getCategoryBySlug(
       return null
     }
 
-    const targetNode = findNodeBySlug(tree.categories, slug)
-
-    if (!targetNode) {
-      return null
-    }
-
-    // 3. 찾은 ID로 상세 정보 조회
-    return await getCategoryById(targetNode.id)
+    return findNodeBySlug(tree.categories, slug)
   } catch (error) {
     return null
   }

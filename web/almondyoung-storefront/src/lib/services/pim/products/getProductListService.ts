@@ -8,7 +8,7 @@ import {
 import {
   toProductCard,
   toProductDetail,
-} from "@lib/utils/transformers/product.transformer"
+} from "@lib/types/product.transformer"
 import type { ProductCard, ProductDetail } from "@lib/types/ui/product"
 import { ProductDetailServiceOpts } from "./getProductDetailService"
 

@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { CartItem } from "@/app/data/__mocks__/user-cart-mock"
+import type { CartItem } from "@lib/types/ui/cart"
 import { ShippingNotice } from "./shipping-notice"
 import { CartControls } from "./cart-controls"
 import { CartItemList } from "./cart-item-list"

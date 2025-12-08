@@ -1,8 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { BannerCarousel } from "@components/layout/components/banner/banner-carousel"
-import { bannerMockData } from "@components/layout/components/banner/banner-mock-data"
 import { BasicProductCard } from "@components/products/product-card"
 import { UserDetail } from "domains/auth/types"
 import MembershipBanner from "domains/home/components/banner/membership-banner"
@@ -134,18 +132,18 @@ export const HomeLoggedIn = ({ user }: { user: UserDetail | null }) => {
         )}
       </ProductListSection>
 
-      {/* 메인 배너 캐러셀 */}
-      <div className="w-full lg:py-8">
+      {/* 메인 배너 캐러셀 - TODO: 실제 배너 데이터 API 연동 필요 */}
+      {/* <div className="w-full lg:py-8">
         <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
           <BannerCarousel
-            slides={bannerMockData}
+            slides={[]}
             height="120px"
             autoPlay={true}
             autoPlayInterval={6000}
             className="lg:overflow-hidden lg:rounded-2xl"
           />
         </div>
-      </div>
+      </div> */}
 
       {/* 전문가를 위한 추천제품 섹션 */}
       <ProductListSection>

@@ -3,7 +3,7 @@
 // 컴포넌트는 ProductDetail만 의존하도록 보장
 
 import { getPimProductDetail } from "@lib/api/pim/pim-api"
-import { toProductDetail } from "@lib/utils/transformers/product.transformer"
+import { toProductDetail } from "@lib/types/product.transformer"
 import type { ProductDetail } from "@lib/types/ui/product"
 
 // descriptionHtml에서 이미지 URL 추출하는 유틸 함수

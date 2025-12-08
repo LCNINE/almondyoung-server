@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
-import { CartItem, mockCartItems } from "../../../data/__mocks__/user-cart-mock"
+import type { CartItem } from "@lib/types/ui/cart"
 import { CartHeader } from "./cart-header"
 import { CartTabsMobile } from "./cart-tabs-mobile"
 import { CartDesktopContent } from "./cart-desktop-content"
@@ -20,12 +20,8 @@ export function CartMainClient() {
     const loadCart = async () => {
       setIsLoading(true)
       try {
-        // TODO: 실제 API 호출로 교체 필요
-        const items = mockCartItems.map((item: CartItem) => ({
-          ...item,
-          isSelected: false,
-        }))
-        setCartItems(items)
+        // TODO: 실제 장바구니 API 연동 필요
+        setCartItems([])
       } catch (error) {
         console.error("장바구니 로드 실패:", error)
         setCartItems([])

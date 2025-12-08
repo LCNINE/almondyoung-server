@@ -15,7 +15,7 @@ import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
-import type { CategoryDetailResponse } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
 import type { ProductCard } from "@lib/types/ui/product"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
@@ -28,7 +28,7 @@ export interface CategoryInfo {
 interface CategoryPageClientProps {
   slug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryDetailResponse // null 가능성 제거 (Container에서 처리함)
+  categoryData: CategoryTreeNode // null 가능성 제거 (Container에서 처리함)
   initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
   initialTotal?: number // 전체 상품 수
   countryCode: string

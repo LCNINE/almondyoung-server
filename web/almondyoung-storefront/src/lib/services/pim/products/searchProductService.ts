@@ -1,7 +1,7 @@
 import { searchProducts } from "@lib/api/pim/pim-api"
 import type { ProductSearchResponseDto, TagFilterDto } from "@lib/api/pim/pim-types"
 import type { ProductCard } from "@lib/types/ui/product"
-import { toProductCardFromSearch } from "@lib/utils/transformers/product.transformer"
+import { toProductCardFromSearch } from "@lib/types/product.transformer"
 
 /**
  * 검색 파라미터 타입

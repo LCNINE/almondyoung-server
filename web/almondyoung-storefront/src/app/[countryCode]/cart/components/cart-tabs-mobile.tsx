@@ -7,7 +7,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@components/common/components/tabs"
-import { CartItem } from "../../../data/__mocks__/user-cart-mock"
+import type { CartItem } from "@lib/types/ui/cart"
 import { ShippingNotice } from "./shipping-notice"
 import { CartControls } from "./cart-controls"
 import { CartItemList } from "./cart-item-list"
