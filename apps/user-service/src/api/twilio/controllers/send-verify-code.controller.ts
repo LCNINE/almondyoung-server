@@ -1,14 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from 'apps/user-service/src/commons/decorator/public.decorator';
 import { SendVerificationCodeDto } from '../dto/twilio.dto';
 import { SendMessageService } from '../services/send-verify-code.service';
 
+
 @ApiTags('Twilio - 인증 메시지')
 @Controller('twilio/send-message')
 export class SendMessageController {
-  constructor(private readonly sendMessageService: SendMessageService) {}
+  constructor(private readonly sendMessageService: SendMessageService) { }
 
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 60000, limit: 1 } }) // 1분에 1번만 발송 가능
   @Post()
   @Public()
   @ApiOperation({
