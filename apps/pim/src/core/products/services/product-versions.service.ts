@@ -152,11 +152,18 @@ export class ProductVersionsService {
         this._fetchImages(versionId, tx),
       ]);
 
+      const variantsWithOptions = await Promise.all(
+        variants.map(async (v) => {
+          const optionValues = await this._fetchVariantOptionValues(v.id, versionId, tx);
+          return { ...v, optionValues };
+        })
+      );
+
       return {
         ...version,
         images,
         optionGroups,
-        variants: variants.map((v) => ({ ...v, optionValues: [] })),
+        variants: variantsWithOptions,
         channelProducts: [],
         tagValues: tags,
       };
@@ -1145,6 +1152,53 @@ export class ProductVersionsService {
       .from(productImages)
       .where(eq(productImages.versionId, versionId))
       .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+  }
+
+  private async _fetchVariantOptionValues(
+    variantId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<any[]> {
+    const optionValues = await tx
+      .select({
+        id: productOptionValues.id,
+        optionGroupId: productOptionValues.optionGroupId,
+        displayName: productOptionValueDisplays.displayName,
+        sortOrder: productOptionValueDisplays.sortOrder,
+        createdAt: productOptionValues.createdAt,
+      })
+      .from(variantOptionValues)
+      .innerJoin(
+        productOptionValues,
+        eq(variantOptionValues.optionValueId, productOptionValues.id),
+      )
+      .innerJoin(
+        productOptionValueDisplays,
+        and(
+          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+          eq(productOptionValueDisplays.versionId, versionId),
+          eq(productOptionValueDisplays.locale, 'ko-KR'),
+        ),
+      )
+      .innerJoin(
+        productOptionGroups,
+        eq(productOptionValues.optionGroupId, productOptionGroups.id),
+      )
+      .innerJoin(
+        productOptionGroupDisplays,
+        and(
+          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+          eq(productOptionGroupDisplays.versionId, versionId),
+          eq(productOptionGroupDisplays.locale, 'ko-KR'),
+        ),
+      )
+      .where(eq(variantOptionValues.variantId, variantId))
+      .orderBy(
+        asc(productOptionGroupDisplays.sortOrder),
+        asc(productOptionValueDisplays.sortOrder),
+      );
+
+    return optionValues;
   }
 }
 
