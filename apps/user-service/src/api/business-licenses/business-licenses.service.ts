@@ -59,14 +59,23 @@ export class BusinessLicensesService {
         });
       }
 
-      await this.dbService.db.insert(businessLicenses).values({
-        userId,
-        businessNumber: data.businessNumber ?? null,
-        representativeName: data.representativeName ?? null,
-        status: 'approved',
-        fileUrl: data.fileUrl ?? null,
-      });
-
+      if (hasFileUrl) {
+        await this.dbService.db.insert(businessLicenses).values({
+          userId,
+          businessNumber: null,
+          representativeName: null,
+          status: 'under_review',
+          fileUrl: data.fileUrl
+        });
+      } else {
+        await this.dbService.db.insert(businessLicenses).values({
+          userId,
+          businessNumber: data.businessNumber,
+          representativeName: data.representativeName,
+          status: 'approved',
+          fileUrl: null,
+        });
+      }
       return;
     } catch (error) {
       console.log('error::', error);
