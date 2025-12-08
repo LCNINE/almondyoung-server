@@ -13,7 +13,6 @@ import {
 } from '../../schema';
 import {
   DbTransaction,
-  PricingRule,
   PriceCalculationResult,
   AppliedRuleInfo,
   ScopeType,
@@ -134,19 +133,23 @@ export class PricingCalculatorService {
 
       if (customerType === 'membership' && quantity && quantity > 0) {
         let bestTieredRule: typeof rules.tieredPriceRules[0] | null = null;
-        
+
         for (const rule of rules.tieredPriceRules) {
           if (
             rule.minQuantity &&
             rule.minQuantity <= quantity &&
             (await this.matchesScope(variantId, rule, trx))
           ) {
-            if (!bestTieredRule || rule.minQuantity > bestTieredRule.minQuantity) {
+            if (
+              !bestTieredRule ||
+              !bestTieredRule.minQuantity ||
+              rule.minQuantity > bestTieredRule.minQuantity
+            ) {
               bestTieredRule = rule;
             }
           }
         }
-        
+
         if (bestTieredRule) {
           const priceBeforeRule = currentPrice;
           currentPrice = this.applyRule(currentPrice, bestTieredRule);
@@ -161,7 +164,7 @@ export class PricingCalculatorService {
             priceAfterRule: currentPrice,
           });
         }
-        
+
         breakdown.afterTieredPrice = currentPrice;
       }
 
@@ -270,7 +273,7 @@ export class PricingCalculatorService {
     }, tx);
   }
 
-  applyRule(currentPrice: number, rule: PricingRule): number {
+  applyRule(currentPrice: number, rule: PricingRuleEntity): number {
     switch (rule.operationType) {
       case 'offset':
         return currentPrice + rule.operationValue;
@@ -288,9 +291,9 @@ export class PricingCalculatorService {
     layer?: 'base_price' | 'membership_price' | 'tiered_price',
     tx?: DbTransaction,
   ): Promise<{
-    basePriceRules: PricingRule[];
-    membershipPriceRules: PricingRule[];
-    tieredPriceRules: PricingRule[];
+    basePriceRules: PricingRuleEntity[];
+    membershipPriceRules: PricingRuleEntity[];
+    tieredPriceRules: PricingRuleEntity[];
   }> {
     return this.inTx(async (trx) => {
       const conditions: SQL[] = [
@@ -334,7 +337,7 @@ export class PricingCalculatorService {
 
   async matchesScope(
     variantId: string,
-    rule: PricingRule,
+    rule: PricingRuleEntity,
     tx?: DbTransaction,
   ): Promise<boolean> {
     return this.inTx(async (trx) => {
