@@ -173,6 +173,7 @@
     "@nestjs/platform-fastify": "^11.1.6",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
+    "@nestjs/throttler": "^6.5.0",
     "@types/passport-kakao": "^1.0.3",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
