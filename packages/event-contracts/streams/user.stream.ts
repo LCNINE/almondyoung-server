@@ -61,6 +61,12 @@ export interface UserResetPasswordPayload {
   verificationToken: string;
 }
 
+export interface BusinessLicenseApprovedPayload {
+  userId: string;
+  email: string;
+  name: string;
+}
+
 // ===== Zod 스키마 정의 =====
 
 const UserCreatedSchema = z.object({
@@ -115,6 +121,12 @@ const UserResetPasswordSchema = z.object({
   verificationToken: z.string().min(1),
 });
 
+const BusinessLicenseApprovedSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const USER_STREAM = stream({
@@ -131,6 +143,7 @@ export const USER_STREAM = stream({
     UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema),
     UserFindId: event<'UserFindId', UserFindIdPayload>('UserFindId', UserFindIdSchema),
     UserResetPassword: event<'UserResetPassword', UserResetPasswordPayload>('UserResetPassword', UserResetPasswordSchema),
+    BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
   },
 });
 
