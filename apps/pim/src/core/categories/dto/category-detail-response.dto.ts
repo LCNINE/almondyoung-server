@@ -30,19 +30,19 @@ export class CategoryDetailResponseDto {
   isActive: boolean;
 
   @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  createdAt: string;
 
   @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  updatedAt: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '부모 카테고리 정보',
     type: CategoryResponseDto,
     required: false
   })
   parent?: CategoryResponseDto;
 
-  @ApiProperty({ 
+  @ApiProperty({
     description: '하위 카테고리 목록',
     type: [CategoryResponseDto]
   })

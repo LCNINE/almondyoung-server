@@ -12,6 +12,7 @@ import {
   salesChannels,
 } from '../../schema';
 import { eq, and } from 'drizzle-orm';
+import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema.types';
 
 export interface LookupVariantResult {
   variantId: string;
@@ -20,20 +21,9 @@ export interface LookupVariantResult {
   isActive: boolean;
 }
 
-export interface ChannelListingWithChannel {
-  id: string;
-  channelItemId: string;
-  channelItemName: string | null;
-  channelOptionName: string | null;
-  channelPrice: number | null;
-  isActive: boolean;
-  createdAt: Date | null;
-  channel: {
-    id: string;
-    name: string;
-    site: string;
-  };
-}
+export type ChannelListingWithChannel = ChannelVariantListingEntity & {
+  channel: SalesChannelEntity;
+};
 
 export interface CreateChannelListingDto {
   variantId: string;
@@ -49,7 +39,7 @@ export interface CreateChannelListingDto {
 export class ChannelListingService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-  ) {}
+  ) { }
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -207,27 +197,17 @@ export class ChannelListingService {
 
     const result = await client
       .select({
-        id: channelVariantListings.id,
-        channelItemId: channelVariantListings.channelItemId,
-        channelItemName: channelVariantListings.channelItemName,
-        channelOptionName: channelVariantListings.channelOptionName,
-        channelPrice: channelVariantListings.channelPrice,
-        isActive: channelVariantListings.isActive,
-        createdAt: channelVariantListings.createdAt,
-        channel: {
-          id: salesChannels.id,
-          name: salesChannels.name,
-          site: salesChannels.site,
-        },
+        listing: channelVariantListings,
+        channel: salesChannels,
       })
       .from(channelVariantListings)
-      .innerJoin(
-        salesChannels,
-        eq(channelVariantListings.salesChannelId, salesChannels.id),
-      )
-      .where(eq(channelVariantListings.variantId, variantId));
+      .innerJoin(salesChannels, eq(channelVariantListings.salesChannelId, salesChannels.id))
+      .where(eq(channelVariantListings.variantId, variantId))
 
-    return result;
+    return [...result].map(({ listing, channel }) => ({
+      ...listing,
+      channel: channel,
+    }));
   }
 
   /**
@@ -242,7 +222,7 @@ export class ChannelListingService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    items: ChannelVariantListing[];
+    data: ChannelVariantListing[];
     total: number;
   }> {
     const client = this.getClient(tx);
@@ -261,7 +241,7 @@ export class ChannelListingService {
       .from(channelVariantListings)
       .where(whereClause);
 
-    const items = await client
+    const data = await client
       .select()
       .from(channelVariantListings)
       .where(whereClause)
@@ -269,7 +249,7 @@ export class ChannelListingService {
       .offset(offset);
 
     return {
-      items,
+      data,
       total: Number(countResult?.count ?? 0),
     };
   }

@@ -241,8 +241,8 @@ export const productMasterCategories = pgTable(
       .notNull()
       .references(() => productCategories.id, { onDelete: 'cascade' }),
     versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
-    isPrimary: boolean('is_primary').default(false), // 주 카테고리 여부
-    createdAt: timestamp('created_at').defaultNow(),
+    isPrimary: boolean('is_primary').default(false).notNull(), // 주 카테고리 여부
+    createdAt: timestamp('created_at').defaultNow().notNull(),
     createdBy: uuid('created_by'),
   },
   (table) => [
@@ -267,7 +267,7 @@ export const productMasterOptionGroups = pgTable(
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
     versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_master_option_groups_master_version').on(
@@ -296,7 +296,7 @@ export const productMasterVariants = pgTable(
       .notNull()
       .references(() => productVariants.id, { onDelete: 'cascade' }),
     versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_master_variants_master_version').on(
@@ -325,7 +325,7 @@ export const productMasterPricingRules = pgTable(
       .notNull()
       .references(() => pricingRules.id, { onDelete: 'cascade' }),
     versionId: uuid('version_id').notNull().references(() => productMasterVersions.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_master_pricing_rules_master_version').on(
@@ -357,8 +357,8 @@ export const productOptionGroupDisplays = pgTable(
     locale: varchar('locale', { length: 10 }).notNull().default('ko-KR'),
     displayName: varchar('display_name', { length: 100 }).notNull(),
     description: text('description'),
-    sortOrder: integer('sort_order').default(0),
-    createdAt: timestamp('created_at').defaultNow(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_option_group_displays_lookup').on(
@@ -394,8 +394,8 @@ export const productOptionValueDisplays = pgTable(
     displayName: varchar('display_name', { length: 100 }).notNull(),
     colorCode: varchar('color_code', { length: 7 }),
     imageUrl: text('image_url'),
-    sortOrder: integer('sort_order').default(0),
-    createdAt: timestamp('created_at').defaultNow(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_option_value_displays_lookup').on(
@@ -420,7 +420,7 @@ export const productOptionGroups = pgTable(
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
 );
 
@@ -434,7 +434,7 @@ export const productOptionValues = pgTable(
     optionGroupId: uuid('option_group_id')
       .notNull()
       .references(() => productOptionGroups.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_option_values_group').on(table.optionGroupId),
@@ -451,15 +451,15 @@ export const productVariants = pgTable(
     variantName: varchar('variant_name', { length: 255 }), // 수동 설정 이름
     images: jsonb('images'), // string[] - 품목별 이미지
 
-    displayOrder: integer('display_order').default(0), // 표시 순서
+    displayOrder: integer('display_order').default(0).notNull(), // 표시 순서
     status: varchar('status', { length: 20 }).notNull().default('active'), // active, inactive
-    isDefault: boolean('is_default').default(false), // 옵션 없는 경우의 기본 품목
+    isDefault: boolean('is_default').default(false).notNull(), // 옵션 없는 경우의 기본 품목
 
     // Phase 1 new fields
     variantCode: varchar('variant_code', { length: 100 }).unique(),
 
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_variants_status').on(table.status),
@@ -523,12 +523,12 @@ export const salesChannels = pgTable(
     categoryId: uuid('category_id').references(() => channelCategories.id, { onDelete: 'set null' }),
     name: varchar('name', { length: 100 }).notNull(),
     description: text('description'),
-    config: jsonb('config'),
+    config: jsonb('config').$type<Record<string, any>>(),
     isActive: boolean('is_active').default(true).notNull(),
     apiEndpoint: varchar('api_endpoint', { length: 500 }),
-    credentials: jsonb('credentials'),
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    credentials: jsonb('credentials').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_sales_channels_type').on(table.type),
@@ -557,10 +557,10 @@ export const channelProducts = pgTable(
     isActive: boolean('is_active').default(true).notNull(), // 판매 여부
 
     // 채널별 특수 설정
-    channelSpecificData: jsonb('channel_specific_data'),
+    channelSpecificData: jsonb('channel_specific_data').$type<Record<string, any>>(),
 
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_channel_products_master').on(table.masterId),
@@ -571,21 +571,24 @@ export const channelProducts = pgTable(
 );
 
 // ===== 10. PRICING RULES (규칙 기반 가격 정책) =====
+export const pricingRuleLayerEnum = pgEnum('pricing_rule_layer', ['base_price', 'membership_price', 'tiered_price']);
+export const pricingRuleScopeTypeEnum = pgEnum('pricing_rule_scope_type', ['all_variants', 'with_option', 'variants']);
+export const pricingRuleOperationTypeEnum = pgEnum('pricing_rule_operation_type', ['offset', 'scale', 'override']);
 export const pricingRules = pgTable(
   'pricing_rules',
   {
     id: uuid('id')
       .primaryKey()
       .$defaultFn(() => uuidv7()),
-    layer: varchar('layer', { length: 20 }).notNull(), // 'base_price', 'membership_price', 'tiered_price'
+    layer: pricingRuleLayerEnum('layer').notNull(), // 'base_price', 'membership_price', 'tiered_price'
     order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
-    scopeType: varchar('scope_type', { length: 20 }).notNull(), // 'all_variants', 'with_option', 'variants'
+    scopeType: pricingRuleScopeTypeEnum('scope_type').notNull(), // 'all_variants', 'with_option', 'variants'
     scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
-    operationType: varchar('operation_type', { length: 20 }).notNull(), // 'offset', 'scale', 'override'
+    operationType: pricingRuleOperationTypeEnum('operation_type').notNull(), // 'offset', 'scale', 'override'
     operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
     minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
 );
 
@@ -603,7 +606,7 @@ export const productImages = pgTable(
     fileId: uuid('file_id').notNull(),
     isPrimary: boolean('is_primary').notNull().default(false), // 대표이미지 여부
     sortOrder: integer('sort_order').notNull().default(0), // 부가이미지 순서 (1-5)
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_product_images_version').on(table.versionId),
@@ -628,7 +631,7 @@ export const productApprovalHistory = pgTable(
     status: varchar('status', { length: 20 }).notNull(), // 'pending', 'approved', 'rejected'
     comment: text('comment'),
     approvedBy: uuid('approved_by').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_approval_history_version').on(table.versionId),
@@ -649,7 +652,7 @@ export const productAuditLog = pgTable(
     changes: jsonb('changes').$type<Record<string, any>>(),
     userId: uuid('user_id').notNull(),
     userEmail: varchar('user_email', { length: 255 }),
-    timestamp: timestamp('timestamp').notNull().defaultNow(),
+    timestamp: timestamp('timestamp').defaultNow().notNull(),
     ipAddress: varchar('ip_address', { length: 45 }),
     userAgent: text('user_agent'),
   },
@@ -672,7 +675,7 @@ export const promotions = pgTable('promotions', {
   endAt: timestamp('end_at').notNull(),
   discountType: varchar('discount_type', { length: 20 }).notNull(), // 'percentage' | 'fixed'
   discountValue: integer('discount_value').notNull(),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const promotionProducts = pgTable('promotion_products', {
@@ -699,8 +702,8 @@ export const tagGroups = pgTable(
     description: text('description'),
     displayOrder: integer('display_order').notNull().default(0),
     isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [
     index('idx_tag_groups_active').on(table.isActive),
@@ -806,8 +809,8 @@ export const channelVariantListings = pgTable(
     isActive: boolean('is_active').default(true).notNull(),
 
     // 메타
-    createdAt: timestamp('created_at').defaultNow(),
-    updatedAt: timestamp('updated_at').defaultNow(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [
     // 핵심 인덱스: 채널 + 채널아이템ID로 variant 조회 (매우 빈번)

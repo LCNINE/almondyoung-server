@@ -28,11 +28,11 @@ export class CategoryResponseDto {
   @ApiProperty({ description: '활성 상태' })
   isActive: boolean;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '하위 카테고리 수', required: false, minimum: 0 })
   childCount?: number;

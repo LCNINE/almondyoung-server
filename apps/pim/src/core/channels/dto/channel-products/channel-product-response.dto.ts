@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SalesChannelDto } from '../sales-channels/sales-channel-response.dto';
 
 export class ChannelProductDto {
   @ApiProperty({ description: '채널 제품 ID' })
@@ -13,31 +14,17 @@ export class ChannelProductDto {
   @ApiProperty({ description: '채널별 제품명', nullable: true })
   name: string | null;
 
-  @ApiProperty({ description: '채널에서의 활성 상태', nullable: true })
-  isActive: boolean | null;
+  @ApiProperty({ description: '채널에서의 활성 상태' })
+  isActive: boolean;
 
   @ApiProperty({ description: '채널별 특화 데이터' })
   channelSpecificData: any;
 
-  @ApiProperty({ description: '생성일시', nullable: true })
-  createdAt: Date | null;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시', nullable: true })
-  updatedAt: Date | null;
-}
-
-export class ChannelInfoDto {
-  @ApiProperty({ description: '채널 ID' })
-  id: string;
-
-  @ApiProperty({ description: '채널명' })
-  name: string;
-
-  @ApiProperty({ description: '채널 타입' })
-  type: string;
-
-  @ApiProperty({ description: '채널 활성 상태' })
-  isActive: boolean;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 }
 
 export class ChannelProductWithChannelDto {
@@ -59,14 +46,14 @@ export class ChannelProductWithChannelDto {
   @ApiProperty({ description: '채널별 특화 데이터' })
   channelSpecificData: Record<string, any>;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
-  @ApiProperty({ description: '판매 채널 정보', type: ChannelInfoDto })
-  channel: ChannelInfoDto;
+  @ApiProperty({ description: '판매 채널 정보', type: SalesChannelDto })
+  channel: SalesChannelDto;
 }
 
 export class ProductMasterInfoDto {
@@ -108,11 +95,11 @@ export class ChannelProductWithMasterDto {
   @ApiProperty({ description: '채널별 특화 데이터' })
   channelSpecificData: Record<string, any>;
 
-  @ApiProperty({ description: '생성일시' })
-  createdAt: Date;
+  @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  createdAt: string;
 
-  @ApiProperty({ description: '수정일시' })
-  updatedAt: Date;
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '제품 마스터 정보', type: ProductMasterInfoDto })
   master: ProductMasterInfoDto;

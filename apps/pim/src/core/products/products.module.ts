@@ -8,9 +8,10 @@ import { ProductMastersService } from './services/product-masters.service';
 import { ProductVariantsService } from './services/product-variants.service';
 import { ProductSearchService } from './services/product-search.service';
 import { ProductVersionsService } from './services/product-versions.service';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
-  imports: [],
+  imports: [PricingModule],
   controllers: [
     ProductMastersController,
     ProductVariantsController,
