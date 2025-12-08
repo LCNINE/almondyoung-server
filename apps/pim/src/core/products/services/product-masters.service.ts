@@ -36,6 +36,7 @@ import {
 } from '../../../schema';
 import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
+import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { v7 as uuidv7 } from 'uuid';
 import { ProductMasterVersionEntity } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
@@ -86,6 +87,8 @@ export class ProductMastersService {
 
     @Inject(forwardRef(() => ProductVersionsService))
     private readonly productVersionsService: ProductVersionsService,
+
+    private readonly pricingCalculatorService: PricingCalculatorService,
   ) { }
 
   private get client() {
@@ -499,7 +502,15 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ): Promise<{
-    data: (ProductMasterVersionEntity & { optionGroupCount?: number; variantCount?: number; thumbnail?: string | null })[];
+    data: (ProductMasterVersionEntity & {
+      optionGroupCount?: number;
+      variantCount?: number;
+      thumbnail?: string | null;
+      minPrice?: number | null;
+      maxPrice?: number | null;
+      minMembershipPrice?: number | null;
+      maxMembershipPrice?: number | null;
+    })[];
     total: number;
     page: number;
     limit: number;
@@ -730,7 +741,7 @@ export class ProductMastersService {
           : orderedFinalDataQuery.limit(limit).offset(offset)
       );
 
-      // ===== 결과 가공: optionGroupCount, variantCount 계산 =====
+      // ===== 결과 가공: optionGroupCount, variantCount, 가격 범위 계산 =====
       const data = await Promise.all(
         rawData.map(async (item) => {
           const version = item.product_master_versions;
@@ -755,10 +766,81 @@ export class ProductMastersService {
               )
             );
 
+          // 가격 범위 계산
+          let minPrice: number | null = null;
+          let maxPrice: number | null = null;
+          let minMembershipPrice: number | null = null;
+          let maxMembershipPrice: number | null = null;
+
+          try {
+            // 이 버전의 모든 variants 조회
+            const variants = await trx
+              .select({ id: productVariants.id })
+              .from(productVariants)
+              .innerJoin(
+                productMasterVariants,
+                and(
+                  eq(productVariants.id, productMasterVariants.variantId),
+                  eq(productMasterVariants.masterId, version.masterId),
+                  eq(productMasterVariants.versionId, version.id)
+                )
+              );
+
+            if (variants.length > 0) {
+              const regularPrices: number[] = [];
+              const membershipPrices: number[] = [];
+
+              // 각 variant의 가격 계산
+              for (const variant of variants) {
+                try {
+                  // 일반 가격 계산
+                  const regularResult = await this.pricingCalculatorService.calculateVariantPriceByVersion(
+                    version.id,
+                    variant.id,
+                    1,
+                    'regular',
+                    trx,
+                  );
+                  regularPrices.push(regularResult.price);
+
+                  // 멤버십 가격 계산
+                  const membershipResult = await this.pricingCalculatorService.calculateVariantPriceByVersion(
+                    version.id,
+                    variant.id,
+                    1,
+                    'membership',
+                    trx,
+                  );
+                  membershipPrices.push(membershipResult.price);
+                } catch (error) {
+                  // 개별 variant 가격 계산 실패는 무시 (pricing rules가 없을 수 있음)
+                }
+              }
+
+              // 최저가/최고가 계산
+              if (regularPrices.length > 0) {
+                minPrice = Math.min(...regularPrices);
+                maxPrice = Math.max(...regularPrices);
+              }
+
+              if (membershipPrices.length > 0) {
+                minMembershipPrice = Math.min(...membershipPrices);
+                maxMembershipPrice = Math.max(...membershipPrices);
+              }
+            }
+          } catch (error) {
+            // 가격 계산 실패는 무시하고 null로 반환
+            this.logger.warn(`Failed to calculate price range for version ${version.id}: ${error.message}`);
+          }
+
           return {
             ...version,
             optionGroupCount: optionGroupCountResult.count,
             variantCount: variantCountResult.count,
+            minPrice,
+            maxPrice,
+            minMembershipPrice,
+            maxMembershipPrice,
           };
         })
       );

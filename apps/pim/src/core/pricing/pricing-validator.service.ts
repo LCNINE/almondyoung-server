@@ -42,6 +42,7 @@ export class PricingValidatorService {
 
   async validateRuleSet(
     masterId: string,
+    versionId: string,
     rulesDto: unknown,
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
@@ -66,7 +67,7 @@ export class PricingValidatorService {
 
       const validatedRules = parseResult.data;
 
-      await this.validateScopeTargets(masterId, validatedRules, trx);
+      await this.validateScopeTargets(masterId, versionId, validatedRules, trx);
 
       return validatedRules;
     }, tx);
@@ -74,6 +75,7 @@ export class PricingValidatorService {
 
   private async validateScopeTargets(
     masterId: string,
+    versionId: string,
     rulesSet: ValidatedPricingRulesSet,
     tx: DbTransaction,
   ): Promise<void> {
@@ -81,12 +83,12 @@ export class PricingValidatorService {
 
     const withOptionTargetIds = this.collectTargetIds(allRules, hasWithOptionScope);
     if (withOptionTargetIds.length > 0) {
-      await this.validateOptionValueIds(masterId, withOptionTargetIds, tx);
+      await this.validateOptionValueIds(masterId, versionId, withOptionTargetIds, tx);
     }
 
     const variantsTargetIds = this.collectTargetIds(allRules, hasVariantsScope);
     if (variantsTargetIds.length > 0) {
-      await this.validateVariantIds(masterId, variantsTargetIds, tx);
+      await this.validateVariantIds(masterId, versionId, variantsTargetIds, tx);
     }
   }
 
@@ -111,10 +113,10 @@ export class PricingValidatorService {
 
   private async validateOptionValueIds(
     masterId: string,
+    versionId: string,
     optionValueIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    // 매핑 테이블을 통해 active 버전의 optionValues 조회
     const optionValues = await tx
       .select({
         id: productOptionValues.id,
@@ -129,17 +131,10 @@ export class PricingValidatorService {
         productMasterOptionGroups,
         eq(productOptionGroups.id, productMasterOptionGroups.optionGroupId),
       )
-      .innerJoin(
-        productMasterVersions,
-        and(
-          eq(productMasterOptionGroups.masterId, productMasterVersions.masterId),
-          eq(productMasterOptionGroups.versionId, productMasterVersions.id),
-          eq(productMasterVersions.status, 'active'),
-        ),
-      )
       .where(
         and(
-          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterOptionGroups.masterId, masterId),
+          eq(productMasterOptionGroups.versionId, versionId),
           inArray(productOptionValues.id, optionValueIds),
         ),
       );
@@ -161,10 +156,10 @@ export class PricingValidatorService {
 
   private async validateVariantIds(
     masterId: string,
+    versionId: string,
     variantIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    // 매핑 테이블을 통해 active 버전의 variants 조회
     const variants = await tx
       .select({
         id: productVariants.id,
@@ -175,17 +170,10 @@ export class PricingValidatorService {
         productMasterVariants,
         eq(productVariants.id, productMasterVariants.variantId),
       )
-      .innerJoin(
-        productMasterVersions,
-        and(
-          eq(productMasterVariants.masterId, productMasterVersions.masterId),
-          eq(productMasterVariants.versionId, productMasterVersions.id),
-          eq(productMasterVersions.status, 'active'),
-        ),
-      )
       .where(
         and(
-          eq(productMasterVersions.masterId, masterId),
+          eq(productMasterVariants.masterId, masterId),
+          eq(productMasterVariants.versionId, versionId),
           inArray(productVariants.id, variantIds),
         ),
       );
@@ -240,7 +228,24 @@ export class PricingValidatorService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
-      // 매핑 테이블을 통해 active 버전의 variants 조회
+      // active 버전 찾기
+      const [activeVersion] = await trx
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.status, 'active'),
+          ),
+        )
+        .limit(1);
+
+      if (!activeVersion) {
+        // active 버전이 없으면 validation skip
+        return;
+      }
+
+      // active 버전의 variants 조회
       const variants = await trx
         .select({ id: productVariants.id })
         .from(productMasterVariants)
@@ -248,15 +253,12 @@ export class PricingValidatorService {
           productVariants,
           eq(productMasterVariants.variantId, productVariants.id),
         )
-        .innerJoin(
-          productMasterVersions,
+        .where(
           and(
-            eq(productMasterVariants.masterId, productMasterVersions.masterId),
-            eq(productMasterVariants.versionId, productMasterVersions.id),
-            eq(productMasterVersions.status, 'active'),
+            eq(productMasterVariants.masterId, masterId),
+            eq(productMasterVariants.versionId, activeVersion.id),
           ),
-        )
-        .where(eq(productMasterVersions.masterId, masterId));
+        );
 
       if (variants.length === 0) {
         return;
@@ -266,8 +268,8 @@ export class PricingValidatorService {
 
       for (const variant of variants) {
         try {
-          const baseResult = await this.calculatorService.calculateVariantPrice(
-            masterId,
+          const baseResult = await this.calculatorService.calculateVariantPriceByVersion(
+            activeVersion.id,
             variant.id,
             undefined,
             'regular',
@@ -281,8 +283,8 @@ export class PricingValidatorService {
           }
 
           const membershipResult =
-            await this.calculatorService.calculateVariantPrice(
-              masterId,
+            await this.calculatorService.calculateVariantPriceByVersion(
+              activeVersion.id,
               variant.id,
               undefined,
               'membership',

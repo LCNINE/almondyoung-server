@@ -36,79 +36,43 @@ export class PricingService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async getMasterRules(
-    masterId: string,
-    versionId?: string,
+  async getVersionRules(
+    versionId: string,
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
-      await this.ensureMasterExists(masterId, trx);
+      // version 존재 여부 확인
+      const [version] = await trx
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId))
+        .limit(1);
 
-      // 매핑 테이블을 통해 pricing rules 조회
-      let allRules: any[];
-
-      // version 지정 여부에 따라 조건 추가
-      if (versionId !== undefined) {
-        allRules = await trx
-          .select({
-            id: pricingRules.id,
-            layer: pricingRules.layer,
-            order: pricingRules.order,
-            scopeType: pricingRules.scopeType,
-            scopeTargetIds: pricingRules.scopeTargetIds,
-            operationType: pricingRules.operationType,
-            operationValue: pricingRules.operationValue,
-            minQuantity: pricingRules.minQuantity,
-            createdAt: pricingRules.createdAt,
-            updatedAt: pricingRules.updatedAt,
-            masterId: productMasterPricingRules.masterId,
-            versionId: productMasterPricingRules.versionId,
-          })
-          .from(pricingRules)
-          .innerJoin(
-            productMasterPricingRules,
-            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-          )
-          .where(
-            and(
-              eq(productMasterPricingRules.masterId, masterId),
-              eq(productMasterPricingRules.versionId, versionId),
-            ),
-          )
-          .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
-      } else {
-        // active 버전의 rules 가져오기
-        allRules = await trx
-          .select({
-            id: pricingRules.id,
-            layer: pricingRules.layer,
-            order: pricingRules.order,
-            scopeType: pricingRules.scopeType,
-            scopeTargetIds: pricingRules.scopeTargetIds,
-            operationType: pricingRules.operationType,
-            operationValue: pricingRules.operationValue,
-            minQuantity: pricingRules.minQuantity,
-            createdAt: pricingRules.createdAt,
-            updatedAt: pricingRules.updatedAt,
-            masterId: productMasterPricingRules.masterId,
-            versionId: productMasterPricingRules.versionId,
-          })
-          .from(pricingRules)
-          .innerJoin(
-            productMasterPricingRules,
-            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-          )
-          .innerJoin(
-            productMasterVersions,
-            and(
-              eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
-              eq(productMasterPricingRules.versionId, productMasterVersions.id),
-              eq(productMasterVersions.status, 'active'),
-            ),
-          )
-          .where(eq(productMasterVersions.masterId, masterId))
-          .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
+      if (!version) {
+        throw new NotFoundException(`Version ${versionId} not found`);
       }
+
+      // versionId만으로 pricing rules 조회
+      const allRules = await trx
+        .select({
+          id: pricingRules.id,
+          layer: pricingRules.layer,
+          order: pricingRules.order,
+          scopeType: pricingRules.scopeType,
+          scopeTargetIds: pricingRules.scopeTargetIds,
+          operationType: pricingRules.operationType,
+          operationValue: pricingRules.operationValue,
+          minQuantity: pricingRules.minQuantity,
+          createdAt: pricingRules.createdAt,
+          updatedAt: pricingRules.updatedAt,
+        })
+        .from(pricingRules)
+        .innerJoin(
+          productMasterPricingRules,
+          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
+        )
+        .where(eq(productMasterPricingRules.versionId, versionId))
+        .orderBy(asc(pricingRules.layer), asc(pricingRules.order));
 
       return {
         basePriceRules: allRules
@@ -124,87 +88,50 @@ export class PricingService {
     }, tx);
   }
 
-  async replaceMasterRules(
-    masterId: string,
+  async replaceVersionRules(
+    versionId: string,
     rulesDto: ReplacePricingRulesDto,
-    versionId?: string,
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
     return this.inTx(async (trx) => {
-      await this.ensureMasterExists(masterId, trx);
+      // draft 상태 검증 및 masterId 가져오기
+      const [version] = await trx
+        .select({
+          status: productMasterVersions.status,
+          masterId: productMasterVersions.masterId,
+        })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId))
+        .limit(1);
 
+      if (!version) {
+        throw new NotFoundException(`Version ${versionId} not found`);
+      }
+
+      if (version.status !== 'draft') {
+        throw new BadRequestException('Only draft versions can be modified');
+      }
+
+      // validation (masterId는 version에서 가져온 것 사용)
       const validatedRules = await this.validatorService.validateRuleSet(
-        masterId,
+        version.masterId,
+        versionId,
         rulesDto,
         trx,
       );
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
-      let actualVersionId: string;
-      if (versionId === undefined) {
-        const [activeVersion] = await trx
-          .select({ id: productMasterVersions.id })
-          .from(productMasterVersions)
-          .where(
-            and(
-              eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.status, 'active'),
-            ),
-          )
-          .limit(1);
-
-        if (!activeVersion) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
-        }
-        actualVersionId = activeVersion.id;
-      }
-      else {
-        actualVersionId = versionId;
-      }
-
-      // draft 상태 검증
-      const [versionToModify] = await trx
-        .select({ status: productMasterVersions.status })
-        .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.id, actualVersionId),
-          ),
-        )
-        .limit(1);
-
-      if (!versionToModify) {
-        throw new NotFoundException(`Version ${actualVersionId} not found for master ${masterId}`);
-      }
-
-      if (versionToModify.status !== 'draft') {
-        console.error('❌ version is not draft:', versionToModify.status);
-        throw new BadRequestException('Cannot modify pricing rules for active or inactive versions');
-      }
-
-      // 매핑된 pricingRule ID 조회
+      // 매핑된 pricingRule ID 조회 (versionId만 사용)
       const mappedRuleIds = await trx
         .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
         .from(productMasterPricingRules)
-        .where(
-          and(
-            eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.versionId, actualVersionId),
-          ),
-        );
+        .where(eq(productMasterPricingRules.versionId, versionId));
 
-      // 기존 매핑 삭제
+      // 기존 매핑 삭제 (versionId만 사용)
       await trx
         .delete(productMasterPricingRules)
-        .where(
-          and(
-            eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.versionId, actualVersionId),
-          ),
-        );
+        .where(eq(productMasterPricingRules.versionId, versionId));
 
-      // 고아 rules 정리 (다른 버전이 사용하지 않는 경우만 삭제)
+      // 고아 rules 정리
       if (mappedRuleIds.length > 0) {
         await this._cleanupOrphanedPricingRules(
           mappedRuleIds.map((r) => r.pricingRuleId),
@@ -262,75 +189,55 @@ export class PricingService {
       if (rulesToInsert.length > 0) {
         const insertedRules = await trx.insert(pricingRules).values(rulesToInsert).returning();
 
-        // 매핑 테이블에 연결
+        // 매핑 테이블에 연결 (masterId는 version에서 가져온 것 사용)
         const mappings = insertedRules.map((rule) => ({
           id: uuidv7(),
-          masterId,
+          masterId: version.masterId,
           pricingRuleId: rule.id,
-          versionId: actualVersionId,
+          versionId: versionId,
         }));
 
         await trx.insert(productMasterPricingRules).values(mappings);
       }
 
-      await this.validatorService.validateCalculatedPrices(masterId, trx);
+      await this.validatorService.validateCalculatedPrices(version.masterId, trx);
 
-      return this.getMasterRules(masterId, actualVersionId, trx);
+      return this.getVersionRules(versionId, trx);
     }, tx);
   }
 
-  async deleteMasterRules(
-    masterId: string,
-    versionId?: string,
+  async deleteVersionRules(
+    versionId: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
-      await this.ensureMasterExists(masterId, trx);
+      // draft 상태 검증
+      const [version] = await trx
+        .select({ status: productMasterVersions.status })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId))
+        .limit(1);
 
-      // version 결정 (지정되지 않으면 active 버전 사용)
-      let actualVersionId: string;
-      if (versionId === undefined) {
-        const [activeVersion] = await trx
-          .select({ id: productMasterVersions.id })
-          .from(productMasterVersions)
-          .where(
-            and(
-              eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.status, 'active'),
-            ),
-          )
-          .limit(1);
+      if (!version) {
+        throw new NotFoundException(`Version ${versionId} not found`);
+      }
 
-        if (!activeVersion) {
-          throw new NotFoundException(`No active version found for master ${masterId}`);
-        }
-        actualVersionId = activeVersion.id;
+      if (version.status !== 'draft') {
+        throw new BadRequestException('Only draft versions can be modified');
       }
-      else {
-        actualVersionId = versionId;
-      }
-      // 매핑된 pricingRule ID 조회
+
+      // 매핑된 pricingRule ID 조회 (versionId만 사용)
       const mappedRuleIds = await trx
         .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
         .from(productMasterPricingRules)
-        .where(
-          and(
-            eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.versionId, actualVersionId),
-          ),
-        );
+        .where(eq(productMasterPricingRules.versionId, versionId));
 
-      // 기존 매핑 삭제
+      // 기존 매핑 삭제 (versionId만 사용)
       await trx
         .delete(productMasterPricingRules)
-        .where(
-          and(
-            eq(productMasterPricingRules.masterId, masterId),
-            eq(productMasterPricingRules.versionId, actualVersionId),
-          ),
-        );
+        .where(eq(productMasterPricingRules.versionId, versionId));
 
-      // 고아 rules 정리 (다른 버전이 사용하지 않는 경우만 삭제)
+      // 고아 rules 정리
       if (mappedRuleIds.length > 0) {
         await this._cleanupOrphanedPricingRules(
           mappedRuleIds.map((r) => r.pricingRuleId),
@@ -341,56 +248,17 @@ export class PricingService {
   }
 
   async getVariantPriceSet(
-    masterId: string,
+    versionId: string,
     variantId: string,
-    versionId?: string,
     tx?: DbTransaction,
   ): Promise<VariantPriceSet> {
     return this.inTx(async (trx) => {
-      let targetVersionId: string;
-
-      if (versionId) {
-        targetVersionId = versionId;
-      } else {
-        const [activeVersion] = await trx
-          .select({ id: productMasterVersions.id })
-          .from(productMasterVersions)
-          .where(
-            and(
-              eq(productMasterVersions.masterId, masterId),
-              eq(productMasterVersions.status, 'active'),
-            ),
-          );
-
-        if (!activeVersion) {
-          throw new NotFoundException(
-            `No active version found for master ${masterId}`,
-          );
-        }
-        targetVersionId = activeVersion.id;
-      }
-
       return this.calculatorService.calculateVariantPriceSet(
-        targetVersionId,
+        versionId,
         variantId,
         trx,
       );
     }, tx);
-  }
-
-  private async ensureMasterExists(
-    masterId: string,
-    tx: DbTransaction,
-  ): Promise<void> {
-    const masters = await tx
-      .select({ id: productMasterVersions.id })
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.masterId, masterId))
-      .limit(1);
-
-    if (masters.length === 0) {
-      throw new NotFoundException(`Product master ${masterId} not found`);
-    }
   }
 
   /**

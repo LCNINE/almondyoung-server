@@ -198,17 +198,20 @@ export class ProductVariantsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getVariantDetail(
     @Param('id') id: string,
-    @Param('versionId') versionId?: string,
-    @Param('masterId') masterId?: string,
+    @Query()
+    query: {
+      versionId?: string;
+      masterId?: string;
+    },
   ): Promise<VariantWithPriceDto> {
-    if (!versionId && !masterId) {
+    if (!query.versionId && !query.masterId) {
       throw new HttpException('Version ID or master ID is required', HttpStatus.BAD_REQUEST);
     }
 
     try {
-      const variant = versionId
-        ? await this.productVariantsService.getVariantDetail({ variantId: id, versionId })
-        : await this.productVariantsService.getVariantDetail({ variantId: id, masterId: masterId! });
+      const variant = query.versionId
+        ? await this.productVariantsService.getVariantDetail({ variantId: id, versionId: query.versionId })
+        : await this.productVariantsService.getVariantDetail({ variantId: id, masterId: query.masterId! });
 
       if (!variant) {
         throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);

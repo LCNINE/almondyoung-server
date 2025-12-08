@@ -41,39 +41,6 @@ export class PricingCalculatorService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async calculateVariantPrice(
-    masterId: string,
-    variantId: string,
-    quantity?: number,
-    customerType: 'regular' | 'membership' = 'regular',
-    tx?: DbTransaction,
-  ): Promise<PriceCalculationResult> {
-    return this.inTx(async (trx) => {
-      const [activeVersion] = await trx
-        .select({ id: productMasterVersions.id })
-        .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.status, 'active'),
-          ),
-        );
-
-      if (!activeVersion) {
-        throw new NotFoundException(
-          `No active version found for master ${masterId}`,
-        );
-      }
-
-      return this.calculateVariantPriceByVersion(
-        activeVersion.id,
-        variantId,
-        quantity,
-        customerType,
-        trx,
-      );
-    }, tx);
-  }
 
   async calculateVariantPriceByVersion(
     versionId: string,
@@ -112,11 +79,10 @@ export class PricingCalculatorService {
         );
       }
 
-      const rules = await this.getRulesForMaster(
-        version.masterId,
+      const rules = await this.getRulesForVersion(
+        versionId,
         undefined,
         trx,
-        versionId,
       );
 
       let currentPrice = 0;
@@ -167,26 +133,35 @@ export class PricingCalculatorService {
       }
 
       if (customerType === 'membership' && quantity && quantity > 0) {
+        let bestTieredRule: typeof rules.tieredPriceRules[0] | null = null;
+        
         for (const rule of rules.tieredPriceRules) {
           if (
             rule.minQuantity &&
             rule.minQuantity <= quantity &&
             (await this.matchesScope(variantId, rule, trx))
           ) {
-            const priceBeforeRule = currentPrice;
-            currentPrice = this.applyRule(currentPrice, rule);
-            appliedRules.push({
-              ruleId: rule.id,
-              layer: 'tiered_price',
-              order: rule.order,
-              scopeType: rule.scopeType as ScopeType,
-              operationType: rule.operationType as OperationType,
-              operationValue: rule.operationValue,
-              priceBeforeRule,
-              priceAfterRule: currentPrice,
-            });
+            if (!bestTieredRule || rule.minQuantity > bestTieredRule.minQuantity) {
+              bestTieredRule = rule;
+            }
           }
         }
+        
+        if (bestTieredRule) {
+          const priceBeforeRule = currentPrice;
+          currentPrice = this.applyRule(currentPrice, bestTieredRule);
+          appliedRules.push({
+            ruleId: bestTieredRule.id,
+            layer: 'tiered_price',
+            order: bestTieredRule.order,
+            scopeType: bestTieredRule.scopeType as ScopeType,
+            operationType: bestTieredRule.operationType as OperationType,
+            operationValue: bestTieredRule.operationValue,
+            priceBeforeRule,
+            priceAfterRule: currentPrice,
+          });
+        }
+        
         breakdown.afterTieredPrice = currentPrice;
       }
 
@@ -253,11 +228,10 @@ export class PricingCalculatorService {
         trx,
       );
 
-      const rules = await this.getRulesForMaster(
-        version.masterId,
+      const rules = await this.getRulesForVersion(
+        versionId,
         'tiered_price',
         trx,
-        versionId,
       );
 
       const tieredPrices: TieredPriceInfo[] = [];
@@ -309,89 +283,44 @@ export class PricingCalculatorService {
     }
   }
 
-  async getRulesForMaster(
-    masterId: string,
+  async getRulesForVersion(
+    versionId: string,
     layer?: 'base_price' | 'membership_price' | 'tiered_price',
     tx?: DbTransaction,
-    versionId?: string,
   ): Promise<{
     basePriceRules: PricingRule[];
     membershipPriceRules: PricingRule[];
     tieredPriceRules: PricingRule[];
   }> {
     return this.inTx(async (trx) => {
-      let allRules: PricingRuleEntity[];
+      const conditions: SQL[] = [
+        eq(productMasterPricingRules.versionId, versionId),
+      ];
 
-      // version이 지정되면 해당 버전만, 아니면 active 버전 사용
-      if (versionId) {
-        const conditions: SQL[] = [
-          eq(productMasterPricingRules.masterId, masterId),
-          eq(productMasterPricingRules.versionId, versionId),
-        ];
-
-        if (layer) {
-          conditions.push(eq(pricingRules.layer, layer));
-        }
-
-        allRules = await trx
-          .select({
-            id: pricingRules.id,
-            layer: pricingRules.layer,
-            order: pricingRules.order,
-            scopeType: pricingRules.scopeType,
-            scopeTargetIds: pricingRules.scopeTargetIds,
-            operationType: pricingRules.operationType,
-            operationValue: pricingRules.operationValue,
-            minQuantity: pricingRules.minQuantity,
-            createdAt: pricingRules.createdAt,
-            updatedAt: pricingRules.updatedAt,
-          })
-          .from(pricingRules)
-          .innerJoin(
-            productMasterPricingRules,
-            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-          )
-          .where(and(...conditions))
-          .orderBy(asc(pricingRules.order));
-      } else {
-        // active 버전의 rules 가져오기
-        const conditions: SQL[] = [
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.status, 'active'),
-        ];
-
-        if (layer) {
-          conditions.push(eq(pricingRules.layer, layer));
-        }
-
-        allRules = await trx
-          .select({
-            id: pricingRules.id,
-            layer: pricingRules.layer,
-            order: pricingRules.order,
-            scopeType: pricingRules.scopeType,
-            scopeTargetIds: pricingRules.scopeTargetIds,
-            operationType: pricingRules.operationType,
-            operationValue: pricingRules.operationValue,
-            minQuantity: pricingRules.minQuantity,
-            createdAt: pricingRules.createdAt,
-            updatedAt: pricingRules.updatedAt,
-          })
-          .from(pricingRules)
-          .innerJoin(
-            productMasterPricingRules,
-            eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
-          )
-          .innerJoin(
-            productMasterVersions,
-            and(
-              eq(productMasterPricingRules.masterId, productMasterVersions.masterId),
-              eq(productMasterPricingRules.versionId, productMasterVersions.id),
-            ),
-          )
-          .where(and(...conditions))
-          .orderBy(asc(pricingRules.order));
+      if (layer) {
+        conditions.push(eq(pricingRules.layer, layer));
       }
+
+      const allRules: PricingRuleEntity[] = await trx
+        .select({
+          id: pricingRules.id,
+          layer: pricingRules.layer,
+          order: pricingRules.order,
+          scopeType: pricingRules.scopeType,
+          scopeTargetIds: pricingRules.scopeTargetIds,
+          operationType: pricingRules.operationType,
+          operationValue: pricingRules.operationValue,
+          minQuantity: pricingRules.minQuantity,
+          createdAt: pricingRules.createdAt,
+          updatedAt: pricingRules.updatedAt,
+        })
+        .from(pricingRules)
+        .innerJoin(
+          productMasterPricingRules,
+          eq(pricingRules.id, productMasterPricingRules.pricingRuleId),
+        )
+        .where(and(...conditions))
+        .orderBy(asc(pricingRules.order));
 
       return {
         basePriceRules: allRules.filter((r) => r.layer === 'base_price'),

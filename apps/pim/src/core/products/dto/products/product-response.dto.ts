@@ -137,4 +137,32 @@ export class ProductSummaryDto {
 
   @ApiProperty({ description: '변형 개수', minimum: 1 })
   variantCount: number;
+
+  @ApiProperty({ 
+    description: '최저가 (일반 고객 기준)', 
+    nullable: true,
+    example: 10000 
+  })
+  minPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최고가 (일반 고객 기준)', 
+    nullable: true,
+    example: 50000 
+  })
+  maxPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최저 멤버십가', 
+    nullable: true,
+    example: 9000 
+  })
+  minMembershipPrice: number | null;
+
+  @ApiProperty({ 
+    description: '최고 멤버십가', 
+    nullable: true,
+    example: 45000 
+  })
+  maxMembershipPrice: number | null;
 }

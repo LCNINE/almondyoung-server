@@ -58,6 +58,10 @@ export class ProductMasterMapper {
     thumbnail?: string | null;
     optionGroupCount?: number;
     variantCount?: number;
+    minPrice?: number | null;
+    maxPrice?: number | null;
+    minMembershipPrice?: number | null;
+    maxMembershipPrice?: number | null;
   }): ProductSummaryDto {
     return {
       id: entity.id,
@@ -69,6 +73,10 @@ export class ProductMasterMapper {
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       optionGroupCount: entity.optionGroupCount ?? 0,
       variantCount: entity.variantCount ?? 0,
+      minPrice: entity.minPrice ?? null,
+      maxPrice: entity.maxPrice ?? null,
+      minMembershipPrice: entity.minMembershipPrice ?? null,
+      maxMembershipPrice: entity.maxMembershipPrice ?? null,
     };
   }
 

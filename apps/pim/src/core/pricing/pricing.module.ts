@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { PricingController } from './pricing.controller';
+import { VersionPricingController } from './version-pricing.controller';
+import { MasterPricingController } from './master-pricing.controller';
 import { PricingService } from './pricing.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { PricingValidatorService } from './pricing-validator.service';
 
 @Module({
-  controllers: [PricingController],
+  controllers: [VersionPricingController, MasterPricingController],
   providers: [
     PricingService,
     PricingCalculatorService,
