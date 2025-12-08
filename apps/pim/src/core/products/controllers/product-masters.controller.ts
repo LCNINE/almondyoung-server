@@ -12,6 +12,7 @@ import {
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
+import { DateMapper } from '../../../common/mappers';
 import {
   ApiTags,
   ApiOperation,
@@ -24,20 +25,18 @@ import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ZodValidationPipe } from '@app/shared';
 import {
-  CreateMasterDto,
-  CreateMasterSchema,
-  CreateMasterDtoSwagger,
-  UpdateProductMasterDto,
-  ProductMasterDto,
-  MasterDetailDto,
-  MasterListItemDto,
-  MasterListResponseDto,
-  MasterUpdateResponseDto,
-} from '../dto';
-import { MasterProductWithPrimaryVersionDto, ProductDto, ProductListItemDto, ProductListResponseDto } from '../dto/products/product-response.dto';
+  MasterProductWithPrimaryVersionDto,
+  ProductDto,
+  ProductListItemDto,
+  ProductListResponseDto,
+  ProductSummaryDto
+} from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
 import { DbService, InjectDb } from '@app/db';
 import { PimSchema } from 'apps/pim/src/schema';
+import { PaginatedResponseDto } from '../../../common/dto';
+import { ApiOkResponsePaginated } from '../../../common/decorators';
+import { ProductMasterMapper } from '../mappers';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -74,7 +73,7 @@ export class ProductMastersController {
   async createMaster(): Promise<ProductDto> {
     try {
       const master = await this.productMastersService.createMaster();
-      return ProductMapper.toDto(master);
+      return ProductMapper.toDto(master, []);
     } catch (error) {
       console.error('Create master error:', error);
       throw new HttpException(
@@ -86,14 +85,16 @@ export class ProductMastersController {
 
   @Get()
   @ApiOperation({
-    summary: '제품 마스터 목록 조회',
+    summary: '상품 목록 조회',
     description: `
-      제품 마스터 목록을 필터링 및 페이지네이션과 함께 조회합니다.
-      
-      **기본 동작:** Active 버전만 반환합니다.
-      **옵션:** includeAllVersions=true 시 모든 버전 상태를 포함합니다.
-      
-      각 항목은 Master ID와 active 버전의 정보를 포함합니다.
+      상품 목록을 필터링 및 페이지네이션과 함께 조회합니다.
+
+      **조회 모드**:
+      - active: 공개된 상품만 (기본값)
+      - active-or-latest: 공개 우선, 없으면 최신 비공개 상품
+      - draft: 임시 저장된 상품만
+
+      각 항목은 상품의 요약 정보를 포함합니다.
     `,
   })
   @ApiQuery({
@@ -133,22 +134,21 @@ export class ProductMastersController {
     description: '검색 키워드',
   })
   @ApiQuery({
-    name: 'status',
+    name: 'mode',
     required: false,
     type: String,
-    enum: ['draft', 'inactive', 'active'],
-    description: '버전 상태 필터 (기본값: active)',
+    enum: ['active', 'active-or-latest', 'draft'],
+    description: '조회 모드: active(active 버전만), active-or-latest(active 우선, 없으면 최신 inactive), draft(draft 버전만). 기본값: active',
   })
   @ApiQuery({
-    name: 'includeAllVersions',
+    name: 'createdBy',
     required: false,
-    type: Boolean,
-    description: '모든 버전 포함 여부 (기본값: false, active만 조회)',
+    type: String,
+    description: '작성자 ID 필터 (모든 모드에서 사용 가능)',
   })
-  @ApiResponse({
-    status: 200,
-    description: '제품 마스터 목록 조회 성공',
-    type: MasterListResponseDto,
+  // 새로운 제네릭 패턴 사용: ApiOkResponsePaginated
+  @ApiOkResponsePaginated(ProductSummaryDto, {
+    description: '상품 목록 조회 성공',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getMasters(
@@ -159,10 +159,10 @@ export class ProductMastersController {
       categoryId?: string;
       brand?: string;
       search?: string;
-      status?: 'draft' | 'inactive' | 'active';
-      includeAllVersions?: boolean;
+      mode?: 'active' | 'active-or-latest' | 'draft';
+      createdBy?: string;
     },
-  ): Promise<MasterListResponseDto> {
+  ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
     try {
       const filters = {
         page: query.page ? parseInt(query.page) : undefined,
@@ -170,10 +170,17 @@ export class ProductMastersController {
         categoryId: query.categoryId,
         brand: query.brand,
         search: query.search,
-        status: query.includeAllVersions ? undefined : (query.status || 'active'),
+        mode: query.mode,
+        createdBy: query.createdBy,
       };
 
-      return await this.productMastersService.getMasters(filters);
+      const result = await this.productMastersService.getMasters(filters);
+      return {
+        data: result.data.map(item => ProductMasterMapper.toProductSummary(item)),
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+      };
     } catch (error) {
       throw new HttpException(
         'Failed to get masters',
@@ -220,52 +227,7 @@ export class ProductMastersController {
   @ApiResponse({
     status: 200,
     description: '제품 마스터 상세 조회 성공',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        name: { type: 'string' },
-        description: { type: 'string' },
-        brand: { type: 'string' },
-        basePrice: { type: 'number' },
-        status: { type: 'string' },
-        isWholesaleOnly: { type: 'boolean' },
-        isMembershipOnly: { type: 'boolean' },
-        images: {
-          type: 'object',
-          properties: {
-            primary: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                url: { type: 'string' },
-                originalName: { type: 'string' },
-                fileName: { type: 'string' },
-                mimeType: { type: 'string' },
-                size: { type: 'number' },
-              },
-              nullable: true,
-            },
-            additional: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  url: { type: 'string' },
-                  originalName: { type: 'string' },
-                  fileName: { type: 'string' },
-                  sortOrder: { type: 'number' },
-                },
-              },
-            },
-          },
-        },
-        optionGroups: { type: 'array' },
-        variants: { type: 'array' },
-        channelProducts: { type: 'array' },
-      },
-    },
+    type: ProductDto,
   })
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
@@ -328,7 +290,7 @@ export class ProductMastersController {
         success: true,
         message: 'Master deleted successfully',
         masterId: deleted.id,
-        deletedAt: deleted.deletedAt?.toISOString(),
+        deletedAt: DateMapper.toNullableString(deleted.deletedAt),
       };
     } catch (error) {
       if (error.message.includes('not found')) {

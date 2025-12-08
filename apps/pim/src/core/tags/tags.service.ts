@@ -11,6 +11,7 @@ import {
   TagValueResponseDto,
   TagValueItemDto,
 } from './dto';
+import { TagMapper } from './mappers';
 import {
   TagGroup,
   TagValue,
@@ -354,27 +355,11 @@ export class TagsService {
   // ===== HELPER METHODS =====
 
   private mapTagGroupToResponse(tagGroup: TagGroup): TagGroupResponseDto {
-    return {
-      id: tagGroup.id,
-      name: tagGroup.name,
-      description: tagGroup.description,
-      displayOrder: tagGroup.displayOrder,
-      isActive: tagGroup.isActive,
-      createdAt: tagGroup.createdAt,
-      updatedAt: tagGroup.updatedAt,
-    };
+    return TagMapper.toGroupDto(tagGroup);
   }
 
   private mapTagValueToResponse(tagValue: TagValue): TagValueResponseDto {
-    return {
-      id: tagValue.id,
-      groupId: tagValue.groupId,
-      name: tagValue.name,
-      displayOrder: tagValue.displayOrder,
-      isActive: tagValue.isActive,
-      createdAt: tagValue.createdAt,
-      updatedAt: tagValue.updatedAt,
-    };
+    return TagMapper.toValueDto(tagValue);
   }
 
   private mapTagValueToItemDto(tagValue: TagValue): TagValueItemDto {

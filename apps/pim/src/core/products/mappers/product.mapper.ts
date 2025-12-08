@@ -1,8 +1,10 @@
+import { DateMapper } from '../../../common/mappers';
 import { ProductMasterVersion } from '../../../types';
+import { ProductImageDto } from '../dto/products/product-image.dto';
 import { ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';
 
 export class ProductMapper {
-  static toDto(version: ProductMasterVersion): ProductDto {
+  static toDto(version: ProductMasterVersion, images: ProductImageDto[]): ProductDto {
     return {
       id: version.id,
       masterId: version.masterId,
@@ -12,7 +14,7 @@ export class ProductMapper {
       description: version.description,
       brand: version.brand,
       thumbnail: version.thumbnail,
-      images: version.images,
+      images: images,
       seoTitle: version.seoTitle,
       seoDescription: version.seoDescription,
       seoKeywords: version.seoKeywords,
@@ -21,14 +23,10 @@ export class ProductMapper {
       productCode: version.productCode,
       isWholesaleOnly: version.isWholesaleOnly ?? false,
       isMembershipOnly: version.isMembershipOnly ?? false,
-      createdAt: version.createdAt?.toISOString() ?? '',
-      updatedAt: version.updatedAt?.toISOString() ?? '',
-      deletedAt: version.deletedAt?.toISOString() ?? null,
+      createdAt: DateMapper.toNotNullString(version.createdAt),
+      updatedAt: DateMapper.toNotNullString(version.updatedAt),
+      deletedAt: DateMapper.toNullableString(version.deletedAt),
     };
-  }
-
-  static toDtoArray(versions: ProductMasterVersion[]): ProductDto[] {
-    return versions.map(v => this.toDto(v));
   }
 
   static toListItem(version: ProductMasterVersion): ProductListItemDto {
@@ -38,14 +36,9 @@ export class ProductMapper {
       name: version.name,
       thumbnail: version.thumbnail,
       status: version.status,
-      createdAt: version.createdAt?.toISOString() ?? '',
+      createdAt: DateMapper.toNotNullString(version.createdAt),
     };
   }
-
-  static toListItemArray(versions: ProductMasterVersion[]): ProductListItemDto[] {
-    return versions.map(v => this.toListItem(v));
-  }
-
 }
 
 
