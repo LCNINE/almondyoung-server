@@ -200,8 +200,6 @@ export class PricingService {
         await trx.insert(productMasterPricingRules).values(mappings);
       }
 
-      await this.validatorService.validateCalculatedPrices(version.masterId, trx);
-
       return this.getVersionRules(versionId, trx);
     }, tx);
   }

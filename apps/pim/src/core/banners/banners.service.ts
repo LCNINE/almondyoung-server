@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { type PimSchema, pimSchema } from '../../schema';
-import { eq, and, isNull, sql, SQL } from 'drizzle-orm';
+import { eq, and, isNull, sql, SQL, or, lte, gt } from 'drizzle-orm';
 import {
   DbTransaction,
   BannerGroup,
@@ -116,8 +116,14 @@ export class BannersService {
             eq(pimSchema.banners.bannerGroupId, group.id),
             isNull(pimSchema.banners.deletedAt),
             eq(pimSchema.banners.isActive, true),
-            sql`(${pimSchema.banners.displayStartAt} IS NULL OR ${pimSchema.banners.displayStartAt} <= ${now})`,
-            sql`(${pimSchema.banners.displayEndAt} IS NULL OR ${pimSchema.banners.displayEndAt} >= ${now})`,
+            or(
+              isNull(pimSchema.banners.displayStartAt),
+              lte(pimSchema.banners.displayStartAt, now),
+            ),
+            or(
+              isNull(pimSchema.banners.displayEndAt),
+              gt(pimSchema.banners.displayEndAt, now),
+            )
           ),
         )
         .orderBy(pimSchema.banners.sortOrder);

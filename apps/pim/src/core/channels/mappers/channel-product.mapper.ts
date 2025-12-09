@@ -41,7 +41,7 @@ export class ChannelProductMapper {
       channelSpecificData: entity.channelSpecificData ?? {},
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      channel: SalesChannelMapper.toDto(entity.channel),
+      channel: SalesChannelMapper.toDto({ ...entity.channel, category: null }),
     };
   }
 
