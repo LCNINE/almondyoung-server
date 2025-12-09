@@ -37,6 +37,7 @@ import {
   AddProductsToCategoryDto,
   UpdateVisibilityDto,
 } from './dto';
+import { CategoryMapper } from './mappers';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -405,6 +406,7 @@ export class ProductCategoriesController {
   // ===== TAG GROUP MANAGEMENT =====
 
   @Put(':categoryId/tag-groups')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: '카테고리 태그 그룹 연결 설정',
     description: '카테고리에 연결된 태그 그룹을 설정합니다. 기존 연결은 모두 삭제되고 새로운 연결로 교체됩니다.',
@@ -462,6 +464,7 @@ export class ProductCategoriesController {
   async getCategoryTagGroups(
     @Param('categoryId') categoryId: string,
   ): Promise<CategoryTagGroupsResponseDto> {
-    return this.productCategoriesService.getCategoryTagGroups(categoryId);
+    const entity = await this.productCategoriesService.getCategoryTagGroups(categoryId);
+    return CategoryMapper.toCategoryTagGroupsDto(entity);
   }
 }

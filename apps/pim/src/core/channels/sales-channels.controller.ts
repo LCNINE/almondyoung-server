@@ -9,6 +9,7 @@ import {
   Query,
   HttpException,
   HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -378,6 +379,7 @@ export class SalesChannelsController {
   // }
 
   @Post('validate')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '판매 채널 설정 검증',
     description: '판매 채널의 설정 정보가 유효한지 검증합니다.',

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TagValueItemDto } from './tag-value-item.dto';
 
 export class TagGroupResponseDto {
   @ApiProperty({ description: '태그 그룹 ID' })
@@ -22,7 +23,7 @@ export class TagGroupResponseDto {
   @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   updatedAt: string;
 
-  @ApiProperty({ description: '태그 값 개수', required: false, minimum: 0 })
-  valuesCount?: number;
+  @ApiProperty({ description: '태그 값 목록', type: [TagValueItemDto] })
+  values: TagValueItemDto[];
 }
 

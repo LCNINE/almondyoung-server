@@ -1,17 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { eq, and, sql, SQL } from 'drizzle-orm';
+import { eq, and, sql, SQL, inArray } from 'drizzle-orm';
 import {
   CreateTagGroupDto,
   UpdateTagGroupDto,
-  TagGroupResponseDto,
-  TagGroupDetailResponseDto,
   CreateTagValueDto,
   UpdateTagValueDto,
-  TagValueResponseDto,
-  TagValueItemDto,
 } from './dto';
-import { TagMapper } from './mappers';
+import { TagGroupWithValues } from './mappers';
 import {
   TagGroup,
   TagValue,
@@ -22,6 +18,7 @@ import {
   DbTransaction,
 } from '../../types';
 import { type PimSchema, pimSchema } from '../../schema';
+import { TagValueEntity } from '../../schema.types';
 
 @Injectable()
 export class TagsService {
@@ -43,7 +40,7 @@ export class TagsService {
   async createTagGroup(
     data: CreateTagGroupDto,
     tx?: DbTransaction,
-  ): Promise<TagGroupResponseDto> {
+  ): Promise<TagGroupWithValues> {
     return this.inTx(async (tx) => {
       const newTagGroupData: NewTagGroup = {
         name: data.name,
@@ -57,14 +54,14 @@ export class TagsService {
         .values(newTagGroupData)
         .returning();
 
-      return this.mapTagGroupToResponse(newTagGroup);
+      return { ...newTagGroup, values: [] }
     }, tx)
   }
 
   async getTagGroup(
     id: string,
     tx?: DbTransaction,
-  ): Promise<TagGroupResponseDto> {
+  ): Promise<TagGroupWithValues> {
     return this.inTx(async (tx) => {
       const [tagGroup] = await tx
         .select()
@@ -75,22 +72,19 @@ export class TagsService {
         throw new NotFoundException(`Tag group with ID ${id} not found`);
       }
 
-      const [countResult] = await tx
-        .select({ count: sql<number>`count(*)::int` })
+      const tagValues = await tx
+        .select()
         .from(pimSchema.tagValues)
         .where(eq(pimSchema.tagValues.groupId, id));
 
-      const response = this.mapTagGroupToResponse(tagGroup);
-      response.valuesCount = countResult?.count ?? 0;
-
-      return response;
+      return { ...tagGroup, values: tagValues };
     }, tx)
   }
 
   async getTagGroupWithValues(
     id: string,
     tx?: DbTransaction,
-  ): Promise<TagGroupDetailResponseDto> {
+  ): Promise<TagGroupWithValues> {
     return this.inTx(async (tx) => {
       const [tagGroup] = await tx
         .select()
@@ -112,12 +106,7 @@ export class TagsService {
         )
         .orderBy(pimSchema.tagValues.displayOrder, pimSchema.tagValues.name);
 
-      const response: TagGroupDetailResponseDto = {
-        ...tagGroup,
-        values: tagValues.map(this.mapTagValueToItemDto),
-      };
-
-      return response;
+      return { ...tagGroup, values: tagValues };
     }, tx)
 
 
@@ -126,7 +115,7 @@ export class TagsService {
   async listTagGroups(
     filters?: { isActive?: boolean },
     tx?: DbTransaction,
-  ): Promise<TagGroupResponseDto[]> {
+  ): Promise<TagGroupWithValues[]> {
     return this.inTx(async (tx) => {
 
       const conditions: SQL[] = [];
@@ -139,20 +128,17 @@ export class TagsService {
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(pimSchema.tagGroups.displayOrder, pimSchema.tagGroups.name);
 
-      const tagGroupsWithCounts = await Promise.all(
-        tagGroups.map(async (group) => {
-          const [countResult] = await tx
-            .select({ count: sql<number>`count(*)::int` })
-            .from(pimSchema.tagValues)
-            .where(eq(pimSchema.tagValues.groupId, group.id));
+      const tagValues = await tx
+        .select()
+        .from(pimSchema.tagValues)
+        .where(inArray(pimSchema.tagValues.groupId, tagGroups.map(group => group.id)));
 
-          const response = this.mapTagGroupToResponse(group);
-          response.valuesCount = countResult?.count ?? 0;
-          return response;
-        }),
-      );
+      const valueMap = new Map<string, TagValue[]>();
+      for (const tagValue of tagValues) {
+        valueMap.set(tagValue.groupId, [...(valueMap.get(tagValue.groupId) || []), tagValue]);
+      }
 
-      return tagGroupsWithCounts;
+      return tagGroups.map(group => ({ ...group, values: valueMap.get(group.id) || [] }));
     }, tx)
 
   }
@@ -161,7 +147,7 @@ export class TagsService {
     id: string,
     data: UpdateTagGroupDto,
     tx?: DbTransaction,
-  ): Promise<TagGroupResponseDto> {
+  ): Promise<void> {
     return this.inTx(async (tx) => {
       await this.getTagGroup(id, tx);
 
@@ -172,7 +158,7 @@ export class TagsService {
         isActive: data.isActive,
       };
 
-      const [updatedTagGroup] = await tx
+      const updatedTagGroups = await tx
         .update(pimSchema.tagGroups)
         .set({
           ...updateData,
@@ -181,7 +167,10 @@ export class TagsService {
         .where(eq(pimSchema.tagGroups.id, id))
         .returning();
 
-      return this.mapTagGroupToResponse(updatedTagGroup);
+      if (updatedTagGroups.length === 0) {
+        throw new NotFoundException(`Updated tag group with ID ${id} not found`);
+      }
+
     }, tx)
   }
 
@@ -189,16 +178,13 @@ export class TagsService {
     return this.inTx(async (tx) => {
       await this.getTagGroup(id, tx);
 
-      const [valuesCount] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(pimSchema.tagValues)
+      await tx
+        .update(pimSchema.tagValues)
+        .set({
+          isActive: false,
+          updatedAt: new Date(),
+        })
         .where(eq(pimSchema.tagValues.groupId, id));
-
-      if (valuesCount && valuesCount.count > 0) {
-        throw new BadRequestException(
-          `Cannot delete tag group with ${valuesCount.count} tag values. Delete values first.`,
-        );
-      }
 
       await tx
         .update(pimSchema.tagGroups)
@@ -215,21 +201,11 @@ export class TagsService {
   async createTagValue(
     data: CreateTagValueDto,
     tx?: DbTransaction,
-  ): Promise<TagValueResponseDto> {
+  ): Promise<TagValueEntity> {
     return this.inTx(async (tx) => {
-      await this.getTagGroup(data.groupId, tx);
+      const tagGroup = await this.getTagGroup(data.groupId, tx);
 
-      const [existing] = await tx
-        .select()
-        .from(pimSchema.tagValues)
-        .where(
-          and(
-            eq(pimSchema.tagValues.groupId, data.groupId),
-            eq(pimSchema.tagValues.name, data.name),
-          ),
-        );
-
-      if (existing) {
+      if (tagGroup.values.some(value => value.name === data.name)) {
         throw new BadRequestException(
           `Tag value with name "${data.name}" already exists in this group`,
         );
@@ -238,16 +214,20 @@ export class TagsService {
       const newTagValueData: NewTagValue = {
         groupId: data.groupId,
         name: data.name,
-        displayOrder: data.displayOrder ?? 0,
+        displayOrder: data.displayOrder ?? tagGroup.values.reduce((max, cur) => Math.max(max, cur.displayOrder), 0) + 1,
         isActive: data.isActive ?? true,
       };
 
-      const [newTagValue] = await tx
+      const newTagValues = await tx
         .insert(pimSchema.tagValues)
         .values(newTagValueData)
         .returning();
 
-      return this.mapTagValueToResponse(newTagValue);
+      if (newTagValues.length === 0) {
+        throw new Error('Failed to get created tag value');
+      }
+
+      return newTagValues[0];
     }, tx)
 
   }
@@ -255,52 +235,18 @@ export class TagsService {
   async getTagValue(
     id: string,
     tx?: DbTransaction,
-  ): Promise<TagValueResponseDto> {
+  ): Promise<TagValueEntity> {
     return this.inTx(async (tx) => {
       const [tagValue] = await tx
-        .select({
-          value: pimSchema.tagValues,
-          group: pimSchema.tagGroups,
-        })
+        .select()
         .from(pimSchema.tagValues)
-        .leftJoin(
-          pimSchema.tagGroups,
-          eq(pimSchema.tagValues.groupId, pimSchema.tagGroups.id),
-        )
         .where(eq(pimSchema.tagValues.id, id));
 
       if (!tagValue) {
         throw new NotFoundException(`Tag value with ID ${id} not found`);
       }
 
-      const response = this.mapTagValueToResponse(tagValue.value);
-      if (tagValue.group) {
-        response.groupName = tagValue.group.name;
-      }
-
-      return response;
-    }, tx)
-  }
-
-  async listTagValuesByGroup(
-    groupId: string,
-    tx?: DbTransaction,
-  ): Promise<TagValueResponseDto[]> {
-    return this.inTx(async (tx) => {
-      await this.getTagGroup(groupId, tx);
-
-      const tagValues = await tx
-        .select()
-        .from(pimSchema.tagValues)
-        .where(
-          and(
-            eq(pimSchema.tagValues.groupId, groupId),
-            eq(pimSchema.tagValues.isActive, true)
-          )
-        )
-        .orderBy(pimSchema.tagValues.displayOrder, pimSchema.tagValues.name);
-
-      return tagValues.map(this.mapTagValueToResponse);
+      return tagValue;
     }, tx)
   }
 
@@ -308,7 +254,7 @@ export class TagsService {
     id: string,
     data: UpdateTagValueDto,
     tx?: DbTransaction,
-  ): Promise<TagValueResponseDto> {
+  ): Promise<void> {
     return this.inTx(async (tx) => {
       const existingValue = await this.getTagValue(id, tx);
 
@@ -337,7 +283,7 @@ export class TagsService {
         isActive: data.isActive,
       };
 
-      const [updatedTagValue] = await tx
+      const updatedTagValues = await tx
         .update(pimSchema.tagValues)
         .set({
           ...updateData,
@@ -346,9 +292,10 @@ export class TagsService {
         .where(eq(pimSchema.tagValues.id, id))
         .returning();
 
-      return this.mapTagValueToResponse(updatedTagValue);
+      if (updatedTagValues.length === 0) {
+        throw new NotFoundException(`Updated tag value with ID ${id} not found`);
+      }
     }, tx)
-
   }
 
   async deleteTagValue(id: string, tx?: DbTransaction): Promise<void> {
@@ -365,25 +312,5 @@ export class TagsService {
     }, tx)
   }
 
-  // ===== HELPER METHODS =====
-
-  private mapTagGroupToResponse(tagGroup: TagGroup): TagGroupResponseDto {
-    return TagMapper.toGroupDto(tagGroup);
-  }
-
-  private mapTagValueToResponse(tagValue: TagValue): TagValueResponseDto {
-    return TagMapper.toValueDto(tagValue);
-  }
-
-  private mapTagValueToItemDto(tagValue: TagValue): TagValueItemDto {
-    return {
-      id: tagValue.id,
-      name: tagValue.name,
-      displayOrder: tagValue.displayOrder,
-      isActive: tagValue.isActive,
-      createdAt: tagValue.createdAt,
-      updatedAt: tagValue.updatedAt,
-    };
-  }
 }
 
