@@ -7,11 +7,16 @@ import { ChannelCategoryMapper } from './channel-category.mapper';
  * Mapper for SalesChannel DTOs
  * Handles Date to ISO 8601 string conversion
  */
+
+export type SalesChannelWithCategory = SalesChannelEntity & {
+  category: ChannelCategoryEntity | null;
+}
+
 export class SalesChannelMapper {
   /**
    * Map entity to SalesChannelDto
    */
-  static toDto(entity: SalesChannelEntity & { category?: ChannelCategoryEntity }): SalesChannelDto {
+  static toDto(entity: SalesChannelWithCategory): SalesChannelDto {
     return {
       id: entity.id,
       type: entity.type,
@@ -32,7 +37,7 @@ export class SalesChannelMapper {
   /**
    * Map array of entities to SalesChannelDto array
    */
-  static toDtoArray(entities: Array<SalesChannelEntity & { category?: ChannelCategoryEntity }>): SalesChannelDto[] {
+  static toDtoArray(entities: Array<SalesChannelWithCategory>): SalesChannelDto[] {
     return entities.map(e => this.toDto(e));
   }
 }

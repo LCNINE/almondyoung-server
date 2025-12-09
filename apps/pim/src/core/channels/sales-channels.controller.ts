@@ -159,16 +159,17 @@ export class SalesChannelsController {
     summary: '활성 판매 채널 조회',
     description: '활성 상태인 판매 채널만 조회합니다.',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponsePaginated(SalesChannelDto, {
     description: '활성 판매 채널 조회 성공',
-    type: [SalesChannelDto],
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getActiveChannels(): Promise<SalesChannelDto[]> {
+  async getActiveChannels(): Promise<PaginatedResponseDto<SalesChannelDto>> {
     try {
-      const channels = await this.salesChannelsService.getActiveChannels();
-      return SalesChannelMapper.toDtoArray(channels);
+      const { data, ...pageInfo } = await this.salesChannelsService.getActiveChannels();
+      return {
+        ...pageInfo,
+        data: SalesChannelMapper.toDtoArray(data),
+      };
     } catch (error) {
       throw new HttpException(
         'Failed to get active channels',
@@ -193,13 +194,13 @@ export class SalesChannelsController {
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getChannelById(@Param('id') id: string): Promise<SalesChannelDto> {
     try {
-      const channel = await this.salesChannelsService.getChannelById(id);
+      const channel = await this.salesChannelsService.tryGetChannelById(id);
 
       if (!channel) {
         throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
       }
 
-      return channel as SalesChannelDto;
+      return SalesChannelMapper.toDto(channel);
     } catch (error) {
       if (
         error.message === 'Channel not found' ||
@@ -331,50 +332,50 @@ export class SalesChannelsController {
     }
   }
 
-  @Get('type/:type')
-  @ApiOperation({
-    summary: '타입별 판매 채널 조회',
-    description: '특정 타입의 판매 채널을 조회합니다.',
-  })
-  @ApiParam({ name: 'type', description: '판매 채널 타입' })
-  @ApiResponse({
-    status: 200,
-    description: '타입별 판매 채널 조회 성공',
-    type: SalesChannelDto,
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({
-    status: 404,
-    description: '해당 타입의 판매 채널을 찾을 수 없음',
-  })
-  @ApiResponse({ status: 500, description: '서버 오류' })
-  async getChannelByType(
-    @Param('type') type: string,
-  ): Promise<SalesChannelDto> {
-    try {
-      const channel = await this.salesChannelsService.getChannelByType(type);
+  // @Get('type/:type')
+  // @ApiOperation({
+  //   summary: '타입별 판매 채널 조회',
+  //   description: '특정 타입의 판매 채널을 조회합니다.',
+  // })
+  // @ApiParam({ name: 'type', description: '판매 채널 타입' })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: '타입별 판매 채널 조회 성공',
+  //   type: SalesChannelDto,
+  // })
+  // @ApiResponse({ status: 400, description: '잘못된 요청' })
+  // @ApiResponse({
+  //   status: 404,
+  //   description: '해당 타입의 판매 채널을 찾을 수 없음',
+  // })
+  // @ApiResponse({ status: 500, description: '서버 오류' })
+  // async getChannelByType(
+  //   @Param('type') type: string,
+  // ): Promise<SalesChannelDto> {
+  //   try {
+  //     const channel = await this.salesChannelsService.getChannelByType(type);
 
-      if (!channel) {
-        throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
-      }
+  //     if (!channel) {
+  //       throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
+  //     }
 
-      return channel as SalesChannelDto;
-    } catch (error) {
-      if (
-        error.message === 'Channel not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get channel by type',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  //     return channel as SalesChannelDto;
+  //   } catch (error) {
+  //     if (
+  //       error.message === 'Channel not found' ||
+  //       error.status === HttpStatus.NOT_FOUND
+  //     ) {
+  //       throw new HttpException('Channel not found', HttpStatus.NOT_FOUND);
+  //     }
+  //     if (error.message.includes('required')) {
+  //       throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+  //     }
+  //     throw new HttpException(
+  //       'Failed to get channel by type',
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 
   @Post('validate')
   @ApiOperation({

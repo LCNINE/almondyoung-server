@@ -44,7 +44,7 @@ export class ChannelListingMapper {
       isActive: entity.isActive,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
-      channel: SalesChannelMapper.toDto(entity.channel),
+      channel: SalesChannelMapper.toDto({ ...entity.channel, category: null }),
     };
   }
 }

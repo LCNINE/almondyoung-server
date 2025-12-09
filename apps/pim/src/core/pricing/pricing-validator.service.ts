@@ -224,28 +224,10 @@ export class PricingValidatorService {
   }
 
   async validateCalculatedPrices(
-    masterId: string,
+    versionId: string,
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
-      // active 버전 찾기
-      const [activeVersion] = await trx
-        .select({ id: productMasterVersions.id })
-        .from(productMasterVersions)
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.status, 'active'),
-          ),
-        )
-        .limit(1);
-
-      if (!activeVersion) {
-        // active 버전이 없으면 validation skip
-        return;
-      }
-
-      // active 버전의 variants 조회
       const variants = await trx
         .select({ id: productVariants.id })
         .from(productMasterVariants)
@@ -255,8 +237,7 @@ export class PricingValidatorService {
         )
         .where(
           and(
-            eq(productMasterVariants.masterId, masterId),
-            eq(productMasterVariants.versionId, activeVersion.id),
+            eq(productMasterVariants.versionId, versionId),
           ),
         );
 
@@ -269,22 +250,22 @@ export class PricingValidatorService {
       for (const variant of variants) {
         try {
           const baseResult = await this.calculatorService.calculateVariantPriceByVersion(
-            activeVersion.id,
+            versionId,
             variant.id,
             undefined,
             'regular',
             trx,
           );
 
-          if (baseResult.price <= 0) {
+          if (baseResult.price < 0) {
             errors.push(
-              `Variant ${variant.id}: base price is ${baseResult.price} (must be > 0)`,
+              `Variant ${variant.id}: base price is ${baseResult.price} (must be >= 0)`,
             );
           }
 
           const membershipResult =
             await this.calculatorService.calculateVariantPriceByVersion(
-              activeVersion.id,
+              versionId,
               variant.id,
               undefined,
               'membership',
@@ -305,8 +286,7 @@ export class PricingValidatorService {
 
       if (errors.length > 0) {
         throw new BadRequestException({
-          message: 'Invalid calculated prices',
-          errors,
+          message: 'Invalid calculated prices: \n' + errors.join('\n'),
         });
       }
     }, tx);
