@@ -21,7 +21,7 @@ import {
   CategoryTagGroupsResponseDto,
   CategoryTagGroupItemDto,
 } from './dto';
-import { CategoryMapper } from './mappers';
+import { CategoryMapper, CategoryTagGroupsEntity, CategoryTagGroupItem } from './mappers';
 import {
   ProductMaster,
   DbTransaction,
@@ -36,7 +36,7 @@ import {
   CategorySeoConfig,
   CategoryTemplateConfig,
 } from '../../schema';
-import { eq, isNull, like, inArray, and, or, sql } from 'drizzle-orm';
+import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
 
 @Injectable()
@@ -1507,11 +1507,16 @@ export class ProductCategoriesService {
 
   /**
    * 카테고리의 태그 그룹 및 태그 값 조회 (상속 포함)
+   * 
+   * 복잡한 JOIN을 피하고 여러 단순한 쿼리로 분리하여:
+   * 1. 가독성 향상
+   * 2. 카테시안 곱으로 인한 중복 데이터 방지
+   * 3. 타입 안전성 개선
    */
   async getCategoryTagGroups(
     categoryId: string,
     tx?: DbTransaction,
-  ): Promise<CategoryTagGroupsResponseDto> {
+  ): Promise<CategoryTagGroupsEntity> {
     const client = this.getClient(tx);
 
     const [category] = await client
@@ -1528,16 +1533,19 @@ export class ProductCategoriesService {
     const ancestors = await this._getAncestorCategoryIds(categoryId, client);
     const allCategoryIds = ancestors.map((a) => a.id);
 
-    // 자신 + 조상들의 태그 그룹 연결 조회 (조상은 appliesToDescendants=true만)
-    const result = await client
+    // 태그 그룹 연결 정보만 조회 (tag_values 없이)
+    // LEFT JOIN을 사용하지 않아 카테시안 곱 발생 없음
+    const tagGroupLinks = await client
       .select({
-        tagGroup: pimSchema.tagGroups,
-        link: pimSchema.categoryTagGroups,
-        category: {
-          id: pimSchema.productCategories.id,
-          name: pimSchema.productCategories.name,
-        },
-        tagValue: pimSchema.tagValues,
+        tagGroupId: pimSchema.categoryTagGroups.tagGroupId,
+        categoryId: pimSchema.categoryTagGroups.categoryId,
+        categoryName: pimSchema.productCategories.name,
+        displayOrder: pimSchema.categoryTagGroups.displayOrder,
+        isRequired: pimSchema.categoryTagGroups.isRequired,
+        appliesToDescendants: pimSchema.categoryTagGroups.appliesToDescendants,
+        tagGroupName: pimSchema.tagGroups.name,
+        tagGroupDescription: pimSchema.tagGroups.description,
+        tagGroupIsActive: pimSchema.tagGroups.isActive,
       })
       .from(pimSchema.categoryTagGroups)
       .innerJoin(
@@ -1547,10 +1555,6 @@ export class ProductCategoriesService {
       .innerJoin(
         pimSchema.tagGroups,
         eq(pimSchema.categoryTagGroups.tagGroupId, pimSchema.tagGroups.id),
-      )
-      .leftJoin(
-        pimSchema.tagValues,
-        eq(pimSchema.tagValues.groupId, pimSchema.tagGroups.id),
       )
       .where(
         and(
@@ -1562,49 +1566,53 @@ export class ProductCategoriesService {
         ),
       );
 
-    const groupedData: Record<string, CategoryTagGroupItemDto> = {};
+    // 태그 그룹별로 정리 (groupID => mapping)
+    const groupedData: Record<string, CategoryTagGroupItem> = {};
 
-    for (const row of result) {
-      const groupId = row.tagGroup.id;
-      const isInherited = row.category.id !== categoryId;
+    for (const link of tagGroupLinks) {
+      const isInherited = link.categoryId !== categoryId;
 
-      // 동일 태그 그룹 중복 검증 (정합성 체크)
-      if (groupedData[groupId]) {
-        throw new ConflictError(
-          `Data integrity error: Tag group ${groupId} is linked multiple times for category ${categoryId}`,
-        );
-      }
-
-      groupedData[groupId] = {
-        id: row.tagGroup.id,
-        name: row.tagGroup.name,
-        description: row.tagGroup.description,
-        displayOrder: row.link.displayOrder,
-        isRequired: row.link.isRequired,
-        appliesToDescendants: row.link.appliesToDescendants,
+      groupedData[link.tagGroupId] = {
+        id: link.tagGroupId,
+        name: link.tagGroupName,
+        description: link.tagGroupDescription,
+        displayOrder: link.displayOrder,
+        isRequired: link.isRequired,
+        appliesToDescendants: link.appliesToDescendants,
         isInherited,
-        inheritedFromCategoryId: isInherited ? row.category.id : null,
-        inheritedFromCategoryName: isInherited ? row.category.name : null,
-        isActive: row.tagGroup.isActive,
+        inheritedFromCategoryId: isInherited ? link.categoryId : null,
+        inheritedFromCategoryName: isInherited ? link.categoryName : null,
+        isActive: link.tagGroupIsActive,
         values: [],
       };
     }
 
-    // 태그 값 추가
-    for (const row of result) {
-      const groupId = row.tagGroup.id;
-      if (row.tagValue && row.tagValue.isActive && groupedData[groupId]) {
-        const existingValue = groupedData[groupId].values.find(
-          (v) => v.id === row.tagValue!.id,
-        );
-        if (!existingValue) {
-          groupedData[groupId].values.push({
-            id: row.tagValue.id,
-            name: row.tagValue.name,
-            displayOrder: row.tagValue.displayOrder,
-            isActive: row.tagValue.isActive,
-            createdAt: row.tagValue.createdAt,
-            updatedAt: row.tagValue.updatedAt,
+    // 각 태그 그룹의 값들을 별도 쿼리로 조회
+    if (Object.keys(groupedData).length > 0) {
+      const tagGroupIds = Object.keys(groupedData);
+
+      const tagValues = await client
+        .select()
+        .from(pimSchema.tagValues)
+        .where(
+          and(
+            inArray(pimSchema.tagValues.groupId, tagGroupIds),
+            eq(pimSchema.tagValues.isActive, true),
+          ),
+        )
+        .orderBy(asc(pimSchema.tagValues.displayOrder));
+
+      // 값들을 각 그룹에 추가
+      for (const value of tagValues) {
+        if (groupedData[value.groupId]) {
+          groupedData[value.groupId].values.push({
+            id: value.id,
+            groupId: value.groupId,
+            name: value.name,
+            displayOrder: value.displayOrder,
+            isActive: value.isActive,
+            createdAt: value.createdAt,
+            updatedAt: value.updatedAt,
           });
         }
       }
