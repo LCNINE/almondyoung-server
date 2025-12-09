@@ -51,47 +51,57 @@ export class OutboxDispatcherService implements OnModuleInit {
       let processedCount = 0;
 
       // FOR UPDATE SKIP LOCKED로 동시성 제어
-      const events = await this.db.db.transaction(async (tx) => {
-        const pendingEvents = await tx.execute<{
-          id: string;
-          event_type: string;
-          aggregate_type: string;
-          aggregate_id: string;
-          partition_key: string;
-          payload: Record<string, unknown>;
-          attempts: number;
-        }>(sql`
-          SELECT 
-            id, 
-            event_type, 
-            aggregate_type, 
-            aggregate_id, 
-            partition_key, 
-            payload,
-            attempts
-          FROM ${walletSchema.outboxEvents}
-          WHERE status = 'PENDING'
-            AND next_attempt_at <= NOW()
-          ORDER BY created_at ASC
-          LIMIT ${batchSize}
-          FOR UPDATE SKIP LOCKED
-        `);
+      // const events = await this.db.db.transaction(async (tx) => {
+      //   const pendingEvents = await tx.execute<{
+      //     id: string;
+      //     event_type: string;
+      //     aggregate_type: string;
+      //     aggregate_id: string;
+      //     partition_key: string;
+      //     payload: Record<string, unknown>;
+      //     attempts: number;
+      //   }>(sql`
+      //     SELECT 
+      //       id, 
+      //       event_type, 
+      //       aggregate_type, 
+      //       aggregate_id, 
+      //       partition_key, 
+      //       payload,
+      //       attempts
+      //     FROM ${walletSchema.outboxEvents}
+      //     WHERE status = 'PENDING'
+      //       AND next_attempt_at <= NOW()
+      //     ORDER BY created_at ASC
+      //     LIMIT ${batchSize}
+      //     FOR UPDATE SKIP LOCKED
+      //   `);
 
-        if (pendingEvents.length === 0) {
-          return [];
-        }
+      //   if (pendingEvents.length === 0) {
+      //     return [];
+      //   }
 
-        // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
-        const eventIds = pendingEvents.map((e) => e.id);
-        await tx
-          .update(walletSchema.outboxEvents)
-          .set({
-            attempts: sql`${walletSchema.outboxEvents.attempts} + 1`,
-          })
-          .where(inArray(walletSchema.outboxEvents.id, eventIds));
+      //   // 조회된 이벤트의 attempts 증가 (트랜잭션 내)
+      //   const eventIds = pendingEvents.map((e) => e.id);
+      //   await tx
+      //     .update(walletSchema.outboxEvents)
+      //     .set({
+      //       attempts: sql`${walletSchema.outboxEvents.attempts} + 1`,
+      //     })
+      //     .where(inArray(walletSchema.outboxEvents.id, eventIds));
 
-        return pendingEvents;
-      });
+      //   return pendingEvents;
+      // });
+      // DB 접근 임시 제한
+      const events: {
+        id: string;
+        event_type: string;
+        aggregate_type: string;
+        aggregate_id: string;
+        partition_key: string;
+        payload: Record<string, unknown>;
+        attempts: number;
+      }[] = []
 
       if (events.length === 0) {
         return;
