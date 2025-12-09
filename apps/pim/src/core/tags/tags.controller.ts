@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,13 +28,19 @@ import {
   CreateTagValueDto,
   CreateTagValueBodyDto,
   UpdateTagValueDto,
-  TagValueResponseDto,
 } from './dto';
+import { TagGroupWithValues, TagMapper } from './mappers';
+import { DbService, InjectDb } from '@app/db';
+import { type PimSchema } from '../../schema';
+import { TagValueWithGroupNameDto } from './dto/tag-value-with-group-name.dto';
 
 @ApiTags('Tags')
 @Controller('tags')
 export class TagsController {
-  constructor(private readonly tagsService: TagsService) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly tagsService: TagsService
+  ) { }
 
   // ===== TAG GROUPS =====
 
@@ -55,7 +62,8 @@ export class TagsController {
   async createTagGroup(
     @Body() dto: CreateTagGroupDto,
   ): Promise<TagGroupResponseDto> {
-    return this.tagsService.createTagGroup(dto);
+    const tagGroup = await this.tagsService.createTagGroup(dto);
+    return TagMapper.toGroupDto(tagGroup);
   }
 
   @Get('groups')
@@ -72,7 +80,8 @@ export class TagsController {
     @Query() query: TagGroupQueryDto,
   ): Promise<TagGroupResponseDto[]> {
     const filters = query.isActive !== undefined ? { isActive: query.isActive } : undefined;
-    return this.tagsService.listTagGroups(filters);
+    const tagGroups = await this.tagsService.listTagGroups(filters);
+    return tagGroups.map(TagMapper.toGroupDto);
   }
 
   @Get('groups/:id')
@@ -95,34 +104,10 @@ export class TagsController {
     description: '태그 그룹을 찾을 수 없음',
   })
   async getTagGroup(@Param('id') id: string): Promise<TagGroupResponseDto> {
-    return this.tagsService.getTagGroup(id);
+    const tagGroup = await this.tagsService.getTagGroup(id);
+    return TagMapper.toGroupDto(tagGroup);
   }
 
-  @Get('groups/:id/detail')
-  @ApiOperation({
-    summary: '태그 그룹 상세 조회 (값 포함)',
-    description:
-      '특정 태그 그룹의 정보와 모든 태그 값을 함께 조회합니다.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: '태그 그룹 ID (UUID)',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: '태그 그룹 상세 조회 성공',
-    type: TagGroupDetailResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: '태그 그룹을 찾을 수 없음',
-  })
-  async getTagGroupWithValues(
-    @Param('id') id: string,
-  ): Promise<TagGroupDetailResponseDto> {
-    return this.tagsService.getTagGroupWithValues(id);
-  }
 
   @Put('groups/:id')
   @ApiOperation({
@@ -148,10 +133,15 @@ export class TagsController {
     @Param('id') id: string,
     @Body() dto: UpdateTagGroupDto,
   ): Promise<TagGroupResponseDto> {
-    return this.tagsService.updateTagGroup(id, dto);
+    return await this.db.db.transaction(async (tx) => {
+      await this.tagsService.updateTagGroup(id, dto, tx);
+      const tagGroup = await this.tagsService.getTagGroup(id, tx);
+      return TagMapper.toGroupDto(tagGroup);
+    });
   }
 
   @Delete('groups/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: '태그 그룹 삭제',
     description:
@@ -194,7 +184,7 @@ export class TagsController {
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: '태그 값 생성 성공',
-    type: TagValueResponseDto,
+    type: TagValueWithGroupNameDto,
   })
   @ApiResponse({
     status: HttpStatus.BAD_REQUEST,
@@ -207,35 +197,15 @@ export class TagsController {
   async createTagValue(
     @Param('groupId') groupId: string,
     @Body() body: CreateTagValueBodyDto,
-  ): Promise<TagValueResponseDto> {
+  ): Promise<TagValueWithGroupNameDto> {
     const dto: CreateTagValueDto = { ...body, groupId };
-    return this.tagsService.createTagValue(dto);
+    return await this.db.db.transaction(async (tx) => {
+      const tagValue = await this.tagsService.createTagValue(dto, tx);
+      const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);
+      return TagMapper.toValueWithGroupDto({ ...tagValue, group: tagGroup });
+    });
   }
 
-  @Get('groups/:groupId/values')
-  @ApiOperation({
-    summary: '태그 값 목록 조회',
-    description: '특정 태그 그룹의 모든 태그 값을 조회합니다.',
-  })
-  @ApiParam({
-    name: 'groupId',
-    description: '태그 그룹 ID (UUID)',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: '태그 값 목록 조회 성공',
-    type: [TagValueResponseDto],
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: '태그 그룹을 찾을 수 없음',
-  })
-  async listTagValuesByGroup(
-    @Param('groupId') groupId: string,
-  ): Promise<TagValueResponseDto[]> {
-    return this.tagsService.listTagValuesByGroup(groupId);
-  }
 
   @Get('values/:id')
   @ApiOperation({
@@ -250,14 +220,18 @@ export class TagsController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: '태그 값 조회 성공',
-    type: TagValueResponseDto,
+    type: TagValueWithGroupNameDto,
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
     description: '태그 값을 찾을 수 없음',
   })
-  async getTagValue(@Param('id') id: string): Promise<TagValueResponseDto> {
-    return this.tagsService.getTagValue(id);
+  async getTagValue(@Param('id') id: string): Promise<TagValueWithGroupNameDto> {
+    return await this.db.db.transaction(async (tx) => {
+      const tagValue = await this.tagsService.getTagValue(id, tx);
+      const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);
+      return TagMapper.toValueWithGroupDto({ ...tagValue, group: tagGroup });
+    });
   }
 
   @Put('values/:id')
@@ -274,7 +248,7 @@ export class TagsController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: '태그 값 수정 성공',
-    type: TagValueResponseDto,
+    type: TagValueWithGroupNameDto,
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
@@ -287,11 +261,17 @@ export class TagsController {
   async updateTagValue(
     @Param('id') id: string,
     @Body() dto: UpdateTagValueDto,
-  ): Promise<TagValueResponseDto> {
-    return this.tagsService.updateTagValue(id, dto);
+  ): Promise<TagValueWithGroupNameDto> {
+    return await this.db.db.transaction(async (tx) => {
+      await this.tagsService.updateTagValue(id, dto, tx);
+      const tagValue = await this.tagsService.getTagValue(id, tx);
+      const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);
+      return TagMapper.toValueWithGroupDto({ ...tagValue, group: tagGroup });
+    });
   }
 
   @Delete('values/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: '태그 값 삭제',
     description: '특정 태그 값을 삭제합니다.',
