@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
+import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import {
   ProductMasterVersion,
   DbTransaction,
@@ -40,6 +41,7 @@ export class ProductVersionsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
+    private readonly pricingValidator: PricingValidatorService,
   ) { }
 
   private get dbConn() {
@@ -249,6 +251,9 @@ export class ProductVersionsService {
             eq(productMasterVersions.status, 'active'),
           ),
         );
+
+      // 가격 검증 (publish 시점)
+      await this.pricingValidator.validateCalculatedPrices(versionId, tx);
 
       // draft를 active로 publish
       await tx
