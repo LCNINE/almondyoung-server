@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Min } from 'class-validator';
 
 /**
  * 페이지네이션 응답 DTO (제네릭)
@@ -58,6 +60,10 @@ export class PaginationQueryDto {
     minimum: 1,
     example: 1,
   })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
   page?: number;
 
   @ApiProperty({
@@ -68,5 +74,9 @@ export class PaginationQueryDto {
     maximum: 100,
     example: 20,
   })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  @Min(1)
   limit?: number;
 }
