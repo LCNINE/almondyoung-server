@@ -128,6 +128,12 @@
 
 /* 단순 css 정의 */
 :root {
+  /* 폰트 패밀리 */
+  --font-geist-sans: "Pretendard", sans-serif;
+  --font-geist-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
   /* Grayscale 팔레트 */
   --white: #ffffff;
   --gray-0: #ffffff;

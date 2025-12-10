@@ -108,7 +108,7 @@ export default function AddPaymentMethodSelector({
             <li key={index}>
               <button
                 onClick={item.action}
-                className="flex w-full items-center rounded-xl bg-white p-4 shadow-sm transition-all hover:bg-gray-50 active:scale-[0.99]"
+                className="hover:bg-gray-20 flex w-full items-center rounded-xl bg-white p-4 shadow-sm transition-all active:scale-[0.99]"
               >
                 {item.icon}
                 <span className="ml-4 grow text-left text-base font-semibold text-gray-800">

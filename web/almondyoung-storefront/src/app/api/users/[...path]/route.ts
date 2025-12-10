@@ -33,6 +33,7 @@ async function buildBackendUrl(
   const { path } = await params
   const pathString = path.join("/")
   const searchParams = request.nextUrl.search
+  // 기존 users 경로 처리
   return `${BACKEND_BASE_URL}/users/${pathString}${searchParams}`
 }
 
@@ -40,15 +41,8 @@ async function buildBackendUrl(
 async function processResponse(backendResponse: Response) {
   const data = await backendResponse.json().catch(() => null)
 
-  // 백엔드 에러가 났을 때 백엔드 응답을 그대로 전달
-  // 백엔드 응답 구조:
-  // 1. ApplicationException: { success: false, error: string, message: string }
-  // 2. ValidationPipe (HttpException): { statusCode: number, message: string | string[], error: string, errors?: string[] }
-  // 3. 기타: 백엔드가 보내는 그대로
-
+  // 백엔드 에러가 났을 때 내용을 감추지 않고 보여줌
   if (!backendResponse.ok) {
-    // 백엔드 응답을 그대로 전달 (변형하지 않음)
-    // 클라이언트에서 필요한 정보를 추출하도록 함
     return NextResponse.json(data || { error: "Unknown Backend Error" }, {
       status: backendResponse.status,
     })
@@ -74,7 +68,6 @@ export async function GET(request: NextRequest, { params }: any) {
       method: "GET",
       headers: headers,
       cache: "no-store",
-      credentials: "include",
     })
 
     return processResponse(res)

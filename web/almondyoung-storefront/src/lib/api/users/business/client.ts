@@ -1,4 +1,4 @@
-import { BusinessInfoRequestDto } from "@lib/types/dto/business"
+import { BusinessInfoRequestDto } from "@lib/types/dto/users"
 import { ApiAuthError, HttpApiError } from "../../api-error"
 
 // 사업자 정보 외부 조회

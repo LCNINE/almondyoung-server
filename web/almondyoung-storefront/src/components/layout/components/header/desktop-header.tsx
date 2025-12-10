@@ -267,7 +267,7 @@ export function DesktopHeader() {
           </div>
         </div>
 
-        <div className="relative z-205 flex items-center gap-8">
+        <div className="relative flex items-center gap-8">
           <button
             onMouseEnter={() => setOpen(true)}
             onMouseLeave={() => setOpen(false)}

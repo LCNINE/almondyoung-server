@@ -3,7 +3,7 @@ import {
   getRecentViews,
   removeFromRecentViews,
 } from "@lib/api/users/recent-views"
-import { RecentViewDto } from "@lib/types/dto/user"
+import { RecentViewDto } from "@lib/types/dto/users"
 import { RecentViewProductThumbnail } from "@lib/types/ui/product"
 import { getPimProductDetail, getAllProductList } from "@lib/api/pim/pim-api"
 import { toRecentViewProductThumbnail } from "@lib/utils/transformers/user.transformer"
@@ -47,9 +47,14 @@ function readCache(userId: string): CachedRecentViews | null {
 function writeCache(userId: string, items: RecentViewProductThumbnail[]): void {
   if (typeof window === "undefined") return
   try {
-    localStorage.setItem(getCacheKey(userId), JSON.stringify({
-      items, lastFetched: Date.now(), userId
-    }))
+    localStorage.setItem(
+      getCacheKey(userId),
+      JSON.stringify({
+        items,
+        lastFetched: Date.now(),
+        userId,
+      })
+    )
   } catch {}
 }
 
@@ -57,25 +62,27 @@ function writeCache(userId: string, items: RecentViewProductThumbnail[]): void {
 async function enrichWithProductInfo(
   recentViews: RecentViewProductThumbnail[]
 ): Promise<RecentViewProductThumbnail[]> {
-  console.log(`🔍 [enrichWithProductInfo] 시작: ${recentViews.length}개 상품 처리`)
+  console.log(
+    `🔍 [enrichWithProductInfo] 시작: ${recentViews.length}개 상품 처리`
+  )
   const startTime = performance.now()
-  
+
   // 각 상품을 개별 호출하는 대신, 한 번의 큰 요청으로 많은 상품을 가져온 후 필터링
-  const productIds = recentViews.map(rv => rv.productId).filter(Boolean)
-  
+  const productIds = recentViews.map((rv) => rv.productId).filter(Boolean)
+
   if (productIds.length === 0) {
     return recentViews
   }
 
   try {
     console.log(`🚀 PIM API 일괄 조회 시작: ${productIds.length}개 상품`)
-    
+
     // 모든 상품 정보를 한 번에 가져오기 (충분히 큰 limit 설정)
     const productMap = new Map<string, any>()
-    
+
     // 방법 1: 개별 호출 (기존 방식 유지 - 병렬 처리)
     // 방법 2: 배치 API가 있다면 사용
-    
+
     // 현재는 개별 호출을 병렬로 처리
     const enrichProduct = async (
       recentView: RecentViewProductThumbnail,
@@ -98,20 +105,28 @@ async function enrichWithProductInfo(
       const itemStartTime = performance.now()
       try {
         const pimStartTime = performance.now()
-        console.log(`  🔄 [${index}/${recentViews.length}] PIM API 호출 시작: ${productId}`)
-        
+        console.log(
+          `  🔄 [${index}/${recentViews.length}] PIM API 호출 시작: ${productId}`
+        )
+
         try {
           const pimProduct = await getPimProductDetail(productId)
           const pimDuration = Math.round(performance.now() - pimStartTime)
-          console.log(`  ✓ [${index}/${recentViews.length}] PIM API 완료: ${productId} (${pimDuration}ms)`)
+          console.log(
+            `  ✓ [${index}/${recentViews.length}] PIM API 완료: ${productId} (${pimDuration}ms)`
+          )
 
-          const thumbnail = pimProduct.thumbnail || 
-                           pimProduct.images?.primary || 
-                           (pimProduct.images?.additional && pimProduct.images.additional[0]) ||
-                           ""
+          const thumbnail =
+            pimProduct.thumbnail ||
+            pimProduct.images?.primary ||
+            (pimProduct.images?.additional &&
+              pimProduct.images.additional[0]) ||
+            ""
 
           const totalDuration = Math.round(performance.now() - itemStartTime)
-          console.log(`  ✅ [${index}/${recentViews.length}] 완료: ${productId} (총 ${totalDuration}ms)`)
+          console.log(
+            `  ✅ [${index}/${recentViews.length}] 완료: ${productId} (총 ${totalDuration}ms)`
+          )
 
           return {
             productId,
@@ -146,7 +161,9 @@ async function enrichWithProductInfo(
     }
 
     const enrichedViews = await Promise.all(
-      recentViews.map((recentView, index) => enrichProduct(recentView, index + 1))
+      recentViews.map((recentView, index) =>
+        enrichProduct(recentView, index + 1)
+      )
     )
 
     const totalDuration = Math.round(performance.now() - startTime)
@@ -172,23 +189,27 @@ export async function getRecentViewsService(
   opts?: RecentViewsServiceOpts
 ): Promise<RecentViewProductThumbnail[]> {
   const totalStartTime = performance.now()
-  
+
   // 캐시 먼저 확인
   if (opts?.useCache && opts?.userId) {
     const cached = readCache(opts.userId)
     if (cached) {
-      console.log(`📦 캐시에서 조회 (${cached.items.length}개, ${Math.round((Date.now() - cached.lastFetched) / 1000)}초 전 캐시)`)
+      console.log(
+        `📦 캐시에서 조회 (${cached.items.length}개, ${Math.round((Date.now() - cached.lastFetched) / 1000)}초 전 캐시)`
+      )
       return cached.items.slice(0, limit)
     }
   }
-  
+
   try {
     // 1단계: User API 호출
     const step1Start = performance.now()
     console.log(`🚀 [단계 1] User API 호출 시작...`)
     const dtos = await getRecentViews(limit)
     const step1Duration = Math.round(performance.now() - step1Start)
-    console.log(`✅ [단계 1] User API 호출 완료: ${step1Duration}ms (${dtos.length}개)`)
+    console.log(
+      `✅ [단계 1] User API 호출 완료: ${step1Duration}ms (${dtos.length}개)`
+    )
 
     // 2단계: DTO → UI 타입 변환
     const step2Start = performance.now()
@@ -200,10 +221,12 @@ export async function getRecentViewsService(
     // 3단계: PIM API로 썸네일 채우기
     const step3Start = performance.now()
     console.log(`🚀 [단계 3] PIM API로 썸네일 채우기 시작...`)
-    
+
     // 🎯 최적화: 썸네일이 있는지 먼저 확인 (빈 문자열이 아니면 이미 채워진 것)
-    const needsEnrichment = uiItems.some(item => !item.thumbnail || item.thumbnail.trim() === "")
-    
+    const needsEnrichment = uiItems.some(
+      (item) => !item.thumbnail || item.thumbnail.trim() === ""
+    )
+
     let enrichedItems: RecentViewProductThumbnail[]
     if (!needsEnrichment && uiItems.length > 0 && uiItems[0].thumbnail) {
       console.log(`⚡ [단계 3] 썸네일 이미 있음, PIM API 스킵`)
@@ -211,10 +234,10 @@ export async function getRecentViewsService(
     } else {
       enrichedItems = await enrichWithProductInfo(uiItems)
     }
-    
+
     const step3Duration = Math.round(performance.now() - step3Start)
     console.log(`✅ [단계 3] PIM API 썸네일 채우기 완료: ${step3Duration}ms`)
-    
+
     // 캐시 저장
     if (opts?.useCache && opts?.userId) {
       writeCache(opts.userId, enrichedItems)
@@ -222,15 +245,24 @@ export async function getRecentViewsService(
 
     const totalDuration = Math.round(performance.now() - totalStartTime)
     console.log(`\n📊 [전체 성능 분석]`)
-    console.log(`  - User API: ${step1Duration}ms (${Math.round(step1Duration/totalDuration*100)}%)`)
-    console.log(`  - 변환: ${step2Duration}ms (${Math.round(step2Duration/totalDuration*100)}%)`)
-    console.log(`  - PIM API: ${step3Duration}ms (${Math.round(step3Duration/totalDuration*100)}%)`)
+    console.log(
+      `  - User API: ${step1Duration}ms (${Math.round((step1Duration / totalDuration) * 100)}%)`
+    )
+    console.log(
+      `  - 변환: ${step2Duration}ms (${Math.round((step2Duration / totalDuration) * 100)}%)`
+    )
+    console.log(
+      `  - PIM API: ${step3Duration}ms (${Math.round((step3Duration / totalDuration) * 100)}%)`
+    )
     console.log(`  - 총 소요: ${totalDuration}ms`)
-    
+
     return enrichedItems
   } catch (error) {
     const errorDuration = Math.round(performance.now() - totalStartTime)
-    console.error(`❌ [getRecentViewsService] 에러 (${errorDuration}ms):`, error)
+    console.error(
+      `❌ [getRecentViewsService] 에러 (${errorDuration}ms):`,
+      error
+    )
     return []
   }
 }
@@ -267,7 +299,7 @@ export async function addToRecentViewsService(
 
     // DTO -> UI 타입 변환
     const uiItem = toRecentViewProductThumbnail(recentViewDto)
-    
+
     // 상품 정보와 결합 (썸네일 채우기)
     const enrichedResult = await enrichWithProductInfo([uiItem])
     const enrichedItem = enrichedResult[0]

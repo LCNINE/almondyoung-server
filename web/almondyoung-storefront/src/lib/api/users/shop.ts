@@ -1,6 +1,6 @@
 "use client"
 
-import { ShopInfoDto } from "@lib/types/dto/user"
+import { ShopInfoDto } from "@lib/types/dto/users"
 
 /**
  * 서버 에러 응답을 포함하는 커스텀 에러 클래스

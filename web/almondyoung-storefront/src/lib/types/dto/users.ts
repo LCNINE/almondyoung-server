@@ -52,16 +52,19 @@ export interface ProfileDto {
 
 // 사용자 상세 정보 응답 DTO
 export interface UserDetailsResponseDto {
-  id: string //사용자 ID
-  loginId: string //로그인 ID
-  username: string //사용자 이름
-  email: string //이메일
-  isEmailVerified: boolean //이메일 인증 여부
-  lastActivityAt: Date //마지막 활동 시간
-  createdAt: Date //생성일
-  updatedAt: Date //수정일
-  shop: ShopInfoDto | null //상점 정보
-  profile: ProfileDto | null //프로필 정보
+  success: boolean
+  data: {
+    id: string //사용자 ID
+    loginId: string //로그인 ID
+    username: string //사용자 이름
+    email: string //이메일
+    isEmailVerified: boolean //이메일 인증 여부
+    lastActivityAt: Date //마지막 활동 시간
+    createdAt: Date //생성일
+    updatedAt: Date //수정일
+    shop: ShopInfoDto | null //상점 정보
+    profile: ProfileDto | null //프로필 정보
+  }
 }
 
 // 기본 사용자 응답 DTO
@@ -101,5 +104,55 @@ export interface RecentViewsResponseDto {
   limit: number //페이지당 항목 수
 }
 
-//동의사항
+//동의사항-
 export interface UserConsents {}
+
+// --------------- 사업자 정보 관련 DTO --------------
+export interface BusinessInfo {
+  id: string
+  userId: string
+  shopId?: string | null
+  businessNumber?: string | null // 사업자등록번호
+  representativeName?: string | null // 대표자명
+  reviewComment?: string | null // 관리자 리뷰 코멘트
+  fileUrl?: string | null // 검증 파일
+  status?: "under_review" | "approved" | "rejected" // 검증 상태
+  metadata?: unknown // 메타데이터
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface BusinessInfoResponseDto {
+  success: boolean
+  data: BusinessInfo
+}
+
+export interface BusinessInfoRequestDto {
+  businessNumber?: string
+  representativeName?: string
+  fileUrl?: string
+  metadata?: unknown
+  externalBusinessStatus?: boolean
+}
+
+/** 사업자 정보 외부 조회 응답 DTO */
+export interface ExternalBusinessInfoResponseDto {
+  success: boolean
+  data: BusinessInfo
+}
+
+/** 사업자 정보 외부 조회 요청 DTO */
+export interface ExternalBusinessInfoRequestDto {
+  businessNumber: string
+  representativeName: string
+}
+
+// --------------- 유저 결제 등록 상태 관련 DTO --------------
+export interface UserVerificationStatusDto {
+  birthDate: "verified" | "none"
+  phone: "verified" | "none"
+  business: {
+    status: "verified" | "rejected" | "under_review" | "none"
+    rejectionReason: string | null
+  }
+}

@@ -2,7 +2,7 @@
 
 import { ApiAuthError } from "@lib/api/api-error"
 import { getCookies } from "@lib/data/cookies"
-import { BusinessInfoResponseDto } from "./types"
+import { BusinessInfoResponseDto } from "@lib/types/dto/users"
 
 export const getMyBusiness =
   async (): Promise<BusinessInfoResponseDto | null> => {

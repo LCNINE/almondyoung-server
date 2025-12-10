@@ -301,7 +301,6 @@ export default function BusinessForm({
           />
         </div>
 
-        {/* todo : Badge 상태 관리 필요 */}
         <div className="flex items-center gap-2">
           {form.watch("externalBusinessStatus") === "success" ? (
             <Badge variant="default" className="px-2 py-1 text-xs">

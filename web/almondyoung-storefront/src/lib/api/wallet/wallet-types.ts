@@ -40,4 +40,3 @@ export type CreateHmsCardProfileRequest = {
   password: string
   paymentCompany?: string
 }
-

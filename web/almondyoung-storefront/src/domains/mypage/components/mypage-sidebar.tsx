@@ -51,7 +51,7 @@ export default function MypageSidebar({
 
   return (
     <aside
-      className={`hidden w-[260px] flex-shrink-0 rounded-xl border border-gray-200 bg-white md:block ${className}`}
+      className={`hidden w-[260px] shrink-0 rounded-xl border border-gray-200 bg-white md:block ${className}`}
       aria-label="마이페이지 내비게이션"
     >
       <nav>

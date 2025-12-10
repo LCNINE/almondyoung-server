@@ -1,0 +1,23 @@
+.PhoneInput {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  background-color: #f4f4f4;
+}
+
+.PhoneInput input {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.PhoneInputInput {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.PhoneInputCountry {
+  margin-left: 10px;
+  flex-shrink: 0;
+}

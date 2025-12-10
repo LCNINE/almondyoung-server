@@ -53,7 +53,7 @@ function ArticleCard({
 
   if (isLink) {
     return (
-      <a href="#" className={className + " transition hover:bg-gray-50"}>
+      <a href="#" className={className + " hover:bg-gray-10 transition"}>
         {CardContent}
       </a>
     )
@@ -305,28 +305,25 @@ export default function PaymentManagement() {
         ) : (
           <BnplRegisterCard onAddClick={() => setIsAddDrawerOpen(true)} />
         )}
-
         {/* 2. ⭐️ 멤버십 카드 등록 (요청사항: 적립금 카드 바로 위로 이동) */}
         <MembershipRegisterCard
           onAddClick={() => setIsMembershipCardDrawerOpen(true)}
         />
-
         {/* 3. ⭐️ 적립금/계좌 자산 정보 (별도 도메인으로 분리됨) */}
         <AssetInfoList hasAccount={hasAccount} />
       </section>
-
       {/* 메뉴 네비게이션 */}
       <nav
         aria-label="계좌 관련 메뉴"
         className="mt-10 rounded-lg bg-white shadow-sm md:mx-4"
       >
-        <ul className="divide-y divide-gray-200">
+        <ul className="divide-y divide-gray-200 border border-gray-200">
           {ACCOUNT_MENU_ITEMS.map((item) => (
             <li key={item.label}>
               {item.action === "pin-settings" ? (
                 <button
                   onClick={() => setIsPinSettingsDrawerOpen(true)}
-                  className="flex w-full items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
+                  className="hover:bg-gray-10 flex w-full items-center justify-between px-7 py-3.5 transition-colors"
                 >
                   <span className="text-base font-normal text-black md:text-lg">
                     {item.label}
@@ -339,7 +336,7 @@ export default function PaymentManagement() {
               ) : (
                 <a
                   href={item.href}
-                  className="flex items-center justify-between px-7 py-3.5 transition-colors hover:bg-gray-50"
+                  className="hover:bg-gray-10 flex items-center justify-between px-7 py-3.5 transition-colors"
                 >
                   <span className="text-base font-normal text-black md:text-lg">
                     {item.label}
@@ -354,7 +351,6 @@ export default function PaymentManagement() {
           ))}
         </ul>
       </nav>
-
       <PaymentMethodAddDrawer
         open={isAddDrawerOpen}
         onOpenChange={setIsAddDrawerOpen}

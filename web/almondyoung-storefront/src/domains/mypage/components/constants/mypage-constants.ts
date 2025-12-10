@@ -84,7 +84,7 @@ export const SIDEBAR_MENU_ITEMS = [
     id: "payment",
     label: "결제수단 · 적립금",
     hasSubMenu: false,
-    path: "/mypage/payment-methods",
+    path: "/mypage/payment",
   },
   {
     id: "coupon",

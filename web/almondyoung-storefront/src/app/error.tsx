@@ -1,7 +1,11 @@
 "use client"
 
+import { Button } from "@components/common/ui/button"
+import { Home, RefreshCw } from "lucide-react"
+import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useRef } from "react"
+import LostAlmondImage from "../assets/images/404-notfound.png"
 
 export default function Error({
   error,
@@ -82,47 +86,107 @@ export default function Error({
     return <div className="flex min-h-screen items-center justify-center"></div>
   } else {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
-        <div className="flex w-full max-w-md flex-col items-center rounded-lg bg-white py-10 shadow-md">
-          <svg
-            className="mb-6 h-16 w-16 text-red-500"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            viewBox="0 0 24 24"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="2"
-              fill="#f8717130"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M15 9l-6 6m0-6l6 6"
-            />
-          </svg>
-          <h1 className="mb-2 text-2xl font-semibold text-red-600">
-            문제가 발생했어요
-          </h1>
-          <p className="mb-6 text-center text-gray-700">
-            죄송합니다. 예기치 않은 오류가 발생했습니다.
-            <br />
-            잠시 후 다시 시도해주시거나, 지속적으로 문제가 발생한다면
-            <br />
-            고객센터로 문의해주세요.
-          </p>
-          <button
-            onClick={() => (window.location.href = "/")}
-            className="rounded bg-red-500 px-6 py-2 text-white transition hover:bg-red-600"
-          >
-            홈으로 이동
-          </button>
-        </div>
+      <div className="bg-background flex min-h-screen flex-col">
+        {/* Header */}
+        <header className="border-border bg-foreground border-b">
+          <div className="container mx-auto flex h-14 items-center px-4">
+            <span className="text-background text-lg font-bold tracking-tight">
+              ALMOND YOUNG
+            </span>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="flex flex-1 items-center justify-center px-4 py-12">
+          <div className="w-full max-w-lg text-center">
+            {/* Illustration */}
+            <div className="animate-fade-in mb-6">
+              <Image
+                src={LostAlmondImage}
+                alt="에러가 발생한 아몬드 캐릭터"
+                className="mx-auto h-48 w-48 object-contain transition-transform duration-300 hover:scale-105"
+                width={192}
+                height={192}
+              />
+            </div>
+
+            {/* Error Title */}
+            <div
+              className="animate-fade-in mb-4"
+              style={{ animationDelay: "0.1s" }}
+            >
+              <span className="text-gold text-5xl font-bold">앗!</span>
+            </div>
+
+            {/* Message */}
+            <h1
+              className="text-foreground animate-fade-in mb-3 text-xl font-semibold"
+              style={{ animationDelay: "0.2s" }}
+            >
+              뭔가 잘못됐어요!
+            </h1>
+
+            <p
+              className="text-muted-foreground animate-fade-in mb-2 text-sm leading-relaxed"
+              style={{ animationDelay: "0.3s" }}
+            >
+              예상치 못한 오류가 발생했어요. 걱정 마세요!
+            </p>
+            <p
+              className="text-muted-foreground animate-fade-in mb-8 text-sm"
+              style={{ animationDelay: "0.4s" }}
+            >
+              새로고침하거나 홈으로 돌아가 보세요!
+            </p>
+
+            {/* Action Buttons */}
+            <div
+              className="animate-fade-in flex flex-col gap-3 sm:flex-row sm:justify-center"
+              style={{ animationDelay: "0.5s" }}
+            >
+              <Button
+                variant="default"
+                size="lg"
+                className="w-full sm:w-auto"
+                onClick={() => (window.location.href = "/")}
+              >
+                <Home className="h-4 w-4" />
+                홈으로 돌아가기
+              </Button>
+
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full sm:w-auto"
+                onClick={() => window.location.reload()}
+              >
+                <RefreshCw className="h-4 w-4" />
+                새로고침
+              </Button>
+            </div>
+
+            {/* Help Section */}
+            <div
+              className="bg-surface animate-fade-in mt-10 rounded-lg p-4"
+              style={{ animationDelay: "0.7s" }}
+            >
+              <p className="text-muted-foreground text-xs">
+                문제가 계속된다면{" "}
+                <span className="text-foreground font-medium">고객센터</span>로
+                문의해 주세요.
+              </p>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="border-border border-t py-6">
+          <div className="container mx-auto px-4 text-center">
+            <p className="text-muted-foreground text-xs">
+              © {new Date().getFullYear()} ALMOND YOUNG. All rights reserved.
+            </p>
+          </div>
+        </footer>
       </div>
     )
   }

@@ -1,13 +1,16 @@
 import { routeHandler } from "@lib/api/api-route-handler"
+import { cookies as nextCookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 
 export const GET = routeHandler(async (request: NextRequest) => {
-  const cookies = request.cookies.toString()
+  const cookieStore = await nextCookies()
+  const cookieHeader = cookieStore.toString()
 
   const res = await fetch(`${process.env.BACKEND_URL!}/users/users/detail`, {
     cache: "no-store",
     headers: {
-      Cookie: cookies,
+      "Content-Type": "application/json",
+      Cookie: cookieHeader,
     },
   })
 

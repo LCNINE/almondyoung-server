@@ -42,9 +42,7 @@ export default function PhoneVerifyForm({
   initialData,
 }: PhoneVerifyFormProps) {
   const router = useRouter()
-  const [phoneNumber, setPhoneNumber] = useState(
-    initialData?.phoneNumber || ""
-  )
+  const [phoneNumber, setPhoneNumber] = useState(initialData?.phoneNumber || "")
   const phoneInputRef = useRef<any>(null)
 
   const {
@@ -61,21 +59,6 @@ export default function PhoneVerifyForm({
       carrier: "",
     },
   })
-
-  // IntlTelInput의 onChange 핸들러
-  const handlePhoneChange = (
-    isValid: boolean,
-    value: string,
-    country: any,
-    number?: string,
-    id?: string,
-  ) => {
-    // value는 포맷된 값 (예: "010-3333-3333"), number는 국제 형식
-    // 숫자만 추출하여 저장
-    const cleaned = value.replace(/\D/g, "")
-    console.log("Phone change:", { value, cleaned, isValid, number })
-    setPhoneNumber(cleaned) // 숫자만 저장
-  }
 
   // phoneNumber state가 변경될 때마다 form에 반영
   useEffect(() => {
@@ -131,7 +114,7 @@ export default function PhoneVerifyForm({
       const phoneLength = cleanedPhoneNumber.length
       if (!cleanedPhoneNumber || (phoneLength !== 10 && phoneLength !== 11)) {
         alert(
-          `올바른 휴대폰번호를 입력해주세요. (현재: ${phoneLength}자리, 필요: 10자리 또는 11자리)`,
+          `올바른 휴대폰번호를 입력해주세요. (현재: ${phoneLength}자리, 필요: 10자리 또는 11자리)`
         )
         return
       }
@@ -143,12 +126,12 @@ export default function PhoneVerifyForm({
         return
       }
 
-    if (onComplete) {
+      if (onComplete) {
         onComplete(finalData)
-    } else {
-      // 독립적으로 사용될 때
-      alert("본인인증이 완료되었습니다 (임시)")
-      router.push("/kr/mypage/payment-methods")
+      } else {
+        // 독립적으로 사용될 때
+        alert("본인인증이 완료되었습니다 (임시)")
+        router.push("/kr/mypage/payment-methods")
       }
     } catch (error) {
       console.error("본인인증 오류:", error)
@@ -160,7 +143,7 @@ export default function PhoneVerifyForm({
     <div className="flex min-h-full flex-col bg-white p-4">
       <div className="mb-6 flex items-center gap-2">
         {onBack && (
-          <button onClick={onBack} className="p-1 -ml-2">
+          <button onClick={onBack} className="-ml-2 p-1">
             <ChevronLeft className="h-6 w-6" />
           </button>
         )}
@@ -171,37 +154,39 @@ export default function PhoneVerifyForm({
         onSubmit={handleSubmit(onSubmit)}
         className="flex flex-col gap-12 pt-8 pb-8"
       >
-      {/* Title Section */}
+        {/* Title Section */}
         <section className="px-4">
-        <h1 className="text-center font-['Pretendard'] text-xl leading-7 font-bold text-black">
-          안전한 결제를 위해
-          <br />
-          고객님의 정보를 확인할게요.
-        </h1>
-      </section>
+          <h1 className="text-center font-['Pretendard'] text-xl leading-7 font-bold text-black">
+            안전한 결제를 위해
+            <br />
+            고객님의 정보를 확인할게요.
+          </h1>
+        </section>
 
-      {/* Benefit Section */}
+        {/* Benefit Section */}
         <section className="px-4">
-        <p className="text-center font-['Pretendard'] text-xl leading-7 font-bold text-black">
-          혜택노출
-        </p>
-      </section>
+          <p className="text-center font-['Pretendard'] text-xl leading-7 font-bold text-black">
+            혜택노출
+          </p>
+        </section>
 
-      {/* Form Section */}
+        {/* Form Section */}
         <section className="px-4">
-        <div className="flex flex-col gap-8">
-          {/* Name Input */}
-          <div className="flex flex-col">
-            <input
+          <div className="flex flex-col gap-8">
+            {/* Name Input */}
+            <div className="flex flex-col">
+              <input
                 {...register("name", { required: "이름을 입력해주세요" })}
-              type="text"
-              placeholder="이름"
-              className="border-b border-neutral-400 bg-transparent px-4 py-3 font-['Noto_Sans_KR'] text-xs leading-5 text-neutral-400 outline-none focus:border-black focus:text-black"
-            />
+                type="text"
+                placeholder="이름"
+                className="border-b border-neutral-400 bg-transparent px-4 py-3 font-['Noto_Sans_KR'] text-xs leading-5 text-neutral-400 outline-none focus:border-black focus:text-black"
+              />
               {errors.name && (
-                <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>
+                <p className="mt-1 text-xs text-red-500">
+                  {errors.name.message}
+                </p>
               )}
-          </div>
+            </div>
 
             {/* Birthday Input */}
             <div className="flex flex-col">
@@ -223,10 +208,10 @@ export default function PhoneVerifyForm({
                   {errors.birthDate.message}
                 </p>
               )}
-          </div>
+            </div>
 
-          {/* Carrier Select */}
-          <div className="relative">
+            {/* Carrier Select */}
+            <div className="relative">
               <select
                 {...register("carrier", { required: "통신사를 선택해주세요" })}
                 className="text-Text-Default-Default border-Border-Default-Default w-full appearance-none border bg-white py-3 pr-10 pl-4 font-['Pretendard'] text-xs leading-4 outline-none"
@@ -235,23 +220,22 @@ export default function PhoneVerifyForm({
                 <option value="SKT">SKT</option>
                 <option value="KT">KT</option>
                 <option value="LG U+">LG U+</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="text-Icon-Default-Default pointer-events-none absolute top-1/2 right-3 -translate-y-1/2"
-            />
+              </select>
+              <ChevronDown
+                size={16}
+                className="text-Icon-Default-Default pointer-events-none absolute top-1/2 right-3 -translate-y-1/2"
+              />
               {errors.carrier && (
                 <p className="mt-1 text-xs text-red-500">
                   {errors.carrier.message}
                 </p>
               )}
-          </div>
+            </div>
 
-          {/* Phone Input */}
-          <div className="flex flex-col">
+            {/* Phone Input */}
             <IntlTelInput
-                ref={phoneInputRef}
-                initialValue={phoneNumber || initialData?.phoneNumber || ""}
+              ref={phoneInputRef}
+              initialValue={phoneNumber || initialData?.phoneNumber || ""}
               inputProps={{
                 placeholder: "휴대폰번호 (숫자만 입력하세요)",
                 className:
@@ -260,28 +244,31 @@ export default function PhoneVerifyForm({
               initOptions={{
                 initialCountry: "kr",
               }}
-                onChange={handlePhoneChange}
+              onChangeNumber={(number) => {
+                const cleaned = number.replace(/\D/g, "") // (예: +821012345678)
+                setPhoneNumber(cleaned)
+              }}
             />
-              {errors.phoneNumber && (
-                <p className="mt-1 text-xs text-red-500">
-                  {errors.phoneNumber.message}
-                </p>
-              )}
-          </div>
-        </div>
-      </section>
 
-      {/* Submit Button Section */}
+            {errors.phoneNumber && (
+              <p className="mt-1 text-xs text-red-500">
+                {errors.phoneNumber.message}
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* Submit Button Section */}
         <section className="px-4">
-        <button
-          type="submit"
+          <button
+            type="submit"
             disabled={isSubmitting}
             className="w-full rounded-[5px] bg-amber-500 px-4 py-3 text-center font-['Noto_Sans_KR'] text-sm leading-5 text-white disabled:opacity-50"
-        >
+          >
             {isSubmitting ? "인증 중..." : "인증 요청"}
-        </button>
-      </section>
-    </form>
+          </button>
+        </section>
+      </form>
     </div>
   )
 }
