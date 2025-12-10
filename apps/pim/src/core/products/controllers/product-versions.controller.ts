@@ -47,19 +47,8 @@ export class ProductVersionsController {
   async getVersionTree(
     @Param('masterId') masterId: string,
   ): Promise<VersionTreeResponseDto[]> {
-    try {
-      const tree = await this.productVersionsService.getVersionTree(masterId);
-      return tree.map((node) => this._mapToResponseDto(node));
-    } catch (error) {
-      this.logger.error(`Failed to get version tree: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to get version tree: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const tree = await this.productVersionsService.getVersionTree(masterId);
+    return tree.map((node) => this._mapToResponseDto(node));
   }
 
   @Get('active')
@@ -98,30 +87,16 @@ export class ProductVersionsController {
     @Param('masterId') masterId: string,
     @Param('versionId') versionId: string,
   ) {
-    try {
-      const versionDetail = await this.productVersionsService.getVersionDetail(versionId);
+    const versionDetail = await this.productVersionsService.getVersionDetail(versionId);
 
-      if (versionDetail.masterId !== masterId) {
-        throw new HttpException(
-          'Version does not belong to the specified master',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      return ProductVersionMapper.toDetailResponseDto(versionDetail);
-    } catch (error) {
-      this.logger.error(`Failed to get version: ${error.message}`, error.stack);
-      if (error.message.includes('not found')) {
-        throw new HttpException('Version not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('does not belong')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
+    if (versionDetail.masterId !== masterId) {
       throw new HttpException(
-        `Failed to get version: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        'Version does not belong to the specified master',
+        HttpStatus.BAD_REQUEST,
       );
     }
+
+    return ProductVersionMapper.toDetailResponseDto(versionDetail);
   }
 
   @Post()
@@ -143,45 +118,31 @@ export class ProductVersionsController {
     @Param('masterId') masterId: string,
     @Body() dto: CreateDraftVersionDto,
   ) {
-    try {
-      let parentVersionId = dto.parentVersionId;
+    let parentVersionId = dto.parentVersionId;
 
-      if (!parentVersionId) {
-        try {
-          const activeVersion = await this.productVersionsService.getActiveVersion(masterId);
-          parentVersionId = activeVersion.id;
-        } catch {
-          throw new HttpException(
-            'No active version found. Please provide parentVersionId explicitly.',
-            HttpStatus.BAD_REQUEST,
-          );
-        }
+    if (!parentVersionId) {
+      try {
+        const activeVersion = await this.productVersionsService.getActiveVersion(masterId);
+        parentVersionId = activeVersion.id;
+      } catch {
+        throw new HttpException(
+          'No active version found. Please provide parentVersionId explicitly.',
+          HttpStatus.BAD_REQUEST,
+        );
       }
-
-      const userId = '00000000-0000-0000-0000-000000000000';
-      const version = await this.productVersionsService.createDraftVersion(
-        parentVersionId,
-        userId,
-        dto.copyMappings !== false,
-      );
-      return {
-        ...version,
-        createdAt: version.createdAt?.toISOString() || null,
-        updatedAt: version.updatedAt?.toISOString() || null,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to create draft version: ${error.message}`, error.stack);
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to create draft version: ${error.message}`,
-        HttpStatus.BAD_REQUEST,
-      );
     }
+
+    const userId = '00000000-0000-0000-0000-000000000000';
+    const version = await this.productVersionsService.createDraftVersion(
+      parentVersionId,
+      userId,
+      dto.copyMappings !== false,
+    );
+    return {
+      ...version,
+      createdAt: version.createdAt?.toISOString() || null,
+      updatedAt: version.updatedAt?.toISOString() || null,
+    };
   }
 
   @Put(':versionId')

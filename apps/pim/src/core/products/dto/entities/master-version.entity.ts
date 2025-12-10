@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 
-export class ProductMasterVersionEntity {
+export class ProductVersionDto {
   @ApiProperty({ description: '버전 ID' })
   id: string;
 

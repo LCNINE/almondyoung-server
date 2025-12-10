@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import {
   ProductVariant,
@@ -55,7 +55,7 @@ export class ProductVariantsService {
     limit: number;
   }> {
     if (!masterId) {
-      throw new Error('Master ID is required');
+      throw new BadRequestException('Master ID is required');
     }
 
     const client = this.getClient(tx);
@@ -80,7 +80,7 @@ export class ProductVariantsService {
         .limit(1);
 
       if (!activeVersion) {
-        throw new Error(`No active version found for master ${masterId}`);
+        throw new NotFoundException(`No active version found for master ${masterId}`);
       }
       actualVersionId = activeVersion.id;
     }
@@ -91,7 +91,7 @@ export class ProductVariantsService {
         .where(eq(productMasterVersions.id, versionId));
 
       if (!version) {
-        throw new Error(`Version not found: ${versionId}`);
+        throw new NotFoundException(`Version not found: ${versionId}`);
       }
       actualVersionId = version.id;
     }
@@ -366,23 +366,23 @@ export class ProductVariantsService {
 
   async updateVariantStatus(variantId: string, status: string, tx?: DbTransaction): Promise<void> {
     if (!variantId) {
-      throw new Error('Variant ID is required');
+      throw new BadRequestException('Variant ID is required');
     }
 
     if (!status) {
-      throw new Error('Status is required');
+      throw new BadRequestException('Status is required');
     }
 
     const validStatuses = ['active', 'inactive'];
     if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
 
     const client = this.getClient(tx);
 
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
-      throw new Error(`Variant not found: ${variantId}`);
+      throw new NotFoundException(`Variant not found: ${variantId}`);
     }
 
     await client
@@ -396,16 +396,16 @@ export class ProductVariantsService {
 
   async bulkUpdateVariantStatus(variantIds: string[], status: string, tx?: DbTransaction): Promise<void> {
     if (!variantIds || variantIds.length === 0) {
-      throw new Error('Variant IDs are required');
+      throw new BadRequestException('Variant IDs are required');
     }
 
     if (!status) {
-      throw new Error('Status is required');
+      throw new BadRequestException('Status is required');
     }
 
     const validStatuses = ['active', 'inactive'];
     if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
 
     const client = this.getClient(tx);
@@ -419,7 +419,7 @@ export class ProductVariantsService {
     const missingIds = variantIds.filter(id => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
-      throw new Error(`Variants not found: ${missingIds.join(', ')}`);
+      throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
     }
 
     await client
@@ -433,14 +433,14 @@ export class ProductVariantsService {
 
   async updateVariant(variantId: string, data: UpdateProductVariantDto, tx?: DbTransaction): Promise<ProductVariant> {
     if (!variantId) {
-      throw new Error('Variant ID is required');
+      throw new BadRequestException('Variant ID is required');
     }
 
     const client = this.getClient(tx);
 
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
-      throw new Error(`Variant not found: ${variantId}`);
+      throw new NotFoundException(`Variant not found: ${variantId}`);
     }
 
     const updateData = {
@@ -455,7 +455,7 @@ export class ProductVariantsService {
       .returning();
 
     if (result.length === 0) {
-      throw new Error(`Failed to update variant: ${variantId}`);
+      throw new NotFoundException(`Failed to update variant: ${variantId}`);
     }
 
     return result[0];
@@ -463,7 +463,7 @@ export class ProductVariantsService {
 
   async bulkUpdateVariants(data: UpdateVariantBulkDto, tx?: DbTransaction): Promise<void> {
     if (!data.updates || data.updates.length === 0) {
-      throw new Error('Updates are required');
+      throw new BadRequestException('Updates are required');
     }
 
     const client = this.getClient(tx);
@@ -477,16 +477,16 @@ export class ProductVariantsService {
     const missingIds = data.updates.map(u => u.id).filter(id => !existingIds.includes(id));
 
     if (missingIds.length > 0) {
-      throw new Error(`Variants not found: ${missingIds.join(', ')}`);
+      throw new NotFoundException(`Variants not found: ${missingIds.join(', ')}`);
     }
 
     const validStatuses = ['active', 'inactive'];
     if (data.updates.map(u => u.status).some(status => status && !validStatuses.includes(status))) {
-      throw new Error(`Invalid status: ${data.updates.map(u => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`);
+      throw new BadRequestException(`Invalid status: ${data.updates.map(u => u.status).join(', ')}. Valid statuses are: ${validStatuses.join(', ')}`);
     }
 
     if (data.updates.map(u => u.displayOrder).some(displayOrder => displayOrder !== undefined && displayOrder < 0)) {
-      throw new Error('Display order must be non-negative');
+      throw new BadRequestException('Display order must be non-negative');
     }
 
     const updateData = data.updates.map(u => ({
@@ -506,17 +506,17 @@ export class ProductVariantsService {
   async calculateVariantPrice(variantId: string, tx?: DbTransaction): Promise<number> {
     // NOTE: This method has been moved to PricingCalculatorService
     // Use PricingCalculatorService.calculateVariantPrice() instead
-    throw new Error('calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException('calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
   async calculateVariantPrices(variantIds: string[], tx?: DbTransaction): Promise<Record<string, number>> {
     // NOTE: This method has been moved to PricingCalculatorService
-    throw new Error('calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException('calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
   async calculateAllVariantPrices(masterId: string, tx?: DbTransaction): Promise<Record<string, number>> {
     // NOTE: This method has been moved to PricingCalculatorService
-    throw new Error('calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
+    throw new GoneException('calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.');
   }
 
 
@@ -538,7 +538,7 @@ export class ProductVariantsService {
 
   async getActiveVariants(masterId: string, versionId?: string, tx?: DbTransaction): Promise<ProductVariant[]> {
     if (!masterId) {
-      throw new Error('Master ID is required');
+      throw new BadRequestException('Master ID is required');
     }
 
     return await this.inTx(async (tx) => {
@@ -575,18 +575,18 @@ export class ProductVariantsService {
 
   async updateDisplayOrder(variantId: string, displayOrder: number, tx?: DbTransaction): Promise<void> {
     if (!variantId) {
-      throw new Error('Variant ID is required');
+      throw new BadRequestException('Variant ID is required');
     }
 
     if (displayOrder < 0) {
-      throw new Error('Display order must be non-negative');
+      throw new BadRequestException('Display order must be non-negative');
     }
 
     const client = this.getClient(tx);
 
     const exists = await this.existsVariant(variantId, tx);
     if (!exists) {
-      throw new Error(`Variant not found: ${variantId}`);
+      throw new NotFoundException(`Variant not found: ${variantId}`);
     }
 
     await client

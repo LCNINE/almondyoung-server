@@ -1,10 +1,10 @@
+import { ProductMasterVersionEntity } from 'apps/pim/src/schema.types';
 import { DateMapper } from '../../../common/mappers';
-import { ProductMasterVersion } from '../../../types';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 import { ProductDto, ProductListItemDto } from '../dto/products/product-response.dto';
 
 export class ProductMapper {
-  static toDto(version: ProductMasterVersion, images: ProductImageDto[]): ProductDto {
+  static toDto(version: ProductMasterVersionEntity, images: ProductImageDto[]): ProductDto {
     return {
       id: version.id,
       masterId: version.masterId,
@@ -29,7 +29,7 @@ export class ProductMapper {
     };
   }
 
-  static toListItem(version: ProductMasterVersion): ProductListItemDto {
+  static toListItem(version: ProductMasterVersionEntity): ProductListItemDto {
     return {
       id: version.id,
       masterId: version.masterId,

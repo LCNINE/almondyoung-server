@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ProductMasterEntity } from '../entities/master.entity';
-import { ProductMasterVersionEntity } from '../entities/master-version.entity';
+import { ProductVersionDto } from '../entities/master-version.entity';
 import { ProductImageDto } from './product-image.dto';
 
 export class ProductDto {
@@ -106,13 +106,16 @@ export class ProductListResponseDto {
 
 
 export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
-  @ApiProperty({ description: '주 버전', type: ProductMasterVersionEntity, nullable: true })
-  primaryVersion: ProductMasterVersionEntity | null;
+  @ApiProperty({ description: '주 버전', type: ProductVersionDto, nullable: true })
+  primaryVersion: ProductVersionDto | null;
 }
 
 export class ProductSummaryDto {
-  @ApiProperty({ description: '상품 ID' })
-  id: string;
+  @ApiProperty({ description: '마스터 상품 ID' })
+  masterId: string;
+
+  @ApiProperty({ description: '상품 버전 ID' })
+  versionId: string;
 
   @ApiProperty({ description: '상품명' })
   name: string;
@@ -138,31 +141,4 @@ export class ProductSummaryDto {
   @ApiProperty({ description: '변형 개수', minimum: 1 })
   variantCount: number;
 
-  @ApiProperty({ 
-    description: '최저가 (일반 고객 기준)', 
-    nullable: true,
-    example: 10000 
-  })
-  minPrice: number | null;
-
-  @ApiProperty({ 
-    description: '최고가 (일반 고객 기준)', 
-    nullable: true,
-    example: 50000 
-  })
-  maxPrice: number | null;
-
-  @ApiProperty({ 
-    description: '최저 멤버십가', 
-    nullable: true,
-    example: 9000 
-  })
-  minMembershipPrice: number | null;
-
-  @ApiProperty({ 
-    description: '최고 멤버십가', 
-    nullable: true,
-    example: 45000 
-  })
-  maxMembershipPrice: number | null;
 }
