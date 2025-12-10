@@ -91,8 +91,12 @@ export class ProductMastersController {
 
       **조회 모드**:
       - active: 공개된 상품만 (기본값)
-      - active-or-latest: 공개 우선, 없으면 최신 비공개 상품
-      - draft: 임시 저장된 상품만
+      - active-or-inactive: 공개 우선, 없으면 최신 비공개 상품
+
+      **기본값**:
+      - mode: 'active'
+      - limit: 15
+      - deleted: false
 
       각 항목은 상품의 요약 정보를 포함합니다.
     `,
@@ -101,52 +105,45 @@ export class ProductMastersController {
     name: 'page',
     required: false,
     type: String,
-    description: '페이지 번호',
+    description: '페이지 번호 (기본값: 1)',
   })
   @ApiQuery({
     name: 'limit',
     required: false,
     type: String,
-    description: '페이지 당 아이템 수',
-  })
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    type: String,
-    description: '제품 상태 필터',
+    description: '페이지 당 아이템 수 (기본값: 15, 최대: 100)',
   })
   @ApiQuery({
     name: 'categoryId',
     required: false,
     type: String,
-    description: '카테고리 ID 필터',
+    description: '카테고리 ID 필터 (하위 카테고리 포함)',
   })
   @ApiQuery({
     name: 'brand',
     required: false,
     type: String,
-    description: '브랜드 필터',
+    description: '브랜드 필터 (부분 일치)',
   })
   @ApiQuery({
-    name: 'search',
+    name: 'name',
     required: false,
     type: String,
-    description: '검색 키워드',
+    description: '상품명 검색 키워드 (부분 일치)',
   })
   @ApiQuery({
     name: 'mode',
     required: false,
     type: String,
-    enum: ['active', 'active-or-latest', 'draft'],
-    description: '조회 모드: active(active 버전만), active-or-latest(active 우선, 없으면 최신 inactive), draft(draft 버전만). 기본값: active',
+    enum: ['active', 'active-or-inactive'],
+    description: '조회 모드: active(active 버전만), active-or-inactive(active 우선, 없으면 최신 inactive). 기본값: active',
   })
   @ApiQuery({
-    name: 'createdBy',
+    name: 'deleted',
     required: false,
     type: String,
-    description: '작성자 ID 필터 (모든 모드에서 사용 가능)',
+    description: '삭제된 상품 포함 여부 (기본값: false)',
   })
-  // 새로운 제네릭 패턴 사용: ApiOkResponsePaginated
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
@@ -158,35 +155,29 @@ export class ProductMastersController {
       limit?: string;
       categoryId?: string;
       brand?: string;
-      search?: string;
-      mode?: 'active' | 'active-or-latest' | 'draft';
-      createdBy?: string;
+      name?: string;
+      mode?: 'active' | 'active-or-inactive';
+      deleted?: string;
     },
   ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
-    try {
-      const filters = {
-        page: query.page ? parseInt(query.page) : undefined,
-        limit: query.limit ? parseInt(query.limit) : undefined,
-        categoryId: query.categoryId,
-        brand: query.brand,
-        search: query.search,
-        mode: query.mode,
-        createdBy: query.createdBy,
-      };
+    const filters = {
+      page: query.page ? parseInt(query.page) : undefined,
+      limit: query.limit ? parseInt(query.limit) : undefined,
+      categoryId: query.categoryId,
+      brand: query.brand,
+      name: query.name,
+      mode: query.mode,
+      deleted: query.deleted === 'true',
+    };
 
-      const result = await this.productMastersService.getMasters(filters);
-      return {
-        data: result.data.map(item => ProductMasterMapper.toProductSummary(item)),
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-      };
-    } catch (error) {
-      throw new HttpException(
-        'Failed to get masters',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const result = await this.productMastersService.getMasters(filters);
+
+    return {
+      data: result.data.map(item => ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate })),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
   }
 
   @Get('deleted')
@@ -197,16 +188,8 @@ export class ProductMastersController {
   @ApiResponse({ status: 200, description: '삭제된 제품 마스터 목록 조회 성공', type: [MasterProductWithPrimaryVersionDto] })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getDeleted(): Promise<MasterProductWithPrimaryVersionDto[]> {
-    try {
-      const deleted = await this.productMastersService.findDeleted();
-      return deleted;
-    } catch (error) {
-      console.error('Failed to get deleted masters:', error);
-      throw new HttpException(
-        'Failed to get deleted masters',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const deleted = await this.productMastersService.findDeleted();
+    return deleted;
   }
 
   @Get(':id')
@@ -232,27 +215,14 @@ export class ProductMastersController {
   @ApiResponse({ status: 404, description: '제품 마스터를 찾을 수 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async getMasterDetail(@Param('id') id: string) {
-    try {
-      const masterDetail = await this.productMastersService.getMasterDetail(id);
+    const masterDetail = await this.productMastersService.getMasterDetail(id);
 
-      if (!masterDetail) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-
-      // 이미지 정보를 포함한 응답 반환
-      return masterDetail
-    } catch (error) {
-      if (
-        error.message === 'Master not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        'Failed to get master detail',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    if (!masterDetail) {
+      throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
     }
+
+    // 이미지 정보를 포함한 응답 반환
+    return masterDetail
   }
 
   @Delete(':masterId')
@@ -279,34 +249,18 @@ export class ProductMastersController {
     @Param('masterId') masterId: string,
     @Body('userId') userId?: string,
   ) {
-    try {
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      const deleted = await this.productMastersService.deleteMaster(
-        masterId,
-        userIdToUse,
-      );
+    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
+    const deleted = await this.productMastersService.deleteMaster(
+      masterId,
+      userIdToUse,
+    );
 
-      return {
-        success: true,
-        message: 'Master deleted successfully',
-        masterId: deleted.id,
-        deletedAt: DateMapper.toNullableString(deleted.deletedAt),
-      };
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('already deleted')) {
-        throw new HttpException(
-          'Master is already deleted',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      throw new HttpException(
-        `Failed to delete master: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return {
+      success: true,
+      message: 'Master deleted successfully',
+      masterId: deleted.id,
+      deletedAt: DateMapper.toNullableString(deleted.deletedAt),
+    };
   }
 
   @Post(':masterId/restore')
@@ -327,32 +281,16 @@ export class ProductMastersController {
     @Param('masterId') masterId: string,
     @Body('userId') userId?: string,
   ) {
-    try {
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      const restored = await this.productMastersService.restoreMaster(
-        masterId,
-      );
+    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
+    const restored = await this.productMastersService.restoreMaster(
+      masterId,
+    );
 
-      return {
-        success: true,
-        message: 'Master restored successfully',
-        masterId: restored.id,
-      };
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('not deleted')) {
-        throw new HttpException(
-          'Master is not deleted',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      throw new HttpException(
-        `Failed to restore master: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return {
+      success: true,
+      message: 'Master restored successfully',
+      masterId: restored.id,
+    };
   }
 
   @Patch(':masterId/unpublish')
@@ -373,25 +311,12 @@ export class ProductMastersController {
   @ApiResponse({ status: 404, description: 'Master를 찾을 수 없거나 Active 버전이 없음' })
   @ApiResponse({ status: 500, description: '서버 오류' })
   async unpublish(@Param('masterId') masterId: string) {
-    try {
-      await this.productVersionsService.unpublishMaster(masterId);
-      return {
-        success: true,
-        message: 'Master unpublished successfully',
-        masterId,
-      };
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException(
-          'Master not found or no active version exists',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-      throw new HttpException(
-        `Failed to unpublish master: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    await this.productVersionsService.unpublishMaster(masterId);
+    return {
+      success: true,
+      message: 'Master unpublished successfully',
+      masterId,
+    };
   }
 
   @Delete(':id/permanent')
@@ -415,19 +340,9 @@ export class ProductMastersController {
     @Param('id') id: string,
     @Body('userId') userId: string,
   ): Promise<{ deleted: boolean }> {
-    try {
-      // TODO: Get userId from JWT auth
-      const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
-      return await this.productMastersService.hardDelete(id, userIdToUse);
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Master not found', HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        `Failed to hard delete master: ${error.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    // TODO: Get userId from JWT auth
+    const userIdToUse = userId || '00000000-0000-0000-0000-000000000000';
+    return await this.productMastersService.hardDelete(id, userIdToUse);
   }
 
   // NOTE: Price preview and pricing strategy endpoints have been removed.

@@ -81,29 +81,18 @@ export class ProductVariantsController {
       limit?: string;
     },
   ): Promise<PaginatedResponseDto<VariantWithPriceDto>> {
-    try {
-      const filters = {
-        status: query.status,
-        includePrice: query.includePrice !== 'false',
-        page: query.page ? parseInt(query.page) : undefined,
-        limit: query.limit ? parseInt(query.limit) : undefined,
-      };
+    const filters = {
+      status: query.status,
+      includePrice: query.includePrice !== 'false',
+      page: query.page ? parseInt(query.page) : undefined,
+      limit: query.limit ? parseInt(query.limit) : undefined,
+    };
 
-      return await this.productVariantsService.getVariantsByMaster(
-        masterId,
-        undefined, // version (optional)
-        filters,
-      );
-    } catch (error) {
-      console.error(error);
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get variants by master',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return await this.productVariantsService.getVariantsByMaster(
+      masterId,
+      undefined, // version (optional)
+      filters,
+    );
   }
 
 
@@ -154,29 +143,18 @@ export class ProductVariantsController {
       limit?: string;
     },
   ): Promise<PaginatedResponseDto<VariantWithPriceDto>> {
-    try {
-      const filters = {
-        status: query.status,
-        includePrice: query.includePrice !== 'false',
-        page: query.page ? parseInt(query.page) : undefined,
-        limit: query.limit ? parseInt(query.limit) : undefined,
-      };
+    const filters = {
+      status: query.status,
+      includePrice: query.includePrice !== 'false',
+      page: query.page ? parseInt(query.page) : undefined,
+      limit: query.limit ? parseInt(query.limit) : undefined,
+    };
 
-      return await this.productVariantsService.getVariantsByMaster(
-        masterId,
-        versionId, // version (optional)
-        filters,
-      );
-    } catch (error) {
-      console.error(error);
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get variants by master',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    return await this.productVariantsService.getVariantsByMaster(
+      masterId,
+      versionId, // version (optional)
+      filters,
+    );
   }
 
 
@@ -208,31 +186,15 @@ export class ProductVariantsController {
       throw new HttpException('Version ID or master ID is required', HttpStatus.BAD_REQUEST);
     }
 
-    try {
-      const variant = query.versionId
-        ? await this.productVariantsService.getVariantDetail({ variantId: id, versionId: query.versionId })
-        : await this.productVariantsService.getVariantDetail({ variantId: id, masterId: query.masterId! });
+    const variant = query.versionId
+      ? await this.productVariantsService.getVariantDetail({ variantId: id, versionId: query.versionId })
+      : await this.productVariantsService.getVariantDetail({ variantId: id, masterId: query.masterId! });
 
-      if (!variant) {
-        throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-      }
-
-      return variant;
-    } catch (error) {
-      if (
-        error.message === 'Variant not found' ||
-        error.status === HttpStatus.NOT_FOUND
-      ) {
-        throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to get variant detail',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    if (!variant) {
+      throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
     }
+
+    return variant;
   }
 
   @Put(':id')
@@ -257,27 +219,14 @@ export class ProductVariantsController {
     @Param('id') id: string,
     @Body() updateDto: UpdateProductVariantDto,
   ): Promise<VariantUpdateResponseDto> {
-    try {
-      const updatedVariant = await this.productVariantsService.updateVariant(
-        id,
-        updateDto,
-      );
-      return {
-        success: true,
-        data: updatedVariant as any as VariantWithPriceDto,
-      };
-    } catch (error) {
-      if (error.message.includes('not found')) {
-        throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-      }
-      if (error.message.includes('required')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException(
-        'Failed to update variant',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    const updatedVariant = await this.productVariantsService.updateVariant(
+      id,
+      updateDto,
+    );
+    return {
+      success: true,
+      data: updatedVariant as any as VariantWithPriceDto,
+    };
   }
 
   @Put('bulk')
@@ -296,25 +245,9 @@ export class ProductVariantsController {
   async bulkUpdateVariants(
     @Body() bulkUpdateDto: UpdateVariantBulkDto,
   ): Promise<void> {
-    try {
-      await this.productVariantsService.bulkUpdateVariants(
-        bulkUpdateDto,
-      );
-    } catch (error) {
-      if (
-        error.message.includes('required') ||
-        error.message.includes('Invalid')
-      ) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException(error.message, HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        'Failed to bulk update variants',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
+    await this.productVariantsService.bulkUpdateVariants(
+      bulkUpdateDto,
+    );
   }
 
   @Get(':id/price')
@@ -354,29 +287,13 @@ export class ProductVariantsController {
     @Param('id') id: string,
     @Body() statusDto: UpdateVariantStatusDto,
   ): Promise<void> {
-    try {
-      if (!statusDto.status) {
-        throw new HttpException('Status is required', HttpStatus.BAD_REQUEST);
-      }
-
-      await this.productVariantsService.updateVariantStatus(
-        id,
-        statusDto.status,
-      );
-    } catch (error) {
-      if (
-        error.message.includes('required') ||
-        error.message.includes('Invalid')
-      ) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      if (error.message.includes('not found')) {
-        throw new HttpException('Variant not found', HttpStatus.NOT_FOUND);
-      }
-      throw new HttpException(
-        'Failed to update variant status',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+    if (!statusDto.status) {
+      throw new HttpException('Status is required', HttpStatus.BAD_REQUEST);
     }
+
+    await this.productVariantsService.updateVariantStatus(
+      id,
+      statusDto.status,
+    );
   }
 }
