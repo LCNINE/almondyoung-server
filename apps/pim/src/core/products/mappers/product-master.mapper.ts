@@ -15,6 +15,7 @@ import {
   ChannelProductEntity,
 } from '../../../schema.types';
 import { ProductImageDto } from '../dto/products/product-image.dto';
+import { ProductMasterWithVersion } from 'apps/pim/src/types';
 
 /**
  * Mapper for ProductMaster DTOs
@@ -48,35 +49,22 @@ export class ProductMasterMapper {
   /**
    * Map entity to ProductSummaryDto
    */
-  static toProductSummary(entity: Partial<ProductMasterVersionEntity> & {
-    id: string;
-    name: string;
-    brand: string | null;
-    isMembershipOnly: boolean;
-    status: string;
-    createdAt: Date;
-    thumbnail?: string | null;
+
+  static toProductSummary(entity: ProductMasterWithVersion & {
     optionGroupCount?: number;
     variantCount?: number;
-    minPrice?: number | null;
-    maxPrice?: number | null;
-    minMembershipPrice?: number | null;
-    maxMembershipPrice?: number | null;
   }): ProductSummaryDto {
     return {
-      id: entity.id,
-      name: entity.name,
-      thumbnail: entity.thumbnail ?? null,
-      brand: entity.brand,
-      isMembershipOnly: entity.isMembershipOnly,
-      status: entity.status,
+      versionId: entity.version.id,
+      masterId: entity.id,
+      name: entity.version.name,
+      thumbnail: entity.version.thumbnail,
+      brand: entity.version.brand,
+      isMembershipOnly: entity.version.isMembershipOnly,
+      status: entity.version.status,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       optionGroupCount: entity.optionGroupCount ?? 0,
       variantCount: entity.variantCount ?? 0,
-      minPrice: entity.minPrice ?? null,
-      maxPrice: entity.maxPrice ?? null,
-      minMembershipPrice: entity.minMembershipPrice ?? null,
-      maxMembershipPrice: entity.maxMembershipPrice ?? null,
     };
   }
 
