@@ -504,9 +504,8 @@ export class ProductMastersService {
     data: {
       product: ProductMasterWithVersion,
       aggregate: {
-        optionGroupCount: number;
+        optionGroupNames: string[];
         variantCount: number;
-        thumbnail: string | null;
       }
     }[];
     total: number;
@@ -525,58 +524,53 @@ export class ProductMastersService {
 
       // ===== 모드별 버전 선택 로직 =====
       // 각 master에서 어떤 버전을 선택할지 결정
-      let selectedVersionsSubquery;
-
-      if (mode === 'active') {
-        // 모드 1: active 버전만
-        selectedVersionsSubquery = trx
-          .select({
-            masterId: productMasterVersions.masterId,
-            versionId: productMasterVersions.id,
-            status: productMasterVersions.status,
-            createdAt: productMasterVersions.createdAt,
-          })
-          .from(productMasterVersions)
-          .where(
-            and(
-              eq(productMasterVersions.status, 'active'),
-              isNull(productMasterVersions.deletedAt)
-            )
-          )
-          .as('selected_versions');
-      } else {
-        // 모드 2: active 우선, 없으면 최신 inactive
-        // ROW_NUMBER 윈도우 함수로 각 master별 우선순위 부여
-        selectedVersionsSubquery = trx
-          .select({
-            masterId: productMasterVersions.masterId,
-            versionId: productMasterVersions.id,
-            status: productMasterVersions.status,
-            createdAt: productMasterVersions.createdAt,
-            rn: sql<number>`
-              ROW_NUMBER() OVER (
-                PARTITION BY ${productMasterVersions.masterId}
-                ORDER BY
-                  CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END,
-                  ${productMasterVersions.createdAt} DESC
+      // 타입 안전성을 위해 두 모드 모두 동일한 스키마 사용
+      const selectedVersionsSubquery =
+        mode === 'active'
+          ? trx
+            .select({
+              masterId: productMasterVersions.masterId,
+              versionId: productMasterVersions.id,
+              status: productMasterVersions.status,
+              createdAt: productMasterVersions.createdAt,
+              rn: sql<number>`1`.as('rn'),
+            })
+            .from(productMasterVersions)
+            .where(
+              and(
+                eq(productMasterVersions.status, 'active'),
+                isNull(productMasterVersions.deletedAt)
               )
-            `.as('rn'),
-          })
-          .from(productMasterVersions)
-          .where(
-            and(
-              inArray(productMasterVersions.status, ['active', 'inactive']),
-              isNull(productMasterVersions.deletedAt)
             )
-          )
-          .as('ranked_versions');
-      }
+            .as('selected_versions')
+          : trx
+            .select({
+              masterId: productMasterVersions.masterId,
+              versionId: productMasterVersions.id,
+              status: productMasterVersions.status,
+              createdAt: productMasterVersions.createdAt,
+              rn: sql<number>`
+                  ROW_NUMBER() OVER (
+                    PARTITION BY ${productMasterVersions.masterId}
+                    ORDER BY
+                      CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END,
+                      ${productMasterVersions.createdAt} DESC
+                  )
+                `.as('rn'),
+            })
+            .from(productMasterVersions)
+            .where(
+              and(
+                inArray(productMasterVersions.status, ['active', 'inactive']),
+                isNull(productMasterVersions.deletedAt)
+              )
+            )
+            .as('ranked_versions');
 
       // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 (Recursive CTE) =====
       let categoryIds: string[] | undefined;
 
       if (filters?.categoryId) {
-        this.logger.log(`🔍 Category filter: ${filters.categoryId}`);
         // Recursive CTE로 카테고리 트리 조회
         const categoryTreeResult = await trx.execute<{ id: string }>(sql`
           WITH RECURSIVE category_tree AS (
@@ -596,7 +590,6 @@ export class ProductMastersService {
         `);
 
         categoryIds = categoryTreeResult.map(row => row.id);
-        this.logger.log(`⏱️ [${Date.now() - startTime}ms] Category tree resolved: ${categoryIds.length} categories`);
       }
 
       // ===== 공통 where 조건 빌드 =====
@@ -625,76 +618,65 @@ export class ProductMastersService {
         : undefined;
 
       // ===== 모드별 조인 처리 =====
-      let baseQuery;
+      const filteredVersions = trx
+        .select({
+          masterId: selectedVersionsSubquery.masterId,
+          versionId: selectedVersionsSubquery.versionId,
+          status: selectedVersionsSubquery.status,
+          createdAt: selectedVersionsSubquery.createdAt,
+        })
+        .from(selectedVersionsSubquery)
+        .where(eq(selectedVersionsSubquery.rn, 1))
+        .as('filtered_versions');
 
-      if (mode === 'active-or-inactive') {
-        // active-or-inactive: rn = 1인 것만 선택
-        const filteredVersions = trx
-          .select({
-            masterId: selectedVersionsSubquery.masterId,
-            versionId: selectedVersionsSubquery.versionId,
-            status: selectedVersionsSubquery.status,
-            createdAt: selectedVersionsSubquery.createdAt,
-          })
-          .from(selectedVersionsSubquery)
-          .where(eq(selectedVersionsSubquery.rn, 1))
-          .as('filtered_versions');
-
-        baseQuery = trx
-          .select()
-          .from(productMasters)
-          .innerJoin(
-            filteredVersions,
-            eq(productMasters.id, filteredVersions.masterId)
-          )
-          .innerJoin(
-            productMasterVersions,
-            eq(filteredVersions.versionId, productMasterVersions.id)
-          );
-      } else {
-        // active 모드
-        baseQuery = trx
-          .select()
-          .from(productMasters)
-          .innerJoin(
-            selectedVersionsSubquery,
-            eq(productMasters.id, selectedVersionsSubquery.masterId)
-          )
-          .innerJoin(
-            productMasterVersions,
-            eq(selectedVersionsSubquery.versionId, productMasterVersions.id)
-          );
-      }
+      const baseQuery =
+        mode === 'active-or-inactive'
+          ? trx
+            .select()
+            .from(productMasters)
+            .innerJoin(
+              filteredVersions,
+              eq(productMasters.id, filteredVersions.masterId)
+            )
+            .innerJoin(
+              productMasterVersions,
+              eq(filteredVersions.versionId, productMasterVersions.id)
+            )
+          : trx
+            .select()
+            .from(productMasters)
+            .innerJoin(
+              selectedVersionsSubquery,
+              eq(productMasters.id, selectedVersionsSubquery.masterId)
+            )
+            .innerJoin(
+              productMasterVersions,
+              eq(selectedVersionsSubquery.versionId, productMasterVersions.id)
+            );
 
       // 카테고리 조인 추가 (필요한 경우)
-      let queryWithFilters = baseQuery;
-
-      if (categoryIds && categoryIds.length > 0) {
-        queryWithFilters = baseQuery.innerJoin(
-          productMasterCategories,
-          and(
-            eq(productMasterCategories.masterId, productMasters.id),
-            eq(productMasterCategories.versionId, productMasterVersions.id),
-            inArray(productMasterCategories.categoryId, categoryIds)
+      const queryWithFilters =
+        categoryIds && categoryIds.length > 0
+          ? baseQuery.innerJoin(
+            productMasterCategories,
+            and(
+              eq(productMasterCategories.masterId, productMasters.id),
+              eq(productMasterCategories.versionId, productMasterVersions.id),
+              inArray(productMasterCategories.categoryId, categoryIds)
+            )
           )
-        );
-      }
+          : baseQuery;
 
       // WHERE 절 적용
       const finalQuery = whereClause
         ? queryWithFilters.where(whereClause)
         : queryWithFilters;
 
-      this.logger.log(`⏱️ [${Date.now() - startTime}ms] Query built, starting COUNT...`);
-
       // ===== COUNT 쿼리 =====
       const countResult = await finalQuery;
       const total = countResult.length;
 
-      this.logger.log(`⏱️ [${Date.now() - startTime}ms] COUNT complete: ${total} records`);
-
       // ===== DATA 쿼리 (정렬 및 페이지네이션) =====
-      this.logger.log(`🔍 Starting DATA query...`);
       const orderedQuery = finalQuery.orderBy(
         desc(productMasterVersions.createdAt)
       );
@@ -705,10 +687,7 @@ export class ProductMastersService {
           : orderedQuery.limit(limit).offset(offset)
       );
 
-      this.logger.log(`⏱️ [${Date.now() - startTime}ms] DATA query complete: ${rawData.length} records`);
-
       // ===== 결과 가공: ProductMasterWithVersion + aggregate 데이터 =====
-      this.logger.log(`🔍 Starting aggregate calculation...`);
 
       // ===== 배치 쿼리로 N+1 문제 해결 =====
       const versionIds = rawData.map(item => item.product_master_versions.id);
@@ -717,13 +696,21 @@ export class ProductMastersService {
         return { data: [], total, page, limit };
       }
 
-      // 한 번에 모든 optionGroup count 조회
-      const optionGroupCounts = await trx
+      // 한 번에 모든 optionGroup names 조회 (displayName 기준)
+      const optionGroupNamesResult = await trx
         .select({
           versionId: productMasterOptionGroups.versionId,
-          count: count(),
+          names: sql<string[]>`array_agg(DISTINCT ${productOptionGroupDisplays.displayName} ORDER BY ${productOptionGroupDisplays.displayName})`,
         })
         .from(productMasterOptionGroups)
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
+            eq(productMasterOptionGroups.versionId, productOptionGroupDisplays.versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR')
+          )
+        )
         .where(inArray(productMasterOptionGroups.versionId, versionIds))
         .groupBy(productMasterOptionGroups.versionId);
 
@@ -738,14 +725,12 @@ export class ProductMastersService {
         .groupBy(productMasterVariants.versionId);
 
       // Map으로 변환 (O(1) 조회)
-      const optionGroupCountMap = new Map(
-        optionGroupCounts.map(item => [item.versionId, item.count])
+      const optionGroupNamesMap = new Map(
+        optionGroupNamesResult.map(item => [item.versionId, item.names])
       );
       const variantCountMap = new Map(
         variantCounts.map(item => [item.versionId, item.count])
       );
-
-      this.logger.log(`⏱️ [${Date.now() - startTime}ms] Batch aggregate queries complete`);
 
       // 결과 조합 (더 이상 비동기 쿼리 없음)
       const data = rawData.map((item) => {
@@ -760,15 +745,11 @@ export class ProductMastersService {
         return {
           product,
           aggregate: {
-            optionGroupCount: optionGroupCountMap.get(version.id) ?? 0,
+            optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
           },
         };
       });
-
-      this.logger.log(`⏱️ [${Date.now() - startTime}ms] Aggregate calculation complete`);
-
-      this.logger.log(`✅ getMasters completed in ${Date.now() - startTime}ms`);
 
       return {
         data,
