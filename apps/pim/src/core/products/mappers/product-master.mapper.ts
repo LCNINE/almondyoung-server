@@ -51,8 +51,8 @@ export class ProductMasterMapper {
    */
 
   static toProductSummary(entity: ProductMasterWithVersion & {
-    optionGroupCount?: number;
-    variantCount?: number;
+    optionGroupNames: string[];
+    variantCount: number;
   }): ProductSummaryDto {
     return {
       versionId: entity.version.id,
@@ -63,8 +63,8 @@ export class ProductMasterMapper {
       isMembershipOnly: entity.version.isMembershipOnly,
       status: entity.version.status,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
-      optionGroupCount: entity.optionGroupCount ?? 0,
-      variantCount: entity.variantCount ?? 0,
+      optionGroupNames: entity.optionGroupNames,
+      variantCount: entity.variantCount,
     };
   }
 

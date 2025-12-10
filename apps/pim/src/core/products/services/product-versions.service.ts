@@ -310,6 +310,40 @@ export class ProductVersionsService {
     }, tx);
   }
 
+
+  async getDraftVersions(
+    filters?: {
+      page?: number;
+      limit?: number;
+    },
+    tx?: DbTransaction,
+  ): Promise<{
+    data: ProductMasterVersion[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = filters?.page ?? 1;
+    const limit = filters?.limit ?? 15;
+    const offset = (page - 1) * limit;
+
+    return this.inTx(async (tx) => {
+      const versions = await tx
+        .select()
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.status, 'draft'))
+        .limit(limit)
+        .offset(offset);
+      return {
+        data: versions,
+        total: versions.length,
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+
   /**
    * Active version 변경 이벤트 발행
    */
