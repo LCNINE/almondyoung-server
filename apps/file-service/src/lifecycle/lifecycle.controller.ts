@@ -5,9 +5,9 @@ import { ActivateFileDto } from './dto/activate-file.dto';
 import { ActivateResponseDto, DeleteResponseDto } from './dto/activate-response.dto';
 
 @ApiTags('Lifecycle')
-@Controller('api/v1/files')
+@Controller('files')
 export class LifecycleController {
-  constructor(private readonly lifecycleService: LifecycleService) {}
+  constructor(private readonly lifecycleService: LifecycleService) { }
 
   @Patch(':fileId/activate')
   @ApiOperation({ summary: 'Activate a file (pending → active)' })
@@ -32,7 +32,7 @@ export class LifecycleController {
     @Param('fileId', ParseUUIDPipe) fileId: string,
   ): Promise<DeleteResponseDto> {
     const userId = 'temp-user-id';
-    
+
     return this.lifecycleService.deleteFile(fileId, userId);
   }
 }

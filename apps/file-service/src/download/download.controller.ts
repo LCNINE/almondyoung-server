@@ -8,7 +8,7 @@ import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
 @ApiTags('Download')
 @ApiBearerAuth()
 @ApiSecurity('cookie')
-@Controller('api/v1/files')
+@Controller('files')
 export class DownloadController {
   constructor(private readonly downloadService: DownloadService) { }
 
