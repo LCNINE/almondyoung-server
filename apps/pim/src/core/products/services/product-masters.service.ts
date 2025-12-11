@@ -506,6 +506,7 @@ export class ProductMastersService {
       aggregate: {
         optionGroupNames: string[];
         variantCount: number;
+        thumbnail: string | null;
       }
     }[];
     total: number;
@@ -724,12 +725,29 @@ export class ProductMastersService {
         .where(inArray(productMasterVariants.versionId, versionIds))
         .groupBy(productMasterVariants.versionId);
 
+      // 한 번에 모든 primary 이미지 조회 (thumbnail용)
+      const primaryImages = await trx
+        .select({
+          versionId: productImages.versionId,
+          fileId: productImages.fileId,
+        })
+        .from(productImages)
+        .where(
+          and(
+            inArray(productImages.versionId, versionIds),
+            eq(productImages.isPrimary, true)
+          )
+        );
+
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(
         optionGroupNamesResult.map(item => [item.versionId, item.names])
       );
       const variantCountMap = new Map(
         variantCounts.map(item => [item.versionId, item.count])
+      );
+      const thumbnailMap = new Map(
+        primaryImages.map(item => [item.versionId, item.fileId])
       );
 
       // 결과 조합 (더 이상 비동기 쿼리 없음)
@@ -747,6 +765,7 @@ export class ProductMastersService {
           aggregate: {
             optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
+            thumbnail: thumbnailMap.get(version.id) ?? null,
           },
         };
       });
@@ -792,6 +811,9 @@ export class ProductMastersService {
         migrationData,
         optionDiff,
         tagValueIds,
+        thumbnailFileId,
+        additionalImageFileIds,
+        images,
         ...masterUpdateData
       } = data;
 
@@ -806,6 +828,64 @@ export class ProductMastersService {
 
       if (!updated) {
         throw new NotFoundException(`Failed to update version: ${versionId}`);
+      }
+
+      //이미지 처리 (product_images 테이블)
+
+      // 1. 대표 이미지 (thumbnailFileId → product_images with isPrimary=true)
+      if (thumbnailFileId !== undefined) {
+        // 기존 대표 이미지 삭제
+        await tx
+          .delete(productImages)
+          .where(
+            and(
+              eq(productImages.versionId, versionId),
+              eq(productImages.isPrimary, true)
+            )
+          );
+
+        if (thumbnailFileId) {
+          // 새 대표 이미지 추가
+          await tx.insert(productImages).values({
+            id: uuidv7(),
+            versionId: versionId,
+            fileId: thumbnailFileId,
+            isPrimary: true,
+            sortOrder: 0,
+            createdAt: new Date(),
+          });
+        }
+      }
+
+      // 2. 부가 이미지 (additionalImageFileIds → product_images with isPrimary=false)
+      if (additionalImageFileIds !== undefined) {
+        // 기존 부가 이미지 삭제 (대표 이미지 제외)
+        await tx
+          .delete(productImages)
+          .where(
+            and(
+              eq(productImages.versionId, versionId),
+              eq(productImages.isPrimary, false)
+            )
+          );
+
+        // 새 부가 이미지 추가 (최대 5개)
+        if (additionalImageFileIds.length > 0) {
+          if (additionalImageFileIds.length > 5) {
+            throw new BadRequestException('부가 이미지는 최대 5개까지 가능합니다');
+          }
+
+          const imageRecords = additionalImageFileIds.map((fileId, index) => ({
+            id: uuidv7(),
+            versionId: versionId,
+            fileId: fileId,
+            isPrimary: false,
+            sortOrder: index + 1,
+            createdAt: new Date(),
+          }));
+
+          await tx.insert(productImages).values(imageRecords);
+        }
       }
 
       // 카테고리 업데이트
