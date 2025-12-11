@@ -257,6 +257,15 @@ export class StreamPublisher<
   }
 
   /**
+   * Raw MessageEnvelope 발행 (Outbox 패턴용)
+   * 
+   * Outbox에 저장된 envelope를 그대로 Kafka로 발행
+   */
+  async publishRawEnvelope(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
+    await this.sendMessage(envelope, partitionKey);
+  }
+
+  /**
    * 토픽 정보 조회
    */
   getTopicInfo(): {
