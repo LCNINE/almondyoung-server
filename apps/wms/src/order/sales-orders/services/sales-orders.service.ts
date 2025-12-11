@@ -306,8 +306,8 @@ export class SalesOrdersService {
       }
 
       const sources = await trx.query.salesOrders.findMany({
-        where: inArray(wmsTables.salesOrders.id, sourceIds) as any,
-      } as any);
+        where: inArray(wmsTables.salesOrders.id, sourceIds),
+      });
       if (sources.length !== sourceIds.length) {
         return { ok: false, reason: 'ORDER_NOT_FOUND' };
       }
@@ -362,7 +362,7 @@ export class SalesOrdersService {
       }
 
       // 1) 원본 SO의 FO/예약 해제 및 FO 취소
-      const sourceFOs = await trx.query.fulfillmentOrders.findMany({ where: (f, { inArray: ina }) => ina(wmsTables.fulfillmentOrders.salesOrderId, sourceIds) as any });
+      const sourceFOs = await trx.query.fulfillmentOrders.findMany({ where: (f, { inArray: ina }) => ina(wmsTables.fulfillmentOrders.salesOrderId, sourceIds) });
       for (const fo of sourceFOs) {
         const fois = await trx.query.fulfillmentOrderItems.findMany({ where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id) });
         const foiIds = fois.map(item => item.id);
@@ -371,12 +371,12 @@ export class SalesOrdersService {
           await trx
             .update(wmsTables.stockReservations)
             .set({ status: 'released' })
-            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, foiIds) as any);
+            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, foiIds));
           // FOI reservedQty 초기화
           await trx
             .update(wmsTables.fulfillmentOrderItems)
             .set({ reservedQty: 0, updatedAt: new Date() })
-            .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds) as any);
+            .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds));
         }
         // FO 취소
         await trx
@@ -389,7 +389,7 @@ export class SalesOrdersService {
       await trx
         .update(wmsTables.salesOrders)
         .set({ status: 'cancelled' })
-        .where(inArray(wmsTables.salesOrders.id, sourceIds) as any);
+        .where(inArray(wmsTables.salesOrders.id, sourceIds));
 
       // 3) 병합된 SO 기준 FO 재구성(옵션: warehouseId 전달 시 생성)
       if (this.fulfillments) {
@@ -454,68 +454,69 @@ export class SalesOrdersService {
   }
 
   async list(params: SalesOrderFilterDto, tx?: DbTx) {
-    const db = tx ?? this.db.db;
-    const conditions: SQL[] = [];
+    return await this.inTx(async (tx) => {
+      const conditions: SQL[] = [];
 
-    if (params.startDate) {
-      conditions.push(gte(wmsTables.salesOrders.orderDate, new Date(params.startDate)));
-    }
-    if (params.endDate) {
-      // 종료일은 해당 일자의 마지막 시간까지 포함해야 함
-      // YYYY-MM-DD 입력 시 00:00:00으로 생성되므로, 23:59:59로 설정하여 비교
-      const end = new Date(params.endDate);
-      end.setHours(23, 59, 59, 999);
-      conditions.push(lte(wmsTables.salesOrders.orderDate, end));
-    }
-    if (params.channel) {
-      conditions.push(eq(wmsTables.salesOrders.salesChannel, params.channel as any));
-    }
-    if (params.status) {
-      conditions.push(eq(wmsTables.salesOrders.status, params.status as any));
-    }
-
-    // 1. 주문 목록 조회
-    let query = db
-      .select()
-      .from(wmsTables.salesOrders)
-      .$dynamic();
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
-
-    const orders = await query
-      .limit(params.limit ?? 20)
-      .offset(params.offset ?? 0)
-      .orderBy(desc(wmsTables.salesOrders.createdAt));
-
-    if (orders.length === 0) {
-      return [];
-    }
-
-    // 2. 주문 ID 목록 추출
-    const orderIds = orders.map((o) => o.id);
-
-    // 3. 주문 라인 조회
-    const lines = await db
-      .select()
-      .from(wmsTables.salesOrderLines)
-      .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
-
-    // 4. 주문 라인을 주문별로 그룹화
-    const linesByOrderId = new Map<string, typeof lines>();
-    for (const line of lines) {
-      if (!linesByOrderId.has(line.salesOrderId)) {
-        linesByOrderId.set(line.salesOrderId, []);
+      if (params.startDate) {
+        conditions.push(gte(wmsTables.salesOrders.orderDate, new Date(params.startDate)));
       }
-      linesByOrderId.get(line.salesOrderId)!.push(line);
-    }
+      if (params.endDate) {
+        // 종료일은 해당 일자의 마지막 시간까지 포함해야 함
+        // YYYY-MM-DD 입력 시 00:00:00으로 생성되므로, 23:59:59로 설정하여 비교
+        const end = new Date(params.endDate);
+        end.setHours(23, 59, 59, 999);
+        conditions.push(lte(wmsTables.salesOrders.orderDate, end));
+      }
+      if (params.channel) {
+        conditions.push(eq(wmsTables.salesOrders.salesChannel, params.channel));
+      }
+      if (params.status) {
+        conditions.push(eq(wmsTables.salesOrders.status, params.status));
+      }
 
-    // 5. 주문에 라인 정보 추가
-    return orders.map((order) => ({
-      ...order,
-      lines: linesByOrderId.get(order.id) || [],
-    }));
+      // 1. 주문 목록 조회
+      let query = tx
+        .select()
+        .from(wmsTables.salesOrders)
+        .$dynamic();
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
+      }
+
+      const orders = await query
+        .limit(params.limit ?? 20)
+        .offset(params.offset ?? 0)
+        .orderBy(desc(wmsTables.salesOrders.createdAt));
+
+      if (orders.length === 0) {
+        return [];
+      }
+
+      // 2. 주문 ID 목록 추출
+      const orderIds = orders.map((o) => o.id);
+
+      // 3. 주문 라인 조회
+      const lines = await tx
+        .select()
+        .from(wmsTables.salesOrderLines)
+        .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
+
+      // 4. 주문 라인을 주문별로 그룹화
+      const linesByOrderId = new Map<string, typeof lines>();
+      for (const line of lines) {
+        if (!linesByOrderId.has(line.salesOrderId)) {
+          linesByOrderId.set(line.salesOrderId, []);
+        }
+        linesByOrderId.get(line.salesOrderId)!.push(line);
+      }
+
+      // 5. 주문에 라인 정보 추가
+      return orders.map((order) => ({
+        ...order,
+        lines: linesByOrderId.get(order.id) || [],
+      }));
+    }, tx)
   }
 
   /**

@@ -20,15 +20,13 @@ import { InventoryQueryService } from './services/inventory-query.service';
 import { ProductEventConsumer } from './handlers/product-event.consumer';
 import { VariantMatchingStrategy } from './strategies/variant-matching.strategy';
 import { VoidMatchingStrategy } from './strategies/void-matching.strategy';
-import { SkuPricingService } from './services/sku-pricing.service';
 import { SkuManagersService } from './services/sku-managers.service';
 import { SkuLocationMovementService } from './services/sku-location-movement.service';
-import { SkuPricingController } from './controllers/sku-pricing.controller';
 import { SkuManagersController, ManagerSkusController } from './controllers/sku-managers.controller';
 import {
   SkuLocationMovementController,
-  SkuMovementHistoryController,
-  LocationMovementHistoryController,
+  // SkuMovementHistoryController,
+  // LocationMovementHistoryController,
 } from './controllers/sku-location-movement.controller';
 import { AllocationStrategyService } from './services/allocation-strategy.service';
 import { ReservationCronService } from './services/reservation-cron.service';
@@ -63,12 +61,11 @@ import { HolderController } from './controllers/holder.controller';
     InventoryController,
     ProductMatchingController,
     LocationController,
-    SkuPricingController,
     SkuManagersController,
     ManagerSkusController,
     SkuLocationMovementController,
-    SkuMovementHistoryController,
-    LocationMovementHistoryController,
+    // SkuMovementHistoryController,
+    // LocationMovementHistoryController,
     ReservationController,
     ReturnController,
     TransferController,
@@ -87,7 +84,6 @@ import { HolderController } from './controllers/holder.controller';
     InventoryQueryService,
     VariantMatchingStrategy,
     VoidMatchingStrategy,
-    SkuPricingService,
     SkuManagersService,
     SkuLocationMovementService,
     AllocationStrategyService,
@@ -106,7 +102,6 @@ import { HolderController } from './controllers/holder.controller';
     StockEventStore,
     InventoryCommandService,
     InventoryQueryService,
-    SkuPricingService,
     SkuManagersService,
     SkuLocationMovementService,
     AllocationStrategyService,

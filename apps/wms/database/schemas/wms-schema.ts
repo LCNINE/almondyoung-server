@@ -253,7 +253,7 @@ export const suppliers = pgTable('suppliers', {
   ceoName: varchar('ceo_name', { length: 100 }),
 
   // Purchase settings
-  isDirectDelivery: boolean('is_direct_delivery').default(false),
+  isDirectDelivery: boolean('is_direct_delivery').notNull().default(false),
   orderCutoffTime: varchar('order_cutoff_time', { length: 10 }),
 
   // Payment information
@@ -399,14 +399,14 @@ export const skus = pgTable('skus', {
 
   // 이미지 관리
   mainImageUrl: varchar('main_image_url', { length: 512 }), // @deprecated - Use skuImages table
-  currentStock: integer('current_stock').default(0), // Calculated/cached
+  currentStock: integer('current_stock').notNull().default(0), // Calculated/cached
 
   // 유효기간 및 날짜 관리
-  expiryDateManagement: boolean('expiry_date_management').default(false),
+  expiryDateManagement: boolean('expiry_date_management').notNull().default(false),
   expiryStartDate: timestamp('expiry_start_date', { withTimezone: true }),
   expiryEndDate: timestamp('expiry_end_date', { withTimezone: true }),
-  manufacturingDateManagement: boolean('manufacturing_date_management').default(false),
-  isGeneralInventory: boolean('is_general_inventory').default(true),
+  manufacturingDateManagement: boolean('manufacturing_date_management').notNull().default(false),
+  isGeneralInventory: boolean('is_general_inventory').notNull().default(true),
 
   // 유효 기간
   validityStartDate: timestamp('validity_start_date', { withTimezone: true }),
@@ -464,8 +464,8 @@ export const skuImages = pgTable('sku_images', {
 
   uploadId: uuid('upload_id').notNull(),
 
-  isPrimary: boolean('is_primary').default(true),
-  sortOrder: integer('sort_order').default(0),
+  isPrimary: boolean('is_primary').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -490,29 +490,6 @@ export const skuCategories = pgTable('sku_categories', {
 });
 
 // ===== Phase 2 Step 4: New SKU Related Tables =====
-
-// SKU Variant Pricing: 다단계 가격 관리
-export const skuVariantPricing = pgTable('sku_variant_pricing', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'cascade' })
-    .notNull(),
-
-  // 3단계 가격
-  retailPrice: integer('retail_price'), // 소매가
-  specialSalePrice: integer('special_sale_price'), // 특가
-  wholesalePrice: integer('wholesale_price'), // 도매가
-  sellingPrice: integer('selling_price'), // 현재 판매가
-
-  // 가격 유효기간
-  priceEffectiveDate: timestamp('price_effective_date', { withTimezone: true }),
-  priceExpiryDate: timestamp('price_expiry_date', { withTimezone: true }),
-
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, t => ({
-  uniqueSkuPricing: unique().on(t.skuId),
-}));
 
 // SKU Managers: SKU별 담당자 관리
 export const skuManagers = pgTable('sku_managers', {
@@ -1142,7 +1119,7 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 export const shipments = pgTable('shipments', {
   id: uuid('id').primaryKey().defaultRandom(),
   trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-  carrier: carrierEnum('carrier').default('CJ'),
+  carrier: carrierEnum('carrier').notNull().default('CJ'),
   status: shipmentStatusEnum('status').notNull().default('created'),
   eta: timestamp('eta', { withTimezone: true }),
   splitStatus: boolean('split_status').notNull().default(false),
@@ -1188,8 +1165,8 @@ export const returns = pgTable('returns', {
   qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
   qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
   qcNotes: text('qc_notes'), // QC 검사 노트
-  restockQuantity: integer('restock_quantity').default(0),
-  disposeQuantity: integer('dispose_quantity').default(0),
+  restockQuantity: integer('restock_quantity').notNull().default(0),
+  disposeQuantity: integer('dispose_quantity').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -1203,13 +1180,13 @@ export const returnItems = pgTable('return_items', {
   returnId: uuid('return_id').references(() => returns.id, { onDelete: 'cascade' }).notNull(),
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }).notNull(),
   requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
-  receivedQuantity: integer('received_quantity').default(0), // 실제 입고 수량
-  qcPassedQuantity: integer('qc_passed_quantity').default(0), // QC 통과 수량
-  qcFailedQuantity: integer('qc_failed_quantity').default(0), // QC 실패 수량
-  restockedQuantity: integer('restocked_quantity').default(0), // 재입고 수량
-  disposedQuantity: integer('disposed_quantity').default(0), // 폐기 수량
+  receivedQuantity: integer('received_quantity').notNull().default(0), // 실제 입고 수량
+  qcPassedQuantity: integer('qc_passed_quantity').notNull().default(0), // QC 통과 수량
+  qcFailedQuantity: integer('qc_failed_quantity').notNull().default(0), // QC 실패 수량
+  restockedQuantity: integer('restocked_quantity').notNull().default(0), // 재입고 수량
+  disposedQuantity: integer('disposed_quantity').notNull().default(0), // 폐기 수량
   locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
-  qcStatus: varchar('qc_status', { length: 50 }).default('pending'), // pending, passed, failed
+  qcStatus: varchar('qc_status', { length: 50 }).notNull().default('pending'), // pending, passed, failed
   qcReason: text('qc_reason'), // QC 결과 사유
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1281,7 +1258,7 @@ export const purchaseOrders = pgTable('purchase_orders', {
   requiresTransfer: boolean('requires_transfer').notNull().default(false), // 창고간 이동 필요 여부
 
   // Audit workflow fields
-  auditStatus: poAuditStatusEnum('audit_status').default('draft'),
+  auditStatus: poAuditStatusEnum('audit_status').notNull().default('draft'),
   submittedForAuditAt: timestamp('submitted_for_audit_at', { withTimezone: true }),
   submittedForAuditBy: uuid('submitted_for_audit_by'),
   auditedAt: timestamp('audited_at', { withTimezone: true }),
@@ -1714,7 +1691,6 @@ export const wmsTables = {
   skuImages,
   categories,
   skuCategories,
-  skuVariantPricing,
   skuManagers,
   skuLocationMovements,
   skuGroups,
@@ -1839,10 +1815,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   skuBarcodes: many(skuBarcodes),
   images: many(skuImages),
   // Phase 2 Step 4: New relations
-  pricing: one(skuVariantPricing, {
-    fields: [skus.id],
-    references: [skuVariantPricing.skuId],
-  }),
   managers: one(skuManagers, {
     fields: [skus.id],
     references: [skuManagers.skuId],
@@ -1928,13 +1900,6 @@ export const skuImagesRelations = relations(skuImages, ({ one }) => ({
 }));
 
 // ===== Phase 2 Step 4: New Table Relations =====
-
-export const skuVariantPricingRelations = relations(skuVariantPricing, ({ one }) => ({
-  sku: one(skus, {
-    fields: [skuVariantPricing.skuId],
-    references: [skus.id],
-  }),
-}));
 
 export const skuManagersRelations = relations(skuManagers, ({ one }) => ({
   sku: one(skus, {
@@ -2658,9 +2623,6 @@ export type NewCategory = InferInsertModel<typeof categories>;
 
 export type SkuCategory = InferSelectModel<typeof skuCategories>;
 export type NewSkuCategory = InferInsertModel<typeof skuCategories>;
-
-export type SkuVariantPricing = InferSelectModel<typeof skuVariantPricing>;
-export type NewSkuVariantPricing = InferInsertModel<typeof skuVariantPricing>;
 
 export type SkuManager = InferSelectModel<typeof skuManagers>;
 export type NewSkuManager = InferInsertModel<typeof skuManagers>;

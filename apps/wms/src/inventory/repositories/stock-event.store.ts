@@ -4,6 +4,7 @@ import { wmsSchema, wmsTables, DbTx } from '../../../database/schemas/wms-schema
 import { DbService } from '@app/db';
 import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
+import { StockStateEnum } from 'apps/wms/database/schemas/enum-values';
 
 
 // TransitionType alias for strong typing
@@ -35,7 +36,7 @@ export class StockEventStore {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -113,8 +114,8 @@ export class StockEventStore {
       fromLocationId: string | null;
       toWarehouseId: string | null;
       toLocationId: string | null;
-      fromState: any | null;
-      toState: any | null;
+      fromState: StockStateEnum | null;
+      toState: StockStateEnum | null;
       quantity: number;
     },
     options?: { forbidNegative?: boolean }
@@ -189,7 +190,7 @@ export class StockEventStore {
     startDate?: string,
     endDate?: string
   ) {
-    const where = (e: typeof wmsTables.stockEvents, ops: any) => and(
+    const where = (e: typeof wmsTables.stockEvents) => and(
       skuId ? eq(e.skuId, skuId) : undefined,
       warehouseId
         ? or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId))
@@ -282,7 +283,7 @@ export class StockEventStore {
       where: (e, { or, eq, isNull }) =>
         warehouseId
           ? and(or(eq(e.fromWarehouseId, warehouseId), eq(e.toWarehouseId, warehouseId)),
-                eq(e.eventStatus, 'POSTED'), isNull(e.voidedByEventId))
+            eq(e.eventStatus, 'POSTED'), isNull(e.voidedByEventId))
           : and(eq(e.eventStatus, 'POSTED'), isNull(e.voidedByEventId)),
       orderBy: (e, { desc }) => [desc(e.occurredAt)],
       limit,

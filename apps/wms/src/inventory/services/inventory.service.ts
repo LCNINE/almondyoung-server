@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb, TypedDatabase, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
-import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL } from 'drizzle-orm';
+import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL, inArray, desc } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto, SkuCreationSource } from '../dto/sku/create-sku.dto';
@@ -64,7 +64,7 @@ export class InventoryService implements OnModuleInit {
         ...cleanSkuData,
         ...(skuGroupId && { groupId: skuGroupId }),
         code: this._generateSkuCode(),
-      } as any).returning();
+      }).returning();
 
       if (supplierIds && supplierIds.length > 0) {
         await trx.insert(wmsTables.skuSuppliers).values(
@@ -246,7 +246,7 @@ export class InventoryService implements OnModuleInit {
     }
   }
 
-  async getSkuById(skuId: string, tx?: DbTx): Promise<SkuResponseDto> {
+  async getSkuById(skuId: string, tx?: DbTx, warehouseId?: string): Promise<SkuResponseDto> {
     const result = await this.inTx(async (trx) => {
       const [result] = await trx
         .select()
@@ -301,6 +301,36 @@ export class InventoryService implements OnModuleInit {
       .orderBy(wmsTables.skuImages.sortOrder)
       , tx);
 
+    // 재고 정보 조회
+    let currentStock = 0;
+    if (warehouseId) {
+      // 특정 창고의 재고만 조회
+      const [stockInfo] = await this.inTx(async (trx) => trx
+        .select({ onHandQty: wmsSchema.stockSummary.onHandQty })
+        .from(wmsSchema.stockSummary)
+        .where(
+          and(
+            eq(wmsSchema.stockSummary.skuId, skuId),
+            eq(wmsSchema.stockSummary.warehouseId, warehouseId)
+          )
+        )
+        .limit(1)
+        , tx);
+
+      currentStock = stockInfo?.onHandQty ?? 0;
+    } else {
+      // 전체 창고 합계
+      const [stockInfo] = await this.inTx(async (trx) => trx
+        .select({
+          total: sql<number>`COALESCE(SUM(${wmsSchema.stockSummary.onHandQty}), 0)`
+        })
+        .from(wmsSchema.stockSummary)
+        .where(eq(wmsSchema.stockSummary.skuId, skuId))
+        , tx);
+
+      currentStock = Number(stockInfo?.total ?? 0);
+    }
+
     // 타입 안전성과 type inference를 유지하기 위해 객체 spread와 nullish coalescing 사용
     const sku = {
       ...result.sku,
@@ -328,6 +358,7 @@ export class InventoryService implements OnModuleInit {
         sortOrder: img.sortOrder ?? 0,
         createdAt: img.createdAt,
       })),
+      currentStock,
     };
   }
 
@@ -340,87 +371,92 @@ export class InventoryService implements OnModuleInit {
     inventoryManagement?: boolean;
     groupId?: string;
   }, tx?: DbTx): Promise<SkuResponseDto[]> {
-    const results = await this.inTx(async (trx) => {
-      const baseQuery = trx.select({
-        sku: wmsTables.skus,
-        barcode: wmsTables.skuBarcodes,
-        supplier: wmsTables.suppliers,
-        category: wmsTables.categories,
-        group: wmsTables.skuGroups, // group 추가
-      })
-        .from(wmsTables.skus)
-        .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
-        .leftJoin(wmsTables.skuSuppliers, eq(wmsTables.skus.id, wmsTables.skuSuppliers.skuId))
-        .leftJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
-        .leftJoin(wmsTables.skuCategories, eq(wmsTables.skus.id, wmsTables.skuCategories.skuId))
-        .leftJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id))
-        .leftJoin(wmsTables.skuGroups, eq(wmsTables.skus.groupId, wmsTables.skuGroups.id)); // group join 추가
+    return this.inTx(async (trx) => {
+      // Step 1: 관계 테이블 조건으로 SKU ID 필터링
+      let skuIdFilter: string[] | undefined;
 
+      // barcode 조건으로 SKU ID 찾기
+      if (query.barcode) {
+        const skuIdsFromBarcode = await trx
+          .selectDistinct({ skuId: wmsTables.skus.id })
+          .from(wmsTables.skus)
+          .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
+          .where(
+            or(
+              eq(wmsTables.skus.defaultBarcode, query.barcode),
+              eq(wmsTables.skuBarcodes.barcode, query.barcode)
+            )
+          );
+        skuIdFilter = skuIdsFromBarcode.map(row => row.skuId);
+        if (skuIdFilter.length === 0) return [];
+      }
+
+      // supplierName 조건으로 SKU ID 찾기
+      if (query.supplierName) {
+        const skuIdsFromSupplier = await trx
+          .selectDistinct({ skuId: wmsTables.skuSuppliers.skuId })
+          .from(wmsTables.skuSuppliers)
+          .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
+          .where(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
+
+        const supplierSkuIds = skuIdsFromSupplier.map(row => row.skuId);
+        if (supplierSkuIds.length === 0) return [];
+
+        // 이전 필터와 교집합
+        skuIdFilter = skuIdFilter
+          ? skuIdFilter.filter(id => supplierSkuIds.includes(id))
+          : supplierSkuIds;
+
+        if (skuIdFilter.length === 0) return [];
+      }
+
+      // Step 2: 메인 테이블 조건 구성
       const conditions: SQL[] = [];
 
       if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
       if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
       if (query.groupId) conditions.push(eq(wmsTables.skus.groupId, query.groupId));
       if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
-
-      if (query.barcode) {
-        const barcodeCondition = or(
-          eq(wmsTables.skus.defaultBarcode, query.barcode),
-          eq(wmsTables.skuBarcodes.barcode, query.barcode),
-        );
-        if (barcodeCondition) conditions.push(barcodeCondition);
+      if (skuIdFilter && skuIdFilter.length > 0) {
+        conditions.push(inArray(wmsTables.skus.id, skuIdFilter));
       }
 
-      if (query.supplierName) {
-        conditions.push(sql`${wmsTables.suppliers.name} ILIKE ${'%' + query.supplierName + '%'}`);
-      }
+      // Step 3: Relational query로 데이터 조회 (Cartesian product 없음!)
+      const skus = await trx.query.skus.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        with: {
+          skuBarcodes: true,
+          skuSuppliers: {
+            with: {
+              supplier: true,
+            },
+          },
+          skuCategories: {
+            with: {
+              category: true,
+            },
+          },
+          group: true,
+        },
+      });
 
-      const finalQuery = conditions.length > 0 ? baseQuery.where(and(...conditions)) : baseQuery;
-      return finalQuery;
+      // Step 4: DTO 형식으로 변환
+      return skus.map(sku => ({
+        ...sku,
+        skuGroup: sku.group ?? undefined,
+        barcodes: sku.skuBarcodes.map(bc => ({
+          id: bc.id,
+          barcode: bc.barcode,
+          barcodeType: bc.barcodeType,
+          packingUnit: bc.packingUnit,
+        })),
+        suppliers: sku.skuSuppliers.map(ss => ({
+          id: ss.supplier.id,
+          name: ss.supplier.name,
+        })),
+        categoryNames: sku.skuCategories.map(sc => sc.category.name),
+      }));
     }, tx);
-
-    const aggregatedSkus = results.reduce((acc, row) => {
-      const sku = row.sku;
-      if (!acc[sku.id]) {
-        acc[sku.id] = {
-          ...sku,
-          skuGroup: row.group ?? undefined,
-          barcodes: new Map(),
-          suppliers: new Map<string, { id: string; name: string }>(),
-          categoryNames: new Set<string>(),
-        };
-      }
-
-      if (row.barcode) {
-        acc[sku.id].barcodes.set(row.barcode.id, {
-          id: row.barcode.id,
-          barcode: row.barcode.barcode,
-          barcodeType: row.barcode.barcodeType,
-          packingUnit: row.barcode.packingUnit,
-        });
-      }
-
-      if (row.supplier) {
-        acc[sku.id].suppliers.set(row.supplier.id, {
-          id: row.supplier.id,
-          name: row.supplier.name,
-        });
-      }
-
-      if (row.category) {
-        acc[sku.id].categoryNames.add(row.category.name);
-      }
-
-      return acc;
-    }, {} as Record<string, any>);
-
-    return Object.values(aggregatedSkus).map(sku => ({
-      ...sku,
-      barcodes: Array.from(sku.barcodes.values()),
-      suppliers: Array.from(sku.suppliers.values()),
-      categoryNames: Array.from(sku.categoryNames),
-      skuGroup: sku.skuGroup,
-    }));
   }
 
   /**
@@ -436,6 +472,13 @@ export class InventoryService implements OnModuleInit {
     offset: number;
   }> {
     return this.inTx(async (trx) => {
+      // displayMode는 warehouseId와 함께만 사용 가능
+      if (filters.displayMode && !filters.warehouseId) {
+        throw new BadRequestException(
+          'displayMode filter requires warehouseId to be specified'
+        );
+      }
+
       // Build where conditions
       const conditions: SQL[] = [];
 
@@ -456,7 +499,7 @@ export class InventoryService implements OnModuleInit {
 
       // Stock type
       if (filters.stockType) {
-        conditions.push(eq(wmsTables.skus.stockType, filters.stockType as any));
+        conditions.push(eq(wmsTables.skus.stockType, filters.stockType));
       }
 
       // ===== WMS-INTERNAL GROUPING FILTERS =====
@@ -491,8 +534,20 @@ export class InventoryService implements OnModuleInit {
       if (filters.isGrouped !== undefined) {
         conditions.push(
           filters.isGrouped
-            ? isNotNull(wmsTables.skus.groupId)  // Has group
-            : isNull(wmsTables.skus.groupId)     // Standalone SKU
+            ? isNotNull(wmsTables.skus.groupId)
+            : isNull(wmsTables.skus.groupId)
+        );
+      }
+
+      // Supplier filter
+      if (filters.supplierId) {
+        conditions.push(
+          inArray(
+            wmsTables.skus.id,
+            trx.select({ id: wmsTables.skuSuppliers.skuId })
+              .from(wmsTables.skuSuppliers)
+              .where(eq(wmsTables.skuSuppliers.supplierId, filters.supplierId))
+          )
         );
       }
 
@@ -509,108 +564,70 @@ export class InventoryService implements OnModuleInit {
         conditions.push(lte(wmsTables.skus.createdAt, new Date(filters.endDate)));
       }
 
-      // Build base query with stock summary join (for filtering only)
-      // First, get distinct SKU IDs with all filters applied
-      // Use groupBy to ensure distinct SKU IDs before pagination
-      let skuIdQuery = trx
+      // stockSummary JOIN 조건: warehouseId가 있으면 해당 창고만 JOIN
+      const stockSummaryJoinCondition = filters.warehouseId
+        ? and(
+          eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId),
+          eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)
+        )
+        : eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId);
+
+      // Build base query with stock summary join
+      const skuIdQuery = trx
         .select({ skuId: wmsTables.skus.id })
         .from(wmsTables.skus)
-        .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId))
+        .leftJoin(wmsSchema.stockSummary, stockSummaryJoinCondition)
         .groupBy(wmsTables.skus.id);
 
-      // Apply base conditions
-      if (conditions.length > 0) {
-        skuIdQuery = skuIdQuery.where(and(...conditions)) as any;
-      }
-
-      // Display mode filters (applied to joined stockSummary)
-      if (filters.displayMode) {
+      // Display mode filters (warehouseId와 함께만 사용 가능)
+      if (filters.displayMode && filters.warehouseId) {
         switch (filters.displayMode) {
           case StockDisplayMode.BELOW_SAFETY:
-            skuIdQuery = skuIdQuery.where(
+            conditions.push(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
-            ) as any;
+            );
             break;
           case StockDisplayMode.WITH_STOCK:
-            skuIdQuery = skuIdQuery.where(
+            conditions.push(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
-            ) as any;
+            );
             break;
           case StockDisplayMode.OUT_OF_STOCK:
-            skuIdQuery = skuIdQuery.where(
+            conditions.push(
               sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
-            ) as any;
+            );
             break;
         }
       }
 
-      // Warehouse filter (via stock summary)
-      if (filters.warehouseId) {
-        skuIdQuery = skuIdQuery.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
-      }
-
-      // Sorting - need to join back to skus table for sorting
+      // Sorting
       const sortField = filters.sortBy ?? 'createdAt';
       const sortDirection = filters.sortOrder ?? 'desc';
-
-      // For sorting, we need to reference the actual skus table fields
-      // So we'll use a subquery approach or order by the joined table
-      // Since we're selecting distinct skuId, we need to order by the skus table fields
-      // We'll use a subquery to get the sort value
-      if (sortDirection === 'asc') {
-        skuIdQuery = skuIdQuery.orderBy(asc(wmsTables.skus[sortField])) as any;
-      } else {
-        skuIdQuery = skuIdQuery.orderBy(sql`${wmsTables.skus[sortField]} DESC`) as any;
-      }
-
-      // Pagination - now applied to distinct SKU IDs
-      skuIdQuery = skuIdQuery.limit(filters.limit ?? 50).offset(filters.offset ?? 0) as any;
+      const orderCondition = sortDirection === 'asc'
+        ? asc(wmsTables.skus[sortField])
+        : desc(wmsTables.skus[sortField]);
 
       // Execute query to get distinct SKU IDs
-      const skuIdResults = await skuIdQuery;
+      const skuIdResults = await skuIdQuery
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(orderCondition)
+        .limit(filters.limit ?? 50)
+        .offset(filters.offset ?? 0);
+
       const uniqueSkuIds = skuIdResults.map(row => row.skuId);
 
-      // Count total (with same conditions)
-      let countQuery = trx
+      // Count total (동일한 conditions 사용, 중복 제거)
+      const [countResult] = await trx
         .select({ count: sql<number>`count(DISTINCT ${wmsTables.skus.id})` })
         .from(wmsTables.skus)
-        .leftJoin(wmsSchema.stockSummary, eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId));
+        .leftJoin(wmsSchema.stockSummary, stockSummaryJoinCondition)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-      if (conditions.length > 0) {
-        countQuery = countQuery.where(and(...conditions)) as any;
-      }
-
-      // Apply display mode to count query
-      if (filters.displayMode) {
-        switch (filters.displayMode) {
-          case StockDisplayMode.BELOW_SAFETY:
-            countQuery = countQuery.where(
-              sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) < ${wmsTables.skus.safetyStock}`
-            ) as any;
-            break;
-          case StockDisplayMode.WITH_STOCK:
-            countQuery = countQuery.where(
-              sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) > 0`
-            ) as any;
-            break;
-          case StockDisplayMode.OUT_OF_STOCK:
-            countQuery = countQuery.where(
-              sql`COALESCE(${wmsSchema.stockSummary.onHandQty}, 0) = 0`
-            ) as any;
-            break;
-        }
-      }
-
-      if (filters.warehouseId) {
-        countQuery = countQuery.where(eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId)) as any;
-      }
-
-      const [countResult] = await countQuery;
       const total = Number(countResult?.count ?? 0);
 
-      // Map to DTOs - now we have the correct number of unique SKU IDs
+      // Map to DTOs (warehouseId 전달)
       const items = await Promise.all(
-        uniqueSkuIds.map(skuId => this.getSkuById(skuId, trx))
+        uniqueSkuIds.map(skuId => this.getSkuById(skuId, trx, filters.warehouseId))
       );
 
       return {

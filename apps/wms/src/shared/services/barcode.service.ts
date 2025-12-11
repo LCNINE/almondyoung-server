@@ -341,7 +341,7 @@ export class BarcodeService {
         includetext: options?.includetext ?? true,
         textxalign: options?.textxalign ?? 'center',
         textsize: options?.textsize ?? 10,
-      } as any);
+      });
 
       return Buffer.from(png).toString('base64');
     } catch (error) {
