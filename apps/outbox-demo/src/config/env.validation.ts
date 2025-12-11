@@ -1,9 +1,13 @@
 import { z } from 'zod';
 
 export const outboxDemoEnvSchema = z.object({
-  // Database
   DATABASE_URL: z.string().url(),
   PORT: z.string().regex(/^\d+$/).optional(),
+  KAFKA_CLIENT_ID: z.string(),
+  KAFKA_BROKERS: z.string(),
+  KAFKA_API_KEY: z.string(),
+  KAFKA_API_SECRET: z.string(),
+  KAFKA_GROUP_ID: z.string().optional(),
 });
 
 export type OutboxDemoEnvConfig = z.infer<typeof outboxDemoEnvSchema>;
