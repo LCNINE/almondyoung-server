@@ -11,7 +11,7 @@ export class FulfillmentReservationsFacade {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unified: UnifiedReservationService,
-  ) {}
+  ) { }
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -98,7 +98,7 @@ export class FulfillmentReservationsFacade {
           await trx
             .update(wmsTables.stockReservations)
             .set({ quantity: r.quantity - remaining, updatedAt: new Date() })
-            .where(and(eq(wmsTables.stockReservations.id, r.id), eq(wmsTables.stockReservations.status, 'confirmed') as any));
+            .where(and(eq(wmsTables.stockReservations.id, r.id), eq(wmsTables.stockReservations.status, 'confirmed')));
           remaining = 0;
         }
       }

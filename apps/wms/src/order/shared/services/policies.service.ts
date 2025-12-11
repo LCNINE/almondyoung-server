@@ -5,7 +5,7 @@ import { nowSeoul } from '../../../shared/services/time.util';
 
 @Injectable()
 export class PoliciesService {
-  constructor(private readonly db: DbService<typeof wmsSchema>) {}
+  constructor(private readonly db: DbService<typeof wmsSchema>) { }
 
   async getVariantPolicy(variantId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;

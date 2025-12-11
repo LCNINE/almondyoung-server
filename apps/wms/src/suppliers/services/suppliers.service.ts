@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, Supplier } from '../../../database/schemas/wms-schema';
 import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
 import {
   CreateSupplierDto,
@@ -258,7 +258,7 @@ export class SuppliersService {
       const total = countResult[0]?.count || 0;
 
       const supplierIds = supplierList.map(s => s.id);
-      let categoriesBySupplier: Record<string, any[]> = {};
+      let categoriesBySupplier: Record<string, { id: string, name: string, description: string | null }[]> = {};
 
       if (supplierIds.length > 0) {
         const allCategories = await trx
@@ -285,7 +285,7 @@ export class SuppliersService {
             description: cat.categoryDescription,
           });
           return acc;
-        }, {} as Record<string, any[]>);
+        }, {} as Record<string, { id: string, name: string, description: string | null }[]>);
       }
 
       const data = supplierList.map(supplier =>
@@ -326,7 +326,7 @@ export class SuppliersService {
     }, tx);
   }
 
-  private mapToResponseDto(supplier: any, categories: any[]): SupplierResponseDto {
+  private mapToResponseDto(supplier: Supplier, categories: { id: string, name: string, description: string | null }[]): SupplierResponseDto {
     return SupplierResponseDto.fromDbRow(supplier, categories);
   }
 }

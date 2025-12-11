@@ -57,7 +57,7 @@ export class TransferJobLineDto {
     description: '생성 일시',
     example: '2025-10-20T08:00:00Z',
   })
-  createdAt: Date;
+  createdAt: string;
 }
 
 export class TransferJobDto {
@@ -77,7 +77,7 @@ export class TransferJobDto {
     description: '발생 일시',
     example: '2025-10-20T08:00:00Z',
   })
-  occurredAt: Date;
+  occurredAt: string;
 
   @ApiProperty({
     description: '총 수량',
@@ -110,13 +110,13 @@ export class TransferJobDto {
     description: '생성 일시',
     example: '2025-10-20T08:00:00Z',
   })
-  createdAt: Date;
+  createdAt: string;
 
   @ApiProperty({
     description: '수정 일시',
     example: '2025-10-20T09:00:00Z',
   })
-  updatedAt: Date;
+  updatedAt: string;
 
   @ApiProperty({
     description: '작업 라인 목록',
@@ -232,5 +232,3 @@ export class TransferJobListResponseDto {
   })
   offset: number;
 }
-
-

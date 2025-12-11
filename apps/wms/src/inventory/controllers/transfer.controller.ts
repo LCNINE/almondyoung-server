@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { TransferService } from '../services/transfer.service';
+import { MovementJob } from '../../../database/schemas/wms-schema';
 import {
   CreateTransferJobDto,
   ExecuteTransferJobDto,
@@ -26,11 +27,12 @@ import {
   TransferJobStatusDto,
   TransferJobListResponseDto,
 } from '../dto/transfer/transfer-response.dto';
+import { TransferJobMapper, TransferJobLineMapper } from '../mappers/transfer.mapper';
 
 @ApiTags('Inventory - Transfers')
 @Controller('inventory/transfers')
 export class TransferController {
-  constructor(private readonly transferService: TransferService) {}
+  constructor(private readonly transferService: TransferService) { }
 
   /**
    * 1. 창고 간/창고 내 이동 작업 생성
@@ -51,13 +53,19 @@ export class TransferController {
   })
   async createTransferJob(@Body() dto: CreateTransferJobDto): Promise<CreateTransferJobResponseDto> {
     try {
-      return await this.transferService.createTransferJob({
+      const result = await this.transferService.createTransferJob({
         fromWarehouseId: dto.fromWarehouseId,
         toWarehouseId: dto.toWarehouseId,
         items: dto.items,
         actorId: dto.actorId,
         memo: dto.memo,
       });
+
+      return {
+        jobId: result.jobId,
+        journalId: result.journalId,
+        lines: result.lines.map(line => TransferJobLineMapper.toDto(line)),
+      };
     } catch (error) {
       if (error.message?.includes('required') || error.message?.includes('At least')) {
         throw new BadRequestException(error.message);
@@ -170,7 +178,8 @@ export class TransferController {
   })
   async getTransferJob(@Param('id') id: string): Promise<TransferJobDto> {
     try {
-      return (await this.transferService.getTransferJob(id)) as TransferJobDto;
+      const { lines, ...job } = await this.transferService.getTransferJob(id);
+      return TransferJobMapper.toDto(job as MovementJob, lines);
     } catch (error) {
       if (error.message?.includes('not found')) {
         throw new NotFoundException(error.message);
@@ -248,14 +257,14 @@ export class TransferController {
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ): Promise<TransferJobListResponseDto> {
-    const jobs = await this.transferService.listTransferJobs({
+    const jobs: MovementJob[] = await this.transferService.listTransferJobs({
       warehouseId,
       limit: limit ? parseInt(limit.toString()) : 50,
       offset: offset ? parseInt(offset.toString()) : 0,
     });
 
     return {
-      jobs: jobs as any[],
+      jobs: jobs.map(job => TransferJobMapper.toDto(job)),
       total: jobs.length,
       limit: limit ? parseInt(limit.toString()) : 50,
       offset: offset ? parseInt(offset.toString()) : 0,

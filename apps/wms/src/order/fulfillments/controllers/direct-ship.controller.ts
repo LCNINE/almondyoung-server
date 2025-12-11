@@ -11,6 +11,7 @@ import {
 import { DirectShipService } from '../../shared/services/direct-ship.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
+import { DirectShipOrder } from '../../shared/services/direct-ship.service';
 
 const ForwardOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
@@ -32,7 +33,7 @@ const ExportOrdersSchema = z.object({
 export class DirectShipController {
   constructor(
     private readonly directShipService: DirectShipService
-  ) {}
+  ) { }
 
   @Get('dashboard')
   @ApiOperation({ summary: '직송 대시보드', description: '직송 주문 대시보드 정보를 조회합니다.' })
@@ -70,8 +71,7 @@ export class DirectShipController {
   async getDirectShipOrdersByCompany() {
     const ordersByCompany = await this.directShipService.getDirectShipOrdersByCompany();
 
-    // Convert Map to Object for JSON serialization
-    const result: Record<string, any> = {};
+    const result: Record<string, DirectShipOrder[]> = {};
     for (const [companyName, orders] of ordersByCompany.entries()) {
       result[companyName] = orders;
     }

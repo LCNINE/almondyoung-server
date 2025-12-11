@@ -86,14 +86,14 @@ export class InboundController {
   async listInboundReceipts(
     @Query('skuId') skuId?: string,
     @Query('warehouseId') warehouseId?: string,
-    @Query('method') method?: string,
+    @Query('method') method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned',
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
     return this.inboundService.listInboundReceipts({
-      skuId, warehouseId, method: method as any,
+      skuId, warehouseId, method,
       startDate, endDate,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
@@ -113,8 +113,8 @@ export class InboundController {
   async listInboundWorkLogs(
     @Query('warehouseId') warehouseId?: string,
     @Query('skuId') skuId?: string,
-    @Query('type') type?: string,
-    @Query('method') method?: string,
+    @Query('type') type?: 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL',
+    @Query('method') method?: 'individual' | 'simple' | 'simple_fullscan' | 'planned',
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
@@ -122,7 +122,7 @@ export class InboundController {
   ) {
     return this.inboundService.listInboundWorkLogs({
       warehouseId, skuId,
-      type: type as any, method: method as any,
+      type, method,
       startDate, endDate,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,

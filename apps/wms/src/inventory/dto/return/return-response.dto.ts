@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { returnStatusValues, type ReturnStatusEnum } from 'apps/wms/database/schemas/enum-values';
 
 export class ReturnItemDto {
   @ApiProperty({
@@ -69,11 +70,11 @@ export class ReturnItemDto {
 
   @ApiProperty({
     description: 'QC 상태',
-    enum: ['pending', 'passed', 'failed'],
+    enum: returnStatusValues,
     example: 'passed',
     nullable: true,
   })
-  qcStatus: string | null;
+  qcStatus: ReturnStatusEnum | null;
 
   @ApiProperty({
     description: 'QC 결과 사유',
@@ -86,13 +87,13 @@ export class ReturnItemDto {
     description: '생성 일시',
     example: '2025-10-20T08:00:00Z',
   })
-  createdAt: Date;
+  createdAt: string;
 
   @ApiProperty({
     description: '수정 일시',
     example: '2025-10-20T10:00:00Z',
   })
-  updatedAt: Date;
+  updatedAt: string;
 }
 
 export class ReturnDto {
@@ -141,7 +142,7 @@ export class ReturnDto {
     example: '2025-10-20T09:00:00Z',
     nullable: true,
   })
-  qcInspectedAt: Date | null;
+  qcInspectedAt: string | null;
 
   @ApiProperty({
     description: 'QC 검사자',
@@ -173,13 +174,13 @@ export class ReturnDto {
     description: '생성 일시',
     example: '2025-10-20T08:00:00Z',
   })
-  createdAt: Date;
+  createdAt: string;
 
   @ApiProperty({
     description: '수정 일시',
     example: '2025-10-20T10:00:00Z',
   })
-  updatedAt: Date;
+  updatedAt: string;
 
   @ApiProperty({
     description: '반품 아이템 목록',
@@ -283,5 +284,3 @@ export class ReturnListResponseDto {
   })
   offset: number;
 }
-
-

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, SupplierCategory } from '../../../database/schemas/wms-schema';
 import { eq } from 'drizzle-orm';
 import { 
   CreateSupplierCategoryDto, 
@@ -114,7 +114,7 @@ export class SupplierCategoriesService {
     }, tx);
   }
 
-  private mapToResponseDto(category: any): SupplierCategoryResponseDto {
+  private mapToResponseDto(category: SupplierCategory): SupplierCategoryResponseDto {
     return {
       id: category.id,
       name: category.name,

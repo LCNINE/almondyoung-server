@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query, UsePipes } from '@nestjs/common';
-import { ConsolidationService } from '../../shared/services/consolidation.service';
+import { ConsolidationGroup, ConsolidationService } from '../../shared/services/consolidation.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 
@@ -201,7 +201,7 @@ export class ConsolidationController {
     };
   }
 
-  private generateRecommendations(groups: any[]): string[] {
+  private generateRecommendations(groups: ConsolidationGroup[]): string[] {
     const recommendations: string[] = [];
 
     const autoGroups = groups.filter(g => g.recommendation === 'auto_consolidate').length;

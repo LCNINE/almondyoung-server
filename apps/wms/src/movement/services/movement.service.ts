@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, MovementJobLine, MovementJob } from '../../../database/schemas/wms-schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { StockEventStore } from '../../inventory/repositories/stock-event.store';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -16,7 +16,7 @@ export class MovementService {
 
   private get db() { return this.dbService.db; }
 
-  async moveImmediately(dto: MoveBatchDto) {
+  async moveImmediately(dto: MoveBatchDto): Promise<{ job: MovementJob; lines: MovementJobLine[] }> {
     const { warehouseId, actorId, memo } = dto;
     if (!dto.lines?.length) throw new BadRequestException('lines required');
 
@@ -66,7 +66,7 @@ export class MovementService {
         totalQuantity: dto.lines.reduce((s, l) => s + l.quantity, 0),
       }).returning();
 
-      const lineOutputs: any[] = [];
+      const lineOutputs: MovementJobLine[] = [];
 
       for (const line of dto.lines) {
         // 음수 방지: from 그레인 수량 확인(간단 체크)
@@ -121,18 +121,11 @@ export class MovementService {
           reason: line.memo ?? memo,
         });
 
-        lineOutputs.push({
-          id: jobLine.id,
-          skuId: line.skuId,
-          quantity: line.quantity,
-          fromLocationId: line.fromLocationId,
-          toLocationId: line.toLocationId,
-          eventId: event?.id ?? null,
-        });
+        lineOutputs.push(jobLine);
       }
 
       return {
-        job: { id: job.id, warehouseId: job.warehouseId, occurredAt: job.occurredAt, totalQuantity: job.totalQuantity, journalId: job.journalId, actorId: job.actorId, memo: job.memo },
+        job,
         lines: lineOutputs,
       };
     });

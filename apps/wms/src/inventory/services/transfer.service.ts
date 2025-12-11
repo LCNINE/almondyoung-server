@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, MovementJob } from '../../../database/schemas/wms-schema';
 import { eq, and, desc, SQL } from 'drizzle-orm';
 import { StockEventService } from './stock-event.service';
 import { InventoryCommandService } from './inventory-command.service';
@@ -20,7 +20,7 @@ export class TransferService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly stockEventService: StockEventService,
     private readonly commandService: InventoryCommandService,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -319,7 +319,7 @@ export class TransferService {
     warehouseId?: string;
     limit?: number;
     offset?: number;
-  }, tx?: DbTx) {
+  }, tx?: DbTx): Promise<MovementJob[]> {
     const db = tx ?? this.db;
 
     const conditions: SQL[] = [];
