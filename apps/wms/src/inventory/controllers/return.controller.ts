@@ -27,11 +27,15 @@ import {
   ProcessReturnResponseDto,
   ReturnListResponseDto,
 } from '../dto/return/return-response.dto';
+import { ReturnItemMapper, ReturnMapper } from '../mappers/return.mapper';
+import { ReturnFiltersDto } from '../dto/return/return-filters.dto';
+import { ReturnStatusEnum } from 'apps/wms/database/schemas/enum-values';
+import { Return } from 'apps/wms/database/schemas/wms-schema';
 
 @ApiTags('Inventory - Returns')
 @Controller('inventory/returns')
 export class ReturnController {
-  constructor(private readonly returnService: ReturnService) {}
+  constructor(private readonly returnService: ReturnService) { }
 
   /**
    * 1. 반품 요청 생성
@@ -52,13 +56,17 @@ export class ReturnController {
   })
   async createReturn(@Body() dto: CreateReturnDto): Promise<CreateReturnResponseDto> {
     try {
-      return await this.returnService.createReturnRequest({
+      const { returnId, items } = await this.returnService.createReturnRequest({
         orderId: dto.orderId,
         shipmentId: dto.shipmentId,
         warehouseId: dto.warehouseId,
         returnReason: dto.returnReason,
         items: dto.items,
       });
+      return {
+        returnId,
+        items: items.map(item => ReturnItemMapper.toDto(item)),
+      };
     } catch (error) {
       if (error.message?.includes('required')) {
         throw new BadRequestException(error.message);
@@ -234,14 +242,8 @@ export class ReturnController {
     description: '반품을 찾을 수 없음',
   })
   async getReturn(@Param('id') id: string): Promise<ReturnDto> {
-    try {
-      return (await this.returnService.getReturn(id)) as ReturnDto;
-    } catch (error) {
-      if (error.message?.includes('not found')) {
-        throw new NotFoundException(error.message);
-      }
-      throw error;
-    }
+    const returnEntity = await this.returnService.getReturn(id);
+    return ReturnMapper.toDto(returnEntity);
   }
 
   /**
@@ -252,62 +254,25 @@ export class ReturnController {
     summary: '반품 목록 조회',
     description: '반품 목록을 필터링 및 페이징하여 조회합니다.',
   })
-  @ApiQuery({
-    name: 'warehouseId',
-    description: '창고 ID (선택적)',
-    required: false,
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiQuery({
-    name: 'status',
-    description: '반품 상태 (선택적)',
-    required: false,
-    enum: ['requested', 'received', 'qc_passed', 'qc_failed', 'disposed'],
-    example: 'received',
-  })
-  @ApiQuery({
-    name: 'orderId',
-    description: '주문 ID (선택적)',
-    required: false,
-    example: '550e8400-e29b-41d4-a716-446655440001',
-  })
-  @ApiQuery({
-    name: 'limit',
-    description: '페이지 크기',
-    required: false,
-    example: 50,
-  })
-  @ApiQuery({
-    name: 'offset',
-    description: '오프셋',
-    required: false,
-    example: 0,
-  })
   @ApiResponse({
     status: 200,
     description: '반품 목록',
     type: ReturnListResponseDto,
   })
-  async listReturns(
-    @Query('warehouseId') warehouseId?: string,
-    @Query('status') status?: string,
-    @Query('orderId') orderId?: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
-  ): Promise<ReturnListResponseDto> {
-    const returns = await this.returnService.listReturns({
-      warehouseId,
-      status,
-      orderId,
-      limit: limit ? parseInt(limit.toString()) : 50,
-      offset: offset ? parseInt(offset.toString()) : 0,
+  async listReturns(@Query() filters: ReturnFiltersDto): Promise<ReturnListResponseDto> {
+    const returns: Return[] = await this.returnService.listReturns({
+      warehouseId: filters.warehouseId,
+      status: filters.status,
+      orderId: filters.orderId,
+      limit: filters.limit ?? 50,
+      offset: filters.offset ?? 0,
     });
 
     return {
-      returns: returns as any[],
+      returns: returns.map(returnEntity => ReturnMapper.toDto(returnEntity)),
       total: returns.length,
-      limit: limit ? parseInt(limit.toString()) : 50,
-      offset: offset ? parseInt(offset.toString()) : 0,
+      limit: filters.limit ?? 50,
+      offset: filters.offset ?? 0,
     };
   }
 }

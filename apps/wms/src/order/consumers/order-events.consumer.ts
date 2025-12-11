@@ -104,7 +104,7 @@ export class OrderEventsConsumer {
         await tx.insert(wmsTables.orderEvents).values({
           eventId: envelope.messageId,
           orderId: salesOrder.id,
-          eventType: 'ORDER_CREATED' as any,
+          eventType: 'ORDER_CREATED',
           payload: payload as any,
         });
 

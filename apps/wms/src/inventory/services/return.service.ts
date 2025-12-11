@@ -1,10 +1,11 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, Return, ReturnItem } from '../../../database/schemas/wms-schema';
 import { eq, and, desc, SQL } from 'drizzle-orm';
 import { InventoryCommandService } from './inventory-command.service';
 import { StockEventStore } from '../repositories/stock-event.store';
+import { ReturnStatusEnum } from 'apps/wms/database/schemas/enum-values';
 
 /**
  * 반품 처리 서비스
@@ -24,7 +25,7 @@ export class ReturnService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commandService: InventoryCommandService,
     private readonly stockEventStore: StockEventStore,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -46,7 +47,7 @@ export class ReturnService {
       skuId: string;
       requestedQuantity: number;
     }>;
-  }, tx?: DbTx) {
+  }, tx?: DbTx): Promise<{ returnId: string; items: ReturnItem[] }> {
     return this.inTx(async (trx) => {
       this.logger.log(`Creating return request for warehouse ${params.warehouseId}`);
 
@@ -480,11 +481,11 @@ export class ReturnService {
    */
   async listReturns(filters: {
     warehouseId?: string;
-    status?: string;
+    status?: ReturnStatusEnum;
     orderId?: string;
     limit?: number;
     offset?: number;
-  }, tx?: DbTx) {
+  }, tx?: DbTx): Promise<Return[]> {
     const db = tx ?? this.db;
 
     const conditions: SQL[] = [];
@@ -494,7 +495,7 @@ export class ReturnService {
     }
 
     if (filters.status) {
-      conditions.push(eq(wmsTables.returns.status, filters.status as any));
+      conditions.push(eq(wmsTables.returns.status, filters.status));
     }
 
     if (filters.orderId) {
