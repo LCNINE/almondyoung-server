@@ -64,6 +64,8 @@ export type UpdateProductMasterVersion = Partial<
   migrationData?: any;
   optionDiff?: OptionDiff;
   tagValueIds?: string[];
+  thumbnailFileId?: string | null;
+  additionalImageFileIds?: string[];
 };
 
 export type ProductMasterWithVersion = ProductMaster & {

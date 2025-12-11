@@ -161,8 +161,12 @@ export class ProductVersionsService {
         })
       );
 
+      const primaryImage = images.find(img => img.isPrimary);
+      const thumbnail = primaryImage ? primaryImage.fileId : null;
+
       return {
         ...version,
+        thumbnail,
         images,
         optionGroups,
         variants: variantsWithOptions,
@@ -834,9 +838,29 @@ export class ProductVersionsService {
       );
     }
 
+    // 이미지 복사 
+    const images = await tx
+      .select()
+      .from(productImages)
+      .where(eq(productImages.versionId, fromVersionId))
+      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
+    if (images.length > 0) {
+      await tx.insert(productImages).values(
+        images.map((img) => ({
+          id: uuidv7(),
+          versionId: toVersionId,
+          fileId: img.fileId,
+          isPrimary: img.isPrimary,
+          sortOrder: img.sortOrder,
+          createdAt: new Date(),
+        }))
+      );
+    }
+
     this.logger.log(
       `Copied mappings and displays from version ${fromVersionId} to ${toVersionId} for master ${masterId}: ` +
-      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values`,
+      `${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
     );
   }
 

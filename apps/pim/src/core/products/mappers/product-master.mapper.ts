@@ -50,15 +50,19 @@ export class ProductMasterMapper {
    * Map entity to ProductSummaryDto
    */
 
-  static toProductSummary(entity: ProductMasterWithVersion & {
-    optionGroupNames: string[];
-    variantCount: number;
-  }): ProductSummaryDto {
+  static toProductSummary(
+    entity: ProductMasterWithVersion & {
+      optionGroupNames: string[];
+      variantCount: number;
+      thumbnail?: string | null; // product_images에서 가져온 primary 이미지 fileId
+    }
+  ): ProductSummaryDto {
+    // thumbnail은 product_images에서 가져온 값 사용
     return {
       versionId: entity.version.id,
       masterId: entity.id,
       name: entity.version.name,
-      thumbnail: entity.version.thumbnail,
+      thumbnail: entity.thumbnail ?? null,
       brand: entity.version.brand,
       isMembershipOnly: entity.version.isMembershipOnly,
       status: entity.version.status,

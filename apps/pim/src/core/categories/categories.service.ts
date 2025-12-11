@@ -637,8 +637,6 @@ export class ProductCategoriesService {
         name: pimSchema.productMasterVersions.name,
         description: pimSchema.productMasterVersions.description,
         brand: pimSchema.productMasterVersions.brand,
-        thumbnail: pimSchema.productMasterVersions.thumbnail,
-        images: pimSchema.productMasterVersions.images,
         seoTitle: pimSchema.productMasterVersions.seoTitle,
         seoDescription: pimSchema.productMasterVersions.seoDescription,
         seoKeywords: pimSchema.productMasterVersions.seoKeywords,
@@ -650,6 +648,7 @@ export class ProductCategoriesService {
         updatedAt: pimSchema.productMasterVersions.updatedAt,
         createdBy: pimSchema.productMasterVersions.createdBy,
         updatedBy: pimSchema.productMasterVersions.updatedBy,
+        versionId: pimSchema.productMasterVersions.id, // product_images 조회용
       })
       .from(pimSchema.productMasterVersions)
       .innerJoin(
@@ -667,7 +666,34 @@ export class ProductCategoriesService {
       )
       .orderBy(pimSchema.productMasterVersions.name);
 
-    return products;
+    // product_images에서 primary 이미지 조회 (thumbnail용)
+    const versionIds = products.map(p => p.versionId);
+    const primaryImages = versionIds.length > 0
+      ? await client
+        .select({
+          versionId: pimSchema.productImages.versionId,
+          fileId: pimSchema.productImages.fileId,
+        })
+        .from(pimSchema.productImages)
+        .where(
+          and(
+            inArray(pimSchema.productImages.versionId, versionIds),
+            eq(pimSchema.productImages.isPrimary, true)
+          )
+        )
+      : [];
+
+    const thumbnailMap = new Map(
+      primaryImages.map(img => [img.versionId, img.fileId])
+    );
+
+    const productsWithThumbnail = products.map(product => ({
+      ...product,
+      thumbnail: thumbnailMap.get(product.versionId) ?? null,
+      images: null,
+    }));
+
+    return productsWithThumbnail;
   }
 
   async getCategoryProductCount(
