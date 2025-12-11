@@ -23,25 +23,25 @@ The file-service has been fully implemented according to the plan, with all core
 - **Types**: TypeScript types using Drizzle inference
 
 #### ✅ 3. UploadModule (`upload/`)
-- Single file upload endpoint: `POST /api/v1/files/upload`
-- Batch file upload endpoint: `POST /api/v1/files/batch-upload`
+- Single file upload endpoint: `POST /files/upload`
+- Batch file upload endpoint: `POST /files/batch-upload`
 - Integration with StorageService (S3/Local)
 - File status set to 'pending' on upload
 - `uploadedBy` captured from JWT (currently temp-user-id)
 
 #### ✅ 4. LifecycleModule (`lifecycle/`)
-- File activation: `PATCH /api/v1/files/:fileId/activate`
+- File activation: `PATCH /files/:fileId/activate`
   - Transitions file from 'pending' to 'active'
   - Sets `relatedId` and `relatedType` on activation
-- File deletion: `DELETE /api/v1/files/:fileId`
+- File deletion: `DELETE /files/:fileId`
   - Soft delete with permission check
   - Only `uploadedBy` user can delete
 
 #### ✅ 5. DownloadModule (`download/`)
-- Signed URL generation: `GET /api/v1/files/:fileId/download`
+- Signed URL generation: `GET /files/:fileId/download`
   - Configurable expiration time
   - Works with both S3 and Local storage
-- Metadata retrieval: `GET /api/v1/files/:fileId/metadata`
+- Metadata retrieval: `GET /files/:fileId/metadata`
 
 #### ✅ 6. CleanupModule (`cleanup/`)
 - Cron job (daily at 2 AM): Clean up orphaned files
@@ -56,7 +56,7 @@ The file-service has been fully implemented according to the plan, with all core
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 1. UPLOAD (pending)                                     │
-│    - User uploads file via POST /api/v1/files/upload   │
+│    - User uploads file via POST /files/upload           │
 │    - Status: 'pending'                                  │
 │    - uploadedBy: userId (from JWT)                      │
 │    - relatedId/relatedType: null                        │
@@ -72,7 +72,7 @@ The file-service has been fully implemented according to the plan, with all core
                      ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 3. ACTIVATE (active)                                    │
-│    - PATCH /api/v1/files/:fileId/activate              │
+│    - PATCH /files/:fileId/activate                      │
 │    - Status: 'pending' → 'active'                       │
 │    - relatedId: entity ID                               │
 │    - relatedType: entity type                           │
@@ -82,7 +82,7 @@ The file-service has been fully implemented according to the plan, with all core
                      ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 4. DELETE (soft delete)                                 │
-│    - DELETE /api/v1/files/:fileId                       │
+│    - DELETE /files/:fileId                              │
 │    - Status: 'active' → 'deleted'                       │
 │    - deletedAt: timestamp                               │
 │    - Record remains in DB for reference                 │
@@ -102,16 +102,16 @@ Alternative: Orphaned File Cleanup
 ## API Endpoints
 
 ### Upload
-- `POST /api/v1/files/upload` - Upload single file
-- `POST /api/v1/files/batch-upload` - Upload multiple files
+- `POST /files/upload` - Upload single file
+- `POST /files/batch-upload` - Upload multiple files
 
 ### Lifecycle
-- `PATCH /api/v1/files/:fileId/activate` - Activate file
-- `DELETE /api/v1/files/:fileId` - Soft delete file
+- `PATCH /files/:fileId/activate` - Activate file
+- `DELETE /files/:fileId` - Soft delete file
 
 ### Download
-- `GET /api/v1/files/:fileId/download` - Get signed URL
-- `GET /api/v1/files/:fileId/metadata` - Get file metadata
+- `GET /files/:fileId/download` - Get signed URL
+- `GET /files/:fileId/metadata` - Get file metadata
 
 ### Cleanup (Automatic)
 - Cron: `0 2 * * *` - Clean up orphaned files

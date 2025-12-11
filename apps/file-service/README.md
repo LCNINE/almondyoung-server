@@ -102,16 +102,21 @@ Upload (pending) → Activate (active) → Delete (soft delete)
 ## 🔌 API Endpoints
 
 ### Upload
-- `POST /api/v1/files/upload` - 단일 파일 업로드
-- `POST /api/v1/files/batch-upload` - 배치 파일 업로드
+- `POST /files/upload` - 단일 파일 업로드
+- `POST /files/batch-upload` - 배치 파일 업로드
 
 ### Lifecycle
-- `PATCH /api/v1/files/:fileId/activate` - 파일 활성화
-- `DELETE /api/v1/files/:fileId` - 파일 삭제
+- `PATCH /files/:fileId/activate` - 파일 활성화
+- `DELETE /files/:fileId` - 파일 삭제
 
 ### Download
-- `GET /api/v1/files/:fileId/download` - Signed URL 생성
-- `GET /api/v1/files/:fileId/metadata` - 파일 메타데이터 조회
+- `GET /files/:fileId/download` - Signed URL 생성
+- `GET /files/:fileId/metadata` - 파일 메타데이터 조회
+
+**참고**: Railway를 통해 접근할 때는 `/file-service` 프리픽스가 추가됩니다:
+- `POST /file-service/files/upload`
+- `GET /file-service/files/:fileId/download`
+- 등등...
 
 ---
 
@@ -132,7 +137,7 @@ Upload (pending) → Activate (active) → Delete (soft delete)
 #### 1. 파일 업로드
 
 ```bash
-curl -X POST http://localhost:3005/api/v1/files/upload \
+curl -X POST http://localhost:3005/files/upload \
   -F "file=@./test-image.jpg" \
   -F "context=product-image"
 ```
@@ -151,7 +156,7 @@ curl -X POST http://localhost:3005/api/v1/files/upload \
 #### 2. 파일 활성화
 
 ```bash
-curl -X PATCH http://localhost:3005/api/v1/files/01933e7a-1234-7890-abcd-0123456789ab/activate \
+curl -X PATCH http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab/activate \
   -H "Content-Type: application/json" \
   -d '{
     "relatedType": "product",
@@ -162,13 +167,13 @@ curl -X PATCH http://localhost:3005/api/v1/files/01933e7a-1234-7890-abcd-0123456
 #### 3. Signed URL 생성
 
 ```bash
-curl http://localhost:3005/api/v1/files/01933e7a-1234-7890-abcd-0123456789ab/download?expiresIn=3600
+curl http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab/download?expiresIn=3600
 ```
 
 #### 4. 파일 삭제
 
 ```bash
-curl -X DELETE http://localhost:3005/api/v1/files/01933e7a-1234-7890-abcd-0123456789ab
+curl -X DELETE http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab
 ```
 
 ---

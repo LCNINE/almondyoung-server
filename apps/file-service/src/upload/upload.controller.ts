@@ -23,7 +23,7 @@ interface JwtPayload {
 @ApiTags('Upload')
 @ApiBearerAuth()
 @ApiSecurity('cookie')
-@Controller('api/v1/files')
+@Controller('files')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) { }
 
