@@ -35,6 +35,7 @@ npm install @nestjs/microservices kafkajs ulid zod
 
 - **[빠른 시작 가이드](./docs/quick-start-guide.md)** ⭐ 처음 사용자 필독!
 - **[문제 해결 가이드](./docs/troubleshooting.md)** 🆘 문제가 있을 때
+- **[Outbox 마이그레이션 가이드](./MIGRATION_GUIDE.md)** 🔧 Drizzle 마이그레이션 설정
 - [Schema Validation Guide](./docs/schema-validation-guide.md) - Zod 스키마 검증
 - [Graceful Shutdown Guide](./docs/graceful-shutdown-guide.md) - 안전한 종료
 - [First Look](./docs/first-look.md) - 아키텍처 평가

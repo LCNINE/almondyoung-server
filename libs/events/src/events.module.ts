@@ -26,6 +26,12 @@ import {
   getDLQTopicName,
 } from '@packages/event-contracts/types';
 import { SchemaValidationOptions } from '@packages/event-contracts/types';
+import { OutboxConfig } from './outbox/outbox.types';
+import { OutboxPublisher } from './outbox/outbox-publisher.service';
+import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
+import { outboxSchema } from './outbox/outbox.schema';
+import { ScheduleModule } from '@nestjs/schedule';
+import { DbService } from '@app/db';
 
 /**
  * EventsModule 설정 옵션 (Publisher용)
@@ -36,6 +42,8 @@ export interface EventsModuleOptions {
   serviceName?: string; // 선택: 기본값은 환경변수 SERVICE_NAME
   enableDLQ?: boolean; // DLQ 활성화 (기본: true)
   validation?: SchemaValidationOptions; // 스키마 검증 옵션
+  enableOutbox?: boolean; // Outbox 패턴 활성화 (기본: false)
+  outbox?: OutboxConfig; // Outbox 설정
 }
 
 /**
@@ -97,12 +105,12 @@ export class EventsModule {
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
     const dlqProvider = enableDLQ
       ? {
-          provide: DLQHandler,
-          useFactory: (kafkaClient: any) => {
-            return new DLQHandler(kafkaClient);
-          },
-          inject: ['KAFKA_CLIENT'],
-        }
+        provide: DLQHandler,
+        useFactory: (kafkaClient: any) => {
+          return new DLQHandler(kafkaClient);
+        },
+        inject: ['KAFKA_CLIENT'],
+      }
       : null;
 
     // Graceful Shutdown Service
@@ -114,15 +122,51 @@ export class EventsModule {
       inject: ['KAFKA_CLIENT'],
     };
 
+    // Outbox 관련 providers
+    const enableOutbox = options.enableOutbox ?? false;
+    const outboxProviders = enableOutbox
+      ? [
+        {
+          provide: OutboxPublisher,
+          useClass: OutboxPublisher,
+        },
+        {
+          provide: OutboxDispatcher,
+          useFactory: (dbService: DbService, kafkaClient: any) => {
+            // topic -> StreamPublisher 매핑 생성
+            const publisherMap = new Map<string, StreamPublisher>();
+            options.streams.forEach((stream) => {
+              const publisher = new StreamPublisher(
+                kafkaClient,
+                stream,
+                serviceName,
+                options.validation,
+              );
+              publisherMap.set(stream.topic.topic, publisher);
+            });
+
+            return new OutboxDispatcher(
+              dbService,
+              publisherMap,
+              options.outbox,
+            );
+          },
+          inject: [DbService, 'KAFKA_CLIENT'],
+        },
+      ]
+      : [];
+
     const providers = [
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
+      ...outboxProviders,
       shutdownProvider, // Graceful shutdown 항상 등록
     ];
 
     return {
       module: EventsModule,
       imports: [
+        ...(enableOutbox ? [ScheduleModule.forRoot()] : []),
         ClientsModule.register([
           {
             name: 'KAFKA_CLIENT',
@@ -175,20 +219,20 @@ export class EventsModule {
     // DLQ Handler 제공자
     const dlqProvider = enableAutoDLQ
       ? {
-          provide: DLQHandler,
-          useFactory: (kafkaClient: any) => {
-            return new DLQHandler(kafkaClient);
-          },
-          inject: ['KAFKA_CLIENT'],
-        }
+        provide: DLQHandler,
+        useFactory: (kafkaClient: any) => {
+          return new DLQHandler(kafkaClient);
+        },
+        inject: ['KAFKA_CLIENT'],
+      }
       : null;
 
     // Exception Filter 제공자
     const filterProvider = enableAutoDLQ
       ? {
-          provide: APP_FILTER,
-          useClass: EventsExceptionFilter,
-        }
+        provide: APP_FILTER,
+        useClass: EventsExceptionFilter,
+      }
       : null;
 
     // Schema Validation Interceptor 제공자
@@ -364,6 +408,19 @@ export class EventsModule {
    */
   static InjectStreamPublisher(topicName: string) {
     return Inject(this.getPublisherToken(topicName));
+  }
+
+  /**
+   * Outbox 스키마 export (앱에서 병합할 수 있도록)
+   * 
+   * @example
+   * const combinedSchema = {
+   *   ...wmsSchema,
+   *   ...EventsModule.outboxSchema,
+   * };
+   */
+  static get outboxSchema() {
+    return outboxSchema;
   }
 }
 

@@ -33,5 +33,11 @@ export * from './interceptors/schema-validation.interceptor';
 // Graceful Shutdown
 export * from './shutdown/graceful-shutdown.service';
 
+// Outbox Pattern
+export * from './outbox/outbox.schema';
+export * from './outbox/outbox.types';
+export * from './outbox/outbox-publisher.service';
+export * from './outbox/outbox-dispatcher.service';
+
 // Utilities
 export * from './utils/message-id.util';

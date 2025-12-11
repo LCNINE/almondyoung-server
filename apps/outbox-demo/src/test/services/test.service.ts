@@ -1,8 +1,9 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { Database, DbTx } from '../../../database/schemas/demo-schema';
-import { test_records } from '../../../database/schemas/test.schema';
-import { outbox_events } from '../../../database/schemas/outbox.schema';
+import { DbService } from '@app/db';
+import { DbTx } from '../../../database/schemas/db.types';
+import { OutboxDemoSchema, testRecords } from '../../../database/schemas/schema';
+import { OutboxPublisher } from '@app/events';
 import { CreateTestRecordDto } from '../dto/create-test-record.dto';
 
 @Injectable()
@@ -10,8 +11,13 @@ export class TestService {
   private readonly logger = new Logger(TestService.name);
 
   constructor(
-    @Inject('DATABASE') private readonly db: Database,
-  ) {}
+    private readonly dbService: DbService<OutboxDemoSchema>,
+    private readonly outboxPublisher: OutboxPublisher,
+  ) { }
+
+  private get db() {
+    return this.dbService.db;
+  }
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
     return tx ? fn(tx) : this.db.transaction(fn);
@@ -31,7 +37,7 @@ export class TestService {
 
       // 1. 비즈니스 로직 - 테스트 레코드 저장 (Source of Truth)
       const [record] = await tx
-        .insert(test_records)
+        .insert(testRecords)
         .values({
           name: dto.name,
           description: dto.description ?? '',
@@ -41,11 +47,12 @@ export class TestService {
 
       this.logger.log(`✅ Test record created: id=${record.id}`);
 
-      // 2. Outbox에 이벤트 저장 (발행 대기열)
-      await tx.insert(outbox_events).values({
+      // 2. Outbox에 이벤트 저장 (발행 대기열) - 새 구현 사용
+      await this.outboxPublisher.saveEvent({
+        topic: 'test.events.v1',
+        eventType: 'TestRecordCreated',
         aggregateType: 'TestRecord',
         aggregateId: record.id.toString(),
-        eventType: 'TestRecordCreated',
         payload: {
           id: record.id,
           name: record.name,
@@ -56,8 +63,7 @@ export class TestService {
         metadata: {
           source: 'outbox-demo',
         },
-        status: 'PENDING',
-      });
+      }, tx);
 
       this.logger.log(`📦 Outbox event created for record id=${record.id}`);
 
@@ -75,12 +81,12 @@ export class TestService {
 
       // 1. 레코드 상태 변경
       const [record] = await tx
-        .update(test_records)
+        .update(testRecords)
         .set({
           status: 'DELETED',
           updatedAt: new Date(),
         })
-        .where(eq(test_records.id, id))
+        .where(eq(testRecords.id, id))
         .returning();
 
       if (!record) {
@@ -89,17 +95,17 @@ export class TestService {
 
       this.logger.log(`✅ Test record deleted: id=${id}`);
 
-      // 2. Outbox에 삭제 이벤트 저장
-      await tx.insert(outbox_events).values({
+      // 2. Outbox에 삭제 이벤트 저장 - 새 구현 사용
+      await this.outboxPublisher.saveEvent({
+        topic: 'test.events.v1',
+        eventType: 'TestRecordDeleted',
         aggregateType: 'TestRecord',
         aggregateId: record.id.toString(),
-        eventType: 'TestRecordDeleted',
         payload: {
           id: record.id,
           deletedAt: new Date().toISOString(),
         },
-        status: 'PENDING',
-      });
+      }, tx);
 
       this.logger.log(`📦 Outbox event created for deletion id=${id}`);
 
@@ -113,8 +119,8 @@ export class TestService {
   async getAllTestRecords() {
     const records = await this.db
       .select()
-      .from(test_records)
-      .orderBy(test_records.createdAt);
+      .from(testRecords)
+      .orderBy(testRecords.createdAt);
 
     return records;
   }
@@ -125,8 +131,8 @@ export class TestService {
   async getTestRecordById(id: number) {
     const [record] = await this.db
       .select()
-      .from(test_records)
-      .where(eq(test_records.id, id));
+      .from(testRecords)
+      .where(eq(testRecords.id, id));
 
     return record;
   }

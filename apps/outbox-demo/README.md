@@ -4,13 +4,14 @@
 
 ## 개요
 
-이 앱은 [Transactional Outbox Pattern](../../docs/transactional-outbox-pattern.md) 문서에서 설명한 패턴을 실제로 구현한 데모입니다.
+이 앱은 `@app/events` 모듈의 Outbox 패턴 기능을 사용하여 DB 트랜잭션과 이벤트 발행의 원자성을 보장하는 방법을 보여줍니다.
 
 ### 주요 기능
 
 - ✅ DB 트랜잭션과 이벤트 발행의 원자성 보장
 - ✅ Outbox 테이블을 통한 At-Least-Once 보장
-- ✅ Cron 기반 OutboxDispatcher
+- ✅ `@app/events` 모듈의 OutboxPublisher 및 OutboxDispatcher 사용
+- ✅ Cron 기반 자동 이벤트 발행 (5초마다)
 - ✅ 재시도 메커니즘 (최대 5회)
 - ✅ 실패한 이벤트 추적
 
@@ -53,15 +54,15 @@ cp .env.example .env.local
 ### 2. 데이터베이스 설정
 
 ```bash
-# 스키마 푸시 (테이블 생성)
-npm run db:push:outbox-demo
+# event 스키마 마이그레이션 (event.outbox_events 테이블 생성)
+npm run migrate:event "postgresql://user:password@localhost:5432/mydb"
 
-# 또는 마이그레이션 생성
-npm run db:generate:outbox-demo
+# test_records 테이블 생성
+npm run db:push:outbox-demo
 ```
 
 생성되는 테이블:
-- `outbox_events`: Outbox 이벤트 저장
+- `event.outbox_events`: Outbox 이벤트 저장 (공용 스키마)
 - `test_records`: 테스트 비즈니스 데이터
 
 ## 실행
@@ -98,8 +99,8 @@ curl -X POST http://localhost:3003/test \
 
 **결과:**
 - `test_records` 테이블에 레코드 생성
-- `outbox_events` 테이블에 `TestRecordCreated` 이벤트 저장 (status: PENDING)
-- 5초 이내에 OutboxDispatcher가 이벤트를 Kafka로 발행
+- `event.outbox_events` 테이블에 `TestRecordCreated` 이벤트 저장 (status: PENDING)
+- 5초 이내에 `@app/events`의 OutboxDispatcher가 이벤트를 Kafka로 자동 발행
 - 성공 시 이벤트 상태가 PUBLISHED로 변경
 
 ### 2. 모든 레코드 조회
@@ -125,27 +126,27 @@ curl -X DELETE http://localhost:3003/test/1
 
 **결과:**
 - `test_records.status`가 DELETED로 변경
-- `outbox_events` 테이블에 `TestRecordDeleted` 이벤트 저장
-- OutboxDispatcher가 Kafka로 발행
+- `event.outbox_events` 테이블에 `TestRecordDeleted` 이벤트 저장
+- `@app/events`의 OutboxDispatcher가 Kafka로 발행
 
 ## 로그 확인
 
-OutboxDispatcher는 다음과 같은 로그를 출력합니다:
+`@app/events`의 OutboxDispatcher는 다음과 같은 로그를 출력합니다:
 
 ```
-📦 Processing 2 events
-✅ Event 1: TestRecordCreated
-✅ Event 2: TestRecordDeleted
+[OutboxDispatcher] Processing 2 outbox events
+[OutboxDispatcher] Event 1 published: TestRecordCreated
+[OutboxDispatcher] Event 2 published: TestRecordDeleted
 ```
 
 실패 시:
 ```
-❌ Event 3 failed (1/5): Connection timeout
+[OutboxDispatcher] Event 3 failed (1/5): Connection timeout
 ```
 
 최종 실패 시:
 ```
-🚨 ALERT: Event 3 failed permanently after 5 attempts
+[OutboxDispatcher] Event 3 failed (5/5): Connection timeout
 ```
 
 ## Outbox 이벤트 상태 전이
@@ -160,29 +161,28 @@ PENDING → PROCESSING → PUBLISHED (성공)
 
 ## 모니터링
 
-### OutboxDispatcher Cron 작업
+### `@app/events` OutboxDispatcher Cron 작업
 
 1. **매 5초마다**: PENDING 이벤트 처리 및 Kafka 발행
-2. **매 시간마다**: FAILED 이벤트 개수 보고
-3. **매일 새벽 2시**: 7일 이상 된 PUBLISHED 이벤트 삭제
+2. **매일 새벽 2시**: 7일 이상 된 PUBLISHED 이벤트 자동 삭제
 
 ## 데이터베이스 직접 확인
 
 ```sql
 -- Outbox 이벤트 현황
 SELECT status, COUNT(*)
-FROM outbox_events
+FROM event.outbox_events
 GROUP BY status;
 
 -- 최근 이벤트 확인
 SELECT id, event_type, status, created_at, published_at, retry_count
-FROM outbox_events
+FROM event.outbox_events
 ORDER BY created_at DESC
 LIMIT 10;
 
 -- 실패한 이벤트 확인
 SELECT id, event_type, error_message, retry_count
-FROM outbox_events
+FROM event.outbox_events
 WHERE status = 'FAILED';
 ```
 
@@ -195,6 +195,66 @@ WHERE status = 'FAILED';
 3. **트랜잭션 범위**: SELECT + UPDATE는 트랜잭션 안에, Kafka 발행은 밖에
 4. **상태 관리**: PENDING → PROCESSING → PUBLISHED 전이
 5. **재시도 메커니즘**: 최대 5회 재시도 후 FAILED 상태로 전환
+6. **`@app/events` 모듈**: OutboxPublisher와 OutboxDispatcher를 통한 쉬운 구현
+
+## 코드 예시
+
+### OutboxPublisher 사용
+
+```typescript
+import { OutboxPublisher } from '@app/events';
+
+@Injectable()
+export class TestService {
+  constructor(
+    @Inject('DATABASE') private readonly db: Database,
+    private readonly outboxPublisher: OutboxPublisher,
+  ) {}
+
+  async createTestRecord(dto: CreateTestRecordDto) {
+    return this.db.transaction(async (tx) => {
+      // 1. 비즈니스 로직
+      const [record] = await tx.insert(test_records).values({...}).returning();
+
+      // 2. Outbox에 이벤트 저장 (같은 트랜잭션)
+      await this.outboxPublisher.saveEvent({
+        topic: 'test.events.v1',
+        eventType: 'TestRecordCreated',
+        aggregateType: 'TestRecord',
+        aggregateId: record.id.toString(),
+        payload: {
+          id: record.id,
+          name: record.name,
+        },
+      }, tx);
+
+      return record;
+    });
+  }
+}
+```
+
+### AppModule 설정
+
+```typescript
+import { EventsModule } from '@app/events';
+
+@Module({
+  imports: [
+    EventsModule.forRoot({
+      streams: [TEST_STREAM],
+      serviceName: 'outbox-demo',
+      enableOutbox: true,  // Outbox 패턴 활성화
+      outbox: {
+        dispatchIntervalMs: 5000,
+        maxRetries: 5,
+      },
+    }),
+    // ...
+  ],
+})
+export class AppModule {}
+```
 
 ## 테스트 시나리오
 
@@ -242,5 +302,6 @@ curl -X POST http://localhost:3003/test \
 
 ## 참고 문서
 
-- [Transactional Outbox Pattern 문서](../../docs/transactional-outbox-pattern.md)
 - [Events Module](../../libs/events/)
+- [Events Module README](../../libs/events/README.md)
+- Transactional Outbox Pattern 구현은 `libs/events/src/outbox/`에 있습니다
