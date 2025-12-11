@@ -159,12 +159,12 @@ temp/pending/2025/01/880e8400-e29b-41d4-a716-446655440003.jpg
 
 ### Public APIs
 ```
-POST   /api/v1/files/upload              # 단일 파일 업로드
-POST   /api/v1/files/batch-upload        # 배치 업로드
-PATCH  /api/v1/files/:fileId/activate    # 파일 활성화
-DELETE /api/v1/files/:fileId             # 파일 삭제
-GET    /api/v1/files/:fileId/download    # Signed URL 발급
-GET    /api/v1/files/:fileId/metadata    # 메타데이터 조회
+POST   /files/upload              # 단일 파일 업로드
+POST   /files/batch-upload        # 배치 업로드
+PATCH  /files/:fileId/activate    # 파일 활성화
+DELETE /files/:fileId             # 파일 삭제
+GET    /files/:fileId/download    # Signed URL 발급
+GET    /files/:fileId/metadata    # 메타데이터 조회
 ```
 
 
