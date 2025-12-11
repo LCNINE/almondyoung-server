@@ -13,6 +13,7 @@ import {
   channelProducts,
   salesChannels,
   productMasterVersions,
+  productImages,
 } from '../../schema';
 import {
   eq,
@@ -241,8 +242,6 @@ export class ChannelProductsService {
           name: productMasterVersions.name,
           description: productMasterVersions.description,
           brand: productMasterVersions.brand,
-          thumbnail: productMasterVersions.thumbnail,
-          images: productMasterVersions.images,
           seoTitle: productMasterVersions.seoTitle,
           seoDescription: productMasterVersions.seoDescription,
           seoKeywords: productMasterVersions.seoKeywords,
@@ -251,6 +250,7 @@ export class ChannelProductsService {
           createdBy: productMasterVersions.createdBy,
           updatedBy: productMasterVersions.updatedBy,
         },
+        versionId: productMasterVersions.id, // product_images 조회용
       })
       .from(channelProducts)
       .innerJoin(
@@ -268,7 +268,37 @@ export class ChannelProductsService {
       dataQuery.where(whereClause);
     }
 
-    const data = await dataQuery;
+    const rawData = await dataQuery;
+
+    // product_images에서 primary 이미지 조회 (thumbnail용)
+    const versionIds = rawData.map(item => item.versionId);
+    const primaryImages = versionIds.length > 0
+      ? await client
+        .select({
+          versionId: productImages.versionId,
+          fileId: productImages.fileId,
+        })
+        .from(productImages)
+        .where(
+          and(
+            inArray(productImages.versionId, versionIds),
+            eq(productImages.isPrimary, true)
+          )
+        )
+      : [];
+
+    const thumbnailMap = new Map(
+      primaryImages.map(img => [img.versionId, img.fileId])
+    );
+
+    const data = rawData.map(item => ({
+      ...item,
+      master: {
+        ...item.master,
+        thumbnail: thumbnailMap.get(item.versionId) ?? null,
+        images: null,
+      },
+    }));
 
     return {
       data,
@@ -378,8 +408,8 @@ export class ChannelProductsService {
           id: productMasterVersions.id,
           name: productMasterVersions.name, // 원본 이름
           description: productMasterVersions.description,
-          images: productMasterVersions.images,
         },
+        versionId: productMasterVersions.id, // product_images 조회용
       })
       .from(channelProducts)
       .innerJoin(
@@ -402,22 +432,22 @@ export class ChannelProductsService {
 
     const data = result[0];
 
+    // product_images에서 이미지 조회
+    const images = await client
+      .select()
+      .from(productImages)
+      .where(eq(productImages.versionId, data.versionId))
+      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+
     // 2. 데이터 병합 로직
     return {
       id: data.channelProduct.id,
       masterId: data.channelProduct.masterId,
       channelId: data.channelProduct.channelId,
-      // 상품명: 오버라이드된 이름이 있으면 사용, 없으면 원본 이름 사용
-      name: data.channelProduct.name || data.master.name,
-      // 설명, 이미지는 항상 원본 Master 데이터 사용
-      description: data.master.description || '',
-      images: Array.isArray(data.master.images)
-        ? (data.master.images as string[])
-        : [],
-      // basePrice removed - 가격은 pricing rules API로 조회 필요
-      // 판매 여부는 채널별 설정 사용
-      isActive: (data.channelProduct.isActive ?? true) as boolean,
-      // 채널별 특수 데이터
+      name: data.channelProduct.name ?? data.master.name, // 채널 상품 이름 우선, 없으면 원본
+      description: data.master.description ?? '',
+      images: images.map(img => img.fileId), // product_images에서 가져온 fileId 배열
+      isActive: data.channelProduct.isActive ?? true,
       channelSpecificData: data.channelProduct.channelSpecificData,
     };
   }
