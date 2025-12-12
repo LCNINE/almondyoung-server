@@ -136,7 +136,7 @@ export const USER_STREAM = stream({
   events: {
     UserCreated: event<'UserCreated', UserCreatedPayload>('UserCreated', UserCreatedSchema),
     UserVerification: event<'UserVerification', UserVerificationPayload>('UserVerification', UserVerificationSchema),
-    UserEmailVerified: event<'UserEmailVerified', UserEmailVerifiedPayload>('UserEmailVerified', UserVerificationSchema),
+    UserEmailVerified: event<'UserEmailVerified', UserEmailVerifiedPayload>('UserEmailVerified', UserEmailVerifiedSchema),
     UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
     UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
     UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),
