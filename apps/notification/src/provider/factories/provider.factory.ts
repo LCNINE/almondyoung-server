@@ -18,19 +18,28 @@ export class ProviderFactory {
         providerId: string,
         config: Record<string, any>
     ): NotificationProvider | null {
-        switch (providerName.toLowerCase()) {
-            case 'resend':
-                return new ResendProvider(providerId, config, this.configService);
-            case 'twilio':
-                return new TwilioProvider(providerId, config, this.configService);
-            case 'kakao':
-            case 'nhn-kakao':
-            case 'nhn':
-                return new NHNProvider(providerId, config, this.configService);
-            case 'fcm':
-                return new FCMProvider(providerId, config, this.configService);
-            default:
-                return null;
+        const name = providerName.toLowerCase();
+
+        // Resend Email Provider
+        if (name.includes('resend')) {
+            return new ResendProvider(providerId, config, this.configService);
         }
+
+        // Twilio SMS Provider
+        if (name.includes('twilio')) {
+            return new TwilioProvider(providerId, config, this.configService);
+        }
+
+        // NHN KakaoTalk Provider
+        if (name.includes('nhn') || name.includes('kakao')) {
+            return new NHNProvider(providerId, config, this.configService);
+        }
+
+        // Firebase FCM Push Provider
+        if (name.includes('fcm')) {
+            return new FCMProvider(providerId, config, this.configService);
+        }
+
+        return null;
     }
 }
