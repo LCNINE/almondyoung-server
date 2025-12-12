@@ -272,25 +272,25 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
         // 기존 metadata를 유지하면서 업데이트
         // 개발 중 임시로 지속적인 DB 접근 차단
-        const existingProvider = await this.db.query.notificationProviders.findFirst({
-          where: eq(notificationProviders.providerId, providerId),
-        });
+        // const existingProvider = await this.db.query.notificationProviders.findFirst({
+        //     where: eq(notificationProviders.providerId, providerId),
+        // });
 
-        const existingMetadata = existingProvider?.metadata || {};
-
-        await this.db
-          .update(notificationProviders)
-          .set({
-            status: isAvailable ? ProviderStatus.ACTIVE : ProviderStatus.ERROR,
-            metadata: {
-              ...existingMetadata,
-              lastHealthCheck: new Date().toISOString(),
-              isHealthy: isAvailable,
-              // 에러 정보는 health check 성공 시 제거하지 않음 (이력 유지)
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(notificationProviders.providerId, providerId));
+        // const existingMetadata = existingProvider?.metadata || {};
+        // 
+        // await this.db
+        //     .update(notificationProviders)
+        //     .set({
+        //         status: isAvailable ? ProviderStatus.ACTIVE : ProviderStatus.ERROR,
+        //         metadata: {
+        //             ...existingMetadata,
+        //             lastHealthCheck: new Date().toISOString(),
+        //             isHealthy: isAvailable,
+        //             // 에러 정보는 health check 성공 시 제거하지 않음 (이력 유지)
+        //         },
+        //         updatedAt: new Date(),
+        //     })
+        //     .where(eq(notificationProviders.providerId, providerId));
 
         if (!isAvailable) {
           await this.alertService.createAlert({
@@ -320,26 +320,26 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
 
         // 헬스체크 에러 시에도 DB 상태를 ERROR로 갱신
         // 개발 중 임시로 지속적인 DB 접근 차단
-        const existingProvider = await this.db.query.notificationProviders.findFirst({
-          where: eq(notificationProviders.providerId, providerId),
-        });
+        // const existingProvider = await this.db.query.notificationProviders.findFirst({
+        //     where: eq(notificationProviders.providerId, providerId),
+        // });
 
-        const existingMetadata = existingProvider?.metadata || {};
+        // const existingMetadata = existingProvider?.metadata || {};
 
-        await this.db
-          .update(notificationProviders)
-          .set({
-            status: ProviderStatus.ERROR,
-            metadata: {
-              ...existingMetadata,
-              lastHealthCheck: new Date().toISOString(),
-              isHealthy: false,
-              lastError: error.message,
-              lastErrorAt: new Date().toISOString(),
-            },
-            updatedAt: new Date(),
-          })
-          .where(eq(notificationProviders.providerId, providerId));
+        // await this.db
+        //     .update(notificationProviders)
+        //     .set({
+        //         status: ProviderStatus.ERROR,
+        //         metadata: {
+        //             ...existingMetadata,
+        //             lastHealthCheck: new Date().toISOString(),
+        //             isHealthy: false,
+        //             lastError: error.message,
+        //             lastErrorAt: new Date().toISOString(),
+        //         },
+        //         updatedAt: new Date(),
+        //     })
+        //     .where(eq(notificationProviders.providerId, providerId));
 
         await this.alertService.createAlert({
           type: 'provider_health_check_error',
