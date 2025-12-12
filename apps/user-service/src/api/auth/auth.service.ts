@@ -321,6 +321,8 @@ export class AuthService {
         url.searchParams.set('userId', verificationToken.user.id);
       }
 
+      console.log('verificationToken.user:::', verificationToken.user.username, 'email:::', verificationToken.user.email, 'id:::', verificationToken.user.id)
+
 
       await this.eventPublisher.publishEvent({
         eventType: 'UserEmailVerified',
