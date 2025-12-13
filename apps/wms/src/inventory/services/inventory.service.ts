@@ -18,7 +18,7 @@ import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryQueryService } from './inventory-query.service';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
-import { PaginatedResponseDto } from 'apps/pim/src/common';
+import { PaginatedResponseDto } from '../../shared/dto';
 
 
 @Injectable()
