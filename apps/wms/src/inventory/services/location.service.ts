@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, LocationRack, LocationColumn, Location } from '../../../database/schemas/wms-schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {
@@ -17,8 +17,9 @@ import {
   ExtendRackBinsDto
 } from '../dto/location-update.dto';
 import { LocationQueryDto } from '../dto/location-query.dto';
-import { LocationType, SystemLocationRole } from '../types';
+import { SystemLocationRole } from '../types';
 import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
+import { StandardLocationResponseDto, ZoneLocationResponseDto } from '../dto';
 
 @Injectable()
 export class LocationService {
@@ -291,15 +292,14 @@ export class LocationService {
       const [location] = await tx
         .insert(wmsTables.locations)
         .values({
+          ...dto,
           warehouseId,
           code: locationCode,
           locationType: 'zone',
           rackId: null,
           binIdentifier: null,
           displayName: dto.displayName || dto.code,
-          capacityLimit: dto.capacityLimit,
           isActive: true,
-          notes: dto.notes,
         })
         .returning();
 
@@ -396,36 +396,21 @@ export class LocationService {
     };
   }
 
-  async getLocationById(locationId: string) {
-    const [result] = await this.db
-      .select({
-        location: wmsTables.locations,
-        rack: wmsTables.locationRacks,
-        column: wmsTables.locationColumns,
-      })
-      .from(wmsTables.locations)
-      .leftJoin(
-        wmsTables.locationRacks,
-        eq(wmsTables.locations.rackId, wmsTables.locationRacks.id)
-      )
-      .leftJoin(
-        wmsTables.locationColumns,
-        eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
-      )
-      .where(eq(wmsTables.locations.id, locationId))
-      .limit(1);
+  async getLocationById(locationId: string, tx?: DbTx): Promise<Location> {
+    return await this.inTx(async (tx) => {
+      const [result] = await this.db
+        .select()
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.id, locationId))
+        .limit(1);
 
-    if (!result) {
-      throw new NotFoundException(`Location with id ${locationId} not found`);
-    }
+      if (!result) {
+        throw new NotFoundException(`Location with id ${locationId} not found`);
+      }
 
-    return {
-      ...result.location,
-      columnName: result.column?.columnName,
-      rackNumber: result.rack?.rackNumber,
-    };
+      return result;
+    }, tx)
   }
-
 
 
   async updateLocation(locationId: string, dto: UpdateLocationDto) {
@@ -550,18 +535,8 @@ export class LocationService {
     });
   }
 
-  async getRacks(warehouseId: string, columnName?: string, isActive?: boolean) {
-    const query = this.db
-      .select({
-        rack: wmsTables.locationRacks,
-        column: wmsTables.locationColumns,
-      })
-      .from(wmsTables.locationRacks)
-      .innerJoin(
-        wmsTables.locationColumns,
-        eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
-      );
-
+  async getRacks(warehouseId: string, columnName?: string, isActive?: boolean, tx?: DbTx)
+    : Promise<(LocationRack & { column: LocationColumn })[]> {
     const conditions = [eq(wmsTables.locationColumns.warehouseId, warehouseId)];
 
     if (columnName) {
@@ -571,12 +546,21 @@ export class LocationService {
       conditions.push(eq(wmsTables.locationRacks.isActive, isActive));
     }
 
-    return query
-      .where(and(...conditions))
-      .orderBy(
-        asc(wmsTables.locationColumns.columnName),
-        asc(wmsTables.locationRacks.rackNumber)
-      );
+    return this.inTx(async (tx) => {
+      const result = await tx
+        .select()
+        .from(wmsTables.locationRacks)
+        .innerJoin(
+          wmsTables.locationColumns,
+          eq(wmsTables.locationRacks.columnId, wmsTables.locationColumns.id)
+        )
+        .where(and(...conditions));
+
+      return result.map(row => ({
+        ...row.location_racks,
+        column: row.location_columns,
+      }));
+    }, tx)
   }
 
   // 삭제 보호: 시스템 로케이션은 삭제 금지

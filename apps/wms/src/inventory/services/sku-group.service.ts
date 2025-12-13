@@ -348,7 +348,6 @@ export class SkuGroupService {
           id: skus.id,
           name: skus.name,
           code: skus.code,
-          defaultBarcode: skus.defaultBarcode,
           safetyStock: skus.safetyStock,
           primaryLocationId: skus.primaryLocationId,
         })
@@ -360,7 +359,6 @@ export class SkuGroupService {
         id: m.id,
         name: m.name,
         code: m.code,
-        defaultBarcode: m.defaultBarcode,
         safetyStock: m.safetyStock,
         primaryLocationId: m.primaryLocationId,
       }));
@@ -390,7 +388,6 @@ export class SkuGroupService {
           id: skus.id,
           name: skus.name,
           code: skus.code,
-          defaultBarcode: skus.defaultBarcode,
           safetyStock: skus.safetyStock,
           primaryLocationId: skus.primaryLocationId,
         })
@@ -404,7 +401,6 @@ export class SkuGroupService {
         id: s.id,
         name: s.name,
         code: s.code,
-        defaultBarcode: s.defaultBarcode,
         safetyStock: s.safetyStock,
         primaryLocationId: s.primaryLocationId,
       }));

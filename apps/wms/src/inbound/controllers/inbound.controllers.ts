@@ -2,22 +2,26 @@ import { Controller, Post, Body, Get, Query, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InboundService } from '../services/inbound.service';
 import { SimpleInboundDto, IndividualInboundDto, PutawayRequestDto, ReturnInboundDto, CancelInboundDto, CreateInboundPlanDto, AddInboundPlanItemsDto, ListPlanItemsQueryDto, ReceiveFromPlanDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
+import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
+import { InboundReceiptMapper } from '../mappers/inbound.mapper';
 
 @ApiTags('Inbound')
 @Controller('inbound')
 export class InboundController {
   @Post('simple')
   @ApiOperation({ summary: '간편입고 - SKU 리스트를 지정 위치로 즉시 입고' })
-  @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.' })
+  @ApiResponse({ status: 201, description: '입고가 성공적으로 처리되었습니다.', type: SimpleInboundResponseDto })
   async simpleInbound(@Body() dto: SimpleInboundDto) {
-    return this.inboundService.simpleInbound(dto);
+    const result = await this.inboundService.simpleInbound(dto);
+    return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
   }
 
   @Post('simple-fullscan')
   @ApiOperation({ summary: '전수조사 간편입고 - (서버는 간편입고와 동일 처리, 기록만 구분)' })
-  @ApiResponse({ status: 201, description: '전수조사 간편입고가 성공적으로 처리되었습니다.' })
+  @ApiResponse({ status: 201, description: '전수조사 간편입고가 성공적으로 처리되었습니다.', type: SimpleInboundResponseDto })
   async simpleInboundFullscan(@Body() dto: SimpleInboundDto) {
-    return this.inboundService.simpleInboundFullscan(dto);
+    const result = await this.inboundService.simpleInboundFullscan(dto);
+    return InboundReceiptMapper.toSimpleResponseDto(result.receipt, result.lines);
   }
 
   @ApiOperation({ summary: '입고 라인 메모 수정' })
@@ -29,9 +33,10 @@ export class InboundController {
 
   @Post('individual')
   @ApiOperation({ summary: '개별입고 - 단일 SKU를 지정(옵션) 로케로 입고' })
-  @ApiResponse({ status: 201, description: '개별입고가 성공적으로 처리되었습니다.' })
+  @ApiResponse({ status: 201, description: '개별입고가 성공적으로 처리되었습니다.', type: IndividualInboundResponseDto })
   async individualInbound(@Body() dto: IndividualInboundDto) {
-    return this.inboundService.individualInbound(dto);
+    const result = await this.inboundService.individualInbound(dto);
+    return InboundReceiptMapper.toIndividualResponseDto(result.receipt, result.line);
   }
 
   constructor(private readonly inboundService: InboundService) { }

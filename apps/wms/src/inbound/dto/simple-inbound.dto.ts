@@ -85,6 +85,10 @@ export class ReturnInboundDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @ApiProperty({ description: '회송 사유', required: false })
+  @IsOptional()
+  reason?: string;
 }
 
 export class CancelInboundDto {
