@@ -25,7 +25,6 @@ import { authorizationSchema } from '@app/authorization';
 /*───────────────────────────
  * ENUM DECLARATIONS
  *──────────────────────────*/
-export const barcodeTypeEnum = pgEnum('barcode_type', ['standard']);
 export const sourceTypeEnum = pgEnum('source_type', ['direct', 'in_house', 'overseas']);
 
 export const eventStatusEnum = pgEnum('event_status', ['PENDING', 'POSTED', 'VOIDED']);
@@ -357,13 +356,12 @@ export const holders = pgTable('holders', {
 export const skus = pgTable('skus', {
   id: uuid('id').primaryKey().defaultRandom(),
   holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'cascade' }).default("019d0001-0000-7000-a000-000000000001").notNull(),
-  groupId: uuid('group_id').references(() => skuGroups.id),
+  groupId: uuid('group_id').references(() => skuGroups.id, { onDelete: 'set null' }),
   optionKey: varchar('option_key', { length: 255 }),
 
   name: varchar('name', { length: 255 }).notNull(),
   code: varchar('code', { length: 64 }).notNull().unique(),
 
-  defaultBarcode: varchar('default_barcode', { length: 64 }), // SKU의 기본 바코드 (skuBarcodes에서 관리, 자동생성됨)
   stockType: stockTypeEnum('stock_type').notNull().default('physical'),
   deliveryProfileId: uuid('delivery_profile_id').references(() => deliveryProfiles.id, { onDelete: 'set null' }),
   sale1m: integer('sale_1m'),
@@ -420,7 +418,8 @@ export const skus = pgTable('skus', {
   variantGroupCode: varchar('variant_group_code', { length: 64 }),
 
 
-
+  isDeleted: boolean('is_deleted').notNull().default(false),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => ({
@@ -448,8 +447,8 @@ export const skuSuppliers = pgTable('sku_suppliers', {
 export const skuBarcodes = pgTable('sku_barcodes', {
   id: uuid('id').primaryKey().defaultRandom(),
   skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'cascade' }).notNull(),
-  barcode: varchar('barcode', { length: 64 }).notNull().unique(), // 실제 바코드 값
-  barcodeType: barcodeTypeEnum('barcode_type').notNull(),
+  barcode: varchar('barcode', { length: 64 }).notNull().unique(),
+  isPrimary: boolean('is_primary').notNull().default(false),
   packingUnit: varchar('packing_unit', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -627,7 +626,7 @@ export const locations = pgTable('locations', {
   displayName: varchar('display_name', { length: 128 }),
   capacityLimit: integer('capacity_limit'),
   fifoRank: integer('fifo_rank'),
-  isExpirySeparated: boolean('is_expiry_separated'),
+  isExpirySeparated: boolean('is_expiry_separated').notNull().default(false),
   isActive: boolean('is_active').notNull().default(true),
   notes: text('notes'),
   // 시스템 로케이션 보호 필드
@@ -697,7 +696,12 @@ export const stockEvents = pgTable(
       t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt
     ),
     ckQtyPositive: check("ck_events_qty_positive", sql`${t.quantity} > 0`),
-    ckStatesDifferent: check("ck_events_states_diff", sql`${t.fromState} is distinct from ${t.toState}`),
+    ckStatesDifferent: check(
+      "ck_events_states_diff",
+      sql`(${t.fromState} is distinct from ${t.toState}) 
+          OR (${t.fromLocationId} is distinct from ${t.toLocationId})
+          OR (${t.fromWarehouseId} is distinct from ${t.toWarehouseId})`
+    ),
     ckSidePresent: check(
       "ck_events_side_present",
       sql`(${t.fromState} is not null) or (${t.toState} is not null)`
@@ -1774,6 +1778,9 @@ export const suppliersRelations = relations(suppliers, ({ many }) => ({
   purchaseOrders: many(purchaseOrders),
   skuSuppliers: many(skuSuppliers),
   supplierCategoryMappings: many(supplierCategoryMappings),
+  skusAsLogisticsPartner: many(skus, {
+    relationName: 'logisticsPartner',
+  }),
 }));
 
 export const supplierCategoriesRelations = relations(supplierCategories, ({ many }) => ({
@@ -1815,10 +1822,7 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   skuBarcodes: many(skuBarcodes),
   images: many(skuImages),
   // Phase 2 Step 4: New relations
-  managers: one(skuManagers, {
-    fields: [skus.id],
-    references: [skuManagers.skuId],
-  }),
+  managers: one(skuManagers),
   locationMovements: many(skuLocationMovements),
   group: one(skuGroups, {
     fields: [skus.groupId],
@@ -1900,6 +1904,10 @@ export const skuImagesRelations = relations(skuImages, ({ one }) => ({
 }));
 
 // ===== Phase 2 Step 4: New Table Relations =====
+
+export const skuGroupsRelations = relations(skuGroups, ({ many }) => ({
+  skus: many(skus),
+}));
 
 export const skuManagersRelations = relations(skuManagers, ({ one }) => ({
   sku: one(skus, {
@@ -1983,6 +1991,18 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   inboundReceiptLines: many(inboundReceiptLines),
   movementJobLines: many(movementJobLines),
   outboundTaskLines: many(outboundTaskLines),
+  skusPrimary: many(skus, {
+    relationName: 'primaryLocation',
+  }),
+  skusSecondary: many(skus, {
+    relationName: 'secondaryLocation',
+  }),
+  skuMovementsFrom: many(skuLocationMovements, {
+    relationName: 'movementFrom',
+  }),
+  skuMovementsTo: many(skuLocationMovements, {
+    relationName: 'movementTo',
+  }),
 }));
 
 // Stock Relations
@@ -2500,6 +2520,9 @@ export const wmsRelations = {
 
   // SKU Relations
   skusRelations,
+  skuGroupsRelations,
+  skuManagersRelations,
+  skuLocationMovementsRelations,
   skuSuppliersRelations,
   skuCategoriesRelations,
   skuBarcodesRelations,

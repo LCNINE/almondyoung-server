@@ -20,7 +20,7 @@ import {
   MoveWithinWarehouseDto,
 } from '../dto/transfer/create-transfer.dto';
 import {
-  TransferJobDto,
+  TransferJobWithLinesDto,
   CreateTransferJobResponseDto,
   ExecuteTransferJobResponseDto,
   MoveWithinWarehouseResponseDto,
@@ -170,16 +170,16 @@ export class TransferController {
   @ApiResponse({
     status: 200,
     description: '이동 작업 상세 정보',
-    type: TransferJobDto,
+    type: TransferJobWithLinesDto,
   })
   @ApiResponse({
     status: 404,
     description: '이동 작업을 찾을 수 없음',
   })
-  async getTransferJob(@Param('id') id: string): Promise<TransferJobDto> {
+  async getTransferJob(@Param('id') id: string): Promise<TransferJobWithLinesDto> {
     try {
       const { lines, ...job } = await this.transferService.getTransferJob(id);
-      return TransferJobMapper.toDto(job as MovementJob, lines);
+      return TransferJobMapper.toWithLinesDto(job, lines);
     } catch (error) {
       if (error.message?.includes('not found')) {
         throw new NotFoundException(error.message);
@@ -257,17 +257,20 @@ export class TransferController {
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ): Promise<TransferJobListResponseDto> {
-    const jobs: MovementJob[] = await this.transferService.listTransferJobs({
+    const parsedLimit = limit ?? 50;
+    const parsedOffset = offset ?? 0;
+
+    const jobs = await this.transferService.listTransferJobs({
       warehouseId,
-      limit: limit ? parseInt(limit.toString()) : 50,
-      offset: offset ? parseInt(offset.toString()) : 0,
+      limit: parsedLimit,
+      offset: parsedOffset,
     });
 
     return {
-      jobs: jobs.map(job => TransferJobMapper.toDto(job)),
+      jobs: jobs.map(job => TransferJobMapper.toWithLineCountDto(job, job.lineCount)),
       total: jobs.length,
-      limit: limit ? parseInt(limit.toString()) : 50,
-      offset: offset ? parseInt(offset.toString()) : 0,
+      limit: parsedLimit,
+      offset: parsedOffset,
     };
   }
 }

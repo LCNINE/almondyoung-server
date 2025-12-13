@@ -68,13 +68,6 @@ export class SkuGroupMemberDto {
   code: string;
 
   @ApiProperty({
-    description: '기본 바코드 (Default barcode)',
-    example: '1234567890123',
-    nullable: true
-  })
-  defaultBarcode: string | null;
-
-  @ApiProperty({
     description: '안전 재고 (Safety stock)',
     example: 50,
     minimum: 0

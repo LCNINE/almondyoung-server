@@ -85,7 +85,7 @@
     "test:membership:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
     "db:generate:wms": "drizzle-kit generate --config apps/wms/database/drizzle/drizzle.config.ts",
-    "db:push:wms": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
+    "db:push:wms": "./scripts/with-ipv4.sh drizzle-kit push --config apps/wms/database/drizzle/drizzle.config.ts",
     "db:push:wms:test": "drizzle-kit push --config apps/wms/database/drizzle/drizzle.test-config.ts",
     "db:generate:pim": "cd apps/pim && drizzle-kit generate",
     "db:migrate:pim": "cd apps/pim && drizzle-kit migrate",

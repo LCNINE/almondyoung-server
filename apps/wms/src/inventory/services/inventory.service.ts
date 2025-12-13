@@ -1,21 +1,24 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectTypedDb, TypedDatabase, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import { wmsTables, wmsSchema, DbTx, SkuBarcode } from '../../../database/schemas/wms-schema';
 import { and, eq, isNull, or, sql, asc, like, gte, lte, isNotNull, SQL, inArray, desc } from 'drizzle-orm';
 import { GetStockQueryDto } from '../dto/inventory/get-stock-query.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/inventory/advanced-filters.dto';
 import { CreateSkuDto, SkuCreationSource } from '../dto/sku/create-sku.dto';
 import { UpdateSkuDto } from '../dto/sku/update-sku.dto';
 import { AddBarcodeDto } from '../dto/sku/add-barcode.dto';
-import { SkuResponseDto } from '../dto/sku/sku-response.dto';
+import { BarcodeDto, SkuResponseDto } from '../dto/sku/sku-response.dto';
 import { SkuStockSummaryDto } from '../dto/sku/sku-stock-summary.dto';
+import { CurrentStockDto } from '../dto/sku/current-stock.dto';
 import { CreateWarehouseDto } from '../dto/warehouse/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/warehouse/update-warehouse.dto';
 import { WAREHOUSE_CONSTANTS, WarehouseType } from '../constants/warehouse.constants';
+import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryQueryService } from './inventory-query.service';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
+import { PaginatedResponseDto } from 'apps/pim/src/common';
 
 
 @Injectable()
@@ -39,6 +42,7 @@ export class InventoryService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    await this._ensureDefaultHoldersExist();
     await this._ensureDefaultWarehousesExist();
   }
 
@@ -46,24 +50,14 @@ export class InventoryService implements OnModuleInit {
   // SKU 관리 도메인
   // ****************************************************************
 
-  private removeUndefinedFields<T extends Record<string, any>>(obj: T): Partial<T> {
-    return Object.fromEntries(
-      Object.entries(obj).filter(([_, value]) => value !== undefined && value !== null)
-    ) as Partial<T>;
-  }
-
   async createSku(createSkuDto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
     return this.inTx(async (trx) => {
       const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, currentStock, ...skuData } = createSkuDto;
 
-      // undefined 값을 가진 필드를 제거
-      const cleanSkuData = this.removeUndefinedFields(skuData);
-
       const [newSku] = await trx.insert(wmsTables.skus).values({
-        name: skuData.name, // 필수 필드 명시적으로 보장
-        ...cleanSkuData,
+        ...skuData,
         ...(skuGroupId && { groupId: skuGroupId }),
-        code: this._generateSkuCode(),
+        code: await this._generateSkuCode(trx),
       }).returning();
 
       if (supplierIds && supplierIds.length > 0) {
@@ -94,6 +88,13 @@ export class InventoryService implements OnModuleInit {
 
         await trx.insert(wmsTables.skuImages).values(imageRecords);
       }
+
+      // Create primary barcode that equals SKU code
+      await trx.insert(wmsTables.skuBarcodes).values({
+        skuId: newSku.id,
+        barcode: newSku.code,
+        isPrimary: true,
+      });
 
       return this.getSkuById(newSku.id, trx);
     }, tx);
@@ -168,82 +169,244 @@ export class InventoryService implements OnModuleInit {
     }
 
     try {
-      // 1. SKU 존재 확인
-      const sku = await this.inTx(async (trx) => {
-        const [row] = await trx
+      await this.inTx(async (trx) => {
+        // 1. SKU 존재 확인
+        const [sku] = await trx
           .select()
           .from(wmsTables.skus)
           .where(eq(wmsTables.skus.id, skuId))
           .limit(1);
-        return row;
+
+        if (!sku) {
+          throw new NotFoundException(`SKU with ID ${skuId} not found`);
+        }
+
+        // 2. 활성 재고 확인
+        const [stockAgg] = await trx
+          .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
+          .from(wmsTables.stockLedgers)
+          .where(eq(wmsTables.stockLedgers.skuId, skuId));
+
+        const totalStock = stockAgg?.qty ?? 0;
+        if (totalStock > 0) {
+          throw new ConflictException(
+            `Cannot delete SKU ${skuId}: Has active stock of ${totalStock} units. ` +
+            'Please adjust stock to zero before deletion.'
+          );
+        }
+
+        // 3. 상품 매칭 사용 확인
+        const matchings = await trx
+          .select({ productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId })
+          .from(wmsTables.productVariantSkuLinks)
+          .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId));
+
+        if (matchings.length > 0) {
+          const matchingIds = matchings.map(m => m.productMatchingId).join(', ');
+          throw new ConflictException(
+            `Cannot delete SKU ${skuId}: Used in ${matchings.length} product matching(s): ${matchingIds}. ` +
+            'Please remove from product matchings first.'
+          );
+        }
+
+        // 4. 예약 확인
+        const reservations = await trx
+          .select({ id: wmsTables.stockReservations.id })
+          .from(wmsTables.stockReservations)
+          .where(and(
+            eq(wmsTables.stockReservations.skuId, skuId),
+            eq(wmsTables.stockReservations.status, 'confirmed')
+          ));
+
+        if (reservations.length > 0) {
+          throw new ConflictException(
+            `Cannot delete SKU ${skuId}: Has ${reservations.length} active reservation(s). ` +
+            'Please release all reservations first.'
+          );
+        }
+
+        // 5. 삭제 실행
+        const deleteResult = await trx.update(wmsTables.skus)
+          .set({ isDeleted: true, deletedAt: new Date() })
+          .where(eq(wmsTables.skus.id, skuId))
+          .returning();
+
+        if (deleteResult.length === 0) {
+          throw new ConflictException(`Failed to delete SKU ${skuId}. It may have been deleted by another process.`);
+        }
+
+        this.logger.log(`SKU ${skuId} (${sku.name}) deleted successfully`);
       }, tx);
-
-      if (!sku) {
-        throw new NotFoundException(`SKU with ID ${skuId} not found`);
-      }
-
-      // 2. 활성 재고 확인
-      const [stockAgg] = await this.inTx(async (trx) => trx
-        .select({ qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}),0)` })
-        .from(wmsTables.stockLedgers)
-        .where(eq(wmsTables.stockLedgers.skuId, skuId))
-        , tx);
-
-      const totalStock = stockAgg?.qty ?? 0;
-      if (totalStock > 0) {
-        throw new ConflictException(
-          `Cannot delete SKU ${skuId}: Has active stock of ${totalStock} units. ` +
-          'Please adjust stock to zero before deletion.'
-        );
-      }
-
-      // 3. 상품 매칭 사용 확인
-      const matchings = await this.inTx(async (trx) => trx
-        .select({ productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId })
-        .from(wmsTables.productVariantSkuLinks)
-        .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId))
-        , tx);
-
-      if (matchings.length > 0) {
-        const matchingIds = matchings.map(m => m.productMatchingId).join(', ');
-        throw new ConflictException(
-          `Cannot delete SKU ${skuId}: Used in ${matchings.length} product matching(s): ${matchingIds}. ` +
-          'Please remove from product matchings first.'
-        );
-      }
-
-      // 4. 예약 확인
-      const reservations = await this.inTx(async (trx) => trx
-        .select({ id: wmsTables.stockReservations.id })
-        .from(wmsTables.stockReservations)
-        .where(and(
-          eq(wmsTables.stockReservations.skuId, skuId),
-          eq(wmsTables.stockReservations.status, 'confirmed')
-        ))
-        , tx);
-
-      if (reservations.length > 0) {
-        throw new ConflictException(
-          `Cannot delete SKU ${skuId}: Has ${reservations.length} active reservation(s). ` +
-          'Please release all reservations first.'
-        );
-      }
-
-      // 5. 삭제 실행
-      const deleteResult = await this.inTx(async (trx) => trx.delete(wmsTables.skus)
-        .where(eq(wmsTables.skus.id, skuId))
-        .returning(), tx);
-
-      if (deleteResult.length === 0) {
-        throw new ConflictException(`Failed to delete SKU ${skuId}. It may have been deleted by another process.`);
-      }
-
-      this.logger.log(`SKU ${skuId} (${sku.name}) deleted successfully`);
 
     } catch (error) {
       this.logger.error(`Failed to delete SKU ${skuId}:`, error);
       throw error;
     }
+  }
+
+  async getDeletedSkus(
+    filters: {
+      search?: string;
+      deletedStartDate?: string;
+      deletedEndDate?: string;
+      limit?: number;
+      offset?: number;
+    },
+    tx?: DbTx
+  ): Promise<{
+    items: SkuResponseDto[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    return this.inTx(async (trx) => {
+      const { skus, skuGroups } = wmsTables;
+
+      const conditions: SQL[] = [];
+
+      conditions.push(eq(skus.isDeleted, true));
+
+      if (filters.search) {
+        conditions.push(like(skus.name, `%${filters.search}%`));
+      }
+
+      if (filters.deletedStartDate) {
+        conditions.push(gte(skus.deletedAt, new Date(filters.deletedStartDate)));
+      }
+
+      if (filters.deletedEndDate) {
+        conditions.push(lte(skus.deletedAt, new Date(filters.deletedEndDate)));
+      }
+
+      const deletedSkus = await trx
+        .select()
+        .from(skus)
+        .leftJoin(skuGroups, eq(skus.groupId, skuGroups.id))
+        .where(and(...conditions))
+        .orderBy(desc(skus.deletedAt))
+        .limit(filters.limit ?? 50)
+        .offset(filters.offset ?? 0);
+
+      const [countResult] = await trx
+        .select({ count: sql<number>`count(*)` })
+        .from(skus)
+        .where(and(...conditions));
+
+      const total = Number(countResult?.count ?? 0);
+
+      const items = await Promise.all(
+        deletedSkus.map(async (row) => {
+          const skuId = row.skus.id;
+
+          const barcodes = await trx
+            .select()
+            .from(wmsTables.skuBarcodes)
+            .where(eq(wmsTables.skuBarcodes.skuId, skuId));
+
+          const suppliers = await trx
+            .select({
+              id: wmsTables.suppliers.id,
+              name: wmsTables.suppliers.name,
+            })
+            .from(wmsTables.skuSuppliers)
+            .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
+            .where(eq(wmsTables.skuSuppliers.skuId, skuId));
+
+          const categories = await trx
+            .select({
+              name: wmsTables.categories.name,
+            })
+            .from(wmsTables.skuCategories)
+            .innerJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id))
+            .where(eq(wmsTables.skuCategories.skuId, skuId));
+
+          const images = await trx
+            .select()
+            .from(wmsTables.skuImages)
+            .where(eq(wmsTables.skuImages.skuId, skuId))
+            .orderBy(wmsTables.skuImages.sortOrder);
+
+          const [stockInfo] = await trx
+            .select({
+              total: sql<number>`COALESCE(SUM(${wmsSchema.stockSummary.onHandQty}), 0)`
+            })
+            .from(wmsSchema.stockSummary)
+            .where(eq(wmsSchema.stockSummary.skuId, skuId));
+
+          const currentStock = Number(stockInfo?.total ?? 0);
+
+          return {
+            ...row.skus,
+            skuGroup: row.sku_groups,
+            barcodes: barcodes.map(b => ({
+              id: b.id,
+              barcode: b.barcode,
+              isPrimary: b.isPrimary,
+              packingUnit: b.packingUnit ?? undefined,
+            })),
+            suppliers: suppliers,
+            categoryNames: categories.map(c => c.name),
+            images: images.map(img => ({
+              id: img.id,
+              uploadId: img.uploadId,
+              url: '',
+              isPrimary: img.isPrimary ?? false,
+              sortOrder: img.sortOrder ?? 0,
+              createdAt: img.createdAt,
+            })),
+            currentStock,
+          };
+        })
+      );
+
+      return {
+        items,
+        total,
+        limit: filters.limit ?? 50,
+        offset: filters.offset ?? 0,
+      };
+    }, tx);
+  }
+
+  async restoreSku(skuId: string, tx?: DbTx): Promise<SkuResponseDto> {
+    if (!skuId || typeof skuId !== 'string') {
+      throw new BadRequestException('Valid SKU ID is required');
+    }
+
+    return this.inTx(async (trx) => {
+      const [sku] = await trx
+        .select()
+        .from(wmsTables.skus)
+        .where(and(
+          eq(wmsTables.skus.id, skuId),
+          eq(wmsTables.skus.isDeleted, true)
+        ))
+        .limit(1);
+
+      if (!sku) {
+        throw new NotFoundException(
+          `Deleted SKU with ID ${skuId} not found. It may not exist or may not be deleted.`
+        );
+      }
+
+      const [restored] = await trx
+        .update(wmsTables.skus)
+        .set({
+          isDeleted: false,
+          deletedAt: null,
+          updatedAt: new Date()
+        })
+        .where(eq(wmsTables.skus.id, skuId))
+        .returning();
+
+      if (!restored) {
+        throw new ConflictException(`Failed to restore SKU ${skuId}`);
+      }
+
+      this.logger.log(`SKU ${skuId} (${sku.name}) restored successfully`);
+
+      return this.getSkuById(skuId, trx);
+    }, tx);
   }
 
   async getSkuById(skuId: string, tx?: DbTx, warehouseId?: string): Promise<SkuResponseDto> {
@@ -255,7 +418,10 @@ export class InventoryService implements OnModuleInit {
           wmsTables.skuGroups,
           eq(wmsTables.skus.groupId, wmsTables.skuGroups.id)
         )
-        .where(eq(wmsTables.skus.id, skuId))
+        .where(and(
+          eq(wmsTables.skus.id, skuId),
+          eq(wmsTables.skus.isDeleted, false)
+        ))
         .limit(1);
 
       if (!result) {
@@ -345,7 +511,7 @@ export class InventoryService implements OnModuleInit {
       barcodes: barcodes.map(b => ({
         id: b.id,
         barcode: b.barcode,
-        barcodeType: b.barcodeType,
+        isPrimary: b.isPrimary,
         packingUnit: b.packingUnit ?? undefined,
       })),
       suppliers: suppliers,
@@ -378,15 +544,9 @@ export class InventoryService implements OnModuleInit {
       // barcode 조건으로 SKU ID 찾기
       if (query.barcode) {
         const skuIdsFromBarcode = await trx
-          .selectDistinct({ skuId: wmsTables.skus.id })
-          .from(wmsTables.skus)
-          .leftJoin(wmsTables.skuBarcodes, eq(wmsTables.skus.id, wmsTables.skuBarcodes.skuId))
-          .where(
-            or(
-              eq(wmsTables.skus.defaultBarcode, query.barcode),
-              eq(wmsTables.skuBarcodes.barcode, query.barcode)
-            )
-          );
+          .selectDistinct({ skuId: wmsTables.skuBarcodes.skuId })
+          .from(wmsTables.skuBarcodes)
+          .where(eq(wmsTables.skuBarcodes.barcode, query.barcode));
         skuIdFilter = skuIdsFromBarcode.map(row => row.skuId);
         if (skuIdFilter.length === 0) return [];
       }
@@ -413,6 +573,8 @@ export class InventoryService implements OnModuleInit {
       // Step 2: 메인 테이블 조건 구성
       const conditions: SQL[] = [];
 
+      conditions.push(eq(wmsTables.skus.isDeleted, false));
+
       if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
       if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
       if (query.groupId) conditions.push(eq(wmsTables.skus.groupId, query.groupId));
@@ -421,40 +583,98 @@ export class InventoryService implements OnModuleInit {
         conditions.push(inArray(wmsTables.skus.id, skuIdFilter));
       }
 
-      // Step 3: Relational query로 데이터 조회 (Cartesian product 없음!)
-      const skus = await trx.query.skus.findMany({
-        where: conditions.length > 0 ? and(...conditions) : undefined,
-        with: {
-          skuBarcodes: true,
-          skuSuppliers: {
-            with: {
-              supplier: true,
-            },
-          },
-          skuCategories: {
-            with: {
-              category: true,
-            },
-          },
-          group: true,
-        },
-      });
+      // Step 3: tx.select를 사용한 데이터 조회 (N+1 문제 회피)
+
+      // 3-1: 메인 SKU 데이터 조회
+      const skus = await trx
+        .select()
+        .from(wmsTables.skus)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      if (skus.length === 0) return [];
+
+      const skuIds = skus.map(sku => sku.id);
+      const uniqueGroupIds = [...new Set(skus.map(sku => sku.groupId).filter((id): id is string => id !== null))];
+
+      // 3-2: SKU Groups 조회 (있는 경우만)
+      const groups = uniqueGroupIds.length > 0
+        ? await trx
+          .select()
+          .from(wmsTables.skuGroups)
+          .where(inArray(wmsTables.skuGroups.id, uniqueGroupIds))
+        : [];
+
+      const groupMap = new Map(groups.map(g => [g.id, g]));
+
+      // 3-3: SKU Barcodes 조회 (IN 쿼리로 N+1 회피)
+      const barcodes = await trx
+        .select()
+        .from(wmsTables.skuBarcodes)
+        .where(inArray(wmsTables.skuBarcodes.skuId, skuIds));
+
+      const barcodesBySkuId = new Map<string, typeof barcodes>();
+      for (const barcode of barcodes) {
+        if (!barcodesBySkuId.has(barcode.skuId)) {
+          barcodesBySkuId.set(barcode.skuId, []);
+        }
+        barcodesBySkuId.get(barcode.skuId)!.push(barcode);
+      }
+
+      // 3-4: SKU Suppliers with Supplier info (JOIN으로 한 번에)
+      const skuSuppliersWithSupplier = await trx
+        .select({
+          skuSupplierId: wmsTables.skuSuppliers.supplierId,
+          skuId: wmsTables.skuSuppliers.skuId,
+          supplierId: wmsTables.suppliers.id,
+          supplierName: wmsTables.suppliers.name,
+        })
+        .from(wmsTables.skuSuppliers)
+        .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
+        .where(inArray(wmsTables.skuSuppliers.skuId, skuIds));
+
+      const suppliersBySkuId = new Map<string, Array<{ id: string; name: string }>>();
+      for (const ss of skuSuppliersWithSupplier) {
+        if (!suppliersBySkuId.has(ss.skuId)) {
+          suppliersBySkuId.set(ss.skuId, []);
+        }
+        suppliersBySkuId.get(ss.skuId)!.push({
+          id: ss.supplierId,
+          name: ss.supplierName,
+        });
+      }
+
+      // 3-5: SKU Categories with Category info (JOIN으로 한 번에)
+      const skuCategoriesWithCategory = await trx
+        .select({
+          skuCategoryId: wmsTables.skuCategories.categoryId,
+          skuId: wmsTables.skuCategories.skuId,
+          categoryId: wmsTables.categories.id,
+          categoryName: wmsTables.categories.name,
+        })
+        .from(wmsTables.skuCategories)
+        .innerJoin(wmsTables.categories, eq(wmsTables.skuCategories.categoryId, wmsTables.categories.id))
+        .where(inArray(wmsTables.skuCategories.skuId, skuIds));
+
+      const categoriesBySkuId = new Map<string, string[]>();
+      for (const sc of skuCategoriesWithCategory) {
+        if (!categoriesBySkuId.has(sc.skuId)) {
+          categoriesBySkuId.set(sc.skuId, []);
+        }
+        categoriesBySkuId.get(sc.skuId)!.push(sc.categoryName);
+      }
 
       // Step 4: DTO 형식으로 변환
       return skus.map(sku => ({
         ...sku,
-        skuGroup: sku.group ?? undefined,
-        barcodes: sku.skuBarcodes.map(bc => ({
+        skuGroup: sku.groupId ? groupMap.get(sku.groupId) ?? undefined : undefined,
+        barcodes: (barcodesBySkuId.get(sku.id) || []).map(bc => ({
           id: bc.id,
           barcode: bc.barcode,
-          barcodeType: bc.barcodeType,
+          isPrimary: bc.isPrimary,
           packingUnit: bc.packingUnit,
         })),
-        suppliers: sku.skuSuppliers.map(ss => ({
-          id: ss.supplier.id,
-          name: ss.supplier.name,
-        })),
-        categoryNames: sku.skuCategories.map(sc => sc.category.name),
+        suppliers: suppliersBySkuId.get(sku.id) || [],
+        categoryNames: categoriesBySkuId.get(sku.id) || [],
       }));
     }, tx);
   }
@@ -482,6 +702,8 @@ export class InventoryService implements OnModuleInit {
       // Build where conditions
       const conditions: SQL[] = [];
 
+      conditions.push(eq(wmsTables.skus.isDeleted, false));
+
       // Search by name or code
       if (filters.search) {
         conditions.push(
@@ -492,9 +714,24 @@ export class InventoryService implements OnModuleInit {
         );
       }
 
-      // Barcode search
+      // Barcode search - find SKU IDs from skuBarcodes table
       if (filters.barcode) {
-        conditions.push(eq(wmsTables.skus.defaultBarcode, filters.barcode));
+        const skuIdsWithBarcode = await trx
+          .selectDistinct({ skuId: wmsTables.skuBarcodes.skuId })
+          .from(wmsTables.skuBarcodes)
+          .where(eq(wmsTables.skuBarcodes.barcode, filters.barcode));
+
+        if (skuIdsWithBarcode.length === 0) {
+          // No SKUs with this barcode, return empty result
+          return {
+            items: [],
+            total: 0,
+            limit: filters.limit ?? 50,
+            offset: filters.offset ?? 0,
+          };
+        }
+
+        conditions.push(sql`${wmsTables.skus.id} IN ${skuIdsWithBarcode.map(r => r.skuId)}`);
       }
 
       // Stock type
@@ -639,33 +876,34 @@ export class InventoryService implements OnModuleInit {
     }, tx);
   }
 
-  async addBarcode(skuId: string, addBarcodeDto: AddBarcodeDto, tx?: DbTx): Promise<void> {
+  async addBarcode(skuId: string, addBarcodeDto: AddBarcodeDto, tx?: DbTx): Promise<SkuBarcode> {
     const sku = await this.findSkuById(skuId);
     if (!sku) {
       throw new NotFoundException(`SKU with ID ${skuId} not found`);
     }
 
-    const existingBarcode = await this.inTx(async (trx) => {
-      const [row] = await trx
+    const newBarcode = await this.inTx(async (trx) => {
+      const [existingBarcode] = await trx
         .select()
         .from(wmsTables.skuBarcodes)
         .where(eq(wmsTables.skuBarcodes.barcode, addBarcodeDto.barcode))
         .limit(1);
-      return row;
+
+      if (existingBarcode) {
+        throw new ConflictException(`Barcode ${addBarcodeDto.barcode} already exists`);
+      }
+
+      const [newBarcode] = await trx.insert(wmsTables.skuBarcodes).values({
+        skuId,
+        barcode: addBarcodeDto.barcode,
+        isPrimary: false,
+        packingUnit: addBarcodeDto.packingUnit,
+      }).returning();
+
+      return newBarcode;
     }, tx);
 
-    if (existingBarcode) {
-      throw new ConflictException(`Barcode ${addBarcodeDto.barcode} already exists`);
-    }
-
-    await this.inTx(async (trx) => trx.insert(wmsTables.skuBarcodes).values({
-      skuId,
-      barcode: addBarcodeDto.barcode,
-      barcodeType: addBarcodeDto.barcodeType || 'standard',
-      packingUnit: addBarcodeDto.packingUnit,
-    }), tx);
-
-    this.logger.log(`Barcode ${addBarcodeDto.barcode} added to SKU ${skuId}`);
+    return newBarcode;
   }
 
   async removeBarcode(skuId: string, barcodeId: string, tx?: DbTx): Promise<void> {
@@ -690,8 +928,8 @@ export class InventoryService implements OnModuleInit {
       throw new NotFoundException(`Barcode with ID ${barcodeId} not found for SKU ${skuId}`);
     }
 
-    if (sku.defaultBarcode === barcode.barcode) {
-      throw new BadRequestException('Cannot remove default barcode');
+    if (barcode.isPrimary) {
+      throw new BadRequestException('Cannot remove primary barcode');
     }
 
     await this.inTx(async (trx) => trx.delete(wmsTables.skuBarcodes)
@@ -705,28 +943,55 @@ export class InventoryService implements OnModuleInit {
   // 재고 관리 도메인
   // ****************************************************************
 
-  async getCurrentStock(query: GetStockQueryDto, tx?: DbTx) {
-    const { skuId, warehouseId, locationId, asOfTimestamp } = query;
-    if (asOfTimestamp) {
-      throw new BadRequestException('asOfTimestamp 기반 조회는 아직 지원되지 않습니다.');
-    }
+  async getCurrentStock(query: GetStockQueryDto, tx?: DbTx): Promise<PaginatedResponseDto<CurrentStockDto>> {
+    const { skuId, warehouseId, page = 1, limit = 20 } = query;
+    const offset = (page - 1) * limit;
 
-    const rows = await this.inTx(async (trx) => trx
-      .select({
-        skuId: wmsTables.stockLedgers.skuId,
-        warehouseId: wmsTables.stockLedgers.warehouseId,
-        locationId: wmsTables.stockLedgers.locationId,
-        stockState: wmsTables.stockLedgers.stockState,
-        quantity: wmsTables.stockLedgers.qty,
-      })
-      .from(wmsTables.stockLedgers)
-      .where(and(
-        skuId ? eq(wmsTables.stockLedgers.skuId, skuId) : undefined,
-        warehouseId ? eq(wmsTables.stockLedgers.warehouseId, warehouseId) : undefined,
-        locationId ? eq(wmsTables.stockLedgers.locationId, locationId) : undefined,
-      )), tx);
+    return this.inTx(async (trx) => {
+      const conditions: SQL[] = [
+        eq(wmsSchema.stockSummary.warehouseId, warehouseId),
+      ];
 
-    return rows;
+      if (skuId) {
+        conditions.push(eq(wmsSchema.stockSummary.skuId, skuId));
+      }
+
+      const summaries = await trx
+        .select()
+        .from(wmsSchema.stockSummary)
+        .where(and(...conditions))
+        .limit(limit)
+        .offset(offset);
+
+      const data = summaries.map(s => ({
+        skuId: s.skuId,
+        skuName: s.skuName ?? '',
+        warehouseId: s.warehouseId,
+        warehouseName: s.warehouseName ?? '',
+        onHandQty: s.onHandQty,
+        defectiveQty: s.defectiveQty,
+        inTransferQty: s.inTransferQty,
+        reservedQty: s.reservedQty,
+        availableQty: s.availableQty,
+        inboundPendingQty: s.inboundPendingQty,
+        projectedAvailableQty: s.projectedAvailableQty,
+        lastCalculatedAt: s.lastCalculatedAt,
+      }));
+
+      const [countResult] = await trx
+        .select({ count: sql<number>`count(*)` })
+        .from(wmsSchema.stockSummary)
+        .where(and(...conditions));
+
+      const total = Number(countResult?.count || 0);
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+      };
+    }, tx);
   }
 
   async getTotalStockBySku(skuId: string, tx?: DbTx): Promise<{
@@ -803,71 +1068,53 @@ export class InventoryService implements OnModuleInit {
     return this.eventStore.getEventHistory(skuId, warehouseId, startDate, endDate);
   }
 
-  async getQuickStockSummary(skuId?: string, warehouseId?: string, tx?: DbTx) {
-    const conditions: SQL[] = [];
-    if (skuId) conditions.push(eq(wmsSchema.stockSummary.skuId, skuId));
-    if (warehouseId) conditions.push(eq(wmsSchema.stockSummary.warehouseId, warehouseId));
-
-    const summaries = await this.inTx(async (trx) => trx
-      .select()
-      .from(wmsSchema.stockSummary)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      , tx);
-
-    return summaries;
-  }
-
-  async adjustStockManually(stockId: string, delta: number, reason: string) {
-    throw new BadRequestException('stockId 기반 수동 조정은 더 이상 지원하지 않습니다.');
-  }
-
   async getSkuStockSummary(skuId: string, tx?: DbTx): Promise<SkuStockSummaryDto> {
     const sku = await this.findSkuById(skuId);
     if (!sku) {
       throw new NotFoundException(`SKU with ID ${skuId} not found`);
     }
 
-    const summaries = await this.inTx(async (trx) => trx
-      .select()
-      .from(wmsSchema.stockSummary)
-      .where(eq(wmsSchema.stockSummary.skuId, skuId))
-      , tx);
+    return await this.inTx(async (tx) => {
+      const summaries = await tx
+        .select()
+        .from(wmsSchema.stockSummary)
+        .where(eq(wmsSchema.stockSummary.skuId, skuId))
 
-    const warehouseIds = summaries.map(summary => summary.warehouseId);
-    const warehouses = await this.inTx(async (trx) => trx
-      .select()
-      .from(wmsTables.warehouses)
-      .where(sql`${wmsTables.warehouses.id} = ANY(${warehouseIds})`)
-      , tx);
+      const warehouseIds = summaries.map(summary => summary.warehouseId);
+      const warehouses = await tx
+        .select()
+        .from(wmsTables.warehouses)
+        .where(inArray(wmsTables.warehouses.id, warehouseIds))
 
-    const warehouseMap = new Map(warehouses.map(warehouse => [warehouse.id, warehouse]));
+      const warehouseMap = new Map(warehouses.map(warehouse => [warehouse.id, warehouse]));
 
-    const warehouseStocks = summaries.map(summary => ({
-      warehouseId: summary.warehouseId,
-      warehouseName: warehouseMap.get(summary.warehouseId)?.name || 'Unknown Warehouse',
-      realQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-      reservedQuantity: summary.reservedQty,
-      availableQuantity: summary.availableQty,
-    }));
+      const warehouseStocks = summaries.map(summary => ({
+        warehouseId: summary.warehouseId,
+        warehouseName: warehouseMap.get(summary.warehouseId)?.name || 'Unknown Warehouse',
+        realQuantity: summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+        reservedQuantity: summary.reservedQty,
+        availableQuantity: summary.availableQty,
+      }));
 
-    const totals = summaries.reduce(
-      (acc, summary) => ({
-        totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
-        totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
-        totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
-      }),
-      { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 }
-    );
+      const totals = summaries.reduce(
+        (acc, summary) => ({
+          totalRealQuantity: acc.totalRealQuantity + summary.onHandQty + summary.defectiveQty + summary.inTransferQty,
+          totalReservedQuantity: acc.totalReservedQuantity + summary.reservedQty,
+          totalAvailableQuantity: acc.totalAvailableQuantity + summary.availableQty,
+        }),
+        { totalRealQuantity: 0, totalReservedQuantity: 0, totalAvailableQuantity: 0 }
+      );
 
-    return {
-      skuId: sku.id,
-      skuName: sku.name,
-      skuCode: sku.code,
-      totalRealQuantity: totals.totalRealQuantity,
-      totalReservedQuantity: totals.totalReservedQuantity,
-      totalAvailableQuantity: totals.totalAvailableQuantity,
-      warehouseStocks: warehouseStocks,
-    };
+      return {
+        skuId: sku.id,
+        skuName: sku.name,
+        skuCode: sku.code,
+        totalRealQuantity: totals.totalRealQuantity,
+        totalReservedQuantity: totals.totalReservedQuantity,
+        totalAvailableQuantity: totals.totalAvailableQuantity,
+        warehouseStocks: warehouseStocks,
+      };
+    }, tx)
   }
 
   // 이벤트 관련 메서드들은 StockEventStore로 위임
@@ -1015,41 +1262,75 @@ export class InventoryService implements OnModuleInit {
   // Private Helper Methods
   // ****************************************************************
 
-  private _generateSkuCode(): string {
+  private async _generateSkuCode(tx: DbTx): Promise<string> {
     const prefix = 'P';
-    const numericPart = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
-    const alphaPart = Array.from({ length: 3 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join('');
-    return `${prefix}${numericPart}${alphaPart}`;
-  }
 
-  private async _generateAndSetDefaultBarcode(skuId: string, db: DbTx): Promise<string> {
-    const generatedBarcode = `SKU_B_${skuId.substring(0, 8).toUpperCase()}_${Date.now()}`;
+    const [lastSku] = await tx
+      .select({ code: wmsTables.skus.code })
+      .from(wmsTables.skus)
+      .where(like(wmsTables.skus.code, `${prefix}%`))
+      .orderBy(desc(wmsTables.skus.code))
+      .limit(1);
 
-    const [newSkuBarcode] = await db.insert(wmsTables.skuBarcodes).values({
-      skuId,
-      barcode: generatedBarcode,
-      barcodeType: 'standard',
-    }).returning();
-
-    if (!newSkuBarcode) {
-      throw new Error('Failed to create default barcode for SKU.');
+    let nextNumber = 1;
+    if (lastSku) {
+      const numericPart = lastSku.code.substring(prefix.length);
+      const lastNumber = parseInt(numericPart, 10);
+      if (!isNaN(lastNumber)) {
+        nextNumber = lastNumber + 1;
+      }
     }
 
-    await db.update(wmsTables.skus)
-      .set({ defaultBarcode: generatedBarcode, updatedAt: new Date() })
-      .where(eq(wmsTables.skus.id, skuId));
-
-    this.logger.log(`Default barcode ${generatedBarcode} set for SKU ${skuId}.`);
-    return generatedBarcode;
+    return `${prefix}${String(nextNumber).padStart(5, '0')}`;
   }
+
 
   private _calculateAvailableQuantity(realQuantity: number, reservedQuantity: number): number {
     return realQuantity - reservedQuantity;
   }
 
-  private _canUseStockSummary(query: GetStockQueryDto): boolean {
-    // locationId나 expiryDate 등 상세 조건이 없으면 summary 사용 가능
-    return !query.locationId && !query.asOfTimestamp && !query.stockType;
+  private async _ensureSinglePrimaryBarcode(skuId: string, tx: DbTx): Promise<void> {
+    const primaries = await tx
+      .select()
+      .from(wmsTables.skuBarcodes)
+      .where(
+        and(
+          eq(wmsTables.skuBarcodes.skuId, skuId),
+          eq(wmsTables.skuBarcodes.isPrimary, true)
+        )
+      );
+
+    if (primaries.length !== 1) {
+      throw new Error(`SKU ${skuId} must have exactly one primary barcode, found ${primaries.length}`);
+    }
+  }
+
+  private async _ensureDefaultHoldersExist() {
+    try {
+      const defaultHolder = HOLDER_CONSTANTS.DEFAULT_HOLDER;
+
+      const existingHolder = await this.inTx(async (trx) => {
+        const [row] = await trx
+          .select()
+          .from(wmsTables.holders)
+          .where(eq(wmsTables.holders.id, defaultHolder.id))
+          .limit(1);
+        return row;
+      });
+
+      if (!existingHolder) {
+        await this.inTx(async (trx) => {
+          await trx.insert(wmsTables.holders).values({
+            id: defaultHolder.id,
+            name: defaultHolder.name,
+            isOurAsset: defaultHolder.isOurAsset,
+          });
+        });
+        this.logger.log(`기본 Holder 생성: ${defaultHolder.name}`);
+      }
+    } catch (error) {
+      this.logger.error('기본 Holder 생성 중 오류 발생:', error);
+    }
   }
 
   private async _ensureDefaultWarehousesExist() {

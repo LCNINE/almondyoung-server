@@ -1,6 +1,5 @@
 import {
   returnStatusEnum,
-  barcodeTypeEnum,
   sourceTypeEnum,
   eventStatusEnum,
   stockStateEnum,
@@ -46,9 +45,6 @@ import {
 
 export const returnStatusValues = returnStatusEnum.enumValues;
 export type ReturnStatusEnum = (typeof returnStatusValues)[number];
-
-export const barcodeTypeValues = barcodeTypeEnum.enumValues;
-export type BarcodeTypeEnum = (typeof barcodeTypeValues)[number];
 
 export const sourceTypeValues = sourceTypeEnum.enumValues;
 export type SourceTypeEnum = (typeof sourceTypeValues)[number];

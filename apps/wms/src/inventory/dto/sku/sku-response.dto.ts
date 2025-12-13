@@ -17,8 +17,8 @@ export class BarcodeDto {
   @ApiProperty()
   barcode: string;
 
-  @ApiProperty()
-  barcodeType: string;
+  @ApiProperty({ description: 'Whether this is the primary barcode (synced with SKU code)' })
+  isPrimary: boolean;
 
   @ApiProperty({ required: false, nullable: true })
   packingUnit?: string | null;
@@ -33,9 +33,6 @@ export class SkuResponseDto {
 
   @ApiProperty()
   code: string;
-
-  @ApiProperty({ required: false, nullable: true })
-  defaultBarcode?: string | null;
 
   @ApiProperty({ required: false, nullable: true })
   deliveryProfileId?: string | null;
@@ -183,6 +180,12 @@ export class SkuResponseDto {
   // 옵션 그룹
   @ApiProperty({ required: false, nullable: true })
   variantGroupCode?: string | null;
+
+  @ApiProperty({ description: '삭제 여부', example: false })
+  isDeleted: boolean;
+
+  @ApiProperty({ description: '삭제 시각', nullable: true, required: false })
+  deletedAt: Date | null;
 
   @ApiProperty()
   createdAt: Date;

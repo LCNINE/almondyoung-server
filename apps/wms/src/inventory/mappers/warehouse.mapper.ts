@@ -1,0 +1,15 @@
+import { Warehouse } from "apps/wms/database/schemas/wms-schema";
+import { WarehouseDto } from "../dto/inventory/warehouse.dto";
+
+export class WarehouseMapper {
+  static toDto(warehouse: Warehouse): WarehouseDto {
+    return {
+      id: warehouse.id,
+      name: warehouse.name,
+      location: warehouse.location,
+      type: warehouse.type,
+      createdAt: warehouse.createdAt.toISOString(),
+      updatedAt: warehouse.updatedAt.toISOString(),
+    };
+  }
+}

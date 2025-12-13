@@ -85,8 +85,7 @@ async function bootstrap() {
         path: request.url,
         method: request.method,
         status: status,
-        errorName: exception.name,
-        errorMessage: exception.message,
+        exception,
       });
 
       // Fastify 응답 처리
@@ -109,6 +108,7 @@ async function bootstrap() {
       'Cookie',
       'Set-Cookie',
     ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     exposedHeaders: ['Set-Cookie'],
   });
   app.enableShutdownHooks();

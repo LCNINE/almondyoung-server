@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class TransferJobLineDto {
+export class MovementJobLineDto {
   @ApiProperty({
     description: '라인 ID',
     example: '550e8400-e29b-41d4-a716-446655440010',
@@ -48,7 +48,7 @@ export class TransferJobLineDto {
 
   @ApiProperty({
     description: '메모',
-    example: 'Transfer from WH1 to WH2',
+    example: 'Move to better location',
     nullable: true,
   })
   memo: string | null;
@@ -60,7 +60,7 @@ export class TransferJobLineDto {
   createdAt: string;
 }
 
-export class BaseTransferJobDto {
+export class BaseMovementJobDto {
   @ApiProperty({
     description: '작업 ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
@@ -68,7 +68,7 @@ export class BaseTransferJobDto {
   id: string;
 
   @ApiProperty({
-    description: '창고 ID',
+    description: '창고 ID (동일 창고 내 이동)',
     example: '550e8400-e29b-41d4-a716-446655440001',
   })
   warehouseId: string;
@@ -101,7 +101,7 @@ export class BaseTransferJobDto {
 
   @ApiProperty({
     description: '메모',
-    example: 'Monthly rebalancing',
+    example: 'Daily location optimization',
     nullable: true,
   })
   memo: string | null;
@@ -119,126 +119,115 @@ export class BaseTransferJobDto {
   updatedAt: string;
 }
 
-export class TransferJobWithLinesDto extends BaseTransferJobDto {
+export class MovementJobWithLinesDto extends BaseMovementJobDto {
   @ApiProperty({
     description: '작업 라인 목록',
-    type: [TransferJobLineDto],
-    required: false,
+    type: [MovementJobLineDto],
   })
-  lines?: TransferJobLineDto[];
+  lines: MovementJobLineDto[];
 }
 
-export class TransferJobWithLineCountDto extends BaseTransferJobDto {
+export class MovementWorkLogDto {
   @ApiProperty({
-    description: '작업 라인 개수',
+    description: '로그 ID',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  id: string;
+
+  @ApiProperty({
+    description: '작업 유형',
+    enum: ['MOVE', 'TRANSFER'],
+    example: 'MOVE',
+  })
+  type: string;
+
+  @ApiProperty({
+    description: '타임스탬프',
+    example: '2025-10-20T08:00:00Z',
+  })
+  timestamp: string;
+
+  @ApiProperty({
+    description: '작업 ID',
+    example: '550e8400-e29b-41d4-a716-446655440010',
+    nullable: true,
+  })
+  jobId: string | null;
+
+  @ApiProperty({
+    description: '라인 ID',
+    example: '550e8400-e29b-41d4-a716-446655440020',
+    nullable: true,
+  })
+  lineId: string | null;
+
+  @ApiProperty({
+    description: 'SKU ID',
+    example: '550e8400-e29b-41d4-a716-446655440001',
+    nullable: true,
+  })
+  skuId: string | null;
+
+  @ApiProperty({
+    description: '창고 ID',
+    example: '550e8400-e29b-41d4-a716-446655440002',
+    nullable: true,
+  })
+  warehouseId: string | null;
+
+  @ApiProperty({
+    description: '출발 위치 ID',
+    example: '550e8400-e29b-41d4-a716-446655440030',
+    nullable: true,
+  })
+  fromLocationId: string | null;
+
+  @ApiProperty({
+    description: '도착 위치 ID',
+    example: '550e8400-e29b-41d4-a716-446655440031',
+    nullable: true,
+  })
+  toLocationId: string | null;
+
+  @ApiProperty({
+    description: '수량',
     example: 10,
+    nullable: true,
   })
-  lineCount: number;
+  quantity: number | null;
+
+  @ApiProperty({
+    description: '이벤트 ID',
+    example: '550e8400-e29b-41d4-a716-446655440040',
+    nullable: true,
+  })
+  eventId: string | null;
+
+  @ApiProperty({
+    description: '사유',
+    example: 'Location optimization',
+    nullable: true,
+  })
+  reason: string | null;
 }
 
-export class CreateTransferJobResponseDto {
+export class MovementHistoryResponseDto {
   @ApiProperty({
-    description: '작업 ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: '이동 히스토리 목록',
+    type: [MovementWorkLogDto],
   })
-  jobId: string;
+  logs: MovementWorkLogDto[];
 
   @ApiProperty({
-    description: 'Journal ID',
-    example: '550e8400-e29b-41d4-a716-446655440100',
-  })
-  journalId: string;
-
-  @ApiProperty({
-    description: '생성된 라인 목록',
-    type: [TransferJobLineDto],
-  })
-  lines: TransferJobLineDto[];
-}
-
-export class ExecuteTransferJobResponseDto {
-  @ApiProperty({
-    description: '작업 ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  jobId: string;
-
-  @ApiProperty({
-    description: '실행된 라인 개수',
-    example: 5,
-  })
-  linesExecuted: number;
-}
-
-export class MoveWithinWarehouseResponseDto {
-  @ApiProperty({
-    description: '작업 ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  jobId: string;
-
-  @ApiProperty({
-    description: 'Journal ID',
-    example: '550e8400-e29b-41d4-a716-446655440100',
-  })
-  journalId: string;
-}
-
-export class TransferJobStatusDto {
-  @ApiProperty({
-    description: '작업 ID',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  jobId: string;
-
-  @ApiProperty({
-    description: '전체 라인 개수',
-    example: 10,
-  })
-  total: number;
-
-  @ApiProperty({
-    description: '실행 완료된 라인 개수',
+    description: '조회 기간 (일)',
     example: 7,
   })
-  executed: number;
-
-  @ApiProperty({
-    description: '대기 중인 라인 개수',
-    example: 3,
-  })
-  pending: number;
-
-  @ApiProperty({
-    description: '작업 상태',
-    enum: ['pending', 'in_progress', 'completed'],
-    example: 'in_progress',
-  })
-  status: string;
-}
-
-export class TransferJobListResponseDto {
-  @ApiProperty({
-    description: '이동 작업 목록',
-    type: [TransferJobWithLineCountDto],
-  })
-  jobs: TransferJobWithLineCountDto[];
+  days: number;
 
   @ApiProperty({
     description: '총 개수',
     example: 25,
   })
   total: number;
-
-  @ApiProperty({
-    description: '페이지 크기',
-    example: 50,
-  })
-  limit: number;
-
-  @ApiProperty({
-    description: '오프셋',
-    example: 0,
-  })
-  offset: number;
 }
+

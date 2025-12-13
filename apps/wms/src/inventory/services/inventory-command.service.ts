@@ -10,7 +10,7 @@ export class InventoryCommandService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly eventStore: StockEventStore,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -104,6 +104,8 @@ export class InventoryCommandService {
 
   async transferReceive(input: {
     skuId: string;
+    fromWarehouseId: string;
+    fromLocationId: string;
     toWarehouseId: string;
     toLocationId: string;
     quantity: number;
@@ -115,9 +117,11 @@ export class InventoryCommandService {
     const exec = async (trx: DbTx) => {
       const event = await this.eventStore.createEvent({
         skuId: input.skuId,
+        fromWarehouseId: input.fromWarehouseId,
+        fromLocationId: input.fromLocationId,
+        fromState: 'IN_TRANSFER',
         toWarehouseId: input.toWarehouseId,
         toLocationId: input.toLocationId,
-        fromState: 'IN_TRANSFER',
         toState: 'ON_HAND',
         transitionType: 'MOVE',
         quantity: input.quantity,
@@ -193,10 +197,12 @@ export class InventoryCommandService {
     occurredAt?: Date;
     idempotencyKey?: string;
     reason?: string;
+    journalId?: string;
   }, tx?: DbTx) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
       const event = await this.eventStore.createEvent({
+        journalId: input.journalId,
         skuId: input.skuId,
         fromWarehouseId: input.warehouseId,
         fromLocationId: input.fromLocationId,

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../../database/schemas/wms-schema';
+import type { InboundReceipt, InboundReceiptLine } from '../../../database/schemas/wms-schema';
 import { DbService } from '@app/db';
 import { and, eq, sql, gte, lte, desc, inArray } from 'drizzle-orm';
 import { InventoryService } from '../../inventory/services/inventory.service';
@@ -86,6 +87,7 @@ export class InboundService {
       }).returning();
 
       let totalQty = 0;
+      const lines: InboundReceiptLine[] = [];
       for (const item of items) {
         const sku = await this.inventoryService.findSkuById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
@@ -100,21 +102,23 @@ export class InboundService {
           journalId: journal.id,
         }, tx);
 
-        await tx.insert(wmsTables.inboundReceiptLines).values({
+        const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
           receiptId: receipt.id,
           skuId: item.skuId,
           quantity: item.quantity,
           originLocationId: effectiveLocationId,
           eventId: eventId ?? null,
           memo: item.memo,
-        });
+        }).returning();
 
+        lines.push(line);
         totalQty += item.quantity;
       }
 
-      await tx.update(wmsTables.inboundReceipts)
+      const [updatedReceipt] = await tx.update(wmsTables.inboundReceipts)
         .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id));
+        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
+        .returning();
 
       // 작업 로그 기록 (회차 레벨)
       await tx.insert(wmsTables.inboundWorkLogs).values({
@@ -127,7 +131,7 @@ export class InboundService {
         reason: 'simple_inbound',
       });
 
-      return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
+      return { receipt: updatedReceipt, lines };
     }, tx);
   }
 
@@ -155,6 +159,7 @@ export class InboundService {
       }).returning();
 
       let totalQty = 0;
+      const lines: InboundReceiptLine[] = [];
       for (const item of items) {
         const sku = await this.inventoryService.findSkuById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
@@ -167,19 +172,21 @@ export class InboundService {
           reason: 'simple_inbound_fullscan',
           journalId: journal.id,
         }, tx);
-        await tx.insert(wmsTables.inboundReceiptLines).values({
+        const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
           receiptId: receipt.id,
           skuId: item.skuId,
           quantity: item.quantity,
           originLocationId: effectiveLocationId,
           eventId: eventId ?? null,
           memo: item.memo,
-        });
+        }).returning();
+        lines.push(line);
         totalQty += item.quantity;
       }
-      await tx.update(wmsTables.inboundReceipts)
+      const [updatedReceipt] = await tx.update(wmsTables.inboundReceipts)
         .set({ totalQuantity: totalQty })
-        .where(eq(wmsTables.inboundReceipts.id, receipt.id));
+        .where(eq(wmsTables.inboundReceipts.id, receipt.id))
+        .returning();
       await tx.insert(wmsTables.inboundWorkLogs).values({
         type: 'INBOUND',
         receiptId: receipt.id,
@@ -189,7 +196,7 @@ export class InboundService {
         method: 'simple_fullscan',
         reason: 'simple_inbound_fullscan',
       });
-      return { success: true, count: items.length, receiptId: receipt.id, totalQuantity: totalQty };
+      return { receipt: updatedReceipt, lines };
     }, tx);
   }
 
@@ -232,14 +239,14 @@ export class InboundService {
         journalId: journal.id,
       }, tx);
 
-      await tx.insert(wmsTables.inboundReceiptLines).values({
+      const [line] = await tx.insert(wmsTables.inboundReceiptLines).values({
         receiptId: receipt.id,
         skuId,
         quantity,
         originLocationId: effectiveLocationId,
         eventId: eventId ?? null,
         memo: dto.memo,
-      });
+      }).returning();
 
       await tx.update(wmsTables.inboundReceipts)
         .set({ totalQuantity: quantity })
@@ -255,7 +262,7 @@ export class InboundService {
         reason: 'individual_inbound',
       });
 
-      return { success: true, receiptId: receipt.id };
+      return { receipt, line };
     }, tx);
   }
 
@@ -822,7 +829,7 @@ export class InboundService {
         warehouseId: receipt.warehouseId,
         fromLocationId: originLocationId,
         quantity: dto.quantity,
-        reason: 'RETURN',
+        reason: dto.reason,
         eventId: event?.id ?? null,
       });
 
@@ -965,29 +972,7 @@ export class InboundService {
     });
 
     if (!skuBarcode) {
-      // 기본 바코드로도 조회
-      const sku = await this.db.query.skus.findFirst({
-        where: eq(wmsTables.skus.defaultBarcode, barcode),
-      });
-
-      if (!sku) {
-        throw new NotFoundException(`바코드 ${barcode}에 해당하는 SKU를 찾을 수 없습니다.`);
-      }
-
-      // 예상 SKU와 다른 경우
-      if (expectedSkuId && sku.id !== expectedSkuId) {
-        throw new BadRequestException(
-          `스캔한 SKU(${sku.code})가 예상 SKU와 다릅니다.`
-        );
-      }
-
-      return {
-        skuId: sku.id,
-        skuCode: sku.code,
-        skuName: sku.name,
-        barcode: sku.defaultBarcode,
-        barcodeType: 'default',
-      };
+      throw new NotFoundException(`바코드 ${barcode}에 해당하는 SKU를 찾을 수 없습니다.`);
     }
 
     // SKU 정보 별도 조회
@@ -1007,7 +992,7 @@ export class InboundService {
       skuCode: sku?.code,
       skuName: sku?.name,
       barcode: skuBarcode.barcode,
-      barcodeType: skuBarcode.barcodeType,
+      isPrimary: skuBarcode.isPrimary,
       packingUnit: skuBarcode.packingUnit,
     };
   }

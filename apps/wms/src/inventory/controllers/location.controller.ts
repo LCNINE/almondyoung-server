@@ -16,7 +16,9 @@ import {
   ApiResponse,
   ApiParam,
   ApiQuery,
-  ApiBody
+  ApiBody,
+  ApiExtraModels,
+  getSchemaPath
 } from '@nestjs/swagger';
 import { LocationService } from '../services/location.service';
 import {
@@ -37,15 +39,17 @@ import {
   RackQueryDto
 } from '../dto/location-query.dto';
 import {
-  LocationResponseDto,
+  BaseLocationResponseDto,
   LocationColumnResponseDto,
   LocationRackResponseDto,
   StandardLocationResponseDto,
   ZoneLocationResponseDto,
   LocationListResponseDto
 } from '../dto/location-response.dto';
+import { LocationMapper } from '../mappers/location.mapper';
 
 @ApiTags('Location Management')
+@ApiExtraModels(StandardLocationResponseDto, ZoneLocationResponseDto)
 @Controller('locations')
 export class LocationController {
   private readonly logger = new Logger(LocationController.name);
@@ -151,11 +155,12 @@ export class LocationController {
     @Param('warehouseId') warehouseId: string,
     @Query() query: RackQueryDto
   ) {
-    return await this.locationService.getRacks(
+    const racks = await this.locationService.getRacks(
       warehouseId,
       query.columnName,
       query.isActive
     );
+    return racks.map(LocationMapper.toLocationRackResponseDto);
   }
 
   @Put('/racks/:rackId')
@@ -230,14 +235,19 @@ export class LocationController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: '로케이션 상세 정보가 성공적으로 조회되었습니다.',
-    type: LocationResponseDto
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(StandardLocationResponseDto) },
+        { $ref: getSchemaPath(ZoneLocationResponseDto) }
+      ]
+    }
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
     description: '로케이션을 찾을 수 없습니다.'
   })
   async getLocationById(@Param('locationId') locationId: string) {
-    return await this.locationService.getLocationById(locationId);
+    return LocationMapper.toLocationResponseDto(await this.locationService.getLocationById(locationId));
   }
 
 
@@ -249,7 +259,7 @@ export class LocationController {
   @ApiResponse({
     status: HttpStatus.OK,
     description: '로케이션 정보가 성공적으로 수정되었습니다.',
-    type: LocationResponseDto
+    type: BaseLocationResponseDto
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,

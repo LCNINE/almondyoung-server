@@ -1,5 +1,5 @@
 import { MovementJob, MovementJobLine } from 'apps/wms/database/schemas/wms-schema';
-import { TransferJobDto, TransferJobLineDto } from '../dto/transfer/transfer-response.dto';
+import { TransferJobWithLinesDto, TransferJobLineDto, TransferJobWithLineCountDto, BaseTransferJobDto } from '../dto/transfer/transfer-response.dto';
 
 export class TransferJobLineMapper {
   static toDto(line: MovementJobLine): TransferJobLineDto {
@@ -18,7 +18,20 @@ export class TransferJobLineMapper {
 }
 
 export class TransferJobMapper {
-  static toDto(job: MovementJob, lines?: MovementJobLine[]): TransferJobDto {
+  static toDto(job: MovementJob): BaseTransferJobDto {
+    return {
+      id: job.id,
+      warehouseId: job.warehouseId,
+      occurredAt: job.occurredAt.toISOString(),
+      totalQuantity: job.totalQuantity,
+      journalId: job.journalId,
+      actorId: job.actorId,
+      memo: job.memo,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+    };
+  }
+  static toWithLinesDto(job: MovementJob, lines?: MovementJobLine[]): TransferJobWithLinesDto {
     return {
       id: job.id,
       warehouseId: job.warehouseId,
@@ -30,6 +43,21 @@ export class TransferJobMapper {
       createdAt: job.createdAt.toISOString(),
       updatedAt: job.updatedAt.toISOString(),
       lines: lines?.map(line => TransferJobLineMapper.toDto(line)),
+    };
+  }
+
+  static toWithLineCountDto(job: MovementJob, lineCount: number): TransferJobWithLineCountDto {
+    return {
+      id: job.id,
+      warehouseId: job.warehouseId,
+      occurredAt: job.occurredAt.toISOString(),
+      totalQuantity: job.totalQuantity,
+      journalId: job.journalId,
+      actorId: job.actorId,
+      memo: job.memo,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
+      lineCount: lineCount,
     };
   }
 }
