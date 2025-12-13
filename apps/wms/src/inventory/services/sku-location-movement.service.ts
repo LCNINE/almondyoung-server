@@ -550,20 +550,24 @@ export class SkuLocationMovementService {
     identifier: string,
     tx: DbTx
   ): Promise<{ id: string; barcode: string | null } | null> {
-    const { skus } = wmsTables;
+    const { skus, skuBarcodes } = wmsTables;
 
     // Check if identifier is UUID format
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const isUuid = uuidRegex.test(identifier);
 
     if (isUuid) {
-      // Try to find by ID
+      // Try to find by ID, get primary barcode
       const result = await tx
         .select({
           id: skus.id,
-          barcode: skus.defaultBarcode,
+          barcode: skuBarcodes.barcode,
         })
         .from(skus)
+        .leftJoin(skuBarcodes, and(
+          eq(skus.id, skuBarcodes.skuId),
+          eq(skuBarcodes.isPrimary, true)
+        ))
         .where(eq(skus.id, identifier))
         .limit(1);
 
@@ -575,18 +579,18 @@ export class SkuLocationMovementService {
       }
     }
 
-    // Try to find by barcode
+    // Try to find by barcode (any barcode, not just primary)
     const barcodeResult = await tx
       .select({
-        id: skus.id,
-        barcode: skus.defaultBarcode,
+        skuId: skuBarcodes.skuId,
+        barcode: skuBarcodes.barcode,
       })
-      .from(skus)
-      .where(eq(skus.defaultBarcode, identifier))
+      .from(skuBarcodes)
+      .where(eq(skuBarcodes.barcode, identifier))
       .limit(1);
 
     return barcodeResult[0] ? {
-      id: barcodeResult[0].id,
+      id: barcodeResult[0].skuId,
       barcode: barcodeResult[0].barcode,
     } : null;
   }

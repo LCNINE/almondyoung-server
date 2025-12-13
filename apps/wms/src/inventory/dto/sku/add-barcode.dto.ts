@@ -7,11 +7,6 @@ export class AddBarcodeDto {
     @IsNotEmpty()
     barcode: string;
 
-    @ApiProperty({ description: '바코드 타입', enum: ['standard'], default: 'standard' })
-    @IsEnum(['standard'])
-    @IsOptional()
-    barcodeType?: 'standard' = 'standard';
-
     @ApiProperty({ description: '포장 단위', required: false })
     @IsString()
     @IsOptional()

@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, MovementJob } from '../../../database/schemas/wms-schema';
-import { eq, and, desc, SQL } from 'drizzle-orm';
+import { eq, and, desc, SQL, sql, getTableColumns } from 'drizzle-orm';
 import { StockEventService } from './stock-event.service';
 import { InventoryCommandService } from './inventory-command.service';
 
@@ -209,6 +209,7 @@ export class TransferService {
             toLocationId: line.toLocationId,
             quantity: line.quantity,
             reason: line.memo || 'Internal movement',
+            journalId: movementJob.journalId ?? undefined,
           }, trx);
 
           // Line 업데이트
@@ -319,7 +320,7 @@ export class TransferService {
     warehouseId?: string;
     limit?: number;
     offset?: number;
-  }, tx?: DbTx): Promise<MovementJob[]> {
+  }, tx?: DbTx): Promise<(MovementJob & { lineCount: number })[]> {
     const db = tx ?? this.db;
 
     const conditions: SQL[] = [];
@@ -328,12 +329,22 @@ export class TransferService {
       conditions.push(eq(wmsTables.movementJobs.warehouseId, filters.warehouseId));
     }
 
-    const jobs = await db.query.movementJobs.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
-      limit: filters.limit || 50,
-      offset: filters.offset || 0,
-      orderBy: desc(wmsTables.movementJobs.occurredAt),
-    });
+    const { movementJobs, movementJobLines } = wmsTables;
+
+    const jobs = await db
+      .select({
+        ...getTableColumns(movementJobs),
+        lineCount: sql<number>`(
+          SELECT COUNT(*)::int 
+          FROM ${movementJobLines} 
+          WHERE ${movementJobLines.jobId} = ${movementJobs.id}
+        )`.as('line_count'),
+      })
+      .from(movementJobs)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .limit(filters.limit || 50)
+      .offset(filters.offset || 0)
+      .orderBy(desc(movementJobs.occurredAt));
 
     return jobs;
   }

@@ -100,7 +100,11 @@ export class StocktakingService {
                     expectedQty: stockLedgers.qty,
                     skuName: skus.name,
                     skuCode: skus.code,
-                    defaultBarcode: skus.defaultBarcode,
+                    primaryBarcode: sql<string>`(
+                      SELECT barcode FROM sku_barcodes 
+                      WHERE sku_id = ${skus.id} AND is_primary = true 
+                      LIMIT 1
+                    )`,
                 })
                 .from(stockLedgers)
                 .innerJoin(skus, eq(stockLedgers.skuId, skus.id))
@@ -132,7 +136,7 @@ export class StocktakingService {
                     skuId: item.skuId,
                     skuName: item.skuName,
                     skuCode: item.skuCode,
-                    barcode: item.defaultBarcode,
+                    barcode: item.primaryBarcode,
                     expectedQuantity: item.expectedQty,
                 })),
             };
@@ -144,17 +148,29 @@ export class StocktakingService {
      */
     async scanProduct(dto: ScanProductDto, tx?: DbTx) {
         return this.inTx(async (tx) => {
-            const { skus, stocktakingLines } = wmsTables;
+            const { skus, skuBarcodes, stocktakingLines } = wmsTables;
 
             // Find SKU by barcode
+            const barcodeResult = await tx
+                .select({
+                    skuId: skuBarcodes.skuId,
+                })
+                .from(skuBarcodes)
+                .where(eq(skuBarcodes.barcode, dto.productBarcode))
+                .limit(1);
+
+            if (!barcodeResult[0]) {
+                throw new NotFoundException(`SKU with barcode ${dto.productBarcode} not found`);
+            }
+
             const sku = await tx
                 .select()
                 .from(skus)
-                .where(eq(skus.defaultBarcode, dto.productBarcode))
+                .where(eq(skus.id, barcodeResult[0].skuId))
                 .limit(1);
 
             if (!sku[0]) {
-                throw new NotFoundException(`SKU with barcode ${dto.productBarcode} not found`);
+                throw new NotFoundException(`SKU not found`);
             }
 
             // Find or create stocktaking line

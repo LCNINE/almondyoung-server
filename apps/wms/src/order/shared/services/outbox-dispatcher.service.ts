@@ -14,7 +14,7 @@ import {
   FulfillmentReturnedPayload,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../../../database/schemas/wms-schema';
-import { eq, and, lte, sql } from 'drizzle-orm';
+import { eq, and, lte, sql, inArray } from 'drizzle-orm';
 
 type FulfillmentPayload =
   | FulfillmentCreatedPayload
@@ -104,7 +104,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           .set({
             attempts: sql`${wmsTables.outboxEvents.attempts} + 1`,
           })
-          .where(sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`);
+          .where(inArray(wmsTables.outboxEvents.id, eventIds));
 
         return pendingEvents;
       });
@@ -229,7 +229,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         eventIds
           ? and(
             eq(wmsTables.outboxEvents.status, 'failed'),
-            sql`${wmsTables.outboxEvents.id} = ANY(${eventIds})`,
+            inArray(wmsTables.outboxEvents.id, eventIds),
           )
           : eq(wmsTables.outboxEvents.status, 'failed'),
       )
