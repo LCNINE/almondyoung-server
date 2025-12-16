@@ -1,4 +1,11 @@
-import type { CategoryDisplaySettings, PimCategory } from "@lib/api/pim/pim-types"
+import type {
+  CategoryDisplaySettings,
+  CategoryTreeNodeDto,
+  CategoryResponseDto,
+} from "@lib/types/dto/pim"
+
+// 하위 호환성을 위한 타입 별칭
+type PimCategory = CategoryTreeNodeDto | CategoryResponseDto
 
 /**
  * display_settings JSON 문자열을 파싱하여 CategoryDisplaySettings 객체로 변환

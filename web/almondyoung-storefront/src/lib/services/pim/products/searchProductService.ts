@@ -1,5 +1,8 @@
-import { searchProducts } from "@lib/api/pim/pim-api"
-import type { ProductSearchResponseDto, TagFilterDto } from "@lib/api/pim/pim-types"
+import { searchProducts } from "@lib/api/pim/search.server"
+import type {
+  ProductSearchResponseDto,
+  TagFilterDto,
+} from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 import { toProductCardFromSearch } from "@lib/types/product.transformer"
 
@@ -54,7 +57,11 @@ export async function searchProductService(
     }
 
     // API 호출
-    const response = await searchProducts(searchParams)
+    const result = await searchProducts(searchParams)
+    if ("error" in result) {
+      throw new Error(result.error.message)
+    }
+    const response = result.data
 
     // ProductSearchItemDto -> ProductCard 변환
     const items: ProductCard[] = response.items.map(toProductCardFromSearch)

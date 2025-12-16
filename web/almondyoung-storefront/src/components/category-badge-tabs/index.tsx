@@ -1,5 +1,5 @@
 import React from "react"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 
 // --- 반응형 스타일 변수 ---
@@ -26,7 +26,7 @@ const activeTagStyle = `
 `
 
 interface CategoryBadgeTabsProps {
-  categories: CategoryTreeNode[]
+  categories: CategoryTreeNodeDto[]
   initialCategoryId?: string | "first" // "first"면 첫 번째 카테고리, 특정 ID면 해당 카테고리
   onCategorySelect?: (categoryId: string) => void
 }
@@ -39,20 +39,20 @@ export function CategoryBadgeTabs({
   // 카테고리 트리에서 실제 표시할 카테고리 추출
   const displayCategories = React.useMemo(() => {
     if (categories.length === 0) return []
-    
+
     const level0Categories = categories.filter((category) => {
       if (category.level !== 0) return false
       if (category.isActive === false) return false
       if (!getShowOnMainCategory(category)) return false
       return true
     })
-    
+
     return level0Categories.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
   }, [categories])
 
   // 초기 카테고리 ID 결정
-  const defaultCategoryId = initialCategoryId === "first" 
-    ? displayCategories[0]?.id ?? "" 
+  const defaultCategoryId = initialCategoryId === "first"
+    ? displayCategories[0]?.id ?? ""
     : initialCategoryId
 
   // 선택된 카테고리 상태
@@ -61,8 +61,8 @@ export function CategoryBadgeTabs({
   // displayCategories가 로드되면 초기값 설정
   React.useEffect(() => {
     if (displayCategories.length > 0 && !activeCategoryId) {
-      const targetId = initialCategoryId === "first" 
-        ? displayCategories[0].id 
+      const targetId = initialCategoryId === "first"
+        ? displayCategories[0].id
         : initialCategoryId
       setActiveCategoryId(targetId)
     }

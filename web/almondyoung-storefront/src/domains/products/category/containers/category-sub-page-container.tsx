@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategorySubPageClient } from "../components/category-sub-page-client"
-import { getCategoryBySlug } from "@lib/api/pim/pim-api"
+import { getCategoryBySlug } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 
 interface CategorySubPageContainerProps {
@@ -17,9 +17,15 @@ export async function CategorySubPageContainer({
   const { slug, sub: subSlug, countryCode } = await params
 
   // 서브 카테고리 정보 조회 (subSlug로 직접 조회)
-  const categoryData = await getCategoryBySlug(subSlug)
+  const result = await getCategoryBySlug(subSlug)
 
-  // 데이터가 없으면 404 처리
+  // 에러 처리
+  if ("error" in result) {
+    console.error("❌ [CategorySubPageContainer] 카테고리 조회 실패:", result.error)
+    return notFound()
+  }
+
+  const categoryData = result.data
   if (!categoryData) {
     return notFound()
   }

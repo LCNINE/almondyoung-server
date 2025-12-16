@@ -2,9 +2,9 @@ import { ThemeManager } from "@components/common/theme-manager"
 import ProtectedRoute from "@components/protected-route"
 import HomeTemplate from "domains/home/template/home-template"
 import { CategorySelectSection } from "../../../../legacy/sections/yourCategory-section"
-import { getCategoryTree } from "@lib/api/pim/pim-api"
+import { getCategoryTree } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim.dto"
 import type { ProductCard } from "@lib/types/ui/product"
 
 export default async function Home(props: {
@@ -13,13 +13,17 @@ export default async function Home(props: {
   const { countryCode } = await props.params
 
   // 카테고리 트리 조회
-  let categories: CategoryTreeNode[] = []
+  let categories: CategoryTreeNodeDto[] = []
   let initialCategoryProducts: ProductCard[] = []
   let initialCategoryId: string | null = null
 
   try {
-    const categoryTree = await getCategoryTree()
-    categories = categoryTree.categories || []
+    const result = await getCategoryTree()
+    if (result.error) {
+      console.error("❌ [Home] 카테고리 조회 실패:", result.error)
+    } else {
+      categories = result.data?.categories || []
+    }
 
     // 첫 번째 카테고리 선택 (또는 루트 카테고리의 첫 번째 자식)
     if (categories.length > 0) {

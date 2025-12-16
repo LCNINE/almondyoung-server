@@ -14,7 +14,7 @@ import SectionHeader from "./components/list/section-header"
 import ProductList from "./components/list/product-list"
 import { ProductListSection } from "./components/list/product-list-section"
 import CategoryBadgeTabs from "@components/category-badge-tabs"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 import { getProductListService } from "@lib/services/pim/products/getProductListService"
 import {
@@ -24,7 +24,7 @@ import {
 
 // 비로그인 사용자용 홈페이지 섹션들
 export const HomeLogout: React.FC<{
-  categories: CategoryTreeNode[]
+  categories: CategoryTreeNodeDto[]
   initialCategoryId: string | null
   initialCategoryProducts: ProductCard[]
 }> = ({ categories, initialCategoryId, initialCategoryProducts }) => {

@@ -15,7 +15,7 @@ import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
 import CustomDropdown from "@components/dropdown"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryResponseDto, CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 
 // 프론트 전용 타입(CategoryInfo)을 별도로 쓰기보다
@@ -28,7 +28,7 @@ export interface CategoryInfo {
 interface CategoryPageClientProps {
   slug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryTreeNode // null 가능성 제거 (Container에서 처리함)
+  categoryData: CategoryTreeNodeDto // null 가능성 제거 (Container에서 처리함)
   initialProducts?: ProductCard[] // 서버에서 로드한 초기 상품 목록
   initialTotal?: number // 전체 상품 수
   countryCode: string
@@ -80,9 +80,9 @@ export function CategoryPageClient({
 
             {categoryData.children && categoryData.children.length > 0 && (
               <CategoryCircleTabs
-                items={categoryData.children} // 서버 DTO 구조 그대로 전달
+                items={categoryData.children as CategoryResponseDto[]} // 서버 DTO 구조 그대로 전달
                 selectedId=""
-                onSelect={() => {}}
+                onSelect={() => { }}
                 countryCode={countryCode}
                 parentSlug={slug}
               />

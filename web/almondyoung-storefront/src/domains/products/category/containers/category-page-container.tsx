@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation"
 import { CategoryPageClient } from "../components/category-page-client"
-import { getCategoryBySlug } from "@lib/api/pim/pim-api"
+import { getCategoryBySlug } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 
 interface CategoryPageContainerProps {
@@ -15,10 +15,16 @@ export async function CategoryPageContainer({
 }: CategoryPageContainerProps) {
   const { slug, countryCode } = await params
 
-  // 1. API 모듈을 통해 데이터 조회 (서버 -> 라우트핸들러 -> 백엔드)
-  const categoryData = await getCategoryBySlug(slug)
+  // 1. API 모듈을 통해 데이터 조회 (서버 액션 -> 백엔드)
+  const result = await getCategoryBySlug(slug)
 
-  // 2. 데이터가 없으면 404 처리
+  // 2. 에러 처리
+  if ("error" in result) {
+    console.error("❌ [CategoryPageContainer] 카테고리 조회 실패:", result.error)
+    return notFound()
+  }
+
+  const categoryData = result.data
   if (!categoryData) {
     return notFound()
   }
@@ -31,14 +37,14 @@ export async function CategoryPageContainer({
   }
 
   // 4. 카테고리별 상품 목록 로드
-  console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, { 
-    categoryId: categoryData.id, 
-    categoryName: categoryData.name 
+  console.log(`🚀 [CategoryPageContainer] 상품 목록 로드 시작:`, {
+    categoryId: categoryData.id,
+    categoryName: categoryData.name
   })
-  
+
   let initialProducts: any[] = []
   let initialTotal = 0
-  
+
   try {
     const productsResult = await getProductsByCategoryService(categoryData.id, {
       page: 1,
@@ -46,9 +52,9 @@ export async function CategoryPageContainer({
     })
     initialProducts = productsResult.items
     initialTotal = productsResult.total
-    console.log(`✅ [CategoryPageContainer] 상품 목록 로드 완료:`, { 
-      itemCount: initialProducts.length, 
-      total: initialTotal 
+    console.log(`✅ [CategoryPageContainer] 상품 목록 로드 완료:`, {
+      itemCount: initialProducts.length,
+      total: initialTotal
     })
   } catch (error) {
     console.error("❌ [CategoryPageContainer] 상품 목록 로드 실패:", error)

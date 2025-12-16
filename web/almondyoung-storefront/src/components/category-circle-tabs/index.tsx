@@ -1,7 +1,7 @@
 import Image from "next/image"
 import Link from "next/link"
 import * as React from "react"
-import type { CategoryResponse } from "@lib/api/pim/pim-types"
+import type { CategoryResponseDto } from "@lib/types/dto/pim"
 
 // --- 데이터 타입 및 더미 데이터 ---
 
@@ -23,14 +23,14 @@ const PLACEHOLDER_IMAGES = [
  * 카테고리 탭 아이템의 데이터 구조
  */
 interface CategoryCircleItemProps {
-  category: CategoryResponse
+  category: CategoryResponseDto
   isSelected: boolean
   countryCode: string
   parentSlug: string
 }
 
 interface CategoryCircleTabsProps {
-  items: CategoryResponse[]
+  items: CategoryResponseDto[]
   selectedId: string
   onSelect: (id: string) => void
   countryCode: string
@@ -47,7 +47,7 @@ function CategoryCircleItem({
 }: CategoryCircleItemProps) {
   // 서버 데이터 구조: imageUrl 또는 thumbnail 사용
   const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGES[0]
-  
+
   // sub 페이지로 이동하는 링크 생성
   const href = `/${countryCode}/category/${parentSlug}/${category.slug}`
 
@@ -62,9 +62,8 @@ function CategoryCircleItem({
         - isSelected 상태일 때 시각적 강조 (ring 처리) 추가
       */}
       <div
-        className={`bg-muted mb-2 max-h-[180px] max-w-[180px] overflow-hidden rounded-full transition-transform duration-200 group-hover:scale-105 ${
-          isSelected ? "ring-2 ring-black ring-offset-2" : ""
-        }`}
+        className={`bg-muted mb-2 max-h-[180px] max-w-[180px] overflow-hidden rounded-full transition-transform duration-200 group-hover:scale-105 ${isSelected ? "ring-2 ring-black ring-offset-2" : ""
+          }`}
       >
         <Image
           src={imageUrl}
@@ -77,11 +76,10 @@ function CategoryCircleItem({
 
       {/* 텍스트 스타일 */}
       <span
-        className={`line-clamp-2 text-xs font-medium md:text-sm ${
-          isSelected
-            ? "font-bold text-black"
-            : "text-gray-900 group-hover:text-gray-700"
-        }`}
+        className={`line-clamp-2 text-xs font-medium md:text-sm ${isSelected
+          ? "font-bold text-black"
+          : "text-gray-900 group-hover:text-gray-700"
+          }`}
       >
         {category.name}
       </span>

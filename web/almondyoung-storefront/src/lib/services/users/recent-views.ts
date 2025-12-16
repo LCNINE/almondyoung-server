@@ -5,7 +5,7 @@ import {
 } from "@lib/api/users/recent-views"
 import { RecentViewDto } from "@lib/types/dto/users"
 import { RecentViewProductThumbnail } from "@lib/types/ui/product"
-import { getPimProductDetail, getAllProductList } from "@lib/api/pim/pim-api"
+import { getProductDetail } from "@lib/api/pim/masters.server"
 import { toRecentViewProductThumbnail } from "@lib/utils/transformers/user.transformer"
 
 // 서비스 옵션 타입
@@ -55,7 +55,7 @@ function writeCache(userId: string, items: RecentViewProductThumbnail[]): void {
         userId,
       })
     )
-  } catch {}
+  } catch { }
 }
 
 // 최근 본 상품에 상품 정보 결합 (개선: 한 번의 API 호출로 모든 상품 정보 가져오기)
@@ -110,7 +110,11 @@ async function enrichWithProductInfo(
         )
 
         try {
-          const pimProduct = await getPimProductDetail(productId)
+          const result = await getProductDetail(productId)
+          if ("error" in result) {
+            throw new Error(result.error.message)
+          }
+          const pimProduct = result.data
           const pimDuration = Math.round(performance.now() - pimStartTime)
           console.log(
             `  ✓ [${index}/${recentViews.length}] PIM API 완료: ${productId} (${pimDuration}ms)`

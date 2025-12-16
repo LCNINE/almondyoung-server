@@ -9,7 +9,7 @@ import CustomDropdown from "@components/dropdown"
 import { SlidersHorizontal } from "lucide-react"
 import { overlay } from "overlay-kit"
 import { MobileFilterSheet } from "./mobile-filter-sheet"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 
 export interface CategoryInfo {
@@ -21,7 +21,7 @@ interface CategorySubPageClientProps {
   slug: string
   subSlug: string
   categoryInfo: CategoryInfo
-  categoryData: CategoryTreeNode
+  categoryData: CategoryTreeNodeDto
   initialProducts?: ProductCard[]
   initialTotal?: number
   countryCode: string
@@ -83,7 +83,7 @@ export function CategorySubPageClient({
                       const isActive = child.slug === subSlug
                       // 재귀적으로 하위 카테고리를 표시하기 위해 현재 카테고리의 slug를 parentSlug로 사용
                       const href = `/${countryCode}/category/${categoryData.slug}/${child.slug}`
-                      
+
                       return (
                         <li key={child.id} className="flex-shrink-0">
                           <Link
@@ -96,10 +96,9 @@ export function CategorySubPageClient({
                               border-gray-200
                               font-['Pretendard'] transition-colors
                               whitespace-nowrap
-                              ${
-                                isActive
-                                  ? "bg-black outline-black text-zinc-100 font-normal md:bg-zinc-800 md:outline-zinc-800 md:font-bold"
-                                  : "outline-Grays-Gray-3 text-Grays-Gray font-normal hover:bg-gray-100"
+                              ${isActive
+                                ? "bg-black outline-black text-zinc-100 font-normal md:bg-zinc-800 md:outline-zinc-800 md:font-bold"
+                                : "outline-Grays-Gray-3 text-Grays-Gray font-normal hover:bg-gray-100"
                               }
                             `}
                             aria-pressed={isActive}
@@ -143,7 +142,7 @@ export function CategorySubPageClient({
                 <ProductSortToolbar />
               </div>
             </section>
-            
+
             <section>
               {/* Product Grid */}
               {paginatedProducts.length > 0 && (
