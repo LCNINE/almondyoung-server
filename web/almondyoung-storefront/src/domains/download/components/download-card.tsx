@@ -3,15 +3,15 @@
 import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"
 import { cn } from "@lib/utils"
-import { format } from "date-fns"
 import {
-  downloadDigitalAssetAction,
-  updateDigitalAssetExerciseAction,
-} from "domains/mypage/actions/digital-asset-actions"
-import { DigitalAssetLicense } from "domains/mypage/types/mypage-types"
+  downloadDigitalAsset,
+  updateDigitalAssetExercise,
+} from "@lib/api/medusa/digital-asset"
+import type { DigitalAssetLicense } from "@lib/types/ui/digital-aseet.ui"
 import { Cat, Check, Download } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
+import Image from "next/image"
 
 interface DownloadCardProps {
   digitalAsset: DigitalAssetLicense
@@ -25,7 +25,7 @@ export function DownloadCard({ digitalAsset, isExercised }: DownloadCardProps) {
     setDownloadingId(assetId)
 
     try {
-      const result = await downloadDigitalAssetAction(assetId)
+      const result = await downloadDigitalAsset(assetId)
 
       setDownloadingId(null)
 
@@ -71,7 +71,7 @@ export function DownloadCard({ digitalAsset, isExercised }: DownloadCardProps) {
 
     if (confirmed) {
       try {
-        const result = await updateDigitalAssetExerciseAction(assetId)
+        const result = await updateDigitalAssetExercise(assetId)
 
         if (result.success) {
           toast.success("사용 처리 완료", {
@@ -100,10 +100,12 @@ export function DownloadCard({ digitalAsset, isExercised }: DownloadCardProps) {
     >
       {/* Thumbnail */}
       <div className="bg-muted relative aspect-video overflow-hidden">
-        <img
-          src={digitalAsset?.digital_asset?.thumbnail_url}
+        <Image
+          src={digitalAsset?.digital_asset?.thumbnail_url || ""}
           alt={digitalAsset?.digital_asset?.name}
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          width={100}
+          height={100}
         />
         <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 

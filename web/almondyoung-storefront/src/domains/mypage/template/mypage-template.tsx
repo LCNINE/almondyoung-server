@@ -1,6 +1,6 @@
 import MypageLayout from "@components/layout/mypage-layout"
 import { fetchMe } from "@lib/api/users/me"
-import { UserDetail } from "types/global"
+import type { UserDetail } from "@lib/types/ui/user"
 import { MyPageDesktopContent } from "../components/desktop"
 import { MyPageMobileContent } from "../components/mobile"
 
@@ -9,13 +9,12 @@ export async function MyPageTemplate() {
 
   return (
     <>
-      {/* 모바일 콘텐츠 - md 미만 */}
-      <div className="block md:hidden">
+      {/* 모바일 콘텐츠 - lg 미만 */}
+      <div className="block lg:hidden">
         <MyPageMobileContent currentUser={currentUser as UserDetail} />
       </div>
-
-      {/* 데스크탑 콘텐츠 - md 이상 */}
-      <div className="hidden md:block">
+      {/* 데스크탑 콘텐츠 - lg 이상 */}
+      <div className="hidden lg:block">
         <MypageLayout>
           <MyPageDesktopContent currentUser={currentUser as UserDetail} />
         </MypageLayout>

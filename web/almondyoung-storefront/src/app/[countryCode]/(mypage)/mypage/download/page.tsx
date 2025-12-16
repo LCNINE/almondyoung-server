@@ -2,10 +2,10 @@ import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
 import { fetchMe } from "@lib/api/users/me"
+import { UserDetail } from "@lib/types/ui/user"
 import DownloadPageTemplate from "domains/download/download-page-template"
 import { AlertCircle } from "lucide-react"
 import { Metadata } from "next"
-import { UserDetail } from "types/global"
 
 export const metadata: Metadata = {
   title: "마이페이지 | 다운로드",
@@ -25,7 +25,10 @@ export default async function DownloadPage({
   const is_exercised = params.is_exercised ?? null
 
   try {
-    const digitalAssets = await getDigitalAssets(skip, take)
+    const digitalAssets = await getDigitalAssets({
+      skip: skip.toString(),
+      take: take.toString(),
+    })
 
     return (
       <WithHeaderLayout
@@ -39,7 +42,7 @@ export default async function DownloadPage({
         <MypageLayout>
           <DownloadPageTemplate
             user={currentUser as UserDetail}
-            digitalAssets={digitalAssets.data.licenses}
+            digitalAssets={digitalAssets.licenses}
             currentPage={page}
             itemsPerPage={take}
             is_exercised={is_exercised}

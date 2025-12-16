@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from "@components/common/ui/form"
 import { Input } from "@components/common/ui/input"
+import { Label } from "@components/common/ui/label"
 import { ScrollArea } from "@components/common/ui/scroll-area"
 import {
   Select,
@@ -28,34 +29,83 @@ import {
 } from "@components/common/ui/select"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
-import { getApickAccount } from "@lib/api/wallet"
+import { getMyBusiness } from "@lib/api/users/business"
+import { getApickAccount, onboardHmsBnpl } from "@lib/api/wallet"
 import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { format } from "date-fns"
 import { ChevronLeft, ChevronRight, CreditCard } from "lucide-react"
-import { useEffect, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm, useFormContext } from "react-hook-form"
 import { toast } from "sonner"
 import { usePaymentMethodModalStore } from "../store/payment-method-modal-store"
 import BANKS from "./banks.data.json"
 import BillingAgreementForm from "./billing-agreement"
 import { paymentMethodFormSchema, PaymentMethodFormSchema } from "./schema"
-import { Label } from "@components/common/ui/label"
 
-type Step = "method" | "bank" | "account" | "agreement"
+type Step = "method" | "bank" | "account" | "agreement" | "editAccount"
 
 // 결제 수단 선택 모달 컴포넌트
 export default function PaymentMethodForm({ user }: { user: UserDetail }) {
-  const { isOpen, openModal, closeModal } = usePaymentMethodModalStore()
+  const { isOpen, openModal, closeModal } = usePaymentMethodModalStore() // 결제 수단 선택 모달
+  const router = useRouter()
+
   const form = useForm<PaymentMethodFormSchema>({
     resolver: zodResolver(paymentMethodFormSchema),
     defaultValues: {
       bankCode: "",
       accountNumber: "",
       accountHolderName: "",
-      accountHolderBirthDate: "",
+      billingDate: "10",
+      birthDate: user.profile?.birthDate
+        ? format(user.profile.birthDate, "yyyy-MM-dd")
+        : "",
+      payerNumber: "",
+      email: user.email || "",
+      isOwnerConfirmed: false,
+      electronicTransaction: false,
+      privacyPolicy: false,
+      thirdPartySharing: false,
+      signature: undefined,
     },
   })
+
+  const [state, formAction, pending] = useActionState(onboardHmsBnpl, null)
+  const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    const fetchBusinessInfo = async () => {
+      const businessInfo = await getMyBusiness()
+      if (businessInfo) {
+        form.setValue("payerNumber", businessInfo.businessNumber as string)
+      }
+    }
+
+    fetchBusinessInfo()
+  }, [])
+
+  useEffect(() => {
+    if (user.profile?.birthDate) {
+      form.setValue("birthDate", format(user.profile.birthDate, "yyyy-MM-dd"))
+    }
+
+    if (user) {
+      form.setValue("email", user.email)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (state) {
+      if (state && state.success) {
+        toast.success("정기 결제 등록이 완료되었습니다.")
+        router.refresh()
+        closeModal()
+      } else {
+        toast.error(state?.message || "정기결제 신청에 실패했습니다.")
+      }
+    }
+  }, [state])
 
   const [step, setStep] = useState<Step>("method")
 
@@ -91,11 +141,25 @@ export default function PaymentMethodForm({ user }: { user: UserDetail }) {
     }
   }
 
-  useEffect(() => {
-    if (user.profile?.birthDate) {
-      form.setValue("birthDate", format(user.profile.birthDate, "yyyy-MM-dd"))
-    }
-  }, [user.profile?.birthDate])
+  const handleSubmit = async (data: PaymentMethodFormSchema) => {
+    // 전화번호 형식 변환: +821012345678 -> 01012345678
+    const phoneNumber = user.profile?.phoneNumber || ""
+    const formattedPhone = phoneNumber.startsWith("+82")
+      ? "0" + phoneNumber.slice(3) // +82 제거하고 0 추가
+      : phoneNumber
+
+    const formData = new FormData()
+    formData.append("payerName", data.accountHolderName) // 납부자 명
+    formData.append("phone", formattedPhone) // 전화번호
+    formData.append("paymentCompany", data.bankCode) // 은행코드
+    formData.append("paymentNumber", data.accountNumber) // 계좌번호
+    formData.append("payerNumber", data.payerNumber || "") // 납부자 사업자 번호
+    formData.append("file", data.signature as File) //  전자서명 파일
+
+    startTransition(async () => {
+      formAction(formData)
+    })
+  }
 
   const renderContent = () => {
     switch (step) {
@@ -125,8 +189,9 @@ export default function PaymentMethodForm({ user }: { user: UserDetail }) {
       case "bank":
         return (
           <BankSelector
-            onSelect={(bankCode: string) => {
-              form.setValue("bankCode", bankCode)
+            onSelect={(bank) => {
+              form.setValue("bankCode", bank.code)
+              form.setValue("bankName", bank.name)
               handleBankSelect("account")
             }}
           />
@@ -138,20 +203,30 @@ export default function PaymentMethodForm({ user }: { user: UserDetail }) {
           <BankAccountLookupForm
             bankCode={form.watch("bankCode")}
             onNextStep={() => handleBankSelect("agreement")}
+            userName={user.username}
+          />
+        )
+
+      case "editAccount":
+        return (
+          <BankAccountLookupForm
+            bankCode={form.watch("bankCode")}
+            onNextStep={() => handleBankSelect("agreement")}
+            userName={user.username}
           />
         )
 
       // 결제 동의 폼 컴포넌트
       case "agreement":
-        return <BillingAgreementForm user={user} />
+        return (
+          <BillingAgreementForm
+            user={user}
+            isFormSubmitting={pending || isPending}
+          />
+        )
       default:
         return null
     }
-  }
-
-  const handleSubmit = (data: PaymentMethodFormSchema) => {
-    console.log(data)
-    // TODO: 결제수단 등록 로직 구현
   }
 
   return (
@@ -190,7 +265,11 @@ export default function PaymentMethodForm({ user }: { user: UserDetail }) {
 /**
  * 은행 선택 컴포넌트
  */
-function BankSelector({ onSelect }: { onSelect: (bankCode: string) => void }) {
+function BankSelector({
+  onSelect,
+}: {
+  onSelect: (bank: { code: string; name: string }) => void
+}) {
   return (
     <>
       <p className="mb-4 text-center text-sm">
@@ -202,7 +281,7 @@ function BankSelector({ onSelect }: { onSelect: (bankCode: string) => void }) {
             <Button
               variant="outline"
               key={bank.code}
-              onClick={() => onSelect(bank.code)}
+              onClick={() => onSelect(bank)}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg border p-3 transition"
               )}
@@ -222,50 +301,53 @@ function BankSelector({ onSelect }: { onSelect: (bankCode: string) => void }) {
 function BankAccountLookupForm({
   bankCode,
   onNextStep,
+  userName,
 }: {
   bankCode: string | null
   onNextStep: () => void
+  userName: string
 }) {
   const form = useFormContext<PaymentMethodFormSchema>()
-
+  const isOwnerConfirmed = form.watch("isOwnerConfirmed") // 예금주 확인 여부
   const [isPending, startTransition] = useTransition()
-
-  console.log("form.getValues():", form.formState.errors)
 
   const handleSearch = () => {
     const bankCode = form.watch("bankCode")
     const accountNumber = form.watch("accountNumber")
-    const accountHolderName = form.watch("accountHolderName")
 
     if (!bankCode || !accountNumber) {
       form.setError("accountNumber", {
         message: "계좌번호를 입력해주세요",
       })
 
-      form.setError("accountHolderName", {
-        message: "예금주를 입력해주세요",
-      })
-
       return
     }
 
+    form.setValue("isOwnerConfirmed", false)
     startTransition(async () => {
       try {
         const data = await getApickAccount(bankCode, accountNumber)
+
         if (data.api.success) {
-          if (accountHolderName !== data.api.data.account_holder_name) {
-            form.setError("accountHolderName", {
-              message: "예금주가 일치하지 않습니다.",
-            })
+          if (data.data.계좌실명 !== userName) {
+            toast.error("본인 명의의 계좌만 등록 가능합니다.")
+            form.setValue("isOwnerConfirmed", false)
             return
           }
+
+          form.setValue("bankCode", data.data.은행코드)
+          form.setValue("accountHolderName", data.data.계좌실명)
+          form.setValue("isOwnerConfirmed", true)
         }
       } catch (error) {
         if (error instanceof HttpApiError) {
           toast.error(error.message)
+          form.setValue("isOwnerConfirmed", false)
           return
         }
+
         toast.error("계좌 조회에 실패했습니다. 정보를 확인해주세요.")
+        form.setValue("isOwnerConfirmed", false)
       }
     })
   }
@@ -291,30 +373,6 @@ function BankAccountLookupForm({
             </SelectContent>
           </Select>
         </div>
-
-        <FormField
-          control={form.control}
-          name="accountHolderName"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-sm font-medium">예금주</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="예금주를 입력해주세요"
-                  maxLength={10}
-                  {...field}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\s/g, "")
-                    field.onChange(value)
-                    form.clearErrors("accountHolderName")
-                  }}
-                  type="text"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
 
         <FormField
           control={form.control}
@@ -361,7 +419,14 @@ function BankAccountLookupForm({
         </div>
       </div>
 
-      <BankAccountLookupResult bankCode={bankCode} onNextStep={onNextStep} />
+      {isOwnerConfirmed && (
+        <BankAccountLookupResult
+          bankCode={bankCode}
+          onNextStep={() => {
+            onNextStep()
+          }}
+        />
+      )}
     </>
   )
 }
@@ -376,20 +441,32 @@ function BankAccountLookupResult({
 }) {
   if (!bankCode) return null
 
+  const form = useFormContext<PaymentMethodFormSchema>()
+  const accountHolderName = form.watch("accountHolderName")
+  const accountNumber = form.watch("accountNumber")
+
   return (
-    <Card
-      className="mt-8 cursor-pointer border border-none shadow-sm transition-all hover:translate-y-[-2px] hover:shadow-md"
-      onClick={onNextStep}
-    >
-      <CardContent className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3" onClick={onNextStep}>
-          <div className="flex size-10 items-center justify-center rounded-lg bg-blue-500">
-            <CreditCard className="size-5 text-white" />
+    <>
+      <p className="my-4 text-sm font-bold">이 계좌가 맞나요?</p>
+
+      <Card
+        className="cursor-pointer border border-none shadow-sm transition-all hover:translate-y-[-2px] hover:shadow-md"
+        onClick={onNextStep}
+      >
+        <CardContent className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-3" onClick={onNextStep}>
+            <div className="flex size-10 items-center justify-center rounded-lg bg-blue-500">
+              <CreditCard className="size-5 text-white" />
+            </div>
+
+            <div className="flex flex-col">
+              <p className="text-xs font-medium">{accountNumber}</p>
+              <p className="text-sm font-medium">{accountHolderName}</p>
+            </div>
           </div>
-          <span className="text-sm font-bold">은행계좌</span>
-        </div>
-        <ChevronRight className="size-5" />
-      </CardContent>
-    </Card>
+          <ChevronRight className="size-5" />
+        </CardContent>
+      </Card>
+    </>
   )
 }

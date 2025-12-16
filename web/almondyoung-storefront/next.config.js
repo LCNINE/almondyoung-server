@@ -73,6 +73,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "almondyoung.s3.ap-northeast-2.amazonaws.com",
       },
+      {
+        protocol: "https",
+        hostname:
+          "almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com",
+      },
     ],
   },
 }

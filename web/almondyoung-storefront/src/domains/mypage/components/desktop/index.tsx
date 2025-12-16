@@ -1,4 +1,4 @@
-import { UserDetail } from "domains/auth/types"
+import type { UserDetail } from "@lib/types/ui/user"
 import { PaymentInfoSection } from "./payment-info-section"
 import { QuickMenuSection } from "./quick-menu-section"
 import { RecommendedProductsSection } from "./recommended-products-section"
@@ -25,7 +25,7 @@ export function MyPageDesktopContent({
         userName={currentUser?.username}
         userId={currentUser?.id}
       />
-      <QuickMenuSection  />
+      <QuickMenuSection />
       <ShippingItemsSection />
       <PaymentInfoSection />
       <RecommendedProductsSection />

@@ -50,7 +50,8 @@ async function fetchPim<T>(path: string, options?: RequestInit): Promise<T> {
     if (!res.ok) {
       const error = await res.json().catch(() => ({ message: "Unknown error" }))
       throw new Error(
-        error.message || `PIM API Request Failed: ${res.status} ${res.statusText}`
+        error.message ||
+          `PIM API Request Failed: ${res.status} ${res.statusText}`
       )
     }
 
@@ -138,11 +139,11 @@ export async function getCategoryBySlug(
 /**
  * 제품 마스터 목록 조회
  * GET /masters
- * 
+ *
  * @param params 쿼리 파라미터
  * @param signal AbortSignal (선택)
  * @returns 제품 마스터 목록 (가격 정보 없음)
- * 
+ *
  * TODO: 가격 정보가 필요하면 Variant 조회 또는 가격 계산 API 별도 호출 필요
  */
 export async function getAllProductList(
@@ -158,31 +159,30 @@ export async function getAllProductList(
   },
   signal?: AbortSignal
 ): Promise<ProductListResponse> {
-  console.log(`🚀 [getAllProductList] 호출:`, params)
-  
   const queryParams = new URLSearchParams()
-  
+
   if (params?.page) queryParams.set("page", params.page.toString())
   if (params?.limit) queryParams.set("limit", params.limit.toString())
   if (params?.status) queryParams.set("status", params.status)
   if (params?.categoryId) queryParams.set("categoryId", params.categoryId)
   if (params?.brand) queryParams.set("brand", params.brand)
   if (params?.search) queryParams.set("search", params.search)
-  if (params?.versionStatus) queryParams.set("versionStatus", params.versionStatus)
+  if (params?.versionStatus)
+    queryParams.set("versionStatus", params.versionStatus)
   if (params?.includeAllVersions !== undefined) {
     queryParams.set("includeAllVersions", params.includeAllVersions.toString())
   }
 
   const query = queryParams.toString()
   const path = query ? `/masters?${query}` : "/masters"
-  
+
   return fetchPim<ProductListResponse>(path, { signal })
 }
 
 /**
  * 카테고리별 제품 조회
  * GET /masters?categoryId=xxx
- * 
+ *
  * @param categoryId 카테고리 ID (빈 문자열이면 전체 조회)
  * @param params 쿼리 파라미터
  * @param signal AbortSignal (선택)
@@ -200,9 +200,7 @@ export async function getPimCategoryProducts(
   signal?: AbortSignal
 ): Promise<ProductListResponse> {
   // categoryId가 빈 문자열이면 전체 조회 (categoryId 파라미터 제외)
-  const queryParams = categoryId
-    ? { ...params, categoryId }
-    : params
+  const queryParams = categoryId ? { ...params, categoryId } : params
 
   return getAllProductList(queryParams, signal)
 }
@@ -210,7 +208,7 @@ export async function getPimCategoryProducts(
 /**
  * 제품 마스터 상세 조회
  * GET /masters/:id
- * 
+ *
  * @param id 제품 마스터 ID
  * @returns 제품 마스터 상세 정보
  */
@@ -223,12 +221,12 @@ export async function getPimProductDetail(
 /**
  * 제품 Variant 조회
  * GET /variants/masters/:masterId?includePrice=true
- * 
+ *
  * @param masterId 제품 마스터 ID
  * @param options 옵션 (includePrice, status 등)
  * @param signal AbortSignal (선택)
  * @returns Variant 목록
- * 
+ *
  * TODO: includePrice=true 옵션 사용 시 가격 정보 포함 가능
  */
 export async function getPimProductVariants(
@@ -242,7 +240,7 @@ export async function getPimProductVariants(
   signal?: AbortSignal
 ): Promise<VariantListResponse> {
   const queryParams = new URLSearchParams()
-  
+
   if (options?.includePrice !== undefined) {
     queryParams.set("includePrice", options.includePrice.toString())
   }
@@ -251,10 +249,10 @@ export async function getPimProductVariants(
   if (options?.limit) queryParams.set("limit", options.limit.toString())
 
   const query = queryParams.toString()
-  const path = query 
-    ? `/variants/masters/${masterId}?${query}` 
+  const path = query
+    ? `/variants/masters/${masterId}?${query}`
     : `/variants/masters/${masterId}`
-  
+
   return fetchPim<VariantListResponse>(path, { signal })
 }
 
@@ -265,7 +263,7 @@ export async function getPimProductVariants(
 /**
  * Elasticsearch 기반 상품 검색
  * GET /products/search
- * 
+ *
  * @param params 검색 파라미터
  * @param signal AbortSignal (선택)
  * @returns 검색 결과
@@ -287,14 +285,16 @@ export async function searchProducts(
   signal?: AbortSignal
 ): Promise<ProductSearchResponseDto> {
   const queryParams = new URLSearchParams()
-  
+
   if (params?.keyword) queryParams.set("keyword", params.keyword)
   if (params?.categoryId) queryParams.set("categoryId", params.categoryId)
   if (params?.brands && params.brands.length > 0) {
     params.brands.forEach((brand) => queryParams.append("brands", brand))
   }
-  if (params?.minPrice !== undefined) queryParams.set("minPrice", params.minPrice.toString())
-  if (params?.maxPrice !== undefined) queryParams.set("maxPrice", params.maxPrice.toString())
+  if (params?.minPrice !== undefined)
+    queryParams.set("minPrice", params.minPrice.toString())
+  if (params?.maxPrice !== undefined)
+    queryParams.set("maxPrice", params.maxPrice.toString())
   if (params?.status) queryParams.set("status", params.status)
   if (params?.tagFilters && params.tagFilters.length > 0) {
     params.tagFilters.forEach((filter, index) => {
@@ -311,6 +311,6 @@ export async function searchProducts(
 
   const query = queryParams.toString()
   const path = query ? `/products/search?${query}` : "/products/search"
-  
+
   return fetchPim<ProductSearchResponseDto>(path, { signal })
 }

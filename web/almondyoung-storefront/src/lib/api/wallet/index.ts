@@ -1,5 +1,4 @@
 export * from "./get-bnpl-summary"
 export * from "./get-bnpl-history"
 export * from "./wallet-server-api"
-export * from "./wallet-types"
 export * from "./wallet-api"

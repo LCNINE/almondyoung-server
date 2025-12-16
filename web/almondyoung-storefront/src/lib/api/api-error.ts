@@ -1,3 +1,6 @@
+/**
+ * 기본 에러 클래스
+ */
 export class HttpApiError extends Error {
   public digest?: string
 
@@ -9,6 +12,18 @@ export class HttpApiError extends Error {
   ) {
     super(message)
     this.name = "ApiError"
+  }
+}
+
+/**
+ * 유효성 검사 에러 전용 클래스
+ */
+export class ValidationError extends HttpApiError {
+  constructor(
+    message: string,
+    public fields?: Record<string, string>
+  ) {
+    super(message, 400, "VALIDATION_ERROR")
   }
 }
 

@@ -1,41 +1,49 @@
 import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
-import { UserVerificationStatusDto } from "@lib/types/dto/users"
+import {
+  BusinessInfoDto,
+  UserDetailDto,
+  UserVerificationStatusDto,
+} from "@lib/types/dto/users"
 import { getCookies } from "@lib/data/cookies"
+import { api } from "@lib/api/api"
 
 export const getVerificationStatus =
   async (): Promise<UserVerificationStatusDto> => {
-    const cookies = await getCookies()
-
-    const response = await fetch(
-      `${process.env.APP_URL}/api/users/verification-status`,
-      {
+    try {
+      const currentUser = await api<UserDetailDto>("users", "/users/detail", {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cookies,
+        cache: "no-store",
+        withAuth: true,
+      })
+
+      const businessInfo = await api<BusinessInfoDto | null>(
+        "users",
+        "/business-licenses/me",
+        {
+          method: "GET",
+          withAuth: true,
+        }
+      )
+
+      const verificationStatus: UserVerificationStatusDto = {
+        birthDate: currentUser.profile?.birthDate ? "verified" : "none",
+        phone: currentUser.profile?.phoneNumber ? "verified" : "none",
+        business: {
+          status:
+            businessInfo?.status === "approved"
+              ? "verified"
+              : businessInfo?.status === "rejected"
+                ? "rejected"
+                : businessInfo?.status === "under_review"
+                  ? "under_review"
+                  : "none",
+          rejectionReason: businessInfo?.reviewComment ?? null,
         },
       }
-    )
 
-    const data = await response.json()
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        throw new ApiAuthError(
-          "Unauthorized",
-          response.status,
-          data.message,
-          data
-        )
-      }
-
-      throw new HttpApiError(
-        data.message || "Failed to get verification status",
-        response.status,
-        response.statusText,
-        data
-      )
+      return verificationStatus
+    } catch (error) {
+      console.error("Failed to get verification status:", error)
+      throw error
     }
-
-    return data
   }

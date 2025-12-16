@@ -1,4 +1,4 @@
-import { UserDetail } from "domains/auth/types"
+import type { UserDetail } from "@lib/types/ui/user"
 import { MENU_ITEMS } from "../constants/mypage-constants"
 import { MenuList } from "./menu-list"
 import { MobileHeader } from "./mobile-header"

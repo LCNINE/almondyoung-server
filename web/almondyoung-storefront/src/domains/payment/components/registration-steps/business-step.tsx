@@ -14,19 +14,16 @@ import { Label } from "@components/common/ui/label"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
 import { uploadFile } from "@lib/api/file/upload"
-import {
-  createBusiness,
-  fetchExternalBusinessInfo,
-  updateBusiness,
-} from "@lib/api/users/business/client"
+import { createBusiness, updateBusiness } from "@lib/api/users/business"
 import { FilesDto } from "@lib/types/dto/files"
-import { BusinessInfo } from "@lib/types/dto/users"
+import type { BusinessInfo } from "@lib/types/ui/user"
 import { Clock } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useTransition } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
+import { useBusinessVerification } from "../hooks/use-business-verification"
 
 // 사업자 인증 스템 컴포넌트
 export default function BusinessStep({
@@ -91,14 +88,6 @@ function BusinessForm({
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [BusinessCheckStatus, setBusinessCheckStatus] = useState<
-    "success" | "failed" | null
-  >(null)
-
-  // 외부조회로 사업자 정보 조회
-  const [isExternalBusinessPending, startExternalBusinessTransition] =
-    useTransition()
-
   // 사업자 정보 등록
   const [isCreateBusinessPending, startCreateBusinessTransition] =
     useTransition()
@@ -112,8 +101,14 @@ function BusinessForm({
     },
   })
 
+  const {
+    businessCheckStatus,
+    isPending: isExternalBusinessPending,
+    handleVerifyBusiness,
+  } = useBusinessVerification({ form })
+
   const onSubmit = async (data: BusinessFormData) => {
-    if (!BusinessCheckStatus && !form.watch("file")) {
+    if (!businessCheckStatus && !form.watch("file")) {
       toast.error("사업자 정보 입력 또는 파일 첨부를 해주세요.")
       return
     }
@@ -146,7 +141,7 @@ function BusinessForm({
           business: {
             businessNumber: form.watch("businessNumber") ?? "",
             representativeName: form.watch("ceoName") ?? "",
-            fileUrl: fileRes?.data?.url ?? undefined,
+            fileUrl: fileRes?.url ?? undefined,
           },
           businessId: businessInfo.id,
         })
@@ -154,7 +149,7 @@ function BusinessForm({
         const res = await createBusiness({
           businessNumber: form.watch("businessNumber") ?? "",
           representativeName: form.watch("ceoName") ?? "",
-          fileUrl: fileRes?.data?.url ?? undefined,
+          fileUrl: fileRes?.url ?? undefined,
         })
       }
       router.refresh()
@@ -166,56 +161,9 @@ function BusinessForm({
     })
   }
 
-  const handleExternalBusiness = async () => {
-    if (!form.watch("businessNumber")) {
-      toast.error("사업자등록번호를 입력해주세요.")
-      form.setFocus("businessNumber")
-      return
-    }
-    if (!form.watch("ceoName")) {
-      toast.error("대표자 이름을 입력해주세요.")
-      form.setFocus("ceoName")
-      return
-    }
-
-    startExternalBusinessTransition(async () => {
-      try {
-        const res = await fetchExternalBusinessInfo(
-          form.getValues("businessNumber"),
-          form.getValues("ceoName")
-        )
-
-        if (res.success) {
-          toast.success(
-            '사업자 정보 조회가 완료되었습니다. 아래 "등록하기" 버튼을 눌러 사업자 정보를 등록해주세요.'
-          )
-          setBusinessCheckStatus("success")
-        }
-      } catch (error: any) {
-        setBusinessCheckStatus("failed")
-        if (error instanceof HttpApiError) {
-          switch (error.data.message) {
-            case "사업자번호는 10자리이어야 합니다.":
-              toast.error("사업자등록번호는 10자리이어야 합니다.")
-              form.setFocus("businessNumber")
-              break
-            case "대표자 이름이 일치하지 않습니다.":
-              toast.error("대표자 이름이 일치하지 않습니다.")
-              form.setFocus("ceoName")
-              break
-            default:
-              toast.error(error.data.message || "조회 중 오류가 발생했습니다.")
-          }
-        } else {
-          toast.error(error.message || "조회 중 오류가 발생했습니다.")
-        }
-      }
-    })
-  }
-
   // 파일 첨부 버튼 클릭 핸들러
   const handleFileUploadClick = () => {
-    if (BusinessCheckStatus === "success") {
+    if (businessCheckStatus === "success") {
       const confirmed = confirm(
         "이미 사업자 정보가 조회되었습니다. 파일을 첨부하시겠습니까?"
       )
@@ -261,6 +209,12 @@ function BusinessForm({
                 autoComplete="off"
                 maxLength={12}
                 inputMode="numeric"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleVerifyBusiness()
+                  }
+                }}
               />
             </div>
           )}
@@ -277,6 +231,12 @@ function BusinessForm({
                 id="ceo-name-input"
                 placeholder="대표자명(사업자등록증 표기)"
                 autoComplete="off"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleVerifyBusiness()
+                  }
+                }}
               />
             </div>
           )}
@@ -284,17 +244,17 @@ function BusinessForm({
       </div>
 
       <div className="flex items-center gap-2">
-        {BusinessCheckStatus === "success" && (
+        {businessCheckStatus === "success" && (
           <Badge className="bg-green-500 text-white">조회 완료</Badge>
         )}
-        {BusinessCheckStatus === "failed" && (
+        {businessCheckStatus === "failed" && (
           <Badge className="bg-red-500 text-white">조회 실패</Badge>
         )}
 
         <Button
           type="button"
           className="ml-auto w-28"
-          onClick={handleExternalBusiness}
+          onClick={handleVerifyBusiness}
           disabled={isExternalBusinessPending}
         >
           {isExternalBusinessPending ? "조회 중..." : "조회"}

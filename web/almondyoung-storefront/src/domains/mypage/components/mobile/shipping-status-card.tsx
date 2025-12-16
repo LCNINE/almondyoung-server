@@ -40,7 +40,7 @@ function ShippingItem({ item }: { item: OrderItem }) {
   return (
     <li className="flex w-full items-center gap-4 py-1">
       {/* 썸네일 */}
-      <div className="relative h-[45px] w-11 flex-shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
+      <div className="relative h-[45px] w-11 shrink-0 overflow-hidden rounded-[5px] border border-[#d9d9d9]/50">
         <Image
           src={item.thumbnail}
           alt={`주문번호 ${item.orderNumber}`}
@@ -72,9 +72,9 @@ function ShippingItem({ item }: { item: OrderItem }) {
 export default function ShippingStatusCard() {
   return (
     // PARENT:
-    // - w-full max-w-md: 반응형이되, 너무 넓어지지 않도록 제한
+    // - w-full: 반응형이되, 너무 넓어지지 않도록 제한
     // - p-4: 적절한 내부 여백
-    <section className="flex w-full max-w-md flex-col gap-3">
+    <section className="flex w-full flex-col gap-3">
       {/* Header */}
       <h2 className="text-base font-bold text-black">배송 중 상품</h2>
 

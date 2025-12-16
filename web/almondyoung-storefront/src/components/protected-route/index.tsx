@@ -27,7 +27,6 @@ export default async function ProtectedRoute({
 
     return <>{children}</>
   } catch (e) {
-    // todo: 네트워크 에러 리펙토링 필요
     if (e instanceof ApiNetworkError) {
       return (
         <>

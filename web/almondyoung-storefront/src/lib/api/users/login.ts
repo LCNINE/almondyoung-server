@@ -1,69 +1,51 @@
 "use server"
 
-import { HttpApiError } from "@lib/api/api-error"
 import { appConfig } from "@lib/app-config"
 import { getCacheTag, setTokenCookies } from "@lib/data/cookies"
-import { transferCart } from "@lib/api/medusa/customer"
 import { revalidatePath, revalidateTag } from "next/cache"
-import { medusaSignin } from "../medusa/signin"
 import { redirect } from "next/navigation"
+import { api } from "../api"
+import { ApiNetworkError, HttpApiError } from "../api-error"
+import { transferCart } from "../medusa/customer"
+import { medusaSignin } from "../medusa/signin"
 
-type LoginState =
-  | { success: true }
+// 반환 타입 정의
+type LoginResult =
+  | { success: true; accessToken: string; refreshToken: string }
   | { success: false; error: string; code?: string }
 
 export async function login(
-  _currentState: LoginState | null,
+  prevState: LoginResult | null,
   formData: FormData
-): Promise<LoginState> {
+): Promise<LoginResult> {
   const loginId = formData.get("loginId") as string
   const password = formData.get("password") as string
   const countryCode = formData.get("countryCode") as string
   const redirectTo = formData.get("redirect_to") as string
 
+  let tokens: { accessToken: string; refreshToken: string }
+
   try {
-    //  사용자 서비스 로그인
-    const result = await fetch(`${process.env.BACKEND_URL}/users/auth/signin`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ loginId, password }),
-    })
-    const resultData = await result.json()
-
-    if (!result.ok) {
-      throw new HttpApiError(
-        resultData.message || "로그인에 실패했습니다",
-        result.status,
-        resultData
-      )
-    }
-
-    // 응답에서 토큰을 받아서 쿠키로 설정
-    // (Server Action에서는 백엔드의 Set-Cookie가 브라우저로 자동 전달되지 않으므로)
-    await setTokenCookies(
-      resultData.data.accessToken,
-      resultData.data.refreshToken
+    tokens = await api<{ accessToken: string; refreshToken: string }>(
+      "users",
+      "/auth/signin",
+      {
+        method: "POST",
+        body: { loginId, password },
+        withAuth: false, // 로그인은 인증 필요 없음
+      }
     )
 
-    console.log("[LOGIN] Cookies set successfully")
-  } catch (error: any) {
-    console.error("User service login error:", error)
+    await setTokenCookies(tokens.accessToken, tokens.refreshToken)
+  } catch (error) {
+    console.error("User service login error:`", error)
 
     if (error instanceof HttpApiError) {
-      if (error.status === 400) {
-        return {
-          success: false,
-          error: "아이디 또는 비밀번호를 확인해주세요",
-          code: "INVALID_CREDENTIALS",
-        }
-      }
-      if (error.status === 401) {
+      if (error.status === 400 || error.status === 401) {
         return {
           success: false,
           error: "아이디 또는 비밀번호가 일치하지 않습니다",
-          code: "UNAUTHORIZED",
+          code: "INVALID_CREDENTIALS",
         }
       }
       if (error.status === 429) {
@@ -79,16 +61,7 @@ export async function login(
       }
     }
 
-    // 네트워크 관련 에러 처리
-    if (
-      error instanceof Error &&
-      (error.message.includes("fetch") ||
-        error.message.includes("network") ||
-        error.message.includes("ECONNREFUSED") ||
-        error.message.includes("ETIMEDOUT") ||
-        error.name === "FetchError" ||
-        error.name === "NetworkError")
-    ) {
+    if (error instanceof ApiNetworkError) {
       return {
         success: false,
         error: "서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요",
@@ -102,6 +75,7 @@ export async function login(
     }
   }
 
+  // 로그인 성공 후 처리
   await medusaSignin()
 
   const customerCacheTag = await getCacheTag("customers")
@@ -111,14 +85,9 @@ export async function login(
     await transferCart()
   } catch (error) {
     console.error("Cart transfer error:", error)
-    // 장바구니 이전 실패는 치명적이지 않으므로 로그인은 성공으로 처리
-    console.warn("장바구니 이전 실패, 하지만 로그인은 성공")
   }
 
-  // redirectTo 처리: 기본값은 홈
   const targetPath = redirectTo ?? `${appConfig.auth.redirect_to}`
-
-  // 캐시 무효화: layout과 해당 페이지가 다시 렌더링되도록
   revalidatePath("/", "layout")
   revalidatePath(targetPath)
   redirect(targetPath)

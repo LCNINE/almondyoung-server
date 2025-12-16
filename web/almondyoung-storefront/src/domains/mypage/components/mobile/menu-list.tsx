@@ -17,7 +17,7 @@ export function MenuList({ items }: MenuListProps) {
           <li key={item.label}>
             <Link
               href={item.path}
-              className={`flex w-full items-center gap-4 p-4 transition-colors hover:bg-gray-50 ${index > 0 ? "border-muted border-t" : ""}`}
+              className={`hover:bg-gray-10 flex w-full items-center gap-4 p-4 transition-colors ${index > 0 ? "border-muted border-t" : ""}`}
             >
               <ListIcon>{item.icon}</ListIcon>
               <span className="grow text-base text-gray-800">{item.label}</span>

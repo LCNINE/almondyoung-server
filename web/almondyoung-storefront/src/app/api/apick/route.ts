@@ -2,14 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 
 /**
  * APick 계좌 조회 API
- * TODO: 추후 wallet service로 이관
+ * TODO: 추후 백엔드의 wallet service로 이관
  */
 export async function POST(req: NextRequest) {
-  console.log("들어옴 ")
   const { bankCode, accountNumber } = await req.json()
-
-  console.log("bankCode:", bankCode)
-  console.log("accountNumber:", accountNumber)
 
   const response = await fetch("https://apick.app/rest/account_realname", {
     method: "POST",
@@ -29,5 +25,5 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  return NextResponse.json({ success: true, data: responseData })
+  return NextResponse.json(responseData)
 }

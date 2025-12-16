@@ -1,11 +1,19 @@
+"use server"
+
 /**
  * Wallet API 클라이언트
  * 라우트 핸들러를 통해 백엔드 API를 호출합니다.
  * 클라이언트 측에서는 credentials: "include"로 쿠키가 자동 전달됩니다.
  */
 
-import { HttpApiError } from "../api-error"
-import type { CreateHmsCardProfileRequest } from "./wallet-types"
+import type {
+  BnplProfileDto,
+  CreateHmsCardProfileRequest,
+  OnboardHmsBnplResponse,
+} from "@lib/types/dto/wallet"
+import { revalidateTag } from "next/cache"
+import { api } from "../api"
+import { ApiNetworkError, HttpApiError } from "../api-error"
 
 const API_BASE = "/api/wallet"
 
@@ -36,18 +44,17 @@ export interface PinErrorResponse {
   }
 }
 
-// ==========================================
-// APick 관련 API
-// ==========================================
-
 /**
  * APick 계좌 조회
  * @param bankCode 은행 코드
  * @param accountNumber 계좌 번호
  */
 export async function getApickAccount(bankCode: string, accountNumber: string) {
-  const res = await fetch(`api/apick`, {
+  const res = await fetch(`${process.env.APP_URL}/api/apick`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ bankCode, accountNumber }),
   })
 
@@ -71,24 +78,17 @@ export async function getApickAccount(bankCode: string, accountNumber: string) {
 /**
  * 결제 프로필 목록 조회
  */
-export async function getPaymentProfiles() {
-  const res = await fetch(`${API_BASE}/payments/profiles`, {
+export async function getBnplProfiles() {
+  const data = await api<BnplProfileDto[]>("wallet", "/payments/profiles", {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
     },
-    credentials: "include",
     cache: "no-store",
+    withAuth: true,
   })
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message || `Failed to fetch payment profiles: ${res.statusText}`
-    )
-  }
-
-  return res.json()
+  return data
 }
 
 /**
@@ -146,22 +146,16 @@ export async function setDefaultPaymentProfile(profileId: string) {
  * @param profileId 프로필 ID
  */
 export async function deletePaymentProfile(profileId: string) {
-  const res = await fetch(`${API_BASE}/payments/profiles/${profileId}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-  })
+  const res = await api<{ success: boolean }>(
+    "wallet",
+    `/payments/profiles/${profileId}`,
+    {
+      method: "DELETE",
+      withAuth: true,
+    }
+  )
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message || `Failed to delete profile: ${res.statusText}`
-    )
-  }
-
-  return res.json()
+  return res
 }
 
 // ==========================================
@@ -172,24 +166,43 @@ export async function deletePaymentProfile(profileId: string) {
  * HMS BNPL 온보딩 (FormData)
  * @param formData FormData (서명 파일 포함)
  */
-export async function onboardHmsBnpl(formData: FormData) {
-  const res = await fetch(`${API_BASE}/payments/hms-bnpl/onboard`, {
-    method: "POST",
-    credentials: "include",
-    // FormData는 Content-Type을 자동으로 설정하므로 명시하지 않음
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(
-      error.message || `Failed to onboard HMS BNPL: ${res.statusText}`
+export async function onboardHmsBnpl(prevState: any, formData: FormData) {
+  try {
+    const data = await api<OnboardHmsBnplResponse>(
+      "wallet",
+      "/payments/hms-bnpl/onboard",
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      }
     )
+
+    return { ...data, success: true }
+  } catch (error) {
+    if (error instanceof HttpApiError) {
+      if (error.message.includes("Bad Request Exception")) {
+        return {
+          message:
+            "정기결제 신청에 실패했습니다. 입력하신 정보를 확인해주세요.",
+          success: false,
+        }
+      }
+
+      return {
+        message: error.message || "정기결제 신청에 실패했습니다.",
+        success: false,
+      }
+    }
+
+    if (error instanceof ApiNetworkError) {
+      return {
+        message: error.message || "네트워크 에러가 발생했습니다.",
+        success: false,
+      }
+    }
   }
-
-  return res.json()
 }
-
 // ==========================================
 // 결제 Intent 관련 API
 // ==========================================

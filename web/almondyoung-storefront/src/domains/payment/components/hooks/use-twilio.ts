@@ -1,9 +1,6 @@
 import { HttpApiError } from "@lib/api/api-error"
 import { sendTwilioMessageApi, verifyCodeApi } from "@lib/api/users/twilio"
-import type {
-  SendTwilioMessageDto,
-  VerifyCodeDto,
-} from "@lib/api/users/twilio/types"
+import type { SendTwilioMessageDto, VerifyCodeDto } from "@lib/types/dto/users"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 
@@ -28,30 +25,24 @@ export const useTwilio = () => {
   const sendTwilioMessage = (data: SendTwilioMessageDto) => {
     startCodeSendTransition(async () => {
       try {
-        const res = await sendTwilioMessageApi(data)
-
-        if (res.success) {
+        const result = await sendTwilioMessageApi(data)
+        if (result) {
           toast.success("인증번호가 발송되었습니다.")
           setIsCodeSent(true)
           setTimer(60)
-          return
         }
       } catch (error) {
         if (error instanceof HttpApiError) {
-          if (error.message.includes("is not a valid")) {
-            toast.error("유효하지 않은 전화번호입니다.")
-            return
-          }
-
           if (error.status === 429) {
             toast.error(
-              error.message ||
-                "너무 많은 요청이 있습니다. 잠시 후 다시 시도해주세요."
+              "너무 많은 요청을 보냈습니다. 잠시 후 다시 시도해주세요."
             )
             return
           }
         }
+
         toast.error("인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        return
       }
     })
   }
@@ -60,22 +51,15 @@ export const useTwilio = () => {
   const verifyCode = (data: VerifyCodeDto) => {
     startCodeVerifyTransition(async () => {
       try {
-        const res = await verifyCodeApi(data)
-
-        if (res.success) {
+        const result = await verifyCodeApi(data)
+        if (result) {
           toast.success("인증번호가 검증되었습니다.")
           setIsCodeVerified(true)
-
-          return
         }
       } catch (error) {
-        if (error instanceof HttpApiError) {
-          toast.error(
-            error.message ||
-              "인증번호 검증에 실패했습니다. 잠시 후 다시 시도해주세요."
-          )
-          setIsCodeVerified(false)
-        }
+        toast.error("인증번호 검증에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        setIsCodeVerified(false)
+        return
       }
     })
   }

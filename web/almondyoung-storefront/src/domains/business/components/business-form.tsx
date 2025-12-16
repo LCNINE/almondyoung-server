@@ -19,8 +19,8 @@ import {
   createBusiness,
   fetchExternalBusinessInfo,
   updateBusiness,
-} from "@lib/api/users/business/client"
-import type { BusinessInfo } from "@lib/types/dto/business"
+} from "@lib/api/users/business"
+import type { BusinessInfoDto } from "@lib/types/dto/users"
 import type { FilesDto } from "@lib/types/dto/files"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import type { ViewMode } from "domains/business/template/business-info-template"
@@ -32,7 +32,7 @@ import BusinessFileManager from "./business-file-manager"
 import { BusinessDtoSchema, businessDtoSchema } from "./schema"
 
 interface BusinessInfoFormProps {
-  initialData?: BusinessInfo | null
+  initialData?: BusinessInfoDto | null
   onCancel: () => void
   viewMode: ViewMode
   setViewMode: (viewMode: ViewMode) => void
@@ -102,7 +102,7 @@ export default function BusinessForm({
           const res = await createBusiness({
             businessNumber,
             representativeName,
-            fileUrl: fileRes?.data?.url,
+            fileUrl: fileRes?.url,
             externalBusinessStatus:
               form.watch("externalBusinessStatus") === "success" ? true : false,
             metadata,
@@ -118,10 +118,10 @@ export default function BusinessForm({
           // fileRes.data.url이 있으면 기존 사업자번호랑 대표자는 ''로 설정
           const res = await updateBusiness({
             business: {
-              businessNumber: fileRes?.data.url ? "" : businessNumber,
-              representativeName: fileRes?.data.url ? "" : representativeName,
-              fileUrl: fileRes?.data?.url
-                ? fileRes.data.url
+              businessNumber: fileRes?.url ? "" : businessNumber,
+              representativeName: fileRes?.url ? "" : representativeName,
+              fileUrl: fileRes?.url
+                ? fileRes.url
                 : initialData?.fileUrl
                   ? initialData.fileUrl
                   : "",
@@ -149,7 +149,7 @@ export default function BusinessForm({
           }
         }
 
-        toast.success(toastMessage(fileRes?.data.url ? "fileUpload" : viewMode))
+        toast.success(toastMessage(fileRes?.url ? "fileUpload" : viewMode))
       } catch (error) {
         console.log("error:", error)
         if (error instanceof HttpApiError) {

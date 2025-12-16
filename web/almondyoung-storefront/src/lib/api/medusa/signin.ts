@@ -7,34 +7,25 @@ import {
 } from "@lib/data/cookies"
 import { revalidateTag } from "next/cache"
 import { transferCart } from "./customer"
+import { api } from "../api"
 
-export async function medusaSignin() {
+export async function medusaSignin(): Promise<{
+  success: boolean
+  data?: string
+  error?: string
+  message?: string
+}> {
   try {
-    const headers = {
-      ...(await getAuthHeaders("accessToken")),
-    }
-
-    const res = await fetch(`${process.env.APP_URL}/api/medusa/signin`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-    })
-
-    if (!res.ok) {
-      const result = await res.json()
-
-      return {
-        success: false,
-        error: result.error,
-        message: result.message || "Medusa signin failed",
+    const data = await api<{ token: string }>(
+      "medusa",
+      "/auth/customer/my-auth",
+      {
+        method: "POST",
+        withAuth: true,
       }
-    }
+    )
 
-    const result = await res.json()
-
-    setMedusaAuthToken(result.token)
+    setMedusaAuthToken(data.token)
 
     const customerCacheTag = await getCacheTag("customers")
     revalidateTag(customerCacheTag)
@@ -47,7 +38,7 @@ export async function medusaSignin() {
 
     return {
       success: true,
-      data: result,
+      data: data.token,
     }
   } catch (error) {
     console.error("medusaSignin error:", error)

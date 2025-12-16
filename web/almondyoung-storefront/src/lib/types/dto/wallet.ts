@@ -5,7 +5,7 @@
 /**
  * 결제 프로필 타입
  */
-export type PaymentProfile = {
+export type BnplProfileDto = {
   id: string
   kind: "CARD" | "BANK_ACCOUNT" | "WALLET"
   provider: "HMS_CARD" | "HMS_BNPL" | "TOSS"
@@ -39,4 +39,13 @@ export type CreateHmsCardProfileRequest = {
   validUntil: string
   password: string
   paymentCompany?: string
+}
+
+/**
+ * HMS BNPL 온보딩 응답 타입
+ */
+export type OnboardHmsBnplResponse = {
+  success: boolean
+  profileId: string
+  memberId: string
 }

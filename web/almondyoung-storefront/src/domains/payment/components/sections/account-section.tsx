@@ -9,7 +9,7 @@ export default function AccountSection() {
     return (
       <EmptyState
         message="계좌"
-        className="bg-card"
+        className="bg-card border-none shadow-xs"
         action={
           <Button
             variant="ghost"

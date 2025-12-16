@@ -2,7 +2,7 @@ import Image from "next/image" // next/image 사용 권장 (일반 img도 가능
 import { ChevronRight, CreditCard } from "lucide-react" // 1. 아이콘 임포트
 export default function PayLaterBanner() {
   return (
-    <section className="relative flex w-full max-w-md items-center justify-between overflow-hidden bg-[#ff9a1a] px-6 py-3 shadow-sm">
+    <section className="relative flex w-full items-center justify-between overflow-hidden bg-[#ff9a1a] px-6 py-3 shadow-sm">
       {/* 1. Left Content (Text) */}
       {/* z-10: 장식 텍스트보다 위에 오도록 설정 */}
       <div className="z-10 flex flex-col gap-1">

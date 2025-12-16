@@ -1,4 +1,9 @@
-import { NextRequest } from "next/server"
+/**
+ *
+ * 추후 제거 될 레거시 코드
+ */
+
+import { NextRequest, NextResponse } from "next/server"
 import {
   getAuthHeaders,
   buildBackendUrl,
@@ -32,9 +37,6 @@ export async function GET(request: NextRequest, { params }: any) {
   } catch (error) {
     // fetch 자체가 실패한 경우에만 500 반환
     console.error("[PIM Route Handler] Fetch error:", error)
-    return NextResponse.json(
-      { error: "Proxy GET Error" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Proxy GET Error" }, { status: 500 })
   }
 }

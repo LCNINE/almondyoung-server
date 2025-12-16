@@ -24,7 +24,8 @@ export default function Error({
     hasTriedRef.current = true
 
     const tokenRefresh = async () => {
-      if (error.digest === "Unauthorized" || error.message === "Unauthorized") {
+      console.log("error:", error.stack)
+      if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
         const isMainPage = /^\/[a-z]{2}\/?$/.test(pathname)
 
         try {
@@ -82,7 +83,7 @@ export default function Error({
     tokenRefresh()
   }, [error, reset, router, pathname])
 
-  if (error.digest === "Unauthorized" || error.message === "Unauthorized") {
+  if (error.digest === "UNAUTHORIZED" || error.message === "UNAUTHORIZED") {
     return <div className="flex min-h-screen items-center justify-center"></div>
   } else {
     return (

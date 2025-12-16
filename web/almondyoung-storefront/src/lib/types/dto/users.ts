@@ -1,13 +1,24 @@
-// Address DTO (백엔드에서 참조하는 타입)
+import type { UserBaseType } from "../common/users"
+
+export interface UserDetailDto extends UserBaseType {
+  shop: ShopInfoDto | null
+  profile: {
+    phoneNumber: string | null
+    address: AddressDto | null
+    birthDate: Date | null
+    profileImageUrl: string | null
+    createdAt: Date
+    updatedAt: Date
+  } | null
+}
+
 export interface AddressDto {
-  id: string
-  street: string
-  city: string
-  state: string
-  postalCode: string
-  country: string
-  createdAt: Date
-  updatedAt: Date
+  address_1: string // 주소 1 (기본주소)
+  address_2?: string // 주소 2 (상세주소)
+  city: string // 도시
+  country_codeL: string // 국가 코드
+  postal_code: string // 우편번호
+  province?: string // 시/도
 }
 
 export interface WishlistDto {
@@ -16,12 +27,6 @@ export interface WishlistDto {
   createdAt: string
   updatedAt: string
   userId: string
-}
-
-// 카테고리 정보 DTO
-export interface CategoryInfoDto {
-  id: string //카테고리 ID
-  name: string //카테고리 이름
 }
 
 // 상점 정보 DTO
@@ -50,37 +55,6 @@ export interface ProfileDto {
   updatedAt: Date //프로필 수정일
 }
 
-// 사용자 상세 정보 응답 DTO
-export interface UserDetailsResponseDto {
-  success: boolean
-  data: {
-    id: string //사용자 ID
-    loginId: string //로그인 ID
-    username: string //사용자 이름
-    email: string //이메일
-    isEmailVerified: boolean //이메일 인증 여부
-    lastActivityAt: Date //마지막 활동 시간
-    createdAt: Date //생성일
-    updatedAt: Date //수정일
-    shop: ShopInfoDto | null //상점 정보
-    profile: ProfileDto | null //프로필 정보
-  }
-}
-
-// 기본 사용자 응답 DTO
-export interface UserResponseDto {
-  id: string //사용자 ID
-  loginId: string //로그인 ID
-  username: string //사용자 이름
-  email: string //이메일
-  password: string | null
-  isEmailVerified: boolean
-  lastActivityAt: Date
-  deletedAt: Date | null
-  createdAt: Date //생성일
-  updatedAt: Date //수정일
-}
-
 // 최근 본 상품 DTO (실제 DB구조)
 export interface RecentViewDto {
   id: string //최근 본 상품 ID
@@ -88,12 +62,6 @@ export interface RecentViewDto {
   productId: string //상품 ID
   createdAt: string //생성 시간
   updatedAt: string //수정 시간
-}
-
-// 최근 본 상품 추가 요청 DTO
-export interface AddToRecentViewsDto {
-  /** 상품 ID */
-  productId: string
 }
 
 // 최근 본 상품 응답 DTO
@@ -104,11 +72,8 @@ export interface RecentViewsResponseDto {
   limit: number //페이지당 항목 수
 }
 
-//동의사항-
-export interface UserConsents {}
-
 // --------------- 사업자 정보 관련 DTO --------------
-export interface BusinessInfo {
+export interface BusinessInfoDto {
   id: string
   userId: string
   shopId?: string | null
@@ -122,11 +87,6 @@ export interface BusinessInfo {
   updatedAt: Date
 }
 
-export interface BusinessInfoResponseDto {
-  success: boolean
-  data: BusinessInfo
-}
-
 export interface BusinessInfoRequestDto {
   businessNumber?: string
   representativeName?: string
@@ -138,7 +98,7 @@ export interface BusinessInfoRequestDto {
 /** 사업자 정보 외부 조회 응답 DTO */
 export interface ExternalBusinessInfoResponseDto {
   success: boolean
-  data: BusinessInfo
+  data: BusinessInfoDto
 }
 
 /** 사업자 정보 외부 조회 요청 DTO */
@@ -155,4 +115,20 @@ export interface UserVerificationStatusDto {
     status: "verified" | "rejected" | "under_review" | "none"
     rejectionReason: string | null
   }
+}
+
+/**
+ * 휴대폰 인증번호 발송 요청 DTO
+ */
+export type SendTwilioMessageDto = {
+  countryCode: string
+  phoneNumber: string
+}
+
+/**
+ * 휴대폰 인증번호 검증 요청 DTO
+ */
+export type VerifyCodeDto = {
+  code: string
+  phoneNumber: string
 }

@@ -1,8 +1,12 @@
+"use server"
+
+import { api } from "../api"
+
 interface MedusaSignupParams {
   email: string
   first_name: string
   last_name: string
-  almond_user_id: number
+  almond_user_id: string
   almond_login_id: string
 }
 
@@ -23,31 +27,21 @@ export async function medusaSignup(
     params
 
   try {
-    const res = await fetch(`${process.env.APP_URL}/api/medusa/signup`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        first_name,
-        last_name,
-        almond_user_id,
-        almond_login_id,
-      }),
-      credentials: "include",
-    })
-
-    if (!res.ok) {
-      const result = await res.json()
-      return {
-        success: false,
-        error: result.error,
-        message: result.message || "Medusa signup failed",
+    const result = await api<string>(
+      "medusa",
+      "/auth/customer/my-auth/register",
+      {
+        method: "POST",
+        body: {
+          email,
+          first_name,
+          last_name: last_name,
+          almond_user_id: almond_user_id,
+          almond_login_id: almond_login_id,
+        },
+        withAuth: true,
       }
-    }
-
-    const result = await res.json()
+    )
 
     return {
       success: true,

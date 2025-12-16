@@ -1,5 +1,6 @@
 "use client"
 
+import { Spinner } from "@components/common/spinner"
 import { Button } from "@components/common/ui/button"
 import { Checkbox } from "@components/common/ui/checkbox"
 import {
@@ -33,7 +34,7 @@ import {
 import { agreements } from "@lib/data/agreements"
 import { UserDetail } from "@lib/types/ui/user"
 import { format } from "date-fns"
-import { ChevronRight, RotateCw } from "lucide-react"
+import { Check, ChevronRight, PenLine, RotateCw } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Controller, useFormContext } from "react-hook-form"
 import { formatPhoneNumber } from "react-phone-number-input"
@@ -45,7 +46,13 @@ import { PaymentMethodFormSchema } from "./schema"
 /**
  * 정기결제 동의서 컴포넌트
  */
-export default function BillingAgreement({ user }: { user: UserDetail }) {
+export default function BillingAgreement({
+  user,
+  isFormSubmitting,
+}: {
+  user: UserDetail
+  isFormSubmitting: boolean
+}) {
   const form = useFormContext<PaymentMethodFormSchema>()
 
   const [isSignatureModalOpen, setIsSignatureModalOpen] =
@@ -56,128 +63,95 @@ export default function BillingAgreement({ user }: { user: UserDetail }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ScrollArea className="h-64 sm:h-96">
-        <section className="flex">
-          <div className="flex-1 space-y-2">
-            <div>
-              <Label className="text-sm font-medium">결제 신청인</Label>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium">회사명</Label>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium">결제자 휴대폰 번호</Label>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium">계좌번호</Label>
-            </div>
-
-            <div>
-              <Label className="text-sm font-medium">예금주(소유주)명</Label>
-            </div>
+      <section className="flex">
+        <div className="flex-1 space-y-2">
+          <div>
+            <Label className="text-sm font-medium">결제 신청인</Label>
           </div>
 
-          <div className="flex-2 space-y-2">
-            <p className="text-sm font-medium">{user.username}</p>
-            <p className="text-sm font-medium">블랙속눈썹</p>
-            <p className="text-sm font-medium">
-              {formatPhoneNumber(user.profile?.phoneNumber || "")}
-            </p>
-            <p className="text-sm font-medium">
-              우리은행 {maskAccountNumber("1234567890123456")}
-            </p>
-            <p className="text-sm font-medium">정중식</p>
-          </div>
-        </section>
-        <section className="mt-4 flex gap-4 py-2">
-          <div className="flex-1 space-y-2">
-            <Label className="text-sm font-medium">결제자 생년월일</Label>
-            <Input
-              type="text"
-              placeholder="YYYY-MM-DD"
-              required
-              value={form.watch("birthDate")}
-              onChange={(e) => form.setValue("birthDate", e.target.value)}
-              className="bg-gray-10"
-            />
+          <div>
+            <Label className="text-sm font-medium">결제자 휴대폰 번호</Label>
           </div>
 
-          <div className="flex-1 space-y-2">
-            <Label className="text-sm font-medium">결제일</Label>
-            <Select
-              value={form.watch("billingDate")}
-              onValueChange={(value) => form.setValue("billingDate", value)}
-            >
-              <SelectTrigger className="w-full rounded-none border-2 bg-white shadow-none">
-                <SelectValue placeholder="매월 10일" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {dayOptions.map((day) => (
-                  <SelectItem key={day} value={String(day)}>
-                    매월 {day}일
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div>
+            <Label className="text-sm font-medium">계좌번호</Label>
           </div>
-        </section>
 
-        <section className="space-y-2 py-2">
-          <Label className="text-sm font-medium">현금영수증 신청</Label>
-
-          <div className="flex gap-9">
-            <div className="flex items-center gap-2">
-              <Checkbox id="bank-auto-receipt" className="cursor-pointer" />
-              <Label
-                className="cursor-pointer text-sm font-normal"
-                htmlFor="bank-auto-receipt"
-              >
-                은행자동 이체 시 자동 발행
-              </Label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Checkbox id="business-number-same" className="cursor-pointer" />
-              <Label
-                className="cursor-pointer text-sm font-normal"
-                htmlFor="business-number-same"
-              >
-                사업자번호 동일
-              </Label>
-            </div>
+          <div>
+            <Label className="text-sm font-medium">예금주(소유주)명</Label>
           </div>
-        </section>
+        </div>
 
-        <section className="mt-4 space-y-2 py-2">
-          <Label className="text-sm font-medium">현금영수증 수신 email</Label>
+        <div className="flex-2 space-y-2">
+          <p className="text-sm font-medium">{user.username}</p>
+          <p className="text-sm font-medium">
+            {formatPhoneNumber(user.profile?.phoneNumber || "")}
+          </p>
+          <p className="text-sm font-medium">
+            {form.watch("bankName")}{" "}
+            {maskAccountNumber(form.watch("accountNumber"))}
+          </p>
+          <p className="text-sm font-medium">
+            {form.watch("accountHolderName")}
+          </p>
+        </div>
+      </section>
+      <section className="mt-4 flex gap-4 py-2">
+        <div className="flex-1 space-y-2">
+          <Label className="text-sm font-medium">생년월일</Label>
+          <Input
+            type="text"
+            placeholder="YYYY-MM-DD"
+            required
+            value={form.watch("birthDate")}
+            onChange={(e) => form.setValue("birthDate", e.target.value)}
+            className="bg-gray-10"
+          />
+        </div>
 
-          <Input type="email" placeholder="example@gmail.com" />
-        </section>
+        <div className="flex-1 space-y-2">
+          <Label className="text-sm font-medium">결제일</Label>
+          <Select
+            value={form.watch("billingDate")}
+            onValueChange={(value) => form.setValue("billingDate", value)}
+          >
+            <SelectTrigger className="w-full rounded-none border-2 bg-white shadow-none">
+              <SelectValue
+                placeholder="매월 10일"
+                defaultValue={form.watch("billingDate") || "10"}
+              />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {dayOptions.map((day) => (
+                <SelectItem key={day} value={String(day)}>
+                  매월 {day}일
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
 
-        {/* 약관 동의 섹션 */}
-        <section className="mt-4">
-          {agreements.slice(2, 5).map((agreement) => (
-            <AgreementForm
-              key={agreement.id}
-              agreement={agreement}
-              checked={
-                !!form.watch(agreement.id as keyof PaymentMethodFormSchema)
-              }
-              onCheckedChange={(checked) =>
-                form.setValue(
-                  agreement.id as keyof PaymentMethodFormSchema,
-                  checked
-                )
-              }
-            />
-          ))}
-        </section>
-      </ScrollArea>
+      {/* 약관 동의 섹션 */}
+      <section className="mt-4">
+        {agreements.slice(2, 5).map((agreement) => (
+          <AgreementForm
+            key={agreement.id}
+            agreement={agreement}
+            checked={
+              !!form.watch(agreement.id as keyof PaymentMethodFormSchema)
+            }
+            onCheckedChange={(checked) =>
+              form.setValue(
+                agreement.id as keyof PaymentMethodFormSchema,
+                checked
+              )
+            }
+          />
+        ))}
+      </section>
 
-      <section className="mt-5 space-y-3 border-t pt-4">
+      <section className="mt-5 space-y-4 border-t pt-5">
         {Object.keys(form.formState.errors).length > 0 ? (
           <p className="text-xs text-red-500">
             {
@@ -194,24 +168,60 @@ export default function BillingAgreement({ user }: { user: UserDetail }) {
           </p>
         )}
 
-        <Button
-          type="button"
-          variant={"default"}
-          className={`w-full cursor-pointer ${form.formState.errors.signature && "animate-pulse"}`}
-          onClick={() => {
-            setIsSignatureModalOpen(true)
-          }}
-        >
-          전자서명
-        </Button>
+        <div className="fixed right-0 bottom-0 left-0 space-y-2 bg-white p-4">
+          {/* 전자서명 영역 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">
+                전자서명 <span className="text-red-500">*</span>
+              </Label>
+              {form.watch("signature") && (
+                <span className="flex items-center gap-1 text-xs text-green-600">
+                  <Check className="size-3.5" />
+                  서명 완료
+                </span>
+              )}
 
-        <Button
-          type="submit"
-          variant={"default"}
-          className="w-full cursor-pointer"
-        >
-          정기결제 신청
-        </Button>
+              {!form.watch("signature") && (
+                <p className="text-center text-xs text-gray-500">
+                  전자서명을 완료해주세요
+                </p>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              variant={"outline"}
+              size="lg"
+              className={`w-full cursor-pointer transition-all hover:bg-yellow-50 hover:text-white ${
+                form.formState.errors.signature
+                  ? "animate-pulse border-red-500 bg-red-50"
+                  : ""
+              }`}
+              onClick={() => {
+                setIsSignatureModalOpen(true)
+              }}
+            >
+              <PenLine className="mr-2 size-4" />
+              {form.watch("signature") ? "서명 다시하기" : "전자서명 하기"}
+            </Button>
+          </div>
+
+          {/* 신청 버튼 */}
+          <Button
+            type="submit"
+            variant={"default"}
+            size="lg"
+            className="bg-primary hover:bg-primary/90 w-full cursor-pointer font-semibold"
+            disabled={!form.watch("signature") || isFormSubmitting}
+          >
+            {isFormSubmitting ? (
+              <Spinner size="sm" color="white" />
+            ) : (
+              "정기결제 신청하기"
+            )}
+          </Button>
+        </div>
       </section>
 
       <SignaturePad
@@ -321,6 +331,7 @@ interface SignaturePadProps {
   onClose: () => void
 }
 
+// 서명 패드 컴포넌트
 export function SignaturePad({
   user,
   onComplete,
@@ -331,6 +342,7 @@ export function SignaturePad({
 
   const sigCanvas = useRef<SignatureCanvas>(null)
   const [isEmpty, setIsEmpty] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
 
   const clear = () => {
     sigCanvas.current?.clear()
@@ -367,28 +379,58 @@ export function SignaturePad({
   useEffect(() => {
     if (!isOpen) return
 
-    // 모달이 열릴 때마다 캔버스 초기화
-    if (sigCanvas.current) {
-      sigCanvas.current.clear()
-      setIsEmpty(true)
-    }
+    const loadSignature = async () => {
+      const signature = form.watch("signature")
 
-    const signature = form.watch("signature")
-
-    if (signature && sigCanvas.current) {
-      // File 객체를 Data URL로 변환
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string
-        if (dataUrl && sigCanvas.current) {
-          // 캔버스 초기화 후 이미지 그리기
+      // 서명이 없으면 캔버스 초기화
+      if (!signature) {
+        if (sigCanvas.current) {
           sigCanvas.current.clear()
-          sigCanvas.current.fromDataURL(dataUrl)
-          setIsEmpty(false)
+          setIsEmpty(true)
         }
+        return
       }
-      reader.readAsDataURL(signature)
+
+      // 서명이 있으면 로드
+      setIsLoading(true)
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            const result = e.target?.result as string
+            if (result) resolve(result)
+            else reject(new Error("Failed to read file"))
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(signature)
+        })
+
+        // 이미지가 완전히 로드된 후 캔버스에 그리기
+        await new Promise<void>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            if (sigCanvas.current) {
+              // 약간의 딜레이를 주어 캔버스가 완전히 준비되도록 함
+              setTimeout(() => {
+                if (sigCanvas.current) {
+                  sigCanvas.current.clear()
+                  sigCanvas.current.fromDataURL(dataUrl)
+                  setIsEmpty(false)
+                  resolve()
+                }
+              }, 100)
+            }
+          }
+          img.src = dataUrl
+        })
+      } catch (error) {
+        console.error("Failed to load signature:", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    loadSignature()
   }, [isOpen, form])
 
   return (
@@ -402,6 +444,12 @@ export function SignaturePad({
         </DialogHeader>
 
         <div className="bg-yellow-10 relative rounded-lg">
+          {isLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50">
+              <p className="text-sm text-gray-600">서명 불러오는 중...</p>
+            </div>
+          )}
+
           <SignatureCanvas
             ref={sigCanvas}
             canvasProps={{
@@ -413,8 +461,8 @@ export function SignaturePad({
             onBegin={() => setIsEmpty(false)}
           />
 
-          {isEmpty && (
-            <p className="text-gray-40 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-medium">
+          {isEmpty && !isLoading && (
+            <p className="text-gray-40 pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-medium">
               여기에 서명하세요
             </p>
           )}
@@ -432,7 +480,7 @@ export function SignaturePad({
           <Button
             type="button"
             onClick={save}
-            disabled={isEmpty}
+            disabled={isEmpty || isLoading}
             className="w-full sm:w-auto"
           >
             서명 완료

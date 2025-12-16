@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react"
 
 export function PointsBanner() {
   return (
-    <section className="flex w-full max-w-md items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
+    <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
       {/* Left Side: 상태 메시지 */}
       <p className="text-[11px] font-medium text-[#2c2c2e]">
         최근 30일 내 적립내역이 없어요

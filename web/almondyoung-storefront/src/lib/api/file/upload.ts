@@ -1,30 +1,14 @@
-import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
+"use server"
 
-export const uploadFile = async (formData: FormData) => {
-  const response = await fetch(`/api/file/upload`, {
+import { FilesDto } from "@lib/types/dto/files"
+import { api } from "../api"
+
+export const uploadFile = async (formData: FormData): Promise<FilesDto> => {
+  const data = await api<FilesDto>("fs", `/files/upload`, {
     method: "POST",
     body: formData,
+    withAuth: true,
   })
-
-  const data = await response.json()
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new ApiAuthError(
-        "Unauthorized",
-        response.status,
-        data.message,
-        data
-      )
-    }
-
-    throw new HttpApiError(
-      data.message || "Failed to upload file",
-      response.status,
-      response.statusText,
-      data
-    )
-  }
 
   return data
 }

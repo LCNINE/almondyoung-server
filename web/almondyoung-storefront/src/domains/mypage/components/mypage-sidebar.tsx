@@ -8,14 +8,6 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 import { SIDEBAR_MENU_ITEMS } from "./constants/mypage-constants"
 import type { MenuItem } from "../types/sidebar-types"
 
-/**
- * ✅ 개선 요약
- * - getFullPath 제거 (불필요)
- * - handleMenuClick 단순화 (불필요한 파라미터 제거)
- * - isActive 로직 수정 (정확한 경로 매칭)
- * - useState 초기값 개선 (빈 객체로 시작)
- * - 시맨틱 HTML 구조 유지
- */
 export default function MypageSidebar({
   menuItems = SIDEBAR_MENU_ITEMS,
   className = "",
@@ -25,12 +17,10 @@ export default function MypageSidebar({
 }) {
   const pathname = usePathname()
 
-  // ✅ 빈 객체로 시작 (하드코딩 제거)
   const [expandedSections, setExpandedSections] = useState<
     Record<string, boolean>
   >({})
 
-  // ✅ 불필요한 파라미터 제거
   const toggleSection = (label: string) => {
     setExpandedSections((prev) => ({
       ...prev,
@@ -39,7 +29,6 @@ export default function MypageSidebar({
   }
   const normalizedPathname = pathname.replace(/^\/[a-z]{2}(\/|$)/, "/")
 
-  // ✅ 정규화된 pathname으로 비교
   const isActive = (path: string, exact = false) => {
     if (exact || path === "/mypage") {
       return normalizedPathname === path

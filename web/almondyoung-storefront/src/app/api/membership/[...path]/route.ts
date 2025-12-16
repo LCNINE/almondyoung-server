@@ -1,3 +1,5 @@
+// 추후 제거될 레거시코드
+
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 

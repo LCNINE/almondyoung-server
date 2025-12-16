@@ -5,10 +5,9 @@ import { cn } from "@lib/utils"
 export default function Footer({ className }: { className?: string }) {
   return (
     <footer className={cn("w-full", className)}>
-      {/* --- 데스크탑 뷰 (변경 없음) --- */}
+      {/* --- 데스크탑 뷰 --- */}
       <div className="hidden w-full bg-stone-200 md:block">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-8 text-stone-400 md:flex-row lg:gap-12">
-          {/* ... 데스크탑 내용 동일 ... */}
           <section className="flex-1 md:max-w-sm">
             <h3 className="mb-4 text-lg font-bold text-stone-500">
               고객센터 1877-7184
@@ -34,7 +33,7 @@ export default function Footer({ className }: { className?: string }) {
                   인스타그램
                 </button>
               </div>
-              <nav className="flex gap-4 text-sm">
+              <nav className="flex flex-wrap gap-4 text-sm">
                 <Link
                   href="/#"
                   className="hover:text-stone-700 hover:underline"
@@ -92,17 +91,15 @@ export default function Footer({ className }: { className?: string }) {
         </div>
       </div>
 
-      {/* --- 모바일 뷰 (수정됨: 왼쪽 정렬) --- */}
+      {/* --- 모바일 뷰 --- */}
       <div className="block md:hidden">
         <div className="border-t border-stone-100 bg-stone-50 px-5 pt-10 pb-28">
-          {/* [수정] text-center 제거 -> text-left (기본값) 적용 */}
           <div className="text-left">
             {/* 고객센터 */}
             <section className="mb-8">
               <h3 className="mb-3 text-[15px] font-bold text-stone-800">
                 고객센터 1877-7184
               </h3>
-              {/* [수정] justify-center -> justify-start (왼쪽 정렬) */}
               <div className="flex justify-start gap-4 text-sm font-medium text-stone-600">
                 <button type="button" className="hover:text-stone-900">
                   전화걸기
@@ -119,8 +116,6 @@ export default function Footer({ className }: { className?: string }) {
             </section>
 
             {/* 정책 링크 */}
-            {/* [수정] justify-center -> justify-start (왼쪽 정렬) 
-                flex-wrap을 추가하여 화면이 좁을 때 줄바꿈이 자연스럽게 되도록 함 */}
             <nav className="mb-6 flex flex-wrap justify-start gap-x-4 gap-y-2 text-xs text-stone-500">
               <Link href="/company" className="hover:text-stone-800">
                 회사소개
@@ -140,7 +135,6 @@ export default function Footer({ className }: { className?: string }) {
             </nav>
 
             {/* 회사 정보 */}
-            {/* 부모 div가 text-left이므로 자연스럽게 왼쪽 정렬됩니다 */}
             <address className="space-y-1 text-[11px] leading-relaxed text-stone-400 not-italic">
               <p>주식회사 엘씨나인 | 대표자: 김정희</p>
               <p>사업자등록번호: 467-86-01638</p>
@@ -150,7 +144,6 @@ export default function Footer({ className }: { className?: string }) {
             </address>
 
             <div className="mt-6 border-t border-stone-200 pt-4">
-              {/* [수정] text-center 제거 */}
               <p className="text-[10px] text-stone-300">
                 Copyright © 아몬드영. All rights reserved.
               </p>

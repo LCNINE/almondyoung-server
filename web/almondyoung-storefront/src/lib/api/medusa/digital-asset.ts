@@ -1,104 +1,154 @@
+"use server"
+
 import { getAuthHeaders } from "@lib/data/cookies"
-import { DigitalAssetsResponse } from "@lib/types/dto/digital-asset.dto"
+import { DigitalAssetsResDto } from "@lib/types/dto/digital-asset.dto"
+import { revalidatePath } from "next/cache"
+import { api } from "../api"
+import { HttpApiError } from "../api-error"
 
-export const getDigitalAssets = async (
-  skip: number = 0,
-  take: number = 20
-): Promise<DigitalAssetsResponse> => {
+export const getDigitalAssets = async ({
+  skip,
+  take,
+}: {
+  skip: string
+  take: string
+}): Promise<DigitalAssetsResDto> => {
   const headers = await getAuthHeaders()
 
-  return await fetch(
-    `${process.env.APP_URL}/api/medusa/digital-assets?skip=${skip}&take=${take}`,
+  const result = await api<DigitalAssetsResDto>(
+    "medusa",
+    `/store/library?skip=${skip}&take=${take}`,
     {
       method: "GET",
+      withAuth: true,
       headers: {
-        "Content-Type": "application/json",
         ...headers,
-      },
-      credentials: "include",
-    }
-  )
-    .then(async (res) => {
-      const data = await res.json()
-
-      return data
-    })
-    .catch((error) => {
-      console.error(`Failed to fetch digital assets: ${error.toString()}`)
-      throw new Error(error.toString())
-    })
-}
-
-export const updateDigitalAssetExerciseApi = async (
-  assetId: string
-): Promise<void> => {
-  const headers = await getAuthHeaders()
-
-  return await fetch(`${process.env.APP_URL}/api/medusa/digital-assets`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    body: JSON.stringify({ assetId }),
-    credentials: "include",
-  })
-    .then(async (res) => {
-      const data = await res.json()
-
-      return data
-    })
-    .catch((error) => {
-      console.error(
-        `Failed to update digital asset exercise: ${error.toString()}`
-      )
-      throw new Error(error.toString())
-    })
-}
-
-export const downloadDigitalAssetApi = async (
-  assetId: string
-): Promise<{ blob: Blob; filename: string }> => {
-  const headers = await getAuthHeaders()
-
-  const res = await fetch(
-    `${process.env.APP_URL}/api/medusa/digital-assets/download/${assetId}`,
-    {
-      method: "GET",
-      headers: {
         "Content-Type": "application/json",
-        ...headers,
+        "x-publishable-api-key":
+          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
       },
-      credentials: "include",
     }
   )
 
-  if (!res.ok) {
-    const errorData = await res.json()
+  return result
+}
 
-    throw new Error("파일 다운로드 실패")
+export const updateDigitalAssetExercise = async (
+  assetId: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const headers = await getAuthHeaders()
+
+    await api<void>("medusa", `/store/library/${assetId}/exercise`, {
+      method: "POST",
+      withAuth: true,
+      body: { assetId },
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+        "x-publishable-api-key":
+          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+      },
+    })
+
+    // 페이지 재검증으로 최신 데이터 반영
+    revalidatePath("/[countryCode]/mypage/download", "page")
+
+    return {
+      success: true,
+      message: "라이센스가 성공적으로 사용 처리되었습니다.",
+    }
+  } catch (error) {
+    console.error("Failed to exercise digital asset:", error)
+    return {
+      success: false,
+      message: "라이센스 사용 처리에 실패했습니다. 다시 시도해주세요.",
+    }
   }
+}
 
-  const blob = await res.blob()
+export const downloadDigitalAsset = async (
+  assetId: string
+): Promise<
+  | {
+      success: boolean
+      message: string
+      data: { base64: string; filename: string; mimeType: string }
+    }
+  | {
+      success: false
+      message: string
+    }
+> => {
+  try {
+    const headers = await getAuthHeaders()
 
-  const contentDisposition = res.headers.get("content-disposition")
-  let filename = "download"
+    const baseUrl =
+      process.env.USE_RAILWAY_BACKEND === "true"
+        ? `${process.env.BACKEND_URL}/medusa`
+        : "http://localhost:9000" // 메두사 server PORT
 
-  if (contentDisposition) {
-    const filenameMatch = contentDisposition.match(
-      /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+    const response = await fetch(
+      `${baseUrl}/store/library/${assetId}/download`,
+      {
+        method: "GET",
+        headers: {
+          ...headers,
+          "x-publishable-api-key":
+            process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+        },
+      }
     )
-    if (filenameMatch && filenameMatch[1]) {
-      filename = filenameMatch[1].replace(/['"]/g, "")
-      // URL 인코딩된 한글 파일명 디코딩
-      try {
-        filename = decodeURIComponent(filename)
-      } catch (e) {
-        // 디코딩 실패시 원본 사용
-        console.warn("Failed to decode filename:", e)
+
+    if (!response.ok) {
+      throw new HttpApiError(
+        `다운로드 실패: ${response.status}`,
+        response.status,
+        response.statusText
+      )
+    }
+
+    const blob = await response.blob()
+
+    // content-disposition 헤더에서 파일명 추출
+    const contentDisposition = response.headers.get("content-disposition")
+    let filename = "download"
+
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(
+        /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+      )
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, "")
+        // URL 인코딩된 한글 파일명 디코딩
+        try {
+          filename = decodeURIComponent(filename)
+        } catch (e) {
+          console.warn("Failed to decode filename:", e)
+        }
       }
     }
-  }
 
-  return { blob, filename }
+    const arrayBuffer = await blob.arrayBuffer()
+    const base64 = Buffer.from(arrayBuffer).toString("base64")
+    const mimeType = blob.type || "application/octet-stream"
+
+    return {
+      success: true,
+      message: "다운로드가 준비되었습니다.",
+      data: {
+        base64,
+        filename,
+        mimeType,
+      },
+    }
+  } catch (error: any) {
+    console.error("Failed to download digital asset:", error)
+    return {
+      success: false,
+      message:
+        error?.message ||
+        "라이센스 다운로드에 실패했습니다. 다시 시도해주세요.",
+    }
+  }
 }

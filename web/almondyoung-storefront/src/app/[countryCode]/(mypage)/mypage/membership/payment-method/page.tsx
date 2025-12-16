@@ -1,11 +1,8 @@
 "use client"
 
 import { HttpApiError } from "@lib/api/api-error"
-import {
-  getPaymentProfiles,
-  setDefaultPaymentProfile,
-  type PaymentProfile,
-} from "@lib/api/wallet"
+import { getBnplProfiles, setDefaultPaymentProfile } from "@lib/api/wallet"
+import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
@@ -30,7 +27,7 @@ const IconChevronLeft = () => (
 // 멤버십 회비 결제 수단 관리 페이지
 export default function PaymentMethodScreen() {
   const router = useRouter()
-  const [profiles, setProfiles] = useState<PaymentProfile[]>([])
+  const [profiles, setProfiles] = useState<BnplProfileDto[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isChanging, setIsChanging] = useState<string | null>(null) // 변경 중인 profileId
 
@@ -39,7 +36,7 @@ export default function PaymentMethodScreen() {
     async function fetchProfiles() {
       try {
         setIsLoading(true)
-        const data = await getPaymentProfiles()
+        const data = await getBnplProfiles()
         // HMS_CARD만 필터링 (멤버십은 HMS_CARD만 사용)
         const hmsCardProfiles = data.filter(
           (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
@@ -66,7 +63,7 @@ export default function PaymentMethodScreen() {
       toast.success("기본 결제 수단이 변경되었습니다.")
 
       // 프로필 목록 새로고침
-      const data = await getPaymentProfiles()
+      const data = await getBnplProfiles()
       const hmsCardProfiles = data.filter(
         (p) => p.provider === "HMS_CARD" && p.status === "ACTIVE"
       )
@@ -88,14 +85,14 @@ export default function PaymentMethodScreen() {
   }
 
   // 프로필 포맷팅 헬퍼
-  const formatCardDisplay = (profile: PaymentProfile) => {
+  const formatCardDisplay = (profile: BnplProfileDto) => {
     if (profile.details?.paymentCompanyName) {
       return profile.details.paymentCompanyName
     }
     return "카드"
   }
 
-  const formatCardNumber = (profile: PaymentProfile) => {
+  const formatCardNumber = (profile: BnplProfileDto) => {
     if (profile.details?.cardLast4) {
       return `****-****-****-${profile.details.cardLast4}`
     }

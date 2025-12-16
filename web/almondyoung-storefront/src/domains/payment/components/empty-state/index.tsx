@@ -8,6 +8,7 @@ interface EmptyStateProps {
   action?: React.ReactNode
 }
 
+// 비어있는 상태를 표시하는 컴포넌트
 export default function EmptyState({
   message,
   className,
