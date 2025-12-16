@@ -34,6 +34,7 @@ export function useBusinessVerification({
 
     startTransition(async () => {
       try {
+        // 사업자 정보 외부 조회
         const res = await fetchExternalBusinessInfo(
           form.getValues("businessNumber"),
           form.getValues("ceoName")

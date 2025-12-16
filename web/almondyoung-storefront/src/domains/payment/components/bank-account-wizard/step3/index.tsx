@@ -40,13 +40,13 @@ import { Controller, useFormContext } from "react-hook-form"
 import { formatPhoneNumber } from "react-phone-number-input"
 import SignatureCanvas from "react-signature-canvas"
 import { v4 as uuidv4 } from "uuid"
-import { maskAccountNumber } from "../utils/mask-account-number"
-import { PaymentMethodFormSchema } from "./schema"
+import { maskAccountNumber } from "../../utils/mask-account-number"
+import { PaymentMethodFormSchema } from "../schema"
 
 /**
  * 정기결제 동의서 컴포넌트
  */
-export default function BillingAgreement({
+export default function BankAgreementStep({
   user,
   isFormSubmitting,
 }: {
@@ -55,6 +55,7 @@ export default function BillingAgreement({
 }) {
   const form = useFormContext<PaymentMethodFormSchema>()
 
+  // 전자서명 모달 오픈
   const [isSignatureModalOpen, setIsSignatureModalOpen] =
     useState<boolean>(false)
 
@@ -83,14 +84,21 @@ export default function BillingAgreement({
         </div>
 
         <div className="flex-2 space-y-2">
+          {/* 유저이름 */}
           <p className="text-sm font-medium">{user.username}</p>
+
+          {/* 유저 전화번호 */}
           <p className="text-sm font-medium">
             {formatPhoneNumber(user.profile?.phoneNumber || "")}
           </p>
+
+          {/* 계좌번호 */}
           <p className="text-sm font-medium">
             {form.watch("bankName")}{" "}
             {maskAccountNumber(form.watch("accountNumber"))}
           </p>
+
+          {/* 예금주(소유주)명 */}
           <p className="text-sm font-medium">
             {form.watch("accountHolderName")}
           </p>
@@ -150,6 +158,7 @@ export default function BillingAgreement({
           />
         ))}
       </section>
+
 
       <section className="mt-5 space-y-4 border-t pt-5">
         {Object.keys(form.formState.errors).length > 0 ? (

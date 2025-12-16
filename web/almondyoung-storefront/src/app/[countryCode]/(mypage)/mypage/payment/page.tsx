@@ -36,7 +36,7 @@ async function PaymentContainer() {
     <PaymentManagement
       currentUser={currentUser}
       verificationStatus={verificationStatus}
-      businessInfo={businessInfo || null}
+      businessInfo={businessInfo}
       bnplProfiles={bnplProfiles}
     />
   )

@@ -5,6 +5,10 @@ interface Step {
   label: string
 }
 
+/**
+ * 검증 스텝 인디케이터 컴포넌트
+ * Ex) 1. 본인 인증 -> 2. 사업자 확인 -> 3. 계좌등록 및 동의
+ */
 export function StepIndicator({
   steps,
   currentStep,
@@ -14,7 +18,7 @@ export function StepIndicator({
 }) {
   const currentIndex = steps.findIndex((s) => s.id === currentStep)
 
-  if (currentStep === "birthDate" || currentStep === "paymentAccount") {
+  if (currentStep === "bankAccount") {
     return null
   }
 

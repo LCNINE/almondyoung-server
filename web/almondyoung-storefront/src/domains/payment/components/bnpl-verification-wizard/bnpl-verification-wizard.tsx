@@ -6,21 +6,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@components/common/ui/dialog"
-
 import type { UserVerificationStatusDto } from "@lib/types/dto/users"
+import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import type { BusinessInfo, UserDetail } from "@lib/types/ui/user"
 import { useEffect, useState } from "react"
-import BirthdateStep from "../registration-steps/birthdate-step"
-import BusinessStep from "../registration-steps/business-step"
-import PaymentAccountStep from "../registration-steps/payment-account-step"
-import { PhoneStep } from "../registration-steps/phone-step"
-import { StepIndicator } from "../registration-steps/step-Indicator"
-import type { BnplProfileDto } from "@lib/types/dto/wallet"
+import { StepIndicator } from "../step-Indicator"
+import { PhoneVerificationStep } from "./step1"
+import BusinessVerificationStep from "./step2"
+import BankAccountStep from "./step3"
 
-type Step = "birthDate" | "phone" | "business" | "paymentAccount"
+type Step = "phone" | "business" | "bankAccount"
 
-// 결제 수단 등록 모달 컴포넌트
-export default function PaymentRegistrationWizardModal({
+// 나중결제 등록전 인증 모달 컴포넌트
+export default function BnplVerificationWizard({
   open,
   onOpenChange,
   user,
@@ -35,22 +33,20 @@ export default function PaymentRegistrationWizardModal({
   businessInfo: BusinessInfo | null
   bnplProfiles: BnplProfileDto[]
 }) {
-  const [currentStep, setCurrentStep] = useState<Step>("birthDate")
+  const [currentStep, setCurrentStep] = useState<Step>("phone")
 
   useEffect(() => {
     if (!verificationStatus) return
 
-    const { birthDate, phone, business } = verificationStatus
+    const { phone, business } = verificationStatus
 
     // 완료된 스텝은 건너뛰고, pending/rejected면 해당 스텝에서 멈춤
-    if (birthDate !== "verified") {
-      setCurrentStep("birthDate")
-    } else if (phone !== "verified") {
+    if (phone !== "verified") {
       setCurrentStep("phone")
     } else if (business.status !== "verified") {
       setCurrentStep("business")
     } else {
-      setCurrentStep("paymentAccount")
+      setCurrentStep("bankAccount")
     }
   }, [verificationStatus])
 
@@ -73,9 +69,9 @@ export default function PaymentRegistrationWizardModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle
-            className={`${currentStep === "paymentAccount" && "text-center"} `}
+            className={`${currentStep === "bankAccount" && "text-center"} `}
           >
-            {currentStep === "paymentAccount"
+            {currentStep === "bankAccount"
               ? "결제수단 관리"
               : steps.find((step) => step.id === currentStep)?.label}
           </DialogTitle>
@@ -83,15 +79,8 @@ export default function PaymentRegistrationWizardModal({
 
         <StepIndicator steps={steps} currentStep={currentStep} />
 
-        {currentStep === "birthDate" && (
-          <BirthdateStep
-            status={verificationStatus?.birthDate}
-            onComplete={() => setCurrentStep("phone")}
-          />
-        )}
-
         {currentStep === "phone" && (
-          <PhoneStep
+          <PhoneVerificationStep
             status={verificationStatus?.phone}
             onComplete={() => setCurrentStep("business")}
             user={user}
@@ -99,16 +88,16 @@ export default function PaymentRegistrationWizardModal({
         )}
 
         {currentStep === "business" && (
-          <BusinessStep
+          <BusinessVerificationStep
             status={verificationStatus?.business.status}
             rejectionReason={verificationStatus?.business.rejectionReason}
-            onComplete={() => setCurrentStep("paymentAccount")}
+            onComplete={() => setCurrentStep("bankAccount")}
             businessInfo={businessInfo}
           />
         )}
 
-        {currentStep === "paymentAccount" && (
-          <PaymentAccountStep
+        {currentStep === "bankAccount" && (
+          <BankAccountStep
             onComplete={() => onOpenChange(false)}
             user={user}
             bnplProfiles={bnplProfiles}

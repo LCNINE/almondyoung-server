@@ -1,13 +1,13 @@
 import { create } from "zustand"
 
-interface PaymentMethodModalStore {
+interface BankAccountModalStore {
   isOpen: boolean
   openModal: () => void
   closeModal: () => void
   toggleModal: () => void
 }
 
-export const usePaymentMethodModalStore = create<PaymentMethodModalStore>(
+export const useBankAccountModalStore = create<BankAccountModalStore>(
   (set) => ({
     isOpen: false,
     openModal: () => set({ isOpen: true }),

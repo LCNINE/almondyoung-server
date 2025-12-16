@@ -8,11 +8,10 @@ import { CreditCard } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import { toast } from "sonner"
-import PaymentMethodForm from "../payment-method-form"
-import { usePaymentMethodModalStore } from "../store/payment-method-modal-store"
+import { useBankAccountModalStore } from "../../store/payment-method-modal-store"
 
 // 계좌 등록 스텝 컴포넌트
-export default function PaymentAccountStep({
+export default function BankAccountStep({
   onComplete,
   user,
   bnplProfiles,
@@ -21,41 +20,27 @@ export default function PaymentAccountStep({
   user: UserDetail
   bnplProfiles: BnplProfileDto[]
 }) {
-  const { openModal } = usePaymentMethodModalStore()
+  // 결제수단 등록 모달 오픈
+  const { openModal } = useBankAccountModalStore()
 
   return (
     <div className="min-h-96">
-      <PaymentAccountContent bnplProfiles={bnplProfiles} />
+      {bnplProfiles.length === 0 ? (
+        <EmptyMessage message="등록된 계좌가 없습니다." />
+      ) : (
+        <BankAccountList bnplProfiles={bnplProfiles} />
+      )}
 
       <div className="bg-background fixed bottom-0 left-0 w-full px-4 pb-4">
         <Button variant="default" className="w-full" onClick={openModal}>
           + {bnplProfiles.length === 0 ? "결제수단 등록" : "결제수단 추가"}
         </Button>
       </div>
-
-      {/* 결제 수단 선택 모달 */}
-      <PaymentMethodForm user={user} />
     </div>
   )
 }
 
-function PaymentAccountContent({
-  bnplProfiles,
-}: {
-  bnplProfiles: BnplProfileDto[]
-}) {
-  if (bnplProfiles.length === 0) {
-    return <EmptyMessage message="등록된 계좌가 없습니다." />
-  }
-
-  return <PaymentAccountList bnplProfiles={bnplProfiles} />
-}
-
-function PaymentAccountList({
-  bnplProfiles,
-}: {
-  bnplProfiles: BnplProfileDto[]
-}) {
+function BankAccountList({ bnplProfiles }: { bnplProfiles: BnplProfileDto[] }) {
   return (
     <div>
       <p className="text-sm font-medium">
@@ -64,7 +49,7 @@ function PaymentAccountList({
 
       <ul className="border-gray-20 absolute right-0 left-0 mt-4 border-y">
         {bnplProfiles.map((paymentProfile, index) => (
-          <PaymentAccountItem
+          <BankAccountItem
             key={paymentProfile.id}
             paymentProfile={paymentProfile}
             lastItem={index === bnplProfiles.length - 1}
@@ -75,7 +60,7 @@ function PaymentAccountList({
   )
 }
 
-function PaymentAccountItem({
+function BankAccountItem({
   paymentProfile,
   lastItem = false,
 }: {

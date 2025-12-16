@@ -8,7 +8,7 @@ export default function PendingPointsSection() {
       <CardContent className="flex items-center justify-between p-7">
         <div>
           <span className="text-foreground text-lg font-bold">
-            아몬드영 적립금
+            곧 적립될 아몬드영 적립금이에요
           </span>
         </div>
 

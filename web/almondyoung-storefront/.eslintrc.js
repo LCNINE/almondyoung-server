@@ -5,9 +5,14 @@ module.exports = {
       "error",
       {
         patterns: [
-          { group: ["@/lib/data/*"], message: "server-only 비즈니스 계층입니다." }
-        ]
-      }
+          {
+            group: ["@/lib/data/*"],
+            message: "server-only 비즈니스 계층입니다.",
+          },
+        ],
+      },
     ],
+
+    "@typescript-eslint/no-unsafe-argument": "warn",
   },
-};
+}

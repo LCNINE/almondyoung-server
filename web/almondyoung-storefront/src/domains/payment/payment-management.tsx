@@ -2,15 +2,16 @@
 
 import { PageTitle } from "@components/common/page-title"
 import type { UserVerificationStatusDto } from "@lib/types/dto/users"
+import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import type { BusinessInfo, UserDetail } from "@lib/types/ui/user"
 import { useState } from "react"
-import PaymentRegistrationModal from "./components/modals/payment-registration-wizard-modal"
+import BankAccountWizard from "./components/bank-account-wizard/bank-account-wizard"
+import BnplSection from "./components/bnpl-section"
+import BnplVerificationWizard from "./components/bnpl-verification-wizard/bnpl-verification-wizard"
 import AccountSection from "./components/sections/account-section"
-import BnplSection from "./components/sections/bnpl-section"
 import PaymentMenuList from "./components/sections/payment-menu-list"
 import PendingPointsSection from "./components/sections/pending-points-section"
 import PointSection from "./components/sections/point-section"
-import type { BnplProfileDto } from "@lib/types/dto/wallet"
 
 export function PaymentManagement({
   currentUser,
@@ -49,8 +50,8 @@ export function PaymentManagement({
       {/* 하단 메뉴 리스트 */}
       <PaymentMenuList />
 
-      {/* 등록 모달 */}
-      <PaymentRegistrationModal
+      {/* 나중결제 등록전 인증 모달 */}
+      <BnplVerificationWizard
         open={isBnplRegisterModalOpen}
         onOpenChange={setIsBnplRegisterModalOpen}
         user={currentUser}
@@ -58,6 +59,9 @@ export function PaymentManagement({
         businessInfo={businessInfo}
         bnplProfiles={bnplProfiles}
       />
+
+      {/* 결제 수단 등록 모달 */}
+      <BankAccountWizard user={currentUser} />
     </div>
   )
 }

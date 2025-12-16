@@ -16,13 +16,13 @@ import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { format } from "date-fns"
 import "intl-tel-input/build/css/intlTelInput.css"
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { Controller, useForm } from "react-hook-form"
 import PhoneInput, { type Country } from "react-phone-number-input"
 import "react-phone-number-input/style.css"
 import { toast } from "sonner"
 import { z } from "zod"
-import useTwilio from "../hooks/use-twilio"
+import useTwilio from "../../hooks/use-twilio"
 import "./phone-input.css"
 
 const schema = z.object({
@@ -37,7 +37,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>
 
 // 휴대폰 인증 스텝 컴포넌트
-export function PhoneStep({
+export function PhoneVerificationStep({
   status,
   onComplete,
   user,
@@ -49,12 +49,6 @@ export function PhoneStep({
   const verificationCodeRef = useRef<HTMLInputElement>(null)
   const [verificationCode, setVerificationCode] = useState("") // 인증번호
   const [isUpdateProfilePending, startUpdateProfileTransition] = useTransition()
-
-  useEffect(() => {
-    if (status === "verified") {
-      onComplete()
-    }
-  }, [status, onComplete])
 
   const {
     sendTwilioMessage,
