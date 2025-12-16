@@ -6,7 +6,7 @@ import type { ApiResponse } from "@lib/types/common/users"
 import type {
     VariantListResponseDto,
     VariantWithPriceDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 // variant 목록 조회 (master id 기반)
 export const getVariantsByMaster = async (

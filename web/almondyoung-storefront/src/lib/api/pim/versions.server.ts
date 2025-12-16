@@ -7,7 +7,7 @@ import type {
     VersionTreeResponseDto,
     ProductVersionDto,
     ProductDetailDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 // 버전 목록 조회
 export const getVersionList = async (

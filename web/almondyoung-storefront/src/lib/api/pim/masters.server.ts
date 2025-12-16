@@ -6,8 +6,7 @@ import type { ApiResponse } from "@lib/types/common/users"
 import type {
     ProductListResponseDto,
     ProductDetailDto,
-    ProductListItemDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 // 상품 목록 조회
 export const getProductList = async (params?: {

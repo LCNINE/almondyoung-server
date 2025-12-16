@@ -8,7 +8,7 @@ import type {
     CalculatePriceRequestDto,
     CalculatePriceResponseDto,
     VariantPriceSetDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 
 // 가격 규칙 조회

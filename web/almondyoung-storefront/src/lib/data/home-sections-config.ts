@@ -2,7 +2,7 @@
 // 홈 페이지 섹션 설정 관리
 // TODO: 추후 API 엔드포인트에서 섹션 설정을 받아오도록 변경 예정
 
-import type { ProductListParams } from "@lib/services/pim/products/getProductListService"
+import type { ProductListParams } from "@lib/types/ui/product"
 
 export interface HomeSectionConfig {
   id: string

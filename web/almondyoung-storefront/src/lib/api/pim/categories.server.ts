@@ -9,7 +9,7 @@ import type {
     CategoryResponseDto,
     CategoryPathResponseDto,
     CategoryTreeNodeDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 // 카테고리 트리 조회
 export const getCategoryTree = async (

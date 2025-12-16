@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from "react"
 import type { CartItem } from "@lib/types/ui/cart"
-import { getAllCategories } from "@lib/services/pim/category/getCategory"
+import { getAllCategories } from "@lib/services/pim/category/getCategoryService"
 import { ProductCard } from "@lib/types/ui/product"
 import { CartHeader } from "./cart-header"
 import { CartTabsMobile } from "./cart-tabs-mobile"
@@ -182,7 +182,7 @@ export function CartMainClient({ user, isLoggedIn }: CartMainClientProps) {
       (sum, item) =>
         sum +
         (item.product.membershipPrice || item.product.basePrice || 0) *
-          item.quantity,
+        item.quantity,
       0
     )
     // 50,000원 이상 무료배송

@@ -3,8 +3,11 @@
 // 컴포넌트는 ProductDetail만 의존하도록 보장
 
 import { getProductDetail } from "@lib/api/pim/masters.server"
-import { toProductDetail } from "@lib/types/product.transformer"
-import type { ProductDetail } from "@lib/types/ui/product"
+import { toProductDetail } from "@lib/utils/transformers"
+import type {
+  ProductDetail,
+  ProductDetailServiceOpts,
+} from "@lib/types/ui/product"
 
 // descriptionHtml에서 이미지 URL 추출하는 유틸 함수
 const extractAllImgs = (html?: string | null): string[] => {
@@ -24,12 +27,6 @@ const extractAllImgs = (html?: string | null): string[] => {
 }
 // import { getSkuStockByProduct } from "@lib/api/wms/wms-api" // 필요 시
 // import { getUserProductMeta } from "@lib/services/user/user-product-meta.service" // 필요 시
-
-export interface ProductDetailServiceOpts {
-  userId?: string
-  withStock?: boolean
-  // withReview?: boolean  // 추후 리뷰 요약 단건이 필요하면 추가
-}
 
 export async function getProductDetailService(
   id: string,

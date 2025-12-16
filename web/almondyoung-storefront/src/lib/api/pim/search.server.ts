@@ -6,7 +6,7 @@ import type { ApiResponse } from "@lib/types/common/users"
 import type {
     ProductSearchResponseDto,
     TagFilterDto,
-} from "@lib/types/dto/pim.dto"
+} from "@lib/types/dto/pim"
 
 // 엘라스틱서치 기반 상품 검색
 export const searchProducts = async (params?: {

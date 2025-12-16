@@ -1,41 +1,10 @@
 import { searchProducts } from "@lib/api/pim/search.server"
 import type {
-  ProductSearchResponseDto,
-  TagFilterDto,
-} from "@lib/types/dto/pim"
-import type { ProductCard } from "@lib/types/ui/product"
-import { toProductCardFromSearch } from "@lib/types/product.transformer"
-
-/**
- * 검색 파라미터 타입
- */
-export interface SearchProductParams {
-  keyword?: string
-  categoryId?: string
-  brands?: string[]
-  minPrice?: number
-  maxPrice?: number
-  status?: string
-  tagFilters?: TagFilterDto[]
-  sortBy?: "relevance" | "price" | "createdAt"
-  sortOrder?: "asc" | "desc"
-  page?: number
-  limit?: number
-}
-
-/**
- * 검색 결과 타입
- */
-export interface SearchProductResult {
-  items: ProductCard[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
-  aggregations?: ProductSearchResponseDto["aggregations"]
-}
+  ProductCard,
+  SearchProductParams,
+  SearchProductResult,
+} from "@lib/types/ui/product"
+import { toProductCardFromSearch } from "@lib/utils/transformers"
 
 /**
  * Elasticsearch를 사용한 상품 검색 서비스

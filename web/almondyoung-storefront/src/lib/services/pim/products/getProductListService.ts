@@ -1,30 +1,13 @@
 // services/pim/products/getProductListService.ts
 
 import { getProductList } from "@lib/api/pim/masters.server"
-import {
-  toProductCard,
-  toProductDetail,
-} from "@lib/types/product.transformer"
-import type { ProductCard, ProductDetail } from "@lib/types/ui/product"
-import { ProductDetailServiceOpts } from "./getProductDetailService"
-
-// ---- 1) 목록 파라미터/옵션 타입 ----
-export interface ProductListParams {
-  page?: number
-  limit?: number
-  sort?: string
-  query?: string
-  categoryId?: string
-  brand?: string
-  tags?: string[]
-  stock?: string[] // ex) ["in_stock", "low_stock"]
-}
-
-export interface ProductListServiceOpts {
-  userId?: string
-  withStock?: boolean
-  withReview?: boolean
-}
+import { toProductCard } from "@lib/utils/transformers"
+import type {
+  ProductCard,
+  ProductListParams,
+  ProductListServiceOpts,
+  ProductListServiceResponse,
+} from "@lib/types/ui/product"
 
 // PIM API 쿼리 파라미터 매핑 함수
 // 실제 PIM API는 쿼리 파라미터로 직접 전달
@@ -44,12 +27,7 @@ function buildPimQuery(params: ProductListParams) {
 export async function getProductListService(
   params: ProductListParams,
   opts?: ProductListServiceOpts
-): Promise<{
-  items: ProductCard[]
-  total: number
-  page: number
-  limit: number
-}> {
+): Promise<ProductListServiceResponse> {
   try {
     const pimParams = buildPimQuery(params)
     const result = await getProductList({
@@ -128,12 +106,7 @@ export async function getProductsByCategoryService(
   categoryId: string,
   params?: Omit<ProductListParams, "categoryId" | "brand" | "query">,
   opts?: ProductListServiceOpts | AbortSignal
-): Promise<{
-  items: ProductCard[]
-  total: number
-  page: number
-  limit: number
-}> {
+): Promise<ProductListServiceResponse> {
   try {
     // AbortSignal 처리
     const signal = opts instanceof AbortSignal ? opts : undefined
@@ -191,7 +164,7 @@ export async function getProductsByBrandService(
   brand: string,
   params?: Omit<ProductListParams, "brand" | "categoryId" | "query">,
   opts?: ProductListServiceOpts
-) {
+): Promise<ProductListServiceResponse> {
   const result = await getProductList({
     page: params?.page,
     limit: params?.limit,

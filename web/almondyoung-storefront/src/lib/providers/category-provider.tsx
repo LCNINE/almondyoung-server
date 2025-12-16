@@ -2,11 +2,11 @@
 "use client"
 
 import React, { createContext, useContext, useState } from "react"
-import type { PimCategory } from "@lib/api/pim"
-import { getAllCategoriesCached } from "@lib/services/pim/category/getCategory"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
+import { getAllCategoriesCached } from "@lib/services/pim/category/getCategoryService"
 
 type Ctx = {
-  categories: PimCategory[]
+  categories: CategoryTreeNodeDto[]
   isRefreshing: boolean
   refresh: () => Promise<void>
 }
@@ -25,9 +25,9 @@ export function CategoryProvider({
   initialCategories,
 }: {
   children: React.ReactNode
-  initialCategories: PimCategory[]
+  initialCategories: CategoryTreeNodeDto[]
 }) {
-  const [categories, setCategories] = useState<PimCategory[]>(
+  const [categories, setCategories] = useState<CategoryTreeNodeDto[]>(
     initialCategories ?? []
   )
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -36,7 +36,7 @@ export function CategoryProvider({
     try {
       setIsRefreshing(true)
       const res = await getAllCategoriesCached()
-      setCategories(res ?? [])
+      setCategories(res)
     } finally {
       setIsRefreshing(false)
     }
