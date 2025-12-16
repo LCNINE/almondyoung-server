@@ -11,14 +11,21 @@ import type {
 
 // PIM API 쿼리 파라미터 매핑 함수
 // 실제 PIM API는 쿼리 파라미터로 직접 전달
-function buildPimQuery(params: ProductListParams) {
+function buildPimQuery(params: ProductListParams): {
+  page?: number
+  limit?: number
+  mode?: "active" | "active-or-inactive"
+  categoryId?: string
+  brand?: string
+  name?: string
+} {
   return {
     page: params.page,
     limit: params.limit,
-    status: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터
+    mode: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터 (백엔드는 mode 파라미터 사용)
     categoryId: params.categoryId,
     brand: params.brand,
-    search: params.query, // 검색어는 search 파라미터로 전달
+    name: params.query, // 검색어는 name 파라미터로 전달 (백엔드 API는 name 파라미터 사용)
     // TODO: tags, stock 필터는 PIM API에서 지원하는지 확인 필요
   }
 }
@@ -33,10 +40,10 @@ export async function getProductListService(
     const result = await getProductList({
       page: pimParams.page,
       limit: pimParams.limit,
-      mode: pimParams.status === "active" ? "active" : undefined,
+      mode: pimParams.mode,
       categoryId: pimParams.categoryId,
       brand: pimParams.brand,
-      name: pimParams.search,
+      name: pimParams.name,
     })
 
     if ("error" in result) {

@@ -2,7 +2,7 @@
 
 import { api } from "@lib/api/api"
 import { ApiNetworkError, HttpApiError } from "@lib/api/api-error"
-import type { ApiResponse } from "@lib/types/common/users"
+import type { ApiResponse } from "@lib/api/api"
 import type {
     CategoryTreeResponseDto,
     CategoryDetailResponseDto,

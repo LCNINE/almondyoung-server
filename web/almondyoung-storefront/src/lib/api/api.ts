@@ -1,5 +1,13 @@
-import { getAccessToken, getCookies } from "@lib/data/cookies"
-import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error"
+import { getAccessToken, getCookies } from "@lib/data/cookies";
+import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error";
+
+/**
+ * server action response type
+ * 이 타입을 사용해야 프론트단에서 래핑된 에러를 처리할 수 있습니다.
+ */
+export type ApiResponse<T> =
+  | { success?: boolean; data: T }
+  | { success?: false; error: { message: string; status: number } }
 
 type ServiceType =
   | "channelAdapter"
@@ -70,7 +78,7 @@ export async function api<T>(
 
   // body가 있고 FormData가 아닐 때만 Content-Type 설정
   if (body && !isFormData) {
-    ;(headers as Record<string, string>)["Content-Type"] = "application/json"
+    ; (headers as Record<string, string>)["Content-Type"] = "application/json"
   }
 
   if (withAuth) {
@@ -82,7 +90,7 @@ export async function api<T>(
       throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
     }
 
-    ;(headers as Record<string, string>).Cookie = cookieString
+    ; (headers as Record<string, string>).Cookie = cookieString
   }
 
   let response: Response
