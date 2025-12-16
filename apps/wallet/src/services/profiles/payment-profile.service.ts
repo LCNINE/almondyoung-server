@@ -67,7 +67,7 @@ export class PaymentProfileService {
             isNull(schema.paymentProfiles.deletedAt),
           ),
         );
-      console.log('profiles::', profiles);
+
       // 각 프로필에 대해 상세 정보 조회
       const profilesWithDetails = await Promise.all(
         profiles.map(async (profile) => {
@@ -106,6 +106,7 @@ export class PaymentProfileService {
               };
             }
           }
+
           return {
             id: profile.id,
             kind: profile.kind,
@@ -115,12 +116,9 @@ export class PaymentProfileService {
             isDefault: profile.isDefault,
             details,
             createdAt: profile.createdAt,
-
           };
         }),
       );
-
-      console.log('profilesWithDetails:', profilesWithDetails);
 
       return profilesWithDetails;
     });
