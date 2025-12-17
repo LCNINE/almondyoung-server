@@ -9,6 +9,14 @@ export type ApiResponse<T> =
   | { success?: boolean; data: T }
   | { success?: false; error: { message: string; status: number } }
 
+/**
+ * server action response type
+ * 이 타입을 사용해야 프론트단에서 래핑된 에러를 처리할 수 있습니다.
+ */
+export type ApiResponse<T> =
+  | { success: true; data: T }
+  | { success: false; error: { message: string; status: number } }
+
 type ServiceType =
   | "channelAdapter"
   | "fs"

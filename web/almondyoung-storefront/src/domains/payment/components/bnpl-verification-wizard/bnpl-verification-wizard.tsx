@@ -11,6 +11,7 @@ import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import type { BusinessInfo, UserDetail } from "@lib/types/ui/user"
 import { useEffect, useState } from "react"
 import { StepIndicator } from "../step-Indicator"
+import { useBnplModalStore } from "../store/bnpl-modal-store"
 import { PhoneVerificationStep } from "./step1"
 import BusinessVerificationStep from "./step2"
 import BankAccountStep from "./step3"
@@ -19,20 +20,18 @@ type Step = "phone" | "business" | "bankAccount"
 
 // 나중결제 등록전 인증 모달 컴포넌트
 export default function BnplVerificationWizard({
-  open,
-  onOpenChange,
   user,
   verificationStatus,
   businessInfo,
   bnplProfiles,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
   user: UserDetail
   verificationStatus: UserVerificationStatusDto
   businessInfo: BusinessInfo | null
   bnplProfiles: BnplProfileDto[]
 }) {
+  const { isOpen, openModal, closeModal, toggleModal } = useBnplModalStore()
+
   const [currentStep, setCurrentStep] = useState<Step>("phone")
 
   useEffect(() => {
@@ -65,7 +64,7 @@ export default function BnplVerificationWizard({
   ] as const
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={toggleModal}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle
@@ -98,7 +97,7 @@ export default function BnplVerificationWizard({
 
         {currentStep === "bankAccount" && (
           <BankAccountStep
-            onComplete={() => onOpenChange(false)}
+            onComplete={() => closeModal()}
             user={user}
             bnplProfiles={bnplProfiles}
           />

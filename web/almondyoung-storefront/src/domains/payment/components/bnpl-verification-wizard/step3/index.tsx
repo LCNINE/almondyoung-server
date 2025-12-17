@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@components/common/ui/button"
-import { deletePaymentProfile } from "@lib/api/wallet"
+import { deletePaymentProfile, setDefaultPaymentProfile } from "@lib/api/wallet"
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
 import { UserDetail } from "@lib/types/ui/user"
 import { CreditCard } from "lucide-react"
@@ -70,7 +70,9 @@ function BankAccountItem({
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
-  const handleDelete = () => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+
     startTransition(async () => {
       try {
         if (confirm("계좌를 삭제하시겠습니까?")) {
@@ -87,7 +89,7 @@ function BankAccountItem({
 
   return (
     <li
-      className={`flex items-center justify-between border-b py-6 pr-4 pl-6 ${lastItem ? "border-none" : "border-gray-20 border-b"}`}
+      className={`flex cursor-pointer items-center justify-between border-b py-6 pr-4 pl-6 ${lastItem ? "border-none" : "border-gray-20 border-b"}`}
     >
       <div className="flex w-full items-center gap-10">
         <div className="flex size-10 items-center justify-center rounded-lg bg-blue-500">

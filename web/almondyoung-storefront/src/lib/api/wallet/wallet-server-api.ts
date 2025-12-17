@@ -1,7 +1,4 @@
-/**
- * Wallet 서버 사이드 API 클라이언트
- * 서버 컴포넌트에서 사용할 때는 쿠키를 수동으로 전달해야 합니다.
- */
+// 레거시 삭제할 예정
 
 const API_BASE = "/api/wallet"
 
@@ -10,12 +7,15 @@ const API_BASE = "/api/wallet"
  * @param cookies 쿠키 문자열 (request.cookies.toString())
  */
 export async function getPaymentProfilesServer(cookies?: string) {
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-  
+  const appUrl =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000"
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   }
-  
+
   if (cookies) {
     headers["Cookie"] = cookies
   }
@@ -28,9 +28,10 @@ export async function getPaymentProfilesServer(cookies?: string) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: "Unknown error" }))
-    throw new Error(error.message || `Failed to fetch payment profiles: ${res.statusText}`)
+    throw new Error(
+      error.message || `Failed to fetch payment profiles: ${res.statusText}`
+    )
   }
 
   return res.json()
 }
-

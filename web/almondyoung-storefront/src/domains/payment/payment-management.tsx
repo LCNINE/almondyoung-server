@@ -1,30 +1,34 @@
-"use client"
-
 import { PageTitle } from "@components/common/page-title"
-import type { UserVerificationStatusDto } from "@lib/types/dto/users"
-import type { BnplProfileDto } from "@lib/types/dto/wallet"
-import type { BusinessInfo, UserDetail } from "@lib/types/ui/user"
-import { useState } from "react"
+import { getMyBusiness } from "@lib/api/users/business"
+import { fetchMe } from "@lib/api/users/me"
+import { getVerificationStatus } from "@lib/api/users/verification-status"
+import {
+  getBnplHistory,
+  getBnplProfiles,
+  getBnplSummary,
+  getPointBalance,
+} from "@lib/api/wallet"
 import BankAccountWizard from "./components/bank-account-wizard/bank-account-wizard"
 import BnplSection from "./components/bnpl-section"
 import BnplVerificationWizard from "./components/bnpl-verification-wizard/bnpl-verification-wizard"
+import PointSection from "./components/point-section"
 import AccountSection from "./components/sections/account-section"
 import PaymentMenuList from "./components/sections/payment-menu-list"
 import PendingPointsSection from "./components/sections/pending-points-section"
-import PointSection from "./components/sections/point-section"
 
-export function PaymentManagement({
-  currentUser,
-  verificationStatus,
-  businessInfo,
-  bnplProfiles,
-}: {
-  currentUser: UserDetail
-  verificationStatus: UserVerificationStatusDto
-  businessInfo: BusinessInfo | null
-  bnplProfiles: BnplProfileDto[]
-}) {
-  const [isBnplRegisterModalOpen, setIsBnplRegisterModalOpen] = useState(false)
+export default async function PaymentManagement() {
+  const currentUser = await fetchMe()
+  const verificationStatus = await getVerificationStatus() // step 별 진행 상태, 결제 수단 등록할 때 인증 정보 steps 별 진행 상태 확인용
+  const businessInfo = await getMyBusiness() // 사업자 정보 조회
+  const bnplProfiles = await getBnplProfiles() // 나중결제 계좌 조회
+
+  const { balance, withdrawable } = await getPointBalance() // 적립금 잔액 조회
+
+  // temp: 임시임 추후에는 pending이라는 상태명으로 들어올 예정
+  const pendingPoints = balance - withdrawable // 적립 예정 포인트 (출금 가능일 미도달)
+
+  const defaultBnplProfile =
+    bnplProfiles?.find((profile) => profile.isDefault) ?? null // 나중결제 계좌 중 내가 기본으로 설정한 계좌 조회
 
   return (
     <div className="p x-3 rounded-xl bg-white pt-4 pb-9 md:px-6">
@@ -33,31 +37,32 @@ export function PaymentManagement({
       <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
         {/* 나중결제 내역 */}
         <BnplSection
-          onBnplRegisterClick={() => setIsBnplRegisterModalOpen(true)}
-          bnplProfiles={bnplProfiles}
+          bnplProfiles={bnplProfiles ?? []}
+          hasError={bnplProfiles === null}
         />
 
         {/* 적립금 섹션 */}
-        <PointSection />
+        <PointSection withdrawable={withdrawable} />
 
         {/* 계좌 섹션 */}
-        <AccountSection />
+        <AccountSection
+          defaultBnplProfile={defaultBnplProfile}
+          hasError={bnplProfiles === null}
+        />
 
         {/* 적립 예정인 적립금 섹션 */}
-        <PendingPointsSection />
+        <PendingPointsSection pendingPoints={pendingPoints} />
       </div>
 
       {/* 하단 메뉴 리스트 */}
       <PaymentMenuList />
 
-      {/* 나중결제 등록전 인증 모달 */}
+      {/* 등록 모달 */}
       <BnplVerificationWizard
-        open={isBnplRegisterModalOpen}
-        onOpenChange={setIsBnplRegisterModalOpen}
         user={currentUser}
         verificationStatus={verificationStatus}
         businessInfo={businessInfo}
-        bnplProfiles={bnplProfiles}
+        bnplProfiles={bnplProfiles ?? []}
       />
 
       {/* 결제 수단 등록 모달 */}

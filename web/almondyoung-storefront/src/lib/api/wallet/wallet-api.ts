@@ -7,9 +7,12 @@
  */
 
 import type {
+  BnplHistoryDto,
   BnplProfileDto,
+  BnplSummaryDto,
   CreateHmsCardProfileRequest,
   OnboardHmsBnplResponse,
+  PointBalanceDto,
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
 import { ApiNetworkError, HttpApiError } from "../api-error"
@@ -77,17 +80,33 @@ export async function getApickAccount(bankCode: string, accountNumber: string) {
 /**
  * 결제 프로필 목록 조회
  */
-export async function getBnplProfiles() {
-  const data = await api<BnplProfileDto[]>("wallet", "/payments/profiles", {
+export async function getBnplProfiles(): Promise<BnplProfileDto[] | null> {
+  try {
+    const data = await api<BnplProfileDto[]>("wallet", "/payments/profiles", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      withAuth: true,
+    })
+
+    return data
+  } catch (error) {
+    console.error("BNPL 프로필 조회 실패:", error)
+    // 에러 발생 시 null 반환하여 페이지는 정상 렌더링되도록 함
+    return null
+  }
+}
+
+export async function getBnplSummary(): Promise<BnplSummaryDto> {
+  const result = await api<BnplSummaryDto>("wallet", "/payments/bnpl/summary", {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
     cache: "no-store",
     withAuth: true,
   })
 
-  return data
+  return result
 }
 
 /**
@@ -151,6 +170,26 @@ export async function deletePaymentProfile(profileId: string) {
 // ==========================================
 // BNPL 관련 API
 // ==========================================
+
+/**
+ * 나중결제 내역 조회
+ * @param limit 조회 개수 제한
+ */
+export async function getBnplHistory(
+  year: number,
+  month: number
+): Promise<BnplHistoryDto> {
+  const result = await api<BnplHistoryDto>(
+    "wallet",
+    `/payments/bnpl/history?year=${year}&month=${month}`,
+    {
+      method: "GET",
+      withAuth: true,
+    }
+  )
+
+  return result
+}
 
 /**
  * HMS BNPL 온보딩 (FormData)
@@ -362,12 +401,16 @@ export async function getPointHistory(limit?: number) {
 /**
  * 포인트 잔액 조회
  */
-export async function getPointBalance() {
-  const result = await api("wallet", "/payments/points/balance", {
-    method: "GET",
-    cache: "no-store",
-    withAuth: true,
-  })
+export async function getPointBalance(): Promise<PointBalanceDto> {
+  const result = await api<PointBalanceDto>(
+    "wallet",
+    "/payments/points/balance",
+    {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    }
+  )
 
   return result
 }

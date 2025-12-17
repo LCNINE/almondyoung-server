@@ -1,24 +1,6 @@
 import type { BnplProfileDto } from "@lib/types/dto/wallet"
 
 /**
- * D-day 계산 함수
- * @param targetDate - 목표 날짜 (YYYY-MM-DD 형식)
- * @returns D-day 숫자 (음수면 지난 날짜)
- */
-export function calculateDday(targetDate: string): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const target = new Date(targetDate)
-  target.setHours(0, 0, 0, 0)
-
-  const diffTime = target.getTime() - today.getTime()
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-  return diffDays
-}
-
-/**
  * D-day 텍스트 포맷팅
  * @param dday - D-day 숫자
  * @returns 포맷팅된 D-day 텍스트 (예: "D-3", "D-Day", "D+2")
@@ -42,12 +24,31 @@ export function formatPaymentDate(dateString: string): string {
 }
 
 /**
- * 금액을 천 단위 콤마로 포맷팅
+ * 금액을 한국식 만 단위로 포맷팅 (천 단위로 반올림)
  * @param amount - 금액
- * @returns 포맷팅된 금액 (예: "156,000")
+ * @returns 포맷팅된 금액 (예: "15만 6천", "100만", "155만 2천")
  */
 export function formatAmount(amount: number): string {
-  return amount.toLocaleString("ko-KR")
+  if (amount < 10000) {
+    return amount.toLocaleString("ko-KR")
+  }
+
+  const man = Math.floor(amount / 10000)
+  const remainder = amount % 10000
+  const cheon = Math.round(remainder / 1000)
+
+  if (cheon === 0) {
+    // 딱 떨어지거나 천 원 미만: "10만", "100만"
+    return `${man.toLocaleString("ko-KR")}만`
+  }
+
+  if (cheon === 10) {
+    // 반올림 결과가 1만이 되는 경우: "16만"
+    return `${(man + 1).toLocaleString("ko-KR")}만`
+  }
+
+  // 나머지가 있는 경우: "15만 6천", "155만 2천"
+  return `${man.toLocaleString("ko-KR")}만 ${cheon}천`
 }
 
 /**
