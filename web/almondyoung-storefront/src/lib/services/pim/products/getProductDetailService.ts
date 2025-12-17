@@ -35,9 +35,20 @@ export async function getProductDetailService(
   // 1) PIM 상세
   const result = await getProductDetail(id)
   if ("error" in result) {
+    console.error("[getProductDetailService] 상품 조회 실패:", {
+      id,
+      error: result.error,
+    })
     throw new Error(result.error.message)
   }
   const dto = result.data
+
+  // 2) DTO 유효성 검증
+  if (!dto || !dto.id) {
+    console.error("[getProductDetailService] 잘못된 상품 데이터:", { id, dto })
+    throw new Error("상품 정보를 찾을 수 없습니다.")
+  }
+
   let productDetail = toProductDetail(dto)
 
   // 2) descriptionHtml에서 detailImages 추출

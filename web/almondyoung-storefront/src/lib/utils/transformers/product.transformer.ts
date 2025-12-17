@@ -81,7 +81,7 @@ const pickPrimaryImage = (
   return (
     (dto as any).thumbnail ||
     extractFirstImgFromHtml((dto as any).descriptionHtml) ||
-    "/api/placeholder/240/240"
+    "https://placehold.co/240x240?text=No+Image"
   )
 }
 
@@ -199,7 +199,7 @@ export const toProductCard = (
   const defaultSku = variants?.[0]?.id // 단일/다중 모두 첫 변형을 기본 값으로 둠
 
   return {
-    id: "id" in dto ? dto.id : dto.versionId, // ProductDetailDto는 id, ProductListItemDto는 versionId
+    id: (dto as any).masterId || (dto as ProductDetailDto).id, // ProductListItemDto는 masterId, ProductDetailDto는 id
     name: dto.name,
     brand: (dto as any).brand || undefined,
     thumbnail: pickPrimaryImage(dto),
@@ -211,7 +211,7 @@ export const toProductCard = (
     tags: (dto as any).tags ?? [],
     stock: {},
     optionMeta: { isSingle },
-    defaultSku, // ✅
+    defaultSku,
   }
 }
 
@@ -245,6 +245,11 @@ export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
   }
 
   for (const v of dto.variants ?? []) {
+    // variantName이 null이면 스킵
+    if (!v.variantName) {
+      continue
+    }
+
     // variantName을 파싱하여 옵션 조합 추출
     // 형식: "빨강 × L" 또는 "색상:빨강|사이즈:L"
     const parts: Record<string, string> = {}
@@ -320,7 +325,7 @@ export const toProductCardFromSearch = (
   // 썸네일 추출 (description에서 이미지 추출 또는 기본값)
   const thumbnail =
     extractFirstImgFromHtml(dto.description) ||
-    "/api/placeholder/240/240"
+    "https://placehold.co/240x240?text=No+Image"
 
   // 태그를 문자열 배열로 변환
   const tags = dto.tags?.map((tag) => tag.value_name) || []

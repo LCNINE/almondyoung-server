@@ -4,7 +4,7 @@ import * as React from "react"
 import type { CategoryResponseDto } from "@lib/types/dto/pim"
 
 // placeholder 이미지 (없을 때만 사용)
-const PLACEHOLDER_IMAGE = "/api/placeholder/120/120"
+const PLACEHOLDER_IMAGE = "https://placehold.co/120x120?text=No+Image"
 
 /**
  * 카테고리 탭 아이템의 데이터 구조

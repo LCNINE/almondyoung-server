@@ -46,6 +46,9 @@ const ProductInfo = ({
   const membershipPrice = product.membershipPrice ?? 0
   const isMembershipOnly = product.isMembershipOnly ?? false
 
+  // 2-1. 가격 정보가 없는 경우 체크
+  const noPriceInfo = basePrice === 0 && membershipPrice === 0
+
   // 3. 할인율 계산 (단순 수식 - 프론트 책임)
   const discountRate =
     basePrice > 0 && membershipPrice > 0 && membershipPrice < basePrice
@@ -97,15 +100,21 @@ const ProductInfo = ({
         </div>
 
         {/* 가격 */}
-        <ProductPrice
-          displayPrice={displayPrice}
-          originalPrice={originalPrice}
-          discountRate={discountRate}
-          isSoldOut={isSoldOut}
-          isMembershipOnly={isMembershipOnly}
-          showMembershipTag={showMembershipTag}
-          isTimeSale={isTimeSale}
-        />
+        {noPriceInfo ? (
+          <span className="text-base font-medium text-gray-600 md:text-[19px]">
+            가격 문의
+          </span>
+        ) : (
+          <ProductPrice
+            displayPrice={displayPrice}
+            originalPrice={originalPrice}
+            discountRate={discountRate}
+            isSoldOut={isSoldOut}
+            isMembershipOnly={isMembershipOnly}
+            showMembershipTag={showMembershipTag}
+            isTimeSale={isTimeSale}
+          />
+        )}
 
         {/* 평점/리뷰 */}
         {product.rating && product.reviewCount && (

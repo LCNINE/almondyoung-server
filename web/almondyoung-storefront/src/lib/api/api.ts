@@ -109,7 +109,15 @@ export async function api<T>(
   if (response.ok) {
     const json = await response.json()
 
-    // data 필드가 있으면 풀어서 반환 (null 포함)
+    //Pagination 응답 (data, total, page, limit이 모두 있으면) 전체 반환
+    if (json && typeof json === "object" &&
+      "data" in json &&
+      "total" in json &&
+      "page" in json &&
+      "limit" in json) {
+      return json  // Pagination 응답은 전체 반환
+    }
+
     if (json && typeof json === "object" && "data" in json) {
       return json.data
     }
