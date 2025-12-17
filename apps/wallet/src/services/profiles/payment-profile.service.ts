@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { v4 as uuidv4 } from 'uuid'; // UUID 생성을 위해 라이브러리 사용 (또는 crypto)
-import { eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { ProviderRegistry } from '../../providers/provider-registry';
 import {
   PaymentError,
@@ -47,7 +47,7 @@ export class PaymentProfileService {
   // 결제 프로필 목록 조회 (상세 정보 포함)
   async getPaymentProfiles(userId: string) {
     return this.db.db.transaction(async (tx) => {
-      // 사용자의 모든 결제 프로필 조회 (deletedAt 제외 - 스키마 호환성)
+      // 사용자의 활성 결제 프로필만 조회 (soft delete 된 것 제외)
       const profiles = await tx
         .select({
           id: schema.paymentProfiles.id,
@@ -61,7 +61,12 @@ export class PaymentProfileService {
           updatedAt: schema.paymentProfiles.updatedAt,
         })
         .from(schema.paymentProfiles)
-        .where(eq(schema.paymentProfiles.userId, userId));
+        .where(
+          and(
+            eq(schema.paymentProfiles.userId, userId),
+            isNull(schema.paymentProfiles.deletedAt),
+          ),
+        );
 
       // 각 프로필에 대해 상세 정보 조회
       const profilesWithDetails = await Promise.all(
