@@ -10,8 +10,23 @@ import {
   uniqueIndex,
   jsonb,
 } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { authorizationSchema } from '@app/authorization';
+
+export const fileContexts = pgTable('file_contexts', {
+  id: varchar('id', { length: 50 }).primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  allowPublic: boolean('allow_public').default(false).notNull(),
+  allowPrivate: boolean('allow_private').default(true).notNull(),
+  allowedMimeTypes: jsonb('allowed_mime_types').$type<string[]>(),
+  maxFileSize: integer('max_file_size').notNull(),
+  pathPrefix: varchar('path_prefix', { length: 100 }).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 export const uploads = pgTable(
   'uploads',
@@ -33,7 +48,9 @@ export const uploads = pgTable(
 
     status: varchar('status', { length: 20 }).default('active').notNull(),
 
-    context: varchar('context', { length: 50 }),
+    contextId: varchar('context_id', { length: 50 })
+      .notNull()
+      .references(() => fileContexts.id, { onDelete: 'restrict' }),
 
     relatedType: varchar('related_type', { length: 50 }),
     relatedId: uuid('related_id'),
@@ -56,7 +73,7 @@ export const uploads = pgTable(
   },
   (table) => [
     index('idx_uploads_status').on(table.status),
-    index('idx_uploads_context').on(table.context),
+    index('idx_uploads_context_id').on(table.contextId),
     index('idx_uploads_related').on(table.relatedType, table.relatedId),
     index('idx_uploads_uploaded_by').on(table.uploadedBy),
     index('idx_uploads_created_at').on(table.createdAt),
@@ -95,7 +112,19 @@ export const fileReferences = pgTable(
   ],
 );
 
+export const fileContextsRelations = relations(fileContexts, ({ many }) => ({
+  uploads: many(uploads),
+}));
+
+export const uploadsRelations = relations(uploads, ({ one }) => ({
+  context: one(fileContexts, {
+    fields: [uploads.contextId],
+    references: [fileContexts.id],
+  }),
+}));
+
 export const fileServiceSchema = {
+  fileContexts,
   uploads,
   fileReferences,
   // Auth Schema (from @app/authorization)

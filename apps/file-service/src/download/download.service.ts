@@ -9,7 +9,7 @@ export class DownloadService {
   constructor(
     private readonly storageService: StorageService,
     private readonly fileRepository: FileRepository,
-  ) {}
+  ) { }
 
   async getSignedUrl(fileId: string, expiresIn: number = 3600): Promise<SignedUrlResponseDto> {
     const file = await this.fileRepository.findById(fileId);
@@ -22,10 +22,18 @@ export class DownloadService {
       throw new BadRequestException('File is not active');
     }
 
+    if (file.isPublic) {
+      return {
+        signedUrl: file.url,
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      };
+    }
+
     const signedUrlResult = await this.storageService.getSignedUrl({
       key: file.filePath,
       expiresIn,
       operation: 'get',
+      isPublic: false,
     });
 
     return {
@@ -49,7 +57,8 @@ export class DownloadService {
       size: file.size,
       url: file.url,
       status: file.status,
-      context: file.context,
+      contextId: file.contextId,
+      isPublic: file.isPublic,
       metadata: file.metadata,
       createdAt: file.createdAt,
       activatedAt: file.activatedAt,

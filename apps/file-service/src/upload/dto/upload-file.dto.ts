@@ -1,15 +1,33 @@
-import { IsEnum, IsOptional, IsObject, IsArray } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsArray, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { FILE_CONTEXTS, FileContext } from '../../shared/constants/file-contexts';
 
 export class UploadFileDto {
   @ApiProperty({
-    description: 'Context in which the file is being uploaded',
-    enum: Object.values(FILE_CONTEXTS),
+    description: 'File context ID',
+    enum: [
+      'product-image',
+      'product-document',
+      'user-avatar',
+      'user-document',
+      'invoice',
+      'receipt',
+      'shipment-label',
+      'business-verification-file',
+    ],
     example: 'product-image',
   })
-  @IsEnum(FILE_CONTEXTS)
-  context: FileContext;
+  @IsString()
+  contextId: string;
+
+  @ApiProperty({
+    description: 'Whether the file should be publicly accessible. ' +
+                 'Required for contexts that allow both public and private.',
+    required: false,
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 
   @ApiProperty({
     description: 'Additional metadata for the file',

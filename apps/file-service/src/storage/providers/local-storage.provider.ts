@@ -27,6 +27,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
 
   async upload(request: UploadRequest): Promise<UploadResult> {
     try {
+      const isPublic = request.isPublic ?? false;
       const filePath = path.join(this.baseDir, request.key);
       const dir = path.dirname(filePath);
 
@@ -36,13 +37,14 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
 
       const url = `http://localhost:${this.port}/files/local/${request.key}`;
 
-      this.logger.log(`File uploaded to local: ${request.key}`);
+      this.logger.log(`File uploaded to local (${isPublic ? 'public' : 'private'}): ${request.key}`);
 
       return {
         success: true,
         key: request.key,
         url,
         provider: StorageProviderType.LOCAL,
+        isPublic,
       };
     } catch (error) {
       this.logger.error(`Local upload failed: ${error.message}`);
