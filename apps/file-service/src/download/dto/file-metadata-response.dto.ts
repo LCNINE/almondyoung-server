@@ -45,11 +45,16 @@ export class FileMetadataResponseDto {
   status: string;
 
   @ApiProperty({
-    description: 'File context',
+    description: 'File context ID',
     example: 'product-image',
-    required: false,
   })
-  context?: string | null;
+  contextId: string;
+
+  @ApiProperty({
+    description: 'Whether the file is publicly accessible',
+    example: true,
+  })
+  isPublic: boolean;
 
   @ApiProperty({
     description: 'Additional metadata',

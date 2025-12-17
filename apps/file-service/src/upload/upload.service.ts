@@ -1,7 +1,9 @@
-import { Injectable, BadRequestException, HttpStatus } from '@nestjs/common';
+import { Injectable, BadRequestException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
 import { PathBuilderService } from '../storage/path-builder.service';
 import { FileRepository } from '../shared/repositories/file.repository';
+import { FileContextRepository } from '../shared/repositories/file-context.repository';
+import { FileContextValidator } from '../shared/services/file-context-validator.service';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
 import { v7 as uuidv7 } from 'uuid';
@@ -12,6 +14,8 @@ export class UploadService {
     private readonly storageService: StorageService,
     private readonly pathBuilder: PathBuilderService,
     private readonly fileRepository: FileRepository,
+    private readonly fileContextRepository: FileContextRepository,
+    private readonly contextValidator: FileContextValidator,
   ) {}
 
   async uploadFile(file: Express.Multer.File, dto: UploadFileDto, userId: string): Promise<UploadResponseDto> {
@@ -19,24 +23,38 @@ export class UploadService {
       throw new BadRequestException('File is required');
     }
     try {
+      const context = await this.fileContextRepository.findById(dto.contextId);
+
+      if (!context) {
+        throw new NotFoundException(`Context ${dto.contextId} not found`);
+      }
+
+      if (!context.isActive) {
+        throw new BadRequestException(`${context.name} is currently disabled`);
+      }
+
+      this.contextValidator.validateMimeType(context, file.mimetype);
+      this.contextValidator.validateFileSize(context, file.size);
+
+      const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);
+
       const fileId = uuidv7();
       const extension = this.getFileExtension(file.originalname);
 
       const filePath = this.pathBuilder.buildPath({
-        context: dto.context,
+        prefix: context.pathPrefix,
         fileId,
         extension,
-        userId: this.shouldIncludeUserId(dto.context) ? userId : undefined,
-        status: 'active',
       });
 
       const uploadResult = await this.storageService.upload({
         key: filePath,
         buffer: file.buffer,
         contentType: file.mimetype,
+        isPublic,
         metadata: {
           uploadedBy: userId,
-          context: dto.context,
+          contextId: dto.contextId,
         },
       });
 
@@ -49,9 +67,10 @@ export class UploadService {
         size: file.size,
         mimeType: file.mimetype,
         status: 'active',
-        context: dto.context,
+        contextId: dto.contextId,
         uploadedBy: userId,
         storageProvider: uploadResult.provider.toLowerCase(),
+        isPublic,
         metadata: dto.metadata,
         activatedAt: new Date(),
       });
@@ -62,6 +81,7 @@ export class UploadService {
         fileName: fileRecord.fileName,
         size: fileRecord.size,
         status: fileRecord.status,
+        isPublic: fileRecord.isPublic,
       };
     } catch (error) {
       console.error('파일업로드 에러 :', error);
@@ -95,9 +115,5 @@ export class UploadService {
   private getFileExtension(filename: string): string {
     const parts = filename.split('.');
     return parts.length > 1 ? parts.pop() || '' : '';
-  }
-
-  private shouldIncludeUserId(context: string): boolean {
-    return context === 'user-avatar' || context === 'user-document';
   }
 }
