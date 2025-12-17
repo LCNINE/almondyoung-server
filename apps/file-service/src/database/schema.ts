@@ -31,7 +31,7 @@ export const uploads = pgTable(
       .default('s3')
       .notNull(),
 
-    status: varchar('status', { length: 20 }).default('pending').notNull(),
+    status: varchar('status', { length: 20 }).default('active').notNull(),
 
     context: varchar('context', { length: 50 }),
 

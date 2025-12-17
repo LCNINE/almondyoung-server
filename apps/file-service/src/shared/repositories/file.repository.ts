@@ -12,7 +12,7 @@ export class FileRepository {
   constructor(
     @InjectTypedDb<FileServiceDb>()
     private readonly dbService: DbService<FileServiceDb>,
-  ) {}
+  ) { }
 
   private get db() {
     return this.dbService.db;
@@ -65,18 +65,6 @@ export class FileRepository {
     await this.db
       .delete(uploads)
       .where(eq(uploads.id, id));
-  }
-
-  async findPendingOlderThan(date: Date) {
-    return this.db
-      .select()
-      .from(uploads)
-      .where(
-        and(
-          eq(uploads.status, 'pending'),
-          lt(uploads.createdAt, date),
-        ),
-      );
   }
 
   async addReference(data: NewFileReference) {
