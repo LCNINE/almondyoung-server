@@ -168,19 +168,12 @@ aws s3 mb s3://almondyoung-prod-files --region ap-northeast-2
 
 ## Monitoring
 
-### Cron Jobs
-
-The cleanup service runs daily at 2 AM (server time):
-
-- Deletes files in 'pending' state older than 24 hours
-
 ### Logs
 
 Monitor logs for:
 
-- `[CleanupService]` - Orphaned file cleanup results
 - `[UploadService]` - Upload operations
-- `[LifecycleService]` - File activation/deletion
+- `[LifecycleService]` - File deletion
 
 ### Metrics to Track
 
@@ -193,11 +186,7 @@ Monitor logs for:
 2. **Storage Metrics**
    - Total storage used
    - Storage growth rate
-   - Files by status (pending/active/deleted)
-
-3. **Cleanup Metrics**
-   - Orphaned files cleaned per day
-   - Cleanup failures
+   - Files by status (active/deleted)
 
 ---
 
@@ -209,17 +198,6 @@ Monitor logs for:
 2. Verify AWS credentials (if using S3)
 3. Check file size limits
 4. Review error logs
-
-### Issue: Cleanup not running
-
-1. Verify ScheduleModule is imported
-2. Check server timezone
-3. Review CleanupService logs
-
-### Issue: Cannot activate file
-
-1. Verify file exists and is in 'pending' state
-2. Check file ID format (must be valid UUID)
 
 ### Issue: S3 permissions error
 
@@ -237,16 +215,6 @@ Monitor logs for:
 SELECT status, COUNT(*) 
 FROM uploads 
 GROUP BY status;
-```
-
-### Find Old Pending Files
-
-```sql
-SELECT id, file_name, created_at 
-FROM uploads 
-WHERE status = 'pending' 
-  AND created_at < NOW() - INTERVAL '24 hours'
-ORDER BY created_at ASC;
 ```
 
 ### Storage Usage by Context
@@ -290,11 +258,6 @@ All necessary indexes are included in the schema:
 - Files are organized by date and context for efficient partitioning
 - Use CloudFront CDN for frequently accessed files (future enhancement)
 
-### Cleanup Scheduling
-
-- Runs at 2 AM to minimize impact on peak hours
-- Processes files in batches to avoid memory issues
-
 ---
 
 ## Backup Strategy
@@ -328,7 +291,6 @@ Consider S3 lifecycle policies for cost optimization:
 ### Horizontal Scaling
 
 - Multiple instances can run concurrently
-- Cleanup cron should run on only one instance (use leader election)
 
 ### Database Scaling
 
@@ -346,6 +308,5 @@ Consider S3 lifecycle policies for cost optimization:
 
 For issues or questions, refer to:
 - [Architecture Documentation](./architecture.md)
-- [Implementation Summary](./implementation-summary.md)
 - [Storage Provider Pattern](./storage-provider-pattern.md)
 

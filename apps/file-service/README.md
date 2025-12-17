@@ -57,11 +57,10 @@ http://localhost:3005/api
 ### ✅ 완료된 기능
 
 - **다중 스토리지 지원**: S3, Local Storage (환경변수로 전환)
-- **파일 업로드**: 단일/배치 업로드
-- **파일 생명주기 관리**: pending → active → deleted
+- **파일 업로드**: 단일/배치 업로드 (업로드 시 즉시 active 상태)
+- **파일 생명주기 관리**: active → deleted
 - **다운로드**: Signed URL 생성 (시간 제한)
 - **메타데이터 조회**: 파일 정보 조회
-- **자동 정리**: 24시간 이상 pending 상태 파일 자동 삭제
 - **보안**: 업로더만 삭제 가능, Signed URL
 
 ### 🔮 향후 계획 (Phase 2)
@@ -84,17 +83,14 @@ file-service/
 ├── storage/       # 스토리지 추상화 (Provider 패턴)
 ├── shared/        # 공통 Repository, Constants, Types
 ├── upload/        # 파일 업로드
-├── lifecycle/     # 파일 활성화/삭제
-├── download/      # 다운로드 URL 생성, 메타데이터
-└── cleanup/       # 고아 파일 정리 (Cron)
+├── lifecycle/     # 파일 삭제
+└── download/      # 다운로드 URL 생성, 메타데이터
 ```
 
 ### 파일 생명주기
 
 ```
-Upload (pending) → Activate (active) → Delete (soft delete)
-     ↓
-  24h 후 자동 삭제 (Cleanup)
+Upload (active) → Delete (soft delete)
 ```
 
 ---
@@ -106,7 +102,6 @@ Upload (pending) → Activate (active) → Delete (soft delete)
 - `POST /files/batch-upload` - 배치 파일 업로드
 
 ### Lifecycle
-- `PATCH /files/:fileId/activate` - 파일 활성화
 - `DELETE /files/:fileId` - 파일 삭제
 
 ### Download
@@ -149,28 +144,17 @@ curl -X POST http://localhost:3005/files/upload \
   "url": "http://localhost:3000/files/local/products/images/2025/01/01933e7a-1234-7890-abcd-0123456789ab.jpg",
   "fileName": "01933e7a-1234-7890-abcd-0123456789ab.jpg",
   "size": 1024000,
-  "status": "pending"
+  "status": "active"
 }
 ```
 
-#### 2. 파일 활성화
-
-```bash
-curl -X PATCH http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab/activate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "relatedType": "product",
-    "relatedId": "01933e7b-5678-7890-abcd-0123456789cd"
-  }'
-```
-
-#### 3. Signed URL 생성
+#### 2. Signed URL 생성
 
 ```bash
 curl http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab/download?expiresIn=3600
 ```
 
-#### 4. 파일 삭제
+#### 3. 파일 삭제
 
 ```bash
 curl -X DELETE http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab
@@ -185,11 +169,10 @@ curl -X DELETE http://localhost:3005/files/01933e7a-1234-7890-abcd-0123456789ab
 ```
 apps/file-service/
 ├── src/
-│   ├── cleanup/           # Cron 기반 정리
 │   ├── config/            # 환경변수 검증
 │   ├── database/          # Schema, Migrations
 │   ├── download/          # 다운로드 로직
-│   ├── lifecycle/         # 활성화/삭제
+│   ├── lifecycle/         # 파일 삭제
 │   ├── shared/            # Repository, Constants
 │   ├── storage/           # Provider 패턴
 │   ├── upload/            # 업로드 로직
@@ -221,18 +204,14 @@ apps/file-service/
 
 ## 📊 Monitoring
 
-### Cron Jobs
-
-- **Daily 2 AM**: 고아 파일 정리 (pending > 24h)
-
 ### 로그 모니터링
 
 ```bash
-# Cleanup 로그
-grep "CleanupService" logs/file-service.log
-
 # Upload 로그
 grep "UploadService" logs/file-service.log
+
+# Lifecycle 로그
+grep "LifecycleService" logs/file-service.log
 ```
 
 ### 데이터베이스 쿼리

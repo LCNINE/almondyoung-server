@@ -1,5 +1,4 @@
 export const FILE_STATUSES = {
-  PENDING: 'pending',
   ACTIVE: 'active',
   DELETED: 'deleted',
 } as const;
