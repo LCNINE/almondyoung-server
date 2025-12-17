@@ -3,21 +3,8 @@ import Link from "next/link"
 import * as React from "react"
 import type { CategoryResponseDto } from "@lib/types/dto/pim"
 
-// --- 데이터 타입 및 더미 데이터 ---
-
-// 더미 이미지 풀 (이미지가 없을 때 사용)
-const PLACEHOLDER_IMAGES = [
-  "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-  "https://almondyoung.com/web/product/medium/202402/9b57c6aa76f40052f31f2ea85c6876a7.jpg",
-  "https://almondyoung.com/web/product/medium/202508/f78ca31bb7f7c9cb0461ba7bc24145dc.png",
-  "https://almondyoung.com/web/product/medium/202508/c3a909e285d10ac83233c8dcc4e361f8.jpg",
-  "https://almondyoung.com/web/product/medium/202501/38ddc4ccd1e0005e4ffa5275e1d5d033.jpg",
-  "https://almondyoung.com/web/product/medium/202502/db90e9f1a6ccdf71d4aa82ed1d405981.png",
-  "https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg",
-  "https://almondyoung.com/web/product/medium/202402/9b57c6aa76f40052f31f2ea85c6876a7.jpg",
-  "https://almondyoung.com/web/product/medium/202508/f78ca31bb7f7c9cb0461ba7bc24145dc.png",
-  "https://almondyoung.com/web/product/medium/202508/c3a909e285d10ac83233c8dcc4e361f8.jpg",
-]
+// placeholder 이미지 (없을 때만 사용)
+const PLACEHOLDER_IMAGE = "/api/placeholder/120/120"
 
 /**
  * 카테고리 탭 아이템의 데이터 구조
@@ -46,7 +33,7 @@ function CategoryCircleItem({
   parentSlug,
 }: CategoryCircleItemProps) {
   // 서버 데이터 구조: imageUrl 또는 thumbnail 사용
-  const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGES[0]
+  const imageUrl = category.imageUrl || category.thumbnail || PLACEHOLDER_IMAGE
 
   // sub 페이지로 이동하는 링크 생성
   const href = `/${countryCode}/category/${parentSlug}/${category.slug}`

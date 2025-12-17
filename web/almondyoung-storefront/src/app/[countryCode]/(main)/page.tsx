@@ -1,7 +1,6 @@
 import { ThemeManager } from "@components/common/theme-manager"
 import ProtectedRoute from "@components/protected-route"
 import HomeTemplate from "domains/home/template/home-template"
-import { CategorySelectSection } from "../../../../legacy/sections/yourCategory-section"
 import { getCategoryTree } from "@lib/api/pim/categories.server"
 import { getProductsByCategoryService } from "@lib/services/pim/products/getProductListService"
 import type { CategoryTreeNodeDto } from "@lib/types/dto/pim.dto"
@@ -55,7 +54,6 @@ export default async function Home(props: {
         initialCategoryId={initialCategoryId}
         initialCategoryProducts={initialCategoryProducts}
       />
-      <CategorySelectSection countryCode={countryCode} />
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

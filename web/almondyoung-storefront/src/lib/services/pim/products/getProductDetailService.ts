@@ -51,16 +51,9 @@ export async function getProductDetailService(
   const promises: Array<Promise<unknown>> = []
 
 
-  // 3-2) WMS 재고 (임시로 목업 데이터 사용)
+  // 3-2) WMS 재고 (TODO: 실제 WMS 연동 시 교체)
   const skuStockPromise = opts?.withStock
-    ? Promise.resolve({
-      // 임시 목업 데이터 - 실제로는 WMS API에서 가져와야 함
-      [productDetail.defaultSku || productDetail.id]: 10,
-      // 옵션이 있는 경우 각 SKU별 재고 설정
-      ...(productDetail.skuIndex ? Object.fromEntries(
-        Object.values(productDetail.skuIndex).map(sku => [sku, Math.floor(Math.random() * 20) + 1])
-      ) : {})
-    } as Record<string, number>)
+    ? Promise.resolve({} as Record<string, number>)
     : Promise.resolve({} as Record<string, number>)
   promises.push(skuStockPromise)
 
