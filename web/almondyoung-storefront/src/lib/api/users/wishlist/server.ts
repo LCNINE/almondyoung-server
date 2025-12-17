@@ -34,31 +34,32 @@ export const getWishlist = async (): Promise<WishlistItem[]> => {
 
     const contentType = response.headers.get("content-type")
     if (!contentType || !contentType.includes("application/json")) {
-      console.error("Wishlist API returned non-JSON response:", {
-        status: response.status,
-        contentType,
-      })
+      // TODO: Wishlist API 구현 대기 중
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[Wishlist] API returned non-JSON response (API 미구현 추정)")
+      }
       return [] // 빈 배열 반환 (에러 페이지 방지)
     }
 
     const data = await response.json()
 
     if (!response.ok) {
-      console.error("Failed to get wishlist:", data)
-
-      if (response.status === 401) {
-        // 인증 에러는 조용히 처리 (빈 배열 반환)
-        return []
+      // TODO: Wishlist API 구현 대기 중
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[Wishlist] API error:", response.status)
       }
 
-      // 다른 에러도 빈 배열 반환 (페이지 크래시 방지)
+      // 모든 에러는 조용히 처리 (빈 배열 반환)
       return []
     }
 
     // API 응답이 배열인 경우 그대로 반환, 아닌 경우 data 필드 확인
     return Array.isArray(data) ? data : data.data || []
   } catch (error) {
-    console.error("Wishlist fetch error:", error)
+    // TODO: Wishlist API 구현 대기 중 
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[Wishlist] Fetch error (API 미구현 추정):", error instanceof Error ? error.message : error)
+    }
     return [] // 모든 에러는 빈 배열 반환 (페이지 크래시 방지)
   }
 }

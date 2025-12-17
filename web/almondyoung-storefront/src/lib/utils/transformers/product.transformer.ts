@@ -75,14 +75,51 @@ const sanitizeAndRewrite = (
   )
 }
 
+// UUID 형식인지 확인하는 헬퍼
+const isFileId = (str?: string | null): boolean => {
+  if (!str) return false
+  // UUID 형식: 8-4-4-4-12 (예: 019b2b3c-e60b-7030-a246-079f1e492f70)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
+
+// 이미지 URL 정규화 (fileId 감지 시 placeholder로 대체)
+const normalizeImageUrl = (url?: string | null): string => {
+  if (!url) return "https://placehold.co/240x240?text=No+Image"
+
+  // TODO: 백엔드에서 public URL 제공 시 제거
+  // 현재는 fileId (UUID)가 오는 경우 placeholder로 대체
+  if (isFileId(url)) {
+    console.warn(`[normalizeImageUrl] fileId 감지됨 (${url}). 백엔드 public URL 제공 대기 중.`)
+    return "https://placehold.co/240x240?text=No+Image"
+  }
+
+  // 이미 유효한 URL
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url
+  }
+
+  // 상대 경로는 절대 경로로 변환
+  if (url.startsWith("/")) {
+    return `https://almondyoung.com${url}`
+  }
+
+  return url
+}
+
 const pickPrimaryImage = (
   dto: ProductDetailDto | ProductListItemDto
 ): string => {
-  return (
-    (dto as any).thumbnail ||
-    extractFirstImgFromHtml((dto as any).descriptionHtml) ||
-    "https://placehold.co/240x240?text=No+Image"
-  )
+  const thumbnail = (dto as any).thumbnail
+  if (thumbnail) {
+    return normalizeImageUrl(thumbnail)
+  }
+
+  const htmlImage = extractFirstImgFromHtml((dto as any).descriptionHtml)
+  if (htmlImage) {
+    return normalizeImageUrl(htmlImage)
+  }
+
+  return "https://placehold.co/240x240?text=No+Image"
 }
 
 const roundDiscount = (
@@ -161,11 +198,19 @@ function buildOptions(
           const display = v.displayName
           const matched = variantByName.get(norm(display))
 
+          // VariantDto에는 images가 없으므로 타입 체크
+          const variantImages = (matched as any)?.images as string[] | undefined
+
           return {
             id: v.id, // 옵션값 ID
             name: display, // 버튼 라벨
             code: v.displayName, // 외부/연동 코드 (displayName 사용)
-            image: null, // 필요 시 variant 이미지 연결
+            // 옵션 값 이미지 또는 variant 이미지 사용
+            image: v.imageUrl
+              ? normalizeImageUrl(v.imageUrl)
+              : variantImages?.[0]
+                ? normalizeImageUrl(variantImages[0])
+                : null,
             // ▼ 추가 필드 (옵션 값에 SKU/재고/추가금/비활성 상태 반영)
             sku: matched?.id, // ✅ 변형 ID를 SKU로 사용
             stock: undefined, // ✅ WMS 붙이면 서비스에서 주입
@@ -218,7 +263,8 @@ export const toProductCard = (
 // ---------- 상세용 ----------
 export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
   const card = toProductCard(dto)
-  const allFromHtml = extractAllImgs(dto.descriptionHtml)
+  // HTML에서 추출한 이미지도 정규화
+  const allFromHtml = extractAllImgs(dto.descriptionHtml).map(normalizeImageUrl)
 
   // thumbnails는 메인 썸네일만 포함 (descriptionHtml 이미지 제외)
   const thumbnails = [card.thumbnail].filter(Boolean)
