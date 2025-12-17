@@ -38,7 +38,7 @@ export const SingleOptionQuantitySelector = ({
       <div className="flex items-center gap-3 rounded-lg bg-white py-3">
         <Image
           className="h-20 w-20 rounded object-cover"
-          src={thumbnail || "/api/placeholder/80/80"}
+          src={thumbnail || "https://placehold.co/80x80?text=No+Image"}
           alt={productName || "상품 이미지"}
           width={80}
           height={80}

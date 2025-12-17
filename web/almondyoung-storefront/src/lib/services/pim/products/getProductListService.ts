@@ -1,4 +1,4 @@
-// services/pim/products/getProductListService.ts
+"use server"
 
 import { getProductList } from "@lib/api/pim/masters.server"
 import { toProductCard } from "@lib/utils/transformers"
@@ -9,41 +9,19 @@ import type {
   ProductListServiceResponse,
 } from "@lib/types/ui/product"
 
-// PIM API 쿼리 파라미터 매핑 함수
-// 실제 PIM API는 쿼리 파라미터로 직접 전달
-function buildPimQuery(params: ProductListParams): {
-  page?: number
-  limit?: number
-  mode?: "active" | "active-or-inactive"
-  categoryId?: string
-  brand?: string
-  name?: string
-} {
-  return {
-    page: params.page,
-    limit: params.limit,
-    mode: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터 (백엔드는 mode 파라미터 사용)
-    categoryId: params.categoryId,
-    brand: params.brand,
-    name: params.query, // 검색어는 name 파라미터로 전달 (백엔드 API는 name 파라미터 사용)
-    // TODO: tags, stock 필터는 PIM API에서 지원하는지 확인 필요
-  }
-}
-
 // ---- 2) 기본 목록 서비스 ----
 export async function getProductListService(
   params: ProductListParams,
   opts?: ProductListServiceOpts
 ): Promise<ProductListServiceResponse> {
   try {
-    const pimParams = buildPimQuery(params)
     const result = await getProductList({
-      page: pimParams.page,
-      limit: pimParams.limit,
-      mode: pimParams.mode,
-      categoryId: pimParams.categoryId,
-      brand: pimParams.brand,
-      name: pimParams.name,
+      page: params.page,
+      limit: params.limit,
+      mode: params.query ? undefined : "active",
+      categoryId: params.categoryId,
+      brand: params.brand,
+      name: params.query,
     })
 
     if ("error" in result) {
@@ -51,7 +29,6 @@ export async function getProductListService(
     }
 
     const res = result.data
-    // API 응답 구조에 따라 items 또는 data 필드 사용
     const productItems = res.data || []
 
     if (!Array.isArray(productItems)) {
@@ -72,33 +49,8 @@ export async function getProductListService(
       }
     }
 
-    // ▼ 확장 포인트 (필요 시 주석 해제)
-    // const [reviewMap, stockMap, userMetaMap] = await Promise.all([
-    //   opts?.withReview && items.length ? getPimReviewSummaryBulk(items.map(i => i.id)) : Promise.resolve(null),
-    //   opts?.withStock  && items.length ? getInventorySummaries(items.map(i => i.id))  : Promise.resolve(null),
-    //   opts?.userId     && items.length ? getUserProductMetaBulk({ userId: opts.userId, productIds: items.map(i => i.id) }) : Promise.resolve(null),
-    // ])
-
-    // if (reviewMap) {
-    //   for (const it of items) {
-    //     const s = reviewMap[it.id]
-    //     if (s) {
-    //       it.rating = s.rating
-    //       it.reviewCount = s.reviewCount
-    //       it.qnaCount = s.qnaCount
-    //     }
-    //   }
-    // }
-    // if (stockMap) {
-    //   for (const it of items) it.stock = stockMap[it.id]
-    // }
-    // if (userMetaMap) {
-    //   for (const it of items) it.userMeta = userMetaMap[it.id]
-    // }
-
     return { items, total: res.total, page: res.page, limit: res.limit }
   } catch (e) {
-    // 실패 시에도 호출부가 안전하게 동작하도록 보수적 폴백
     return {
       items: [],
       total: 0,
@@ -115,25 +67,9 @@ export async function getProductsByCategoryService(
   opts?: ProductListServiceOpts | AbortSignal
 ): Promise<ProductListServiceResponse> {
   try {
-    // AbortSignal 처리
-    const signal = opts instanceof AbortSignal ? opts : undefined
-
-    // "all" 카테고리 ID인 경우 전체 상품 조회 (categoryId 필터 제외)
-    const queryParams: {
-      page?: number
-      limit?: number
-      status?: string
-      categoryId?: string
-    } = {
+    const result = await getProductList({
       page: params?.page,
       limit: params?.limit,
-      status: "active", // active 상태만 조회
-    }
-
-    // "all"이 아닌 경우에만 categoryId 필터 추가
-    const result = await getProductList({
-      page: queryParams.page,
-      limit: queryParams.limit,
       mode: "active",
       categoryId: categoryId === "all" ? undefined : categoryId,
     })
@@ -143,8 +79,6 @@ export async function getProductsByCategoryService(
     }
 
     const res = result.data
-    // API 응답 구조에 따라 items 또는 data 필드 사용
-    // 백엔드 응답이 {data: [...], total: 13} 형태일 수도 있음
     const productItems = res.data || []
 
     if (!Array.isArray(productItems)) {
@@ -155,7 +89,6 @@ export async function getProductsByCategoryService(
 
     return { items, total: res.total, page: res.page, limit: res.limit }
   } catch (error) {
-    // 실패 시에도 호출부가 안전하게 동작하도록 보수적 폴백
     return {
       items: [],
       total: 0,
@@ -166,7 +99,6 @@ export async function getProductsByCategoryService(
 }
 
 // ---- 4) 브랜드별 목록 ----
-// PIM이 brand 필터를 지원한다면 brand로, 아니면 query fallback.
 export async function getProductsByBrandService(
   brand: string,
   params?: Omit<ProductListParams, "brand" | "categoryId" | "query">,
@@ -191,36 +123,73 @@ export async function getProductsByBrandService(
 type CachedPage = {
   items: ProductCard[]
   total: number
-  etag?: string
-  lastFetched: number // ms
-}
-
-const LS_KEY = (id: string, sort: string, limit: number) =>
-  `cat:${id}:sort=${sort}:limit=${limit}`
-
-export function readCache(
-  categoryId: string,
-  sort: string,
+  page: number
   limit: number
-): CachedPage | null {
-  try {
-    const raw = localStorage.getItem(LS_KEY(categoryId, sort, limit))
-    if (!raw) return null
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
 }
 
-export function writeCache(
-  categoryId: string,
-  sort: string,
-  limit: number,
-  data: CachedPage
-) {
-  try {
-    localStorage.setItem(LS_KEY(categoryId, sort, limit), JSON.stringify(data))
-  } catch {
-    /* ignore quota */
-  }
+const _cache: Map<string, CachedPage> = new Map()
+
+// 페이지 단위로 캐싱하며, 짧은 TTL 적용 (선택)
+export async function getProductListServiceCached(
+  params: ProductListParams,
+  opts?: ProductListServiceOpts
+): Promise<ProductListServiceResponse> {
+  const key = JSON.stringify({ params, opts })
+  const cached = _cache.get(key)
+  if (cached) return cached
+
+  const result = await getProductListService(params, opts)
+  _cache.set(key, result)
+
+  // 5분 TTL
+  setTimeout(() => _cache.delete(key), 5 * 60 * 1000)
+
+  return result
+}
+
+/**
+ * "인기 상품" 목록 조회
+ * - 실제로는 백엔드에 "인기순" 필터가 있어야 하지만, 임시로 기본 목록을 반환
+ * - TODO: 백엔드에 인기순 필터가 추가되면 해당 파라미터를 사용하도록 수정
+ */
+export async function getPopularProductsService(
+  params?: Partial<ProductListParams>
+): Promise<ProductListServiceResponse> {
+  return getProductListService({
+    ...params,
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 10,
+    sort: "createdAt:desc", // 임시로 최신순 사용
+  })
+}
+
+/**
+ * "신상품" 목록 조회
+ * - createdAt 최신순
+ */
+export async function getNewProductsService(
+  params?: Partial<ProductListParams>
+): Promise<ProductListServiceResponse> {
+  return getProductListService({
+    ...params,
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 10,
+    sort: "createdAt:desc",
+  })
+}
+
+/**
+ * "베스트 상품" 목록 조회
+ * - 실제로는 백엔드에 "판매량순" 필터가 있어야 함
+ * - TODO: 백엔드에 판매량순 필터가 추가되면 해당 파라미터를 사용하도록 수정
+ */
+export async function getBestProductsService(
+  params?: Partial<ProductListParams>
+): Promise<ProductListServiceResponse> {
+  return getProductListService({
+    ...params,
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 10,
+    sort: "createdAt:desc", // 임시로 최신순 사용
+  })
 }

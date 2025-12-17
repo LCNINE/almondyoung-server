@@ -56,50 +56,8 @@ export function CartMainClient({ user, isLoggedIn }: CartMainClientProps) {
       }
 
       try {
-        // 실제 카테고리 목록에서 속눈썹 카테고리 ID 찾기
-        const categoriesResponse = await getAllCategories()
-
-        const findEyelashCategory = (categories: any[]): string => {
-          for (const category of categories) {
-            if (
-              category.name?.toLowerCase().includes("속눈썹") ||
-              category.name?.toLowerCase().includes("eyelash") ||
-              category.name?.toLowerCase().includes("lash")
-            ) {
-              return category.id
-            }
-            if (category.children) {
-              const found = findEyelashCategory(category.children)
-              if (found) return found
-            }
-          }
-          return ""
-        }
-
-        const specialtyCategoryId =
-          findEyelashCategory(
-            Array.isArray(categoriesResponse)
-              ? categoriesResponse
-              : (categoriesResponse as any).categories || []
-          ) || "01999bee-bf43-704d-a367-2b49c14c38f2"
-
-        // 실제 API에서 추천 제품들 가져오기 (장바구니에 없는 제품들)
-        const products: ProductCard[] = [] // 임시로 빈 배열
-
-        // PimProduct를 추천 제품 형식으로 변환
-        const recommendations = products.map((product: ProductCard) => ({
-          id: product.id,
-          image: product.thumbnail || "",
-          name: product.name,
-          price: product.basePrice || 0,
-          membershipPrice: product.membershipPrice || 0,
-          discountRate: product.basePrice || 0, // todo: 정확한 타입 확인해봐야함
-          rating: 4.5,
-          reviewCount: Math.floor(Math.random() * 200) + 50,
-          isSoldOut: false,
-        }))
-
-        setRecommendedProducts(recommendations)
+        // TODO: 추천 상품 API 연동 시 여기를 교체하세요.
+        setRecommendedProducts([])
       } catch (error) {
         console.error("추천 제품 로드 실패:", error)
         setRecommendedProducts([])

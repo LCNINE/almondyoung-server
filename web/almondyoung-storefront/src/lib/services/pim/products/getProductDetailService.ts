@@ -35,9 +35,20 @@ export async function getProductDetailService(
   // 1) PIM 상세
   const result = await getProductDetail(id)
   if ("error" in result) {
+    console.error("[getProductDetailService] 상품 조회 실패:", {
+      id,
+      error: result.error,
+    })
     throw new Error(result.error.message)
   }
   const dto = result.data
+
+  // 2) DTO 유효성 검증
+  if (!dto || !dto.id) {
+    console.error("[getProductDetailService] 잘못된 상품 데이터:", { id, dto })
+    throw new Error("상품 정보를 찾을 수 없습니다.")
+  }
+
   let productDetail = toProductDetail(dto)
 
   // 2) descriptionHtml에서 detailImages 추출
@@ -51,16 +62,9 @@ export async function getProductDetailService(
   const promises: Array<Promise<unknown>> = []
 
 
-  // 3-2) WMS 재고 (임시로 목업 데이터 사용)
+  // 3-2) WMS 재고 (TODO: 실제 WMS 연동 시 교체)
   const skuStockPromise = opts?.withStock
-    ? Promise.resolve({
-      // 임시 목업 데이터 - 실제로는 WMS API에서 가져와야 함
-      [productDetail.defaultSku || productDetail.id]: 10,
-      // 옵션이 있는 경우 각 SKU별 재고 설정
-      ...(productDetail.skuIndex ? Object.fromEntries(
-        Object.values(productDetail.skuIndex).map(sku => [sku, Math.floor(Math.random() * 20) + 1])
-      ) : {})
-    } as Record<string, number>)
+    ? Promise.resolve({} as Record<string, number>)
     : Promise.resolve({} as Record<string, number>)
   promises.push(skuStockPromise)
 

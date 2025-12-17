@@ -3,8 +3,7 @@ import { ProductDetail } from "@lib/types/ui/product"
 import { UserDetail } from "types/global"
 import ProductDetailPage from "domains/products/product-details/product-detail-page"
 import { Suspense } from "react"
-import { getWishlist } from "@lib/api/users/wishlist/server"
-import { WishlistDto } from "@lib/api/users/wishlist/types"
+import { getWishlist, type WishlistItem } from "@lib/api/users/wishlist/server"
 import { getProductDetailService } from "@lib/services/pim/products/getProductDetailService"
 
 export default async function Page({
@@ -16,7 +15,7 @@ export default async function Page({
   let product: ProductDetail | null = null
   let error: string | null = null
   const user: UserDetail | null = await fetchMe().catch(() => null)
-  const wishlist: WishlistDto = await getWishlist()
+  const wishlist: WishlistItem[] = await getWishlist()
 
   try {
     // 실제 PIM API를 통해 상품 상세 정보 조회
