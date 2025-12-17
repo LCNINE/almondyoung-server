@@ -1,15 +1,15 @@
 import Link from "next/link"
 
-import { getAllCategoriesCached } from "@lib/services/pim/category/getCategory"
 import Image from "next/image"
-import { getCategoryTree } from "@lib/api/pim"
+import { getAllCategoriesCached } from "@lib/services/pim/category/getCategoryService"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import { getShowOnMainCategory } from "@lib/utils/category-display-settings"
 export const CategorySelectSection = async (props: { countryCode: string }) => {
-  const categories = await getCategoryTree()
+  const categories = await getAllCategoriesCached()
 
   // showOnMainCategory가 true인 카테고리만 필터링하고 sortOrder 순으로 정렬
-  const filteredCategories = categories.categories
-    .filter((category) => getShowOnMainCategory(category))
+  const filteredCategories = (categories ?? [])
+    .filter((category: CategoryTreeNodeDto) => getShowOnMainCategory(category))
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
     .slice(0, 7)
 

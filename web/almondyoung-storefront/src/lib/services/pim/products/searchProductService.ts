@@ -1,38 +1,10 @@
-import { searchProducts } from "@lib/api/pim/pim-api"
-import type { ProductSearchResponseDto, TagFilterDto } from "@lib/api/pim/pim-types"
-import type { ProductCard } from "@lib/types/ui/product"
-import { toProductCardFromSearch } from "@lib/types/product.transformer"
-
-/**
- * 검색 파라미터 타입
- */
-export interface SearchProductParams {
-  keyword?: string
-  categoryId?: string
-  brands?: string[]
-  minPrice?: number
-  maxPrice?: number
-  status?: string
-  tagFilters?: TagFilterDto[]
-  sortBy?: "relevance" | "price" | "createdAt"
-  sortOrder?: "asc" | "desc"
-  page?: number
-  limit?: number
-}
-
-/**
- * 검색 결과 타입
- */
-export interface SearchProductResult {
-  items: ProductCard[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-  }
-  aggregations?: ProductSearchResponseDto["aggregations"]
-}
+import { searchProducts } from "@lib/api/pim/search.server"
+import type {
+  ProductCard,
+  SearchProductParams,
+  SearchProductResult,
+} from "@lib/types/ui/product"
+import { toProductCardFromSearch } from "@lib/utils/transformers"
 
 /**
  * Elasticsearch를 사용한 상품 검색 서비스
@@ -54,7 +26,11 @@ export async function searchProductService(
     }
 
     // API 호출
-    const response = await searchProducts(searchParams)
+    const result = await searchProducts(searchParams)
+    if ("error" in result) {
+      throw new Error(result.error.message)
+    }
+    const response = result.data
 
     // ProductSearchItemDto -> ProductCard 변환
     const items: ProductCard[] = response.items.map(toProductCardFromSearch)

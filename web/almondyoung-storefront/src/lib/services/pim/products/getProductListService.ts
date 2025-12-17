@@ -1,45 +1,31 @@
 // services/pim/products/getProductListService.ts
 
-import {
-  getPimCategoryProducts,
-  getPimProductDetail,
-  getAllProductList,
-} from "@lib/api/pim/pim-api"
-import {
-  toProductCard,
-  toProductDetail,
-} from "@lib/types/product.transformer"
-import type { ProductCard, ProductDetail } from "@lib/types/ui/product"
-import { ProductDetailServiceOpts } from "./getProductDetailService"
-
-// ---- 1) 목록 파라미터/옵션 타입 ----
-export interface ProductListParams {
-  page?: number
-  limit?: number
-  sort?: string
-  query?: string
-  categoryId?: string
-  brand?: string
-  tags?: string[]
-  stock?: string[] // ex) ["in_stock", "low_stock"]
-}
-
-export interface ProductListServiceOpts {
-  userId?: string
-  withStock?: boolean
-  withReview?: boolean
-}
+import { getProductList } from "@lib/api/pim/masters.server"
+import { toProductCard } from "@lib/utils/transformers"
+import type {
+  ProductCard,
+  ProductListParams,
+  ProductListServiceOpts,
+  ProductListServiceResponse,
+} from "@lib/types/ui/product"
 
 // PIM API 쿼리 파라미터 매핑 함수
 // 실제 PIM API는 쿼리 파라미터로 직접 전달
-function buildPimQuery(params: ProductListParams) {
+function buildPimQuery(params: ProductListParams): {
+  page?: number
+  limit?: number
+  mode?: "active" | "active-or-inactive"
+  categoryId?: string
+  brand?: string
+  name?: string
+} {
   return {
     page: params.page,
     limit: params.limit,
-    status: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터
+    mode: params.query ? undefined : "active", // 검색이 아닐 때만 active 필터 (백엔드는 mode 파라미터 사용)
     categoryId: params.categoryId,
     brand: params.brand,
-    search: params.query, // 검색어는 search 파라미터로 전달
+    name: params.query, // 검색어는 name 파라미터로 전달 (백엔드 API는 name 파라미터 사용)
     // TODO: tags, stock 필터는 PIM API에서 지원하는지 확인 필요
   }
 }
@@ -48,19 +34,26 @@ function buildPimQuery(params: ProductListParams) {
 export async function getProductListService(
   params: ProductListParams,
   opts?: ProductListServiceOpts
-): Promise<{
-  items: ProductCard[]
-  total: number
-  page: number
-  limit: number
-}> {
+): Promise<ProductListServiceResponse> {
   try {
     const pimParams = buildPimQuery(params)
-    const res = await getAllProductList(pimParams)
+    const result = await getProductList({
+      page: pimParams.page,
+      limit: pimParams.limit,
+      mode: pimParams.mode,
+      categoryId: pimParams.categoryId,
+      brand: pimParams.brand,
+      name: pimParams.name,
+    })
 
+    if ("error" in result) {
+      throw new Error(result.error.message)
+    }
+
+    const res = result.data
     // API 응답 구조에 따라 items 또는 data 필드 사용
-    const productItems = res.items || (res as any).data || []
-    
+    const productItems = res.data || []
+
     if (!Array.isArray(productItems)) {
       throw new Error(`Invalid API response: items is not an array`)
     }
@@ -120,12 +113,7 @@ export async function getProductsByCategoryService(
   categoryId: string,
   params?: Omit<ProductListParams, "categoryId" | "brand" | "query">,
   opts?: ProductListServiceOpts | AbortSignal
-): Promise<{
-  items: ProductCard[]
-  total: number
-  page: number
-  limit: number
-}> {
+): Promise<ProductListServiceResponse> {
   try {
     // AbortSignal 처리
     const signal = opts instanceof AbortSignal ? opts : undefined
@@ -143,20 +131,22 @@ export async function getProductsByCategoryService(
     }
 
     // "all"이 아닌 경우에만 categoryId 필터 추가
-    if (categoryId !== "all") {
-      queryParams.categoryId = categoryId
+    const result = await getProductList({
+      page: queryParams.page,
+      limit: queryParams.limit,
+      mode: "active",
+      categoryId: categoryId === "all" ? undefined : categoryId,
+    })
+
+    if ("error" in result) {
+      throw new Error(result.error.message)
     }
 
-    const res = await getPimCategoryProducts(
-      categoryId === "all" ? "" : categoryId,
-      queryParams,
-      signal
-    )
-
+    const res = result.data
     // API 응답 구조에 따라 items 또는 data 필드 사용
     // 백엔드 응답이 {data: [...], total: 13} 형태일 수도 있음
-    const productItems = res.items || (res as any).data || []
-    
+    const productItems = res.data || []
+
     if (!Array.isArray(productItems)) {
       throw new Error(`Invalid API response: items is not an array`)
     }
@@ -181,14 +171,20 @@ export async function getProductsByBrandService(
   brand: string,
   params?: Omit<ProductListParams, "brand" | "categoryId" | "query">,
   opts?: ProductListServiceOpts
-) {
-  const res = await getAllProductList({
+): Promise<ProductListServiceResponse> {
+  const result = await getProductList({
     page: params?.page,
     limit: params?.limit,
-    sort: params?.sort,
     brand,
+    mode: "active",
   })
-  const items = res.items.map(toProductCard)
+
+  if ("error" in result) {
+    throw new Error(result.error.message)
+  }
+
+  const res = result.data
+  const items = res.data.map(toProductCard)
   return { items, total: res.total, page: res.page, limit: res.limit }
 }
 

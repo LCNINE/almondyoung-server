@@ -161,3 +161,83 @@ export interface ProductDetail extends ProductCard {
     slug?: string
   }
 }
+
+// ==========================================
+// 서비스 레이어 타입
+// ==========================================
+
+// 상품 목록 조회 파라미터
+export interface ProductListParams {
+  page?: number
+  limit?: number
+  sort?: string
+  query?: string
+  categoryId?: string
+  brand?: string
+  tags?: string[]
+  stock?: string[] // ex) ["in_stock", "low_stock"]
+}
+
+// 상품목록 서비스 옵션
+export interface ProductListServiceOpts {
+  userId?: string
+  withStock?: boolean
+  withReview?: boolean
+}
+
+// 상품 목록 서비스 응답
+export interface ProductListServiceResponse {
+  items: ProductCard[]
+  total: number
+  page: number
+  limit: number
+}
+
+/**
+ * 상품 상세 서비스 옵션
+ */
+export interface ProductDetailServiceOpts {
+  userId?: string
+  withStock?: boolean
+  // withReview?: boolean  // 추후 리뷰 요약 단건이 필요하면 추가
+}
+
+// 상품 검색 파라미터
+export interface SearchProductParams {
+  keyword?: string
+  categoryId?: string
+  brands?: string[]
+  minPrice?: number
+  maxPrice?: number
+  status?: string
+  tagFilters?: Array<{
+    groupId: string
+    valueIds: string[]
+  }>
+  sortBy?: "relevance" | "price" | "createdAt"
+  sortOrder?: "asc" | "desc"
+  page?: number
+  limit?: number
+}
+
+// 상품 검색 결과
+export interface SearchProductResult {
+  items: ProductCard[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+  aggregations?: {
+    tags?: Array<{
+      group_id: string
+      group_name: string
+      values: Array<{
+        value_id: string
+        value_name: string
+        count: number
+      }>
+    }>
+  }
+}

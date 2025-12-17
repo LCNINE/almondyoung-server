@@ -4,12 +4,12 @@ import { useUser } from "contexts/user-context"
 import HeroBannerSlider from "../components/banner/heroBannerSlider"
 import { HomeLoggedIn } from "../home-loggedin"
 import { HomeLogout } from "../home-logout"
-import type { CategoryTreeNode } from "@lib/api/pim/pim-types"
+import type { CategoryTreeNodeDto } from "@lib/types/dto/pim"
 import type { ProductCard } from "@lib/types/ui/product"
 
 interface HomeTemplateProps {
   countryCode: string
-  categories: CategoryTreeNode[]
+  categories: CategoryTreeNodeDto[]
   initialCategoryId: string | null
   initialCategoryProducts: ProductCard[]
 }

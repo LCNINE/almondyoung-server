@@ -3,10 +3,12 @@
 // - 폴백/파생값 계산 책임 (할인율, priceRange, 이미지 폴백 등)
 
 import type {
-  PimProductDetail,
-  PimProductListItem,
-  PimOptionGroup,
-  PimVariant,
+  ProductDetailDto,
+  ProductListItemDto,
+  OptionGroupDto,
+  OptionValueDto,
+  VariantDto,
+  ProductSearchItemDto,
 } from "@lib/types/dto/pim"
 import type {
   ProductCard,
@@ -16,7 +18,6 @@ import type {
   PriceInfo,
   PriceRange,
 } from "@lib/types/ui/product"
-import type { ProductSearchItemDto } from "@lib/api/pim/pim-types"
 
 type RawOpt = {
   optionGroupId?: string
@@ -75,7 +76,7 @@ const sanitizeAndRewrite = (
 }
 
 const pickPrimaryImage = (
-  dto: PimProductDetail | PimProductListItem
+  dto: ProductDetailDto | ProductListItemDto
 ): string => {
   return (
     (dto as any).thumbnail ||
@@ -103,10 +104,11 @@ function makeOptionKey(parts: Record<string, string>): string {
 
 const computePriceRange = (
   base?: number | null,
-  variants?: Pick<PimVariant, "priceAdjustment">[] | null
+  variants?: VariantDto[] | null
 ): PriceRange | undefined => {
   if (!base || !variants?.length) return undefined
-  const prices = variants.map((v) => base + (v.priceAdjustment ?? 0))
+  // VariantDto에는 priceAdjustment가 없으므로 기본값 0 사용
+  const prices = variants.map((v) => base + 0)
   return { min: Math.min(...prices), max: Math.max(...prices) }
 }
 
@@ -135,14 +137,14 @@ function toPriceInfo(
 /** PIM 옵션그룹 → UI 옵션 구조로 변환 */
 /** PIM 옵션그룹 + 변형(variants) → UI 옵션 구조로 변환 */
 function buildOptions(
-  groups?: PimOptionGroup[] | null,
-  variants?: PimVariant[] | null
+  groups?: OptionGroupDto[] | null,
+  variants?: VariantDto[] | null
 ): ProductOption[] {
   if (!groups?.length) return []
 
-  // variantName → PimVariant 매핑 (대소문자/공백 무시)
+  // variantName → VariantDto 매핑 (대소문자/공백 무시)
   const norm = (s?: string | null) => (s ?? "").trim().toLowerCase()
-  const variantByName = new Map<string, PimVariant>()
+  const variantByName = new Map<string, VariantDto>()
   for (const v of variants ?? []) {
     variantByName.set(norm(v.variantName), v)
   }
@@ -150,25 +152,24 @@ function buildOptions(
   return groups
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     .map((g): ProductOption => {
-      const label = g.displayName || g.name || "옵션"
+      const label = g.displayName || "옵션"
 
       const values: ProductOptionValue[] = (g.values ?? [])
-        .filter((v) => v.isActive !== false)
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map((v) => {
           // 옵션값 라벨(표시명/코드)을 variantName과 매칭 시도
-          const display = v.displayName || v.value
+          const display = v.displayName
           const matched = variantByName.get(norm(display))
 
           return {
             id: v.id, // 옵션값 ID
             name: display, // 버튼 라벨
-            code: v.value, // 외부/연동 코드
+            code: v.displayName, // 외부/연동 코드 (displayName 사용)
             image: null, // 필요 시 variant 이미지 연결
             // ▼ 추가 필드 (옵션 값에 SKU/재고/추가금/비활성 상태 반영)
             sku: matched?.id, // ✅ 변형 ID를 SKU로 사용
             stock: undefined, // ✅ WMS 붙이면 서비스에서 주입
-            priceDiff: matched?.priceAdjustment ?? 0, // ✅ 옵션가(+/-)
+            priceDiff: 0, // ✅ VariantDto에는 priceAdjustment가 없으므로 0
             disabled: matched?.status === "inactive", // ✅ 비활성 처리
           }
         })
@@ -188,7 +189,7 @@ function buildOptions(
 // 옵션 그룹 -> UI 옵션
 // ---------- 목록용 ----------
 export const toProductCard = (
-  dto: PimProductListItem | PimProductDetail
+  dto: ProductListItemDto | ProductDetailDto
 ): ProductCard => {
   const variants = (dto as any).variants ?? []
   const optionGroups = (dto as any).optionGroups ?? []
@@ -198,12 +199,13 @@ export const toProductCard = (
   const defaultSku = variants?.[0]?.id // 단일/다중 모두 첫 변형을 기본 값으로 둠
 
   return {
-    id: dto.id,
+    id: "id" in dto ? dto.id : dto.versionId, // ProductDetailDto는 id, ProductListItemDto는 versionId
     name: dto.name,
     brand: (dto as any).brand || undefined,
     thumbnail: pickPrimaryImage(dto),
-    basePrice: dto.basePrice ?? undefined,
-    membershipPrice: (dto as any).membershipPrice ?? dto.basePrice ?? 0,
+    // 가격 정보는 Pricing API로 별도 조회 필요 (스펙에 없음)
+    basePrice: undefined,
+    membershipPrice: undefined,
     isMembershipOnly: !!(dto as any).isMembershipOnly,
     status: (dto as any).status, // status가 없으면 undefined, 컴포넌트에서 active로 간주
     tags: (dto as any).tags ?? [],
@@ -214,7 +216,7 @@ export const toProductCard = (
 }
 
 // ---------- 상세용 ----------
-export const toProductDetail = (dto: PimProductDetail): ProductDetail => {
+export const toProductDetail = (dto: ProductDetailDto): ProductDetail => {
   const card = toProductCard(dto)
   const allFromHtml = extractAllImgs(dto.descriptionHtml)
 
@@ -223,40 +225,54 @@ export const toProductDetail = (dto: PimProductDetail): ProductDetail => {
   // 옵션그룹 → UI 옵션
   const options = buildOptions(dto.optionGroups)
 
-  // skuIndex 만들기: variant.optionValues → label/value 매칭 필요
+  // skuIndex 만들기: variantName을 파싱하여 옵션 조합 추출
+  // ProductDetailDto의 variants는 optionValues가 없으므로 variantName을 파싱해야 함
+  // variantName 형식: "빨강 × L" 또는 "색상:빨강|사이즈:L"
   const skuIndex: Record<string, string> = {}
-  const groupById = new Map<string, { label: string; values: any[] }>()
+  const groupById = new Map<string, { label: string; values: Map<string, OptionValueDto> }>()
 
   for (const g of dto.optionGroups ?? []) {
+    const valueMap = new Map<string, OptionValueDto>()
+    for (const v of g.values ?? []) {
+      valueMap.set(v.id, v)
+      // displayName으로도 매핑 (variantName 매칭용)
+      valueMap.set(v.displayName.toLowerCase().trim(), v)
+    }
     groupById.set(g.id, {
-      label: g.displayName || g.name,
-      values: g.values ?? [],
+      label: g.displayName,
+      values: valueMap,
     })
   }
+
   for (const v of dto.variants ?? []) {
-    // 각 variant의 optionValues 배열을 옵션 라벨/디스플레이값으로 역매핑
+    // variantName을 파싱하여 옵션 조합 추출
+    // 형식: "빨강 × L" 또는 "색상:빨강|사이즈:L"
     const parts: Record<string, string> = {}
-    for (const ov of v.optionValues ?? []) {
-      const g = groupById.get(ov.optionGroupId ?? "")
-      const disp =
-        g?.values?.find((x) => x.id === ov.optionValueId)?.displayName ||
-        ov.value
-      const label = g?.label || ov.label || ov.optionGroupId
-      if (label && disp) parts[label] = disp
+
+    // variantName을 파싱 (예: "빨강 × L" → ["빨강", "L"])
+    const variantParts = v.variantName.split(/[×x]/).map(s => s.trim())
+
+    // optionGroups의 값들과 매칭 시도
+    let partIndex = 0
+    for (const g of dto.optionGroups ?? []) {
+      if (partIndex >= variantParts.length) break
+
+      const variantPart = variantParts[partIndex].toLowerCase().trim()
+      const matchedValue = Array.from(groupById.get(g.id)?.values.values() ?? []).find(
+        val => val.displayName.toLowerCase().trim() === variantPart
+      )
+
+      if (matchedValue) {
+        parts[g.displayName] = matchedValue.displayName
+        partIndex++
+      }
     }
+
     const key = makeOptionKey(parts)
     if (key) skuIndex[key] = v.id
   }
 
-  // 할인율 계산
-  const discountRate =
-    card.basePrice &&
-    card.membershipPrice &&
-    card.basePrice > card.membershipPrice
-      ? Math.round(
-          ((card.basePrice - card.membershipPrice) / card.basePrice) * 100
-        )
-      : 0
+  // 할인율 계산은 가격 정보가 있을 때만 수행 (Pricing API로 조회 후)
 
   const result: ProductDetail = {
     ...card,
@@ -265,24 +281,18 @@ export const toProductDetail = (dto: PimProductDetail): ProductDetail => {
     description: dto.description || undefined,
     descriptionHtml: sanitizeAndRewrite(dto.descriptionHtml),
     detailImages: allFromHtml, // descriptionHtml에서 추출한 이미지들을 detailImages에 설정
-    memberPrices: dto.membershipPrice
-      ? [
-          {
-            range: "1~∞",
-            rate: discountRate,
-            price: dto.membershipPrice,
-          },
-        ]
-      : undefined,
+    // 가격 정보는 Pricing API로 별도 조회 필요 (스펙에 없음)
+    memberPrices: undefined,
     options, // ✅ 옵션 UI용
     skuIndex, // ✅ 조합→변형ID 맵
     // skuStock: 서비스에서 withStock일 때 주입
     shipping: undefined,
     productInfo: undefined,
     categories: [],
-    rating: dto.reviewSummary?.rating ?? 0,
-    reviewCount: dto.reviewSummary?.reviewCount ?? 0,
-    qnaCount: dto.reviewSummary?.qnaCount ?? 0,
+    // 리뷰 정보는 별도 API로 조회 필요 (스펙에 없음)
+    rating: 0,
+    reviewCount: 0,
+    qnaCount: 0,
     seo: {
       title: dto.seoTitle || dto.name,
       description: dto.seoDescription || undefined,
