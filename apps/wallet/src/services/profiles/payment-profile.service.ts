@@ -107,6 +107,31 @@ export class PaymentProfileService {
             }
           }
 
+          // HMS BNPL 프로필인 경우 cms_batch_profiles 테이블 조인
+          if (profile.provider === 'HMS_BNPL' && profile.kind === 'BANK_ACCOUNT') {
+            const [batchProfile] = await tx
+              .select()
+              .from(schema.cmsBatchProfiles)
+              .where(eq(schema.cmsBatchProfiles.id, profile.id))
+              .limit(1);
+
+
+            if (batchProfile) {
+              details = {
+                paymentCompany: batchProfile.paymentCompany,
+                paymentCompanyName: batchProfile.paymentCompany || '알 수 없음', // 은행 코드를 리턴함 ex) 090
+                paymentNumber: batchProfile.billingDay
+                  ? `매월 ${batchProfile.billingDay}일 출금`
+                  : null,
+                cardLast4: null, // BNPL은 카드 정보 없음
+                cardBrand: null, // BNPL은 카드 브랜드 없음
+                payerName: batchProfile.payerName,
+                phoneMask: batchProfile.phoneMask,
+                cmsStatus: batchProfile.cmsStatus,
+              };
+            }
+          }
+
           return {
             id: profile.id,
             kind: profile.kind,
@@ -191,6 +216,36 @@ export class PaymentProfileService {
   ) {
     // 모든 과정은 하나의 DB 트랜잭션으로 묶습니다.
     return this.db.db.transaction(async (tx) => {
+      // 중복 등록 방지: HMS_BNPL 프로필이 이미 있는지 확인
+      const existingBnplProfiles = await tx
+        .select()
+        .from(schema.paymentProfiles)
+        .where(
+          and(
+            eq(schema.paymentProfiles.userId, userId),
+            eq(schema.paymentProfiles.provider, 'HMS_BNPL'),
+            isNull(schema.paymentProfiles.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (existingBnplProfiles.length > 0) {
+        // 멱등성 확보: 이미 존재하면 조용히 기존 프로필 정보 반환
+        const existing = existingBnplProfiles[0];
+        const [batchProfile] = await tx
+          .select()
+          .from(schema.cmsBatchProfiles)
+          .where(eq(schema.cmsBatchProfiles.id, existing.id))
+          .limit(1);
+
+        this.logger.log(`HMS_BNPL 프로필이 이미 존재함 - userId: ${userId}, profileId: ${existing.id}`);
+
+        return {
+          profileId: existing.id,
+          memberId: batchProfile?.memberId || 'unknown',
+        };
+      }
+
       const handle = this.registry.get(ProviderType.HMS_BNPL);
       if (!handle.profile) {
         throw new PaymentError('PROFILE_NOT_SUPPORTED_FOR_HMS_BNPL');
@@ -415,10 +470,13 @@ export class PaymentProfileService {
         throw new Error('Profile already deleted');
       }
 
-      // 4. 🚨 [Critical] HMS_CARD 검증
-      // 멤버십 결제는 HMS_CARD만 사용하므로, 다른 프로바이더는 기본값으로 설정 불가
-      if (profile.provider !== 'HMS_CARD') {
-        throw new Error('Only HMS_CARD can be set as default');
+      // 4. 프로바이더 검증
+      // 멤버십 결제: HMS_CARD만 사용
+      // BNPL 출금: HMS_BNPL만 사용
+      // 다른 프로바이더는 기본값 설정 불필요
+      const allowedProviders = ['HMS_CARD', 'HMS_BNPL'];
+      if (!allowedProviders.includes(profile.provider)) {
+        throw new Error('Only HMS_CARD and HMS_BNPL can be set as default');
       }
 
       // 5. 기본값 변경
