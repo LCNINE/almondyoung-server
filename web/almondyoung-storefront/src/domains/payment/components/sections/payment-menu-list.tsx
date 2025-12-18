@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react"
 import Link from "next/link"
 
 const menuItems = [
-  { label: "계좌 사용 내역", href: "/mypage/payment/history" },
+  // { label: "계좌 사용 내역", href: "/mypage/payment/history" },
   { label: "결제 비밀번호 / 보안 설정", href: "/mypage/payment/security" },
   { label: "현금영수증 설정", href: "/mypage/payment/receipt" },
   { label: "나중결제 약관 및 정책", href: "/mypage/payment/terms" },

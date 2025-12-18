@@ -7,8 +7,10 @@ import EmptyState from "../empty-state"
 import { useBnplModalStore } from "../store/bnpl-modal-store"
 import BnplCard from "./bnpl-card"
 import BnplHistorySheet from "./bnpl-history-sheet"
+import ChangeAccountSheet from "./change-account-sheet"
 import { useBnplHistory } from "./hooks/use-bnpl-history"
 import { useBnplSummary } from "./hooks/use-bnpl-summary"
+import { useChangeAccountSheet } from "./hooks/use-change-account-sheet"
 
 interface BnplSectionProps {
   bnplProfiles: BnplProfileDto[]
@@ -20,6 +22,8 @@ export default function BnplSection({
   hasError = false,
 }: BnplSectionProps) {
   const { openModal } = useBnplModalStore()
+  const { isOpen: isChangeAccountSheetOpen, closeSheet } =
+    useChangeAccountSheet()
 
   const { bnplSummary, isPending: isLoadingSummary } = useBnplSummary()
   const {
@@ -121,6 +125,12 @@ export default function BnplSection({
         currentDate={currentDate}
         onPrevious={handlePrevious}
         onNext={handleNext}
+      />
+
+      <ChangeAccountSheet
+        isOpen={isChangeAccountSheetOpen}
+        onClose={closeSheet}
+        bnplProfiles={bnplProfiles}
       />
     </>
   )

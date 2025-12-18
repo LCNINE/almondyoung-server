@@ -1,10 +1,10 @@
 "use client"
 
 import { Button } from "@components/common/ui/button"
+import { Card, CardContent } from "@components/common/ui/card"
 import { BnplProfileDto } from "@lib/types/dto/wallet"
 import { ChevronRight } from "lucide-react"
 import EmptyState from "../empty-state"
-import { useBnplModalStore } from "../store/bnpl-modal-store"
 
 interface AccountSectionProps {
   defaultBnplProfile: BnplProfileDto | null
@@ -54,5 +54,24 @@ export default function AccountSection({
     )
   }
 
-  return <section className="bg-gray-10 p-4"></section>
+  return (
+    <Card className="mb-4 border-none shadow-xs">
+      <CardContent className="flex items-center justify-between p-7">
+        <div>
+          <span className="text-foreground text-lg font-bold">계좌</span>
+        </div>
+
+        <button
+          className="hover:text-primary flex cursor-pointer items-center gap-2"
+          aria-label="계좌 변경"
+        >
+          {/* todo: 계좌 정보 불러와서 표시 */}
+          <span className="text-foreground text-base font-normal">
+            우리은행 계좌
+          </span>
+          <ChevronRight className="size-4" />
+        </button>
+      </CardContent>
+    </Card>
+  )
 }

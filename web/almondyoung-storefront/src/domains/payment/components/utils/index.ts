@@ -60,11 +60,10 @@ export function getBankName(profile: BnplProfileDto): string {
   return profile.details?.paymentCompanyName || "은행"
 }
 
-/**
- * BNPL 프로필에서 마스킹된 계좌번호 추출
- * @param profile - BNPL 프로필
- * @returns 마스킹된 계좌번호
- */
-export function getMaskedAccountNumber(profile: BnplProfileDto): string {
-  return profile.details?.paymentNumber || "****-****-****"
+// 계좌번호 마스킹
+export function maskAccountNumber(accountNumber: string): string {
+  if (accountNumber.length <= 8) return accountNumber
+  const start = accountNumber.slice(0, 4)
+  const end = accountNumber.slice(-2)
+  return `${start}-${"*".repeat(accountNumber.length - 6)}-${end}`
 }

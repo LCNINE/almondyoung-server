@@ -2,17 +2,12 @@ import { PageTitle } from "@components/common/page-title"
 import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
 import { getVerificationStatus } from "@lib/api/users/verification-status"
-import {
-  getBnplHistory,
-  getBnplProfiles,
-  getBnplSummary,
-  getPointBalance,
-} from "@lib/api/wallet"
+import { getBnplProfiles, getPointBalance } from "@lib/api/wallet"
+import AccountSection from "./components/account-section"
 import BankAccountWizard from "./components/bank-account-wizard/bank-account-wizard"
 import BnplSection from "./components/bnpl-section"
 import BnplVerificationWizard from "./components/bnpl-verification-wizard/bnpl-verification-wizard"
 import PointSection from "./components/point-section"
-import AccountSection from "./components/sections/account-section"
 import PaymentMenuList from "./components/sections/payment-menu-list"
 import PendingPointsSection from "./components/sections/pending-points-section"
 

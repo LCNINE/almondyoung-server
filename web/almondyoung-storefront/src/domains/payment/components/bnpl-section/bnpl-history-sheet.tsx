@@ -24,7 +24,7 @@ import {
   XIcon,
 } from "lucide-react"
 import { useState } from "react"
-import { formatAmount } from "./utils/bnpl-utils"
+import { formatAmount } from "../utils"
 
 interface BnplHistorySheetProps {
   isOpen: boolean

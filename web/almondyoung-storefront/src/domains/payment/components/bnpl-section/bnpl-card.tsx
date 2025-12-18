@@ -9,7 +9,8 @@ import {
 import { Skeleton } from "@components/common/ui/skeleton"
 import type { BnplHistoryDto, BnplSummaryDto } from "@lib/types/dto/wallet"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
-import { formatAmount, formatDday, formatPaymentDate } from "./utils/bnpl-utils"
+import { formatAmount, formatDday, formatPaymentDate } from "../utils"
+import { useChangeAccountSheet } from "./hooks/use-change-account-sheet"
 
 interface BnplCardProps {
   bnplSummary: BnplSummaryDto | null
@@ -30,6 +31,8 @@ export default function BnplCard({
   onNext,
   onViewDetails,
 }: BnplCardProps) {
+  const { openSheet } = useChangeAccountSheet()
+
   return (
     <Card className="border-none shadow-xs">
       <CardHeader className="px-4">
@@ -108,7 +111,7 @@ export default function BnplCard({
               variant="outline"
               size="sm"
               className="cursor-pointer px-4 py-5 text-sm font-normal text-gray-700 hover:bg-transparent hover:text-gray-700"
-              // onClick={onChangeAccount}
+              onClick={openSheet}
             >
               출금 계좌 변경
             </Button>

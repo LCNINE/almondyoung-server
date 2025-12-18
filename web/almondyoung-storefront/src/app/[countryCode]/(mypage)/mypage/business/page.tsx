@@ -2,7 +2,7 @@ import { PageTitle } from "@components/common/page-title"
 import { Spinner } from "@components/common/spinner"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
-import { getMyBusiness } from "@lib/api/users/business/server"
+import { getMyBusiness } from "@lib/api/users/business"
 import { fetchMe } from "@lib/api/users/me"
 import { getSEOTags } from "@lib/seo"
 import BusinessInfoTemplate from "domains/business/template/business-info-template"
@@ -48,5 +48,5 @@ export default async function BusinessPage() {
 async function BusinessContent({ user }: { user: any }) {
   const business = await getMyBusiness()
 
-  return <BusinessInfoTemplate user={user} business={business?.data || null} />
+  return <BusinessInfoTemplate user={user} business={business || null} />
 }

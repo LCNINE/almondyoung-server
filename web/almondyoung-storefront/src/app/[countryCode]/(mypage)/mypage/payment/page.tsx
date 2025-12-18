@@ -1,7 +1,9 @@
+import { Spinner } from "@components/common/spinner"
 import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@components/layout/mypage-layout"
 import ProtectedRoute from "@components/protected-route"
 import PaymentManagement from "domains/payment/payment-management"
+import { Suspense } from "react"
 
 export default function PaymentPage() {
   return (
@@ -15,7 +17,15 @@ export default function PaymentPage() {
         }}
       >
         <MypageLayout>
-          <PaymentManagement />
+          <Suspense
+            fallback={
+              <div className="flex h-56 items-center justify-center text-center">
+                <Spinner size="lg" color="gray" />
+              </div>
+            }
+          >
+            <PaymentManagement />
+          </Suspense>
         </MypageLayout>
       </WithHeaderLayout>
     </ProtectedRoute>

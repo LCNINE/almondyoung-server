@@ -40,7 +40,7 @@ import { Controller, useFormContext } from "react-hook-form"
 import { formatPhoneNumber } from "react-phone-number-input"
 import SignatureCanvas from "react-signature-canvas"
 import { v4 as uuidv4 } from "uuid"
-import { maskAccountNumber } from "../../utils/mask-account-number"
+import { maskAccountNumber } from "../../utils"
 import { PaymentMethodFormSchema } from "../schema"
 
 /**
@@ -158,7 +158,6 @@ export default function BankAgreementStep({
           />
         ))}
       </section>
-
 
       <section className="mt-5 space-y-4 border-t pt-5">
         {Object.keys(form.formState.errors).length > 0 ? (

@@ -100,6 +100,7 @@ function BankAccountItem({
           <p className="font-sans text-sm leading-relaxed font-normal">
             {paymentProfile.details?.paymentCompanyName} 계좌
           </p>
+          {/* todo: 마스킹 처리 해줘야함 일단 서버에서 안불러오는거같음 */}
           <p className="font-sans text-sm font-normal">1239-*******-****23</p>
         </div>
       </div>
