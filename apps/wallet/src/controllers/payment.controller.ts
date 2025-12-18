@@ -538,13 +538,13 @@ export class PaymentController {
     summary: '기본 결제 수단 변경',
     description: `특정 결제 프로필을 사용자의 기본 결제 수단으로 설정합니다.
     
-**중요 제약사항:**
-- 멤버십 결제는 HMS_CARD만 사용 가능
-- HMS_CARD가 아닌 프로필은 기본값으로 설정 불가
+**지원되는 프로바이더:**
+- \`HMS_CARD\`: 멤버십 정기 결제에 사용
+- \`HMS_BNPL\`: 나중결제 출금 계좌로 사용
 
 **비즈니스 로직:**
 - 프로필 존재/소유자/상태/삭제 여부 검증
-- HMS_CARD 검증 (멤버십 결제 제약)
+- 프로바이더 검증 (HMS_CARD, HMS_BNPL만 허용)
 - 기존 기본값 해제 후 새 기본값 설정
 - 트랜잭션으로 원자성 보장`,
   })
@@ -560,7 +560,7 @@ export class PaymentController {
   })
   @ApiResponse({
     status: 400,
-    description: '잘못된 요청 (프로필 없음, 삭제됨, 비활성, HMS_CARD 아님)',
+    description: '잘못된 요청 (프로필 없음, 삭제됨, 비활성, 허용되지 않은 프로바이더)',
     type: ErrorResponseDto,
   })
   @ApiResponse({
@@ -1016,7 +1016,7 @@ export class PaymentController {
     try {
       this.logger.log(
         `환불 요청: Intent ${intentId}, Amount ${dto.amount || 'FULL'}, ` +
-          `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
+        `Reason ${dto.reason}, IdemKey ${idemKey || 'none'}`,
       );
 
       return await runInTransaction(this.db, async (tx) => {
