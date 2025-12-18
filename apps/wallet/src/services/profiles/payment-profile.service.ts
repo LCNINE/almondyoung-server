@@ -216,6 +216,36 @@ export class PaymentProfileService {
   ) {
     // 모든 과정은 하나의 DB 트랜잭션으로 묶습니다.
     return this.db.db.transaction(async (tx) => {
+      // 중복 등록 방지: HMS_BNPL 프로필이 이미 있는지 확인
+      const existingBnplProfiles = await tx
+        .select()
+        .from(schema.paymentProfiles)
+        .where(
+          and(
+            eq(schema.paymentProfiles.userId, userId),
+            eq(schema.paymentProfiles.provider, 'HMS_BNPL'),
+            isNull(schema.paymentProfiles.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (existingBnplProfiles.length > 0) {
+        // 멱등성 확보: 이미 존재하면 조용히 기존 프로필 정보 반환
+        const existing = existingBnplProfiles[0];
+        const [batchProfile] = await tx
+          .select()
+          .from(schema.cmsBatchProfiles)
+          .where(eq(schema.cmsBatchProfiles.id, existing.id))
+          .limit(1);
+
+        this.logger.log(`HMS_BNPL 프로필이 이미 존재함 - userId: ${userId}, profileId: ${existing.id}`);
+
+        return {
+          profileId: existing.id,
+          memberId: batchProfile?.memberId || 'unknown',
+        };
+      }
+
       const handle = this.registry.get(ProviderType.HMS_BNPL);
       if (!handle.profile) {
         throw new PaymentError('PROFILE_NOT_SUPPORTED_FOR_HMS_BNPL');
