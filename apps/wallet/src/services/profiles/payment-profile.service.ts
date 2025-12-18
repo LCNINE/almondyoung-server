@@ -107,6 +107,31 @@ export class PaymentProfileService {
             }
           }
 
+          // HMS BNPL 프로필인 경우 cms_batch_profiles 테이블 조인
+          if (profile.provider === 'HMS_BNPL' && profile.kind === 'BANK_ACCOUNT') {
+            const [batchProfile] = await tx
+              .select()
+              .from(schema.cmsBatchProfiles)
+              .where(eq(schema.cmsBatchProfiles.id, profile.id))
+              .limit(1);
+
+
+            if (batchProfile) {
+              details = {
+                paymentCompany: batchProfile.paymentCompany,
+                paymentCompanyName: batchProfile.paymentCompany || '알 수 없음', // 은행 코드를 리턴함 ex) 090
+                paymentNumber: batchProfile.billingDay
+                  ? `매월 ${batchProfile.billingDay}일 출금`
+                  : null,
+                cardLast4: null, // BNPL은 카드 정보 없음
+                cardBrand: null, // BNPL은 카드 브랜드 없음
+                payerName: batchProfile.payerName,
+                phoneMask: batchProfile.phoneMask,
+                cmsStatus: batchProfile.cmsStatus,
+              };
+            }
+          }
+
           return {
             id: profile.id,
             kind: profile.kind,
