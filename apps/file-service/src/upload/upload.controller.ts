@@ -40,15 +40,8 @@ export class UploadController {
         },
         context: {
           type: 'string',
-          enum: [
-            'product-image',
-            'product-document',
-            'user-avatar',
-            'user-document',
-            'invoice',
-            'receipt',
-            'shipment-label',
-          ],
+          description: 'File context ID (validated against database)',
+          example: 'product-image',
         },
         metadata: {
           type: 'object',
@@ -94,15 +87,8 @@ export class UploadController {
         },
         context: {
           type: 'string',
-          enum: [
-            'product-image',
-            'product-document',
-            'user-avatar',
-            'user-document',
-            'invoice',
-            'receipt',
-            'shipment-label',
-          ],
+          description: 'File context ID (validated against database)',
+          example: 'product-image',
         },
         metadata: {
           type: 'object',

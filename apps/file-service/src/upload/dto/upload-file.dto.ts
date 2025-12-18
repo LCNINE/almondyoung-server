@@ -3,17 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class UploadFileDto {
   @ApiProperty({
-    description: 'File context ID',
-    enum: [
-      'product-image',
-      'product-document',
-      'user-avatar',
-      'user-document',
-      'invoice',
-      'receipt',
-      'shipment-label',
-      'business-verification-file',
-    ],
+    description: 'File context ID (validated against file_contexts table)',
     example: 'product-image',
   })
   @IsString()
@@ -38,17 +28,5 @@ export class UploadFileDto {
   @IsObject()
   metadata?: Record<string, any>;
 
-  /**
-   * @description
-   * VAP-FIX: Changed by Gemini
-   * This property is populated by the FileTransformInterceptor.
-   * It is not expected from the client directly in the request body,
-   * but is attached for internal processing and validation.
-   * Marked as optional so validation passes.
-   */
-  @ApiProperty({ type: 'array', items: { type: 'string', format: 'binary' }, required: false, readOnly: true })
-  @IsOptional()
-  @IsArray()
-  files: any[];
 }
 

@@ -1,6 +1,7 @@
 import { Controller, Get, Head, Param, Query, ParseUUIDPipe, ParseIntPipe, DefaultValuePipe, Res, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
-import { RequireScopes, Public } from '@app/authorization';
+import { RequireScopes, Public, User } from '@app/authorization';
+import { JwtPayload } from '../shared/types/jwt-payload.interface';
 import { Response } from 'express';
 import { DownloadService } from './download.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
@@ -31,11 +32,13 @@ export class DownloadController {
   @ApiResponse({ status: 200, description: 'Signed URL generated', type: SignedUrlResponseDto })
   @ApiResponse({ status: 404, description: 'File not found' })
   @ApiResponse({ status: 400, description: 'File is not active' })
+  @ApiResponse({ status: 403, description: 'Not authorized to access this file' })
   async getSignedUrl(
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Query('expiresIn', new DefaultValuePipe(3600), ParseIntPipe) expiresIn: number,
+    @User() user: JwtPayload,
   ): Promise<SignedUrlResponseDto> {
-    return this.downloadService.getSignedUrl(fileId, expiresIn);
+    return this.downloadService.getSignedUrl(fileId, expiresIn, user);
   }
 
   @Get(':fileId/metadata')
@@ -44,10 +47,12 @@ export class DownloadController {
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiResponse({ status: 200, description: 'File metadata', type: FileMetadataResponseDto })
   @ApiResponse({ status: 404, description: 'File not found' })
+  @ApiResponse({ status: 403, description: 'Not authorized to access this file' })
   async getMetadata(
     @Param('fileId', ParseUUIDPipe) fileId: string,
+    @User() user: JwtPayload,
   ): Promise<FileMetadataResponseDto> {
-    return this.downloadService.getMetadata(fileId);
+    return this.downloadService.getMetadata(fileId, user);
   }
 
   @Get('public/:fileId')
