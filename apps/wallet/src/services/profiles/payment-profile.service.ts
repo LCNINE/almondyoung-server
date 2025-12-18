@@ -56,6 +56,7 @@ export class PaymentProfileService {
           provider: schema.paymentProfiles.provider,
           status: schema.paymentProfiles.status,
           name: schema.paymentProfiles.name,
+          paymentNumber: schema.paymentProfiles.paymentNumber,
           isDefault: schema.paymentProfiles.isDefault,
           createdAt: schema.paymentProfiles.createdAt,
           updatedAt: schema.paymentProfiles.updatedAt,
@@ -120,9 +121,7 @@ export class PaymentProfileService {
               details = {
                 paymentCompany: batchProfile.paymentCompany,
                 paymentCompanyName: batchProfile.paymentCompany || '알 수 없음', // 은행 코드를 리턴함 ex) 090
-                paymentNumber: batchProfile.billingDay
-                  ? `매월 ${batchProfile.billingDay}일 출금`
-                  : null,
+                paymentNumber: profile.paymentNumber,
                 cardLast4: null, // BNPL은 카드 정보 없음
                 cardBrand: null, // BNPL은 카드 브랜드 없음
                 payerName: batchProfile.payerName,
@@ -292,6 +291,7 @@ export class PaymentProfileService {
           userId,
           kind: 'BANK_ACCOUNT',
           provider: ProviderType.HMS_BNPL,
+          paymentNumber: dto.paymentNumber,
           name: dto.name?.trim() || null, // 빈 문자열도 null로 변환
         },
         tx,
