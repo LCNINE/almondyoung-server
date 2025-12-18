@@ -100,4 +100,17 @@ export class WishlistController {
     return this.wishlistService.getWishlistByUserId(user.id);
   }
 
+
+  @ApiOperation({
+    summary: '찜 항목에서 해당 상품 조회',
+    description: '사용자의 찜 목록에서 특정 상품을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '찜 항목에서 해당 상품 조회 성공' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @Get(':productId')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  async getWishlistByProductId(@CurrentUser() user: User, @Param('productId') productId: string) {
+    return this.wishlistService.getWishlistByProductId(productId);
+  }
 }

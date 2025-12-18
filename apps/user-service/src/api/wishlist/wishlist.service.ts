@@ -72,4 +72,13 @@ export class WishlistService {
 
     return wishlist;
   }
+
+  async getWishlistByProductId(productId: string): Promise<schema.Wishlist[]> {
+    const wishlist = await this.dbService.db
+      .select()
+      .from(schema.wishlist)
+      .where(eq(schema.wishlist.productId, productId));
+
+    return wishlist;
+  }
 }
