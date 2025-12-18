@@ -13,7 +13,7 @@ import { ProviderType } from '../../providers/payment-provider.interface';
 export class PaymentProfilesRepository {
   private readonly logger = new Logger(PaymentProfilesRepository.name);
 
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
 
   private get executor() {
     return this.db.db;
@@ -26,6 +26,7 @@ export class PaymentProfilesRepository {
       kind: 'CARD' | 'BANK_ACCOUNT' | 'WALLET';
       provider: ProviderType;
       name?: string | null;
+      paymentNumber: string;
     },
     tx: WalletExecutor = this.executor,
   ) {
@@ -37,6 +38,7 @@ export class PaymentProfilesRepository {
       kind: input.kind,
       provider: input.provider,
       status: 'PENDING' as const,
+      paymentNumber: input.paymentNumber,
     };
 
     // name이 유효한 값일 때만 포함
@@ -163,7 +165,7 @@ export class PaymentProfilesRepository {
  */
 @Injectable()
 export class CmsCardProfilesRepository {
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
   private get executor() {
     return this.db.db;
   }
@@ -190,7 +192,7 @@ export class CmsCardProfilesRepository {
  */
 @Injectable()
 export class CmsBatchProfilesRepository {
-  constructor(private readonly db: DbService<typeof walletSchema>) {}
+  constructor(private readonly db: DbService<typeof walletSchema>) { }
   private get executor() {
     return this.db.db;
   }
