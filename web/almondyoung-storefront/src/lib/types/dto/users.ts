@@ -132,3 +132,15 @@ export type VerifyCodeDto = {
   code: string
   phoneNumber: string
 }
+
+/**
+ * 약관 동의 정보 DTO
+ */
+export type CreateConsentsDto = {
+  isOver14: boolean
+  termsOfService: boolean
+  electronicTransaction: boolean
+  privacyPolicy: boolean
+  thirdPartySharing: boolean
+  marketingConsent: boolean
+}

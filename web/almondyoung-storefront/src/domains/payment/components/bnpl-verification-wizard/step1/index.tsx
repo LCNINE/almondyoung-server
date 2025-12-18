@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@components/common/ui/select"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { updateProfile } from "@lib/api/users/profile/client"
+import { updateProfile } from "@lib/api/users/profile"
 import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { format } from "date-fns"
@@ -96,11 +96,8 @@ export function PhoneVerificationStep({
     if (isCodeVerified) {
       try {
         startUpdateProfileTransition(async () => {
-          const res = await updateProfile({ phoneNumber: data.phoneNumber })
-          if (res.success) {
-            onComplete()
-            return
-          }
+          await updateProfile({ phoneNumber: data.phoneNumber })
+          onComplete()
         })
       } catch (error) {
         console.error("Failed to update profile:", error)

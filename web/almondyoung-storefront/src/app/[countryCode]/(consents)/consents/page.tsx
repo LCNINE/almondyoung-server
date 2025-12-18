@@ -1,4 +1,4 @@
-import { getConsents } from "@lib/api/users/consents/server"
+import { getConsents } from "@lib/api/users/consents"
 import { fetchMe } from "@lib/api/users/me"
 import { ConsentsTemplate } from "domains/consents/consents-template"
 import { redirect } from "next/navigation"
