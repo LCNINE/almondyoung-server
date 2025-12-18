@@ -172,6 +172,7 @@ export class PaymentProfileService {
           kind: 'CARD',
           provider: ProviderType.HMS_CARD,
           name: dto.memberName ?? null,
+          paymentNumber: null,
         },
         tx,
       );
@@ -386,6 +387,7 @@ export class PaymentProfileService {
           kind: 'WALLET',
           provider: ProviderType.TOSS,
           name,
+          paymentNumber: null,
         },
         tx,
       );

@@ -26,7 +26,7 @@ export class PaymentProfilesRepository {
       kind: 'CARD' | 'BANK_ACCOUNT' | 'WALLET';
       provider: ProviderType;
       name?: string | null;
-      paymentNumber: string;
+      paymentNumber: string | null;
     },
     tx: WalletExecutor = this.executor,
   ) {
@@ -38,7 +38,7 @@ export class PaymentProfilesRepository {
       kind: input.kind,
       provider: input.provider,
       status: 'PENDING' as const,
-      paymentNumber: input.paymentNumber,
+      paymentNumber: input.paymentNumber ?? null,
     };
 
     // name이 유효한 값일 때만 포함

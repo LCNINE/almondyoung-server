@@ -233,7 +233,7 @@ export const paymentProfiles = pgTable(
 
     status: paymentProfileStatusEnum('status').notNull().default('PENDING'),
     name: varchar('name', { length: 64 }), // 사용자 별칭 (예: "내 월급통장")
-    paymentNumber: varchar('payment_number', { length: 25 }), // 계좌번호
+    paymentNumber: varchar('payment_number', { length: 25 }).default(sql`NULL`), // 계좌번호
     // ✅ 기본 결제 수단 여부
     isDefault: boolean('is_default').notNull().default(false),
 
