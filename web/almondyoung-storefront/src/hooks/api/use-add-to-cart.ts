@@ -1,3 +1,4 @@
+import { HttpApiError } from "@lib/api/api-error"
 import { addToCart } from "@lib/api/medusa/cart"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -35,7 +36,6 @@ export function useAddToCart() {
         return { success: false, error: "Failed to add to cart" }
       }
     } catch (error) {
-      console.error("Add to cart error:", error)
       toast.error("장바구니 추가 중 오류가 발생했습니다.")
       return {
         success: false,

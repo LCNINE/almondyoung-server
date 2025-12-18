@@ -195,10 +195,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [mainImage, setMainImage] = useState(
     product?.thumbnails?.[0] || product?.thumbnail || ""
   )
-  const [isWishlisted, setIsWishlisted] = useState(()=>{
-    return wishlist ? true :false 
+  const [isWishlisted, setIsWishlisted] = useState(() => {
+    return wishlist ? true : false
   })
-  
+
   const [isPending, startTransition] = useTransition()
 
   // ===== Refs =====

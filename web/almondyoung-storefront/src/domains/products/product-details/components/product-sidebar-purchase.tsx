@@ -1,6 +1,7 @@
 "use client"
 
 import { CustomButton } from "@components/common/custom-buttons/custom-button"
+import { Spinner } from "@components/common/spinner"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { SingleOptionQuantitySelector } from "app/[countryCode]/(main)/products/components/single-option-quantity-selector"
@@ -46,7 +47,7 @@ export function ProductSidebarPurchase({
     }>
   >([])
 
-  const { addToCart } = useAddToCart()
+  const { isLoading, addToCart } = useAddToCart()
 
   // 유틸 함수
   const isSingleOption = !product.options || product.options.length === 0
@@ -178,7 +179,6 @@ export function ProductSidebarPurchase({
         </header>
 
         {/* 평점 */}
-
         <ProductRatingDisplay
           rating={product.rating || 0}
           reviewCount={product.reviewCount || 0}
@@ -267,16 +267,17 @@ export function ProductSidebarPurchase({
               <CustomButton
                 variant="outline"
                 size="lg"
-                className="flex-1"
+                className="hover:text-primary flex-1 cursor-pointer hover:bg-transparent"
                 onClick={handleAddToCart}
+                disabled={isLoading}
               >
-                장바구니
+                {isLoading ? <Spinner size="sm" color="blue" /> : "장바구니"}
               </CustomButton>
               <CustomButton
                 variant="fill"
                 color="primary"
                 size="lg"
-                className="flex-1"
+                className="flex-1 cursor-pointer"
                 onClick={handleBuyNow}
               >
                 바로구매

@@ -1,10 +1,6 @@
 "use server"
 
 import { sdk } from "@lib/app-config"
-import medusaError from "@lib/utils/medusa-error"
-import { HttpTypes } from "@medusajs/types"
-import { revalidateTag } from "next/cache"
-import { redirect } from "next/navigation"
 import {
   getAuthHeaders,
   getCacheOptions,
@@ -13,7 +9,12 @@ import {
   removeCartId,
   setCartId,
 } from "@lib/data/cookies"
+import medusaError from "@lib/utils/medusa-error"
+import { HttpTypes } from "@medusajs/types"
+import { revalidateTag } from "next/cache"
+import { redirect } from "next/navigation"
 import { getRegion } from "./regions"
+import { HttpApiError } from "../api-error"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -21,9 +22,6 @@ import { getRegion } from "./regions"
  * @returns The cart object if found, or null if not found.
  */
 export async function retrieveCart(cartId?: string, fields?: string) {
-  return null
-
-  /* 기존 코드 (주석처리)
   const id = cartId || (await getCartId())
   fields ??=
     "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name"
@@ -52,14 +50,9 @@ export async function retrieveCart(cartId?: string, fields?: string) {
     })
     .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
     .catch(() => null)
-  */
 }
 
 export async function getOrSetCart(countryCode: string) {
-  // Mock 환경에서는 항상 mock 장바구니 반환
-  return await retrieveCart()
-
-  /* 기존 코드 (주석처리)
   const region = await getRegion(countryCode)
 
   if (!region) {
@@ -93,7 +86,6 @@ export async function getOrSetCart(countryCode: string) {
   }
 
   return cart
-  */
 }
 
 export async function updateCart(data: HttpTypes.StoreUpdateCart) {
@@ -136,18 +128,22 @@ export async function addToCart({
   quantity: number
   countryCode: string
 }) {
-  // Mock 환경에서는 로그만 출력하고 성공 처리
-  console.log("Mock addToCart called:", { variantId, quantity, countryCode })
-
-  /* 기존 코드 (주석처리)
   if (!variantId) {
-    throw new Error("Missing variant ID when adding to cart")
+    throw new HttpApiError(
+      "Missing variant ID when adding to cart",
+      400,
+      "BAD_REQUEST"
+    )
   }
 
   const cart = await getOrSetCart(countryCode)
 
   if (!cart) {
-    throw new Error("Error retrieving or creating cart")
+    throw new HttpApiError(
+      "Error retrieving or creating cart",
+      400,
+      "BAD_REQUEST"
+    )
   }
 
   const headers = {
@@ -172,7 +168,6 @@ export async function addToCart({
       revalidateTag(fulfillmentCacheTag)
     })
     .catch(medusaError)
-  */
 }
 
 export async function updateLineItem({
