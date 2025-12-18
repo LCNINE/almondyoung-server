@@ -3,9 +3,10 @@
 import { Breadcrumb } from "@components/layout/components/breadcrumb"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { useRecentViews } from "@hooks/api/use-recent-views"
-import { toggleWishlist } from "@lib/api/users/wishlist/client"
+import { toggleWishlist } from "@lib/api/users/wishlist"
 import type { ProductDetail } from "@lib/types/ui/product"
 import { ProductCard } from "@lib/types/ui/product"
+import type { UserDetail, WishlistItem } from "@lib/types/ui/user"
 import { ProductRecommandSlider } from "components/product-recommand-slider"
 import { ReviewDetailCardList } from "domains/reviews/details"
 import {
@@ -14,7 +15,6 @@ import {
 } from "domains/reviews/summary"
 import { use, useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { UserDetail } from "types/global"
 import { ProductDetailInfo } from "./components/product-detail-info"
 import { ProductImageGallery } from "./components/product-image-gallery"
 import { ProductInfoAccordion } from "./components/product-info-accordion"
@@ -22,6 +22,7 @@ import { ProductInfoMobile } from "./components/product-info-mobile"
 import { ProductQnaSection } from "./components/product-qna-section"
 import { ProductSidebarPurchase } from "./components/product-sidebar-purchase"
 import { ProductTabs } from "./components/product-tabs"
+import { useRouter } from "next/navigation"
 
 interface ProductDetailPageProps {
   params: Promise<{
@@ -31,6 +32,7 @@ interface ProductDetailPageProps {
   product: ProductDetail | null
   error?: string | null
   user: UserDetail | null
+  wishlist: WishlistItem | null
 }
 
 // Mock 데이터
@@ -181,10 +183,11 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   product,
   error,
   user,
+  wishlist,
 }) => {
   const resolvedParams = use(params)
   const { countryCode } = resolvedParams
-
+  const router = useRouter()
   // ===== 상태 관리 =====
   const [activeTab, setActiveTab] = useState<
     "detail" | "review" | "qna" | "info"
@@ -192,7 +195,10 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const [mainImage, setMainImage] = useState(
     product?.thumbnails?.[0] || product?.thumbnail || ""
   )
-  const [isWishlisted, setIsWishlisted] = useState(false)
+  const [isWishlisted, setIsWishlisted] = useState(()=>{
+    return wishlist ? true :false 
+  })
+  
   const [isPending, startTransition] = useTransition()
 
   // ===== Refs =====
@@ -239,7 +245,6 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   }
 
   const handleWishlistToggle = (productId: string) => {
-    console.log("productId:", productId)
     if (!user) {
       toast.error(
         "로그인이 필요한 기능입니다. 먼저 로그인 후 다시 시도해 주세요."
@@ -260,6 +265,8 @@ const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             ? "찜 목록에서 상품이 삭제되었습니다."
             : "상품이 찜 목록에 추가되었습니다."
         )
+
+        router.refresh()
       } catch (error) {
         // 실패시 상태 복원
         setIsWishlisted(previousState)

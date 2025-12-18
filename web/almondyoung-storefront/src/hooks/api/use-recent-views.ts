@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react"
 import { RecentViewProductThumbnail } from "@lib/types/ui/product"
-import { UserBasicInfo } from "@lib/types/ui/user"
+import { UserDetail } from "@lib/types/ui/user"
 
 // TODO: 실제 API 연동 필요
 
@@ -33,7 +33,7 @@ interface UseRecentViewsReturn {
  * 추후 API 연동 시 실제 로직 추가 예정
  */
 export function useRecentViews(
-  user: UserBasicInfo | null,
+  user: UserDetail | null,
   options: UseRecentViewsOptions = {}
 ): UseRecentViewsReturn {
   // TODO: 실제 API 연동 필요

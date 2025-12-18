@@ -144,3 +144,25 @@ export type CreateConsentsDto = {
   thirdPartySharing: boolean
   marketingConsent: boolean
 }
+
+/**
+ * 위시리스트
+ */
+export interface WishlistDto {
+  success: boolean
+  data: {
+    id: string
+    productId: string
+    createdAt: string
+    updatedAt: string
+    userId: string
+  }[]
+}
+
+export interface WishlistResponse {
+  id: string
+  userId: string
+  productId: string
+  createdAt: string
+  updatedAt?: string
+}
