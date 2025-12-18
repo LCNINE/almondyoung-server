@@ -46,6 +46,8 @@ async function bootstrap() {
           'http://localhost:9000',
           'http://127.0.0.1:3000',
           'https://almondyoung-storefront.vercel.app',
+          'https://api-gateway-development-10ed.up.railway.app/*',
+          'https://medusa-dev.up.railway.app',
         ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
