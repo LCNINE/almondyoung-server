@@ -1,13 +1,12 @@
 import { defineConfig } from 'drizzle-kit';
 import { join } from 'path';
 import { config } from 'dotenv';
-//상대경로
+
 config({ path: join(__dirname, '.env'), override: true });
 
-
 export default defineConfig({
-  schema: './src/**/schema.ts',
-  out: './drizzle',
+  schema: 'apps/wallet/src/shared/database/schema.ts',
+  out: 'apps/wallet/drizzle',
   dialect: 'postgresql',
   dbCredentials: { url: process.env.DATABASE_URL ?? '' },
   verbose: true,
