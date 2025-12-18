@@ -470,10 +470,13 @@ export class PaymentProfileService {
         throw new Error('Profile already deleted');
       }
 
-      // 4. 🚨 [Critical] HMS_CARD 검증
-      // 멤버십 결제는 HMS_CARD만 사용하므로, 다른 프로바이더는 기본값으로 설정 불가
-      if (profile.provider !== 'HMS_CARD') {
-        throw new Error('Only HMS_CARD can be set as default');
+      // 4. 프로바이더 검증
+      // 멤버십 결제: HMS_CARD만 사용
+      // BNPL 출금: HMS_BNPL만 사용
+      // 다른 프로바이더는 기본값 설정 불필요
+      const allowedProviders = ['HMS_CARD', 'HMS_BNPL'];
+      if (!allowedProviders.includes(profile.provider)) {
+        throw new Error('Only HMS_CARD and HMS_BNPL can be set as default');
       }
 
       // 5. 기본값 변경

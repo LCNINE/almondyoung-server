@@ -79,13 +79,22 @@ export class BnplWithdrawalService {
         try {
             // 1. 결제 프로필 조회
             const profiles = await this.profileService.getPaymentProfiles(userId);
+
+            // 기본 출금 계좌를 우선적으로 사용 (isDefault=true)
+            // 없으면 첫 번째 ACTIVE 계좌 사용 (하위 호환성)
             const bnplProfile = profiles.find(
+                (p) => p.provider === 'HMS_BNPL' && p.status === 'ACTIVE' && p.isDefault
+            ) || profiles.find(
                 (p) => p.provider === 'HMS_BNPL' && p.status === 'ACTIVE'
             );
 
             if (!bnplProfile) {
                 throw new Error('활성화된 BNPL 프로필을 찾을 수 없습니다.');
             }
+
+            this.logger.log(
+                `출금 계좌 선택 - profileId: ${bnplProfile.id}, isDefault: ${bnplProfile.isDefault}`
+            );
 
             // 2. CMS Batch Profile에서 memberId 조회
             const [cmsBatchProfile] = await this.db.db.query.cmsBatchProfiles.findMany({
