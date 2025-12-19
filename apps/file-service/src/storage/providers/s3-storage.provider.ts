@@ -25,7 +25,8 @@ export class S3StorageProvider
   implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(S3StorageProvider.name);
   private s3Client: S3Client;
-  private bucketName: string;
+  private publicBucket: string;
+  private privateBucket: string;
   private region: string;
 
   constructor(private readonly configService: ConfigService) { }
@@ -45,7 +46,8 @@ export class S3StorageProvider
     const secretAccessKey = this.configService.getOrThrow<string>(
       'AWS_SECRET_ACCESS_KEY',
     );
-    this.bucketName = this.configService.getOrThrow<string>('AWS_S3_BUCKET');
+    this.publicBucket = this.configService.getOrThrow<string>('AWS_S3_PUBLIC_BUCKET');
+    this.privateBucket = this.configService.getOrThrow<string>('AWS_S3_PRIVATE_BUCKET');
 
     this.s3Client = new S3Client({
       region: this.region,
@@ -58,30 +60,49 @@ export class S3StorageProvider
     this.logger.log('S3 Storage Provider initialized');
   }
 
+  private getBucket(isPublic: boolean): string {
+    return isPublic ? this.publicBucket : this.privateBucket;
+  }
+
+  private buildUrl(key: string, isPublic: boolean): string {
+    const bucket = this.getBucket(isPublic);
+    return `https://${bucket}.s3.${this.region}.amazonaws.com/${key}`;
+  }
+
   async upload(request: UploadRequest): Promise<UploadResult> {
     try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucketName,
+      const isPublic = request.isPublic ?? false;
+      const bucket = this.getBucket(isPublic);
+
+      const commandParams: any = {
+        Bucket: bucket,
         Key: request.key,
         Body: request.buffer,
         ContentType: request.contentType,
         Metadata: request.metadata,
-      });
+      };
 
+      if (isPublic) {
+        commandParams.ACL = 'public-read';
+      }
+
+      const command = new PutObjectCommand(commandParams);
       const response = await this.s3Client.send(command);
 
-      const url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${request.key}`;
+      const url = this.buildUrl(request.key, isPublic);
 
-      this.logger.log(`File uploaded to S3: ${request.key}`);
+      this.logger.log(`File uploaded to S3 (${isPublic ? 'public' : 'private'}): ${request.key}`);
 
       return {
         success: true,
         key: request.key,
         url,
         provider: StorageProviderType.S3,
+        isPublic,
         metadata: {
           etag: response.ETag,
           versionId: response.VersionId,
+          bucket,
         },
       };
     } catch (error) {
@@ -92,13 +113,16 @@ export class S3StorageProvider
 
   async delete(request: DeleteRequest): Promise<void> {
     try {
+      const isPublic = request.isPublic ?? false;
+      const bucket = this.getBucket(isPublic);
+
       const command = new DeleteObjectCommand({
-        Bucket: this.bucketName,
+        Bucket: bucket,
         Key: request.key,
       });
 
       await this.s3Client.send(command);
-      this.logger.log(`File deleted from S3: ${request.key}`);
+      this.logger.log(`File deleted from S3 (${isPublic ? 'public' : 'private'}): ${request.key}`);
     } catch (error) {
       this.logger.error(`S3 delete failed: ${error.message}`);
       throw new StorageError('S3_DELETE_FAILED', error.message);
@@ -107,14 +131,17 @@ export class S3StorageProvider
 
   async getSignedUrl(request: SignedUrlRequest): Promise<SignedUrlResult> {
     try {
+      const isPublic = request.isPublic ?? false;
+      const bucket = this.getBucket(isPublic);
+
       const command =
         request.operation === 'put'
           ? new PutObjectCommand({
-            Bucket: this.bucketName,
+            Bucket: bucket,
             Key: request.key,
           })
           : new GetObjectCommand({
-            Bucket: this.bucketName,
+            Bucket: bucket,
             Key: request.key,
           });
 
