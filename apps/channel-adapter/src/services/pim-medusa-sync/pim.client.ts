@@ -1,3 +1,4 @@
+// apps/channel-adapter/src/services/pim-medusa-sync/pim.client.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';

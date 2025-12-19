@@ -32,23 +32,24 @@ export class MedusaClient {
         this.logger.log(`Medusa client initialized: ${this.apiUrl}`);
     }
 
-    // pim master id로 medusa product 조회
-    async findProductByPimMasterId(
-        pimMasterId: string,
+    // handle로 medusa product 조회 (handle = pim-{masterId})
+    async findProductByHandle(
+        handle: string,
     ): Promise<MedusaProduct | null> {
         try {
-            this.logger.debug(`Finding Medusa product by PIM masterId: ${pimMasterId}`);
+            this.logger.debug(`Finding Medusa product by handle: ${handle}`);
 
-            const response = await this.client.get('/products', {
+            // Medusa는 handle 기반 조회를 공식 지원
+            const response = await this.client.get(`/products`, {
                 params: {
-                    'metadata[pimMasterId]': pimMasterId,
+                    handle,
                     limit: 1,
                 },
             });
 
             const products = response.data?.products || [];
             if (products.length === 0) {
-                this.logger.debug(`No Medusa product found for PIM masterId: ${pimMasterId}`);
+                this.logger.debug(`No Medusa product found for handle: ${handle}`);
                 return null;
             }
 
@@ -59,10 +60,10 @@ export class MedusaClient {
             return product;
         } catch (error) {
             this.logger.error(
-                `Failed to find product by PIM masterId: ${pimMasterId}`,
+                `Failed to find product by handle: ${handle}`,
                 error.stack,
             );
-            throw new Error(`Medusa findProductByPimMasterId failed: ${error.message}`);
+            throw new Error(`Medusa findProductByHandle failed: ${error.message}`);
         }
     }
 
@@ -124,46 +125,63 @@ export class MedusaClient {
         }
     }
 
-    // upsert: pim master id로 medusa product 조회 후 자동으로 생성/업데이트 선택
+    // upsert: medusaProductId가 있으면 update, 없으면 create
+    // (mapping repository가 제공한 medusaProductId 사용)
     async upsertProduct(
         payload: MedusaProductPayload,
+        medusaProductId?: string,
     ): Promise<{ product: MedusaProduct; action: 'created' | 'updated' }> {
-        const pimMasterId = payload.metadata.pimMasterId;
-
-        // 1. PIM Master ID로 기존 Product 조회
-        const existingProduct = await this.findProductByPimMasterId(pimMasterId);
-
-        if (!existingProduct) {
-            // 2. 없으면 생성
-            const product = await this.createProduct(payload);
-            return { product, action: 'created' };
+        if (medusaProductId) {
+            // 매핑이 있으면 업데이트
+            const product = await this.updateProduct(medusaProductId, payload);
+            return { product, action: 'updated' };
         }
 
-        // 3. 있으면 업데이트
-        const product = await this.updateProduct(existingProduct.id, payload);
-        return { product, action: 'updated' };
+        // 매핑이 없으면 handle로 조회 (혹시 매핑 테이블과 실제 상태가 다른 경우 복구)
+        const existingProduct = await this.findProductByHandle(payload.handle);
+        if (existingProduct) {
+            this.logger.warn(
+                `Found product by handle without mapping: ${payload.handle} -> ${existingProduct.id}. Updating.`,
+            );
+            const product = await this.updateProduct(existingProduct.id, payload);
+            return { product, action: 'updated' };
+        }
+
+        // 완전히 새 상품
+        const product = await this.createProduct(payload);
+        return { product, action: 'created' };
     }
 
-    // medusa product 삭제 (PIM Master ID 기반)
-    async deleteProduct(pimMasterId: string): Promise<void> {
+    // medusa product를 draft로 전환 (unpublished 처리 - P1 권장사항)
+    async setProductToDraft(medusaProductId: string): Promise<void> {
         try {
-            this.logger.warn(`Deleting Medusa product for PIM masterId: ${pimMasterId}`);
+            this.logger.log(`Setting Medusa product to draft: ${medusaProductId}`);
 
-            // 1. PIM Master ID로 기존 Product 조회
-            const existingProduct = await this.findProductByPimMasterId(pimMasterId);
+            await this.client.post(`/products/${medusaProductId}`, {
+                status: 'draft',
+            });
 
-            if (!existingProduct) {
-                this.logger.debug(`No Medusa product to delete for PIM masterId: ${pimMasterId}`);
-                return;
-            }
-
-            // 2. Medusa Product 삭제
-            await this.client.delete(`/products/${existingProduct.id}`);
-
-            this.logger.log(`Deleted Medusa product: ${existingProduct.id} (PIM: ${pimMasterId})`);
+            this.logger.log(`Set product to draft: ${medusaProductId}`);
         } catch (error) {
             this.logger.error(
-                `Failed to delete Medusa product for PIM masterId: ${pimMasterId}`,
+                `Failed to set product to draft: ${medusaProductId}`,
+                error.response?.data || error.stack,
+            );
+            throw new Error(`Medusa setProductToDraft failed: ${error.message}`);
+        }
+    }
+
+    // medusa product 삭제 (주의: 장바구니/주문 참조 깨질 수 있음)
+    async deleteProduct(medusaProductId: string): Promise<void> {
+        try {
+            this.logger.warn(`Deleting Medusa product: ${medusaProductId}`);
+
+            await this.client.delete(`/products/${medusaProductId}`);
+
+            this.logger.log(`Deleted Medusa product: ${medusaProductId}`);
+        } catch (error) {
+            this.logger.error(
+                `Failed to delete Medusa product: ${medusaProductId}`,
                 error.response?.data || error.stack,
             );
             throw new Error(`Medusa deleteProduct failed: ${error.message}`);

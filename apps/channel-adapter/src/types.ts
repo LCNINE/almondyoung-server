@@ -1,3 +1,4 @@
+// apps/channel-adapter/src/types.ts
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {

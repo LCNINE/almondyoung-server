@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PimClient } from './pim.client';
 import { MedusaClient } from './medusa.client';
+import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
 import {
     transformPimToMedusa,
     validatePimSnapshot,
@@ -11,7 +12,7 @@ export interface SyncResult {
     success: boolean;
     masterId: string;
     medusaProductId?: string;
-    action?: 'created' | 'updated' | 'skipped';
+    action?: 'created' | 'updated' | 'skipped' | 'unpublished';
     error?: string;
 }
 
@@ -22,30 +23,69 @@ export class PimMedusaSyncService {
     constructor(
         private readonly pimClient: PimClient,
         private readonly medusaClient: MedusaClient,
+        private readonly mappingRepo: PimMedusaMappingRepository,
     ) { }
 
-    // 단일 Master 동기화 (Main Entry Point)
-    async syncMaster(masterId: string): Promise<SyncResult> {
+    // 단일 Master 동기화 (Main Entry Point - mapping 기반)
+    async syncMaster(masterId: string, versionToCheck?: number): Promise<SyncResult> {
         this.logger.log(`Starting sync for PIM master: ${masterId}`);
 
         try {
             // 1. PIM Active Version 조회
             const snapshot = await this.pimClient.getActiveVersion(masterId);
 
-            // 2. 검증
+            if (!snapshot || !snapshot.versionId) {
+                this.logger.warn(`No active version for master ${masterId}`);
+                return {
+                    success: true,
+                    masterId,
+                    action: 'skipped',
+                };
+            }
+
+            // shouldProcess 체크
+            if (versionToCheck !== undefined) {
+                const shouldProcess = await this.mappingRepo.shouldProcess(
+                    masterId,
+                    versionToCheck,
+                );
+                if (!shouldProcess) {
+                    return {
+                        success: true,
+                        masterId,
+                        action: 'skipped',
+                    };
+                }
+            }
+
+            // 3. 검증
             validatePimSnapshot(snapshot);
 
-            // 3. Medusa Payload로 변환
+            // 4. Medusa Payload로 변환
             const medusaPayload = transformPimToMedusa(snapshot);
 
-            // 4. Medusa에 Upsert
+            // 5. 기존 매핑 조회
+            const existingMapping = await this.mappingRepo.findByPimMasterId(masterId);
+            const medusaProductId = existingMapping?.medusaProductId ?? undefined;
+
+            // 6. Medusa에 Upsert
             const { product, action } = await this.medusaClient.upsertProduct(
                 medusaPayload,
+                medusaProductId,
             );
 
             this.logger.log(
                 `Sync completed: ${masterId} → Medusa ${product.id} (${action})`,
             );
+
+            // 7. 매핑 테이블 업데이트
+            await this.mappingRepo.recordSuccess(masterId, {
+                pimVersionId: snapshot.versionId,
+                pimVersion: snapshot.version,
+                medusaProductId: product.id,
+                medusaHandle: medusaPayload.handle,
+                action,
+            });
 
             return {
                 success: true,
@@ -59,6 +99,20 @@ export class PimMedusaSyncService {
                 error.stack,
             );
 
+            // 실패 기록
+            try {
+                const snapshot = await this.pimClient.getActiveVersion(masterId);
+                if (snapshot && snapshot.versionId) {
+                    await this.mappingRepo.recordFailure(masterId, {
+                        pimVersionId: snapshot.versionId,
+                        pimVersion: snapshot.version,
+                        error: error.message,
+                    });
+                }
+            } catch (recordError) {
+                this.logger.error('Failed to record failure', recordError);
+            }
+
             return {
                 success: false,
                 masterId,
@@ -67,7 +121,7 @@ export class PimMedusaSyncService {
         }
     }
 
-    // 여러 Masters 일괄 동기화 (백필용)
+    // 여러 Masters 일괄 동기화
     async syncMultipleMasters(masterIds: string[]): Promise<SyncResult[]> {
         this.logger.log(`Syncing ${masterIds.length} PIM masters...`);
 
@@ -90,17 +144,15 @@ export class PimMedusaSyncService {
         return results;
     }
 
-    // 전체 Active Masters 동기화 (Full Backfill)
+    // 전체 Active Masters 동기화
     async syncAllActiveMasters(): Promise<SyncResult[]> {
         this.logger.log('🔄 Starting full sync of all active PIM masters...');
 
         try {
-            // 1. 모든 Active Master 목록 조회
             const masterIds = await this.pimClient.getAllActiveMasters();
 
             this.logger.log(`Found ${masterIds.length} active masters to sync`);
 
-            // 2. 일괄 동기화
             const results = await this.syncMultipleMasters(masterIds);
 
             return results;
@@ -110,34 +162,44 @@ export class PimMedusaSyncService {
         }
     }
 
-    // 이벤트 기반 동기화 (Kafka 컨슈머용)
+    // 이벤트 기반 동기화(Kafka 컨슈머용 - unpublished는 draft로)
     async handleActiveVersionChanged(
         event: PimActiveVersionChangedEvent,
     ): Promise<void> {
-        const { masterId, productId, changeReason } = event;
+        const { masterId, productId, version, changeReason } = event;
 
         this.logger.log(
-            `📨 PIM Event: ${masterId} (${changeReason}) - productId: ${productId}`,
+            `📨 PIM Event: ${masterId} (${changeReason}) - productId: ${productId}, version: ${version}`,
         );
 
         // changeReason에 따라 처리
         switch (changeReason) {
             case 'published':
             case 'rollback':
-                // Active 버전 생성/변경 → Medusa에 동기화 (published)
-                if (!productId) {
-                    this.logger.error(`productId is null for published/rollback event`);
+                if (!productId || version === null) {
+                    this.logger.error(`productId or version is null for published/rollback event`);
                     return;
                 }
-                await this.syncMaster(masterId);
+                await this.syncMaster(masterId, version);
                 break;
 
             case 'unpublished':
-                // PIM의 active가 없다 = 쇼핑몰에서 보여줄 필요 없음
                 this.logger.log(
-                    `Master ${masterId} unpublished → Deleting from Medusa`,
+                    `Master ${masterId} unpublished → Setting to draft in Medusa`,
                 );
-                await this.medusaClient.deleteProduct(masterId);
+
+                const mapping = await this.mappingRepo.findByPimMasterId(masterId);
+                if (!mapping || !mapping.medusaProductId) {
+                    this.logger.warn(`No mapping found for unpublished master ${masterId}`);
+                    return;
+                }
+
+                await this.medusaClient.setProductToDraft(mapping.medusaProductId);
+
+                await this.mappingRepo.update(masterId, {
+                    lastSyncAction: 'updated',
+                    lastSyncedAt: new Date(),
+                });
                 break;
 
             default:

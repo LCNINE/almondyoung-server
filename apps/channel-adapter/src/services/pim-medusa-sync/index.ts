@@ -1,8 +1,10 @@
 export { PimClient } from './pim.client';
 export { MedusaClient } from './medusa.client';
 export { PimMedusaSyncService } from './pim-medusa-sync.service';
+export { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
+export { OutboxWorkerService } from './outbox-worker.service';
 export {
-  transformPimToMedusa,
-  validatePimSnapshot,
+    transformPimToMedusa,
+    validatePimSnapshot,
 } from './pim-to-medusa.transformer';
 
