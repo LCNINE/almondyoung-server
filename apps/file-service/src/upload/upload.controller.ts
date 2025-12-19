@@ -6,6 +6,7 @@ import {
   UploadedFiles,
   UseInterceptors,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
@@ -28,6 +29,7 @@ export class UploadController {
   constructor(private readonly uploadService: UploadService) { }
 
   @Post('upload')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Upload a single file' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -38,21 +40,26 @@ export class UploadController {
           type: 'string',
           format: 'binary',
         },
-        context: {
+        contextId: {
           type: 'string',
           description: 'File context ID (validated against database)',
           example: 'product-image',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'Whether the file should be publicly accessible (optional)',
+          example: false,
         },
         metadata: {
           type: 'object',
           description: 'Optional metadata',
         },
       },
-      required: ['file', 'context'],
+      required: ['file', 'contextId'],
     },
   })
   @ApiResponse({
-    status: 201,
+    status: 200,
     description: 'File uploaded successfully',
     type: UploadResponseDto,
   })
@@ -63,15 +70,19 @@ export class UploadController {
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
   ): Promise<UploadResponseDto> {
-
     if (!file) {
       throw new BadRequestException('File is required');
+    }
+
+    if (dto.isPublic !== undefined && typeof dto.isPublic === 'string') {
+      dto.isPublic = dto.isPublic === 'true';
     }
 
     return this.uploadService.uploadFile(file, dto, user.userId);
   }
 
   @Post('batch-upload')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Upload multiple files' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -85,21 +96,26 @@ export class UploadController {
             format: 'binary',
           },
         },
-        context: {
+        contextId: {
           type: 'string',
           description: 'File context ID (validated against database)',
           example: 'product-image',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'Whether the files should be publicly accessible (optional)',
+          example: false,
         },
         metadata: {
           type: 'object',
           description: 'Optional metadata',
         },
       },
-      required: ['files', 'context'],
+      required: ['files', 'contextId'],
     },
   })
   @ApiResponse({
-    status: 201,
+    status: 200,
     description: 'Files uploaded successfully',
     type: BatchUploadResponseDto,
   })
@@ -112,6 +128,10 @@ export class UploadController {
   ): Promise<BatchUploadResponseDto> {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
+    }
+
+    if (dto.isPublic !== undefined && typeof dto.isPublic === 'string') {
+      dto.isPublic = dto.isPublic === 'true';
     }
 
     return this.uploadService.batchUploadFiles(files, dto, user.userId);

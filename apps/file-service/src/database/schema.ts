@@ -64,7 +64,7 @@ export const uploads = pgTable(
     }>(),
 
     uploadedBy: uuid('uploaded_by').notNull(),
-    isPublic: boolean('is_public').default(false),
+    isPublic: boolean('is_public').default(false).notNull(),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

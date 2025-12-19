@@ -55,23 +55,70 @@ export class FileContextValidator {
     return isPublic;
   }
 
+  /**
+   * Check if actual MIME type matches the pattern
+   * Supports:
+   * - Exact match: "image/jpeg"
+   * - Type wildcard: "image/*" (matches all image types including image/svg+xml)
+   * - Full wildcard: (matches all types)
+   */
+  private matchesMimeType(actual: string, pattern: string): boolean {
+    if (actual === pattern) {
+      return true;
+    }
+
+    if (pattern === '*/*') {
+      return true;
+    }
+
+    if (pattern.endsWith('/*')) {
+      const [patternType] = pattern.split('/');
+      const [actualType] = actual.split('/');
+      return patternType === actualType;
+    }
+
+    return false;
+  }
+
+  /**
+   * Validate MIME type against whitelist (throws exception)
+   */
   validateMimeType(context: FileContext, mimeType: string): void {
-    if (
-      context.allowedMimeTypes &&
-      !context.allowedMimeTypes.includes(mimeType)
-    ) {
+    if (!context.allowedMimeTypes || context.allowedMimeTypes.length === 0) {
+      return;
+    }
+
+    const isAllowed = context.allowedMimeTypes.some(pattern =>
+      this.matchesMimeType(mimeType, pattern),
+    );
+
+    if (!isAllowed) {
       throw new BadRequestException(
         `Invalid file type for ${context.name}. ` +
-          `Allowed: ${context.allowedMimeTypes.join(', ')}`,
+        `Allowed: ${context.allowedMimeTypes.join(', ')}. ` +
+        `Got: ${mimeType}`,
       );
     }
+  }
+
+  /**
+   * Check if MIME type is valid (returns boolean, no exception)
+   */
+  isValidMimeType(context: FileContext, mimeType: string): boolean {
+    if (!context.allowedMimeTypes || context.allowedMimeTypes.length === 0) {
+      return true;
+    }
+
+    return context.allowedMimeTypes.some(pattern =>
+      this.matchesMimeType(mimeType, pattern),
+    );
   }
 
   validateFileSize(context: FileContext, size: number): void {
     if (size > context.maxFileSize) {
       throw new BadRequestException(
-        `File too large for ${context.name}. ` +
-          `Max: ${(context.maxFileSize / 1024 / 1024).toFixed(1)}MB`,
+        `File size too large for ${context.name}. ` +
+        `Max: ${(context.maxFileSize / 1024 / 1024).toFixed(1)}MB`,
       );
     }
   }
